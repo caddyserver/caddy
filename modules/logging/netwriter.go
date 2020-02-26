@@ -20,6 +20,7 @@ import (
 	"net"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -75,8 +76,26 @@ func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
 	return net.Dial(nw.addr.Network, nw.addr.JoinHostPort(0))
 }
 
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//     net <address>
+//
+func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		nw.Address = d.Val()
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // Interface guards
 var (
-	_ caddy.Provisioner  = (*NetWriter)(nil)
-	_ caddy.WriterOpener = (*NetWriter)(nil)
+	_ caddy.Provisioner     = (*NetWriter)(nil)
+	_ caddy.WriterOpener    = (*NetWriter)(nil)
+	_ caddyfile.Unmarshaler = (*NetWriter)(nil)
 )

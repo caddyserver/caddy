@@ -19,8 +19,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/dustin/go-humanize"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -125,7 +129,77 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     file <filename> {
+//         roll_disabled
+//         roll_size     <size>
+//         roll_keep     <num>
+//         roll_keep_for <days>
+//     }
+//
+// The roll_size value will be rounded down to number of megabytes (MiB).
+// The roll_keep_for duration will be rounded down to number of days.
+func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		fw.Filename = d.Val()
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "roll_disabled":
+				var f bool
+				fw.Roll = &f
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "roll_size":
+				var sizeStr string
+				if !d.AllArgs(&sizeStr) {
+					return d.ArgErr()
+				}
+				size, err := humanize.ParseBytes(sizeStr)
+				if err != nil {
+					return d.Errf("parsing size: %v", err)
+				}
+				fw.RollSizeMB = int(size) / 1024 / 1024
+
+			case "roll_keep":
+				var keepStr string
+				if !d.AllArgs(&keepStr) {
+					return d.ArgErr()
+				}
+				keep, err := strconv.Atoi(keepStr)
+				if err != nil {
+					return d.Errf("parsing roll_keep number: %v", err)
+				}
+				fw.RollKeep = keep
+
+			case "roll_keep_for":
+				var keepForStr string
+				if !d.AllArgs(&keepForStr) {
+					return d.ArgErr()
+				}
+				keepFor, err := time.ParseDuration(keepForStr)
+				if err != nil {
+					return d.Errf("parsing roll_keep_for duration: %v", err)
+				}
+				fw.RollKeepDays = int(keepFor.Hours()) / 24
+			}
+		}
+	}
+	return nil
+}
+
 // Interface guards
 var (
-	_ caddy.Provisioner = (*FileWriter)(nil)
+	_ caddy.Provisioner     = (*FileWriter)(nil)
+	_ caddy.WriterOpener    = (*FileWriter)(nil)
+	_ caddyfile.Unmarshaler = (*FileWriter)(nil)
 )

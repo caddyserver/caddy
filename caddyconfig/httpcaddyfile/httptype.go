@@ -282,6 +282,35 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		}
 	}
 
+	// extract any custom logs, and enforce configured levels
+	var customLogs []namedCustomLog
+	var hasDefaultLog bool
+	for _, sb := range serverBlocks {
+		for _, clVal := range sb.pile["custom_log"] {
+			ncl := clVal.Value.(namedCustomLog)
+			if ncl.name == "" {
+				continue
+			}
+			if ncl.name == "default" {
+				hasDefaultLog = true
+			}
+			if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+				ncl.log.Level = "DEBUG"
+			}
+			customLogs = append(customLogs, ncl)
+		}
+	}
+	if !hasDefaultLog {
+		// if the default log was not customized, ensure we
+		// configure it with any applicable options
+		if _, ok := options["debug"]; ok {
+			customLogs = append(customLogs, namedCustomLog{
+				name: "default",
+				log:  &caddy.CustomLog{Level: "DEBUG"},
+			})
+		}
+	}
+
 	// annnd the top-level config, then we're done!
 	cfg := &caddy.Config{AppsRaw: make(caddy.ModuleMap)}
 	if !reflect.DeepEqual(httpApp, caddyhttp.App{}) {
@@ -298,6 +327,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
 		cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
+	}
+	if len(customLogs) > 0 {
+		if cfg.Logging == nil {
+			cfg.Logging = &caddy.Logging{
+				Logs: make(map[string]*caddy.CustomLog),
+			}
+		}
+		for _, ncl := range customLogs {
+			if ncl.name != "" {
+				cfg.Logging.Logs[ncl.name] = ncl.log
+			}
+		}
 	}
 
 	return cfg, warnings, nil
@@ -335,6 +376,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptEmail(disp)
 		case "admin":
 			val, err = parseOptAdmin(disp)
+		case "debug":
+			options["debug"] = true
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
@@ -504,6 +547,25 @@ func (st *ServerType) serversFromPairings(
 				for _, val := range errorSubrouteVals {
 					sr := val.Value.(*caddyhttp.Subroute)
 					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
+				}
+			}
+
+			// add log associations
+			for _, cval := range sblock.pile["custom_log"] {
+				ncl := cval.Value.(namedCustomLog)
+				if srv.Logs == nil {
+					srv.Logs = &caddyhttp.ServerLogConfig{
+						LoggerNames: make(map[string]string),
+					}
+				}
+				hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+				if err != nil {
+					return nil, err
+				}
+				for _, h := range hosts {
+					if ncl.name != "" {
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				}
 			}
 		}
@@ -938,6 +1000,11 @@ func (c counter) nextGroup() string {
 type matcherSetAndTokens struct {
 	matcherSet caddy.ModuleMap
 	tokens     []caddyfile.Token
+}
+
+type namedCustomLog struct {
+	name string
+	log  *caddy.CustomLog
 }
 
 // sbAddrAssocation is a mapping from a list of
