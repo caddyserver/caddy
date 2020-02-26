@@ -67,6 +67,11 @@ func TestReplacer(t *testing.T) {
 			input:  `{{}`,
 			expect: "",
 		},
+		{
+			input:  `{unknown}`,
+			empty:  "-",
+			expect: "-",
+		},
 	} {
 		actual := rep.ReplaceAll(tc.input, tc.empty)
 		if actual != tc.expect {
