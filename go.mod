@@ -1,6 +1,6 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.13
+go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.0.0
