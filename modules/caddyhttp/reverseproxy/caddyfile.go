@@ -411,6 +411,21 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.TransportRaw = caddyconfig.JSONModuleObject(rt, "protocol", name, nil)
 
+			case "transparent":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Headers == nil {
+					h.Headers = new(headers.Handler)
+				}
+				if h.Headers.Request == nil {
+					h.Headers.Request = new(headers.HeaderOps)
+				}
+				// The X-Forwarded-For header is always appended to by default, directly in the reverse proxy code
+				headers.CaddyfileHeaderOp(h.Headers.Request, "Host", "{http.request.hostport}", "")
+				headers.CaddyfileHeaderOp(h.Headers.Request, "X-Real-Ip", "{http.request.remote}", "")
+				headers.CaddyfileHeaderOp(h.Headers.Request, "X-Forwarded-Proto", "{http.request.scheme}", "")
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
