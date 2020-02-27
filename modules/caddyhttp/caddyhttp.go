@@ -142,7 +142,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 	certmagic.Default.DefaultServerName = app.DefaultSNI
 
 	// this provisions the matchers for each route,
-	// and prepares auto HTTP->HTTP redirects, and
+	// and prepares auto HTTP->HTTPS redirects, and
 	// is required before we provision each server
 	err := app.automaticHTTPSPhase1(ctx, repl)
 	if err != nil {
