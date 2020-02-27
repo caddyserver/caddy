@@ -190,7 +190,7 @@ func readConfig(path string, out io.Writer) error {
 	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
 }
 
-// indexConfigObjects recurisvely searches ptr for object fields named
+// indexConfigObjects recursively searches ptr for object fields named
 // "@id" and maps that ID value to the full configPath in the index.
 // This function is NOT safe for concurrent access; obtain a write lock
 // on currentCfgMu.
