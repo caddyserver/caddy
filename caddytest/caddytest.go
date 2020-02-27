@@ -19,38 +19,30 @@ import (
 
 var internalHostnames = []string{"a.caddy.local", "b.caddy.local", "c.caddy.local"}
 
-// TestContext stores the context of the testing process
-type TestContext struct {
-	t *testing.T
-}
-
-// Complete called to clean up the request free the mutex
-func (tctx *TestContext) Complete() {
-	if tctx.t.Failed() {
-		res, err := http.Get("http://localhost:2019/config/")
-		if err != nil {
-			tctx.t.Log("unable to read the current config")
-		}
-		defer res.Body.Close()
-		body, err := ioutil.ReadAll(res.Body)
-
-		var out bytes.Buffer
-		json.Indent(&out, body, "", "  ")
-		tctx.t.Logf("----------- failed with config -----------\n%s", out.String())
-	}
-}
-
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
-func InitServer(t *testing.T, rawConfig string, configType string) TestContext {
-
-	tctx := TestContext{t: t}
+func InitServer(t *testing.T, rawConfig string, configType string) {
 
 	err := validateTestPrerequisites()
 	if err != nil {
 		t.Skipf("skipping tests as failed integration prerequisites. %s", err)
-		return tctx
+		return
 	}
+
+	t.Cleanup(func() {
+		if t.Failed() {
+			res, err := http.Get("http://localhost:2019/config/")
+			if err != nil {
+				t.Log("unable to read the current config")
+			}
+			defer res.Body.Close()
+			body, err := ioutil.ReadAll(res.Body)
+
+			var out bytes.Buffer
+			json.Indent(&out, body, "", "  ")
+			t.Logf("----------- failed with config -----------\n%s", out.String())
+		}
+	})
 
 	rawConfig = prependCaddyFilePath(rawConfig)
 	client := &http.Client{
@@ -59,7 +51,7 @@ func InitServer(t *testing.T, rawConfig string, configType string) TestContext {
 	req, err := http.NewRequest("POST", "http://localhost:2019/load", strings.NewReader(rawConfig))
 	if err != nil {
 		t.Errorf("failed to create request. %s", err)
-		return tctx
+		return
 	}
 
 	if configType == "json" {
@@ -71,20 +63,19 @@ func InitServer(t *testing.T, rawConfig string, configType string) TestContext {
 	res, err := client.Do(req)
 	if err != nil {
 		t.Errorf("unable to contact caddy server. %s", err)
-		return tctx
+		return
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("unable to read response. %s", err)
-		return tctx
+		return
 	}
 
 	if res.StatusCode != 200 {
 		t.Logf("failed to load config:\n status code:%d \n %s", res.StatusCode, string(body))
 		t.Fail()
 	}
-	return tctx
 }
 
 var hasValidated bool
