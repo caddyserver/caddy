@@ -242,6 +242,24 @@ provisioning stages.`,
 		}(),
 	})
 
+	RegisterCommand(Command{
+		Name:  "fmt",
+		Func:  cmdFormatConfig,
+		Usage: "[--write] [<path>]",
+		Short: "Formats a Caddyfile",
+		Long: `
+Formats the Caddyfile by adding proper indentation and spaces to improve
+human readability. It prints the result to stdout.
+
+If --write is specified, the output will be written to the config file
+directly instead of printing it.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("format", flag.ExitOnError)
+			fs.Bool("write", false, "Over-write the output to specified file")
+			return fs
+		}(),
+	})
+
 }
 
 // RegisterCommand registers the command cmd.
