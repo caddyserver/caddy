@@ -17,6 +17,7 @@ variables:
   GOPATH: $(system.defaultWorkingDirectory)/gopath
   GOBIN:  $(GOPATH)/bin
   modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)'
+  GO111MODULE: on
 
 jobs:
 - job: crossPlatformTest
