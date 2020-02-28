@@ -680,7 +680,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 	return false
 }
 
-// MatchRegexp is an embeddable type for matching
+// MatchRegexp is an embedable type for matching
 // using regular expressions. It adds placeholders
 // to the request's replacer.
 type MatchRegexp struct {

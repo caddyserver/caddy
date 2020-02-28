@@ -105,7 +105,7 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     }
 //
 // Thus, this directive produces multiple handlers, each with a different
-// matcher because multiple consecutive hgandlers are necessary to support
+// matcher because multiple consecutive handlers are necessary to support
 // the common PHP use case. If this "common" config is not compatible
 // with a user's PHP requirements, they can use a manual approach based
 // on the example above to configure it precisely as they need.
