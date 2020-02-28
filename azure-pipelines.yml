@@ -59,6 +59,8 @@ jobs:
       echo "127.0.0.1 b.caddy.local" >> /etc/hosts
       echo "127.0.0.1 c.caddy.local" >> /etc/hosts
       cat /etc/hosts
+      ipconfig /flushdns
+      ping a.caddy.local -n 1
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: "Set hosts file on Windows"
 
