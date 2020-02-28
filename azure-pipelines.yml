@@ -59,7 +59,7 @@ jobs:
       echo "127.0.0.1 b.caddy.local" >> /etc/hosts
       echo "127.0.0.1 c.caddy.local" >> /etc/hosts
       cat /etc/hosts
-      ipconfig /flushdns
+      # ipconfig /flushdns
       ping a.caddy.local -n 1
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: "Set hosts file on Windows"
@@ -142,6 +142,10 @@ jobs:
 
   - script: |
       cmd/caddy/caddy start
+      echo 'run 1'
+      go test -v -count=1 ./caddytest/...
+      sleep 1
+      echo 'run 2'
       go test -v -count=1 ./caddytest/...
       cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
