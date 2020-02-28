@@ -37,7 +37,7 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
-	RegisterHandlerDirective("handle", parseSegmentAsSubroute)
+	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterDirective("log", parseLog)
 }
