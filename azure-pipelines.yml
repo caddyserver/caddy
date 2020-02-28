@@ -139,9 +139,9 @@ jobs:
     displayName: Run tests
 
   - script: |
-      ./cmd/caddy/caddy start
+      cmd/caddy/caddy start
       go test -v -count=1 ./caddytest/...
-      ./cmd/caddy/caddy stop
+      cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
     continueOnError: true
     displayName: Run integration tests
