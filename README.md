@@ -53,7 +53,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 
 Requirements:
 
-- [Go 1.13 or newer](https://golang.org/dl/)
+- [Go 1.14 or newer](https://golang.org/dl/)
 - Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
 
 Download the `v2` source code:
