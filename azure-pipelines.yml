@@ -45,9 +45,9 @@ jobs:
   - bash: |
       ls -lah /etc/hosts
       cat /etc/hosts
-      echo "127.0.0.1 a.caddy.local" >> /etc/hosts
-      echo "127.0.0.1 b.caddy.local" >> /etc/hosts
-      echo "127.0.0.1 c.caddy.local" >> /etc/hosts
+      echo "127.0.0.1 a.caddy.local" | sudo tee -a /etc/hosts
+      echo "127.0.0.1 b.caddy.local" | sudo tee -a /etc/hosts
+      echo "127.0.0.1 c.caddy.local" | sudo tee -a /etc/hosts
       cat /etc/hosts
     displayName: "Set hosts file"
 
