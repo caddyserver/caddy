@@ -140,7 +140,7 @@ jobs:
 
   - script: |
       ./cmd/caddy/caddy start
-      go test -v -count=1 ./caddytest/integraton/...
+      go test -v -count=1 ./caddytest/...
       ./cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
     continueOnError: true
