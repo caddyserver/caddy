@@ -1012,11 +1012,6 @@ func (c counter) nextGroup() string {
 	return name
 }
 
-type matcherSetAndTokens struct {
-	matcherSet caddy.ModuleMap
-	tokens     []caddyfile.Token
-}
-
 type namedCustomLog struct {
 	name string
 	log  *caddy.CustomLog

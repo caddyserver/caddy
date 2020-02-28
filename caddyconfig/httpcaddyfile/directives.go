@@ -283,27 +283,32 @@ func sortRoutes(routes []ConfigValue) {
 				return false
 			}
 
-			if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
-				// use already-decoded matcher, or decode if it's the first time seeing it
-				iPM, jPM := decodedMatchers[i], decodedMatchers[j]
-				if iPM == nil {
-					var pathMatcher caddyhttp.MatchPath
-					_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-					decodedMatchers[i] = pathMatcher
-					iPM = pathMatcher
-				}
-				if jPM == nil {
-					var pathMatcher caddyhttp.MatchPath
-					_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-					decodedMatchers[j] = pathMatcher
-					jPM = pathMatcher
-				}
+			// use already-decoded matcher, or decode if it's the first time seeing it
+			iPM, jPM := decodedMatchers[i], decodedMatchers[j]
+			if iPM == nil && len(iRoute.MatcherSetsRaw) == 1 {
+				var pathMatcher caddyhttp.MatchPath
+				_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+				decodedMatchers[i] = pathMatcher
+				iPM = pathMatcher
+			}
+			if jPM == nil && len(jRoute.MatcherSetsRaw) == 1 {
+				var pathMatcher caddyhttp.MatchPath
+				_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+				decodedMatchers[j] = pathMatcher
+				jPM = pathMatcher
+			}
 
-				// if there is only one path in the matcher, sort by
-				// longer path (more specific) first
-				if len(iPM) == 1 && len(jPM) == 1 {
-					return len(iPM[0]) > len(jPM[0])
-				}
+			// if there is only one path in the matcher, sort by
+			// longer path (more specific) first; if one of the
+			// routes doesn't have a matcher, then it's treated
+			// like a zero-length path matcher
+			switch {
+			case iPM == nil && jPM != nil:
+				return false
+			case iPM != nil && jPM == nil:
+				return true
+			case iPM != nil && jPM != nil:
+				return len(iPM[0]) > len(jPM[0])
 			}
 		}
 
