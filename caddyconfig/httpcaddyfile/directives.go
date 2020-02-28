@@ -161,6 +161,23 @@ func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
 	return matcherSetFromMatcherToken(h.Dispenser.Token(), h.matcherDefs, h.warnings)
 }
 
+// ExtractMatcherSet is like MatcherToken, except this is a higher-level
+// method that returns the matcher set described by the matcher token,
+// or nil if there is none, and deletes the matcher token from the
+// dispenser and resets it as if this look-ahead never happened. Useful
+// when wrapping a route (one or more handlers) in a user-defined matcher.
+func (h Helper) ExtractMatcherSet() (caddy.ModuleMap, error) {
+	matcherSet, hasMatcher, err := h.MatcherToken()
+	if err != nil {
+		return nil, err
+	}
+	if hasMatcher {
+		h.Dispenser.Delete() // strip matcher token
+	}
+	h.Dispenser.Reset() // pretend this lookahead never happened
+	return matcherSet, nil
+}
+
 // NewRoute returns config values relevant to creating a new HTTP route.
 func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
 	handler caddyhttp.MiddlewareHandler) []ConfigValue {
