@@ -51,7 +51,7 @@ type MatchFile struct {
 	Root string `json:"root,omitempty"`
 
 	// The list of files to try. Each path here is
-	// considered relatice to Root. If nil, the request
+	// considered related to Root. If nil, the request
 	// URL's path will be assumed. Files and
 	// directories are treated distinctly, so to match
 	// a directory, the filepath MUST end in a forward

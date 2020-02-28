@@ -254,7 +254,7 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	rec.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
 	rec.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
-	// we don't know a way to guickly generate etag for dynamic content,
+	// we don't know a way to quickly generate etag for dynamic content,
 	// and weak etags still cause browsers to rely on it even after a
 	// refresh, so disable them until we find a better way to do this
 	rec.Header().Del("Etag")
