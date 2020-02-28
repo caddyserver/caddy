@@ -448,6 +448,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) (int, error) 
 	// sites that rely on TLS ClientAuth sharing a port with
 	// sites that do not - if mismatched, close the connection
 	if !vhost.TLS.InsecureDisableSNIMatching && r.TLS != nil &&
+		vhost.TLS.ClientAuth != tls.NoClientCert &&
 		strings.ToLower(r.TLS.ServerName) != strings.ToLower(hostname) {
 		r.Close = true
 		log.Printf("[ERROR] %s - strict host matching: SNI (%s) and HTTP Host (%s) values differ",
