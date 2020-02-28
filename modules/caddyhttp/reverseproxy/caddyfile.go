@@ -101,69 +101,80 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// TODO: the logic in this function is kind of sensitive, we need
 	// to write tests before making any more changes to it
 	upstreamDialAddress := func(upstreamAddr string) (string, error) {
-		// slight hack, to ensure a non-URL parses correctly (simplifies our code paths)
-		const undefinedScheme = "undefined"
-		if !strings.Contains(upstreamAddr, "://") {
-			upstreamAddr = undefinedScheme + "://" + upstreamAddr
-		}
+		var network, scheme, host, port string
 
-		// convenient way to get desired scheme, host, and port
-		toURL, err := url.Parse(upstreamAddr)
-		if err != nil {
-			return "", d.Errf("parsing upstream address: %v", err)
-		}
-		if toURL.Scheme == undefinedScheme {
-			toURL.Scheme = ""
-		}
-
-		// there is currently no way to perform a URL rewrite between choosing
-		// a backend and proxying to it, so we cannot allow extra components
-		// in backend URLs
-		if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
-			return "", d.Err("for now, URLs for proxy upstreams only support scheme, host, and port components")
-		}
-
-		// ensure the port and scheme aren't in conflict
-		urlPort := toURL.Port()
-		if toURL.Scheme == "http" && urlPort == "443" {
-			return "", d.Err("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
-		}
-		if toURL.Scheme == "https" && urlPort == "80" {
-			return "", d.Err("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
-		}
-
-		// dial addresses always need a port, so if no port was
-		// specified, assume the default ports for HTTP(S)
-		if urlPort == "" {
-			var toPort string
-			if toURL.Scheme == "" {
-				// if no port or scheme is specified, we assume HTTP
-				toPort = "80"
-			} else if toURL.Scheme == "https" {
-				toPort = "443"
+		if strings.Contains(upstreamAddr, "://") {
+			toURL, err := url.Parse(upstreamAddr)
+			if err != nil {
+				return "", d.Errf("parsing upstream URL: %v", err)
 			}
-			toURL.Host = net.JoinHostPort(toURL.Host, toPort)
+
+			// there is currently no way to perform a URL rewrite between choosing
+			// a backend and proxying to it, so we cannot allow extra components
+			// in backend URLs
+			if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
+				return "", d.Err("for now, URLs for proxy upstreams only support scheme, host, and port components")
+			}
+
+			// ensure the port and scheme aren't in conflict
+			urlPort := toURL.Port()
+			if toURL.Scheme == "http" && urlPort == "443" {
+				return "", d.Err("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
+			}
+			if toURL.Scheme == "https" && urlPort == "80" {
+				return "", d.Err("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
+			}
+
+			// if port is missing, attempt to infer from scheme
+			if toURL.Port() == "" {
+				var toPort string
+				switch toURL.Scheme {
+				case "", "http":
+					toPort = "80"
+				case "https":
+					toPort = "443"
+				}
+				toURL.Host = net.JoinHostPort(toURL.Hostname(), toPort)
+			}
+
+			scheme, host, port = toURL.Scheme, toURL.Hostname(), toURL.Port()
+		} else {
+			// extract network manually, since caddy.ParseNetworkAddress() will always add one
+			if idx := strings.Index(upstreamAddr, "/"); idx >= 0 {
+				network = strings.ToLower(strings.TrimSpace(upstreamAddr[:idx]))
+				upstreamAddr = upstreamAddr[idx+1:]
+			}
+			var err error
+			host, port, err = net.SplitHostPort(upstreamAddr)
+			if err != nil {
+				host = upstreamAddr
+			}
 		}
 
-		// if port is known and scheme is not, set the scheme
-		if toURL.Scheme == "" {
-			if urlPort == "80" {
-				toURL.Scheme = "http"
-			} else if urlPort == "443" {
-				toURL.Scheme = "https"
+		// if scheme is not set, we may be able to infer it from a known port
+		if scheme == "" {
+			if port == "80" {
+				scheme = "http"
+			} else if port == "443" {
+				scheme = "https"
 			}
 		}
 
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
-		if commonScheme != "" && toURL.Scheme != commonScheme {
+		if commonScheme != "" && scheme != commonScheme {
 			return "", d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
-				commonScheme, toURL.Scheme)
+				commonScheme, scheme)
 		}
-		commonScheme = toURL.Scheme
+		commonScheme = scheme
 
-		return toURL.Host, nil
+		// for simplest possible config, we only need to include
+		// the network portion if the user specified one
+		if network != "" {
+			return caddy.JoinNetworkAddress(network, host, port), nil
+		}
+		return net.JoinHostPort(host, port), nil
 	}
 
 	for d.Next() {
