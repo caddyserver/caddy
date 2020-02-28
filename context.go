@@ -211,7 +211,7 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 }
 
 // loadModulesFromSomeMap loads modules from val, which must be a type of map[string]interface{}.
-// Depending on inlineModuleKey, it will be interpeted as either a ModuleMap (key is the module
+// Depending on inlineModuleKey, it will be interpreted as either a ModuleMap (key is the module
 // name) or as a regular map (key is not the module name, and module name is defined inline).
 func (ctx Context) loadModulesFromSomeMap(namespace, inlineModuleKey string, val reflect.Value) (map[string]interface{}, error) {
 	// if no inline_key is specified, then val must be a ModuleMap,

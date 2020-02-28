@@ -972,12 +972,12 @@ func sliceContains(haystack []string, needle string) bool {
 	return false
 }
 
-// specifity returns len(s) minus any wildcards (*) and
+// specificity returns len(s) minus any wildcards (*) and
 // placeholders ({...}). Basically, it's a length count
 // that penalizes the use of wildcards and placeholders.
 // This is useful for comparing hostnames and paths.
 // However, wildcards in paths are not a sure answer to
-// the question of specificity. For exmaple,
+// the question of specificity. For example,
 // '*.example.com' is clearly less specific than
 // 'a.example.com', but is '/a' more or less specific
 // than '/a*'?
@@ -1018,7 +1018,7 @@ type namedCustomLog struct {
 	log  *caddy.CustomLog
 }
 
-// sbAddrAssocation is a mapping from a list of
+// sbAddrAssociation is a mapping from a list of
 // addresses to a list of server blocks that are
 // served on those addresses.
 type sbAddrAssociation struct {
