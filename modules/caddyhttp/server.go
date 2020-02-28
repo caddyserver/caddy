@@ -94,7 +94,9 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
-	// Logs customizes how access logs are handled in this server.
+	// Customizes how access logs are handled in this server. To
+	// minimally enable access logs, simply set this to a non-null,
+	// empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
 	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
