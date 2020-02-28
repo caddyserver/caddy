@@ -50,7 +50,7 @@ jobs:
       echo "127.0.0.1 c.caddy.local" | sudo tee -a /etc/hosts
       cat /etc/hosts
     condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
-    displayName: "Set hosts file"
+    displayName: "Set hosts file on Linux, macOS"
 
   - bash: |
       ls -lah /etc/hosts
@@ -60,7 +60,7 @@ jobs:
       echo "127.0.0.1 c.caddy.local" >> /etc/hosts
       cat /etc/hosts
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
-    displayName: "Set hosts file"
+    displayName: "Set hosts file on Windows"
 
   - bash: |
       sudo rm -f $(which go)
@@ -137,6 +137,13 @@ jobs:
     workingDirectory: '$(modulePath)'
     continueOnError: true
     displayName: Run tests
+
+  - script: |
+      (./cmd/caddy run 2>&1) > test-results/integration-run-result.out
+      (go test -v -race ./caddytest/integraton/... 2>&1) > test-results/integration-result.out
+    workingDirectory: '$(modulePath)'
+    continueOnError: true
+    displayName: Run integration tests
 
   - script: |
       mkdir coverage
