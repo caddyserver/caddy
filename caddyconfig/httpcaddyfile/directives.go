@@ -298,18 +298,16 @@ func sortRoutes(routes []ConfigValue) {
 				jPM = pathMatcher
 			}
 
-			// if there is only one path in the matcher, sort by
-			// longer path (more specific) first; if one of the
-			// routes doesn't have a matcher, then it's treated
-			// like a zero-length path matcher
-			switch {
-			case iPM == nil && jPM != nil:
-				return false
-			case iPM != nil && jPM == nil:
-				return true
-			case iPM != nil && jPM != nil:
-				return len(iPM[0]) > len(jPM[0])
+			// sort by longer path (more specific) first; missing
+			// path matchers are treated as zero-length paths
+			var iPathLen, jPathLen int
+			if iPM != nil {
+				iPathLen = len(iPM[0])
 			}
+			if jPM != nil {
+				jPathLen = len(jPM[0])
+			}
+			return iPathLen > jPathLen
 		}
 
 		return dirPositions[iDir] < dirPositions[jDir]
