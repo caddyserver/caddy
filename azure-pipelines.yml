@@ -49,6 +49,17 @@ jobs:
       echo "127.0.0.1 b.caddy.local" | sudo tee -a /etc/hosts
       echo "127.0.0.1 c.caddy.local" | sudo tee -a /etc/hosts
       cat /etc/hosts
+    condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
+    displayName: "Set hosts file"
+
+  - bash: |
+      ls -lah /etc/hosts
+      cat /etc/hosts
+      echo "127.0.0.1 a.caddy.local" >> /etc/hosts
+      echo "127.0.0.1 b.caddy.local" >> /etc/hosts
+      echo "127.0.0.1 c.caddy.local" >> /etc/hosts
+      cat /etc/hosts
+    condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: "Set hosts file"
 
   - bash: |
