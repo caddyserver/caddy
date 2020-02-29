@@ -157,14 +157,16 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				// haven't seen this cert file yet, let's give it a tag
 				// and add a loader for it
 				tag = fmt.Sprintf("cert%d", len(tlsCertTags))
-				fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
-					Certificate: certFilename,
-					Key:         keyFilename,
-					Tags:        []string{tag},
-				})
 				// remember this for next time we see this cert file
 				tlsCertTags[certFilename] = tag
 			}
+
+			fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
+				Certificate: certFilename,
+				Key:         keyFilename,
+				Tags:        []string{tag},
+			})
+
 			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
 			if cp == nil {
 				cp = new(caddytls.ConnectionPolicy)
