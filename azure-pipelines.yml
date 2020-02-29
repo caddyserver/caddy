@@ -104,6 +104,18 @@ jobs:
     workingDirectory: '$(modulePath)/cmd/caddy'
     displayName: Build Caddy
 
+  - task: PublishBuildArtifacts@1
+    condition: eq( variables['Agent.OS'], 'Windows_NT' )
+    inputs:
+      pathtoPublish: '$(modulePath)/cmd/caddy/caddy.exe'
+      artifactName: caddy_v2.exe
+
+  - task: PublishBuildArtifacts@1
+    condition: ne( variables['Agent.OS'], 'Windows_NT' )
+    inputs:
+      pathtoPublish: '$(modulePath)/cmd/caddy/caddy'
+      artifactName: caddy_v2
+
   # its behavior is governed by .golangci.yml
   - script: |
       (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
