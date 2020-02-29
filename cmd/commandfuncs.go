@@ -34,6 +34,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
@@ -534,6 +535,35 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	}
 
 	fmt.Println("Valid configuration")
+
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdFormatConfig(fl Flags) (int, error) {
+	// Default path of file is Caddyfile
+	formatCmdConfigFile := fl.Arg(0)
+	if formatCmdConfigFile == "" {
+		formatCmdConfigFile = "Caddyfile"
+	}
+
+	formatCmdWriteFlag := fl.Bool("write")
+
+	input, err := ioutil.ReadFile(formatCmdConfigFile)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading input file: %v", err)
+	}
+
+	output := caddyfile.Format(input)
+
+	if formatCmdWriteFlag {
+		err = ioutil.WriteFile(formatCmdConfigFile, output, 0644)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, nil
+		}
+	} else {
+		fmt.Print(string(output))
+	}
 
 	return caddy.ExitCodeSuccess, nil
 }
