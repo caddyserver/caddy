@@ -55,6 +55,7 @@ jobs:
   - bash: |
       ls -lah c:/windows/system32/drivers/etc/
       cat c:/windows/system32/drivers/etc/hosts
+      echo "" >> c:\windows\system32\drivers\etc\hosts
       echo "127.0.0.1 a.caddy.local" >> c:\windows\system32\drivers\etc\hosts
       echo "127.0.0.1 b.caddy.local" >> c:\windows\system32\drivers\etc\hosts
       echo "127.0.0.1 c.caddy.local" >> c:\windows\system32\drivers\etc\hosts
