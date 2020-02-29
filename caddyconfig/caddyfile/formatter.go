@@ -29,11 +29,12 @@ func Format(body []byte) []byte {
 		commented,
 		quoted,
 		escaped,
-		block,
 		environ,
 		lineBegin bool
 
 		firstIteration = true
+
+		indentation = 0
 
 		prev,
 		curr,
@@ -93,13 +94,13 @@ func Format(body []byte) []byte {
 			if curr == '}' {
 				if environ {
 					environ = false
-				} else if block {
-					block = false
+				} else if indentation > 0 {
+					indentation--
 				}
 			}
 			if curr == '{' {
 				if unicode.IsSpace(next) {
-					block = true
+					indentation++
 
 					if !unicode.IsSpace(prev) {
 						result.WriteRune(' ')
@@ -113,8 +114,10 @@ func Format(body []byte) []byte {
 					continue
 				} else {
 					lineBegin = false
-					if block {
-						result.WriteRune('\t')
+					if indentation > 0 {
+						for tabs := indentation; tabs > 0; tabs-- {
+							result.WriteRune('\t')
+						}
 					}
 				}
 			} else {
