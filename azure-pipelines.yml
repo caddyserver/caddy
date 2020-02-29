@@ -129,6 +129,7 @@ jobs:
     displayName: Run tests
 
   - script: |
+      set -e
       cmd/caddy/caddy start
       echo 'run 1'
       go test -v -count=1 ./caddytest/...
