@@ -130,6 +130,8 @@ jobs:
 
   - script: |
       set -e
+      cd caddytest && ./generate_key.sh
+      cd '$(modulePath)'
       cmd/caddy/caddy start
       echo 'run 1'
       go test -v -count=1 ./caddytest/...
