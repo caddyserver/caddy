@@ -29,6 +29,22 @@ b
 
 e { f
 }
+
+g {
+h {
+i
+}
+}
+
+j { k {
+l
+}
+}
+
+m {
+	n { o
+	}
+}
 `)
 	expected := []byte(`
 a
@@ -40,6 +56,24 @@ c {
 
 e {
 	f
+}
+
+g {
+	h {
+		i
+	}
+}
+
+j {
+	k {
+		l
+	}
+}
+
+m {
+	n {
+		o
+	}
 }
 `)
 	testFormat(t, input, expected)
