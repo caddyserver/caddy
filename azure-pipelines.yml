@@ -137,7 +137,7 @@ jobs:
       go test -v -count=1 ./caddytest/...
       cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
-    continueOnError: true
+    continueOnError: false
     condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
     displayName: Run integration tests
 
