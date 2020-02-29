@@ -114,7 +114,7 @@ jobs:
     condition: ne( variables['Agent.OS'], 'Windows_NT' )
     inputs:
       pathtoPublish: '$(modulePath)/cmd/caddy/caddy'
-      artifactName: caddy_v2
+      artifactName: 'caddy_v2_$(Agent.OS)'
 
   # its behavior is governed by .golangci.yml
   - script: |
