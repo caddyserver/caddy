@@ -43,6 +43,13 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 
+	// tlsCertTags maps certificate filenames to their tag.
+	// This is used to remember which tag is used for each
+	// certificate files, since we need to avoid loading
+	// the same certificate files more than once, overwriting
+	// previous tags
+	var tlsCertTags = make(map[string]string)
+
 	// load all the server blocks and associate them with a "pile"
 	// of config values; also prohibit duplicate keys because they
 	// can make a config confusing if more than one server block is
@@ -140,6 +147,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				matcherDefs:  matcherDefs,
 				parentBlock:  sb.block,
 				groupCounter: gc,
+				tlsCertTags:  tlsCertTags,
 			})
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
