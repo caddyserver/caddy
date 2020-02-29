@@ -60,11 +60,17 @@ jobs:
       echo "127.0.0.1 b.caddy.local" >> c:\windows\system32\drivers\etc\hosts
       echo "127.0.0.1 c.caddy.local" >> c:\windows\system32\drivers\etc\hosts
       cat c:\windows\system32\drivers\etc\hosts
-      which ipconfig
-      ipconfig /all /flushdns
-      ping a.caddy.local -n 1
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: "Set hosts file on Windows"
+
+  - powershell: |
+      Get-DnsClientCache
+      Write-Host "Clearing DNS Cache..."
+      Clear-DnsClientCache
+
+      Resolve-DnsName -Name a.caddy.local
+    condition: eq( variables['Agent.OS'], 'Windows_NT' )
+    displayName: Flush DNS Cache on Windows
 
   - bash: |
       sudo rm -f $(which go)
