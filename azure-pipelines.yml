@@ -43,6 +43,16 @@ jobs:
     displayName: "Get latest Go version"
 
   - bash: |
+      ls -lah /etc/hosts
+      cat /etc/hosts
+      echo "127.0.0.1 a.caddy.local" | sudo tee -a /etc/hosts
+      echo "127.0.0.1 b.caddy.local" | sudo tee -a /etc/hosts
+      echo "127.0.0.1 c.caddy.local" | sudo tee -a /etc/hosts
+      cat /etc/hosts
+    condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
+    displayName: "Set hosts file on Linux, macOS"
+
+  - bash: |
       sudo rm -f $(which go)
       echo '##vso[task.prependpath]$(GOBIN)'
       echo '##vso[task.prependpath]$(GOROOT)/bin'
@@ -129,6 +139,20 @@ jobs:
     workingDirectory: '$(modulePath)'
     continueOnError: true
     displayName: Run tests
+
+  - script: |
+      set -e
+      cmd/caddy/caddy start
+      echo 'run 1'
+      go test -v -count=1 ./caddytest/...
+      sleep 1
+      echo 'run 2'
+      go test -v -count=1 ./caddytest/...
+      cmd/caddy/caddy stop
+    workingDirectory: '$(modulePath)'
+    continueOnError: false
+    condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
+    displayName: Run integration tests
 
   - script: |
       mkdir coverage
