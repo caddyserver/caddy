@@ -60,7 +60,7 @@ jobs:
       echo "127.0.0.1 c.caddy.local" >> c:\windows\system32\drivers\etc\hosts
       cat c:\windows\system32\drivers\etc\hosts
       which ipconfig
-      ipconfig /flushdns
+      ipconfig /all /flushdns
       ping a.caddy.local -n 1
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
     displayName: "Set hosts file on Windows"
