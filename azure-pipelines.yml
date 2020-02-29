@@ -53,12 +53,12 @@ jobs:
     displayName: "Set hosts file on Linux, macOS"
 
   - bash: |
-      ls -lah /etc/hosts
-      cat /etc/hosts
-      echo "127.0.0.1 a.caddy.local" >> /etc/hosts
-      echo "127.0.0.1 b.caddy.local" >> /etc/hosts
-      echo "127.0.0.1 c.caddy.local" >> /etc/hosts
-      cat /etc/hosts
+      ls -lah c:\windows\system32\drivers\etc\
+      cat c:\windows\system32\drivers\etc\hosts
+      echo "127.0.0.1 a.caddy.local" >> c:\windows\system32\drivers\etc\hosts
+      echo "127.0.0.1 b.caddy.local" >> c:\windows\system32\drivers\etc\hosts
+      echo "127.0.0.1 c.caddy.local" >> c:\windows\system32\drivers\etc\hosts
+      cat c:\windows\system32\drivers\etc\hosts
       which ipconfig
       ipconfig /flushdns
       ping a.caddy.local -n 1
