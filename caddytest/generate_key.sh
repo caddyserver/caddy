@@ -13,7 +13,7 @@ O=Local Developement
 localityName=Local Developement
 commonName=$WILDCARD
 organizationalUnitName=Local Developement
-emailAddress=
+emailAddress=admin@caddy.local
 "
 
 # Generate our Private Key, CSR and Certificate
