@@ -6,7 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-func TestHttpOnly(t *testing.T) {
+func xTestHttpOnly(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -48,7 +48,7 @@ func TestRespond(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://a.caddy.localhost:9443/version", 200, "hello from a.caddy.localhost")
 }
 
-func TestRedirect(t *testing.T) {
+func xTestRedirect(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, `
@@ -76,7 +76,7 @@ func TestRedirect(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://b.caddy.localhost:9443/", 200, "hello from b.caddy.localhost")
 }
 
-func Test2Hosts(t *testing.T) {
+func xTest2Hosts(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, `
@@ -109,7 +109,7 @@ func Test2Hosts(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://b.caddy.localhost:9443/hello", 200, "hello from b.caddy.localhost")
 }
 
-func Test2HostsAndOneStaticIP(t *testing.T) {
+func xTest2HostsAndOneStaticIP(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, `
