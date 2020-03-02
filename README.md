@@ -32,8 +32,8 @@ This is the development branch for Caddy 2, the web server of the Go community.
 ### Menu
 
 - [Build from source](#build-from-source)
-	- [For development](#for-development)
-	- [With version information and/or plugins](#with-version-information-andor-plugins)
+	- [With the build script](#with-the-build-script)
+	- [Custom with plugins](#custom-with-plugins)
 - [Getting started](#getting-started)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
@@ -53,17 +53,34 @@ Requirements:
 - [Go 1.14 or newer](https://golang.org/dl/)
 - Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
-### For development
+### With the build script
 
-_**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
- 
+The Caddy source comes with a build script that will embed the proper version information into the Caddy binary.
+
+**Download the `v2` source code:**
+
 ```bash
 $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
-$ cd caddy/cmd/caddy/
-$ go build
 ```
 
-### With version information and/or plugins
+**Build:**
+
+```bash
+$ caddy/build.sh [<destination>] [<version>]
+```
+
+- `<destination>` is the optional destination path for the `caddy` binary (including the filename).
+	If not given, it will default to a file named `caddy` in the current directory.
+- `<version>` is the Caddy version (Git tag or commit SHA) you want to build.
+	If not given, the build script will try to autodetect the version from the Git repository. Otherwise it will build a `(devel)` build without embedded version information.
+
+**Example:**
+
+```bash
+$ caddy/build.sh /usr/local/bin/caddy
+```
+
+### Custom with plugins
 
 1. Create a new folder: `mkdir caddy`
 2. Change into it: `cd caddy`
