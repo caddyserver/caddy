@@ -5,9 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -16,8 +14,6 @@ import (
 	"testing"
 	"time"
 )
-
-var internalHostnames = []string{"a.caddy.local", "b.caddy.local", "c.caddy.local"}
 
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
@@ -57,7 +53,7 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 	if configType == "json" {
 		req.Header.Add("Content-Type", "application/json")
 	} else {
-		req.Header.Add("Content-Type", "texg/"+configType)
+		req.Header.Add("Content-Type", "text/"+configType)
 	}
 
 	res, err := client.Do(req)
@@ -93,22 +89,11 @@ func validateTestPrerequisites() error {
 	hasValidated = true
 	arePrerequisitesValid = false
 
-	for _, host := range internalHostnames {
-		ips, err := net.LookupIP(host)
-		if err != nil {
-			return fmt.Errorf("caddy integration prerequisites failed. missing dns host:%s. %s", host, err)
-		}
-
-		if len(ips) == 1 && !ips[0].IsLoopback() {
-			return fmt.Errorf("caddy integration prerequisites failed. dns host (%s) should resolve to 127.0.0.1 found %s", host, ips[0])
-		}
-	}
-
 	// check certificates are found
-	if _, err := os.Stat(getIntegrationDir() + "/caddy.local.crt"); os.IsNotExist(err) {
+	if _, err := os.Stat(getIntegrationDir() + "/caddy.localhost.crt"); os.IsNotExist(err) {
 		return errors.New("caddy integration test certificates not found")
 	}
-	if _, err := os.Stat(getIntegrationDir() + "/caddy.local.key"); os.IsNotExist(err) {
+	if _, err := os.Stat(getIntegrationDir() + "/caddy.localhost.key"); os.IsNotExist(err) {
 		return errors.New("caddy integration test certificates not found")
 	}
 
@@ -139,8 +124,8 @@ func getIntegrationDir() string {
 // this helps reduce the noise in test configurations and also allow this
 // to run in any path
 func prependCaddyFilePath(rawConfig string) string {
-	rawConfig = strings.Replace(rawConfig, "/caddy.local.crt", getIntegrationDir()+"/caddy.local.crt", -1)
-	return strings.Replace(rawConfig, "/caddy.local.key", getIntegrationDir()+"/caddy.local.key", -1)
+	rawConfig = strings.Replace(rawConfig, "/caddy.localhost.crt", getIntegrationDir()+"/caddy.localhost.crt", -1)
+	return strings.Replace(rawConfig, "/caddy.localhost.key", getIntegrationDir()+"/caddy.localhost.key", -1)
 }
 
 // AssertGetResponse request a URI and assert the status code and the body contains a string
@@ -155,10 +140,12 @@ func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expected
 // AssertGetResponseBody request a URI and assert the status code matches
 func AssertGetResponseBody(t *testing.T, requestURI string, expectedStatusCode int) (*http.Response, string) {
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
-	client := &http.Client{Transport: tr}
+
 	resp, err := client.Get(requestURI)
 	if err != nil {
 		t.Errorf("failed to call server %s", err)
@@ -187,13 +174,11 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 		return http.ErrUseLastResponse
 	}
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
 	client := &http.Client{
 		CheckRedirect: redirectPolicyFunc,
-		Transport:     tr,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
 
 	resp, err := client.Get(requestURI)
