@@ -152,20 +152,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// policy that is looking for any tag but the last one to be
 			// loaded won't find it, and TLS handshakes will fail (see end)
 			// of issue #3004)
-			tag, ok := h.tlsCertTags[certFilename]
+			tag, ok := tlsCertTags[certFilename]
 			if !ok {
 				// haven't seen this cert file yet, let's give it a tag
 				// and add a loader for it
-				tag = fmt.Sprintf("cert%d", len(h.tlsCertTags))
+				tag = fmt.Sprintf("cert%d", len(tlsCertTags))
 				fileLoader = append(fileLoader, caddytls.CertKeyFilePair{
 					Certificate: certFilename,
 					Key:         keyFilename,
 					Tags:        []string{tag},
 				})
 				// remember this for next time we see this cert file
-				h.tlsCertTags[certFilename] = tag
+				tlsCertTags[certFilename] = tag
 			}
-
 			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
 			if cp == nil {
 				cp = new(caddytls.ConnectionPolicy)
@@ -534,5 +533,12 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 	}
 	return configValues, nil
 }
+
+// tlsCertTags maps certificate filenames to their tag.
+// This is used to remember which tag is used for each
+// certificate files, since we need to avoid loading
+// the same certificate files more than once, overwriting
+// previous tags
+var tlsCertTags = make(map[string]string)
 
 var logCounter int

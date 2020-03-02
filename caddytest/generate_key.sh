@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DOMAIN="caddy.local"
+DOMAIN="caddy.localhost"
 
 # Add wildcard
 WILDCARD="*.$DOMAIN"

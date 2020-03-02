@@ -17,6 +17,3 @@ cmd/caddy/caddy.exe
 # go modules
 vendor
 
-# integration testing prerequisites
-caddytest/caddy.local.crt
-caddytest/caddy.local.key
