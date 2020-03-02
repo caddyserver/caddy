@@ -152,6 +152,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// policy that is looking for any tag but the last one to be
 			// loaded won't find it, and TLS handshakes will fail (see end)
 			// of issue #3004)
+
+			tlsCertTags := h.state["tlsCertTags"].(map[string]string)
+
 			tag, ok := tlsCertTags[certFilename]
 			if !ok {
 				// haven't seen this cert file yet, let's give it a tag
@@ -533,12 +536,5 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 	}
 	return configValues, nil
 }
-
-// tlsCertTags maps certificate filenames to their tag.
-// This is used to remember which tag is used for each
-// certificate files, since we need to avoid loading
-// the same certificate files more than once, overwriting
-// previous tags
-var tlsCertTags = make(map[string]string)
 
 var logCounter int

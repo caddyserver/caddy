@@ -119,6 +119,7 @@ type Helper struct {
 	matcherDefs  map[string]caddy.ModuleMap
 	parentBlock  caddyfile.ServerBlock
 	groupCounter counter
+	state        map[string]interface{}
 }
 
 // Option gets the option keyed by name.
