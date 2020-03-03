@@ -51,7 +51,7 @@ Available for Windows, Mac, Linux, BSD, Solaris, and [Android](https://github.co
 - **Extensible with plugins** because a convenient web server is a helpful one
 - **Runs anywhere** with **no external dependencies** (not even libc)
 
-[See a more complete list of features built into Caddy.](https://caddyserver.com/features) On top of all those, Caddy does even more with plugins: choose which plugins you want at [download](https://caddyserver.com/download).
+[See a more complete list of features built into Caddy.](https://caddyserver.com/#features) On top of all those, Caddy does even more with plugins: choose which plugins you want at [download](https://caddyserver.com/download).
 
 Altogether, Caddy can do things other web servers simply cannot do. Its features and plugins save you time and mistakes, and will cheer you up. Your Caddy instance takes care of the details for you!
 
