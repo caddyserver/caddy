@@ -524,10 +524,12 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 
 		var val namedCustomLog
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
+			logCounter := h.state["logCounter"].(int)
 			cl.Include = []string{"http.log.access"}
 			val.name = fmt.Sprintf("log%d", logCounter)
 			val.log = cl
 			logCounter++
+			h.state["logCounter"] = logCounter
 		}
 		configValues = append(configValues, ConfigValue{
 			Class: "custom_log",
@@ -536,5 +538,3 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 	}
 	return configValues, nil
 }
-
-var logCounter int
