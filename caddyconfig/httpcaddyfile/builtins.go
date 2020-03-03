@@ -153,7 +153,16 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// loaded won't find it, and TLS handshakes will fail (see end)
 			// of issue #3004)
 
-			tlsCertTags := h.state["tlsCertTags"].(map[string]string)
+			// tlsCertTags maps certificate filenames to their tag.
+			// This is used to remember which tag is used for each
+			// certificate files, since we need to avoid loading
+			// the same certificate files more than once, overwriting
+			// previous tags
+			tlsCertTags, ok := h.State["tlsCertTags"].(map[string]string)
+			if !ok {
+				tlsCertTags = make(map[string]string)
+				h.State["tlsCertTags"] = tlsCertTags
+			}
 
 			tag, ok := tlsCertTags[certFilename]
 			if !ok {
@@ -524,12 +533,17 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 
 		var val namedCustomLog
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
-			logCounter := h.state["logCounter"].(int)
+
+			logCounter, ok := h.State["logCounter"].(int)
+			if !ok {
+				logCounter = 0
+			}
+
 			cl.Include = []string{"http.log.access"}
 			val.name = fmt.Sprintf("log%d", logCounter)
 			val.log = cl
 			logCounter++
-			h.state["logCounter"] = logCounter
+			h.State["logCounter"] = logCounter
 		}
 		configValues = append(configValues, ConfigValue{
 			Class: "custom_log",
