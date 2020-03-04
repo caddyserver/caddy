@@ -42,6 +42,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
+	state := make(map[string]interface{})
 
 	// load all the server blocks and associate them with a "pile"
 	// of config values; also prohibit duplicate keys because they
@@ -133,14 +134,17 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				return nil, warnings, fmt.Errorf("%s:%d: unrecognized directive: %s", tkn.File, tkn.Line, dir)
 			}
 
-			results, err := dirFunc(Helper{
+			h := Helper{
 				Dispenser:    caddyfile.NewDispenser(segment),
 				options:      options,
 				warnings:     &warnings,
 				matcherDefs:  matcherDefs,
 				parentBlock:  sb.block,
 				groupCounter: gc,
-			})
+				State:        state,
+			}
+
+			results, err := dirFunc(h)
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
