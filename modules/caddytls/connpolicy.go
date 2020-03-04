@@ -258,7 +258,7 @@ type ClientAuthentication struct {
 
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
-	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 || len(clientauth.ClientAuthType) > 0
+	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 || len(clientauth.Mode) > 0
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
