@@ -100,7 +100,7 @@ jobs:
     workingDirectory: '$(modulePath)'
     displayName: Get dependencies
 
-  - bash: go build -v
+  - bash: CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
     workingDirectory: '$(modulePath)/cmd/caddy'
     displayName: Build Caddy
 
