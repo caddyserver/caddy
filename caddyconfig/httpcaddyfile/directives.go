@@ -114,6 +114,8 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // Caddyfile tokens.
 type Helper struct {
 	*caddyfile.Dispenser
+	// State stores intermediate variables during caddyfile adaptation.
+	State        map[string]interface{}
 	options      map[string]interface{}
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
