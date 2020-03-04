@@ -244,9 +244,12 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
-	// requires a client certificate, but will not verify it
-	ClientAuthType string `json:"client_auth_type,omitempty"`
-
+	// The mode of the client authentication - the allowed values are
+	// 'request'		- A client certificate is retrieved if available (but is not otherwise verified), if no client cert is presented this is also ok
+	// 'require'		- A client certificate must be presented (but is not otherwise verified)
+	// 'verify_if_given'	- Verify the presented client certificate if a client cert is presented, if no client cert is presented this is also ok
+	// 'require_and_verify'	- Verify the presented client certificate. A client certificate must be presented
+	Mode string `json:"mode,omitempty"`
 
 	// state established with the last call to ConfigureTLSConfig
 	trustedLeafCerts       []*x509.Certificate
@@ -267,8 +270,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	}
 
 	// Setup the Client auth according to the possibilites for TLS client auth 
-	if (len(clientauth.ClientAuthType) > 0) {
-		switch clientauth.ClientAuthType {
+	if (len(clientauth.Mode) > 0) {
+		switch clientauth.Mode {
 			case "request": {
 				cfg.ClientAuth = tls.RequestClientCert
 			}
@@ -282,7 +285,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 				cfg.ClientAuth = tls.RequireAndVerifyClientCert
 			}
 			default: {
-				return fmt.Errorf("client_auth_type %s not allowed", clientauth.ClientAuthType)
+				return fmt.Errorf("client auth mode %s not allowed", clientauth.Mode)
 			}
 		}
 	} else {
