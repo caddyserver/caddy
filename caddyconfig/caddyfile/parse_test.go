@@ -256,7 +256,7 @@ func TestRecursiveImport(t *testing.T) {
 			return false
 		}
 		if len(got.Segments[0]) != 1 || len(got.Segments[1]) != 2 {
-			t.Errorf("got unexpect tokens: %v", got.Segments)
+			t.Errorf("got unexpected tokens: %v", got.Segments)
 			return false
 		}
 		return true
@@ -351,7 +351,7 @@ func TestDirectiveImport(t *testing.T) {
 			return false
 		}
 		if len(got.Segments[0]) != 1 || len(got.Segments[1]) != 8 {
-			t.Errorf("got unexpect tokens: %v", got.Segments)
+			t.Errorf("got unexpected tokens: %v", got.Segments)
 			return false
 		}
 		return true

@@ -27,7 +27,7 @@ import (
 // Host represents a remote host which can be proxied to.
 // Its methods must be safe for concurrent use.
 type Host interface {
-	// NumRequests returns the numnber of requests
+	// NumRequests returns the number of requests
 	// currently in process with the host.
 	NumRequests() int
 

@@ -105,7 +105,7 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //     }
 //
 // Thus, this directive produces multiple handlers, each with a different
-// matcher because multiple consecutive hgandlers are necessary to support
+// matcher because multiple consecutive handlers are necessary to support
 // the common PHP use case. If this "common" config is not compatible
 // with a user's PHP requirements, they can use a manual approach based
 // on the example above to configure it precisely as they need.
@@ -167,14 +167,10 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// either way, strip the matcher token and pass
 	// the remaining tokens to the unmarshaler so that
 	// we can gain the rest of the reverse_proxy syntax
-	userMatcherSet, hasUserMatcher, err := h.MatcherToken()
+	userMatcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
 	}
-	if hasUserMatcher {
-		h.Dispenser.Delete() // strip matcher token
-	}
-	h.Dispenser.Reset() // pretend this lookahead never happened
 
 	// set up the transport for FastCGI, and specifically PHP
 	fcgiTransport := Transport{SplitPath: ".php"}
@@ -186,6 +182,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// the rest of the config is specified by the user
 	// using the reverse_proxy directive syntax
+	// TODO: this can overwrite our fcgiTransport that we encoded and
+	// set on the rpHandler... even with a non-fastcgi transport!
 	err = rpHandler.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err
@@ -204,7 +202,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// the user's matcher is a prerequisite for ours, so
 	// wrap ours in a subroute and return that
-	if hasUserMatcher {
+	if userMatcherSet != nil {
 		return []httpcaddyfile.ConfigValue{
 			{
 				Class: "route",

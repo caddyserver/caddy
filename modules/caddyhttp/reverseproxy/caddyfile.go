@@ -15,7 +15,10 @@
 package reverseproxy
 
 import (
+	"net"
 	"net/http"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -81,10 +84,106 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         }
 //     }
 //
+// Proxy upstream addresses should be network dial addresses such
+// as `host:port`, or a URL such as `scheme://host:port`. Scheme
+// and port may be inferred from other parts of the address/URL; if
+// either are missing, defaults to HTTP.
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// currently, all backends must use the same scheme/protocol (the
+	// underlying JSON does not yet support per-backend transports)
+	var commonScheme string
+
+	// we'll wait until the very end of parsing before
+	// validating and encoding the transport
+	var transport http.RoundTripper
+	var transportModuleName string
+
+	// TODO: the logic in this function is kind of sensitive, we need
+	// to write tests before making any more changes to it
+	upstreamDialAddress := func(upstreamAddr string) (string, error) {
+		var network, scheme, host, port string
+
+		if strings.Contains(upstreamAddr, "://") {
+			toURL, err := url.Parse(upstreamAddr)
+			if err != nil {
+				return "", d.Errf("parsing upstream URL: %v", err)
+			}
+
+			// there is currently no way to perform a URL rewrite between choosing
+			// a backend and proxying to it, so we cannot allow extra components
+			// in backend URLs
+			if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
+				return "", d.Err("for now, URLs for proxy upstreams only support scheme, host, and port components")
+			}
+
+			// ensure the port and scheme aren't in conflict
+			urlPort := toURL.Port()
+			if toURL.Scheme == "http" && urlPort == "443" {
+				return "", d.Err("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
+			}
+			if toURL.Scheme == "https" && urlPort == "80" {
+				return "", d.Err("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
+			}
+
+			// if port is missing, attempt to infer from scheme
+			if toURL.Port() == "" {
+				var toPort string
+				switch toURL.Scheme {
+				case "", "http":
+					toPort = "80"
+				case "https":
+					toPort = "443"
+				}
+				toURL.Host = net.JoinHostPort(toURL.Hostname(), toPort)
+			}
+
+			scheme, host, port = toURL.Scheme, toURL.Hostname(), toURL.Port()
+		} else {
+			// extract network manually, since caddy.ParseNetworkAddress() will always add one
+			if idx := strings.Index(upstreamAddr, "/"); idx >= 0 {
+				network = strings.ToLower(strings.TrimSpace(upstreamAddr[:idx]))
+				upstreamAddr = upstreamAddr[idx+1:]
+			}
+			var err error
+			host, port, err = net.SplitHostPort(upstreamAddr)
+			if err != nil {
+				host = upstreamAddr
+			}
+		}
+
+		// if scheme is not set, we may be able to infer it from a known port
+		if scheme == "" {
+			if port == "80" {
+				scheme = "http"
+			} else if port == "443" {
+				scheme = "https"
+			}
+		}
+
+		// the underlying JSON does not yet support different
+		// transports (protocols or schemes) to each backend,
+		// so we remember the last one we see and compare them
+		if commonScheme != "" && scheme != commonScheme {
+			return "", d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
+				commonScheme, scheme)
+		}
+		commonScheme = scheme
+
+		// for simplest possible config, we only need to include
+		// the network portion if the user specified one
+		if network != "" {
+			return caddy.JoinNetworkAddress(network, host, port), nil
+		}
+		return net.JoinHostPort(host, port), nil
+	}
+
 	for d.Next() {
 		for _, up := range d.RemainingArgs() {
-			h.Upstreams = append(h.Upstreams, &Upstream{Dial: up})
+			dialAddr, err := upstreamDialAddress(up)
+			if err != nil {
+				return err
+			}
+			h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
 		}
 
 		for d.NextBlock(0) {
@@ -95,7 +194,11 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				for _, up := range args {
-					h.Upstreams = append(h.Upstreams, &Upstream{Dial: up})
+					dialAddr, err := upstreamDialAddress(up)
+					if err != nil {
+						return err
+					}
+					h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
 				}
 
 			case "lb_policy":
@@ -392,8 +495,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.TransportRaw != nil {
 					return d.Err("transport already specified")
 				}
-				name := d.Val()
-				mod, err := caddy.GetModule("http.reverse_proxy.transport." + name)
+				transportModuleName = d.Val()
+				mod, err := caddy.GetModule("http.reverse_proxy.transport." + transportModuleName)
 				if err != nil {
 					return d.Errf("getting transport module '%s': %v", mod, err)
 				}
@@ -409,11 +512,44 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !ok {
 					return d.Errf("module %s is not a RoundTripper", mod)
 				}
-				h.TransportRaw = caddyconfig.JSONModuleObject(rt, "protocol", name, nil)
+				transport = rt
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
+		}
+	}
+
+	// if the scheme inferred from the backends' addresses is
+	// HTTPS, we will need a non-nil transport to enable TLS
+	if commonScheme == "https" && transport == nil {
+		transport = new(HTTPTransport)
+		transportModuleName = "http"
+	}
+
+	// verify transport configuration, and finally encode it
+	if transport != nil {
+		// TODO: these two cases are identical, but I don't know how to reuse the code
+		switch ht := transport.(type) {
+		case *HTTPTransport:
+			if commonScheme == "https" && ht.TLS == nil {
+				ht.TLS = new(TLSConfig)
+			}
+			if ht.TLS != nil && commonScheme == "http" {
+				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
+			}
+
+		case *NTLMTransport:
+			if commonScheme == "https" && ht.TLS == nil {
+				ht.TLS = new(TLSConfig)
+			}
+			if ht.TLS != nil && commonScheme == "http" {
+				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
+			}
+		}
+
+		if !reflect.DeepEqual(transport, new(HTTPTransport)) {
+			h.TransportRaw = caddyconfig.JSONModuleObject(transport, "protocol", transportModuleName, nil)
 		}
 	}
 

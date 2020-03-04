@@ -37,7 +37,7 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
-	RegisterHandlerDirective("handle", parseSegmentAsSubroute)
+	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterDirective("log", parseLog)
 }
@@ -152,6 +152,18 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// policy that is looking for any tag but the last one to be
 			// loaded won't find it, and TLS handshakes will fail (see end)
 			// of issue #3004)
+
+			// tlsCertTags maps certificate filenames to their tag.
+			// This is used to remember which tag is used for each
+			// certificate files, since we need to avoid loading
+			// the same certificate files more than once, overwriting
+			// previous tags
+			tlsCertTags, ok := h.State["tlsCertTags"].(map[string]string)
+			if !ok {
+				tlsCertTags = make(map[string]string)
+				h.State["tlsCertTags"] = tlsCertTags
+			}
+
 			tag, ok := tlsCertTags[certFilename]
 			if !ok {
 				// haven't seen this cert file yet, let's give it a tag
@@ -521,10 +533,17 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 
 		var val namedCustomLog
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
+
+			logCounter, ok := h.State["logCounter"].(int)
+			if !ok {
+				logCounter = 0
+			}
+
 			cl.Include = []string{"http.log.access"}
 			val.name = fmt.Sprintf("log%d", logCounter)
 			val.log = cl
 			logCounter++
+			h.State["logCounter"] = logCounter
 		}
 		configValues = append(configValues, ConfigValue{
 			Class: "custom_log",
@@ -533,12 +552,3 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 	}
 	return configValues, nil
 }
-
-// tlsCertTags maps certificate filenames to their tag.
-// This is used to remember which tag is used for each
-// certificate files, since we need to avoid loading
-// the same certificate files more than once, overwriting
-// previous tags
-var tlsCertTags = make(map[string]string)
-
-var logCounter int

@@ -282,7 +282,7 @@ func acceptedEncodings(r *http.Request) []string {
 		}
 
 		// encodings with q-factor of 0 are not accepted;
-		// use a small theshold to account for float precision
+		// use a small threshold to account for float precision
 		if qFactor < 0.00001 {
 			continue
 		}

@@ -42,6 +42,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
+	state := make(map[string]interface{})
 
 	// load all the server blocks and associate them with a "pile"
 	// of config values; also prohibit duplicate keys because they
@@ -133,14 +134,17 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 				return nil, warnings, fmt.Errorf("%s:%d: unrecognized directive: %s", tkn.File, tkn.Line, dir)
 			}
 
-			results, err := dirFunc(Helper{
+			h := Helper{
 				Dispenser:    caddyfile.NewDispenser(segment),
 				options:      options,
 				warnings:     &warnings,
 				matcherDefs:  matcherDefs,
 				parentBlock:  sb.block,
 				groupCounter: gc,
-			})
+				State:        state,
+			}
+
+			results, err := dirFunc(h)
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
@@ -327,7 +331,11 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			&warnings)
 	}
 	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
-		cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
+		if adminConfig == "off" {
+			cfg.Admin = &caddy.AdminConfig{Disabled: true}
+		} else {
+			cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
+		}
 	}
 	if len(customLogs) > 0 {
 		if cfg.Logging == nil {
@@ -972,12 +980,12 @@ func sliceContains(haystack []string, needle string) bool {
 	return false
 }
 
-// specifity returns len(s) minus any wildcards (*) and
+// specificity returns len(s) minus any wildcards (*) and
 // placeholders ({...}). Basically, it's a length count
 // that penalizes the use of wildcards and placeholders.
 // This is useful for comparing hostnames and paths.
 // However, wildcards in paths are not a sure answer to
-// the question of specificity. For exmaple,
+// the question of specificity. For example,
 // '*.example.com' is clearly less specific than
 // 'a.example.com', but is '/a' more or less specific
 // than '/a*'?
@@ -1008,17 +1016,12 @@ func (c counter) nextGroup() string {
 	return name
 }
 
-type matcherSetAndTokens struct {
-	matcherSet caddy.ModuleMap
-	tokens     []caddyfile.Token
-}
-
 type namedCustomLog struct {
 	name string
 	log  *caddy.CustomLog
 }
 
-// sbAddrAssocation is a mapping from a list of
+// sbAddrAssociation is a mapping from a list of
 // addresses to a list of server blocks that are
 // served on those addresses.
 type sbAddrAssociation struct {

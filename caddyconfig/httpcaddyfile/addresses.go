@@ -45,7 +45,7 @@ import (
 // key of its server block (specifying the host part), and each key may have
 // a different port. And we definitely need to be sure that a site which is
 // bound to be served on a specific interface is not served on others just
-// beceause that is more convenient: it would be a potential security risk
+// because that is more convenient: it would be a potential security risk
 // if the difference between interfaces means private vs. public.
 //
 // So what this function does for the example above is iterate each server

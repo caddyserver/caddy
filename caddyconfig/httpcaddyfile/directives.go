@@ -114,6 +114,8 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // Caddyfile tokens.
 type Helper struct {
 	*caddyfile.Dispenser
+	// State stores intermediate variables during caddyfile adaptation.
+	State        map[string]interface{}
 	options      map[string]interface{}
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
@@ -159,6 +161,23 @@ func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
 		return nil, false, nil
 	}
 	return matcherSetFromMatcherToken(h.Dispenser.Token(), h.matcherDefs, h.warnings)
+}
+
+// ExtractMatcherSet is like MatcherToken, except this is a higher-level
+// method that returns the matcher set described by the matcher token,
+// or nil if there is none, and deletes the matcher token from the
+// dispenser and resets it as if this look-ahead never happened. Useful
+// when wrapping a route (one or more handlers) in a user-defined matcher.
+func (h Helper) ExtractMatcherSet() (caddy.ModuleMap, error) {
+	matcherSet, hasMatcher, err := h.MatcherToken()
+	if err != nil {
+		return nil, err
+	}
+	if hasMatcher {
+		h.Dispenser.Delete() // strip matcher token
+	}
+	h.Dispenser.Reset() // pretend this lookahead never happened
+	return matcherSet, nil
 }
 
 // NewRoute returns config values relevant to creating a new HTTP route.
@@ -266,28 +285,31 @@ func sortRoutes(routes []ConfigValue) {
 				return false
 			}
 
-			if len(iRoute.MatcherSetsRaw) == 1 && len(jRoute.MatcherSetsRaw) == 1 {
-				// use already-decoded matcher, or decode if it's the first time seeing it
-				iPM, jPM := decodedMatchers[i], decodedMatchers[j]
-				if iPM == nil {
-					var pathMatcher caddyhttp.MatchPath
-					_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-					decodedMatchers[i] = pathMatcher
-					iPM = pathMatcher
-				}
-				if jPM == nil {
-					var pathMatcher caddyhttp.MatchPath
-					_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-					decodedMatchers[j] = pathMatcher
-					jPM = pathMatcher
-				}
-
-				// if there is only one path in the matcher, sort by
-				// longer path (more specific) first
-				if len(iPM) == 1 && len(jPM) == 1 {
-					return len(iPM[0]) > len(jPM[0])
-				}
+			// use already-decoded matcher, or decode if it's the first time seeing it
+			iPM, jPM := decodedMatchers[i], decodedMatchers[j]
+			if iPM == nil && len(iRoute.MatcherSetsRaw) == 1 {
+				var pathMatcher caddyhttp.MatchPath
+				_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+				decodedMatchers[i] = pathMatcher
+				iPM = pathMatcher
 			}
+			if jPM == nil && len(jRoute.MatcherSetsRaw) == 1 {
+				var pathMatcher caddyhttp.MatchPath
+				_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
+				decodedMatchers[j] = pathMatcher
+				jPM = pathMatcher
+			}
+
+			// sort by longer path (more specific) first; missing
+			// path matchers are treated as zero-length paths
+			var iPathLen, jPathLen int
+			if iPM != nil {
+				iPathLen = len(iPM[0])
+			}
+			if jPM != nil {
+				jPathLen = len(jPM[0])
+			}
+			return iPathLen > jPathLen
 		}
 
 		return dirPositions[iDir] < dirPositions[jDir]
