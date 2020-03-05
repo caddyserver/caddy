@@ -2,17 +2,41 @@ package caddytest
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+)
+
+// Defaults store any configuration required to make the tests run
+type Defaults struct {
+	// Port we expect caddy to listening on
+	AdminPort int
+	// Certificates we expect to be loaded before attempting to run the tests
+	Certifcates []string
+}
+
+// Default testing values
+var Default = Defaults{
+	AdminPort:   2019,
+	Certifcates: []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
+}
+
+var (
+	matchKey  = regexp.MustCompile(`(/[\w\d\.]+\.key)`)
+	matchCert = regexp.MustCompile(`(/[\w\d\.]+\.crt)`)
 )
 
 // InitServer this will configure the server with a configurion of a specific
@@ -27,7 +51,7 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 
 	t.Cleanup(func() {
 		if t.Failed() {
-			res, err := http.Get("http://localhost:2019/config/")
+			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 			if err != nil {
 				t.Log("unable to read the current config")
 			}
@@ -44,7 +68,7 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 	client := &http.Client{
 		Timeout: time.Second * 2,
 	}
-	req, err := http.NewRequest("POST", "http://localhost:2019/load", strings.NewReader(rawConfig))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		t.Errorf("failed to create request. %s", err)
 		return
@@ -90,18 +114,17 @@ func validateTestPrerequisites() error {
 	arePrerequisitesValid = false
 
 	// check certificates are found
-	if _, err := os.Stat(getIntegrationDir() + "/caddy.localhost.crt"); os.IsNotExist(err) {
-		return errors.New("caddy integration test certificates not found")
-	}
-	if _, err := os.Stat(getIntegrationDir() + "/caddy.localhost.key"); os.IsNotExist(err) {
-		return errors.New("caddy integration test certificates not found")
+	for _, certName := range Default.Certifcates {
+		if _, err := os.Stat(getIntegrationDir() + certName); os.IsNotExist(err) {
+			return fmt.Errorf("caddy integration test certificates (%s) not found", certName)
+		}
 	}
 
 	// assert that caddy is running
 	client := &http.Client{
 		Timeout: time.Second * 2,
 	}
-	_, err := client.Get("http://localhost:2019/load")
+	_, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 	if err != nil {
 		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
 	}
@@ -120,12 +143,41 @@ func getIntegrationDir() string {
 	return path.Dir(filename)
 }
 
-// use the convention to replace caddy.load.[crt|key] with the full path
+// use the convention to replace /[certificatename].[crt|key] with the full path
 // this helps reduce the noise in test configurations and also allow this
 // to run in any path
 func prependCaddyFilePath(rawConfig string) string {
-	rawConfig = strings.Replace(rawConfig, "/caddy.localhost.crt", getIntegrationDir()+"/caddy.localhost.crt", -1)
-	return strings.Replace(rawConfig, "/caddy.localhost.key", getIntegrationDir()+"/caddy.localhost.key", -1)
+	r := matchKey.ReplaceAllString(rawConfig, getIntegrationDir()+"$1")
+	r = matchCert.ReplaceAllString(r, getIntegrationDir()+"$1")
+	return r
+}
+
+// creates a testing transport that forces call dialing connections to happen locally
+func createTestingTransport() *http.Transport {
+
+	dialer := net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 5 * time.Second,
+		DualStack: true,
+	}
+
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		parts := strings.Split(addr, ":")
+		destAddr := fmt.Sprintf("127.0.0.1:%s", parts[1])
+		log.Printf("caddytest: redirecting the dialer from %s to %s", addr, destAddr)
+		return dialer.DialContext(ctx, network, destAddr)
+	}
+
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	}
 }
 
 // AssertGetResponse request a URI and assert the status code and the body contains a string
@@ -141,9 +193,7 @@ func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expected
 func AssertGetResponseBody(t *testing.T, requestURI string, expectedStatusCode int) (*http.Response, string) {
 
 	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+		Transport: createTestingTransport(),
 	}
 
 	resp, err := client.Get(requestURI)
@@ -176,9 +226,7 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 
 	client := &http.Client{
 		CheckRedirect: redirectPolicyFunc,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+		Transport:     createTestingTransport(),
 	}
 
 	resp, err := client.Get(requestURI)
