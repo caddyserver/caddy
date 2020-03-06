@@ -129,6 +129,10 @@ func (r *Replacer) replace(input, empty string,
 			continue
 		}
 
+		if i > 0 && input[i-1] == '\\' {
+			continue
+		}
+
 		// find the end of the placeholder
 		end := strings.Index(input[i:], string(phClose)) + i
 		if end < i {
@@ -187,7 +191,15 @@ func (r *Replacer) replace(input, empty string,
 	// flush any unwritten remainder
 	sb.WriteString(input[lastWriteCursor:])
 
-	return sb.String(), nil
+	return unescapeBraces(sb.String()), nil
+}
+
+// UnescapeBraces finds escaped braces in s and returns
+// a string with those braces unescaped.
+func unescapeBraces(s string) string {
+	s = strings.Replace(s, "\\{", "{", -1)
+	s = strings.Replace(s, "\\}", "}", -1)
+	return s
 }
 
 // ReplacerFunc is a function that returns a replacement

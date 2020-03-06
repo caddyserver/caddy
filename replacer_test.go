@@ -60,6 +60,26 @@ func TestReplacer(t *testing.T) {
 			expect: "",
 		},
 		{
+			input:  `\{"json": "object"}`,
+			expect: `{"json": "object"}`,
+		},
+		{
+			input:  `\{"json": "object"\}`,
+			expect: `{"json": "object"}`,
+		},
+		{
+			input:  `\{"json": "object{bar}"\}`,
+			expect: `{"json": "object"}`,
+		},
+		{
+			input:  `\{"json": \{"nested": "object"\}\}`,
+			expect: `{"json": {"nested": "object"}}`,
+		},
+		{
+			input:  `\{"json": \{"nested": "{bar}"\}\}`,
+			expect: `{"json": {"nested": ""}}`,
+		},
+		{
 			input:  `{{`,
 			expect: "{{",
 		},
