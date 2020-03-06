@@ -36,24 +36,48 @@ func TestReplacer(t *testing.T) {
 			expect: "{",
 		},
 		{
+			input:  `\{`,
+			expect: "{",
+		},
+		{
 			input:  "foo{",
 			expect: "foo{",
+		},
+		{
+			input:  `foo\{`,
+			expect: `foo{`,
 		},
 		{
 			input:  "foo{bar",
 			expect: "foo{bar",
 		},
 		{
+			input:  `foo\{bar`,
+			expect: `foo{bar`,
+		},
+		{
 			input:  "foo{bar}",
 			expect: "foo",
+		},
+		{
+			input:  `foo\{bar\}`,
+			expect: `foo{bar}`,
 		},
 		{
 			input:  "}",
 			expect: "}",
 		},
 		{
+			input:  `\}`,
+			expect: `}`,
+		},
+		{
 			input:  "{}",
 			expect: "",
+		},
+		{
+			input:  `\{\}`,
+			expect: `{}`,
 		},
 		{
 			input:  `{"json": "object"}`,
@@ -80,6 +104,18 @@ func TestReplacer(t *testing.T) {
 			expect: `{"json": {"nested": ""}}`,
 		},
 		{
+			input:  `pre \{"json": \{"nested": "{bar}"\}\}`,
+			expect: `pre {"json": {"nested": ""}}`,
+		},
+		{
+			input:  `\{"json": \{"nested": "{bar}"\}\} post`,
+			expect: `{"json": {"nested": ""}} post`,
+		},
+		{
+			input:  `pre \{"json": \{"nested": "{bar}"\}\} post`,
+			expect: `pre {"json": {"nested": ""}} post`,
+		},
+		{
 			input:  `{{`,
 			expect: "{{",
 		},
@@ -88,9 +124,29 @@ func TestReplacer(t *testing.T) {
 			expect: "",
 		},
 		{
+			input:  `{"json": "object"\}`,
+			expect: "",
+		},
+		{
 			input:  `{unknown}`,
 			empty:  "-",
 			expect: "-",
+		},
+		{
+			input:  `back\slashes`,
+			expect: `back\slashes`,
+		},
+		{
+			input:  `double back\\slashes`,
+			expect: `double back\\slashes`,
+		},
+		{
+			input:  `placeholder {with \{ brace} in name`,
+			expect: `placeholder  in name`,
+		},
+		{
+			input:  `\{'group':'default','max_age':3600,'endpoints':[\{'url':'https://some.domain.local/a/d/g'\}],'include_subdomains':true\}`,
+			expect: `{'group':'default','max_age':3600,'endpoints':[{'url':'https://some.domain.local/a/d/g'}],'include_subdomains':true}`,
 		},
 	} {
 		actual := rep.ReplaceAll(tc.input, tc.empty)
@@ -102,7 +158,47 @@ func TestReplacer(t *testing.T) {
 }
 
 func BenchmarkReplacer(b *testing.B) {
-	input := `\{"json": \{"nested": "{bar}"\}\}`
+	type testCase struct {
+		name, input, empty string
+	}
+
+	rep := testReplacer()
+
+	// ReplaceAll
+	for _, bm := range []testCase{
+		{
+			name:  "no placeholder",
+			input: `simple string`,
+		},
+		{
+			name:  "placeholder",
+			input: `{"json": "object"}`,
+		},
+		{
+			name:  "escaped placeholder",
+			input: `\{"json": \{"nested": "{bar}"\}\}`,
+		},
+	} {
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				rep.ReplaceAll(bm.input, bm.empty)
+			}
+		})
+	}
+}
+
+func BenchmarkReplacer_Unescaped(b *testing.B) {
+	input := `{"json": "object"}`
+	rep := testReplacer()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rep.ReplaceAll(input, "")
+	}
+}
+
+func BenchmarkReplacer_Plain(b *testing.B) {
+	input := `string`
 	rep := testReplacer()
 
 	b.ResetTimer()

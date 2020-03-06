@@ -112,7 +112,7 @@ func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) 
 func (r *Replacer) replace(input, empty string,
 	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
 	f ReplacementFunc) (string, error) {
-	if !strings.Contains(input, string(phOpen)) {
+	if !strings.Contains(input, string(phOpen)) && !strings.Contains(input, string(phClose)) {
 		return input, nil
 	}
 
@@ -126,12 +126,10 @@ func (r *Replacer) replace(input, empty string,
 	var lastWriteCursor int
 	for i := 0; i < len(input); i++ {
 
-		// check for the escape character
-		if i > 0 && input[i-1] == phEscape {
-			if input[i] == phClose || input[i] == phOpen {
-				sb.WriteString(input[lastWriteCursor : i-1])
-				lastWriteCursor = i
-			}
+		// check for escaped braces
+		if i > 0 && input[i-1] == phEscape && (input[i] == phClose || input[i] == phOpen) {
+			sb.WriteString(input[lastWriteCursor : i-1])
+			lastWriteCursor = i
 			continue
 		}
 
