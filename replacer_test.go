@@ -101,6 +101,16 @@ func TestReplacer(t *testing.T) {
 	}
 }
 
+func BenchmarkReplacer(b *testing.B) {
+	input := `\{"json": \{"nested": "{bar}"\}\}`
+	rep := testReplacer()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rep.ReplaceAll(input, "")
+	}
+}
+
 func TestReplacerSet(t *testing.T) {
 	rep := testReplacer()
 
