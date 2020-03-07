@@ -318,6 +318,9 @@ func (app *App) createAutomationPolicy(ctx caddy.Context) error {
 		// if it has an ACME issuer, maybe we can just use that
 		acmeIssuer, _ = matchingPolicy.Issuer.(*caddytls.ACMEIssuer)
 	}
+	if acmeIssuer == nil {
+		acmeIssuer = new(caddytls.ACMEIssuer)
+	}
 	if acmeIssuer.Challenges == nil {
 		acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 	}
