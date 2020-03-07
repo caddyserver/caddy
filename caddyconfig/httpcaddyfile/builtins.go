@@ -111,7 +111,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var cp *caddytls.ConnectionPolicy
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
-	var mgr caddytls.ACMEManagerMaker
+	var mgr caddytls.ACMEIssuer
 
 	// fill in global defaults, if configured
 	if email := h.Option("email"); email != nil {
@@ -322,9 +322,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	}
 
 	// automation policy
-	if !reflect.DeepEqual(mgr, caddytls.ACMEManagerMaker{}) {
+	if !reflect.DeepEqual(mgr, caddytls.ACMEIssuer{}) {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.automation_manager",
+			Class: "tls.cert_issuer",
 			Value: mgr,
 		})
 	}
@@ -533,12 +533,10 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 
 		var val namedCustomLog
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
-
 			logCounter, ok := h.State["logCounter"].(int)
 			if !ok {
 				logCounter = 0
 			}
-
 			cl.Include = []string{"http.log.access"}
 			val.name = fmt.Sprintf("log%d", logCounter)
 			val.log = cl

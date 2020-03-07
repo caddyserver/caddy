@@ -8,7 +8,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -42,12 +42,10 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
-
-	domainSet map[string]struct{}
 }
 
 // Skipped returns true if name is in skipSlice, which
-// should be one of the Skip* fields on ahc.
+// should be either the Skip or SkipCerts field on ahc.
 func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
 	for _, n := range skipSlice {
 		if name == n {
@@ -67,6 +65,8 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// this map will store associations of HTTP listener
 	// addresses to the routes that do HTTP->HTTPS redirects
 	lnAddrRedirRoutes := make(map[string]Route)
+
+	uniqueDomainsForCerts := make(map[string]struct{})
 
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
@@ -116,8 +116,8 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			srv.TLSConnPolicies = defaultConnPolicies
 		}
 
-		// find all qualifying domain names in this server
-		srv.AutoHTTPS.domainSet = make(map[string]struct{})
+		// find all qualifying domain names (deduplicated) in this server
+		serverDomainSet := make(map[string]struct{})
 		for routeIdx, route := range srv.Routes {
 			for matcherSetIdx, matcherSet := range route.MatcherSets {
 				for matcherIdx, m := range matcherSet {
@@ -131,7 +131,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 							}
 							if certmagic.HostQualifies(d) &&
 								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
-								srv.AutoHTTPS.domainSet[d] = struct{}{}
+								serverDomainSet[d] = struct{}{}
 							}
 						}
 					}
@@ -141,8 +141,27 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// nothing more to do here if there are no
 		// domains that qualify for automatic HTTPS
-		if len(srv.AutoHTTPS.domainSet) == 0 {
+		if len(serverDomainSet) == 0 {
 			continue
+		}
+
+		// for all the hostnames we found, filter them so we have
+		// a deduplicated list of names for which to obtain certs
+		for d := range serverDomainSet {
+			if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+				// if a certificate for this name is already loaded,
+				// don't obtain another one for it, unless we are
+				// supposed to ignore loaded certificates
+				if !srv.AutoHTTPS.IgnoreLoadedCerts &&
+					len(app.tlsApp.AllMatchingCertificates(d)) > 0 {
+					app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
+						zap.String("domain", d),
+						zap.String("server_name", srvName),
+					)
+					continue
+				}
+				uniqueDomainsForCerts[d] = struct{}{}
+			}
 		}
 
 		// tell the server to use TLS if it is not already doing so
@@ -209,6 +228,19 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 	}
 
+	// we now have a list of all the unique names for which we need certs;
+	// turn the set into a slice so that phase 2 can use it
+	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
+	for d := range uniqueDomainsForCerts {
+		app.allCertDomains = append(app.allCertDomains, d)
+	}
+
+	// ensure there is an automation policy to handle these certs
+	err := app.createAutomationPolicy(ctx)
+	if err != nil {
+		return err
+	}
+
 	// if there are HTTP->HTTPS redirects to add, do so now
 	if len(lnAddrRedirRoutes) == 0 {
 		return nil
@@ -258,28 +290,81 @@ redirRoutesLoop:
 	return nil
 }
 
-// automaticHTTPSPhase2 attaches a TLS app pointer to each
-// server. This phase must occur after provisioning, and
-// at the beginning of the app start, before starting each
-// of the servers.
-func (app *App) automaticHTTPSPhase2() error {
-	tlsAppIface, err := app.ctx.App("tls")
-	if err != nil {
-		return fmt.Errorf("getting tls app: %v", err)
+// createAutomationPolicy ensures that certificates for this app are
+// managed properly; for example, it's implied that the HTTPPort
+// should also be the port the HTTP challenge is solved on; the same
+// for HTTPS port and TLS-ALPN challenge also. We need to tell the
+// TLS app to manage these certs by honoring those port configurations,
+// so we either find an existing matching automation policy with an
+// ACME issuer, or make a new one and append it.
+func (app *App) createAutomationPolicy(ctx caddy.Context) error {
+	var matchingPolicy *caddytls.AutomationPolicy
+	var acmeIssuer *caddytls.ACMEIssuer
+	if app.tlsApp.Automation != nil {
+		// maybe we can find an exisitng one that matches; this is
+		// useful if the user made a single automation policy to
+		// set the CA endpoint to a test/staging endpoint (very
+		// common), but forgot to customize the ports here, while
+		// setting them in the HTTP app instead (I did this too
+		// many times)
+		for _, ap := range app.tlsApp.Automation.Policies {
+			if len(ap.Hosts) == 0 {
+				matchingPolicy = ap
+				break
+			}
+		}
 	}
-	tlsApp := tlsAppIface.(*caddytls.TLS)
+	if matchingPolicy != nil {
+		// if it has an ACME issuer, maybe we can just use that
+		acmeIssuer, _ = matchingPolicy.Issuer.(*caddytls.ACMEIssuer)
+	}
+	if acmeIssuer == nil {
+		acmeIssuer = new(caddytls.ACMEIssuer)
+	}
+	if acmeIssuer.Challenges == nil {
+		acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+	}
+	if acmeIssuer.Challenges.HTTP == nil {
+		acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
+	}
+	if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
+		// don't overwrite existing explicit config
+		acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
+	}
+	if acmeIssuer.Challenges.TLSALPN == nil {
+		acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
+	}
+	if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
+		// don't overwrite existing explicit config
+		acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
+	}
 
-	// set the tlsApp pointer before starting any
-	// challenges, since it is required to solve
-	// the ACME HTTP challenge
-	for _, srv := range app.Servers {
-		srv.tlsApp = tlsApp
+	if matchingPolicy == nil {
+		// if there was no matching policy, we'll have to append our own
+		err := app.tlsApp.AddAutomationPolicy(&caddytls.AutomationPolicy{
+			Hosts:  app.allCertDomains,
+			Issuer: acmeIssuer,
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		// if there was an existing matching policy, we need to reprovision
+		// its issuer (because we just changed its port settings and it has
+		// to re-build its stored certmagic config template with the new
+		// values), then re-assign the Issuer pointer on the policy struct
+		// because our type assertion changed the address
+		err := acmeIssuer.Provision(ctx)
+		if err != nil {
+			return err
+		}
+		matchingPolicy.Issuer = acmeIssuer
 	}
 
 	return nil
 }
 
-// automaticHTTPSPhase3 begins certificate management for
+// automaticHTTPSPhase2 begins certificate management for
 // all names in the qualifying domain set for each server.
 // This phase must occur after provisioning and at the end
 // of app start, after all the servers have been started.
@@ -289,72 +374,17 @@ func (app *App) automaticHTTPSPhase2() error {
 // first, then our servers would fail to bind to them,
 // which would be bad, since CertMagic's bindings are
 // temporary and don't serve the user's sites!).
-func (app *App) automaticHTTPSPhase3() error {
-	// begin managing certificates for enabled servers
-	for srvName, srv := range app.Servers {
-		if srv.AutoHTTPS == nil ||
-			srv.AutoHTTPS.Disabled ||
-			len(srv.AutoHTTPS.domainSet) == 0 {
-			continue
-		}
-
-		// marshal the domains into a slice
-		var domains, domainsForCerts []string
-		for d := range srv.AutoHTTPS.domainSet {
-			domains = append(domains, d)
-			if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
-				// if a certificate for this name is already loaded,
-				// don't obtain another one for it, unless we are
-				// supposed to ignore loaded certificates
-				if !srv.AutoHTTPS.IgnoreLoadedCerts &&
-					len(srv.tlsApp.AllMatchingCertificates(d)) > 0 {
-					app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
-						zap.String("domain", d),
-						zap.String("server_name", srvName),
-					)
-					continue
-				}
-				domainsForCerts = append(domainsForCerts, d)
-			}
-		}
-
-		// ensure that these certificates are managed properly;
-		// for example, it's implied that the HTTPPort should also
-		// be the port the HTTP challenge is solved on, and so
-		// for HTTPS port and TLS-ALPN challenge also - we need
-		// to tell the TLS app to manage these certs by honoring
-		// those port configurations
-		acmeManager := &caddytls.ACMEManagerMaker{
-			Challenges: &caddytls.ChallengesConfig{
-				HTTP: &caddytls.HTTPChallengeConfig{
-					AlternatePort: app.HTTPPort, // we specifically want the user-configured port, if any
-				},
-				TLSALPN: &caddytls.TLSALPNChallengeConfig{
-					AlternatePort: app.HTTPSPort, // we specifically want the user-configured port, if any
-				},
-			},
-		}
-		if srv.tlsApp.Automation == nil {
-			srv.tlsApp.Automation = new(caddytls.AutomationConfig)
-		}
-		srv.tlsApp.Automation.Policies = append(srv.tlsApp.Automation.Policies,
-			&caddytls.AutomationPolicy{
-				Hosts:      domainsForCerts,
-				Management: acmeManager,
-			})
-
-		// manage their certificates
-		app.logger.Info("enabling automatic TLS certificate management",
-			zap.Strings("domains", domainsForCerts),
-		)
-		err := srv.tlsApp.Manage(domainsForCerts)
-		if err != nil {
-			return fmt.Errorf("%s: managing certificate for %s: %s", srvName, domains, err)
-		}
-
-		// no longer needed; allow GC to deallocate
-		srv.AutoHTTPS.domainSet = nil
+func (app *App) automaticHTTPSPhase2() error {
+	if len(app.allCertDomains) == 0 {
+		return nil
 	}
-
+	app.logger.Info("enabling automatic TLS certificate management",
+		zap.Strings("domains", app.allCertDomains),
+	)
+	err := app.tlsApp.Manage(app.allCertDomains)
+	if err != nil {
+		return fmt.Errorf("managing certificates for %v: %s", app.allCertDomains, err)
+	}
+	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
 }

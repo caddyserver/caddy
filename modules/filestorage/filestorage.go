@@ -17,7 +17,7 @@ package filestorage
 import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {

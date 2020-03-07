@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -382,14 +382,12 @@ func run(newCfg *Config, start bool) error {
 		return err
 	}
 
-	// Load, Provision, Validate each app and their submodules
+	// Load and Provision each app and their submodules
 	err = func() error {
-		appsIface, err := ctx.LoadModule(newCfg, "AppsRaw")
-		if err != nil {
-			return fmt.Errorf("loading app modules: %v", err)
-		}
-		for appName, appIface := range appsIface.(map[string]interface{}) {
-			newCfg.apps[appName] = appIface.(App)
+		for appName := range newCfg.AppsRaw {
+			if _, err := ctx.App(appName); err != nil {
+				return err
+			}
 		}
 		return nil
 	}()

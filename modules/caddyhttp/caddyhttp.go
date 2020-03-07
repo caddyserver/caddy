@@ -28,8 +28,9 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
-	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -122,6 +123,10 @@ type App struct {
 
 	ctx    caddy.Context
 	logger *zap.Logger
+	tlsApp *caddytls.TLS
+
+	// used temporarily between phases 1 and 2 of auto HTTPS
+	allCertDomains []string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -134,6 +139,12 @@ func (App) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
+	// store some references
+	tlsAppIface, err := ctx.App("tls")
+	if err != nil {
+		return fmt.Errorf("getting tls app: %v", err)
+	}
+	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
 
@@ -144,12 +155,14 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// this provisions the matchers for each route,
 	// and prepares auto HTTP->HTTPS redirects, and
 	// is required before we provision each server
-	err := app.automaticHTTPSPhase1(ctx, repl)
+	err = app.automaticHTTPSPhase1(ctx, repl)
 	if err != nil {
 		return err
 	}
 
+	// prepare each server
 	for srvName, srv := range app.Servers {
+		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 
@@ -202,8 +215,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-
 			srv.errorHandlerChain = srv.Errors.Routes.Compile(errorEmptyHandler)
+		}
+
+		// prepare the TLS connection policies
+		err = srv.TLSConnPolicies.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("server %s: setting up TLS connection policies: %v", srvName, err)
 		}
 	}
 
@@ -238,14 +256,6 @@ func (app *App) Validate() error {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// give each server a pointer to the TLS app;
-	// this is required before they are started so
-	// they can solve ACME challenges
-	err := app.automaticHTTPSPhase2()
-	if err != nil {
-		return fmt.Errorf("enabling automatic HTTPS, phase 2: %v", err)
-	}
-
 	for srvName, srv := range app.Servers {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
@@ -279,10 +289,7 @@ func (app *App) Start() error {
 				if len(srv.TLSConnPolicies) > 0 &&
 					int(listenAddr.StartPort+portOffset) != app.httpPort() {
 					// create TLS listener
-					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
-					if err != nil {
-						return fmt.Errorf("%s/%s: making TLS configuration: %v", listenAddr.Network, hostport, err)
-					}
+					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)
 
 					/////////
@@ -318,7 +325,7 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err = app.automaticHTTPSPhase3()
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}

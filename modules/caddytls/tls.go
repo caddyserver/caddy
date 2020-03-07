@@ -18,13 +18,17 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/certmagic"
 	"github.com/go-acme/lego/v3/challenge"
-	"github.com/mholt/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -76,8 +80,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
-		GetConfigForCert: func(cert certmagic.Certificate) (certmagic.Config, error) {
-			return t.getConfigForName(cert.Names[0])
+		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
+			return t.getConfigForName(cert.Names[0]), nil
 		},
 	}
 	if t.Automation != nil {
@@ -87,20 +91,25 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.certCache = certmagic.NewCache(cacheOpts)
 
 	// automation/management policies
-	if t.Automation != nil {
-		for i, ap := range t.Automation.Policies {
-			val, err := ctx.LoadModule(ap, "ManagementRaw")
-			if err != nil {
-				return fmt.Errorf("loading TLS automation management module: %s", err)
-			}
-			t.Automation.Policies[i].Management = val.(ManagerMaker)
+	if t.Automation == nil {
+		t.Automation = new(AutomationConfig)
+	}
+	t.Automation.defaultAutomationPolicy = new(AutomationPolicy)
+	err := t.Automation.defaultAutomationPolicy.provision(t)
+	if err != nil {
+		return fmt.Errorf("provisioning default automation policy: %v", err)
+	}
+	for i, ap := range t.Automation.Policies {
+		err := ap.provision(t)
+		if err != nil {
+			return fmt.Errorf("provisioning automation policy %d: %v", i, err)
 		}
 	}
 
 	// certificate loaders
 	val, err := ctx.LoadModule(t, "CertificatesRaw")
 	if err != nil {
-		return fmt.Errorf("loading TLS automation management module: %s", err)
+		return fmt.Errorf("loading certificate loader modules: %s", err)
 	}
 	for modName, modIface := range val.(map[string]interface{}) {
 		if modName == "automate" {
@@ -154,6 +163,14 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			}
 		}
 	}
+
+	// TODO: TEMPORARY UNTIL RELEASE CANDIDATES:
+	// MIGRATE MANAGED CERTIFICATE ASSETS TO NEW PATH
+	err = t.moveCertificates()
+	if err != nil {
+		t.logger.Error("migrating certificates", zap.Error(err))
+	}
+	// END TODO: TEMPORARY.
 
 	return nil
 }
@@ -216,12 +233,11 @@ func (t *TLS) Manage(names []string) error {
 	// certmagic.Config for each (potentially large) group of names
 	// and call ManageSync/ManageAsync just once for the whole batch
 	for ap, names := range policyToNames {
-		magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
 		var err error
 		if ap.ManageSync {
-			err = magic.ManageSync(names)
+			err = ap.magic.ManageSync(names)
 		} else {
-			err = magic.ManageAsync(t.ctx.Context, names)
+			err = ap.magic.ManageAsync(t.ctx.Context, names)
 		}
 		if err != nil {
 			return fmt.Errorf("automate: manage %v: %v", names, err)
@@ -232,36 +248,54 @@ func (t *TLS) Manage(names []string) error {
 }
 
 // HandleHTTPChallenge ensures that the HTTP challenge is handled for the
-// certificate named by r.Host, if it is an HTTP challenge request.
+// certificate named by r.Host, if it is an HTTP challenge request. It
+// requires that the automation policy for r.Host has an issue of type
+// *certmagic.ACMEManager.
 func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	if !certmagic.LooksLikeHTTPChallenge(r) {
 		return false
 	}
 	ap := t.getAutomationPolicyForName(r.Host)
-	magic := certmagic.New(t.certCache, ap.makeCertMagicConfig(t.ctx))
-	return magic.HandleHTTPChallenge(w, r)
+	if ap.magic.Issuer == nil {
+		return false
+	}
+	if am, ok := ap.magic.Issuer.(*certmagic.ACMEManager); ok {
+		return am.HandleHTTPChallenge(w, r)
+	}
+	return false
 }
 
-func (t *TLS) getConfigForName(name string) (certmagic.Config, error) {
+// AddAutomationPolicy provisions and adds ap to the list of the app's
+// automation policies.
+func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
+	if t.Automation == nil {
+		t.Automation = new(AutomationConfig)
+	}
+	err := ap.provision(t)
+	if err != nil {
+		return err
+	}
+	t.Automation.Policies = append(t.Automation.Policies, ap)
+	return nil
+}
+
+func (t *TLS) getConfigForName(name string) *certmagic.Config {
 	ap := t.getAutomationPolicyForName(name)
-	return ap.makeCertMagicConfig(t.ctx), nil
+	return ap.magic
 }
 
 func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
-	if t.Automation != nil {
-		for _, ap := range t.Automation.Policies {
-			if len(ap.Hosts) == 0 {
-				// no host filter is an automatic match
+	for _, ap := range t.Automation.Policies {
+		if len(ap.Hosts) == 0 {
+			return ap // no host filter is an automatic match
+		}
+		for _, h := range ap.Hosts {
+			if h == name {
 				return ap
-			}
-			for _, h := range ap.Hosts {
-				if h == name {
-					return ap
-				}
 			}
 		}
 	}
-	return defaultAutomationPolicy
+	return t.Automation.defaultAutomationPolicy
 }
 
 // AllMatchingCertificates returns the list of all certificates in
@@ -309,10 +343,8 @@ func (t *TLS) cleanStorageUnits() {
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
 		for _, ap := range t.Automation.Policies {
-			if acmeMgmt, ok := ap.Management.(ACMEManagerMaker); ok {
-				if acmeMgmt.storage != nil {
-					certmagic.CleanStorage(acmeMgmt.storage, options)
-				}
+			if ap.storage != nil {
+				certmagic.CleanStorage(ap.storage, options)
 			}
 		}
 	}
@@ -355,23 +387,56 @@ type AutomationConfig struct {
 	OCSPCheckInterval caddy.Duration `json:"ocsp_interval,omitempty"`
 
 	// Every so often, Caddy will scan all loaded, managed
-	// certificates for expiration. Certificates which are
-	// about 2/3 into their valid lifetime are due for
-	// renewal. This setting changes how frequently the scan
-	// is performed. If your certificate lifetimes are very
-	// short (less than ~1 week), you should customize this.
+	// certificates for expiration. This setting changes how
+	// frequently the scan for expiring certificates is
+	// performed. If your certificate lifetimes are very
+	// short (less than ~24 hours), you should set this to
+	// a low value.
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
+
+	defaultAutomationPolicy *AutomationPolicy
 }
 
 // AutomationPolicy designates the policy for automating the
 // management (obtaining, renewal, and revocation) of managed
 // TLS certificates.
+//
+// An AutomationPolicy value is not valid until it has been
+// provisioned; use the `AddAutomationPolicy()` method on the
+// TLS app to properly provision a new policy.
 type AutomationPolicy struct {
 	// Which hostnames this policy applies to.
 	Hosts []string `json:"hosts,omitempty"`
 
-	// How to manage certificates.
-	ManagementRaw json.RawMessage `json:"management,omitempty" caddy:"namespace=tls.management inline_key=module"`
+	// The module that will issue certificates. Default: acme
+	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
+
+	// If true, certificates will be requested with MustStaple. Not all
+	// CAs support this, and there are potentially serious consequences
+	// of enabling this feature without proper threat modeling.
+	MustStaple bool `json:"must_staple,omitempty"`
+
+	// How long before a certificate's expiration to try renewing it,
+	// as a function of its total lifetime. As a general and conservative
+	// rule, it is a good idea to renew a certificate when it has about
+	// 1/3 of its total lifetime remaining. This utilizes the majority
+	// of the certificate's lifetime while still saving time to
+	// troubleshoot problems. However, for extremely short-lived certs,
+	// you may wish to increase the ratio to ~1/2.
+	RenewalWindowRatio float64 `json:"renewal_window_ratio,omitempty"`
+
+	// The type of key to generate for certificates.
+	// Supported values: `ed25519`, `p256`, `p384`, `rsa2048`, `rsa4096`.
+	KeyType string `json:"key_type,omitempty"`
+
+	// Optionally configure a separate storage module associated with this
+	// manager, instead of using Caddy's global/default-configured storage.
+	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
+
+	// If true, certificates will be managed "on demand", that is, during
+	// TLS handshakes or when needed, as opposed to at startup or config
+	// load.
+	OnDemand bool `json:"on_demand,omitempty"`
 
 	// If true, certificate management will be conducted
 	// in the foreground; this will block config reloads
@@ -381,23 +446,96 @@ type AutomationPolicy struct {
 	// of your control. Default: false
 	ManageSync bool `json:"manage_sync,omitempty"`
 
-	Management ManagerMaker `json:"-"`
+	Issuer certmagic.Issuer `json:"-"`
+
+	magic   *certmagic.Config
+	storage certmagic.Storage
 }
 
-// makeCertMagicConfig converts ap into a CertMagic config. Passing onDemand
-// is necessary because the automation policy does not have convenient access
-// to the TLS app's global on-demand policies;
-func (ap AutomationPolicy) makeCertMagicConfig(ctx caddy.Context) certmagic.Config {
-	// default manager (ACME) is a special case because of how CertMagic is designed
-	// TODO: refactor certmagic so that ACME manager is not a special case by extracting
-	// its config fields out of the certmagic.Config struct, or something...
-	if acmeMgmt, ok := ap.Management.(*ACMEManagerMaker); ok {
-		return acmeMgmt.makeCertMagicConfig(ctx)
+// provision converts ap into a CertMagic config.
+func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
+	// policy-specific storage implementation
+	if ap.StorageRaw != nil {
+		val, err := tlsApp.ctx.LoadModule(ap, "StorageRaw")
+		if err != nil {
+			return fmt.Errorf("loading TLS storage module: %v", err)
+		}
+		cmStorage, err := val.(caddy.StorageConverter).CertMagicStorage()
+		if err != nil {
+			return fmt.Errorf("creating TLS storage configuration: %v", err)
+		}
+		ap.storage = cmStorage
 	}
 
-	return certmagic.Config{
-		NewManager: ap.Management.NewManager,
+	var ond *certmagic.OnDemandConfig
+	if ap.OnDemand {
+		var onDemand *OnDemandConfig
+		if tlsApp.Automation != nil {
+			onDemand = tlsApp.Automation.OnDemand
+		}
+
+		ond = &certmagic.OnDemandConfig{
+			DecisionFunc: func(name string) error {
+				if onDemand != nil {
+					if onDemand.Ask != "" {
+						err := onDemandAskRequest(onDemand.Ask, name)
+						if err != nil {
+							return err
+						}
+					}
+					// check the rate limiter last because
+					// doing so makes a reservation
+					if !onDemandRateLimiter.Allow() {
+						return fmt.Errorf("on-demand rate limit exceeded")
+					}
+				}
+				return nil
+			},
+		}
 	}
+
+	keySource := certmagic.StandardKeyGenerator{
+		KeyType: supportedCertKeyTypes[ap.KeyType],
+	}
+
+	storage := ap.storage
+	if storage == nil {
+		storage = tlsApp.ctx.Storage()
+	}
+
+	template := certmagic.Config{
+		MustStaple:         ap.MustStaple,
+		RenewalWindowRatio: ap.RenewalWindowRatio,
+		KeySource:          keySource,
+		OnDemand:           ond,
+		Storage:            storage,
+	}
+	cfg := certmagic.New(tlsApp.certCache, template)
+	ap.magic = cfg
+
+	if ap.IssuerRaw != nil {
+		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
+		if err != nil {
+			return fmt.Errorf("loading TLS automation management module: %s", err)
+		}
+		ap.Issuer = val.(certmagic.Issuer)
+	}
+
+	// sometimes issuers may need the parent certmagic.Config in
+	// order to function properly (for example, ACMEIssuer needs
+	// access to the correct storage and cache so it can solve
+	// ACME challenges -- it's an annoying, inelegant circular
+	// dependency that I don't know how to resolve nicely!)
+	if configger, ok := ap.Issuer.(ConfigSetter); ok {
+		configger.SetConfig(cfg)
+	}
+
+	cfg.Issuer = ap.Issuer
+	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
+		cfg.Revoker = rev
+	}
+
+	return nil
 }
 
 // ChallengesConfig configures the ACME challenges.
@@ -482,11 +620,6 @@ type RateLimit struct {
 	Burst int `json:"burst,omitempty"`
 }
 
-// ManagerMaker makes a certificate manager.
-type ManagerMaker interface {
-	NewManager(interactive bool) (certmagic.Manager, error)
-}
-
 // AutomateLoader is a no-op certificate loader module
 // that is treated as a special case: it uses this app's
 // automation features to load certificates for the
@@ -500,6 +633,15 @@ func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
 		ID:  "tls.certificates.automate",
 		New: func() caddy.Module { return new(AutomateLoader) },
 	}
+}
+
+// ConfigSetter is implemented by certmagic.Issuers that
+// need access to a parent certmagic.Config as part of
+// their provisioning phase. For example, the ACMEIssuer
+// requires a config so it can access storage and the
+// cache to solve ACME challenges.
+type ConfigSetter interface {
+	SetConfig(cfg *certmagic.Config)
 }
 
 // These perpetual values are used for on-demand TLS.
@@ -521,8 +663,6 @@ var (
 	storageCleanMu sync.Mutex
 )
 
-var defaultAutomationPolicy = &AutomationPolicy{Management: new(ACMEManagerMaker)}
-
 // Interface guards
 var (
 	_ caddy.App          = (*TLS)(nil)
@@ -531,3 +671,121 @@ var (
 )
 
 const automateKey = "automate"
+
+// TODO: This is temporary until the release candidates
+// (beta 16 changed the storage path for certificates),
+// after which this function can be deleted
+func (t *TLS) moveCertificates() error {
+	log := t.logger.Named("automigrate")
+
+	baseDir := caddy.AppDataDir()
+
+	// if custom storage path was defined, use that instead
+	if fs, ok := t.ctx.Storage().(*certmagic.FileStorage); ok && fs.Path != "" {
+		baseDir = fs.Path
+	}
+
+	oldAcmeDir := filepath.Join(baseDir, "acme")
+	oldAcmeCas, err := ioutil.ReadDir(oldAcmeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("listing used ACME CAs: %v", err)
+	}
+
+	// get list of used CAs
+	var oldCANames []string
+	for _, fi := range oldAcmeCas {
+		if !fi.IsDir() {
+			continue
+		}
+		oldCANames = append(oldCANames, fi.Name())
+	}
+
+	for _, oldCA := range oldCANames {
+		// make new destination path
+		newCAName := oldCA
+		if strings.Contains(oldCA, "api.letsencrypt.org") &&
+			!strings.HasSuffix(oldCA, "-directory") {
+			newCAName += "-directory"
+		}
+		newBaseDir := filepath.Join(baseDir, "certificates", newCAName)
+		err := os.MkdirAll(newBaseDir, 0700)
+		if err != nil {
+			return fmt.Errorf("making new certs directory: %v", err)
+		}
+
+		// list sites in old path
+		oldAcmeSitesDir := filepath.Join(oldAcmeDir, oldCA, "sites")
+		oldAcmeSites, err := ioutil.ReadDir(oldAcmeSitesDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("listing sites: %v", err)
+		}
+
+		if len(oldAcmeSites) > 0 {
+			log.Warn("certificate storage path has changed; attempting one-time auto-migration",
+				zap.String("old_folder", oldAcmeSitesDir),
+				zap.String("new_folder", newBaseDir),
+				zap.String("details", "https://github.com/caddyserver/caddy/issues/2955"))
+		}
+
+		// for each site, move its folder and re-encode its metadata
+		for _, siteInfo := range oldAcmeSites {
+			if !siteInfo.IsDir() {
+				continue
+			}
+
+			// move the folder
+			oldPath := filepath.Join(oldAcmeSitesDir, siteInfo.Name())
+			newPath := filepath.Join(newBaseDir, siteInfo.Name())
+			log.Info("moving certificate assets",
+				zap.String("ca", oldCA),
+				zap.String("site", siteInfo.Name()),
+				zap.String("destination", newPath))
+			err = os.Rename(oldPath, newPath)
+			if err != nil {
+				log.Error("failed moving site to new path; skipping",
+					zap.String("old_path", oldPath),
+					zap.String("new_path", newPath),
+					zap.Error(err))
+				continue
+			}
+
+			// re-encode metadata file
+			metaFilePath := filepath.Join(newPath, siteInfo.Name()+".json")
+			metaContents, err := ioutil.ReadFile(metaFilePath)
+			if err != nil {
+				log.Error("could not read metadata file",
+					zap.String("filename", metaFilePath),
+					zap.Error(err))
+				continue
+			}
+			if len(metaContents) == 0 {
+				continue
+			}
+			cr := certmagic.CertificateResource{
+				SANs:       []string{siteInfo.Name()},
+				IssuerData: json.RawMessage(metaContents),
+			}
+			newMeta, err := json.MarshalIndent(cr, "", "\t")
+			if err != nil {
+				log.Error("encoding new metadata file", zap.Error(err))
+				continue
+			}
+			err = ioutil.WriteFile(metaFilePath, newMeta, 0600)
+			if err != nil {
+				log.Error("writing new metadata file", zap.Error(err))
+				continue
+			}
+		}
+
+		// delete now-empty old sites dir (OK if fails)
+		os.Remove(oldAcmeSitesDir)
+	}
+
+	return nil
+}
