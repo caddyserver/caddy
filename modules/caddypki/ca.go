@@ -15,24 +15,16 @@
 package caddypki
 
 import (
-	"bytes"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
-	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
 
@@ -55,10 +47,11 @@ type CA struct {
 	// into the system trust store.
 	InstallTrust bool `json:"install_trust,omitempty"`
 
+	Root         *KeyPair `json:"root,omitempty"`
+	Intermediate *KeyPair `json:"intermediate,omitempty"`
+
 	// TODO: ability to configure:
-	// - Own root or chain (chain = root + intermediate(s))
-	// - Whether to sign with root directly (maybe needed by some incorrect devices that don't support intermediates)
-	// - Root and intermediate lifetimes -- FIXME: be sure to disallow child cert lifetimes that would extend beyond parent lifetimes
+	// - Root and intermedmiate lifeties -- FIXME: be sure to disallow child cert lifetimes that would extend beyond parent lifetimes
 
 	// Optionally configure a separate storage module associated with this
 	// issuer, instead of using Caddy's global/default-configured storage.
@@ -72,7 +65,8 @@ type CA struct {
 	interKey    interface{} // TODO: should we just store this as a crypto.Signer?
 	mu          *sync.RWMutex
 
-	log *zap.Logger
+	rootCertPath string // mainly used for logging purposes if trusting
+	log          *zap.Logger
 }
 
 // Provision sets up the CA.
@@ -112,12 +106,27 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 		ca.IntermediateCommonName = defaultIntermediateCommonName
 	}
 
-	// load certs and key that will be used for signing
-	rootCert, rootKey, err := ca.loadOrGenRoot()
+	// load the certs and key that will be used for signing
+	var rootCert, interCert *x509.Certificate
+	var rootKey, interKey interface{}
+	var err error
+	if ca.Root != nil {
+		if ca.Root.Format == "" || ca.Root.Format == "pem_file" {
+			ca.rootCertPath = ca.Root.Certificate
+		}
+		rootCert, rootKey, err = ca.Root.Load()
+	} else {
+		ca.rootCertPath = "storage:" + ca.storageKeyRootCert()
+		rootCert, rootKey, err = ca.loadOrGenRoot()
+	}
 	if err != nil {
 		return err
 	}
-	interCert, interKey, err := ca.loadOrGenIntermediate(rootCert, rootKey)
+	if ca.Intermediate != nil {
+		interCert, interKey, err = ca.Intermediate.Load()
+	} else {
+		interCert, interKey, err = ca.loadOrGenIntermediate(rootCert, rootKey)
+	}
 	if err != nil {
 		return err
 	}
@@ -125,18 +134,6 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	ca.mu.Lock()
 	ca.root, ca.inter, ca.interKey = rootCert, interCert, interKey
 	ca.mu.Unlock()
-
-	if ca.InstallTrust {
-		ca.log.Info("trusting root certificate (you might be prompted for password)", zap.String("filename", ca.storageKeyRootCert()))
-		err := truststore.Install(rootCert,
-			truststore.WithDebug(),
-			truststore.WithFirefox(),
-			truststore.WithJava(),
-		)
-		if err != nil {
-			return fmt.Errorf("adding root certificate to trust store: %v", err)
-		}
-	}
 
 	return nil
 }
@@ -151,6 +148,14 @@ func (ca CA) RootCertificate() *x509.Certificate {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.root
+}
+
+// RootKey returns the CA's root private key. Since the root key is
+// not cached in memory long-term, it needs to be loaded from storage,
+// which could yield an error.
+func (ca CA) RootKey() (interface{}, error) {
+	_, rootKey, err := ca.loadOrGenRoot()
+	return rootKey, err
 }
 
 // IntermediateCertificate returns the CA's intermediate
@@ -186,6 +191,16 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, e
 		rootCert, err = pemDecodeSingleCert(rootCertPEM)
 		if err != nil {
 			return nil, nil, fmt.Errorf("parsing root certificate PEM: %v", err)
+		}
+	}
+	if rootKey == nil {
+		rootKeyPEM, err := ca.storage.Load(ca.storageKeyRootKey())
+		if err != nil {
+			return nil, nil, fmt.Errorf("loading root key: %v", err)
+		}
+		rootKey, err = pemDecodePrivateKey(rootKeyPEM)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoding root key: %v", err)
 		}
 	}
 
@@ -290,85 +305,6 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (i
 	return interCert, interKey, nil
 }
 
-func pemDecodeSingleCert(pemDER []byte) (*x509.Certificate, error) {
-	pemBlock, remaining := pem.Decode(pemDER)
-	if pemBlock == nil {
-		return nil, fmt.Errorf("no PEM block found")
-	}
-	if len(remaining) > 0 {
-		return nil, fmt.Errorf("input contained more than a single PEM block")
-	}
-	if pemBlock.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("expected PEM block type to be CERTIFICATE, but got '%s'", pemBlock.Type)
-	}
-	return x509.ParseCertificate(pemBlock.Bytes)
-}
-
-func pemEncodeCert(der []byte) ([]byte, error) {
-	return pemEncode("CERTIFICATE", der)
-}
-
-// pemEncodePrivateKey marshals a EC or RSA private key into a PEM-encoded array of bytes.
-// TODO: this is the same thing as in certmagic. Should we reuse that code somehow? It's unexported.
-func pemEncodePrivateKey(key crypto.PrivateKey) ([]byte, error) {
-	var pemType string
-	var keyBytes []byte
-	switch key := key.(type) {
-	case *ecdsa.PrivateKey:
-		var err error
-		pemType = "EC"
-		keyBytes, err = x509.MarshalECPrivateKey(key)
-		if err != nil {
-			return nil, err
-		}
-	case *rsa.PrivateKey:
-		pemType = "RSA"
-		keyBytes = x509.MarshalPKCS1PrivateKey(key)
-	case *ed25519.PrivateKey:
-		var err error
-		pemType = "ED25519"
-		keyBytes, err = x509.MarshalPKCS8PrivateKey(key)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unsupported key type: %T", key)
-	}
-	return pemEncode(pemType+" PRIVATE KEY", keyBytes)
-}
-
-// pemDecodePrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.
-// Borrowed from Go standard library, to handle various private key and PEM block types.
-// https://github.com/golang/go/blob/693748e9fa385f1e2c3b91ca9acbb6c0ad2d133d/src/crypto/tls/tls.go#L291-L308
-// https://github.com/golang/go/blob/693748e9fa385f1e2c3b91ca9acbb6c0ad2d133d/src/crypto/tls/tls.go#L238)
-// TODO: this is the same thing as in certmagic. Should we reuse that code somehow? It's unexported.
-func pemDecodePrivateKey(keyPEMBytes []byte) (crypto.PrivateKey, error) {
-	keyBlockDER, _ := pem.Decode(keyPEMBytes)
-
-	if keyBlockDER.Type != "PRIVATE KEY" && !strings.HasSuffix(keyBlockDER.Type, " PRIVATE KEY") {
-		return nil, fmt.Errorf("unknown PEM header %q", keyBlockDER.Type)
-	}
-
-	if key, err := x509.ParsePKCS1PrivateKey(keyBlockDER.Bytes); err == nil {
-		return key, nil
-	}
-
-	if key, err := x509.ParsePKCS8PrivateKey(keyBlockDER.Bytes); err == nil {
-		switch key := key.(type) {
-		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
-			return key, nil
-		default:
-			return nil, fmt.Errorf("found unknown private key type in PKCS#8 wrapping: %T", key)
-		}
-	}
-
-	if key, err := x509.ParseECPrivateKey(keyBlockDER.Bytes); err == nil {
-		return key, nil
-	}
-
-	return nil, fmt.Errorf("unknown private key type")
-}
-
 func (ca CA) storageKeyCAPrefix() string {
 	return path.Join("pki", "authorities", certmagic.StorageKeys.Safe(ca.id))
 }
@@ -392,12 +328,6 @@ func (ca CA) newReplacer() *caddy.Replacer {
 	repl.Set("year", strconv.Itoa(time.Now().Year()))
 	repl.Set("pki.ca.cert.key_type", "ECC") // TODO: set this properly
 	return repl
-}
-
-func pemEncode(blockType string, b []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	err := pem.Encode(&buf, &pem.Block{Type: blockType, Bytes: b})
-	return buf.Bytes(), err
 }
 
 const (

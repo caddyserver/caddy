@@ -47,6 +47,12 @@ type InternalIssuer struct {
 	// The validity period of certificates.
 	Lifetime caddy.Duration `json:"lifetime,omitempty"`
 
+	// If true, the root will be the issuer instead of
+	// the intermediate. This is not recommended and should
+	// only be used when devices/clients do not properly
+	// validate certificate chains.
+	SignWithRoot bool `json:"sign_with_root,omitempty"`
+
 	ca *caddypki.CA
 }
 
@@ -103,10 +109,26 @@ func (li InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest
 			Provisioners: provisioner.List{},
 		},
 	}
-	interCert := li.ca.IntermediateCertificate()
+
+	// get the root certificate and the issuer cert+key
+	rootCert := li.ca.RootCertificate()
+	var issuerCert *x509.Certificate
+	var issuerKey interface{}
+	if li.SignWithRoot {
+		issuerCert = rootCert
+		var err error
+		issuerKey, err = li.ca.RootKey()
+		if err != nil {
+			return nil, fmt.Errorf("loading signing key: %v", err)
+		}
+	} else {
+		issuerCert = li.ca.IntermediateCertificate()
+		issuerKey = li.ca.IntermediateKey()
+	}
+
 	auth, err := authority.New(cfg,
-		authority.WithX509Signer(interCert, li.ca.IntermediateKey().(crypto.Signer)),
-		authority.WithX509RootCerts(li.ca.RootCertificate()),
+		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
+		authority.WithX509RootCerts(rootCert),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("initializing certificate authority: %v", err)
@@ -114,9 +136,9 @@ func (li InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest
 
 	// ensure issued certificate does not expire later than its issuer
 	lifetime := time.Duration(li.Lifetime)
-	if time.Now().Add(lifetime).After(interCert.NotAfter) {
+	if time.Now().Add(lifetime).After(issuerCert.NotAfter) {
 		// TODO: log this
-		lifetime = interCert.NotAfter.Sub(time.Now())
+		lifetime = issuerCert.NotAfter.Sub(time.Now())
 	}
 
 	certChain, err := auth.Sign(csr, provisioner.Options{},

@@ -51,34 +51,40 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
-	if needsRenewal(ca.root) {
-		// TODO: implement root renewal (same key)
-		p.log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
-			zap.String("ca", ca.id),
-			zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
-		)
+	// only maintain the root if it's not manually provided in the config
+	if ca.Root == nil {
+		if needsRenewal(ca.root) {
+			// TODO: implement root renewal (use same key)
+			p.log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
+				zap.String("ca", ca.id),
+				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
+			)
+		}
 	}
 
-	if needsRenewal(ca.inter) {
-		p.log.Info("intermediate expires soon; renewing",
-			zap.String("ca", ca.id),
-			zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
-		)
+	// only maintain the intermediate if it's not manually provided in the config
+	if ca.Intermediate == nil {
+		if needsRenewal(ca.inter) {
+			p.log.Info("intermediate expires soon; renewing",
+				zap.String("ca", ca.id),
+				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
+			)
 
-		rootCert, rootKey, err := ca.loadOrGenRoot()
-		if err != nil {
-			return fmt.Errorf("loading root key: %v", err)
-		}
-		interCert, interKey, err := ca.genIntermediate(rootCert, rootKey)
-		if err != nil {
-			return fmt.Errorf("generating new certificate: %v", err)
-		}
-		ca.inter, ca.interKey = interCert, interKey
+			rootCert, rootKey, err := ca.loadOrGenRoot()
+			if err != nil {
+				return fmt.Errorf("loading root key: %v", err)
+			}
+			interCert, interKey, err := ca.genIntermediate(rootCert, rootKey)
+			if err != nil {
+				return fmt.Errorf("generating new certificate: %v", err)
+			}
+			ca.inter, ca.interKey = interCert, interKey
 
-		p.log.Info("renewed intermediate",
-			zap.String("ca", ca.id),
-			zap.Time("new_expiration", ca.inter.NotAfter),
-		)
+			p.log.Info("renewed intermediate",
+				zap.String("ca", ca.id),
+				zap.Time("new_expiration", ca.inter.NotAfter),
+			)
+		}
 	}
 
 	return nil

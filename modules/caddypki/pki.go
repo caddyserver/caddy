@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
 
@@ -67,7 +68,27 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 
 // Start starts the PKI app.
 func (p *PKI) Start() error {
+	// install roots to trust store, if enabled
+	for _, ca := range p.CAs {
+		if ca.InstallTrust {
+			ca.log.Info("trusting root certificate",
+				zap.String("path", ca.rootCertPath))
+			ca.log.Warn("you might be prompted for password to add certificate to trust store")
+
+			err := truststore.Install(ca.root,
+				truststore.WithDebug(),
+				truststore.WithFirefox(),
+				truststore.WithJava(),
+			)
+			if err != nil {
+				return fmt.Errorf("adding root certificate to trust store: %v", err)
+			}
+		}
+	}
+
+	// keep root/intermediates renewed
 	go p.maintenance()
+
 	return nil
 }
 
