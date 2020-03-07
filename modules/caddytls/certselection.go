@@ -7,7 +7,7 @@ import (
 	"math/big"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {

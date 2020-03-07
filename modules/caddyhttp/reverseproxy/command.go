@@ -29,7 +29,7 @@ import (
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {

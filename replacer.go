@@ -148,11 +148,10 @@ func (r *Replacer) replace(input, empty string,
 			if errOnUnknown {
 				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
 					string(phOpen), key, string(phClose))
-			} else if treatUnknownAsEmpty {
-				if empty != "" {
-					sb.WriteString(empty)
-				}
-			} else {
+			} else if !treatUnknownAsEmpty {
+				// if treatUnknownAsEmpty is true, we'll
+				// handle an empty val later; so only
+				// continue otherwise
 				lastWriteCursor = i
 				continue
 			}

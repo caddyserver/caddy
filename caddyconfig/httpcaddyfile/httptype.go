@@ -26,7 +26,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -88,6 +88,13 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			"{remote}", "{http.request.remote}",
 			"{scheme}", "{http.request.scheme}",
 			"{uri}", "{http.request.uri}",
+
+			"{tls_cipher}", "{http.request.tls.cipher_suite}",
+			"{tls_version}", "{http.request.tls.version}",
+			"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
+			"{tls_client_issuer}", "{http.request.tls.client.issuer}",
+			"{tls_client_serial}", "{http.request.tls.client.serial}",
+			"{tls_client_subject}", "{http.request.tls.client.subject}",
 		)
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
@@ -173,9 +180,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
-			if mmVals, ok := sblock.pile["tls.automation_manager"]; ok {
+			if mmVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				for _, mmVal := range mmVals {
-					mm := mmVal.Value.(caddytls.ManagerMaker)
+					mm := mmVal.Value.(certmagic.Issuer)
 					sblockHosts, err := st.autoHTTPSHosts(sblock)
 					if err != nil {
 						return nil, warnings, err
@@ -185,8 +192,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 							tlsApp.Automation = new(caddytls.AutomationConfig)
 						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-							Hosts:         sblockHosts,
-							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
+							Hosts:     sblockHosts,
+							IssuerRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
 					} else {
 						warnings = append(warnings, caddyconfig.Warning{
@@ -245,7 +252,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		if !hasEmail {
 			email = ""
 		}
-		mgr := caddytls.ACMEManagerMaker{
+		mgr := caddytls.ACMEIssuer{
 			CA:    acmeCA.(string),
 			Email: email.(string),
 		}
@@ -260,7 +267,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-			ManagementRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
+			IssuerRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
 		})
 	}
 	if tlsApp.Automation != nil {
@@ -272,6 +279,35 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
 		for _, srv := range httpApp.Servers {
 			srv.ExperimentalHTTP3 = true
+		}
+	}
+
+	// extract any custom logs, and enforce configured levels
+	var customLogs []namedCustomLog
+	var hasDefaultLog bool
+	for _, sb := range serverBlocks {
+		for _, clVal := range sb.pile["custom_log"] {
+			ncl := clVal.Value.(namedCustomLog)
+			if ncl.name == "" {
+				continue
+			}
+			if ncl.name == "default" {
+				hasDefaultLog = true
+			}
+			if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+				ncl.log.Level = "DEBUG"
+			}
+			customLogs = append(customLogs, ncl)
+		}
+	}
+	if !hasDefaultLog {
+		// if the default log was not customized, ensure we
+		// configure it with any applicable options
+		if _, ok := options["debug"]; ok {
+			customLogs = append(customLogs, namedCustomLog{
+				name: "default",
+				log:  &caddy.CustomLog{Level: "DEBUG"},
+			})
 		}
 	}
 
@@ -291,6 +327,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
 		cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
+	}
+	if len(customLogs) > 0 {
+		if cfg.Logging == nil {
+			cfg.Logging = &caddy.Logging{
+				Logs: make(map[string]*caddy.CustomLog),
+			}
+		}
+		for _, ncl := range customLogs {
+			if ncl.name != "" {
+				cfg.Logging.Logs[ncl.name] = ncl.log
+			}
+		}
 	}
 
 	return cfg, warnings, nil
@@ -316,6 +364,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptHTTPPort(disp)
 		case "https_port":
 			val, err = parseOptHTTPSPort(disp)
+		case "default_sni":
+			val, err = parseOptSingleString(disp)
 		case "order":
 			val, err = parseOptOrder(disp)
 		case "experimental_http3":
@@ -323,11 +373,13 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		case "storage":
 			val, err = parseOptStorage(disp)
 		case "acme_ca", "acme_dns", "acme_ca_root":
-			val, err = parseOptACME(disp)
+			val, err = parseOptSingleString(disp)
 		case "email":
-			val, err = parseOptEmail(disp)
+			val, err = parseOptSingleString(disp)
 		case "admin":
 			val, err = parseOptAdmin(disp)
+		case "debug":
+			options["debug"] = true
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
@@ -426,6 +478,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// tls: connection policies and toggle auto HTTPS
+			defaultSNI := tryString(options["default_sni"], warnings)
 			autoHTTPSQualifiedHosts, err := st.autoHTTPSHosts(sblock)
 			if err != nil {
 				return nil, err
@@ -438,6 +491,7 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
+
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -445,6 +499,13 @@ func (st *ServerType) serversFromPairings(
 					hosts, err := st.hostsFromServerBlockKeys(sblock.block)
 					if err != nil {
 						return nil, err
+					}
+					for _, h := range hosts {
+						if h == defaultSNI {
+							hosts = append(hosts, "")
+							cp.DefaultSNI = defaultSNI
+							break
+						}
 					}
 
 					// TODO: are matchers needed if every hostname of the resulting config is matched?
@@ -459,6 +520,11 @@ func (st *ServerType) serversFromPairings(
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
 				// TODO: consolidate equal conn policies
+			} else if defaultSNI != "" {
+				hasCatchAllTLSConnPolicy = true
+				srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{
+					DefaultSNI: defaultSNI,
+				})
 			}
 
 			// exclude any hosts that were defined explicitly with
@@ -497,6 +563,25 @@ func (st *ServerType) serversFromPairings(
 				for _, val := range errorSubrouteVals {
 					sr := val.Value.(*caddyhttp.Subroute)
 					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
+				}
+			}
+
+			// add log associations
+			for _, cval := range sblock.pile["custom_log"] {
+				ncl := cval.Value.(namedCustomLog)
+				if srv.Logs == nil {
+					srv.Logs = &caddyhttp.ServerLogConfig{
+						LoggerNames: make(map[string]string),
+					}
+				}
+				hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+				if err != nil {
+					return nil, err
+				}
+				for _, h := range hosts {
+					if ncl.name != "" {
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				}
 			}
 		}
@@ -690,7 +775,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			// otherwise the one without any hosts (a catch-all) would be
 			// eaten up by the one with hosts; and if both have hosts, we
 			// need to combine their lists
-			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) &&
+			if reflect.DeepEqual(aps[i].IssuerRaw, aps[j].IssuerRaw) &&
 				aps[i].ManageSync == aps[j].ManageSync {
 				if len(aps[i].Hosts) == 0 && len(aps[j].Hosts) > 0 {
 					aps = append(aps[:j], aps[j+1:]...)
@@ -882,6 +967,14 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 	return intVal
 }
 
+func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
+	stringVal, ok := val.(string)
+	if val != nil && !ok && warnings != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a string type"})
+	}
+	return stringVal
+}
+
 // sliceContains returns true if needle is in haystack.
 func sliceContains(haystack []string, needle string) bool {
 	for _, s := range haystack {
@@ -931,6 +1024,11 @@ func (c counter) nextGroup() string {
 type matcherSetAndTokens struct {
 	matcherSet caddy.ModuleMap
 	tokens     []caddyfile.Token
+}
+
+type namedCustomLog struct {
+	name string
+	log  *caddy.CustomLog
 }
 
 // sbAddrAssocation is a mapping from a list of

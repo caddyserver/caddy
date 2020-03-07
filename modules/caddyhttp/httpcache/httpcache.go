@@ -16,6 +16,7 @@ package httpcache
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -108,7 +109,8 @@ func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 		return next.ServeHTTP(w, r)
 	}
 
-	ctx := getterContext{w, r, next}
+	getterCtx := getterContext{w, r, next}
+	ctx := context.WithValue(r.Context(), getterContextCtxKey, getterCtx)
 
 	// TODO: rigorous performance testing
 
@@ -152,8 +154,8 @@ func (c *Cache) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 	return nil
 }
 
-func (c *Cache) getter(ctx groupcache.Context, key string, dest groupcache.Sink) error {
-	combo := ctx.(getterContext)
+func (c *Cache) getter(ctx context.Context, key string, dest groupcache.Sink) error {
+	combo := ctx.Value(getterContextCtxKey).(getterContext)
 
 	// the buffer will store the gob-encoded header, then the body
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -227,6 +229,10 @@ var (
 var errUncacheable = fmt.Errorf("uncacheable")
 
 const groupName = "http_requests"
+
+type ctxKey string
+
+const getterContextCtxKey ctxKey = "getter_context"
 
 // Interface guards
 var (

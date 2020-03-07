@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 )
@@ -71,6 +72,16 @@ func init() {
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme
+// `{http.request.tls.version}` | The TLS version name
+// `{http.request.tls.cipher_suite}` | The TLS cipher suite
+// `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
+// `{http.request.tls.proto}` | The negotiated next protocol
+// `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
+// `{http.request.tls.server_name}` | The server name requested by the client, if any
+// `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
+// `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
+// `{http.request.tls.client.serial}` | The serial number of the client certificate
+// `{http.request.tls.client.subject}` | The subject DN of the client certificate
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
@@ -107,6 +118,10 @@ type App struct {
 
 	ctx    caddy.Context
 	logger *zap.Logger
+	tlsApp *caddytls.TLS
+
+	// used temporarily between phases 1 and 2 of auto HTTPS
+	allCertDomains []string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -119,6 +134,12 @@ func (App) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
+	// store some references
+	tlsAppIface, err := ctx.App("tls")
+	if err != nil {
+		return fmt.Errorf("getting tls app: %v", err)
+	}
+	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
 
@@ -127,12 +148,14 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// this provisions the matchers for each route,
 	// and prepares auto HTTP->HTTP redirects, and
 	// is required before we provision each server
-	err := app.automaticHTTPSPhase1(ctx, repl)
+	err = app.automaticHTTPSPhase1(ctx, repl)
 	if err != nil {
 		return err
 	}
 
+	// prepare each server
 	for srvName, srv := range app.Servers {
+		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 
@@ -185,8 +208,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
 			}
-
 			srv.errorHandlerChain = srv.Errors.Routes.Compile(errorEmptyHandler)
+		}
+
+		// prepare the TLS connection policies
+		err = srv.TLSConnPolicies.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("server %s: setting up TLS connection policies: %v", srvName, err)
 		}
 	}
 
@@ -221,14 +249,6 @@ func (app *App) Validate() error {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// give each server a pointer to the TLS app;
-	// this is required before they are started so
-	// they can solve ACME challenges
-	err := app.automaticHTTPSPhase2()
-	if err != nil {
-		return fmt.Errorf("enabling automatic HTTPS, phase 2: %v", err)
-	}
-
 	for srvName, srv := range app.Servers {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
@@ -262,10 +282,7 @@ func (app *App) Start() error {
 				if len(srv.TLSConnPolicies) > 0 &&
 					int(listenAddr.StartPort+portOffset) != app.httpPort() {
 					// create TLS listener
-					tlsCfg, err := srv.TLSConnPolicies.TLSConfig(app.ctx)
-					if err != nil {
-						return fmt.Errorf("%s/%s: making TLS configuration: %v", listenAddr.Network, hostport, err)
-					}
+					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)
 
 					/////////
@@ -301,7 +318,7 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err = app.automaticHTTPSPhase3()
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}

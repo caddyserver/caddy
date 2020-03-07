@@ -23,7 +23,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 // mapAddressToServerBlocks returns a map of listener address to list of server

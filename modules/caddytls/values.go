@@ -17,8 +17,9 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 
-	"github.com/go-acme/lego/v3/certcrypto"
+	"github.com/caddyserver/certmagic"
 	"github.com/klauspost/cpuid"
 )
 
@@ -101,11 +102,12 @@ var SupportedCurves = map[string]tls.CurveID{
 
 // supportedCertKeyTypes is all the key types that are supported
 // for certificates that are obtained through ACME.
-var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"rsa_2048": certcrypto.RSA2048,
-	"rsa_4096": certcrypto.RSA4096,
-	"ec_p256":  certcrypto.EC256,
-	"ec_p384":  certcrypto.EC384,
+var supportedCertKeyTypes = map[string]certmagic.KeyType{
+	"rsa2048": certmagic.RSA2048,
+	"rsa4096": certmagic.RSA4096,
+	"p256":    certmagic.P256,
+	"p384":    certmagic.P384,
+	"ed25519": certmagic.ED25519,
 }
 
 // defaultCurves is the list of only the curves we want to use
@@ -127,9 +129,36 @@ var SupportedProtocols = map[string]uint16{
 	"tls1.3": tls.VersionTLS13,
 }
 
+// unsupportedProtocols is a map of unsupported protocols.
+// Used for logging only, not enforcement.
+var unsupportedProtocols = map[string]uint16{
+	"ssl3.0": tls.VersionSSL30,
+	"tls1.0": tls.VersionTLS10,
+	"tls1.1": tls.VersionTLS11,
+}
+
 // publicKeyAlgorithms is the map of supported public key algorithms.
 var publicKeyAlgorithms = map[string]x509.PublicKeyAlgorithm{
 	"rsa":   x509.RSA,
 	"dsa":   x509.DSA,
 	"ecdsa": x509.ECDSA,
+}
+
+// ProtocolName returns the standard name for the passed protocol version ID
+// (e.g.  "TLS1.3") or a fallback representation of the ID value if the version
+// is not supported.
+func ProtocolName(id uint16) string {
+	for k, v := range SupportedProtocols {
+		if v == id {
+			return k
+		}
+	}
+
+	for k, v := range unsupportedProtocols {
+		if v == id {
+			return k
+		}
+	}
+
+	return fmt.Sprintf("0x%04x", id)
 }
