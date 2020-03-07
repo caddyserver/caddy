@@ -26,7 +26,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -185,9 +185,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
-			if mmVals, ok := sblock.pile["tls.automation_manager"]; ok {
+			if mmVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				for _, mmVal := range mmVals {
-					mm := mmVal.Value.(caddytls.ManagerMaker)
+					mm := mmVal.Value.(certmagic.Issuer)
 					sblockHosts, err := st.autoHTTPSHosts(sblock)
 					if err != nil {
 						return nil, warnings, err
@@ -197,8 +197,8 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 							tlsApp.Automation = new(caddytls.AutomationConfig)
 						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-							Hosts:         sblockHosts,
-							ManagementRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
+							Hosts:     sblockHosts,
+							IssuerRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
 					} else {
 						warnings = append(warnings, caddyconfig.Warning{
@@ -257,7 +257,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		if !hasEmail {
 			email = ""
 		}
-		mgr := caddytls.ACMEManagerMaker{
+		mgr := caddytls.ACMEIssuer{
 			CA:    acmeCA.(string),
 			Email: email.(string),
 		}
@@ -272,7 +272,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-			ManagementRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
+			IssuerRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
 		})
 	}
 	if tlsApp.Automation != nil {
@@ -335,6 +335,18 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			cfg.Admin = &caddy.AdminConfig{Disabled: true}
 		} else {
 			cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
+		}
+	}
+	if len(customLogs) > 0 {
+		if cfg.Logging == nil {
+			cfg.Logging = &caddy.Logging{
+				Logs: make(map[string]*caddy.CustomLog),
+			}
+		}
+		for _, ncl := range customLogs {
+			if ncl.name != "" {
+				cfg.Logging.Logs[ncl.name] = ncl.log
+			}
 		}
 	}
 	if len(customLogs) > 0 {
@@ -487,6 +499,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// tls: connection policies and toggle auto HTTPS
+			defaultSNI := tryString(options["default_sni"], warnings)
 			autoHTTPSQualifiedHosts, err := st.autoHTTPSHosts(sblock)
 			if err != nil {
 				return nil, err
@@ -499,6 +512,7 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
+
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
@@ -506,6 +520,13 @@ func (st *ServerType) serversFromPairings(
 					hosts, err := st.hostsFromServerBlockKeys(sblock.block)
 					if err != nil {
 						return nil, err
+					}
+					for _, h := range hosts {
+						if h == defaultSNI {
+							hosts = append(hosts, "")
+							cp.DefaultSNI = defaultSNI
+							break
+						}
 					}
 
 					// TODO: are matchers needed if every hostname of the resulting config is matched?
@@ -520,6 +541,11 @@ func (st *ServerType) serversFromPairings(
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
 				// TODO: consolidate equal conn policies
+			} else if defaultSNI != "" {
+				hasCatchAllTLSConnPolicy = true
+				srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{
+					DefaultSNI: defaultSNI,
+				})
 			}
 
 			// exclude any hosts that were defined explicitly with
@@ -770,7 +796,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			// otherwise the one without any hosts (a catch-all) would be
 			// eaten up by the one with hosts; and if both have hosts, we
 			// need to combine their lists
-			if reflect.DeepEqual(aps[i].ManagementRaw, aps[j].ManagementRaw) &&
+			if reflect.DeepEqual(aps[i].IssuerRaw, aps[j].IssuerRaw) &&
 				aps[i].ManageSync == aps[j].ManageSync {
 				if len(aps[i].Hosts) == 0 && len(aps[j].Hosts) > 0 {
 					aps = append(aps[:j], aps[j+1:]...)

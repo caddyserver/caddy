@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/certmagic"
 	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
-	"github.com/mholt/certmagic"
 )
 
 // ConnectionPolicies is an ordered group of connection policies;
@@ -32,16 +32,15 @@ import (
 // connections at handshake-time.
 type ConnectionPolicies []*ConnectionPolicy
 
-// TLSConfig converts the group of policies to a standard-lib-compatible
-// TLS configuration which selects the first matching policy based on
-// the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
-	// set up each of the connection policies
+// Provision sets up each connection policy. It should be called
+// during the Validate() phase, after the TLS app (if any) is
+// already set up.
+func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 	for i, pol := range cp {
 		// matchers
 		mods, err := ctx.LoadModule(pol, "MatchersRaw")
 		if err != nil {
-			return nil, fmt.Errorf("loading handshake matchers: %v", err)
+			return fmt.Errorf("loading handshake matchers: %v", err)
 		}
 		for _, modIface := range mods.(map[string]interface{}) {
 			cp[i].matchers = append(cp[i].matchers, modIface.(ConnectionMatcher))
@@ -51,20 +50,24 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 		if pol.CertSelection != nil {
 			val, err := ctx.LoadModule(pol, "CertSelection")
 			if err != nil {
-				return nil, fmt.Errorf("loading certificate selection module: %s", err)
+				return fmt.Errorf("loading certificate selection module: %s", err)
 			}
 			cp[i].certSelector = val.(certmagic.CertificateSelector)
 		}
-	}
 
-	// pre-build standard TLS configs so we don't have to at handshake-time
-	for i := range cp {
-		err := cp[i].buildStandardTLSConfig(ctx)
+		// pre-build standard TLS config so we don't have to at handshake-time
+		err = pol.buildStandardTLSConfig(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
+			return fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
 		}
 	}
 
+	return nil
+}
+
+// TLSConfig returns a standard-lib-compatible TLS configuration which
+// selects the first matching policy based on the ClientHello.
+func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies
@@ -102,7 +105,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) (*tls.Config, error) {
 
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
 		},
-	}, nil
+	}
 }
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
@@ -137,6 +140,10 @@ type ConnectionPolicy struct {
 	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
 
+	// DefaultSNI becomes the ServerName in a ClientHello if there
+	// is no policy configured for the empty SNI value.
+	DefaultSNI string `json:"default_sni,omitempty"`
+
 	matchers     []ConnectionMatcher
 	certSelector certmagic.CertificateSelector
 
@@ -158,15 +165,24 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		NextProtos:               p.ALPN,
 		PreferServerCipherSuites: true,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			cfgTpl, err := tlsApp.getConfigForName(hello.ServerName)
-			if err != nil {
-				return nil, fmt.Errorf("getting config for name %s: %v", hello.ServerName, err)
-			}
-			newCfg := certmagic.New(tlsApp.certCache, cfgTpl)
+			// TODO: I don't love how this works: we pre-build certmagic configs
+			// so that handshakes are faster. Unfortunately, certmagic configs are
+			// comprised of settings from both a TLS connection policy and a TLS
+			// automation policy. The only two fields (as of March 2020; v2 beta 16)
+			// of a certmagic config that come from the TLS connection policy are
+			// CertSelection and DefaultServerName, so an automation policy is what
+			// builds the base certmagic config. Since the pre-built config is
+			// shared, I don't think we can change any of its fields per-handshake,
+			// hence the awkward shallow copy (dereference) here and the subsequent
+			// changing of some of its fields. I'm worried this dereference allocates
+			// more at handshake-time, but I don't know how to practically pre-build
+			// a certmagic config for each combination of conn policy + automation policy...
+			cfg := *tlsApp.getConfigForName(hello.ServerName)
 			if p.certSelector != nil {
-				newCfg.CertSelection = p.certSelector
+				cfg.CertSelection = p.certSelector
 			}
-			return newCfg.GetCertificate(hello)
+			cfg.DefaultServerName = p.DefaultSNI
+			return cfg.GetCertificate(hello)
 		},
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
@@ -239,8 +255,6 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			return fmt.Errorf("configuring TLS client authentication: %v", err)
 		}
 	}
-
-	// TODO: other fields
 
 	setDefaultTLSParams(cfg)
 
