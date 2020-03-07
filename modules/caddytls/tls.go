@@ -18,7 +18,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,8 +75,6 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision(ctx caddy.Context) error {
-	// TODO: Move assets to the new folder structure!!
-
 	t.ctx = ctx
 	t.logger = ctx.Logger(t)
 
@@ -161,6 +163,14 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			}
 		}
 	}
+
+	// TODO: TEMPORARY UNTIL RELEASE CANDIDATES:
+	// MIGRATE MANAGED CERTIFICATE ASSETS TO NEW PATH
+	err = t.moveCertificates()
+	if err != nil {
+		t.logger.Error("migrating certificates", zap.Error(err))
+	}
+	// END TODO: TEMPORARY.
 
 	return nil
 }
@@ -661,3 +671,119 @@ var (
 )
 
 const automateKey = "automate"
+
+// TODO: This is temporary until the release candidates
+// (beta 16 changed the storage path for certificates),
+// after which this function can be deleted
+func (t *TLS) moveCertificates() error {
+	log := t.logger.Named("automigrate")
+
+	oldAcmeDir := filepath.Join(caddy.AppDataDir(), "acme")
+
+	// if custom storage path was defined, use that instead
+	if fs, ok := t.ctx.Storage().(*certmagic.FileStorage); ok {
+		oldAcmeDir = fs.Path
+	}
+
+	oldAcmeCas, err := ioutil.ReadDir(oldAcmeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("listing used ACME CAs: %v", err)
+	}
+
+	// get list of used CAs
+	var oldCANames []string
+	for _, fi := range oldAcmeCas {
+		if !fi.IsDir() {
+			continue
+		}
+		oldCANames = append(oldCANames, fi.Name())
+	}
+
+	for _, oldCA := range oldCANames {
+		// make new destination path
+		newCAName := oldCA
+		if strings.Contains(oldCA, "api.letsencrypt.org") {
+			newCAName += "-directory"
+		}
+		newBaseDir := filepath.Join(caddy.AppDataDir(), "certificates", newCAName)
+		err := os.MkdirAll(newBaseDir, 0700)
+		if err != nil {
+			return fmt.Errorf("making new certs directory: %v", err)
+		}
+
+		// list sites in old path
+		oldAcmeSitesDir := filepath.Join(oldAcmeDir, oldCA, "sites")
+		oldAcmeSites, err := ioutil.ReadDir(oldAcmeSitesDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("listing sites: %v", err)
+		}
+
+		if len(oldAcmeSites) > 0 {
+			log.Warn("certificate storage path has changed; attempting one-time auto-migration",
+				zap.String("old_folder", oldAcmeSitesDir),
+				zap.String("new_folder", newBaseDir),
+				zap.String("details", "https://github.com/caddyserver/caddy/issues/2955"))
+		}
+
+		// for each site, move its folder and re-encode its metadata
+		for _, siteInfo := range oldAcmeSites {
+			if !siteInfo.IsDir() {
+				continue
+			}
+
+			// move the folder
+			oldPath := filepath.Join(oldAcmeSitesDir, siteInfo.Name())
+			newPath := filepath.Join(newBaseDir, siteInfo.Name())
+			log.Info("moving certificate assets",
+				zap.String("ca", oldCA),
+				zap.String("site", siteInfo.Name()),
+				zap.String("destination", newPath))
+			err = os.Rename(oldPath, newPath)
+			if err != nil {
+				log.Error("failed moving site to new path; skipping",
+					zap.String("old_path", oldPath),
+					zap.String("new_path", newPath),
+					zap.Error(err))
+				continue
+			}
+
+			// re-encode metadata file
+			metaFilePath := filepath.Join(newPath, siteInfo.Name()+".json")
+			metaContents, err := ioutil.ReadFile(metaFilePath)
+			if err != nil {
+				log.Error("could not read metadata file",
+					zap.String("filename", metaFilePath),
+					zap.Error(err))
+				continue
+			}
+			if len(metaContents) == 0 {
+				continue
+			}
+			cr := certmagic.CertificateResource{
+				SANs:       []string{siteInfo.Name()},
+				IssuerData: json.RawMessage(metaContents),
+			}
+			newMeta, err := json.MarshalIndent(cr, "", "\t")
+			if err != nil {
+				log.Error("encoding new metadata file", zap.Error(err))
+				continue
+			}
+			err = ioutil.WriteFile(metaFilePath, newMeta, 0600)
+			if err != nil {
+				log.Error("writing new metadata file", zap.Error(err))
+				continue
+			}
+		}
+
+		// delete now-empty old sites dir (OK if fails)
+		os.Remove(oldAcmeSitesDir)
+	}
+
+	return nil
+}
