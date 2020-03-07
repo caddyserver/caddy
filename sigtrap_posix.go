@@ -21,7 +21,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
 

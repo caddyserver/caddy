@@ -256,6 +256,8 @@ provisioning stages.`,
 // This function panics if the name is already registered,
 // if the name does not meet the described format, or if
 // any of the fields are missing from cmd.
+//
+// This function should be used in init().
 func RegisterCommand(cmd Command) {
 	if cmd.Name == "" {
 		panic("command name is required")
