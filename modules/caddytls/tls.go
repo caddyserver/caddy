@@ -678,13 +678,14 @@ const automateKey = "automate"
 func (t *TLS) moveCertificates() error {
 	log := t.logger.Named("automigrate")
 
-	oldAcmeDir := filepath.Join(caddy.AppDataDir(), "acme")
+	baseDir := caddy.AppDataDir()
 
 	// if custom storage path was defined, use that instead
-	if fs, ok := t.ctx.Storage().(*certmagic.FileStorage); ok {
-		oldAcmeDir = fs.Path
+	if fs, ok := t.ctx.Storage().(*certmagic.FileStorage); ok && fs.Path != "" {
+		baseDir = fs.Path
 	}
 
+	oldAcmeDir := filepath.Join(baseDir, "acme")
 	oldAcmeCas, err := ioutil.ReadDir(oldAcmeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -705,10 +706,11 @@ func (t *TLS) moveCertificates() error {
 	for _, oldCA := range oldCANames {
 		// make new destination path
 		newCAName := oldCA
-		if strings.Contains(oldCA, "api.letsencrypt.org") {
+		if strings.Contains(oldCA, "api.letsencrypt.org") &&
+			!strings.HasSuffix(oldCA, "-directory") {
 			newCAName += "-directory"
 		}
-		newBaseDir := filepath.Join(caddy.AppDataDir(), "certificates", newCAName)
+		newBaseDir := filepath.Join(baseDir, "certificates", newCAName)
 		err := os.MkdirAll(newBaseDir, 0700)
 		if err != nil {
 			return fmt.Errorf("making new certs directory: %v", err)
