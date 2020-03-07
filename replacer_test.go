@@ -37,7 +37,7 @@ func TestReplacer(t *testing.T) {
 		},
 		{
 			input:  `\{`,
-			expect: "{",
+			expect: `{`,
 		},
 		{
 			input:  "foo{",
@@ -69,7 +69,7 @@ func TestReplacer(t *testing.T) {
 		},
 		{
 			input:  `\}`,
-			expect: `}`,
+			expect: `\}`,
 		},
 		{
 			input:  "{}",
@@ -164,7 +164,6 @@ func BenchmarkReplacer(b *testing.B) {
 
 	rep := testReplacer()
 
-	// ReplaceAll
 	for _, bm := range []testCase{
 		{
 			name:  "no placeholder",
@@ -184,26 +183,6 @@ func BenchmarkReplacer(b *testing.B) {
 				rep.ReplaceAll(bm.input, bm.empty)
 			}
 		})
-	}
-}
-
-func BenchmarkReplacer_Unescaped(b *testing.B) {
-	input := `{"json": "object"}`
-	rep := testReplacer()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		rep.ReplaceAll(input, "")
-	}
-}
-
-func BenchmarkReplacer_Plain(b *testing.B) {
-	input := `string`
-	rep := testReplacer()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		rep.ReplaceAll(input, "")
 	}
 }
 

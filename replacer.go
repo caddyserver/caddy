@@ -112,7 +112,7 @@ func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) 
 func (r *Replacer) replace(input, empty string,
 	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
 	f ReplacementFunc) (string, error) {
-	if !strings.Contains(input, string(phOpen)) && !strings.Contains(input, string(phClose)) {
+	if !strings.Contains(input, string(phOpen)) {
 		return input, nil
 	}
 
