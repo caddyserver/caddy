@@ -294,8 +294,8 @@ type Provisioner interface {
 // Validator is implemented by modules which can verify that their
 // configurations are valid. This method will be called after
 // Provision() (if implemented). Validation should always be fast
-// (imperceptible running time) and an error should be returned only
-// if the value's configuration is invalid.
+// (imperceptible running time) and an error must be returned if
+// the module's configuration is invalid.
 type Validator interface {
 	Validate() error
 }

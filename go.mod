@@ -3,33 +3,33 @@ module github.com/caddyserver/caddy/v2
 go 1.14
 
 require (
-	github.com/Masterminds/sprig/v3 v3.0.0
-	github.com/alecthomas/chroma v0.7.0
-	github.com/andybalholm/brotli v0.0.0-20190821151343-b60f0d972eeb
-	github.com/cenkalti/backoff/v3 v3.1.1 // indirect
+	github.com/Masterminds/sprig/v3 v3.0.2
+	github.com/alecthomas/chroma v0.7.1
+	github.com/andybalholm/brotli v1.0.0
+	github.com/caddyserver/certmagic v0.10.0
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
-	github.com/go-acme/lego/v3 v3.3.0
-	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc
+	github.com/go-acme/lego/v3 v3.4.0
+	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 	github.com/ilibs/json5 v1.0.1
-	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/jsternberg/zap-logfmt v1.2.0
-	github.com/klauspost/compress v1.8.6
-	github.com/klauspost/cpuid v1.2.2
-	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucas-clemente/quic-go v0.15.1
-	github.com/mholt/certmagic v0.9.3
-	github.com/miekg/dns v1.1.25 // indirect
-	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
+	github.com/klauspost/compress v1.10.2
+	github.com/klauspost/cpuid v1.2.3
+	github.com/lucas-clemente/quic-go v0.15.2
+	github.com/manifoldco/promptui v0.7.0 // indirect
+	github.com/miekg/dns v1.1.27 // indirect
+	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20200303171503-1e787b591db7
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
+	github.com/smallstep/certificates v0.14.0-rc.5
+	github.com/smallstep/cli v0.14.0-rc.3
+	github.com/smallstep/truststore v0.9.4
 	github.com/vulcand/oxy v1.0.0
-	github.com/yuin/goldmark v1.1.17
-	github.com/yuin/goldmark-highlighting v0.0.0-20191202084645-78f32c8dd6d5
-	go.uber.org/multierr v1.2.0 // indirect
-	go.uber.org/zap v1.10.0
-	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
-	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553
+	github.com/yuin/goldmark v1.1.24
+	github.com/yuin/goldmark-highlighting v0.0.0-20200218065240-d1af22c1126f
+	go.uber.org/zap v1.14.0
+	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
+	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/square/go-jose.v2 v2.4.1 // indirect
-	gopkg.in/yaml.v2 v2.2.4
+	gopkg.in/yaml.v2 v2.2.8
 )

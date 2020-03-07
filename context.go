@@ -21,7 +21,7 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/mholt/certmagic"
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -384,9 +384,13 @@ func (ctx Context) App(name string) (interface{}, error) {
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
 	}
-	modVal, err := ctx.LoadModuleByID(name, nil)
+	appRaw := ctx.cfg.AppsRaw[name]
+	modVal, err := ctx.LoadModuleByID(name, appRaw)
 	if err != nil {
-		return nil, fmt.Errorf("instantiating new module %s: %v", name, err)
+		return nil, fmt.Errorf("loading %s app module: %v", name, err)
+	}
+	if appRaw != nil {
+		ctx.cfg.AppsRaw[name] = nil // allow GC to deallocate
 	}
 	ctx.cfg.apps[name] = modVal.(App)
 	return modVal, nil

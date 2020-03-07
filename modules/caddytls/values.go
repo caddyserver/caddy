@@ -19,7 +19,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/go-acme/lego/v3/certcrypto"
+	"github.com/caddyserver/certmagic"
 	"github.com/klauspost/cpuid"
 )
 
@@ -102,11 +102,12 @@ var SupportedCurves = map[string]tls.CurveID{
 
 // supportedCertKeyTypes is all the key types that are supported
 // for certificates that are obtained through ACME.
-var supportedCertKeyTypes = map[string]certcrypto.KeyType{
-	"rsa_2048": certcrypto.RSA2048,
-	"rsa_4096": certcrypto.RSA4096,
-	"ec_p256":  certcrypto.EC256,
-	"ec_p384":  certcrypto.EC384,
+var supportedCertKeyTypes = map[string]certmagic.KeyType{
+	"rsa2048": certmagic.RSA2048,
+	"rsa4096": certmagic.RSA4096,
+	"p256":    certmagic.P256,
+	"p384":    certmagic.P384,
+	"ed25519": certmagic.ED25519,
 }
 
 // defaultCurves is the list of only the curves we want to use
