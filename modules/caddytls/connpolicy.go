@@ -276,6 +276,20 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
+	// The mode for authenticating the client. Allowed values are:
+	//
+	// Mode | Description
+	// -----|---------------
+	// `request` | Ask clients for a certificate, but allow even if there isn't one; do not verify it
+	// `require` | Require clients to present a certificate, but do not verify it
+	// `verify_if_given` | Ask clients for a certificate; allow even if there isn't one, but verify it if there is
+	// `require_and_verify` | Require clients to present a valid certificate that is verified
+	//
+	// The default mode is `require_and_verify` if any
+	// TrustedCACerts or TrustedLeafCerts are provided;
+	// otherwise, the default mode is `require`.
+	Mode string `json:"mode,omitempty"`
+
 	// state established with the last call to ConfigureTLSConfig
 	trustedLeafCerts       []*x509.Certificate
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
@@ -283,7 +297,7 @@ type ClientAuthentication struct {
 
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
-	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0
+	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 || len(clientauth.Mode) > 0
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
@@ -294,8 +308,28 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		return nil
 	}
 
-	// otherwise, at least require any client certificate
-	cfg.ClientAuth = tls.RequireAnyClientCert
+	// enforce desired mode of client authentication
+	if len(clientauth.Mode) > 0 {
+		switch clientauth.Mode {
+		case "request":
+			cfg.ClientAuth = tls.RequestClientCert
+		case "require":
+			cfg.ClientAuth = tls.RequireAnyClientCert
+		case "verify_if_given":
+			cfg.ClientAuth = tls.VerifyClientCertIfGiven
+		case "require_and_verify":
+			cfg.ClientAuth = tls.RequireAndVerifyClientCert
+		default:
+			return fmt.Errorf("client auth mode %s not allowed", clientauth.Mode)
+		}
+	} else {
+		// otherwise, set a safe default mode
+		if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 {
+			cfg.ClientAuth = tls.RequireAndVerifyClientCert
+		} else {
+			cfg.ClientAuth = tls.RequireAnyClientCert
+		}
+	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
 	if len(clientauth.TrustedCACerts) > 0 {
@@ -308,9 +342,6 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			caPool.AddCert(clientCA)
 		}
 		cfg.ClientCAs = caPool
-
-		// now ensure the standard lib will verify client certificates
-		cfg.ClientAuth = tls.RequireAndVerifyClientCert
 	}
 
 	// enforce leaf verification by writing our own verify function
