@@ -125,6 +125,14 @@ func (r *Replacer) replace(input, empty string,
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
 	for i := 0; i < len(input); i++ {
+
+		// check for escaped braces
+		if i > 0 && input[i-1] == phEscape && (input[i] == phClose || input[i] == phOpen) {
+			sb.WriteString(input[lastWriteCursor : i-1])
+			lastWriteCursor = i
+			continue
+		}
+
 		if input[i] != phOpen {
 			continue
 		}
@@ -133,6 +141,11 @@ func (r *Replacer) replace(input, empty string,
 		end := strings.Index(input[i:], string(phClose)) + i
 		if end < i {
 			continue
+		}
+
+		// if necessary look for the first closing brace that is not escaped
+		for end > 0 && end < len(input)-1 && input[end-1] == phEscape {
+			end = strings.Index(input[end+1:], string(phClose)) + end + 1
 		}
 
 		// write the substring from the last cursor to this point
@@ -237,4 +250,4 @@ var nowFunc = time.Now
 // ReplacerCtxKey is the context key for a replacer.
 const ReplacerCtxKey CtxKey = "replacer"
 
-const phOpen, phClose = '{', '}'
+const phOpen, phClose, phEscape = '{', '}', '\\'
