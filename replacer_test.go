@@ -145,6 +145,14 @@ func TestReplacer(t *testing.T) {
 			expect: `placeholder  in name`,
 		},
 		{
+			input:  `placeholder {with \} brace} in name`,
+			expect: `placeholder  in name`,
+		},
+		{
+			input:  `placeholder {with \} \} braces} in name`,
+			expect: `placeholder  in name`,
+		},
+		{
 			input:  `\{'group':'default','max_age':3600,'endpoints':[\{'url':'https://some.domain.local/a/d/g'\}],'include_subdomains':true\}`,
 			expect: `{'group':'default','max_age':3600,'endpoints':[{'url':'https://some.domain.local/a/d/g'}],'include_subdomains':true}`,
 		},

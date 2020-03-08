@@ -143,6 +143,11 @@ func (r *Replacer) replace(input, empty string,
 			continue
 		}
 
+		// if necessary look for the first closing brace that is not escaped
+		for end > 0 && end < len(input)-1 && input[end-1] == phEscape {
+			end = strings.Index(input[end+1:], string(phClose)) + end + 1
+		}
+
 		// write the substring from the last cursor to this point
 		sb.WriteString(input[lastWriteCursor:i])
 
