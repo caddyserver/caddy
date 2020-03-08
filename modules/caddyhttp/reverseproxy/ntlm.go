@@ -60,8 +60,12 @@ type NTLMTransport struct {
 // CaddyModule returns the Caddy module information.
 func (NTLMTransport) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.transport.http_ntlm",
-		New: func() caddy.Module { return new(NTLMTransport) },
+		ID: "http.reverse_proxy.transport.http_ntlm",
+		New: func() caddy.Module {
+			m := new(NTLMTransport)
+			m.HTTPTransport = new(HTTPTransport)
+			return m
+		},
 	}
 }
 
