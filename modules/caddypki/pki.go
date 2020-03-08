@@ -70,19 +70,27 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 func (p *PKI) Start() error {
 	// install roots to trust store, if enabled
 	for _, ca := range p.CAs {
-		if ca.InstallTrust {
-			ca.log.Info("trusting root certificate",
-				zap.String("path", ca.rootCertPath))
-			ca.log.Warn("you might be prompted for password to add certificate to trust store")
+		if !ca.InstallTrust {
+			continue
+		}
 
-			err := truststore.Install(ca.root,
-				truststore.WithDebug(),
-				truststore.WithFirefox(),
-				truststore.WithJava(),
-			)
-			if err != nil {
-				return fmt.Errorf("adding root certificate to trust store: %v", err)
-			}
+		// avoid password prompt if already trusted
+		if trusted(ca.root) {
+			ca.log.Info("root certificate is already trusted by system",
+				zap.String("path", ca.rootCertPath))
+			continue
+		}
+
+		ca.log.Warn("trusting root certificate (you might be prompted for password)",
+			zap.String("path", ca.rootCertPath))
+
+		err := truststore.Install(ca.root,
+			truststore.WithDebug(),
+			truststore.WithFirefox(),
+			truststore.WithJava(),
+		)
+		if err != nil {
+			return fmt.Errorf("adding root certificate to trust store: %v", err)
 		}
 	}
 

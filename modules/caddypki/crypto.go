@@ -112,6 +112,11 @@ func pemEncode(blockType string, b []byte) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
+func trusted(cert *x509.Certificate) bool {
+	chains, err := cert.Verify(x509.VerifyOptions{})
+	return len(chains) > 0 && err == nil
+}
+
 // KeyPair represents a public-private key pair, where the
 // public key is also called a certificate.
 type KeyPair struct {
