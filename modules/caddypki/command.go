@@ -28,7 +28,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "untrust",
-		Func:  cmdFileServer,
+		Func:  cmdUntrust,
 		Usage: "[--ca <id> | --cert <path>]",
 		Short: "Untrusts a locally-trusted CA certificate",
 		Long: `
@@ -49,7 +49,7 @@ paths will not work).
 
 If no flags are specified, --ca=local is assumed.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("file-server", flag.ExitOnError)
+			fs := flag.NewFlagSet("untrust", flag.ExitOnError)
 			fs.String("ca", "", "The ID of the CA to untrust")
 			fs.String("cert", "", "The path to the CA certificate to untrust")
 			return fs
@@ -57,7 +57,7 @@ If no flags are specified, --ca=local is assumed.`,
 	})
 }
 
-func cmdFileServer(fs caddycmd.Flags) (int, error) {
+func cmdUntrust(fs caddycmd.Flags) (int, error) {
 	ca := fs.String("ca")
 	cert := fs.String("cert")
 
