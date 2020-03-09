@@ -394,6 +394,7 @@ func (app *App) createAutomationPolicy(ctx caddy.Context) error {
 	if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
 		// don't overwrite existing explicit config
 		acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
+		acmeIssuer.Provision(ctx)
 	}
 	if acmeIssuer.Challenges.TLSALPN == nil {
 		acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
