@@ -492,35 +492,10 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
 
-	input, err := ioutil.ReadFile(validateCmdConfigFlag)
+	input, _, err := loadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("reading input file: %v", err)
+		return caddy.ExitCodeFailedStartup, err
 	}
-
-	if validateCmdAdapterFlag != "" {
-		cfgAdapter := caddyconfig.GetAdapter(validateCmdAdapterFlag)
-		if cfgAdapter == nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("unrecognized config adapter: %s", validateCmdAdapterFlag)
-		}
-
-		adaptedConfig, warnings, err := cfgAdapter.Adapt(input, nil)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, err
-		}
-		// print warnings to stderr
-		for _, warn := range warnings {
-			msg := warn.Message
-			if warn.Directive != "" {
-				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
-			}
-			fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", validateCmdAdapterFlag, warn.File, warn.Line, msg)
-		}
-
-		input = adaptedConfig
-	}
-
 	input = caddy.RemoveMetaFields(input)
 
 	var cfg *caddy.Config
