@@ -23,7 +23,6 @@ import (
 )
 
 func init() {
-	caddyconfig.RegisterAdapter("jsonc", Adapter{})
 	caddy.RegisterModule(Adapter{})
 }
 
