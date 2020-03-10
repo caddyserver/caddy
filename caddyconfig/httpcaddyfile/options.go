@@ -177,7 +177,9 @@ func parseOptSingleString(d *caddyfile.Dispenser) (string, error) {
 func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
 	if d.Next() {
 		var listenAddress string
-		d.AllArgs(&listenAddress)
+		if !d.AllArgs(&listenAddress) {
+			return "", d.ArgErr()
+		}
 		if listenAddress == "" {
 			listenAddress = caddy.DefaultAdminListen
 		}
