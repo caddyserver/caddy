@@ -17,16 +17,27 @@ package json5adapter
 import (
 	"encoding/json"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/ilibs/json5"
 )
 
 func init() {
 	caddyconfig.RegisterAdapter("json5", Adapter{})
+	caddy.RegisterModule(Adapter{})
 }
 
 // Adapter adapts JSON5 to Caddy JSON.
 type Adapter struct{}
+
+func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "adapters.json5",
+		New: func() caddy.Module {
+			return Adapter{}
+		},
+	}
+}
 
 // Adapt converts the JSON5 config in body to Caddy JSON.
 func (a Adapter) Adapt(body []byte, options map[string]interface{}) (result []byte, warnings []caddyconfig.Warning, err error) {

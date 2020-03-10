@@ -22,9 +22,22 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
+func init() {
+	caddy.RegisterModule(Adapter{})
+}
+
 // Adapter adapts Caddyfile to Caddy JSON.
 type Adapter struct {
 	ServerType ServerType
+}
+
+func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "adapters.caddyfile",
+		New: func() caddy.Module {
+			return Adapter{}
+		},
+	}
 }
 
 // Adapt converts the Caddyfile config in body to Caddy JSON.

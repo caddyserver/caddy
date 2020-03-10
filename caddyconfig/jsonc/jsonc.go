@@ -17,16 +17,27 @@ package jsoncadapter
 import (
 	"encoding/json"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/muhammadmuzzammil1998/jsonc"
 )
 
 func init() {
 	caddyconfig.RegisterAdapter("jsonc", Adapter{})
+	caddy.RegisterModule(Adapter{})
 }
 
 // Adapter adapts JSON-C to Caddy JSON.
 type Adapter struct{}
+
+func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "adapters.jsonc",
+		New: func() caddy.Module {
+			return Adapter{}
+		},
+	}
+}
 
 // Adapt converts the JSON-C config in body to Caddy JSON.
 func (a Adapter) Adapt(body []byte, options map[string]interface{}) (result []byte, warnings []caddyconfig.Warning, err error) {
