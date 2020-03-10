@@ -124,6 +124,8 @@ func (r *Replacer) replace(input, empty string,
 
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
+	
+scan:
 	for i := 0; i < len(input); i++ {
 
 		// check for escaped braces
@@ -145,7 +147,11 @@ func (r *Replacer) replace(input, empty string,
 
 		// if necessary look for the first closing brace that is not escaped
 		for end > 0 && end < len(input)-1 && input[end-1] == phEscape {
-			end = strings.Index(input[end+1:], string(phClose)) + end + 1
+			nextEnd := strings.Index(input[end+1:], string(phClose))
+			if nextEnd < 0 {
+				continue scan
+			}
+			end += nextEnd + 1
 		}
 
 		// write the substring from the last cursor to this point

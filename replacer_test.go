@@ -156,6 +156,10 @@ func TestReplacer(t *testing.T) {
 			input:  `\{'group':'default','max_age':3600,'endpoints':[\{'url':'https://some.domain.local/a/d/g'\}],'include_subdomains':true\}`,
 			expect: `{'group':'default','max_age':3600,'endpoints':[{'url':'https://some.domain.local/a/d/g'}],'include_subdomains':true}`,
 		},
+		{
+			input:  `{}{}{}{\\\\}\\\\`,
+			expect: `{\\\}\\\\`,
+		},
 	} {
 		actual := rep.ReplaceAll(tc.input, tc.empty)
 		if actual != tc.expect {
