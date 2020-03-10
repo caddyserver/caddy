@@ -79,3 +79,71 @@ func TestSpecificity(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalOptions(t *testing.T) {
+	for i, tc := range []struct {
+		input       string
+		expectWarn  bool
+		expectError bool
+	}{
+		{
+			input: `
+				{
+					email test@example.com
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin off
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 127.0.0.1:2020
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin {
+						disabled false
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
+	} {
+
+		adapter := caddyfile.Adapter{
+			ServerType: ServerType{},
+		}
+
+		_, warnings, err := adapter.Adapt([]byte(tc.input), nil)
+
+		if len(warnings) > 0 != tc.expectWarn {
+			t.Errorf("Test %d warning expectation failed Expected: %v, got %v", i, tc.expectWarn, warnings)
+			continue
+		}
+
+		if err != nil != tc.expectError {
+			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
+			continue
+		}
+	}
+}
