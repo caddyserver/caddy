@@ -1,0 +1,108 @@
+{
+    "apps": {
+        "http": {
+            "http_port": 9080,
+            "https_port": 9443,
+            "servers": {
+                "srv0": {
+                    "listen": [
+                        ":9443"
+                    ],
+                    "routes": [
+                        {
+                            "handle": [
+                                {
+                                    "handler": "subroute",
+                                    "routes": [
+                                        {
+                                            "handle": [
+                                                {
+                                                    "body": "hi secure",
+                                                    "handler": "static_response",
+                                                    "status_code": 200
+                                                }
+                                            ],
+                                            "match": [
+                                                {
+                                                    "path": [
+                                                        "/version"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ],
+                            "match": [
+                                {
+                                    "remote_ip": {
+                                        "ranges":["0.0.0.0/0"]
+                                    }
+                                }
+                            ],
+                            "terminal": true
+                        }
+                    ],
+                    "tls_connection_policies": [
+                        {
+                            "match": {
+                                "sni": ["api.local.security.gallagher.io"]
+                            },
+                            "default_server_name": "*.local.security.gallagher.io"
+                        }
+                    ]
+                },
+                "srv1": {
+                    "listen": [
+                        ":9080"
+                    ],
+                    "routes": [
+                        {
+                            "handle": [
+                                {
+                                    "handler": "subroute",
+                                    "routes": [
+                                        {
+                                            "handle": [
+                                                {
+                                                    "body": "hi",
+                                                    "handler": "static_response",
+                                                    "status_code": 200
+                                                }
+                                            ],
+                                            "match": [
+                                                {
+                                                    "path": [
+                                                        "/v2"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ],
+                            "match": [
+                                {
+                                    "host": [
+                                        "app.local.security.gallagher.io"
+                                    ]
+                                }
+                            ],
+                            "terminal": true
+                        }
+                    ]
+                }
+            }
+        },
+        "tls": {
+            "certificates": {
+                "load_files": [
+                    {
+                        "certificate": "/home/fedora/workspaces/gallagher/third-party/caddy/certificates/ccp-gateway-app.ssl.cer",
+                        "key": "/home/fedora/workspaces/gallagher/third-party/caddy/certificates/ccp-gateway-app.ssl.key"
+                    }
+                ]
+            }
+        }
+    }
+}
