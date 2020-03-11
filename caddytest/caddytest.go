@@ -39,14 +39,28 @@ var (
 	matchCert = regexp.MustCompile(`(/[\w\d\.]+\.crt)`)
 )
 
+type configLoadError struct {
+	Response string
+}
+
+func (e configLoadError) Error() string { return e.Response }
+
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
 func InitServer(t *testing.T, rawConfig string, configType string) {
+	if err := initServer(t, rawConfig, configType); errors.Is(err, &configLoadError{}) {
+		t.Fail()
+	}
+}
+
+// InitServer this will configure the server with a configurion of a specific
+// type. The configType must be either "json" or the adapter type.
+func initServer(t *testing.T, rawConfig string, configType string) error {
 
 	err := validateTestPrerequisites()
 	if err != nil {
 		t.Skipf("skipping tests as failed integration prerequisites. %s", err)
-		return
+		return nil
 	}
 
 	t.Cleanup(func() {
@@ -71,7 +85,7 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		t.Errorf("failed to create request. %s", err)
-		return
+		return err
 	}
 
 	if configType == "json" {
@@ -83,19 +97,21 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 	res, err := client.Do(req)
 	if err != nil {
 		t.Errorf("unable to contact caddy server. %s", err)
-		return
+		return err
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("unable to read response. %s", err)
-		return
+		return err
 	}
 
 	if res.StatusCode != 200 {
 		t.Logf("failed to load config:\n status code:%d \n %s", res.StatusCode, string(body))
-		t.Fail()
+		return configLoadError{Response: string(body)}
 	}
+
+	return nil
 }
 
 var hasValidated bool
@@ -177,6 +193,14 @@ func createTestingTransport() *http.Transport {
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	}
+}
+
+// AssertLoadError will load a config and expect an error
+func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
+	err := initServer(t, rawConfig, configType)
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("expected error \"%s\" but got \"%s\"", expectedError, err.Error())
 	}
 }
 
