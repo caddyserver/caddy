@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"strconv"
 	"sync"
 	"time"
 
@@ -43,15 +42,13 @@ type CA struct {
 	// intermediate certificates.
 	IntermediateCommonName string `json:"intermediate_common_name,omitempty"`
 
-	// If true, Caddy will attempt to install the CA's root
-	// into the system trust store.
-	InstallTrust bool `json:"install_trust,omitempty"`
+	// Whether Caddy will attempt to install the CA's root
+	// into the system trust store, as well as into Java
+	// and Mozilla Firefox trust stores. Default: true.
+	InstallTrust *bool `json:"install_trust,omitempty"`
 
 	Root         *KeyPair `json:"root,omitempty"`
 	Intermediate *KeyPair `json:"intermediate,omitempty"`
-
-	// TODO: ability to configure:
-	// - Root and intermedmiate lifeties -- FIXME: be sure to disallow child cert lifetimes that would extend beyond parent lifetimes
 
 	// Optionally configure a separate storage module associated with this
 	// issuer, instead of using Caddy's global/default-configured storage.
@@ -62,7 +59,7 @@ type CA struct {
 	id          string
 	storage     certmagic.Storage
 	root, inter *x509.Certificate
-	interKey    interface{} // TODO: should we just store this as a crypto.Signer?
+	interKey    interface{} // TODO: should we just store these as crypto.Signer?
 	mu          *sync.RWMutex
 
 	rootCertPath string // mainly used for logging purposes if trusting
@@ -242,7 +239,6 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 		}
 
 		// TODO: should we require that all or none of the assets are required before overwriting anything?
-
 		interCert, interKey, err = ca.genIntermediate(rootCert, rootKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating new intermediate cert: %v", err)
@@ -322,19 +318,16 @@ func (ca CA) storageKeyIntermediateKey() string {
 }
 
 func (ca CA) newReplacer() *caddy.Replacer {
-	// TODO: these are all temporary until I get this more organized
 	repl := caddy.NewReplacer()
 	repl.Set("pki.ca.name", ca.Name)
-	repl.Set("year", strconv.Itoa(time.Now().Year()))
-	repl.Set("pki.ca.cert.key_type", "ECC") // TODO: set this properly
 	return repl
 }
 
 const (
 	defaultCAID                   = "local"
 	defaultCAName                 = "Caddy Local Authority"
-	defaultRootCommonName         = "{pki.ca.name} - {year} {pki.ca.cert.key_type} Root"
-	defaultIntermediateCommonName = "{pki.ca.name} - {pki.ca.cert.key_type} Intermediate"
+	defaultRootCommonName         = "{pki.ca.name} - {time.now.year} ECC Root"
+	defaultIntermediateCommonName = "{pki.ca.name} - ECC Intermediate"
 
 	defaultRootLifetime         = 24 * time.Hour * 30 * 12 * 10
 	defaultIntermediateLifetime = 24 * time.Hour * 7

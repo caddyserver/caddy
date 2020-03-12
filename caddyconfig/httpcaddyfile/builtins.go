@@ -95,7 +95,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 
 // parseTLS parses the tls directive. Syntax:
 //
-//     tls [<email>]|[<cert_file> <key_file>] {
+//     tls [<email>|internal]|[<cert_file> <key_file>] {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
@@ -106,23 +106,11 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 //     }
 //
 func parseTLS(h Helper) ([]ConfigValue, error) {
-	var configVals []ConfigValue
-
 	var cp *caddytls.ConnectionPolicy
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
-	var mgr caddytls.ACMEIssuer
-
-	// fill in global defaults, if configured
-	if email := h.Option("email"); email != nil {
-		mgr.Email = email.(string)
-	}
-	if acmeCA := h.Option("acme_ca"); acmeCA != nil {
-		mgr.CA = acmeCA.(string)
-	}
-	if caPemFile := h.Option("acme_ca_root"); caPemFile != nil {
-		mgr.TrustedRootsPEMFiles = append(mgr.TrustedRootsPEMFiles, caPemFile.(string))
-	}
+	var acmeIssuer *caddytls.ACMEIssuer
+	var internalIssuer *caddytls.InternalIssuer
 
 	for h.Next() {
 		// file certificate loader
@@ -130,10 +118,17 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		switch len(firstLine) {
 		case 0:
 		case 1:
-			if !strings.Contains(firstLine[0], "@") {
-				return nil, h.Err("single argument must be an email address")
+			if firstLine[0] == "internal" {
+				internalIssuer = new(caddytls.InternalIssuer)
+			} else if !strings.Contains(firstLine[0], "@") {
+				return nil, h.Err("single argument must either be 'internal' or an email address")
+			} else {
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				acmeIssuer.Email = firstLine[0]
 			}
-			mgr.Email = firstLine[0]
+
 		case 2:
 			certFilename := firstLine[0]
 			keyFilename := firstLine[1]
@@ -143,7 +138,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// https://github.com/caddyserver/caddy/issues/2588 ... but we
 			// must be careful about how we do this; being careless will
 			// lead to failed handshakes
-
+			//
 			// we need to remember which cert files we've seen, since we
 			// must load each cert only once; otherwise, they each get a
 			// different tag... since a cert loaded twice has the same
@@ -152,7 +147,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// policy that is looking for any tag but the last one to be
 			// loaded won't find it, and TLS handshakes will fail (see end)
 			// of issue #3004)
-
+			//
 			// tlsCertTags maps certificate filenames to their tag.
 			// This is used to remember which tag is used for each
 			// certificate files, since we need to avoid loading
@@ -256,29 +251,38 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				if len(arg) != 1 {
 					return nil, h.ArgErr()
 				}
-				mgr.CA = arg[0]
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				acmeIssuer.CA = arg[0]
 
 			// DNS provider for ACME DNS challenge
 			case "dns":
 				if !h.Next() {
 					return nil, h.ArgErr()
 				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
 				provName := h.Val()
-				if mgr.Challenges == nil {
-					mgr.Challenges = new(caddytls.ChallengesConfig)
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 				}
 				dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
 				if err != nil {
 					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
 				}
-				mgr.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
+				acmeIssuer.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
 
 			case "ca_root":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
 					return nil, h.ArgErr()
 				}
-				mgr.TrustedRootsPEMFiles = append(mgr.TrustedRootsPEMFiles, arg[0])
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, arg[0])
 
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
@@ -290,6 +294,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			return nil, h.ArgErr()
 		}
 	}
+
+	// begin building the final config values
+	var configVals []ConfigValue
 
 	// certificate loaders
 	if len(fileLoader) > 0 {
@@ -322,10 +329,30 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	}
 
 	// automation policy
-	if !reflect.DeepEqual(mgr, caddytls.ACMEIssuer{}) {
+	if acmeIssuer != nil && internalIssuer != nil {
+		// the logic to support this would be complex
+		return nil, h.Err("cannot use both ACME and internal issuers in same server block")
+	}
+	if acmeIssuer != nil {
+		// fill in global defaults, if configured
+		if email := h.Option("email"); email != nil && acmeIssuer.Email == "" {
+			acmeIssuer.Email = email.(string)
+		}
+		if acmeCA := h.Option("acme_ca"); acmeCA != nil && acmeIssuer.CA == "" {
+			acmeIssuer.CA = acmeCA.(string)
+		}
+		if caPemFile := h.Option("acme_ca_root"); caPemFile != nil {
+			acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, caPemFile.(string))
+		}
+
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
-			Value: mgr,
+			Value: acmeIssuer,
+		})
+	} else if internalIssuer != nil {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.cert_issuer",
+			Value: internalIssuer,
 		})
 	}
 

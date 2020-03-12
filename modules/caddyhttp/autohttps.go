@@ -129,8 +129,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
-							if certmagic.HostQualifies(d) &&
-								!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
 								serverDomainSet[d] = struct{}{}
 							}
 						}
@@ -160,6 +159,15 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 					)
 					continue
 				}
+
+				// most clients don't accept wildcards like *.tld... we
+				// can handle that, but as a courtesy, warn the user
+				if strings.Contains(d, "*") &&
+					strings.Count(strings.Trim(d, "."), ".") == 1 {
+					app.logger.Warn("most clients do not trust second-level wildcard certificates (*.tld)",
+						zap.String("domain", d))
+				}
+
 				uniqueDomainsForCerts[d] = struct{}{}
 			}
 		}
@@ -231,12 +239,18 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// we now have a list of all the unique names for which we need certs;
 	// turn the set into a slice so that phase 2 can use it
 	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
+	var internal, external []string
 	for d := range uniqueDomainsForCerts {
+		if certmagic.SubjectQualifiesForPublicCert(d) {
+			external = append(external, d)
+		} else {
+			internal = append(internal, d)
+		}
 		app.allCertDomains = append(app.allCertDomains, d)
 	}
 
 	// ensure there is an automation policy to handle these certs
-	err := app.createAutomationPolicy(ctx)
+	err := app.createAutomationPolicies(ctx, external, internal)
 	if err != nil {
 		return err
 	}
@@ -290,23 +304,29 @@ redirRoutesLoop:
 	return nil
 }
 
-// createAutomationPolicy ensures that certificates for this app are
-// managed properly; for example, it's implied that the HTTPPort
-// should also be the port the HTTP challenge is solved on; the same
-// for HTTPS port and TLS-ALPN challenge also. We need to tell the
-// TLS app to manage these certs by honoring those port configurations,
-// so we either find an existing matching automation policy with an
-// ACME issuer, or make a new one and append it.
-func (app *App) createAutomationPolicy(ctx caddy.Context) error {
+// createAutomationPolicy ensures that automated certificates for this
+// app are managed properly. This adds up to two automation policies:
+// one for the public names, and one for the internal names. If a catch-all
+// automation policy exists, it will be shallow-copied and used as the
+// base for the new ones (this is important for preserving behavior the
+// user intends to be "defaults").
+func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, internalNames []string) error {
+	// nothing to do if no names to manage certs for
+	if len(publicNames) == 0 && len(internalNames) == 0 {
+		return nil
+	}
+
+	// start by finding a base policy that the user may have defined
+	// which should, in theory, apply to any policies derived from it;
+	// typically this would be a "catch-all" policy with no host filter
 	var matchingPolicy *caddytls.AutomationPolicy
-	var acmeIssuer *caddytls.ACMEIssuer
 	if app.tlsApp.Automation != nil {
-		// maybe we can find an exisitng one that matches; this is
-		// useful if the user made a single automation policy to
-		// set the CA endpoint to a test/staging endpoint (very
-		// common), but forgot to customize the ports here, while
-		// setting them in the HTTP app instead (I did this too
-		// many times)
+		// if an existing policy matches (specifically, a catch-all policy),
+		// we should inherit from it, because that is what the user expects;
+		// this is very common for user setting a default issuer, with a
+		// custom CA endpoint, for example - whichever one we choose must
+		// have a host list that is a superset of the policy we make...
+		// the policy with no host filter is guaranteed to qualify
 		for _, ap := range app.tlsApp.Automation.Policies {
 			if len(ap.Hosts) == 0 {
 				matchingPolicy = ap
@@ -314,51 +334,78 @@ func (app *App) createAutomationPolicy(ctx caddy.Context) error {
 			}
 		}
 	}
-	if matchingPolicy != nil {
-		// if it has an ACME issuer, maybe we can just use that
-		acmeIssuer, _ = matchingPolicy.Issuer.(*caddytls.ACMEIssuer)
-	}
-	if acmeIssuer == nil {
-		acmeIssuer = new(caddytls.ACMEIssuer)
-	}
-	if acmeIssuer.Challenges == nil {
-		acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
-	}
-	if acmeIssuer.Challenges.HTTP == nil {
-		acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
-	}
-	if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
-		// don't overwrite existing explicit config
-		acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
-	}
-	if acmeIssuer.Challenges.TLSALPN == nil {
-		acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
-	}
-	if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
-		// don't overwrite existing explicit config
-		acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
+	if matchingPolicy == nil {
+		matchingPolicy = new(caddytls.AutomationPolicy)
 	}
 
-	if matchingPolicy == nil {
-		// if there was no matching policy, we'll have to append our own
-		err := app.tlsApp.AddAutomationPolicy(&caddytls.AutomationPolicy{
-			Hosts:  app.allCertDomains,
-			Issuer: acmeIssuer,
-		})
-		if err != nil {
+	// addPolicy adds an automation policy that uses issuer for hosts.
+	addPolicy := func(issuer certmagic.Issuer, hosts []string) error {
+		// shallow-copy the matching policy; we want to inherit
+		// from it, not replace it... this takes two lines to
+		// overrule compiler optimizations
+		policyCopy := *matchingPolicy
+		newPolicy := &policyCopy
+
+		// very important to provision it, since we are
+		// bypassing the JSON-unmarshaling step
+		if prov, ok := issuer.(caddy.Provisioner); ok {
+			err := prov.Provision(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		newPolicy.Issuer = issuer
+		newPolicy.Hosts = hosts
+
+		return app.tlsApp.AddAutomationPolicy(newPolicy)
+	}
+
+	if len(publicNames) > 0 {
+		var acmeIssuer *caddytls.ACMEIssuer
+		// if it has an ACME issuer, maybe we can just use that
+		// TODO: we might need a deep copy here, like a Clone() method on ACMEIssuer...
+		acmeIssuer, _ = matchingPolicy.Issuer.(*caddytls.ACMEIssuer)
+		if acmeIssuer == nil {
+			acmeIssuer = new(caddytls.ACMEIssuer)
+		}
+		if app.HTTPPort > 0 || app.HTTPSPort > 0 {
+			if acmeIssuer.Challenges == nil {
+				acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+			}
+		}
+		if app.HTTPPort > 0 {
+			if acmeIssuer.Challenges.HTTP == nil {
+				acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
+			}
+			// don't overwrite existing explicit config
+			if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
+				acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
+			}
+		}
+		if app.HTTPSPort > 0 {
+			if acmeIssuer.Challenges.TLSALPN == nil {
+				acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
+			}
+			// don't overwrite existing explicit config
+			if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
+				acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
+			}
+		}
+		if err := addPolicy(acmeIssuer, publicNames); err != nil {
 			return err
 		}
-	} else {
-		// if there was an existing matching policy, we need to reprovision
-		// its issuer (because we just changed its port settings and it has
-		// to re-build its stored certmagic config template with the new
-		// values), then re-assign the Issuer pointer on the policy struct
-		// because our type assertion changed the address
-		err := acmeIssuer.Provision(ctx)
-		if err != nil {
+	}
+
+	if len(internalNames) > 0 {
+		internalIssuer := new(caddytls.InternalIssuer)
+		if err := addPolicy(internalIssuer, internalNames); err != nil {
 			return err
 		}
-		matchingPolicy.Issuer = acmeIssuer
+	}
+
+	err := app.tlsApp.Validate()
+	if err != nil {
+		return err
 	}
 
 	return nil

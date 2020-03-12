@@ -48,7 +48,7 @@ type InternalIssuer struct {
 	Lifetime caddy.Duration `json:"lifetime,omitempty"`
 
 	// If true, the root will be the issuer instead of
-	// the intermediate. This is not recommended and should
+	// the intermediate. This is NOT recommended and should
 	// only be used when devices/clients do not properly
 	// validate certificate chains.
 	SignWithRoot bool `json:"sign_with_root,omitempty"`

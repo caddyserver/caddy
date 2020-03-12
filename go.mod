@@ -4,9 +4,9 @@ go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.0.2
-	github.com/alecthomas/chroma v0.7.1
+	github.com/alecthomas/chroma v0.7.2-0.20200305040604-4f3623dce67a
 	github.com/andybalholm/brotli v1.0.0
-	github.com/caddyserver/certmagic v0.10.0
+	github.com/caddyserver/certmagic v0.10.1
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.4.0
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
@@ -24,8 +24,8 @@ require (
 	github.com/smallstep/cli v0.14.0-rc.3
 	github.com/smallstep/truststore v0.9.4
 	github.com/vulcand/oxy v1.0.0
-	github.com/yuin/goldmark v1.1.24
-	github.com/yuin/goldmark-highlighting v0.0.0-20200218065240-d1af22c1126f
+	github.com/yuin/goldmark v1.1.25
+	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.14.0
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
@@ -33,3 +33,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.4.1 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 )
+
+replace github.com/caddyserver/certmagic => ../../certmagic

@@ -68,9 +68,11 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 
 // Start starts the PKI app.
 func (p *PKI) Start() error {
-	// install roots to trust store, if enabled
+	// install roots to trust store, if not disabled
 	for _, ca := range p.CAs {
-		if !ca.InstallTrust {
+		if ca.InstallTrust != nil && !*ca.InstallTrust {
+			ca.log.Warn("root certificate trust store installation disabled; clients will show warnings without intervention",
+				zap.String("path", ca.rootCertPath))
 			continue
 		}
 
@@ -94,7 +96,10 @@ func (p *PKI) Start() error {
 		}
 	}
 
-	// keep root/intermediates renewed
+	// see if root/intermediates need renewal...
+	p.renewCerts()
+
+	// ...and keep them renewed
 	go p.maintenance()
 
 	return nil

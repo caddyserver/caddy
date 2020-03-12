@@ -23,8 +23,6 @@ import (
 )
 
 func (p *PKI) maintenance() {
-	p.renewCerts()
-
 	ticker := time.NewTicker(10 * time.Minute) // TODO: make configurable
 	defer ticker.Stop()
 
@@ -42,7 +40,9 @@ func (p *PKI) renewCerts() {
 	for _, ca := range p.CAs {
 		err := p.renewCertsForCA(ca)
 		if err != nil {
-			p.log.Error("renewing intermediate certificates", zap.Error(err))
+			p.log.Error("renewing intermediate certificates",
+				zap.Error(err),
+				zap.String("ca", ca.id))
 		}
 	}
 }
@@ -51,12 +51,13 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
+	log := p.log.With(zap.String("ca", ca.id))
+
 	// only maintain the root if it's not manually provided in the config
 	if ca.Root == nil {
 		if needsRenewal(ca.root) {
 			// TODO: implement root renewal (use same key)
-			p.log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
-				zap.String("ca", ca.id),
+			log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
 				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
 			)
 		}
@@ -65,8 +66,7 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 	// only maintain the intermediate if it's not manually provided in the config
 	if ca.Intermediate == nil {
 		if needsRenewal(ca.inter) {
-			p.log.Info("intermediate expires soon; renewing",
-				zap.String("ca", ca.id),
+			log.Info("intermediate expires soon; renewing",
 				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
 			)
 
@@ -80,8 +80,7 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 			}
 			ca.inter, ca.interKey = interCert, interKey
 
-			p.log.Info("renewed intermediate",
-				zap.String("ca", ca.id),
+			log.Info("renewed intermediate",
 				zap.Time("new_expiration", ca.inter.NotAfter),
 			)
 		}
