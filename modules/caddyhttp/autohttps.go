@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
@@ -62,11 +61,13 @@ func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
 // even servers to the app, which still need to be set up with the
 // rest of them during provisioning.
 func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) error {
-	// this map will store associations of HTTP listener
-	// addresses to the routes that do HTTP->HTTPS redirects
-	lnAddrRedirRoutes := make(map[string]Route)
-
+	// this map acts as a set to store the domain names
+	// for which we will manage certificates automatically
 	uniqueDomainsForCerts := make(map[string]struct{})
+
+	// this maps domain names for automatic HTTP->HTTPS
+	// redirects to their destination server address
+	redirDomains := make(map[string]caddy.ParsedAddress)
 
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
@@ -188,50 +189,20 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// create HTTP->HTTPS redirects
 		for _, addr := range srv.Listen {
-			netw, host, port, err := caddy.SplitNetworkAddress(addr)
+			// figure out the address we will redirect to...
+			addr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 			}
 
-			if parts := strings.SplitN(port, "-", 2); len(parts) == 2 {
-				port = parts[0]
-			}
-			redirTo := "https://{http.request.host}"
-
-			if port != strconv.Itoa(app.httpsPort()) {
-				redirTo += ":" + port
-			}
-			redirTo += "{http.request.uri}"
-
-			// build the plaintext HTTP variant of this address
-			httpRedirLnAddr := caddy.JoinNetworkAddress(netw, host, strconv.Itoa(app.httpPort()))
-
-			// build the matcher set for this redirect route
-			// (note that we happen to bypass Provision and
-			// Validate steps for these matcher modules)
-			matcherSet := MatcherSet{MatchProtocol("http")}
-			if len(srv.AutoHTTPS.Skip) > 0 {
-				matcherSet = append(matcherSet, MatchNegate{
-					Matchers: MatcherSet{MatchHost(srv.AutoHTTPS.Skip)},
-				})
-			}
-
-			// create the route that does the redirect and associate
-			// it with the listener address it will be served from
-			// (note that we happen to bypass any Provision or Validate
-			// steps on the handler modules created here)
-			lnAddrRedirRoutes[httpRedirLnAddr] = Route{
-				MatcherSets: []MatcherSet{matcherSet},
-				Handlers: []MiddlewareHandler{
-					StaticResponse{
-						StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-						Headers: http.Header{
-							"Location":   []string{redirTo},
-							"Connection": []string{"close"},
-						},
-						Close: true,
-					},
-				},
+			// ...and associate it with each domain in this server
+			for d := range serverDomainSet {
+				// if this domain is used on more than one HTTPS-enabled
+				// port, we'll have to choose one, so prefer the HTTPS port
+				if _, ok := redirDomains[d]; !ok ||
+					addr.StartPort == uint(app.httpsPort()) {
+					redirDomains[d] = addr
+				}
 			}
 		}
 	}
@@ -255,49 +226,142 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		return err
 	}
 
-	// if there are HTTP->HTTPS redirects to add, do so now
-	if len(lnAddrRedirRoutes) == 0 {
+	// we're done if there are no HTTP->HTTPS redirects to add
+	if len(redirDomains) == 0 {
 		return nil
 	}
 
-	var redirServerAddrs []string
+	// we need to reduce the mapping, i.e. group domains by address
+	// since new routes are appended to servers by their address
+	domainsByAddr := make(map[string][]string)
+	for domain, addr := range redirDomains {
+		addrStr := addr.String()
+		domainsByAddr[addrStr] = append(domainsByAddr[addrStr], domain)
+	}
+
+	// these keep track of the redirect server address(es)
+	// and the routes for those servers which actually
+	// respond with the redirects
+	redirServerAddrs := make(map[string]struct{})
 	var redirRoutes RouteList
 
-	// for each redirect listener, see if there's already a
-	// server configured to listen on that exact address; if so,
-	// simply add the redirect route to the end of its route
-	// list; otherwise, we'll create a new server for all the
-	// listener addresses that are unused and serve the
-	// remaining redirects from it
-redirRoutesLoop:
-	for addr, redirRoute := range lnAddrRedirRoutes {
+	redirServers := make(map[string][]Route)
+
+	for addrStr, domains := range domainsByAddr {
+		// build the matcher set for this redirect route
+		// (note that we happen to bypass Provision and
+		// Validate steps for these matcher modules)
+		matcherSet := MatcherSet{
+			MatchProtocol("http"),
+			MatchHost(domains),
+		}
+
+		// build the address to which to redirect
+		addr, err := caddy.ParseNetworkAddress(addrStr)
+		if err != nil {
+			return err
+		}
+		redirTo := "https://{http.request.host}"
+		if addr.StartPort != DefaultHTTPSPort {
+			redirTo += ":" + strconv.Itoa(int(addr.StartPort))
+		}
+		redirTo += "{http.request.uri}"
+
+		// build the route
+		redirRoute := Route{
+			MatcherSets: []MatcherSet{matcherSet},
+			Handlers: []MiddlewareHandler{
+				StaticResponse{
+					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
+					Headers: http.Header{
+						"Location":   []string{redirTo},
+						"Connection": []string{"close"},
+					},
+					Close: true,
+				},
+			},
+		}
+
+		// use the network/host information from the address,
+		// but change the port to the HTTP port then rebuild
+		redirAddr := addr
+		redirAddr.StartPort = uint(app.httpPort())
+		redirAddr.EndPort = redirAddr.StartPort
+		redirAddrStr := redirAddr.String()
+
+		redirServers[redirAddrStr] = append(redirServers[redirAddrStr], redirRoute)
+	}
+
+	// on-demand TLS means that hostnames may be used which are not
+	// explicitly defined in the config, and we still need to redirect
+	// those; so we can append a single catch-all route (notice there
+	// is no Host matcher) after the other redirect routes which will
+	// allow us to handle unexpected/new hostnames... however, it's
+	// not entirely clear what the redirect destination should be,
+	// so I'm going to just hard-code the app's HTTPS port and call
+	// it good for now...
+	appendCatchAll := func(routes []Route) []Route {
+		redirTo := "https://{http.request.host}"
+		if app.httpsPort() != DefaultHTTPSPort {
+			redirTo += ":" + strconv.Itoa(app.httpsPort())
+		}
+		redirTo += "{http.request.uri}"
+		routes = append(routes, Route{
+			MatcherSets: []MatcherSet{MatcherSet{MatchProtocol("http")}},
+			Handlers: []MiddlewareHandler{
+				StaticResponse{
+					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
+					Headers: http.Header{
+						"Location":   []string{redirTo},
+						"Connection": []string{"close"},
+					},
+					Close: true,
+				},
+			},
+		})
+		return routes
+	}
+
+redirServersLoop:
+	for redirServerAddr, routes := range redirServers {
+		// for each redirect listener, see if there's already a
+		// server configured to listen on that exact address; if so,
+		// simply add the redirect route to the end of its route
+		// list; otherwise, we'll create a new server for all the
+		// listener addresses that are unused and serve the
+		// remaining redirects from it
 		for srvName, srv := range app.Servers {
-			if srv.hasListenerAddress(addr) {
+			if srv.hasListenerAddress(redirServerAddr) {
 				// user has configured a server for the same address
 				// that the redirect runs from; simply append our
 				// redirect route to the existing routes, with a
 				// caveat that their config might override ours
-				app.logger.Warn("server is listening on same interface as redirects, so automatic HTTP->HTTPS redirects might be overridden by your own configuration",
+				app.logger.Warn("user server is listening on same interface as automatic HTTP->HTTPS redirects; user-configured routes might override these redirects",
 					zap.String("server_name", srvName),
-					zap.String("interface", addr),
+					zap.String("interface", redirServerAddr),
 				)
-				srv.Routes = append(srv.Routes, redirRoute)
-				continue redirRoutesLoop
+				srv.Routes = append(srv.Routes, appendCatchAll(routes)...)
+				continue redirServersLoop
 			}
 		}
+
 		// no server with this listener address exists;
 		// save this address and route for custom server
-		redirServerAddrs = append(redirServerAddrs, addr)
-		redirRoutes = append(redirRoutes, redirRoute)
+		redirServerAddrs[redirServerAddr] = struct{}{}
+		redirRoutes = append(redirRoutes, routes...)
 	}
 
 	// if there are routes remaining which do not belong
 	// in any existing server, make our own to serve the
 	// rest of the redirects
 	if len(redirServerAddrs) > 0 {
+		redirServerAddrsList := make([]string, 0, len(redirServerAddrs))
+		for a := range redirServerAddrs {
+			redirServerAddrsList = append(redirServerAddrsList, a)
+		}
 		app.Servers["remaining_auto_https_redirects"] = &Server{
-			Listen: redirServerAddrs,
-			Routes: redirRoutes,
+			Listen: redirServerAddrsList,
+			Routes: appendCatchAll(redirRoutes),
 		}
 	}
 
