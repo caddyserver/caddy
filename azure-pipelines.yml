@@ -137,7 +137,6 @@ jobs:
       cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
     continueOnError: false
-    condition: or(eq( variables['Agent.OS'], 'Linux' ),eq( variables['Agent.OS'], 'Darwin' ))
     displayName: Run integration tests
 
   - script: |
