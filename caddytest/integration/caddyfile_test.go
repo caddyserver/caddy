@@ -66,3 +66,26 @@ func TestDuplicateHosts(t *testing.T) {
 		"caddyfile",
 		"duplicate site address not allowed")
 }
+
+func TestDefaultSNI(t *testing.T) {
+
+	// arrange
+	caddytest.InitServer(t, ` 
+  {
+    http_port     9080
+    https_port    9443
+    default_sni   *.caddy.localhost
+  }
+  
+  127.0.0.1:9443 {
+    tls /caddy.localhost.crt /caddy.localhost.key {
+    }
+    respond /version 200 {
+      body "hello from a.caddy.localhost"
+    }	
+  }
+  `, "caddyfile")
+
+	// act and assert
+	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a.caddy.localhost")
+}
