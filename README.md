@@ -62,7 +62,7 @@ Download the `v2` source code:
 $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
 ```
 
-Build:
+Build: ttt
 
 ```bash
 $ cd caddy/cmd/caddy/
