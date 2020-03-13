@@ -25,11 +25,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
-	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -67,7 +65,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	changeHost := fs.Bool("change-host-header")
 
 	if from == "" {
-		from = "localhost:" + httpcaddyfile.DefaultPort
+		from = "localhost:443"
 	}
 
 	// URLs need a scheme in order to parse successfully
@@ -129,11 +127,9 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		}
 	}
 
-	listen := ":80"
+	listen := ":443"
 	if urlPort := fromURL.Port(); urlPort != "" {
 		listen = ":" + urlPort
-	} else if certmagic.HostQualifies(urlHost) {
-		listen = ":443"
 	}
 
 	server := &caddyhttp.Server{

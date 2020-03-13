@@ -1,7 +1,6 @@
 package httpcaddyfile
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -156,15 +155,8 @@ func TestKeyNormalization(t *testing.T) {
 			t.Errorf("Test %d: Parsing address '%s': %v", i, tc.input, err)
 			continue
 		}
-		expect := tc.expect
-		if !caseSensitivePath {
-			// every other part of the address should be lowercased when normalized,
-			// so simply lower-case the whole thing to do case-insensitive comparison
-			// of the path as well
-			expect = strings.ToLower(expect)
-		}
-		if actual := addr.Normalize().Key(); actual != expect {
-			t.Errorf("Test %d: Normalized key for address '%s' was '%s' but expected '%s'", i, tc.input, actual, expect)
+		if actual := addr.Normalize().Key(); actual != tc.expect {
+			t.Errorf("Test %d: Normalized key for address '%s' was '%s' but expected '%s'", i, tc.input, actual, tc.expect)
 		}
 
 	}
