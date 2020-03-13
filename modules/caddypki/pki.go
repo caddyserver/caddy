@@ -71,7 +71,7 @@ func (p *PKI) Start() error {
 	// install roots to trust store, if not disabled
 	for _, ca := range p.CAs {
 		if ca.InstallTrust != nil && !*ca.InstallTrust {
-			ca.log.Warn("root certificate trust store installation disabled; clients will show warnings without intervention",
+			ca.log.Warn("root certificate trust store installation disabled; local clients may show warnings",
 				zap.String("path", ca.rootCertPath))
 			continue
 		}

@@ -12,11 +12,11 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 	github.com/ilibs/json5 v1.0.1
 	github.com/jsternberg/zap-logfmt v1.2.0
-	github.com/klauspost/compress v1.10.2
+	github.com/klauspost/compress v1.10.3
 	github.com/klauspost/cpuid v1.2.3
 	github.com/lucas-clemente/quic-go v0.15.2
 	github.com/manifoldco/promptui v0.7.0 // indirect
-	github.com/miekg/dns v1.1.27 // indirect
+	github.com/miekg/dns v1.1.28 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20200303171503-1e787b591db7
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
@@ -27,7 +27,7 @@ require (
 	github.com/yuin/goldmark v1.1.25
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.14.0
-	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
+	golang.org/x/crypto v0.0.0-20200311171314-f7b00557c8c4
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/square/go-jose.v2 v2.4.1 // indirect
