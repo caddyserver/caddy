@@ -34,7 +34,7 @@ This is the development branch for Caddy 2.
 ### Menu
 
 - [Build from source](#build-from-source)
-	- [Building with plugins](#building-with-plugins)
+	- [Building with plugins](#building-with-plugins-and/or-version-information)
 - [Getting started](#getting-started)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
@@ -73,7 +73,7 @@ That will put a `caddy(.exe)` binary into the current directory.
 
 If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) or Go package cache (`$GOPATH/pkg`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules). If you have issues with Go modules, please consult the Go community for help. But if there is an actual error in Caddy, please report it to us.
 
-### Building with plugins
+### Building with plugins and/or version information
 
 Caddy is extensible with plugins. Plugins are added at compile-time, so all Caddy binaries are static (self-contained) and portable.
 

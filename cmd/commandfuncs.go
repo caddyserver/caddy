@@ -131,7 +131,7 @@ func cmdStart(fl Flags) (int, error) {
 	// when one of the goroutines unblocks, we're done and can exit
 	select {
 	case <-success:
-		fmt.Printf("Successfully started Caddy (pid=%d)\n", cmd.Process.Pid)
+		fmt.Printf("Successfully started Caddy (pid=%d) - Caddy is running in the background\n", cmd.Process.Pid)
 	case err := <-exit:
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("caddy process exited with error: %v", err)

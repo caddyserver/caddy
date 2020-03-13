@@ -40,10 +40,10 @@ demos, and development.
 
 The listener's socket address can be customized with the --listen flag.
 
-If a qualifying hostname is specified with --domain, the default listener
-address will be changed to the HTTPS port and the server will use HTTPS
-if domain validation succeeds. Ensure A/AAAA records are properly
-configured before using this option.
+If a domain name is specified with --domain, the default listener address
+will be changed to the HTTPS port and the server will use HTTPS. If using
+a public domain, ensure A/AAAA records are properly configured before
+using this option.
 
 If --browse is enabled, requests for folders without an index file will
 respond with a file listing.`,
@@ -89,7 +89,11 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		Routes:            caddyhttp.RouteList{route},
 	}
 	if listen == "" {
-		listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
+		if domain == "" {
+			listen = ":80"
+		} else {
+			listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
+		}
 	}
 	server.Listen = []string{listen}
 

@@ -51,7 +51,7 @@ default, all incoming headers are passed through unmodified.)
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("file-server", flag.ExitOnError)
-			fs.String("from", "", "Address on which to receive traffic")
+			fs.String("from", "localhost:443", "Address on which to receive traffic")
 			fs.String("to", "", "Upstream address to which to to proxy traffic")
 			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
 			return fs
