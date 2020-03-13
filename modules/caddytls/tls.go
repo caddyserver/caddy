@@ -175,6 +175,26 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate validates t's configuration.
+func (t *TLS) Validate() error {
+	if t.Automation != nil {
+		// ensure that host aren't repeated; since only the first
+		// automation policy is used, repeating a host in the lists
+		// isn't useful and is probably a mistake
+		// TODO: test this
+		hostSet := make(map[string]int)
+		for i, ap := range t.Automation.Policies {
+			for _, h := range ap.Hosts {
+				if first, ok := hostSet[h]; ok {
+					return fmt.Errorf("automation policy %d: cannot apply more than one automation policy to host: %s (first match in policy %d)", i, h, first)
+				}
+				hostSet[h] = i
+			}
+		}
+	}
+	return nil
+}
+
 // Start activates the TLS module.
 func (t *TLS) Start() error {
 	// now that we are running, and all manual certificates have
@@ -266,7 +286,10 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // AddAutomationPolicy provisions and adds ap to the list of the app's
-// automation policies.
+// automation policies. If an existing automation policy exists that has
+// fewer hosts in its list than ap does, ap will be inserted before that
+// other policy (this helps ensure that ap will be prioritized/chosen
+// over, say, a catch-all policy).
 func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
@@ -275,6 +298,16 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if err != nil {
 		return err
 	}
+	for i, other := range t.Automation.Policies {
+		// if a catch-all policy (or really, any policy with
+		// fewer names) exists, prioritize this new policy
+		if len(other.Hosts) < len(ap.Hosts) {
+			t.Automation.Policies = append(t.Automation.Policies[:i],
+				append([]*AutomationPolicy{ap}, t.Automation.Policies[i+1:]...)...)
+			return nil
+		}
+	}
+	// otherwise just append the new one
 	t.Automation.Policies = append(t.Automation.Policies, ap)
 	return nil
 }
@@ -444,6 +477,7 @@ type AutomationPolicy struct {
 	// obtaining or renewing certificates. This is often
 	// not desirable, especially when serving sites out
 	// of your control. Default: false
+	// TODO: is this really necessary per-policy? why not a global setting...
 	ManageSync bool `json:"manage_sync,omitempty"`
 
 	Issuer certmagic.Issuer `json:"-"`
@@ -510,8 +544,7 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 		OnDemand:           ond,
 		Storage:            storage,
 	}
-	cfg := certmagic.New(tlsApp.certCache, template)
-	ap.magic = cfg
+	ap.magic = certmagic.New(tlsApp.certCache, template)
 
 	if ap.IssuerRaw != nil {
 		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
@@ -527,12 +560,12 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 	// ACME challenges -- it's an annoying, inelegant circular
 	// dependency that I don't know how to resolve nicely!)
 	if configger, ok := ap.Issuer.(ConfigSetter); ok {
-		configger.SetConfig(cfg)
+		configger.SetConfig(ap.magic)
 	}
 
-	cfg.Issuer = ap.Issuer
+	ap.magic.Issuer = ap.Issuer
 	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
-		cfg.Revoker = rev
+		ap.magic.Revoker = rev
 	}
 
 	return nil
@@ -789,3 +822,10 @@ func (t *TLS) moveCertificates() error {
 
 	return nil
 }
+
+// Interface guards
+var (
+	_ caddy.Provisioner = (*TLS)(nil)
+	_ caddy.Validator   = (*TLS)(nil)
+	_ caddy.App         = (*TLS)(nil)
+)

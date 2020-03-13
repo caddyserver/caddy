@@ -172,20 +172,14 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		httpsPort = strconv.Itoa(hsport.(int))
 	}
 
-	lnPort := DefaultPort
+	// default port is the HTTPS port
+	lnPort := httpsPort
 	if addr.Port != "" {
 		// port explicitly defined
 		lnPort = addr.Port
-	} else if addr.Scheme != "" {
+	} else if addr.Scheme == "http" {
 		// port inferred from scheme
-		if addr.Scheme == "http" {
-			lnPort = httpPort
-		} else if addr.Scheme == "https" {
-			lnPort = httpsPort
-		}
-	} else if certmagic.HostQualifies(addr.Host) {
-		// automatic HTTPS
-		lnPort = httpsPort
+		lnPort = httpPort
 	}
 
 	// error if scheme and port combination violate convention
@@ -213,7 +207,6 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	for lnStr := range listeners {
 		listenersList = append(listenersList, lnStr)
 	}
-	// sort.Strings(listenersList) // TODO: is sorting necessary?
 
 	return listenersList, nil
 }
@@ -317,9 +310,6 @@ func (a Address) String() string {
 // Normalize returns a normalized version of a.
 func (a Address) Normalize() Address {
 	path := a.Path
-	if !caseSensitivePath {
-		path = strings.ToLower(path)
-	}
 
 	// ensure host is normalized if it's an IP address
 	host := a.Host
@@ -357,10 +347,3 @@ func (a Address) Key() string {
 	}
 	return res
 }
-
-const (
-	// DefaultPort is the default port to use.
-	DefaultPort = "2015"
-
-	caseSensitivePath = false // TODO: Used?
-)

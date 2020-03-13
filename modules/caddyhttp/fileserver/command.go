@@ -23,7 +23,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/certmagic"
@@ -90,11 +89,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		Routes:            caddyhttp.RouteList{route},
 	}
 	if listen == "" {
-		if certmagic.HostQualifies(domain) {
-			listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
-		} else {
-			listen = ":" + httpcaddyfile.DefaultPort
-		}
+		listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
 	}
 	server.Listen = []string{listen}
 
