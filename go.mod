@@ -33,5 +33,3 @@ require (
 	gopkg.in/square/go-jose.v2 v2.4.1 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 )
-
-replace github.com/caddyserver/certmagic => ../../certmagic
