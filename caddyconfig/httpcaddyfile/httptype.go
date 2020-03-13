@@ -185,10 +185,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	for _, p := range pairings {
 		for i, sblock := range p.serverBlocks {
 			// tls automation policies
-			if mmVals, ok := sblock.pile["tls.cert_issuer"]; ok {
-				for _, mmVal := range mmVals {
-					mm := mmVal.Value.(certmagic.Issuer)
-					sblockHosts, err := st.autoHTTPSHosts(sblock)
+			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
+				for _, issuerVal := range issuerVals {
+					issuer := issuerVal.Value.(certmagic.Issuer)
+					sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block)
 					if err != nil {
 						return nil, warnings, err
 					}
@@ -198,7 +198,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
 							Hosts:     sblockHosts,
-							IssuerRaw: caddyconfig.JSONModuleObject(mm, "module", mm.(caddy.Module).CaddyModule().ID.Name(), &warnings),
+							IssuerRaw: caddyconfig.JSONModuleObject(issuer, "module", issuer.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
 					} else {
 						warnings = append(warnings, caddyconfig.Warning{
@@ -501,16 +501,13 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// tls: connection policies and toggle auto HTTPS
-			autoHTTPSQualifiedHosts, err := st.autoHTTPSHosts(sblock)
-			if err != nil {
-				return nil, err
-			}
-			if _, ok := sblock.pile["tls.off"]; ok && len(autoHTTPSQualifiedHosts) > 0 {
+			if _, ok := sblock.pile["tls.off"]; ok {
+				// TODO: right now, no directives yield any tls.off value...
 				// tls off: disable TLS (and automatic HTTPS) for server block's names
 				if srv.AutoHTTPS == nil {
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 				}
-				srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, autoHTTPSQualifiedHosts...)
+				srv.AutoHTTPS.Disabled = true
 			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
 
@@ -742,25 +739,10 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 	return subroute, nil
 }
 
-func (st ServerType) autoHTTPSHosts(sb serverBlock) ([]string, error) {
-	// get the hosts for this server block...
-	hosts, err := st.hostsFromServerBlockKeys(sb.block)
-	if err != nil {
-		return nil, err
-	}
-	// ...and of those, which ones qualify for auto HTTPS
-	var autoHTTPSQualifiedHosts []string
-	for _, h := range hosts {
-		if certmagic.HostQualifies(h) {
-			autoHTTPSQualifiedHosts = append(autoHTTPSQualifiedHosts, h)
-		}
-	}
-	return autoHTTPSQualifiedHosts, nil
-}
-
 // consolidateRoutes combines routes with the same properties
 // (same matchers, same Terminal and Group settings) for a
 // cleaner overall output.
+// FIXME: See caddyserver/caddy#3108
 func consolidateRoutes(routes caddyhttp.RouteList) caddyhttp.RouteList {
 	for i := 0; i < len(routes)-1; i++ {
 		if reflect.DeepEqual(routes[i].MatcherSetsRaw, routes[i+1].MatcherSetsRaw) &&

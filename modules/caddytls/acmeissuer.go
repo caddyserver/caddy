@@ -145,7 +145,7 @@ func (m *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 }
 
 // PreCheck implements the certmagic.PreChecker interface.
-func (m *ACMEIssuer) PreCheck(names []string, interactive bool) (skip bool, err error) {
+func (m *ACMEIssuer) PreCheck(names []string, interactive bool) error {
 	return certmagic.NewACMEManager(m.magic, m.template).PreCheck(names, interactive)
 }
 
@@ -200,8 +200,9 @@ type DNSProviderMaker interface {
 
 // Interface guards
 var (
+	_ certmagic.PreChecker = (*ACMEIssuer)(nil)
 	_ certmagic.Issuer     = (*ACMEIssuer)(nil)
 	_ certmagic.Revoker    = (*ACMEIssuer)(nil)
-	_ certmagic.PreChecker = (*ACMEIssuer)(nil)
+	_ caddy.Provisioner    = (*ACMEIssuer)(nil)
 	_ ConfigSetter         = (*ACMEIssuer)(nil)
 )

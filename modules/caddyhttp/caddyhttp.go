@@ -286,8 +286,8 @@ func (app *App) Start() error {
 				}
 
 				// enable TLS if there is a policy and if this is not the HTTP port
-				if len(srv.TLSConnPolicies) > 0 &&
-					int(listenAddr.StartPort+portOffset) != app.httpPort() {
+				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
+				if useTLS {
 					// create TLS listener
 					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)
@@ -316,6 +316,12 @@ func (app *App) Start() error {
 					}
 					/////////
 				}
+
+				app.logger.Debug("starting server loop",
+					zap.String("address", lnAddr),
+					zap.Bool("http3", srv.ExperimentalHTTP3),
+					zap.Bool("tls", useTLS),
+				)
 
 				go s.Serve(ln)
 				app.servers = append(app.servers, s)
