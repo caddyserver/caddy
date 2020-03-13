@@ -137,7 +137,7 @@ jobs:
       cmd/caddy/caddy stop
     workingDirectory: '$(modulePath)'
     continueOnError: false
-    displayName: Run integration tests
+    displayName: Run Integration tests
 
   - script: |
       mkdir coverage
