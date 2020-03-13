@@ -450,6 +450,8 @@ func (st *ServerType) serversFromPairings(
 ) (map[string]*caddyhttp.Server, error) {
 	servers := make(map[string]*caddyhttp.Server)
 
+	defaultSNI := tryString(options["default_sni"], warnings)
+
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
@@ -499,7 +501,6 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// tls: connection policies and toggle auto HTTPS
-			defaultSNI := tryString(options["default_sni"], warnings)
 			if _, ok := sblock.pile["tls.off"]; ok {
 				// TODO: right now, no directives yield any tls.off value...
 				// tls off: disable TLS (and automatic HTTPS) for server block's names
@@ -614,7 +615,7 @@ func (st *ServerType) serversFromPairings(
 		// important that it goes at the end) - see issue #3004:
 		// https://github.com/caddyserver/caddy/issues/3004
 		if len(srv.TLSConnPolicies) > 0 && !hasCatchAllTLSConnPolicy {
-			srv.TLSConnPolicies = append(srv.TLSConnPolicies, new(caddytls.ConnectionPolicy))
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
 		srv.Routes = consolidateRoutes(srv.Routes)
