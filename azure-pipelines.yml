@@ -131,6 +131,15 @@ jobs:
     displayName: Run tests
 
   - script: |
+      set -e
+      cmd/caddy/caddy start
+      go test -v -count=1 ./caddytest/...
+      cmd/caddy/caddy stop
+    workingDirectory: '$(modulePath)'
+    continueOnError: false
+    displayName: Run Integration tests
+
+  - script: |
       mkdir coverage
       gocov convert cover-profile.out > coverage/coverage.json
       # Because Windows doesn't work with input redirection like *nix, but output redirection works.
