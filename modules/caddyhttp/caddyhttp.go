@@ -29,7 +29,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 )
@@ -113,10 +112,6 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
-	// DefaultSNI if set configures all certificate lookups to fallback to use
-	// this SNI name if a more specific certificate could not be found
-	DefaultSNI string `json:"default_sni,omitempty"`
-
 	servers     []*http.Server
 	h3servers   []*http3.Server
 	h3listeners []net.PacketConn
@@ -149,8 +144,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.logger = ctx.Logger(app)
 
 	repl := caddy.NewReplacer()
-
-	certmagic.Default.DefaultServerName = app.DefaultSNI
 
 	// this provisions the matchers for each route,
 	// and prepares auto HTTP->HTTPS redirects, and
@@ -278,13 +271,6 @@ func (app *App) Start() error {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}
 
-				// enable HTTP/2 by default
-				for _, pol := range srv.TLSConnPolicies {
-					if len(pol.ALPN) == 0 {
-						pol.ALPN = append(pol.ALPN, defaultALPN...)
-					}
-				}
-
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
@@ -396,8 +382,6 @@ func (app *App) httpsPort() int {
 	}
 	return app.HTTPSPort
 }
-
-var defaultALPN = []string{"h2", "http/1.1"}
 
 // RequestMatcher is a type that can match to a request.
 // A route matcher MUST NOT modify the request, with the

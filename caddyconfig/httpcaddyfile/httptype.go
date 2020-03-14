@@ -84,12 +84,11 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			"{method}", "{http.request.method}",
 			"{path}", "{http.request.uri.path}",
 			"{query}", "{http.request.uri.query}",
+			"{remote}", "{http.request.remote}",
 			"{remote_host}", "{http.request.remote.host}",
 			"{remote_port}", "{http.request.remote.port}",
-			"{remote}", "{http.request.remote}",
 			"{scheme}", "{http.request.scheme}",
 			"{uri}", "{http.request.uri}",
-
 			"{tls_cipher}", "{http.request.tls.cipher_suite}",
 			"{tls_version}", "{http.request.tls.version}",
 			"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
@@ -173,10 +172,9 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:   tryInt(options["http_port"], &warnings),
-		HTTPSPort:  tryInt(options["https_port"], &warnings),
-		DefaultSNI: tryString(options["default_sni"], &warnings),
-		Servers:    servers,
+		HTTPPort:  tryInt(options["http_port"], &warnings),
+		HTTPSPort: tryInt(options["https_port"], &warnings),
+		Servers:   servers,
 	}
 
 	// now for the TLS app! (TODO: refactor into own func)
@@ -449,7 +447,6 @@ func (st *ServerType) serversFromPairings(
 	groupCounter counter,
 ) (map[string]*caddyhttp.Server, error) {
 	servers := make(map[string]*caddyhttp.Server)
-
 	defaultSNI := tryString(options["default_sni"], warnings)
 
 	for i, p := range pairings {
@@ -538,12 +535,7 @@ func (st *ServerType) serversFromPairings(
 
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
-				// TODO: consolidate equal conn policies
-			} else if defaultSNI != "" {
-				hasCatchAllTLSConnPolicy = true
-				srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{
-					DefaultSNI: defaultSNI,
-				})
+				// TODO: consolidate equal conn policies?
 			}
 
 			// exclude any hosts that were defined explicitly with
@@ -614,7 +606,7 @@ func (st *ServerType) serversFromPairings(
 		// catch-all/default policy if there isn't one already (it's
 		// important that it goes at the end) - see issue #3004:
 		// https://github.com/caddyserver/caddy/issues/3004
-		if len(srv.TLSConnPolicies) > 0 && !hasCatchAllTLSConnPolicy {
+		if !hasCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 

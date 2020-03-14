@@ -144,6 +144,10 @@ func (m *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 	m.magic = cfg
 }
 
+// TODO: I kind of hate how each call to these methods needs to
+// make a new ACME manager to fill in defaults before using; can
+// we find the right place to do that just once and then re-use?
+
 // PreCheck implements the certmagic.PreChecker interface.
 func (m *ACMEIssuer) PreCheck(names []string, interactive bool) error {
 	return certmagic.NewACMEManager(m.magic, m.template).PreCheck(names, interactive)
@@ -156,7 +160,7 @@ func (m *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (m *ACMEIssuer) IssuerKey() string {
-	return m.template.IssuerKey() // does not need storage and cache
+	return certmagic.NewACMEManager(m.magic, m.template).IssuerKey()
 }
 
 // Revoke revokes the given certificate.

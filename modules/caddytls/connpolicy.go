@@ -55,6 +55,11 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			cp[i].certSelector = val.(certmagic.CertificateSelector)
 		}
 
+		// enable HTTP/2 by default
+		if len(pol.ALPN) == 0 {
+			pol.ALPN = append(pol.ALPN, defaultALPN...)
+		}
+
 		// pre-build standard TLS config so we don't have to at handshake-time
 		err = pol.buildStandardTLSConfig(ctx)
 		if err != nil {
@@ -452,3 +457,5 @@ func (a *PublicKeyAlgorithm) UnmarshalJSON(b []byte) error {
 type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
 }
+
+var defaultALPN = []string{"h2", "http/1.1"}
