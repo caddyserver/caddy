@@ -181,7 +181,6 @@ func (t *TLS) Validate() error {
 		// ensure that host aren't repeated; since only the first
 		// automation policy is used, repeating a host in the lists
 		// isn't useful and is probably a mistake
-		// TODO: test this
 		hostSet := make(map[string]int)
 		for i, ap := range t.Automation.Policies {
 			for _, h := range ap.Hosts {
@@ -279,8 +278,8 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	if ap.magic.Issuer == nil {
 		return false
 	}
-	if am, ok := ap.magic.Issuer.(*certmagic.ACMEManager); ok {
-		return am.HandleHTTPChallenge(w, r)
+	if am, ok := ap.magic.Issuer.(*ACMEIssuer); ok {
+		return certmagic.NewACMEManager(am.magic, am.template).HandleHTTPChallenge(w, r)
 	}
 	return false
 }
@@ -709,7 +708,7 @@ const automateKey = "automate"
 // (beta 16 changed the storage path for certificates),
 // after which this function can be deleted
 func (t *TLS) moveCertificates() error {
-	log := t.logger.Named("automigrate")
+	logger := t.logger.Named("automigrate")
 
 	baseDir := caddy.AppDataDir()
 
@@ -760,7 +759,7 @@ func (t *TLS) moveCertificates() error {
 		}
 
 		if len(oldAcmeSites) > 0 {
-			log.Warn("certificate storage path has changed; attempting one-time auto-migration",
+			logger.Warn("certificate storage path has changed; attempting one-time auto-migration",
 				zap.String("old_folder", oldAcmeSitesDir),
 				zap.String("new_folder", newBaseDir),
 				zap.String("details", "https://github.com/caddyserver/caddy/issues/2955"))
@@ -775,13 +774,13 @@ func (t *TLS) moveCertificates() error {
 			// move the folder
 			oldPath := filepath.Join(oldAcmeSitesDir, siteInfo.Name())
 			newPath := filepath.Join(newBaseDir, siteInfo.Name())
-			log.Info("moving certificate assets",
+			logger.Info("moving certificate assets",
 				zap.String("ca", oldCA),
 				zap.String("site", siteInfo.Name()),
 				zap.String("destination", newPath))
 			err = os.Rename(oldPath, newPath)
 			if err != nil {
-				log.Error("failed moving site to new path; skipping",
+				logger.Error("failed moving site to new path; skipping",
 					zap.String("old_path", oldPath),
 					zap.String("new_path", newPath),
 					zap.Error(err))
@@ -792,7 +791,7 @@ func (t *TLS) moveCertificates() error {
 			metaFilePath := filepath.Join(newPath, siteInfo.Name()+".json")
 			metaContents, err := ioutil.ReadFile(metaFilePath)
 			if err != nil {
-				log.Error("could not read metadata file",
+				logger.Error("could not read metadata file",
 					zap.String("filename", metaFilePath),
 					zap.Error(err))
 				continue
@@ -806,12 +805,12 @@ func (t *TLS) moveCertificates() error {
 			}
 			newMeta, err := json.MarshalIndent(cr, "", "\t")
 			if err != nil {
-				log.Error("encoding new metadata file", zap.Error(err))
+				logger.Error("encoding new metadata file", zap.Error(err))
 				continue
 			}
 			err = ioutil.WriteFile(metaFilePath, newMeta, 0600)
 			if err != nil {
-				log.Error("writing new metadata file", zap.Error(err))
+				logger.Error("writing new metadata file", zap.Error(err))
 				continue
 			}
 		}

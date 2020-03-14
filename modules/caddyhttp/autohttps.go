@@ -101,10 +101,6 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			continue
 		}
 
-		defaultConnPolicies := caddytls.ConnectionPolicies{
-			&caddytls.ConnectionPolicy{ALPN: defaultALPN},
-		}
-
 		// if all listeners are on the HTTPS port, make sure
 		// there is at least one TLS connection policy; it
 		// should be obvious that they want to use TLS without
@@ -115,7 +111,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				zap.String("server_name", srvName),
 				zap.Int("https_port", app.httpsPort()),
 			)
-			srv.TLSConnPolicies = defaultConnPolicies
+			srv.TLSConnPolicies = caddytls.ConnectionPolicies{new(caddytls.ConnectionPolicy)}
 		}
 
 		// find all qualifying domain names (deduplicated) in this server
@@ -149,7 +145,8 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		// for all the hostnames we found, filter them so we have
 		// a deduplicated list of names for which to obtain certs
 		for d := range serverDomainSet {
-			if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+			if certmagic.SubjectQualifiesForCert(d) &&
+				!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
 				// if a certificate for this name is already loaded,
 				// don't obtain another one for it, unless we are
 				// supposed to ignore loaded certificates
@@ -176,7 +173,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// tell the server to use TLS if it is not already doing so
 		if srv.TLSConnPolicies == nil {
-			srv.TLSConnPolicies = defaultConnPolicies
+			srv.TLSConnPolicies = caddytls.ConnectionPolicies{new(caddytls.ConnectionPolicy)}
 		}
 
 		// nothing left to do if auto redirects are disabled
@@ -212,13 +209,33 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// turn the set into a slice so that phase 2 can use it
 	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
 	var internal, external []string
+uniqueDomainsLoop:
 	for d := range uniqueDomainsForCerts {
+		// whether or not there is already an automation policy for this
+		// name, we should add it to the list to manage a cert for it
+		app.allCertDomains = append(app.allCertDomains, d)
+
+		// some names we've found might already have automation policies
+		// explicitly specified for them; we should exclude those from
+		// our hidden/implicit policy, since applying a name to more than
+		// one automation policy  would be confusing and an error
+		if app.tlsApp.Automation != nil {
+			for _, ap := range app.tlsApp.Automation.Policies {
+				for _, apHost := range ap.Hosts {
+					if apHost == d {
+						continue uniqueDomainsLoop
+					}
+				}
+			}
+		}
+
+		// if no automation policy exists for the name yet, we
+		// will associate it with an implicit one
 		if certmagic.SubjectQualifiesForPublicCert(d) {
 			external = append(external, d)
 		} else {
 			internal = append(internal, d)
 		}
-		app.allCertDomains = append(app.allCertDomains, d)
 	}
 
 	// ensure there is an automation policy to handle these certs
@@ -263,7 +280,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			return err
 		}
 		redirTo := "https://{http.request.host}"
-		if addr.StartPort != DefaultHTTPSPort {
+		if addr.StartPort != uint(app.httpsPort()) {
 			redirTo += ":" + strconv.Itoa(int(addr.StartPort))
 		}
 		redirTo += "{http.request.uri}"
@@ -384,23 +401,23 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 	// start by finding a base policy that the user may have defined
 	// which should, in theory, apply to any policies derived from it;
 	// typically this would be a "catch-all" policy with no host filter
-	var matchingPolicy *caddytls.AutomationPolicy
+	var basePolicy *caddytls.AutomationPolicy
 	if app.tlsApp.Automation != nil {
-		// if an existing policy matches (specifically, a catch-all policy),
-		// we should inherit from it, because that is what the user expects;
-		// this is very common for user setting a default issuer, with a
-		// custom CA endpoint, for example - whichever one we choose must
-		// have a host list that is a superset of the policy we make...
-		// the policy with no host filter is guaranteed to qualify
 		for _, ap := range app.tlsApp.Automation.Policies {
+			// if an existing policy matches (specifically, a catch-all policy),
+			// we should inherit from it, because that is what the user expects;
+			// this is very common for user setting a default issuer, with a
+			// custom CA endpoint, for example - whichever one we choose must
+			// have a host list that is a superset of the policy we make...
+			// the policy with no host filter is guaranteed to qualify
 			if len(ap.Hosts) == 0 {
-				matchingPolicy = ap
+				basePolicy = ap
 				break
 			}
 		}
 	}
-	if matchingPolicy == nil {
-		matchingPolicy = new(caddytls.AutomationPolicy)
+	if basePolicy == nil {
+		basePolicy = new(caddytls.AutomationPolicy)
 	}
 
 	// addPolicy adds an automation policy that uses issuer for hosts.
@@ -408,7 +425,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		// shallow-copy the matching policy; we want to inherit
 		// from it, not replace it... this takes two lines to
 		// overrule compiler optimizations
-		policyCopy := *matchingPolicy
+		policyCopy := *basePolicy
 		newPolicy := &policyCopy
 
 		// very important to provision it, since we are
@@ -429,7 +446,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		var acmeIssuer *caddytls.ACMEIssuer
 		// if it has an ACME issuer, maybe we can just use that
 		// TODO: we might need a deep copy here, like a Clone() method on ACMEIssuer...
-		acmeIssuer, _ = matchingPolicy.Issuer.(*caddytls.ACMEIssuer)
+		acmeIssuer, _ = basePolicy.Issuer.(*caddytls.ACMEIssuer)
 		if acmeIssuer == nil {
 			acmeIssuer = new(caddytls.ACMEIssuer)
 		}
