@@ -92,7 +92,11 @@ func (p *PKI) Start() error {
 			truststore.WithJava(),
 		)
 		if err != nil {
-			return fmt.Errorf("adding root certificate to trust store: %v", err)
+			// could be some system dependencies that are missing;
+			// shouldn't totally prevent startup, but we should log it
+			p.log.Error("failed to install root certificate",
+				zap.Error(err),
+				zap.String("certificate_file", ca.rootCertPath))
 		}
 	}
 
