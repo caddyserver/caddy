@@ -21,7 +21,6 @@ import (
 	"expvar"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -33,7 +32,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"go.uber.org/zap"
 )
 
@@ -115,7 +113,6 @@ func (admin AdminConfig) newAdminHandler(listenAddr string) adminHandler {
 	}
 
 	// register standard config control endpoints
-	addRoute("/load", AdminHandlerFunc(handleLoad))
 	addRoute("/"+rawConfigKey+"/", AdminHandlerFunc(handleConfig))
 	addRoute("/id/", AdminHandlerFunc(handleConfigID))
 	addRoute("/stop", AdminHandlerFunc(handleStop))
@@ -405,86 +402,6 @@ func (h adminHandler) originAllowed(origin string) bool {
 		}
 	}
 	return false
-}
-
-func handleLoad(w http.ResponseWriter, r *http.Request) error {
-	if r.Method != http.MethodPost {
-		return APIError{
-			Code: http.StatusMethodNotAllowed,
-			Err:  fmt.Errorf("method not allowed"),
-		}
-	}
-
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufPool.Put(buf)
-
-	_, err := io.Copy(buf, r.Body)
-	if err != nil {
-		return APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("reading request body: %v", err),
-		}
-	}
-	body := buf.Bytes()
-
-	// if the config is formatted other than Caddy's native
-	// JSON, we need to adapt it before loading it
-	if ctHeader := r.Header.Get("Content-Type"); ctHeader != "" {
-		ct, _, err := mime.ParseMediaType(ctHeader)
-		if err != nil {
-			return APIError{
-				Code: http.StatusBadRequest,
-				Err:  fmt.Errorf("invalid Content-Type: %v", err),
-			}
-		}
-		if !strings.HasSuffix(ct, "/json") {
-			slashIdx := strings.Index(ct, "/")
-			if slashIdx < 0 {
-				return APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("malformed Content-Type"),
-				}
-			}
-			adapterName := ct[slashIdx+1:]
-			cfgAdapter := caddyconfig.GetAdapter(adapterName)
-			if cfgAdapter == nil {
-				return APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("unrecognized config adapter '%s'", adapterName),
-				}
-			}
-			result, warnings, err := cfgAdapter.Adapt(body, nil)
-			if err != nil {
-				return APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("adapting config using %s adapter: %v", adapterName, err),
-				}
-			}
-			if len(warnings) > 0 {
-				respBody, err := json.Marshal(warnings)
-				if err != nil {
-					Log().Named("admin.api.load").Error(err.Error())
-				}
-				w.Write(respBody)
-			}
-			body = result
-		}
-	}
-
-	forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
-
-	err = Load(body, forceReload)
-	if err != nil {
-		return APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("loading config: %v", err),
-		}
-	}
-
-	Log().Named("admin.api").Info("load complete")
-
-	return nil
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
