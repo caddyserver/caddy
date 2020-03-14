@@ -208,7 +208,7 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expectedBody string) (*http.Response, string) {
 	resp, body := AssertGetResponseBody(t, requestURI, statusCode)
 	if !strings.Contains(body, expectedBody) {
-		t.Errorf("expected response body \"%s\" but got \"%s\"", expectedBody, body)
+		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", requestURI, expectedBody, body)
 	}
 	return resp, string(body)
 }
@@ -229,7 +229,7 @@ func AssertGetResponseBody(t *testing.T, requestURI string, expectedStatusCode i
 	defer resp.Body.Close()
 
 	if expectedStatusCode != resp.StatusCode {
-		t.Errorf("expected status code: %d but got %d", expectedStatusCode, resp.StatusCode)
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -260,12 +260,12 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 	}
 
 	if expectedStatusCode != resp.StatusCode {
-		t.Errorf("expected status code: %d but got %d", expectedStatusCode, resp.StatusCode)
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
 	}
 
 	loc, err := resp.Location()
 	if expectedToLocation != loc.String() {
-		t.Errorf("expected location: \"%s\" but got \"%s\"", expectedToLocation, loc.String())
+		t.Errorf("requesting \"%s\" expected location: \"%s\" but got \"%s\"", requestURI, expectedToLocation, loc.String())
 	}
 
 	return resp

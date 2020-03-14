@@ -519,10 +519,10 @@ func (st *ServerType) serversFromPairings(
 					for _, h := range hosts {
 						if h == defaultSNI {
 							hosts = append(hosts, "")
-							cp.DefaultSNI = defaultSNI
 							break
 						}
 					}
+					cp.DefaultSNI = defaultSNI
 
 					// TODO: are matchers needed if every hostname of the resulting config is matched?
 					if len(hosts) > 0 {
