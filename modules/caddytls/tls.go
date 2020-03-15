@@ -479,6 +479,9 @@ type AutomationPolicy struct {
 	// TODO: is this really necessary per-policy? why not a global setting...
 	ManageSync bool `json:"manage_sync,omitempty"`
 
+	// Issuer stores the decoded issuer parameters. This is only
+	// used to populate an underlying certmagic.Config's Issuer
+	// field; it is not referenced thereafter.
 	Issuer certmagic.Issuer `json:"-"`
 
 	magic   *certmagic.Config
@@ -527,6 +530,14 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 		}
 	}
 
+	if ap.IssuerRaw != nil {
+		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
+		if err != nil {
+			return fmt.Errorf("loading TLS automation management module: %s", err)
+		}
+		ap.Issuer = val.(certmagic.Issuer)
+	}
+
 	keySource := certmagic.StandardKeyGenerator{
 		KeyType: supportedCertKeyTypes[ap.KeyType],
 	}
@@ -542,16 +553,12 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 		KeySource:          keySource,
 		OnDemand:           ond,
 		Storage:            storage,
+		Issuer:             ap.Issuer, // if nil, certmagic.New() will set default in returned Config
+	}
+	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
+		template.Revoker = rev
 	}
 	ap.magic = certmagic.New(tlsApp.certCache, template)
-
-	if ap.IssuerRaw != nil {
-		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
-		if err != nil {
-			return fmt.Errorf("loading TLS automation management module: %s", err)
-		}
-		ap.Issuer = val.(certmagic.Issuer)
-	}
 
 	// sometimes issuers may need the parent certmagic.Config in
 	// order to function properly (for example, ACMEIssuer needs
@@ -560,11 +567,6 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 	// dependency that I don't know how to resolve nicely!)
 	if configger, ok := ap.Issuer.(ConfigSetter); ok {
 		configger.SetConfig(ap.magic)
-	}
-
-	ap.magic.Issuer = ap.Issuer
-	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
-		ap.magic.Revoker = rev
 	}
 
 	return nil
