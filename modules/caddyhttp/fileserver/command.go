@@ -25,6 +25,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	caddytpl "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"github.com/caddyserver/certmagic"
 )
 
@@ -52,7 +53,8 @@ respond with a file listing.`,
 			fs.String("domain", "", "Domain name at which to serve the files")
 			fs.String("root", "", "The path to the root of the site")
 			fs.String("listen", "", "The address to which to bind the listener")
-			fs.Bool("browse", false, "Whether to enable directory browsing")
+			fs.Bool("browse", false, "Enable directory browsing")
+			fs.Bool("templates", false, "Enable template rendering")
 			return fs
 		}(),
 	})
@@ -63,17 +65,24 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	root := fs.String("root")
 	listen := fs.String("listen")
 	browse := fs.Bool("browse")
+	templates := fs.Bool("templates")
+
+	var handlers []json.RawMessage
+
+	if templates {
+		handler := caddytpl.Templates{FileRoot: root}
+		handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "templates", nil))
+	}
 
 	handler := FileServer{Root: root}
 	if browse {
 		handler.Browse = new(Browse)
 	}
 
-	route := caddyhttp.Route{
-		HandlersRaw: []json.RawMessage{
-			caddyconfig.JSONModuleObject(handler, "handler", "file_server", nil),
-		},
-	}
+	handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "file_server", nil))
+
+	route := caddyhttp.Route{HandlersRaw: handlers}
+
 	if domain != "" {
 		route.MatcherSetsRaw = []caddy.ModuleMap{
 			caddy.ModuleMap{
