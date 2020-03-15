@@ -78,8 +78,7 @@ func TestDefaultSNI(t *testing.T) {
   }
   
   127.0.0.1:9443 {
-    tls /caddy.localhost.crt /caddy.localhost.key {
-    }
+    tls /caddy.localhost.crt /caddy.localhost.key
     respond /version 200 {
       body "hello from a.caddy.localhost"
     }	
@@ -101,8 +100,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
   }
   
   a.caddy.localhost:9443, 127.0.0.1:9443 {
-    tls /a.caddy.localhost.crt /a.caddy.localhost.key {
-    }
+    tls /a.caddy.localhost.crt /a.caddy.localhost.key
     respond /version 200 {
       body "hello from a.caddy.localhost"
     }	
@@ -116,7 +114,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 }
 
 // NB: this fails and I dont think it should
-func xTestDefaultSNIWithNamedHostOnly(t *testing.T) {
+func TestDefaultSNIWithNamedHostOnly(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -127,21 +125,21 @@ func xTestDefaultSNIWithNamedHostOnly(t *testing.T) {
   }
   
   a.caddy.localhost:9443 {
-    tls /a.caddy.localhost.crt /a.caddy.localhost.key {
-    }
+    tls /a.caddy.localhost.crt /a.caddy.localhost.key
     respond /version 200 {
       body "hello from a.caddy.localhost"
     }	
   }
   `, "caddyfile")
 
+	t.Fail()
 	// act and assert
 	caddytest.AssertGetResponse(t, "https://a.caddy.localhost:9443/version", 200, "hello from a.caddy.localhost")
 	// makes a request with no sni
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a.caddy.localhost")
 }
 
-func TestDefaultSNIWithPortMappingOn(t *testing.T) {
+func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -152,8 +150,7 @@ func TestDefaultSNIWithPortMappingOn(t *testing.T) {
   }
   
   :9443 {
-    tls /a.caddy.localhost.crt /a.caddy.localhost.key {
-    }
+    tls /a.caddy.localhost.crt /a.caddy.localhost.key
     respond /version 200 {
       body "hello from a.caddy.localhost"
     }	
