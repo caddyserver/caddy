@@ -45,6 +45,11 @@ type configLoadError struct {
 
 func (e configLoadError) Error() string { return e.Response }
 
+func timeElapsed(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s", name, elapsed)
+}
+
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
 func InitServer(t *testing.T, rawConfig string, configType string) {
@@ -83,6 +88,8 @@ func initServer(t *testing.T, rawConfig string, configType string) error {
 	client := &http.Client{
 		Timeout: time.Second * 2,
 	}
+
+	start := time.Now()
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		t.Errorf("failed to create request. %s", err)
@@ -100,6 +107,8 @@ func initServer(t *testing.T, rawConfig string, configType string) error {
 		t.Errorf("unable to contact caddy server. %s", err)
 		return err
 	}
+	timeElapsed(start, "caddytest: config load time")
+
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
