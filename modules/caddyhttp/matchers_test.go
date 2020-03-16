@@ -252,6 +252,26 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/foo/BAR.txt",
 			expect: true,
 		},
+		{
+			match:  MatchPath{"*"},
+			input:  "/",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"*"},
+			input:  "/foo/bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"**"},
+			input:  "/",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"**"},
+			input:  "/foo/bar",
+			expect: true,
+		},
 	} {
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
 		repl := caddy.NewReplacer()
