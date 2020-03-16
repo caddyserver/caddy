@@ -386,6 +386,19 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
+// ListenerWrapper is a type that wraps a listener
+// so it can modify the input listener's methods.
+// Modules that implement this interface are found
+// in the caddy.listeners namespace. Usually, to
+// wrap a listener, you will define your own struct
+// type that embeds the input listener, then
+// implement your own methods that you want to wrap,
+// calling the underlying listener's methods where
+// appropriate.
+type ListenerWrapper interface {
+	WrapListener(net.Listener) net.Listener
+}
+
 var (
 	listeners   = make(map[string]*globalListener)
 	listenersMu sync.Mutex

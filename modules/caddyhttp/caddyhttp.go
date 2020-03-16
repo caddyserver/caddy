@@ -40,6 +40,11 @@ func init() {
 	if err != nil {
 		caddy.Log().Fatal(err.Error())
 	}
+
+	err = caddy.RegisterModule(tlsPlaceholderWrapper{})
+	if err != nil {
+		caddy.Log().Fatal(err.Error())
+	}
 }
 
 // App is a robust, production-ready HTTP server.
@@ -181,6 +186,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.StrictSNIHost = &trueBool
 		}
 
+		// process each listener address
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
 			if err != nil {
@@ -188,6 +194,37 @@ func (app *App) Provision(ctx caddy.Context) error {
 					srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
+		}
+
+		// set up each listener modifier
+		if srv.ListenerWrappersRaw != nil {
+			vals, err := ctx.LoadModule(srv, "ListenerWrappersRaw")
+			if err != nil {
+				return fmt.Errorf("loading listener wrapper modules: %v", err)
+			}
+			var hasTLSPlaceholder bool
+			for i, val := range vals.([]interface{}) {
+				if _, ok := val.(*tlsPlaceholderWrapper); ok {
+					if i == 0 {
+						// putting the tls placeholder wrapper first is nonsensical because
+						// that is the default, implicit setting: without it, all wrappers
+						// will go after the TLS listener anyway
+						return fmt.Errorf("it is unnecessary to specify the TLS listener wrapper in the first position because that is the default")
+					}
+					if hasTLSPlaceholder {
+						return fmt.Errorf("TLS listener wrapper can only be specified once")
+					}
+					hasTLSPlaceholder = true
+				}
+				srv.listenerWrappers = append(srv.listenerWrappers, val.(caddy.ListenerWrapper))
+			}
+			// if any wrappers were configured but the TLS placeholder wrapper is
+			// absent, prepend it so all defined wrappers come after the TLS
+			// handshake; this simplifies logic when starting the server, since we
+			// can simply assume the TLS placeholder will always be there
+			if !hasTLSPlaceholder && len(srv.listenerWrappers) > 0 {
+				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
+			}
 		}
 
 		// pre-compile the primary handler chain, and be sure to wrap it in our
@@ -265,10 +302,21 @@ func (app *App) Start() error {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
+				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
 				ln, err := caddy.Listen(listenAddr.Network, hostport)
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
+				}
+
+				// wrap listener before TLS (up to the TLS placeholder wrapper)
+				var lnWrapperIdx int
+				for i, lnWrapper := range srv.listenerWrappers {
+					if _, ok := lnWrapper.(*tlsPlaceholderWrapper); ok {
+						lnWrapperIdx = i + 1 // mark the next wrapper's spot
+						break
+					}
+					ln = lnWrapper.WrapListener(ln)
 				}
 
 				// enable TLS if there is a policy and if this is not the HTTP port
@@ -301,6 +349,11 @@ func (app *App) Start() error {
 						srv.h3server = h3srv
 					}
 					/////////
+				}
+
+				// finish wrapping listener where we left off before TLS
+				for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
+					ln = srv.listenerWrappers[i].WrapListener(ln)
 				}
 
 				app.logger.Debug("starting server loop",
@@ -544,6 +597,19 @@ func StatusCodeMatches(actual, configured int) bool {
 	return false
 }
 
+// tlsPlaceholderWrapper is a no-op listener wrapper that marks
+// where the TLS listener should be in a chain of listener wrappers.
+type tlsPlaceholderWrapper struct{}
+
+func (tlsPlaceholderWrapper) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.listeners.tls",
+		New: func() caddy.Module { return new(tlsPlaceholderWrapper) },
+	}
+}
+
+func (tlsPlaceholderWrapper) WrapListener(ln net.Listener) net.Listener { return ln }
+
 const (
 	// DefaultHTTPPort is the default port for HTTP.
 	DefaultHTTPPort = 80
@@ -557,4 +623,6 @@ var (
 	_ caddy.App         = (*App)(nil)
 	_ caddy.Provisioner = (*App)(nil)
 	_ caddy.Validator   = (*App)(nil)
+
+	_ caddy.ListenerWrapper = (*tlsPlaceholderWrapper)(nil)
 )

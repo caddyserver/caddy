@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -37,6 +38,10 @@ type Server struct {
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges.
 	Listen []string `json:"listen,omitempty"`
+
+	// A list of listener wrapper modules, which can modify the behavior
+	// of the base listener. They are applied in the given order.
+	ListenerWrappersRaw []json.RawMessage `json:"listener_wrappers,omitempty" caddy:"namespace=caddy.listeners inline_key=wrapper"`
 
 	// How long to allow a read from a client's upload. Setting this
 	// to a short, non-zero value can mitigate slowloris attacks, but
@@ -106,6 +111,7 @@ type Server struct {
 
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
+	listenerWrappers    []caddy.ListenerWrapper
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
