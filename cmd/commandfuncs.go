@@ -514,14 +514,12 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdFormatConfig(fl Flags) (int, error) {
-	// Default path of file is Caddyfile
+func cmdFmt(fl Flags) (int, error) {
 	formatCmdConfigFile := fl.Arg(0)
 	if formatCmdConfigFile == "" {
 		formatCmdConfigFile = "Caddyfile"
 	}
-
-	formatCmdWriteFlag := fl.Bool("write")
+	overwrite := fl.Bool("overwrite")
 
 	input, err := ioutil.ReadFile(formatCmdConfigFile)
 	if err != nil {
@@ -531,7 +529,7 @@ func cmdFormatConfig(fl Flags) (int, error) {
 
 	output := caddyfile.Format(input)
 
-	if formatCmdWriteFlag {
+	if overwrite {
 		err = ioutil.WriteFile(formatCmdConfigFile, output, 0644)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, nil
