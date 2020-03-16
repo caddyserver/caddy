@@ -235,7 +235,7 @@ uniqueDomainsLoop:
 		// one automation policy  would be confusing and an error
 		if app.tlsApp.Automation != nil {
 			for _, ap := range app.tlsApp.Automation.Policies {
-				for _, apHost := range ap.Hosts {
+				for _, apHost := range ap.Subjects {
 					if apHost == d {
 						continue uniqueDomainsLoop
 					}
@@ -424,7 +424,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 			// custom CA endpoint, for example - whichever one we choose must
 			// have a host list that is a superset of the policy we make...
 			// the policy with no host filter is guaranteed to qualify
-			if len(ap.Hosts) == 0 {
+			if len(ap.Subjects) == 0 {
 				basePolicy = ap
 				break
 			}
@@ -451,7 +451,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 			}
 		}
 		newPolicy.Issuer = issuer
-		newPolicy.Hosts = hosts
+		newPolicy.Subjects = hosts
 
 		return app.tlsApp.AddAutomationPolicy(newPolicy)
 	}

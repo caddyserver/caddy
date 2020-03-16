@@ -195,7 +195,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 							tlsApp.Automation = new(caddytls.AutomationConfig)
 						}
 						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-							Hosts:     sblockHosts,
+							Subjects:  sblockHosts,
 							IssuerRaw: caddyconfig.JSONModuleObject(issuer, "module", issuer.(caddy.Module).CaddyModule().ID.Name(), &warnings),
 						})
 					} else {
@@ -768,17 +768,17 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			// if the policy is the same, we can keep just one, but we have
 			// to be careful which one we keep; if only one has any hostnames
 			// defined, then we need to keep the one without any hostnames,
-			// otherwise the one without any hosts (a catch-all) would be
-			// eaten up by the one with hosts; and if both have hosts, we
+			// otherwise the one without any subjects (a catch-all) would be
+			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
 			if reflect.DeepEqual(aps[i].IssuerRaw, aps[j].IssuerRaw) &&
 				aps[i].ManageSync == aps[j].ManageSync {
-				if len(aps[i].Hosts) == 0 && len(aps[j].Hosts) > 0 {
+				if len(aps[i].Subjects) == 0 && len(aps[j].Subjects) > 0 {
 					aps = append(aps[:j], aps[j+1:]...)
-				} else if len(aps[i].Hosts) > 0 && len(aps[j].Hosts) == 0 {
+				} else if len(aps[i].Subjects) > 0 && len(aps[j].Subjects) == 0 {
 					aps = append(aps[:i], aps[i+1:]...)
 				} else {
-					aps[i].Hosts = append(aps[i].Hosts, aps[j].Hosts...)
+					aps[i].Subjects = append(aps[i].Subjects, aps[j].Subjects...)
 					aps = append(aps[:j], aps[j+1:]...)
 				}
 				i--
@@ -789,7 +789,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 
 	// ensure any catch-all policies go last
 	sort.SliceStable(aps, func(i, j int) bool {
-		return len(aps[i].Hosts) > len(aps[j].Hosts)
+		return len(aps[i].Subjects) > len(aps[j].Subjects)
 	})
 
 	return aps
