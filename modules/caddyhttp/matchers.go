@@ -211,9 +211,17 @@ func (m MatchPath) Match(r *http.Request) bool {
 	for _, matchPath := range m {
 		matchPath = repl.ReplaceAll(matchPath, "")
 
+		// special case: whole path is wildcard; this is unnecessary
+		// as it matches all requests, which is the same as no matcher
+		if matchPath == "*" {
+			return true
+		}
+
 		// special case: first and last characters are wildcard,
 		// treat it as a fast substring match
-		if strings.HasPrefix(matchPath, "*") && strings.HasSuffix(matchPath, "*") {
+		if len(matchPath) > 1 &&
+			strings.HasPrefix(matchPath, "*") &&
+			strings.HasSuffix(matchPath, "*") {
 			if strings.Contains(lowerPath, matchPath[1:len(matchPath)-1]) {
 				return true
 			}
