@@ -1,11 +1,9 @@
 Caddy 2
 =======
 
-This is the development branch for Caddy 2.
+This is the development branch for Caddy 2, the web server of the Go community.
 
 **Caddy 2 is production-ready, but there may be breaking changes before the stable 2.0 release.** Please test it and deploy it as much as you are able, and submit your feedback!
-
-**Caddy 2 is the web server of the Go community.** We are looking for maintainers to represent the community! Please become involved with issues, PRs, [our forum](https://caddy.community), sharing on social media, etc.
 
 ---
 
@@ -34,7 +32,8 @@ This is the development branch for Caddy 2.
 ### Menu
 
 - [Build from source](#build-from-source)
-	- [Building with plugins](#building-with-plugins-and/or-version-information)
+	- [For development](#for-development)
+	- [With version information and/or plugins](#with-version-information-and/or-plugins)
 - [Getting started](#getting-started)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
@@ -49,44 +48,29 @@ This is the development branch for Caddy 2.
 
 ## Build from source
 
-_**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below for building with plugins (you do not have to add any plugins)._
-
 Requirements:
 
 - [Go 1.14 or newer](https://golang.org/dl/)
-- Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=auto`)
+- Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
-Download the `v2` source code:
-
+### For development
+ 
 ```bash
 $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
-```
-
-Build:
-
-```bash
 $ cd caddy/cmd/caddy/
 $ go build
 ```
 
-That will put a `caddy(.exe)` binary into the current directory.
+_**Note:** Those steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
 
-If you encounter any Go-module-related errors, try clearing your Go module cache (`$GOPATH/pkg/mod`) or Go package cache (`$GOPATH/pkg`) and read [the Go wiki page about modules for help](https://github.com/golang/go/wiki/Modules). If you have issues with Go modules, please consult the Go community for help. But if there is an actual error in Caddy, please report it to us.
-
-### Building with plugins and/or version information
-
-Caddy is extensible with plugins. Plugins are added at compile-time, so all Caddy binaries are static (self-contained) and portable.
-
-Instructions for doing this are also given in comments in [cmd/caddy/main.go](https://github.com/caddyserver/caddy/blob/v2/cmd/caddy/main.go) which you can copy and use as a template.
+### With version information and/or plugins
 
 1. Create a new folder: `mkdir caddy`
 2. Change into it: `cd caddy`
-3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/v2/cmd/caddy/main.go) into the empty folder. Add imports for any plugins you want to include.
-4. Run: `go mod init caddy`
-5. Run: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with the latest v2 tag. (Won't be necessary after stable 2.0 release.)
-6. Run: `go build`
-
-Congrats, you now have a custom Caddy build with proper version information!
+3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/v2/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
+4. Initialize a Go module: `go mod init caddy`
+5. Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit.
+6. Compile: `go build`
 
 
 
@@ -97,7 +81,7 @@ The [Caddy website](https://caddyserver.com/docs/) has documentation that includ
 
 **We recommend that all users do our [Getting Started](https://caddyserver.com/docs/getting-started) guide to become familiar with using Caddy.**
 
-If you've only got a few minutes, [the website has several quick-start tutorials](https://caddyserver.com/docs/quick-starts) to choose from! However, after finishing a quick-start tutorial, please read more documentation to understand how the software works. 🙂
+If you've only got a minute, [the website has several quick-start tutorials](https://caddyserver.com/docs/quick-starts) to choose from! However, after finishing a quick-start tutorial, please read more documentation to understand how the software works. 🙂
 
 
 
