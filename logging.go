@@ -27,6 +27,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func init() {
@@ -35,12 +36,14 @@ func init() {
 	RegisterModule(DiscardWriter{})
 }
 
-// Logging facilitates logging within Caddy.
+// Logging facilitates logging within Caddy. The default log is
+// called "default" and you can customize it. You can also define
+// additional logs.
 //
 // By default, all logs at INFO level and higher are written to
 // standard error ("stderr" writer) in a human-readable format
-// ("console" encoder). The default log is called "default" and
-// you can customize it. You can also define additional logs.
+// ("console" encoder if stdout is an interactive terminal, "json"
+// encoder otherwise).
 //
 // All defined logs accept all log entries by default, but you
 // can filter by level and module/logger names. A logger's name
@@ -50,10 +53,10 @@ func init() {
 // "http.handlers", because all HTTP handler module names have
 // that prefix.
 //
-// Caddy logs (except the sink) are mostly zero-allocation, so
-// they are very high-performing in terms of memory and CPU time.
-// Enabling sampling can further increase throughput on extremely
-// high-load servers.
+// Caddy logs (except the sink) are zero-allocation, so they are
+// very high-performing in terms of memory and CPU time. Enabling
+// sampling can further increase throughput on extremely high-load
+// servers.
 type Logging struct {
 	// Sink is the destination for all unstructured logs emitted
 	// from Go's standard library logger. These logs are common
@@ -660,11 +663,15 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 
 func newDefaultProductionLogEncoder() zapcore.Encoder {
 	encCfg := zap.NewProductionEncoderConfig()
-	encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
-		encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
+	if terminal.IsTerminal(int(os.Stdout.Fd())) {
+		// if interactive terminal, make output more human-readable by default
+		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+			encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
+		}
+		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		return zapcore.NewConsoleEncoder(encCfg)
 	}
-	return zapcore.NewConsoleEncoder(encCfg)
+	return zapcore.NewJSONEncoder(encCfg)
 }
 
 // Log returns the current default logger.
