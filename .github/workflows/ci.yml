@@ -1,0 +1,113 @@
+# Used as inspiration: https://github.com/mvdan/github-actions-golang
+
+name: Cross-Platform Tests
+
+on:
+  push:
+    branches: [ v2 ]
+  pull_request:
+    branches: [ v2 ]
+
+jobs:
+  test:
+    name: Cross-Platform Tests
+
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        go-version: [ 1.14.x ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    # TODO May not be required
+    - name: Install golangci-lint
+      run: |
+        curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.23.6
+
+    - name: Install test and coverage analysis tools
+      run: |
+        go get github.com/axw/gocov/gocov
+        go get github.com/AlekSi/gocov-xml
+        go get -u github.com/jstemmer/go-junit-report
+
+    - name: Print Go version and environment
+      run: |
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+
+    - name: Get dependencies
+      run: |
+        go get -v -t -d ./...
+        mkdir test-results
+
+    # TODO Might not be in the correct dir at this point
+    - name: Build Caddy
+      run: |
+        CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
+
+    # TODO Publish build artifacts (figure out output path)
+    # - name: Publish Build Artifact (Windows)
+    #   if: matrix.platform == 'windows-latest'
+    #   uses: actions/upload-artifact@v1
+    #   with:
+    #     name: caddy_v2_${{ matrix.os }}
+    #     path: ${{ env.somewhere }}/cmd/caddy/caddy.exe
+
+    # - name: Publish Build Artifact (Linux/Mac)
+    #   if: matrix.platform != 'windows-latest'
+    #   uses: actions/upload-artifact@v1
+    #   with:
+    #     name: caddy_v2_${{ matrix.os }}
+    #     path: ${{ env.somewhere }}/cmd/caddy/caddy
+
+    # TODO I don't think github actions supports junit reports,
+    #      we should probably just send this stuff to stdout
+    # TODO set-output may be incorrect, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
+    - name: Run lint check
+      id: step_lint
+      continue-on-error: true
+      run: |
+        (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
+        echo "::set-output name=status::$?"
+
+    # TODO working dir might be wrong
+    - name: Run tests
+      id: step_test
+      continue-on-error: true
+      run: |
+        (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        echo "::set-output name=status::$?"
+
+    - name: Run integration tests
+      run: |
+        set -e
+        cmd/caddy/caddy start
+        go test -v -count=1 ./caddytest/...
+        cmd/caddy/caddy stop
+
+    - name: Prepare coverage reports
+      run: |
+        mkdir coverage
+        gocov convert cover-profile.out > coverage/coverage.json
+        # Because Windows doesn't work with input redirection like *nix, but output redirection works.
+        (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
+
+    # TODO publish coverage/lint/test results ?
+
+    # To return the correct result even though we set 'continue-on-error: true'
+    - name: Coerce correct build result
+      if: steps.step_lint.outputs.status != 0 || steps.step_test.outputs.status != 0
+      run: |
+        exit 1
