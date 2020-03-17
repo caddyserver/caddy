@@ -54,14 +54,14 @@ jobs:
 
     # TODO Publish build artifacts (figure out output path)
     # - name: Publish Build Artifact (Windows)
-    #   if: matrix.platform == 'windows-latest'
+    #   if: matrix.os == 'windows-latest'
     #   uses: actions/upload-artifact@v1
     #   with:
     #     name: caddy_v2_${{ matrix.os }}
     #     path: ${{ env.somewhere }}/cmd/caddy/caddy.exe
 
     # - name: Publish Build Artifact (Linux/Mac)
-    #   if: matrix.platform != 'windows-latest'
+    #   if: matrix.os != 'windows-latest'
     #   uses: actions/upload-artifact@v1
     #   with:
     #     name: caddy_v2_${{ matrix.os }}
@@ -69,7 +69,7 @@ jobs:
 
     # Only run lint on ubuntu, the reviewdog action uses docker
     - name: Run lint check
-      if: matrix.platform == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest'
       uses: reviewdog/action-golangci-lint@v1
       with:
         github_token: ${{ secrets.github_token }}
