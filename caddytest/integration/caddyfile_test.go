@@ -17,13 +17,13 @@ func TestRespond(t *testing.T) {
   
   localhost:9080 {
     respond /version 200 {
-      body "hello from a.caddy.localhost"
+      body "hello from localhost"
     }	
     }
   `, "caddyfile")
 
 	// act and assert
-	caddytest.AssertGetResponse(t, "http://localhost:9080/version", 200, "hello from a.caddy.localhost")
+	caddytest.AssertGetResponse(t, "http://localhost:9080/version", 200, "hello from localhost")
 }
 
 func TestRedirect(t *testing.T) {
@@ -40,7 +40,7 @@ func TestRedirect(t *testing.T) {
     redir / http://localhost:9080/hello 301
     
     respond /hello 200 {
-      body "hello from b"
+      body "hello from localhost"
     }	
     }
   `, "caddyfile")
@@ -49,7 +49,7 @@ func TestRedirect(t *testing.T) {
 	caddytest.AssertRedirect(t, "http://localhost:9080/", "http://localhost:9080/hello", 301)
 
 	// follow redirect
-	caddytest.AssertGetResponse(t, "http://localhost:9080/", 200, "hello from b")
+	caddytest.AssertGetResponse(t, "http://localhost:9080/", 200, "hello from localhost")
 }
 
 func TestDuplicateHosts(t *testing.T) {
@@ -78,8 +78,52 @@ func TestDefaultSNI(t *testing.T) {
   }
   
   127.0.0.1:9443 {
-    tls /caddy.localhost.crt /caddy.localhost.key {
-    }
+    tls /caddy.localhost.crt /caddy.localhost.key
+    respond /version 200 {
+      body "hello from a"
+    }	
+  }
+  `, "caddyfile")
+
+	// act and assert
+	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+}
+
+func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
+
+	// arrange
+	caddytest.InitServer(t, ` 
+  {
+    http_port     9080
+    https_port    9443
+    default_sni   a.caddy.localhost
+  }
+  
+  a.caddy.localhost:9443, 127.0.0.1:9443 {
+    tls /a.caddy.localhost.crt /a.caddy.localhost.key
+    respond /version 200 {
+      body "hello from a"
+    }	
+  }
+  `, "caddyfile")
+
+	// act and assert
+	// makes a request with no sni
+	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+}
+
+func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
+
+	// arrange
+	caddytest.InitServer(t, ` 
+  {
+    http_port     9080
+    https_port    9443
+    default_sni   a.caddy.localhost
+  }
+  
+  :9443 {
+    tls /a.caddy.localhost.crt /a.caddy.localhost.key
     respond /version 200 {
       body "hello from a.caddy.localhost"
     }	
@@ -87,5 +131,6 @@ func TestDefaultSNI(t *testing.T) {
   `, "caddyfile")
 
 	// act and assert
-	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a.caddy.localhost")
+	// makes a request with no sni
+	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }

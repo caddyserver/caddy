@@ -530,6 +530,7 @@ func (st *ServerType) serversFromPairings(
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
 					} else {
+						cp.DefaultSNI = defaultSNI
 						hasCatchAllTLSConnPolicy = true
 					}
 
