@@ -77,6 +77,11 @@ func Main() {
 	os.Exit(exitCode)
 }
 
+// GetCommand is provided to allow tests to extract the commands
+func GetCommand(name string) Command {
+	return commands[name]
+}
+
 // handlePingbackConn reads from conn and ensures it matches
 // the bytes in expect, or returns an error if it doesn't.
 func handlePingbackConn(conn net.Conn, expect []byte) error {

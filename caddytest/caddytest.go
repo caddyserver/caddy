@@ -18,6 +18,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
+	// plug in Caddy modules here
+	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
 // Defaults store any configuration required to make the tests run
@@ -145,6 +150,31 @@ func validateTestPrerequisites() error {
 		}
 	}
 
+	if isCaddyAdminRunning() != nil {
+		// start inprocess caddy server
+		c := caddycmd.GetCommand("run")
+		go func() {
+			code, err := c.Func(caddycmd.Flags{c.Flags})
+			log.Printf("run response: code:%d, err: %s", code, err)
+		}()
+
+		// wait for caddy to start
+		retries := 4
+		for ; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// assert that caddy is running
+	if err := isCaddyAdminRunning(); err != nil {
+		return err
+	}
+
+	arePrerequisitesValid = true
+	return nil
+}
+
+func isCaddyAdminRunning() error {
 	// assert that caddy is running
 	client := &http.Client{
 		Timeout: time.Second * 2,
@@ -154,7 +184,6 @@ func validateTestPrerequisites() error {
 		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
 	}
 
-	arePrerequisitesValid = true
 	return nil
 }
 

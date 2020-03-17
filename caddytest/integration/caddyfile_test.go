@@ -134,3 +134,92 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	// makes a request with no sni
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }
+
+func TestDefaultSNIWithJson(t *testing.T) {
+
+	// arrange
+	caddytest.InitServer(t, `{
+    "apps": {
+      "http": {
+        "http_port": 9080,
+        "https_port": 9443,
+        "servers": {
+          "srv0": {
+            "listen": [
+              ":9443"
+            ],
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "handler": "subroute",
+                    "routes": [
+                      {
+                        "handle": [
+                          {
+                            "body": "hello from a.caddy.localhost",
+                            "handler": "static_response",
+                            "status_code": 200
+                          }
+                        ],
+                        "match": [
+                          {
+                            "path": [
+                              "/version"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "match": [
+                  {
+                    "host": [
+                      "127.0.0.1"
+                    ]
+                  }
+                ],
+                "terminal": true
+              }
+            ],
+            "tls_connection_policies": [
+              {
+                "certificate_selection": {
+                  "policy": "custom",
+                  "tag": "cert0"
+                },
+                "match": {
+                  "sni": [
+                    "127.0.0.1"
+                  ]
+                }
+              },
+              {
+                "default_sni": "*.caddy.localhost"
+              }
+            ]
+          }
+        }
+      },
+      "tls": {
+        "certificates": {
+          "load_files": [
+            {
+              "certificate": "/caddy.localhost.crt",
+              "key": "/caddy.localhost.key",
+              "tags": [
+                "cert0"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+  `, "json")
+
+	// act and assert
+	// makes a request with no sni
+	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+}
