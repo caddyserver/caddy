@@ -152,10 +152,9 @@ func validateTestPrerequisites() error {
 
 	if isCaddyAdminRunning() != nil {
 		// start inprocess caddy server
-		c := caddycmd.GetCommand("run")
+		os.Args = []string{"caddy", "run"}
 		go func() {
-			code, err := c.Func(caddycmd.Flags{c.Flags})
-			log.Printf("run response: code:%d, err: %s", code, err)
+			caddycmd.Main()
 		}()
 
 		// wait for caddy to start
