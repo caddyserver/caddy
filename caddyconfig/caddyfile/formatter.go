@@ -43,6 +43,12 @@ func Format(body []byte) []byte {
 		err error
 	)
 
+	insertTabs := func(num int) {
+		for tabs := num; tabs > 0; tabs-- {
+			result.WriteRune('\t')
+		}
+	}
+
 	for {
 		prev = curr
 		curr = next
@@ -102,7 +108,7 @@ func Format(body []byte) []byte {
 				if unicode.IsSpace(next) {
 					indentation++
 
-					if !unicode.IsSpace(prev) {
+					if !unicode.IsSpace(prev) && !lineBegin {
 						result.WriteRune(' ')
 					}
 				} else {
@@ -114,10 +120,12 @@ func Format(body []byte) []byte {
 					continue
 				} else {
 					lineBegin = false
-					if indentation > 0 {
-						for tabs := indentation; tabs > 0; tabs-- {
-							result.WriteRune('\t')
-						}
+					if curr == '{' && unicode.IsSpace(next) {
+						// If the block is global, i.e., starts with '{'
+						// One less indentation for these blocks.
+						insertTabs(indentation - 1)
+					} else {
+						insertTabs(indentation)
 					}
 				}
 			} else {
