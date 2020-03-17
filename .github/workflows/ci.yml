@@ -27,11 +27,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    # TODO May not be required
-    - name: Install golangci-lint
-      run: |
-        curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.23.6
-
     - name: Install test and coverage analysis tools
       run: |
         go get github.com/axw/gocov/gocov
@@ -72,17 +67,13 @@ jobs:
     #     name: caddy_v2_${{ matrix.os }}
     #     path: ${{ env.somewhere }}/cmd/caddy/caddy
 
-    # TODO I don't think github actions supports junit reports,
-    #      we should probably just send this stuff to stdout
-    # TODO set-output may be incorrect, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
     - name: Run lint check
-      id: step_lint
-      continue-on-error: true
-      run: |
-        ($(go env GOPATH)/bin/golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
-        echo "::set-output name=status::$?"
+      uses: reviewdog/action-golangci-lint@v1
+      with:
+        github_token: ${{ secrets.github_token }}
 
     # TODO working dir might be wrong
+    # TODO set-output may be incorrect, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
     - name: Run tests
       id: step_test
       continue-on-error: true
