@@ -67,7 +67,7 @@ func TestDuplicateHosts(t *testing.T) {
 		"duplicate site address not allowed")
 }
 
-func TestDefaultSNI(t *testing.T) {
+func xTestDefaultSNI(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -135,7 +135,7 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
-func TestDefaultSNIWithJson(t *testing.T) {
+func xTestDefaultSNIWithJson(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, `{
