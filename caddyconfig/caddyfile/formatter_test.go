@@ -45,6 +45,18 @@ m {
 	n { o
 	}
 }
+
+{
+	p
+}
+
+  { q
+}
+
+	{
+{ r
+}
+}
 `)
 	expected := []byte(`
 a
@@ -73,6 +85,20 @@ j {
 m {
 	n {
 		o
+	}
+}
+
+{
+	p
+}
+
+{
+	q
+}
+
+{
+	{
+		r
 	}
 }
 `)
@@ -110,6 +136,9 @@ b {
 
 d { {$E}
 }
+
+{ {$F}
+}
 `)
 	expected := []byte(`
 {$A}
@@ -120,6 +149,10 @@ b {
 
 d {
 	{$E}
+}
+
+{
+	{$F}
 }
 `)
 	testFormat(t, input, expected)
@@ -190,6 +223,6 @@ g {
 func testFormat(t *testing.T, input, expected []byte) {
 	output := Format(input)
 	if string(output) != string(expected) {
-		t.Errorf("Expected:\n%s\ngot:\n%s", string(output), string(expected))
+		t.Errorf("Expected:\n%s\ngot:\n%s", string(expected), string(output))
 	}
 }
