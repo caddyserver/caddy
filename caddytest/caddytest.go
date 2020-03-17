@@ -45,6 +45,11 @@ type configLoadError struct {
 
 func (e configLoadError) Error() string { return e.Response }
 
+func timeElapsed(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s", name, elapsed)
+}
+
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
 func InitServer(t *testing.T, rawConfig string, configType string) {
@@ -83,6 +88,8 @@ func initServer(t *testing.T, rawConfig string, configType string) error {
 	client := &http.Client{
 		Timeout: time.Second * 2,
 	}
+
+	start := time.Now()
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		t.Errorf("failed to create request. %s", err)
@@ -100,6 +107,8 @@ func initServer(t *testing.T, rawConfig string, configType string) error {
 		t.Errorf("unable to contact caddy server. %s", err)
 		return err
 	}
+	timeElapsed(start, "caddytest: config load time")
+
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
@@ -208,7 +217,7 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expectedBody string) (*http.Response, string) {
 	resp, body := AssertGetResponseBody(t, requestURI, statusCode)
 	if !strings.Contains(body, expectedBody) {
-		t.Errorf("expected response body \"%s\" but got \"%s\"", expectedBody, body)
+		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", requestURI, expectedBody, body)
 	}
 	return resp, string(body)
 }
@@ -229,7 +238,7 @@ func AssertGetResponseBody(t *testing.T, requestURI string, expectedStatusCode i
 	defer resp.Body.Close()
 
 	if expectedStatusCode != resp.StatusCode {
-		t.Errorf("expected status code: %d but got %d", expectedStatusCode, resp.StatusCode)
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -260,12 +269,12 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 	}
 
 	if expectedStatusCode != resp.StatusCode {
-		t.Errorf("expected status code: %d but got %d", expectedStatusCode, resp.StatusCode)
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
 	}
 
 	loc, err := resp.Location()
 	if expectedToLocation != loc.String() {
-		t.Errorf("expected location: \"%s\" but got \"%s\"", expectedToLocation, loc.String())
+		t.Errorf("requesting \"%s\" expected location: \"%s\" but got \"%s\"", requestURI, expectedToLocation, loc.String())
 	}
 
 	return resp
