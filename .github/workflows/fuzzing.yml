@@ -1,0 +1,75 @@
+name: Fuzzing
+
+on:
+  schedule:
+    # Daily midnight fuzzing
+    - cron: '0 0 * * *'
+
+jobs:
+  fuzzing:
+    name: Fuzzing
+
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+        go-version: [ 1.14.x ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    # - name: Checkout code
+    #   uses: actions/checkout@v2
+
+    # TODO env GOBIN may not be set
+    # TODO should have if condition to disable for forks?
+    - name: Download go-fuzz tools and the Fuzzit CLI, move Fuzzit CLI to GOBIN
+      # if: isFork == false
+      run: |
+        # Install Clang-7.0 because other versions seem to be missing the file libclang_rt.fuzzer-x86_64.a
+        sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-7 main"
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo apt update && sudo apt install -y clang-7 lldb-7 lld-7
+
+        go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
+        wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.77/fuzzit_Linux_x86_64
+        chmod a+x fuzzit
+        mv fuzzit $(GOBIN)
+
+    # TODO $(Build.Reason) is probably not set
+    - name: Download go-fuzz tools and the Fuzzit CLI, move Fuzzit CLI to GOBIN
+      env:
+        FUZZIT_API_KEY: ${{ secrets.FUZZIT_API_KEY }}
+      run: |
+        declare -A fuzzers_funcs=(\
+          ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
+          ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
+          ["./listeners_fuzz.go"]="FuzzParseNetworkAddress" \
+          ["./replacer_fuzz.go"]="FuzzReplacer" \
+        )
+
+        declare -A fuzzers_targets=(\
+          ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
+          ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
+          ["./listeners_fuzz.go"]="parse-network-address" \
+          ["./replacer_fuzz.go"]="replacer" \
+        )
+
+        fuzz_type="local-regression"
+        if [[ $(Build.Reason) == "Schedule" ]]; then
+          fuzz_type="fuzzing"
+        fi
+        echo "Fuzzing type: $fuzz_type"
+
+        for f in $(find . -name \*_fuzz.go); do
+          FUZZER_DIRECTORY=$(dirname $f)
+          echo "go-fuzz-build func ${fuzzers_funcs[$f]} residing in $f"
+          go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
+          echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
+          clang-7 -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}"
+          fuzzit create job caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]} --api-key ${FUZZIT_API_KEY} --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}"
+          echo "Completed $f"
+        done
