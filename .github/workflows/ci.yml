@@ -79,7 +79,7 @@ jobs:
       id: step_lint
       continue-on-error: true
       run: |
-        (golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
+        ($(go env GOPATH)/bin/golangci-lint run --out-format junit-xml) > test-results/lint-result.xml
         echo "::set-output name=status::$?"
 
     # TODO working dir might be wrong
