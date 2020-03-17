@@ -67,7 +67,9 @@ jobs:
     #     name: caddy_v2_${{ matrix.os }}
     #     path: ${{ env.somewhere }}/cmd/caddy/caddy
 
+    # Only run lint on ubuntu, the reviewdog action uses docker
     - name: Run lint check
+      if: matrix.platform == 'ubuntu-latest'
       uses: reviewdog/action-golangci-lint@v1
       with:
         github_token: ${{ secrets.github_token }}
