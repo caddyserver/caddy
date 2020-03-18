@@ -59,5 +59,8 @@ func (s *FileStorage) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Interface guard
-var _ caddy.StorageConverter = (*FileStorage)(nil)
+// Interface guards
+var (
+	_ caddy.StorageConverter = (*FileStorage)(nil)
+	_ caddyfile.Unmarshaler  = (*FileStorage)(nil)
+)

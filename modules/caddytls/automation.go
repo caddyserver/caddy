@@ -23,6 +23,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/go-acme/lego/v3/challenge"
+	"go.uber.org/zap"
 )
 
 // AutomationConfig designates configuration for the
@@ -131,31 +132,49 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand {
-		var onDemand *OnDemandConfig
-		if tlsApp.Automation != nil {
-			onDemand = tlsApp.Automation.OnDemand
-		}
-
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(name string) error {
-				if onDemand != nil {
-					if onDemand.Ask != "" {
-						err := onDemandAskRequest(onDemand.Ask, name)
-						if err != nil {
-							return err
-						}
+				// if an "ask" endpoint was defined, consult it first
+				if tlsApp.Automation != nil &&
+					tlsApp.Automation.OnDemand != nil &&
+					tlsApp.Automation.OnDemand.Ask != "" {
+					err := onDemandAskRequest(tlsApp.Automation.OnDemand.Ask, name)
+					if err != nil {
+						return err
 					}
-					// check the rate limiter last because
-					// doing so makes a reservation
-					if !onDemandRateLimiter.Allow() {
-						return fmt.Errorf("on-demand rate limit exceeded")
-					}
+				}
+				// check the rate limiter last because
+				// doing so makes a reservation
+				if !onDemandRateLimiter.Allow() {
+					return fmt.Errorf("on-demand rate limit exceeded")
 				}
 				return nil
 			},
 		}
 	}
 
+	// if this automation policy has no Issuer defined, and
+	// none the subjects do not qualify for a public certificate,
+	// set the issuer to internal so that these names can all
+	// get certificates; critically, we can only do this if an
+	// issuer is not explictly configured AND if the list of
+	// subjects is non-empty
+	if ap.IssuerRaw == nil && len(ap.Subjects) > 0 {
+		var anyPublic bool
+		for _, s := range ap.Subjects {
+			if certmagic.SubjectQualifiesForPublicCert(s) {
+				anyPublic = true
+				break
+			}
+		}
+		if !anyPublic {
+			tlsApp.logger.Info("setting internal issuer for automation policy that has only internal subjects but no issuer configured",
+				zap.Strings("subjects", ap.Subjects))
+			ap.IssuerRaw = json.RawMessage(`{"module":"internal"}`)
+		}
+	}
+
+	// load and provision the issuer module
 	if ap.IssuerRaw != nil {
 		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
 		if err != nil {

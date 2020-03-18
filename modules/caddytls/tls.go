@@ -179,9 +179,17 @@ func (t *TLS) Validate() error {
 	if t.Automation != nil {
 		// ensure that host aren't repeated; since only the first
 		// automation policy is used, repeating a host in the lists
-		// isn't useful and is probably a mistake
+		// isn't useful and is probably a mistake; same for two
+		// catch-all/default policies
+		var hasDefault bool
 		hostSet := make(map[string]int)
 		for i, ap := range t.Automation.Policies {
+			if len(ap.Subjects) == 0 {
+				if hasDefault {
+					return fmt.Errorf("automation policy %d is the second policy that acts as default/catch-all, but will never be used", i)
+				}
+				hasDefault = true
+			}
 			for _, h := range ap.Subjects {
 				if first, ok := hostSet[h]; ok {
 					return fmt.Errorf("automation policy %d: cannot apply more than one automation policy to host: %s (first match in policy %d)", i, h, first)
@@ -301,7 +309,7 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 		// fewer names) exists, prioritize this new policy
 		if len(other.Subjects) < len(ap.Subjects) {
 			t.Automation.Policies = append(t.Automation.Policies[:i],
-				append([]*AutomationPolicy{ap}, t.Automation.Policies[i+1:]...)...)
+				append([]*AutomationPolicy{ap}, t.Automation.Policies[i:]...)...)
 			return nil
 		}
 	}

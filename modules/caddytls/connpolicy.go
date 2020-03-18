@@ -173,7 +173,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			// TODO: I don't love how this works: we pre-build certmagic configs
 			// so that handshakes are faster. Unfortunately, certmagic configs are
 			// comprised of settings from both a TLS connection policy and a TLS
-			// automation policy. The only two fields (as of March 2020; v2 beta 16)
+			// automation policy. The only two fields (as of March 2020; v2 beta 17)
 			// of a certmagic config that come from the TLS connection policy are
 			// CertSelection and DefaultServerName, so an automation policy is what
 			// builds the base certmagic config. Since the pre-built config is

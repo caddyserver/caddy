@@ -103,14 +103,16 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
 //         dns       <provider_name>
+//         on_demand
 //     }
 //
 func parseTLS(h Helper) ([]ConfigValue, error) {
-	var cp *caddytls.ConnectionPolicy
+	cp := new(caddytls.ConnectionPolicy)
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
 	var acmeIssuer *caddytls.ACMEIssuer
 	var internalIssuer *caddytls.InternalIssuer
+	var onDemand bool
 
 	for h.Next() {
 		// file certificate loader
@@ -173,10 +175,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				tlsCertTags[certFilename] = tag
 			}
 			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
-			if cp == nil {
-				cp = new(caddytls.ConnectionPolicy)
-			}
-
 			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
 		default:
 			return nil, h.ArgErr()
@@ -187,7 +185,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			hasBlock = true
 
 			switch h.Val() {
-			// connection policy
 			case "protocols":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
@@ -197,55 +194,41 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					if _, ok := caddytls.SupportedProtocols[args[0]]; !ok {
 						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
 					}
-					if cp == nil {
-						cp = new(caddytls.ConnectionPolicy)
-					}
 					cp.ProtocolMin = args[0]
 				}
 				if len(args) > 1 {
 					if _, ok := caddytls.SupportedProtocols[args[1]]; !ok {
 						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
 					}
-					if cp == nil {
-						cp = new(caddytls.ConnectionPolicy)
-					}
 					cp.ProtocolMax = args[1]
 				}
+
 			case "ciphers":
 				for h.NextArg() {
 					if _, ok := caddytls.SupportedCipherSuites[h.Val()]; !ok {
 						return nil, h.Errf("Wrong cipher suite name or cipher suite not supported: '%s'", h.Val())
 					}
-					if cp == nil {
-						cp = new(caddytls.ConnectionPolicy)
-					}
 					cp.CipherSuites = append(cp.CipherSuites, h.Val())
 				}
+
 			case "curves":
 				for h.NextArg() {
 					if _, ok := caddytls.SupportedCurves[h.Val()]; !ok {
 						return nil, h.Errf("Wrong curve name or curve not supported: '%s'", h.Val())
 					}
-					if cp == nil {
-						cp = new(caddytls.ConnectionPolicy)
-					}
 					cp.Curves = append(cp.Curves, h.Val())
 				}
+
 			case "alpn":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
 					return nil, h.ArgErr()
 				}
-				if cp == nil {
-					cp = new(caddytls.ConnectionPolicy)
-				}
 				cp.ALPN = args
 
-			// certificate folder loader
 			case "load":
 				folderLoader = append(folderLoader, h.RemainingArgs()...)
 
-			// automation policy
 			case "ca":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
@@ -256,7 +239,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.CA = arg[0]
 
-			// DNS provider for ACME DNS challenge
 			case "dns":
 				if !h.Next() {
 					return nil, h.ArgErr()
@@ -284,6 +266,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, arg[0])
 
+			case "on_demand":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				onDemand = true
+
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
 			}
@@ -304,31 +292,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			Class: "tls.certificate_loader",
 			Value: fileLoader,
 		})
-		// ensure server uses HTTPS by setting non-nil conn policy
-		if cp == nil {
-			cp = new(caddytls.ConnectionPolicy)
-		}
 	}
 	if len(folderLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.certificate_loader",
 			Value: folderLoader,
 		})
-		// ensure server uses HTTPS by setting non-nil conn policy
-		if cp == nil {
-			cp = new(caddytls.ConnectionPolicy)
-		}
 	}
 
-	// connection policy
-	if cp != nil {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.connection_policy",
-			Value: cp,
-		})
-	}
-
-	// automation policy
+	// issuer
 	if acmeIssuer != nil && internalIssuer != nil {
 		// the logic to support this would be complex
 		return nil, h.Err("cannot use both ACME and internal issuers in same server block")
@@ -355,6 +327,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			Value: internalIssuer,
 		})
 	}
+
+	// on-demand TLS
+	if onDemand {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.on_demand",
+			Value: true,
+		})
+	}
+
+	// connection policy -- always add one, to ensure that TLS
+	// is enabled, because this directive was used (this is
+	// needed, for instance, when a site block has a key of
+	// just ":5000" - i.e. no hostname, and only on-demand TLS
+	// is enabled)
+	configVals = append(configVals, ConfigValue{
+		Class: "tls.connection_policy",
+		Value: cp,
+	})
 
 	return configVals, nil
 }
