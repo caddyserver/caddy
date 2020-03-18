@@ -618,7 +618,16 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 			}
 		}
 		// if there is more than one, put them in a group
-		if info.count > 1 {
+		// (special case: "rewrite" directive must always be in
+		// its own group--even if there is only one--because we
+		// do not want a rewrite to be consolidated into other
+		// adjacent routes that happen to have the same matcher,
+		// see caddyserver/caddy#3108 - because the implied
+		// intent of rewrite is to do an internal redirect,
+		// we can't assume that the request will continue to
+		// match the same matcher; anyway, giving a route a
+		// unique group name should keep it from consolidating)
+		if info.count > 1 || meDir == "rewrite" {
 			info.groupName = groupCounter.nextGroup()
 		}
 	}
@@ -662,7 +671,6 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 // consolidateRoutes combines routes with the same properties
 // (same matchers, same Terminal and Group settings) for a
 // cleaner overall output.
-// FIXME: See caddyserver/caddy#3108
 func consolidateRoutes(routes caddyhttp.RouteList) caddyhttp.RouteList {
 	for i := 0; i < len(routes)-1; i++ {
 		if reflect.DeepEqual(routes[i].MatcherSetsRaw, routes[i+1].MatcherSetsRaw) &&
