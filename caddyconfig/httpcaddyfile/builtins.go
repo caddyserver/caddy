@@ -102,6 +102,7 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
+//         ca_root   <pem_file>
 //         dns       <provider_name>
 //         on_demand
 //     }

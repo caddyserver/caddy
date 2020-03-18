@@ -282,6 +282,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		var err error
 		disp := caddyfile.NewDispenser(segment)
 		switch dir {
+		case "debug":
+			val = true
 		case "http_port":
 			val, err = parseOptHTTPPort(disp)
 		case "https_port":
@@ -300,8 +302,6 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptSingleString(disp)
 		case "admin":
 			val, err = parseOptAdmin(disp)
-		case "debug":
-			options["debug"] = true
 		case "on_demand_tls":
 			val, err = parseOptOnDemand(disp)
 		case "local_certs":
