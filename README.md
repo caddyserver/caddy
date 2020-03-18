@@ -33,7 +33,7 @@ This is the development branch for Caddy 2, the web server of the Go community.
 
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
-	- [With version information and/or plugins](#with-version-information-and/or-plugins)
+	- [With version information and/or plugins](#with-version-information-andor-plugins)
 - [Getting started](#getting-started)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
@@ -54,14 +54,14 @@ Requirements:
 - Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
 ### For development
+
+_**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
  
 ```bash
 $ git clone -b v2 "https://github.com/caddyserver/caddy.git"
 $ cd caddy/cmd/caddy/
 $ go build
 ```
-
-_**Note:** Those steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
 
 ### With version information and/or plugins
 
