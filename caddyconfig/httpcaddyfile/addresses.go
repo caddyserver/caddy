@@ -274,8 +274,6 @@ func ParseAddress(str string) (Address, error) {
 	return a, nil
 }
 
-// TODO: which of the methods on Address are even used?
-
 // String returns a human-readable form of a. It will
 // be a cleaned-up and filled-out URL string.
 func (a Address) String() string {
@@ -312,7 +310,7 @@ func (a Address) Normalize() Address {
 	path := a.Path
 
 	// ensure host is normalized if it's an IP address
-	host := a.Host
+	host := strings.TrimSpace(a.Host)
 	if ip := net.ParseIP(host); ip != nil {
 		host = ip.String()
 	}

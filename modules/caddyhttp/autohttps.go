@@ -232,7 +232,7 @@ uniqueDomainsLoop:
 		// some names we've found might already have automation policies
 		// explicitly specified for them; we should exclude those from
 		// our hidden/implicit policy, since applying a name to more than
-		// one automation policy  would be confusing and an error
+		// one automation policy would be confusing and an error
 		if app.tlsApp.Automation != nil {
 			for _, ap := range app.tlsApp.Automation.Policies {
 				for _, apHost := range ap.Subjects {

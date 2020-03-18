@@ -26,7 +26,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -177,105 +176,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 		Servers:   servers,
 	}
 
-	// now for the TLS app! (TODO: refactor into own func)
-	tlsApp := caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
-	var certLoaders []caddytls.CertificateLoader
-	for _, p := range pairings {
-		for i, sblock := range p.serverBlocks {
-			// tls automation policies
-			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
-				for _, issuerVal := range issuerVals {
-					issuer := issuerVal.Value.(certmagic.Issuer)
-					sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block)
-					if err != nil {
-						return nil, warnings, err
-					}
-					if len(sblockHosts) > 0 {
-						if tlsApp.Automation == nil {
-							tlsApp.Automation = new(caddytls.AutomationConfig)
-						}
-						tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-							Subjects:  sblockHosts,
-							IssuerRaw: caddyconfig.JSONModuleObject(issuer, "module", issuer.(caddy.Module).CaddyModule().ID.Name(), &warnings),
-						})
-					} else {
-						warnings = append(warnings, caddyconfig.Warning{
-							Message: fmt.Sprintf("Server block %d %v has no names that qualify for automatic HTTPS, so no TLS automation policy will be added.", i, sblock.block.Keys),
-						})
-					}
-				}
-			}
-			// tls certificate loaders
-			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
-				for _, clVal := range clVals {
-					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
-				}
-			}
-		}
-	}
-	// group certificate loaders by module name, then add to config
-	if len(certLoaders) > 0 {
-		loadersByName := make(map[string]caddytls.CertificateLoader)
-		for _, cl := range certLoaders {
-			name := caddy.GetModuleName(cl)
-			// ugh... technically, we may have multiple FileLoader and FolderLoader
-			// modules (because the tls directive returns one per occurrence), but
-			// the config structure expects only one instance of each kind of loader
-			// module, so we have to combine them... instead of enumerating each
-			// possible cert loader module in a type switch, we can use reflection,
-			// which works on any cert loaders that are slice types
-			if reflect.TypeOf(cl).Kind() == reflect.Slice {
-				combined := reflect.ValueOf(loadersByName[name])
-				if !combined.IsValid() {
-					combined = reflect.New(reflect.TypeOf(cl)).Elem()
-				}
-				clVal := reflect.ValueOf(cl)
-				for i := 0; i < clVal.Len(); i++ {
-					combined = reflect.Append(reflect.Value(combined), clVal.Index(i))
-				}
-				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
-			}
-		}
-		for certLoaderName, loaders := range loadersByName {
-			tlsApp.CertificatesRaw[certLoaderName] = caddyconfig.JSON(loaders, &warnings)
-		}
-	}
-	// if global ACME CA, DNS, or email were set, append a catch-all automation
-	// policy that ensures they will be used if no tls directive was used
-	acmeCA, hasACMECA := options["acme_ca"]
-	acmeDNS, hasACMEDNS := options["acme_dns"]
-	email, hasEmail := options["email"]
-	if hasACMECA || hasACMEDNS || hasEmail {
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
-		}
-		if !hasACMECA {
-			acmeCA = ""
-		}
-		if !hasEmail {
-			email = ""
-		}
-		mgr := caddytls.ACMEIssuer{
-			CA:    acmeCA.(string),
-			Email: email.(string),
-		}
-		if hasACMEDNS {
-			provName := acmeDNS.(string)
-			dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
-			if err != nil {
-				return nil, warnings, fmt.Errorf("getting DNS provider module named '%s': %v", provName, err)
-			}
-			mgr.Challenges = &caddytls.ChallengesConfig{
-				DNSRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, &warnings),
-			}
-		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, &caddytls.AutomationPolicy{
-			IssuerRaw: caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings),
-		})
-	}
-	if tlsApp.Automation != nil {
-		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+	// then make the TLS app
+	tlsApp, warnings, err := st.buildTLSApp(pairings, options, warnings)
+	if err != nil {
+		return nil, warnings, err
 	}
 
 	// if experimental HTTP/3 is enabled, enable it on each server
@@ -316,10 +220,10 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// annnd the top-level config, then we're done!
 	cfg := &caddy.Config{AppsRaw: make(caddy.ModuleMap)}
-	if !reflect.DeepEqual(httpApp, caddyhttp.App{}) {
+	if len(httpApp.Servers) > 0 {
 		cfg.AppsRaw["http"] = caddyconfig.JSON(httpApp, &warnings)
 	}
-	if !reflect.DeepEqual(tlsApp, caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}) {
+	if !reflect.DeepEqual(tlsApp, &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}) {
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
 	}
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
@@ -377,7 +281,6 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		var val interface{}
 		var err error
 		disp := caddyfile.NewDispenser(segment)
-		// TODO: make this switch into a map
 		switch dir {
 		case "http_port":
 			val, err = parseOptHTTPPort(disp)
@@ -399,6 +302,10 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptAdmin(disp)
 		case "debug":
 			options["debug"] = true
+		case "on_demand_tls":
+			val, err = parseOptOnDemand(disp)
+		case "local_certs":
+			val = true
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
@@ -411,8 +318,10 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 	return serverBlocks[1:], nil
 }
 
-// hostsFromServerBlockKeys returns a list of all the
-// hostnames found in the keys of the server block sb.
+// hostsFromServerBlockKeys returns a list of all the non-empty hostnames
+// found in the keys of the server block sb. If sb has a key that omits
+// the hostname (i.e. is a catch-all/empty host), then the returned list
+// is empty, because the server block effectively matches ALL hosts.
 // The list may not be in a consistent order.
 func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]string, error) {
 	// first get each unique hostname
@@ -424,7 +333,9 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]stri
 		}
 		addr = addr.Normalize()
 		if addr.Host == "" {
-			continue
+			// server block contains a key like ":443", i.e. the host portion
+			// is empty / catch-all, which means to match all hosts
+			return []string{}, nil
 		}
 		hostMap[addr.Host] = struct{}{}
 	}
@@ -497,25 +408,18 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			// tls: connection policies and toggle auto HTTPS
-			if _, ok := sblock.pile["tls.off"]; ok {
-				// TODO: right now, no directives yield any tls.off value...
-				// tls off: disable TLS (and automatic HTTPS) for server block's names
-				if srv.AutoHTTPS == nil {
-					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-				}
-				srv.AutoHTTPS.Disabled = true
-			} else if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
-				// tls connection policies
+			hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+			if err != nil {
+				return nil, err
+			}
 
+			// tls: connection policies
+			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
+				// tls connection policies
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 
 					// make sure the policy covers all hostnames from the block
-					hosts, err := st.hostsFromServerBlockKeys(sblock.block)
-					if err != nil {
-						return nil, err
-					}
 					for _, h := range hosts {
 						if h == defaultSNI {
 							hosts = append(hosts, "")
@@ -524,7 +428,6 @@ func (st *ServerType) serversFromPairings(
 						}
 					}
 
-					// TODO: are matchers needed if every hostname of the resulting config is matched?
 					if len(hosts) > 0 {
 						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
@@ -536,7 +439,6 @@ func (st *ServerType) serversFromPairings(
 
 					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
-				// TODO: consolidate equal conn policies?
 			}
 
 			// exclude any hosts that were defined explicitly with
@@ -547,7 +449,7 @@ func (st *ServerType) serversFromPairings(
 					return nil, err
 				}
 				addr = addr.Normalize()
-				if addr.Scheme == "http" {
+				if addr.Scheme == "http" && addr.Host != "" {
 					if srv.AutoHTTPS == nil {
 						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 					}
@@ -607,16 +509,41 @@ func (st *ServerType) serversFromPairings(
 		// catch-all/default policy if there isn't one already (it's
 		// important that it goes at the end) - see issue #3004:
 		// https://github.com/caddyserver/caddy/issues/3004
+		// TODO: maybe a smarter way to handle this might be to just make the
+		// auto-HTTPS logic at provision-time detect if there is any connection
+		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
 		if !hasCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
+		// tidy things up a bit
+		srv.TLSConnPolicies = consolidateConnPolicies(srv.TLSConnPolicies)
 		srv.Routes = consolidateRoutes(srv.Routes)
 
 		servers[fmt.Sprintf("srv%d", i)] = srv
 	}
 
 	return servers, nil
+}
+
+// consolidateConnPolicies combines TLS connection policies that are the same,
+// for a cleaner overall output.
+func consolidateConnPolicies(cps caddytls.ConnectionPolicies) caddytls.ConnectionPolicies {
+	for i := 0; i < len(cps); i++ {
+		for j := 0; j < len(cps); j++ {
+			if j == i {
+				continue
+			}
+
+			// if they're exactly equal in every way, just keep one of them
+			if reflect.DeepEqual(cps[i], cps[j]) {
+				cps = append(cps[:j], cps[j+1:]...)
+				i--
+				break
+			}
+		}
+	}
+	return cps
 }
 
 // appendSubrouteToRouteList appends the routes in subroute
@@ -750,52 +677,6 @@ func consolidateRoutes(routes caddyhttp.RouteList) caddyhttp.RouteList {
 	return routes
 }
 
-// consolidateAutomationPolicies combines automation policies that are the same,
-// for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
-	for i := 0; i < len(aps); i++ {
-		for j := 0; j < len(aps); j++ {
-			if j == i {
-				continue
-			}
-
-			// if they're exactly equal in every way, just keep one of them
-			if reflect.DeepEqual(aps[i], aps[j]) {
-				aps = append(aps[:j], aps[j+1:]...)
-				i--
-				break
-			}
-
-			// if the policy is the same, we can keep just one, but we have
-			// to be careful which one we keep; if only one has any hostnames
-			// defined, then we need to keep the one without any hostnames,
-			// otherwise the one without any subjects (a catch-all) would be
-			// eaten up by the one with subjects; and if both have subjects, we
-			// need to combine their lists
-			if reflect.DeepEqual(aps[i].IssuerRaw, aps[j].IssuerRaw) &&
-				aps[i].ManageSync == aps[j].ManageSync {
-				if len(aps[i].Subjects) == 0 && len(aps[j].Subjects) > 0 {
-					aps = append(aps[:j], aps[j+1:]...)
-				} else if len(aps[i].Subjects) > 0 && len(aps[j].Subjects) == 0 {
-					aps = append(aps[:i], aps[i+1:]...)
-				} else {
-					aps[i].Subjects = append(aps[i].Subjects, aps[j].Subjects...)
-					aps = append(aps[:j], aps[j+1:]...)
-				}
-				i--
-				break
-			}
-		}
-	}
-
-	// ensure any catch-all policies go last
-	sort.SliceStable(aps, func(i, j int) bool {
-		return len(aps[i].Subjects) > len(aps[j].Subjects)
-	})
-
-	return aps
-}
-
 func matcherSetFromMatcherToken(
 	tkn caddyfile.Token,
 	matcherDefs map[string]caddy.ModuleMap,
@@ -831,6 +712,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	// keep routes with common host and path matchers together
 	var matcherPairs []*hostPathPair
 
+	var catchAllHosts bool
 	for _, key := range sblock.Keys {
 		addr, err := ParseAddress(key)
 		if err != nil {
@@ -854,6 +736,17 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 				chosenMatcherPair.pathm = []string{addr.Path}
 			}
 			matcherPairs = append(matcherPairs, chosenMatcherPair)
+		}
+
+		// if one of the keys has no host (i.e. is a catch-all for
+		// any hostname), then we need to null out the host matcher
+		// entirely so that it matches all hosts
+		if addr.Host == "" && !catchAllHosts {
+			chosenMatcherPair.hostm = nil
+			catchAllHosts = true
+		}
+		if catchAllHosts {
+			continue
 		}
 
 		// add this server block's keys to the matcher

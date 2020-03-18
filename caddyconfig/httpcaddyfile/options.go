@@ -15,11 +15,12 @@
 package httpcaddyfile
 
 import (
-	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func parseOptHTTPPort(d *caddyfile.Dispenser) (int, error) {
@@ -68,7 +69,7 @@ func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
 		}
 		dirName := d.Val()
 		if _, ok := registeredDirectives[dirName]; !ok {
-			return nil, fmt.Errorf("%s is not a registered directive", dirName)
+			return nil, d.Errf("%s is not a registered directive", dirName)
 		}
 
 		// get positional token
@@ -104,7 +105,7 @@ func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
 		case "before":
 		case "after":
 		default:
-			return nil, fmt.Errorf("unknown positional '%s'", pos)
+			return nil, d.Errf("unknown positional '%s'", pos)
 		}
 
 		// get name of other directive
@@ -145,11 +146,11 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	modName := args[0]
 	mod, err := caddy.GetModule("caddy.storage." + modName)
 	if err != nil {
-		return nil, fmt.Errorf("getting storage module '%s': %v", modName, err)
+		return nil, d.Errf("getting storage module '%s': %v", modName, err)
 	}
 	unm, ok := mod.New().(caddyfile.Unmarshaler)
 	if !ok {
-		return nil, fmt.Errorf("storage module '%s' is not a Caddyfile unmarshaler", mod.ID)
+		return nil, d.Errf("storage module '%s' is not a Caddyfile unmarshaler", mod.ID)
 	}
 	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
 	if err != nil {
@@ -157,7 +158,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	}
 	storage, ok := unm.(caddy.StorageConverter)
 	if !ok {
-		return nil, fmt.Errorf("module %s is not a StorageConverter", mod.ID)
+		return nil, d.Errf("module %s is not a StorageConverter", mod.ID)
 	}
 	return storage, nil
 }
@@ -186,4 +187,64 @@ func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
 		return listenAddress, nil
 	}
 	return "", nil
+}
+
+func parseOptOnDemand(d *caddyfile.Dispenser) (*caddytls.OnDemandConfig, error) {
+	var ond *caddytls.OnDemandConfig
+	for d.Next() {
+		if d.NextArg() {
+			return nil, d.ArgErr()
+		}
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			switch d.Val() {
+			case "ask":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				if ond == nil {
+					ond = new(caddytls.OnDemandConfig)
+				}
+				ond.Ask = d.Val()
+
+			case "interval":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return nil, err
+				}
+				if ond == nil {
+					ond = new(caddytls.OnDemandConfig)
+				}
+				if ond.RateLimit == nil {
+					ond.RateLimit = new(caddytls.RateLimit)
+				}
+				ond.RateLimit.Interval = caddy.Duration(dur)
+
+			case "burst":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				burst, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return nil, err
+				}
+				if ond == nil {
+					ond = new(caddytls.OnDemandConfig)
+				}
+				if ond.RateLimit == nil {
+					ond.RateLimit = new(caddytls.RateLimit)
+				}
+				ond.RateLimit.Burst = burst
+
+			default:
+				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
+			}
+		}
+	}
+	if ond == nil {
+		return nil, d.Err("expected at least one config parameter for on_demand_tls")
+	}
+	return ond, nil
 }
