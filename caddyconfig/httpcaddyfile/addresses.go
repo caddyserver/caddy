@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/certmagic"
@@ -199,7 +200,12 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	// use a map to prevent duplication
 	listeners := make(map[string]struct{})
 	for _, host := range lnHosts {
-		listeners[net.JoinHostPort(host, lnPort)] = struct{}{}
+		addr, err := caddy.ParseNetworkAddress(host)
+		if err == nil && addr.IsUnixNetwork() {
+			listeners[host] = struct{}{}
+		} else {
+			listeners[net.JoinHostPort(host, lnPort)] = struct{}{}
+		}
 	}
 
 	// now turn map into list
