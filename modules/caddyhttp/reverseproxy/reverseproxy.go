@@ -725,6 +725,7 @@ type Selector interface {
 // obsoleted RFC 2616 (section 13.5.1) and are used for backward
 // compatibility.
 var hopHeaders = []string{
+	"Alt-Svc",
 	"Connection",
 	"Proxy-Connection", // non-standard but still sent by libcurl and rejected by e.g. google
 	"Keep-Alive",
