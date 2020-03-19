@@ -24,9 +24,7 @@ import (
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("rewrite", parseCaddyfileRewrite)
-	httpcaddyfile.RegisterHandlerDirective("strip_prefix", parseCaddyfileStripPrefix)
-	httpcaddyfile.RegisterHandlerDirective("strip_suffix", parseCaddyfileStripSuffix)
-	httpcaddyfile.RegisterHandlerDirective("uri_replace", parseCaddyfileURIReplace)
+	httpcaddyfile.RegisterHandlerDirective("uri", parseCaddyfileURI)
 }
 
 // parseCaddyfileRewrite sets up a basic rewrite handler from Caddyfile tokens. Syntax:
@@ -49,89 +47,66 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 	return rewr, nil
 }
 
-// parseCaddyfileStripPrefix sets up a handler from Caddyfile tokens. Syntax:
+// parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
+// URI from Caddyfile tokens. Syntax:
 //
-//     strip_prefix [<matcher>] <prefix>
+//     uri [<matcher>] strip_prefix|strip_suffix|replace <target> [<replacement> [<limit>]]
 //
-// The request path will be stripped the given prefix.
-func parseCaddyfileStripPrefix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+// If strip_prefix or strip_suffix are used, then <target> will be stripped
+// only if it is the beginning or the end, respectively, of the URI path. If
+// replace is used, then <target> will be replaced with <replacement> across
+// the whole URI, up to <limit> times (or unlimited if unspecified).
+func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		rewr.StripPathPrefix = h.Val()
-		if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
-			rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
-		}
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
-	}
-	return rewr, nil
-}
-
-// parseCaddyfileStripSuffix sets up a handler from Caddyfile tokens. Syntax:
-//
-//     strip_suffix [<matcher>] <suffix>
-//
-// The request path will be stripped the given suffix.
-func parseCaddyfileStripSuffix(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var rewr Rewrite
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		rewr.StripPathSuffix = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
-	}
-	return rewr, nil
-}
-
-// parseCaddyfileURIReplace sets up a handler from Caddyfile tokens. Syntax:
-//
-//     uri_replace [<matcher>] <find> <replace> [<limit>]
-//
-// Substring replacements will be performed on the request URI up to the
-// number specified by limit, if any (default = 0, or no limit).
-func parseCaddyfileURIReplace(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var rewr Rewrite
-
-	var repls []replacer
-
 	for h.Next() {
 		args := h.RemainingArgs()
-		var find, replace, lim string
-		switch len(args) {
-		case 3:
-			lim = args[2]
-			fallthrough
-		case 2:
-			find = args[0]
-			replace = args[1]
-		default:
+		if len(args) < 2 {
 			return nil, h.ArgErr()
 		}
-
-		var limInt int
-		if lim != "" {
-			var err error
-			limInt, err = strconv.Atoi(lim)
-			if err != nil {
-				return nil, h.Errf("limit must be an integer; invalid: %v", err)
+		switch args[0] {
+		case "strip_prefix":
+			if len(args) > 2 {
+				return nil, h.ArgErr()
 			}
+			rewr.StripPathPrefix = args[1]
+			if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
+				rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
+			}
+		case "strip_suffix":
+			if len(args) > 2 {
+				return nil, h.ArgErr()
+			}
+			rewr.StripPathSuffix = args[1]
+		case "replace":
+			var find, replace, lim string
+			switch len(args) {
+			case 4:
+				lim = args[3]
+				fallthrough
+			case 3:
+				find = args[1]
+				replace = args[2]
+			default:
+				return nil, h.ArgErr()
+			}
+
+			var limInt int
+			if lim != "" {
+				var err error
+				limInt, err = strconv.Atoi(lim)
+				if err != nil {
+					return nil, h.Errf("limit must be an integer; invalid: %v", err)
+				}
+			}
+
+			rewr.URISubstring = append(rewr.URISubstring, replacer{
+				Find:    find,
+				Replace: replace,
+				Limit:   limInt,
+			})
+		default:
+			return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
 		}
-
-		repls = append(repls, replacer{
-			Find:    find,
-			Replace: replace,
-			Limit:   limInt,
-		})
 	}
-
-	rewr.URISubstring = repls
-
 	return rewr, nil
 }
