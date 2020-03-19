@@ -37,11 +37,17 @@ func init() {
 	caddy.RegisterModule(MatchExpression{})
 }
 
-// MatchExpression matches requests by evaluating a CEL expression.
+// MatchExpression matches requests by evaluating a
+// [CEL](https://github.com/google/cel-spec) expression.
+// This enables complex logic to be expressed using a comfortable,
+// familiar syntax.
+//
+// COMPATIBILITY NOTE: This module is still experimental and is not
+// subject to Caddy's compatibility guarantee.
 type MatchExpression struct {
 	// The CEL expression to evaluate. Any Caddy placeholders
-	// will be expanded and situated into a proper CEL function
-	// call before evaluating.
+	// will be expanded and situated into proper CEL function
+	// calls before evaluating.
 	Expr string
 
 	expandedExpr string
