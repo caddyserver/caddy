@@ -237,7 +237,7 @@ func (c templateContext) funcMarkdown(input interface{}) (template.HTML, error) 
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
-			extension.Table,
+			extension.Footnote,
 			highlighting.NewHighlighting(
 				highlighting.WithFormatOptions(
 					html.WithClasses(true),
