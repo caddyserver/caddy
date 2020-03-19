@@ -135,7 +135,9 @@ func (MatchHost) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	*m = d.RemainingArgs()
+	for d.Next() {
+		*m = append(*m, d.RemainingArgs()...)
+	}
 	return nil
 }
 
@@ -260,7 +262,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		*m = d.RemainingArgs()
+		*m = append(*m, d.RemainingArgs()...)
 	}
 	return nil
 }
@@ -290,7 +292,7 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		*m = d.RemainingArgs()
+		*m = append(*m, d.RemainingArgs()...)
 	}
 	return nil
 }
@@ -622,7 +624,7 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		m.Ranges = d.RemainingArgs()
+		m.Ranges = append(m.Ranges, d.RemainingArgs()...)
 	}
 	return nil
 }
