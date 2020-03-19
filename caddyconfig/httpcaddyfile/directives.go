@@ -33,9 +33,7 @@ var directiveOrder = []string{
 
 	"root",
 
-	"strip_prefix",
-	"strip_suffix",
-	"uri_replace",
+	"uri",
 	"try_files",
 
 	// middleware handlers that typically wrap responses
