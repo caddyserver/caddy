@@ -47,7 +47,7 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 }
 
 // parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
-// URI from Caddyfile tokens Syntax:
+// URI from Caddyfile tokens. Syntax:
 //
 //     uri [<matcher>] strip_prefix|strip_suffix|replace <target> [<replacement> [<limit>]]
 //
