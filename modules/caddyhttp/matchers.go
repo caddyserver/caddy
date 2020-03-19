@@ -107,9 +107,6 @@ type (
 
 		Matchers MatcherSet `json:"-"`
 	}
-
-	// MatchTable matches requests by values in the table.
-	MatchTable string // TODO: finish implementing
 )
 
 func init() {
