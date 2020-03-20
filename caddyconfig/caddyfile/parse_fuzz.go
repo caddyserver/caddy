@@ -17,12 +17,8 @@
 
 package caddyfile
 
-import (
-	"bytes"
-)
-
 func FuzzParseCaddyfile(data []byte) (score int) {
-	sb, err := Parse("Caddyfile", bytes.NewReader(data))
+	sb, err := Parse("Caddyfile", data)
 	if err != nil {
 		// if both an error is received and some ServerBlocks,
 		// then the parse was able to parse partially. Mark this
