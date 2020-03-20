@@ -13,7 +13,7 @@ This is the development branch for Caddy 2, the web server of the Go community.
 <h3 align="center">Every site on HTTPS</h3>
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
-	<a href="https://dev.azure.com/mholt-dev/Caddy/_build/latest?definitionId=5&branchName=v2"><img src="https://dev.azure.com/mholt-dev/Caddy/_apis/build/status/Multiplatform%20Tests?branchName=v2"></a>
+	<a href="https://github.com/caddyserver/caddy/actions?query=workflow%3ACross-Platform"><img src="https://github.com/caddyserver/caddy/workflows/Cross-Platform/badge.svg?branch=v2"></a>
 	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-blue.svg"></a>
 	<a href="https://app.fuzzit.dev/orgs/caddyserver-gh/dashboard"><img src="https://app.fuzzit.dev/badge?org_id=caddyserver-gh"></a>
 	<br>
