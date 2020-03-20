@@ -1,0 +1,119 @@
+# Used as inspiration: https://github.com/mvdan/github-actions-golang
+
+name: Cross-Platform
+
+on:
+  push:
+    branches: 
+      - v2
+  pull_request:
+    branches: 
+      - v2
+
+jobs:
+  test:
+    strategy:
+      # Default is true, cancels jobs for other platforms in the matrix if one fails
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        go-version: [ 1.14.x ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    # These tools would be useful if we later decide to reinvestigate
+    # publishing test/coverage reports to some tool for easier consumption
+    # - name: Install test and coverage analysis tools
+    #   run: |
+    #     go get github.com/axw/gocov/gocov
+    #     go get github.com/AlekSi/gocov-xml
+    #     go get -u github.com/jstemmer/go-junit-report
+    #     echo "::add-path::$(go env GOPATH)/bin"
+
+    - name: Print Go version and environment
+      run: |
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+
+    - name: Get dependencies
+      run: |
+        go get -v -t -d ./...
+        # mkdir test-results
+
+    - name: Build Caddy
+      working-directory: ./cmd/caddy
+      env:
+        CGO_ENABLED: 0
+      run: |
+        go build -trimpath -a -ldflags="-w -s" -v
+
+    - name: Publish Build Artifact (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v1
+      with:
+        name: caddy_v2_${{ matrix.os }}
+        path: ./cmd/caddy/caddy.exe
+
+    - name: Publish Build Artifact (Linux/Mac)
+      if: matrix.os != 'windows-latest'
+      uses: actions/upload-artifact@v1
+      with:
+        name: caddy_v2_${{ matrix.os }}
+        path: ./cmd/caddy/caddy
+
+    # Commented bits below were useful to allow the job to continue
+    # even if the tests fail, so we can publish the report separately
+    # For info about set-output, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
+    - name: Run tests
+      # id: step_test
+      # continue-on-error: true
+      run: |
+        # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        go test -v -coverprofile="cover-profile.out" -race ./...
+        # echo "::set-output name=status::$?"
+
+    # Relevant step if we reinvestigate publishing test/coverage reports
+    # - name: Prepare coverage reports
+    #   run: |
+    #     mkdir coverage
+    #     gocov convert cover-profile.out > coverage/coverage.json
+    #     # Because Windows doesn't work with input redirection like *nix, but output redirection works.
+    #     (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
+
+    # To return the correct result even though we set 'continue-on-error: true'
+    # - name: Coerce correct build result (Windows)
+    #   if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
+    #   run: |
+    #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
+    #     exit 1
+    # - name: Coerce correct build result (Linux/Mac)
+    #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
+    #   run: |
+    #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
+    #     exit 1
+
+  # From https://github.com/reviewdog/action-golangci-lint
+  golangci-lint:
+    name: runner / golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Run golangci-lint
+        uses: reviewdog/action-golangci-lint@v1
+        # uses: docker://reviewdog/action-golangci-lint:v1 # pre-build docker image
+        with:
+          github_token: ${{ secrets.github_token }}
