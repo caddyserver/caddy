@@ -10,8 +10,6 @@ on:
 
 jobs:
   build-and-test:
-    name: Cross-Platform Tests
-
     strategy:
       matrix:
         # os: [ ubuntu-latest, macos-latest, windows-latest ]
