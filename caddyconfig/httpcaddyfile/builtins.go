@@ -555,8 +555,8 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 			if !ok {
 				logCounter = 0
 			}
-			cl.Include = []string{"http.log.access"}
 			val.name = fmt.Sprintf("log%d", logCounter)
+			cl.Include = []string{"http.log.access." + val.name}
 			val.log = cl
 			logCounter++
 			h.State["logCounter"] = logCounter
