@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     strategy:
-      # Default is true, cancels jobs for other platforms if one fails
+      # Default is true, cancels jobs for other platforms in the matrix if one fails
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
@@ -29,6 +29,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    # These tools would be useful if we later decide to reinvestigate
+    # publishing test/coverage reports to some tool for easier consumption
     # - name: Install test and coverage analysis tools
     #   run: |
     #     go get github.com/axw/gocov/gocov
@@ -71,6 +73,8 @@ jobs:
         name: caddy_v2_${{ matrix.os }}
         path: ./cmd/caddy/caddy
 
+    # Commented bits below were useful to allow the job to continue
+    # even if the tests fail, so we can publish the report separately
     # For info about set-output, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
     - name: Run tests
       # id: step_test
@@ -78,8 +82,9 @@ jobs:
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -v -coverprofile="cover-profile.out" -race ./...
-        echo "::set-output name=status::$?"
+        # echo "::set-output name=status::$?"
 
+    # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
     #   run: |
     #     mkdir coverage
@@ -87,21 +92,19 @@ jobs:
     #     # Because Windows doesn't work with input redirection like *nix, but output redirection works.
     #     (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
 
-    # TODO publish coverage/lint/test results ?
-
     # To return the correct result even though we set 'continue-on-error: true'
     # - name: Coerce correct build result (Windows)
     #   if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
-
     # - name: Coerce correct build result (Linux/Mac)
     #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
 
+  # From https://github.com/reviewdog/action-golangci-lint
   golangci-lint:
     name: runner / golangci-lint
     runs-on: ubuntu-latest
