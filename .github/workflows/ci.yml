@@ -84,13 +84,6 @@ jobs:
         (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         echo "::set-output name=status::$?"
 
-    - name: Run integration tests
-      run: |
-        set -e
-        cmd/caddy/caddy start
-        go test -v -count=1 ./caddytest/...
-        cmd/caddy/caddy stop
-
     - name: Prepare coverage reports
       run: |
         mkdir coverage
