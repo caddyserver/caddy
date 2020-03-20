@@ -91,6 +91,8 @@ jobs:
     - name: Coerce correct build result
       if: steps.step_lint.outputs.status != 0 || steps.step_test.outputs.status != 0
       run: |
+        echo "step_lint ${{ steps.step_lint.outputs.status }}\n"
+        echo "step_test ${{ steps.step_test.outputs.status }}\n"
         exit 1
 
   golangci-lint:
