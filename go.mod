@@ -10,14 +10,14 @@ require (
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.5.0
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
-	github.com/google/cel-go v0.3.2
+	github.com/google/cel-go v0.4.0
 	github.com/ilibs/json5 v1.0.1
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.10.3
 	github.com/klauspost/cpuid v1.2.3
 	github.com/lucas-clemente/quic-go v0.15.2
 	github.com/manifoldco/promptui v0.7.0 // indirect
-	github.com/miekg/dns v1.1.28 // indirect
+	github.com/miekg/dns v1.1.29 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20200303171503-1e787b591db7
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
@@ -29,7 +29,7 @@ require (
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.14.1
 	golang.org/x/crypto v0.0.0-20200317142112-1b76d66859c6
-	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
+	golang.org/x/net v0.0.0-20200319234117-63522dbf7eec
 	google.golang.org/genproto v0.0.0-20200305110556-506484158171
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/square/go-jose.v2 v2.4.1 // indirect
