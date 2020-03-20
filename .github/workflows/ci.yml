@@ -28,6 +28,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    # Only run lint on ubuntu, the reviewdog action uses docker
+    - name: Run lint check
+      if: matrix.os == 'ubuntu-latest'
+      uses: reviewdog/action-golangci-lint@v1
+      with:
+        github_token: ${{ secrets.github_token }}
+
     - name: Install test and coverage analysis tools
       run: |
         go get github.com/axw/gocov/gocov
@@ -47,7 +54,7 @@ jobs:
     - name: Get dependencies
       run: |
         go get -v -t -d ./...
-        mkdir test-results
+        # mkdir test-results
 
     # TODO Might not be in the correct dir at this point
     - name: Build Caddy
@@ -69,20 +76,13 @@ jobs:
         name: caddy_v2_${{ matrix.os }}
         path: ./cmd/caddy/caddy
 
-    # Only run lint on ubuntu, the reviewdog action uses docker
-    - name: Run lint check
-      if: matrix.os == 'ubuntu-latest'
-      uses: reviewdog/action-golangci-lint@v1
-      with:
-        github_token: ${{ secrets.github_token }}
-
-    # TODO working dir might be wrong
-    # TODO set-output may be incorrect, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
+    # For info about set-output, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
     - name: Run tests
       id: step_test
       continue-on-error: true
       run: |
-        (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        go test -v -coverprofile=cover-profile.out -race ./...
         echo "::set-output name=status::$?"
 
     - name: Prepare coverage reports
