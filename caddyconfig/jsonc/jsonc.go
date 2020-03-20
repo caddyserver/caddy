@@ -29,7 +29,7 @@ func init() {
 // Adapter adapts JSON-C to Caddy JSON.
 type Adapter struct{}
 
-func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+func (Adapter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "adapters.jsonc",
 		New: func() caddy.Module {

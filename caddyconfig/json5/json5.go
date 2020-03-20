@@ -29,7 +29,7 @@ func init() {
 // Adapter adapts JSON5 to Caddy JSON.
 type Adapter struct{}
 
-func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+func (Adapter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "adapters.json5",
 		New: func() caddy.Module {

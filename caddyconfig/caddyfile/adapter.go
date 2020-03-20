@@ -27,7 +27,7 @@ type Adapter struct {
 	ServerType ServerType
 }
 
-func (_ Adapter) CaddyModule() caddy.ModuleInfo {
+func (Adapter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "adapters.caddyfile",
 		New: func() caddy.Module {
