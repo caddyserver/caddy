@@ -44,6 +44,7 @@ jobs:
         wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.77/fuzzit_Linux_x86_64
         chmod a+x fuzzit
         mv fuzzit $(go env GOPATH)/bin
+        echo "::add-path::$(go env GOPATH)/bin"
 
     - name: Generate fuzzers & submit them to Fuzzit
       env:
