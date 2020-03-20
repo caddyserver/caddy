@@ -29,6 +29,9 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
+    - name: Checkout code
+      uses: actions/checkout@v2
+
     - name: Download go-fuzz tools and the Fuzzit CLI, move Fuzzit CLI to GOBIN
       if: github.repository == 'caddyserver/caddy'
       run: |
