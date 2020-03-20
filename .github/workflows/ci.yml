@@ -1,6 +1,6 @@
 # Used as inspiration: https://github.com/mvdan/github-actions-golang
 
-name: Cross-Platform Tests
+name: Cross-Platform
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
     branches: [ v2 ]
 
 jobs:
-  build-and-test:
+  test:
     strategy:
       matrix:
         # os: [ ubuntu-latest, macos-latest, windows-latest ]
