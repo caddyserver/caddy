@@ -50,7 +50,6 @@ jobs:
         go get -v -t -d ./...
         # mkdir test-results
 
-    # Force bash shell, this command fails on windows if using pwsh
     - name: Build Caddy
       working-directory: ./cmd/caddy
       env:
