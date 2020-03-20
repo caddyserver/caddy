@@ -33,7 +33,7 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Download go-fuzz tools and the Fuzzit CLI, move Fuzzit CLI to GOBIN
-      if: github.repository == 'caddyserver/caddy'
+      # if: github.repository == 'caddyserver/caddy'
       run: |
         # Install Clang-7.0 because other versions seem to be missing the file libclang_rt.fuzzer-x86_64.a
         sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-7 main"
