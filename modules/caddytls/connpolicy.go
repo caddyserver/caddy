@@ -76,6 +76,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies
+	// (TODO: this map does not account for wildcards, see if this is a problem in practice?)
 	indexedBySNI := make(map[string]ConnectionPolicies)
 	if len(cp) > 30 {
 		for _, p := range cp {
