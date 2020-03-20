@@ -88,10 +88,15 @@ jobs:
     # TODO publish coverage/lint/test results ?
 
     # To return the correct result even though we set 'continue-on-error: true'
-    - name: Coerce correct build result
-      if: steps.step_lint.outputs.status != 0 || steps.step_test.outputs.status != 0
+    - name: Coerce correct build result (Windows)
+      if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
       run: |
-        echo "step_lint ${{ steps.step_lint.outputs.status }}\n"
+        echo "step_test ${{ steps.step_test.outputs.status }}\n"
+        exit 1
+
+    - name: Coerce correct build result (Linux/Mac)
+      if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
+      run: |
         echo "step_test ${{ steps.step_test.outputs.status }}\n"
         exit 1
 
