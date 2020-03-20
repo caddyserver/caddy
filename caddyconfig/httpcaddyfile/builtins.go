@@ -15,7 +15,6 @@
 package httpcaddyfile
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
@@ -32,8 +31,8 @@ import (
 
 func init() {
 	RegisterDirective("bind", parseBind)
-	RegisterDirective("root", parseRoot) // TODO: isn't this a handler directive?
 	RegisterDirective("tls", parseTLS)
+	RegisterHandlerDirective("root", parseRoot)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("route", parseRoute)
@@ -52,45 +51,6 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 		lnHosts = append(lnHosts, h.RemainingArgs()...)
 	}
 	return h.NewBindAddresses(lnHosts), nil
-}
-
-// parseRoot parses the root directive. Syntax:
-//
-//     root [<matcher>] <path>
-//
-func parseRoot(h Helper) ([]ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
-
-	matcherSet, ok, err := h.MatcherToken()
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		// no matcher token; oops
-		h.Dispenser.Prev()
-	}
-
-	if !h.NextArg() {
-		return nil, h.ArgErr()
-	}
-	root := h.Val()
-	if h.NextArg() {
-		return nil, h.ArgErr()
-	}
-
-	varsHandler := caddyhttp.VarsMiddleware{"root": root}
-	route := caddyhttp.Route{
-		HandlersRaw: []json.RawMessage{
-			caddyconfig.JSONModuleObject(varsHandler, "handler", "vars", nil),
-		},
-	}
-	if matcherSet != nil {
-		route.MatcherSetsRaw = []caddy.ModuleMap{matcherSet}
-	}
-
-	return []ConfigValue{{Class: "route", Value: route}}, nil
 }
 
 // parseTLS parses the tls directive. Syntax:
@@ -348,6 +308,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	})
 
 	return configVals, nil
+}
+
+// parseRoot parses the root directive. Syntax:
+//
+//     root [<matcher>] <path>
+//
+func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var root string
+	for h.Next() {
+		if !h.Next() {
+			return nil, h.ArgErr()
+		}
+		root = h.Val()
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return caddyhttp.VarsMiddleware{"root": root}, nil
 }
 
 // parseRedir parses the redir directive. Syntax:
