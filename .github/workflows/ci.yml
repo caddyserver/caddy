@@ -53,23 +53,20 @@ jobs:
       working-directory: ./cmd/caddy
       run: |
         CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
-        pwd
-        ls -la
 
-    # TODO Publish build artifacts (figure out output path)
-    # - name: Publish Build Artifact (Windows)
-    #   if: matrix.os == 'windows-latest'
-    #   uses: actions/upload-artifact@v1
-    #   with:
-    #     name: caddy_v2_${{ matrix.os }}
-    #     path: ${{ env.somewhere }}/cmd/caddy/caddy.exe
+    - name: Publish Build Artifact (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v1
+      with:
+        name: caddy_v2_${{ matrix.os }}
+        path: ./cmd/caddy/caddy.exe
 
-    # - name: Publish Build Artifact (Linux/Mac)
-    #   if: matrix.os != 'windows-latest'
-    #   uses: actions/upload-artifact@v1
-    #   with:
-    #     name: caddy_v2_${{ matrix.os }}
-    #     path: ${{ env.somewhere }}/cmd/caddy/caddy
+    - name: Publish Build Artifact (Linux/Mac)
+      if: matrix.os != 'windows-latest'
+      uses: actions/upload-artifact@v1
+      with:
+        name: caddy_v2_${{ matrix.os }}
+        path: ./cmd/caddy/caddy
 
     # Only run lint on ubuntu, the reviewdog action uses docker
     - name: Run lint check
