@@ -42,7 +42,7 @@ jobs:
         chmod a+x fuzzit
         mv fuzzit $(go env GOPATH)/bin
 
-    - name: Download go-fuzz tools and the Fuzzit CLI, move Fuzzit CLI to GOBIN
+    - name: Generate fuzzers & submit them to Fuzzit
       env:
         FUZZIT_API_KEY: ${{ secrets.FUZZIT_API_KEY }}
       run: |
@@ -64,6 +64,7 @@ jobs:
         if [[ ${{ github.event_name }} == "schedule" ]]; then
           fuzz_type="fuzzing"
         fi
+        echo "Github event: ${{ github.event_name }}"
         echo "Fuzzing type: $fuzz_type"
 
         for f in $(find . -name \*_fuzz.go); do
