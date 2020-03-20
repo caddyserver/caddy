@@ -53,6 +53,10 @@ jobs:
       run: |
         CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
 
+    - name: Tree
+      run: |
+        tree
+
     # TODO Publish build artifacts (figure out output path)
     # - name: Publish Build Artifact (Windows)
     #   if: matrix.os == 'windows-latest'
