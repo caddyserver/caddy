@@ -29,12 +29,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Install test and coverage analysis tools
-      run: |
-        go get github.com/axw/gocov/gocov
-        go get github.com/AlekSi/gocov-xml
-        go get -u github.com/jstemmer/go-junit-report
-        echo "::add-path::$(go env GOPATH)/bin"
+    # - name: Install test and coverage analysis tools
+    #   run: |
+    #     go get github.com/axw/gocov/gocov
+    #     go get github.com/AlekSi/gocov-xml
+    #     go get -u github.com/jstemmer/go-junit-report
+    #     echo "::add-path::$(go env GOPATH)/bin"
 
     - name: Print Go version and environment
       run: |
@@ -73,34 +73,34 @@ jobs:
 
     # For info about set-output, see https://stackoverflow.com/questions/57850553/github-actions-check-steps-status
     - name: Run tests
-      id: step_test
-      continue-on-error: true
+      # id: step_test
+      # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -v -coverprofile="cover-profile.out" -race ./...
         echo "::set-output name=status::$?"
 
-    - name: Prepare coverage reports
-      run: |
-        mkdir coverage
-        gocov convert cover-profile.out > coverage/coverage.json
-        # Because Windows doesn't work with input redirection like *nix, but output redirection works.
-        (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
+    # - name: Prepare coverage reports
+    #   run: |
+    #     mkdir coverage
+    #     gocov convert cover-profile.out > coverage/coverage.json
+    #     # Because Windows doesn't work with input redirection like *nix, but output redirection works.
+    #     (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
 
     # TODO publish coverage/lint/test results ?
 
     # To return the correct result even though we set 'continue-on-error: true'
-    - name: Coerce correct build result (Windows)
-      if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
-      run: |
-        echo "step_test ${{ steps.step_test.outputs.status }}\n"
-        exit 1
+    # - name: Coerce correct build result (Windows)
+    #   if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
+    #   run: |
+    #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
+    #     exit 1
 
-    - name: Coerce correct build result (Linux/Mac)
-      if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
-      run: |
-        echo "step_test ${{ steps.step_test.outputs.status }}\n"
-        exit 1
+    # - name: Coerce correct build result (Linux/Mac)
+    #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
+    #   run: |
+    #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
+    #     exit 1
 
   golangci-lint:
     name: runner / golangci-lint
