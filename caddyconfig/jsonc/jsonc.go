@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(Adapter{})
+	caddyconfig.RegisterAdapter("jsonc", Adapter{})
 }
 
 // Adapter adapts JSON-C to Caddy JSON.

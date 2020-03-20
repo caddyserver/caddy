@@ -29,6 +29,10 @@ import (
 	"github.com/caddyserver/certmagic"
 )
 
+func init() {
+	caddyconfig.RegisterAdapter("caddyfile", caddyfile.Adapter{ServerType: ServerType{}})
+}
+
 // ServerType can set up a config from an HTTP Caddyfile.
 type ServerType struct {
 }

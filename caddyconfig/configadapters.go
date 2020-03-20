@@ -17,6 +17,8 @@ package caddyconfig
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // Adapter is a type which can adapt a configuration to Caddy JSON.
@@ -105,7 +107,10 @@ func RegisterAdapter(name string, adapter Adapter) error {
 		return fmt.Errorf("%s: already registered", name)
 	}
 	configAdapters[name] = adapter
-	return nil
+	if mod, ok := adapter.(caddy.Module); ok {
+		return caddy.RegisterModule(mod)
+	}
+	return fmt.Errorf("%s: adapter is not a Caddy module", name)
 }
 
 // GetAdapter returns the adapter with the given name,

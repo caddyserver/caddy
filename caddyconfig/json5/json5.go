@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(Adapter{})
+	caddyconfig.RegisterAdapter("json5", Adapter{})
 }
 
 // Adapter adapts JSON5 to Caddy JSON.

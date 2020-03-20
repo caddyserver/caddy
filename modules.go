@@ -22,8 +22,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
 // Module is a type that is used as a Caddy module. In
@@ -153,10 +151,6 @@ func RegisterModule(instance Module) error {
 		return fmt.Errorf("module already registered: %s", mod.ID)
 	}
 	modules[string(mod.ID)] = mod
-	if m, ok := instance.(caddyconfig.Adapter); ok {
-		err := caddyconfig.RegisterAdapter(mod.ID.Name(), m)
-		return err
-	}
 	return nil
 }
 

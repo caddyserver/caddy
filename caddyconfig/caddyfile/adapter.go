@@ -22,10 +22,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
-func init() {
-	caddy.RegisterModule(Adapter{})
-}
-
 // Adapter adapts Caddyfile to Caddy JSON.
 type Adapter struct {
 	ServerType ServerType
