@@ -33,6 +33,7 @@ jobs:
         go get github.com/axw/gocov/gocov
         go get github.com/AlekSi/gocov-xml
         go get -u github.com/jstemmer/go-junit-report
+        echo "::add-path::$(go env GOPATH)/bin"
 
     - name: Print Go version and environment
       run: |
