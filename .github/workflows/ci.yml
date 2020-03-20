@@ -11,6 +11,8 @@ on:
 jobs:
   test:
     strategy:
+      # Default is true, cancels jobs for other platforms if one fails
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         go-version: [ 1.14.x ]
@@ -73,7 +75,7 @@ jobs:
       continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile=cover-profile.out -race ./...
+        go test -v -coverprofile="cover-profile.out" -race ./...
         echo "::set-output name=status::$?"
 
     - name: Prepare coverage reports
