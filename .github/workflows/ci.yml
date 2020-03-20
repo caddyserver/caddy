@@ -56,7 +56,9 @@ jobs:
     - name: Tree
       run: |
         sudo apt install tree
-        tree
+        tree ~
+        printf "GOPATH $GOPATH"
+        tree $GOPATH
 
     # TODO Publish build artifacts (figure out output path)
     # - name: Publish Build Artifact (Windows)
