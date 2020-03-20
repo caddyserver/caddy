@@ -51,9 +51,10 @@ jobs:
     # Force bash shell, this command fails on windows if using pwsh
     - name: Build Caddy
       working-directory: ./cmd/caddy
-      shell: bash
+      env:
+        CGO_ENABLED: 0
       run: |
-        CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
+        go build -trimpath -a -ldflags="-w -s" -v
 
     - name: Publish Build Artifact (Windows)
       if: matrix.os == 'windows-latest'
