@@ -25,13 +25,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    # Only run lint on ubuntu, the reviewdog action uses docker
-    # - name: Run lint check
-    #   if: matrix.os == 'ubuntu-latest'
-    #   uses: reviewdog/action-golangci-lint@v1
-    #   with:
-    #     github_token: ${{ secrets.github_token }}
-
     - name: Install test and coverage analysis tools
       run: |
         go get github.com/axw/gocov/gocov
@@ -53,9 +46,10 @@ jobs:
         go get -v -t -d ./...
         # mkdir test-results
 
-    # TODO Might not be in the correct dir at this point
+    # Force bash shell, this command fails on windows if using pwsh
     - name: Build Caddy
       working-directory: ./cmd/caddy
+      shell: bash
       run: |
         CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
 
@@ -102,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code into the Go module directory
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
 
       - name: Run golangci-lint
         uses: reviewdog/action-golangci-lint@v1
