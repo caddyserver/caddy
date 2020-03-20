@@ -50,8 +50,11 @@ jobs:
 
     # TODO Might not be in the correct dir at this point
     - name: Build Caddy
+      working-directory: ./cmd/caddy
       run: |
         CGO_ENABLED=0 go build -trimpath -a -ldflags="-w -s" -v
+        pwd
+        ls -la
 
     # TODO Publish build artifacts (figure out output path)
     # - name: Publish Build Artifact (Windows)
