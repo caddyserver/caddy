@@ -29,6 +29,7 @@ import (
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
+	"github.com/google/cel-go/ext"
 	"github.com/google/cel-go/interpreter/functions"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -88,6 +89,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 					decls.String)),
 		),
 		cel.CustomTypeAdapter(celHTTPRequestTypeAdapter{}),
+		ext.Strings(),
 	)
 	if err != nil {
 		return fmt.Errorf("setting up CEL environment: %v", err)
