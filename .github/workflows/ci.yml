@@ -29,11 +29,11 @@ jobs:
       uses: actions/checkout@v2
 
     # Only run lint on ubuntu, the reviewdog action uses docker
-    - name: Run lint check
-      if: matrix.os == 'ubuntu-latest'
-      uses: reviewdog/action-golangci-lint@v1
-      with:
-        github_token: ${{ secrets.github_token }}
+    # - name: Run lint check
+    #   if: matrix.os == 'ubuntu-latest'
+    #   uses: reviewdog/action-golangci-lint@v1
+    #   with:
+    #     github_token: ${{ secrets.github_token }}
 
     - name: Install test and coverage analysis tools
       run: |

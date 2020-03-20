@@ -1,0 +1,21 @@
+name: golangci-lint
+
+on:
+  push:
+    branches: [ v2 ]
+  pull_request:
+    branches: [ v2 ]
+
+jobs:
+  golangci-lint:
+    name: runner / golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code into the Go module directory
+        uses: actions/checkout@v1
+
+      - name: Run golangci-lint
+        uses: reviewdog/action-golangci-lint@v1
+        # uses: docker://reviewdog/action-golangci-lint:v1 # pre-build docker image
+        with:
+          github_token: ${{ secrets.github_token }}
