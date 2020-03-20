@@ -47,6 +47,7 @@ jobs:
         echo "::add-path::$(go env GOPATH)/bin"
 
     - name: Generate fuzzers & submit them to Fuzzit
+      continue-on-error: true
       env:
         FUZZIT_API_KEY: ${{ secrets.FUZZIT_API_KEY }}
       run: |
