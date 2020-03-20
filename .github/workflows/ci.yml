@@ -12,8 +12,7 @@ jobs:
   test:
     strategy:
       matrix:
-        # os: [ ubuntu-latest, macos-latest, windows-latest ]
-        os: [ ubuntu-latest ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
         go-version: [ 1.14.x ]
     runs-on: ${{ matrix.os }}
 
