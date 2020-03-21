@@ -56,6 +56,7 @@ jobs:
     #     echo "::add-path::$(go env GOPATH)/bin"
 
     - name: Print Go version and environment
+      id: vars
       run: |
         printf "Using go at: $(which go)\n"
         printf "Go version: $(go version)\n"
@@ -63,6 +64,8 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
+        # Calculate the short SHA1 hash of the git commit
+        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
 
     - name: Get dependencies
       run: |
@@ -79,7 +82,7 @@ jobs:
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v1
       with:
-        name: caddy_v2_${{ matrix.os }}
+        name: caddy_v2_${{ runner.os }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
 
     # Commented bits below were useful to allow the job to continue
