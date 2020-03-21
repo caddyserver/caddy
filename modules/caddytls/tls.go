@@ -94,12 +94,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation = new(AutomationConfig)
 	}
 	t.Automation.defaultAutomationPolicy = new(AutomationPolicy)
-	err := t.Automation.defaultAutomationPolicy.provision(t)
+	err := t.Automation.defaultAutomationPolicy.Provision(t)
 	if err != nil {
 		return fmt.Errorf("provisioning default automation policy: %v", err)
 	}
 	for i, ap := range t.Automation.Policies {
-		err := ap.provision(t)
+		err := ap.Provision(t)
 		if err != nil {
 			return fmt.Errorf("provisioning automation policy %d: %v", i, err)
 		}
@@ -300,7 +300,7 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
 	}
-	err := ap.provision(t)
+	err := ap.Provision(t)
 	if err != nil {
 		return err
 	}

@@ -407,103 +407,179 @@ redirServersLoop:
 // base for the new ones (this is important for preserving behavior the
 // user intends to be "defaults").
 func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, internalNames []string) error {
-	// nothing to do if no names to manage certs for
-	if len(publicNames) == 0 && len(internalNames) == 0 {
-		return nil
-	}
-
-	// start by finding a base policy that the user may have defined
-	// which should, in theory, apply to any policies derived from it;
-	// typically this would be a "catch-all" policy with no host filter
+	// before we begin, loop through the existing automation policies
+	// and, for any ACMEIssuers we find, make sure they're filled in
+	// with default values that might be specified in our HTTP app; also
+	// look for a base (or "catch-all" / default) automation policy,
+	// which we're going to essentially require, to make sure it has
+	// those defaults, too
 	var basePolicy *caddytls.AutomationPolicy
-	if app.tlsApp.Automation != nil {
-		for _, ap := range app.tlsApp.Automation.Policies {
-			// if an existing policy matches (specifically, a catch-all policy),
-			// we should inherit from it, because that is what the user expects;
-			// this is very common for user setting a default issuer, with a
-			// custom CA endpoint, for example - whichever one we choose must
-			// have a host list that is a superset of the policy we make...
-			// the policy with no host filter is guaranteed to qualify
-			if len(ap.Subjects) == 0 {
-				basePolicy = ap
-				break
+	var foundBasePolicy bool
+	if app.tlsApp.Automation == nil {
+		// we will expect this to not be nil from now on
+		app.tlsApp.Automation = new(caddytls.AutomationConfig)
+	}
+	for _, ap := range app.tlsApp.Automation.Policies {
+		// set up default issuer -- honestly, this is only
+		// really necessary because the HTTP app is opinionated
+		// and has settings which could be inferred as new
+		// defaults for the ACMEIssuer in the TLS app
+		if ap.Issuer == nil {
+			ap.Issuer = new(caddytls.ACMEIssuer)
+		}
+		if acmeIssuer, ok := ap.Issuer.(*caddytls.ACMEIssuer); ok {
+			err := app.fillInACMEIssuer(acmeIssuer)
+			if err != nil {
+				return err
 			}
 		}
+
+		// while we're here, is this the catch-all/base policy?
+		if !foundBasePolicy && len(ap.Subjects) == 0 {
+			basePolicy = ap
+			foundBasePolicy = true
+		}
 	}
+
 	if basePolicy == nil {
+		// no base policy found, we will make one!
 		basePolicy = new(caddytls.AutomationPolicy)
 	}
 
-	// addPolicy adds an automation policy that uses issuer for hosts.
-	addPolicy := func(issuer certmagic.Issuer, hosts []string) error {
-		// shallow-copy the matching policy; we want to inherit
+	// if the basePolicy has an existing ACMEIssuer, let's
+	// use it, otherwise we'll make one
+	baseACMEIssuer, _ := basePolicy.Issuer.(*caddytls.ACMEIssuer)
+	if baseACMEIssuer == nil {
+		// note that this happens if basePolicy.Issuer is nil
+		// OR if it is not nil but is not an ACMEIssuer
+		baseACMEIssuer = new(caddytls.ACMEIssuer)
+	}
+
+	// if there was a base policy to begin with, we already
+	// filled in its issuer's defaults; if there wasn't, we
+	// stil need to do that
+	if !foundBasePolicy {
+		err := app.fillInACMEIssuer(baseACMEIssuer)
+		if err != nil {
+			return err
+		}
+	}
+
+	// never overwrite any other issuer that might already be configured
+	if basePolicy.Issuer == nil {
+		basePolicy.Issuer = baseACMEIssuer
+	}
+
+	if !foundBasePolicy {
+		// there was no base policy to begin with, so add
+		// our base/catch-all policy - this will serve the
+		// public-looking names as well as any other names
+		// that don't match any other policy
+		app.tlsApp.AddAutomationPolicy(basePolicy)
+	} else {
+		// a base policy already existed; we might have
+		// changed it, so re-provision it
+		err := basePolicy.Provision(app.tlsApp)
+		if err != nil {
+			return err
+		}
+	}
+
+	// public names will be taken care of by the base (catch-all)
+	// policy, which we've ensured exists if not already specified;
+	// internal names, however, need to be handled by an internal
+	// issuer, which we need to make a new policy for, scoped to
+	// just those names (yes, this logic is a bit asymmetric, but
+	// it works, because our assumed/natural default issuer is an
+	// ACME issuer)
+	if len(internalNames) > 0 {
+		internalIssuer := new(caddytls.InternalIssuer)
+
+		// shallow-copy the base policy; we want to inherit
 		// from it, not replace it... this takes two lines to
 		// overrule compiler optimizations
 		policyCopy := *basePolicy
 		newPolicy := &policyCopy
 
-		// very important to provision it, since we are
-		// bypassing the JSON-unmarshaling step
-		if prov, ok := issuer.(caddy.Provisioner); ok {
-			err := prov.Provision(ctx)
-			if err != nil {
-				return err
-			}
+		// very important to provision the issuer, since we
+		// are bypassing the JSON-unmarshaling step
+		if err := internalIssuer.Provision(ctx); err != nil {
+			return err
 		}
-		newPolicy.Issuer = issuer
-		newPolicy.Subjects = hosts
 
-		return app.tlsApp.AddAutomationPolicy(newPolicy)
-	}
+		// this policy should apply only to the given names
+		// and should use our issuer -- yes, this overrides
+		// any issuer that may have been set in the base
+		// policy, but we do this because these names do not
+		// already have a policy associated with them, which
+		// is easy to do; consider the case of a Caddyfile
+		// that has only "localhost" as a name, but sets the
+		// default/global ACME CA to the Let's Encrypt staging
+		// endpoint... they probably don't intend to change the
+		// fundamental set of names that setting applies to,
+		// rather they just want to change the CA for the set
+		// of names that would normally use the production API;
+		// anyway, that gets into the weeds a bit...
+		newPolicy.Subjects = internalNames
+		newPolicy.Issuer = internalIssuer
 
-	if len(publicNames) > 0 {
-		var acmeIssuer *caddytls.ACMEIssuer
-		// if it has an ACME issuer, maybe we can just use that
-		// TODO: we might need a deep copy here, like a Clone() method on ACMEIssuer...
-		acmeIssuer, _ = basePolicy.Issuer.(*caddytls.ACMEIssuer)
-		if acmeIssuer == nil {
-			acmeIssuer = new(caddytls.ACMEIssuer)
-		}
-		if app.HTTPPort > 0 || app.HTTPSPort > 0 {
-			if acmeIssuer.Challenges == nil {
-				acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
-			}
-		}
-		if app.HTTPPort > 0 {
-			if acmeIssuer.Challenges.HTTP == nil {
-				acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
-			}
-			// don't overwrite existing explicit config
-			if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
-				acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
-			}
-		}
-		if app.HTTPSPort > 0 {
-			if acmeIssuer.Challenges.TLSALPN == nil {
-				acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
-			}
-			// don't overwrite existing explicit config
-			if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
-				acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
-			}
-		}
-		if err := addPolicy(acmeIssuer, publicNames); err != nil {
+		err := app.tlsApp.AddAutomationPolicy(newPolicy)
+		if err != nil {
 			return err
 		}
 	}
 
-	if len(internalNames) > 0 {
-		internalIssuer := new(caddytls.InternalIssuer)
-		if err := addPolicy(internalIssuer, internalNames); err != nil {
-			return err
-		}
-	}
-
+	// we just changed a lot of stuff, so double-check that it's all good
 	err := app.tlsApp.Validate()
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// fillInACMEIssuer fills in default values into acmeIssuer that
+// are defined in app; these values at time of writing are just
+// app.HTTPPort and app.HTTPSPort, which are used by ACMEIssuer.
+// Sure, we could just use the global/CertMagic defaults, but if
+// a user has configured those ports in the HTTP app, it makes
+// sense to use them in the TLS app too, even if they forgot (or
+// were too lazy, like me) to set it in each automation policy
+// that uses it -- this just makes things a little less tedious
+// for the user, so they don't have to repeat those ports in
+// potentially many places. This function never steps on existing
+// config values. If any changes are made, acmeIssuer is
+// reprovisioned. acmeIssuer must not be nil.
+func (app *App) fillInACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) error {
+	var anyChanges bool
+	if app.HTTPPort > 0 || app.HTTPSPort > 0 {
+		if acmeIssuer.Challenges == nil {
+			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		}
+	}
+	if app.HTTPPort > 0 {
+		if acmeIssuer.Challenges.HTTP == nil {
+			acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
+		}
+		// don't overwrite existing explicit config
+		if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
+			acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
+			anyChanges = true
+		}
+	}
+	if app.HTTPSPort > 0 {
+		if acmeIssuer.Challenges.TLSALPN == nil {
+			acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
+		}
+		// don't overwrite existing explicit config
+		if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
+			acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
+			anyChanges = true
+		}
+	}
+	if anyChanges {
+		return acmeIssuer.Provision(app.ctx)
+	}
 	return nil
 }
 

@@ -377,9 +377,14 @@ func (ctx Context) loadModuleInline(moduleNameKey, moduleScope string, raw json.
 	return val, nil
 }
 
-// App returns the configured app named name. If no app with
-// that name is currently configured, a new empty one will be
-// instantiated. (The app module must still be registered.)
+// App returns the configured app named name. If that app has
+// not yet been loaded and provisioned, it will be immediately
+// loaded and provisioned. If no app with that name is
+// configured, a new empty one will be instantiated instead.
+// (The app module must still be registered.) This must not be
+// called during the Provision/Validate phase to reference a
+// module's own host app (since the parent app module is still
+// in the process of being provisioned, it is not yet ready).
 func (ctx Context) App(name string) (interface{}, error) {
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
