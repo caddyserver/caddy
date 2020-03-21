@@ -115,8 +115,8 @@ type AutomationPolicy struct {
 	storage certmagic.Storage
 }
 
-// provision converts ap into a CertMagic config.
-func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
+// Provision sets up ap and builds its underlying CertMagic config.
+func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// policy-specific storage implementation
 	if ap.StorageRaw != nil {
 		val, err := tlsApp.ctx.LoadModule(ap, "StorageRaw")
@@ -157,8 +157,8 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 	// none the subjects do not qualify for a public certificate,
 	// set the issuer to internal so that these names can all
 	// get certificates; critically, we can only do this if an
-	// issuer is not explictly configured AND if the list of
-	// subjects is non-empty
+	// issuer is not explictly configured (IssuerRaw, vs. just
+	// Issuer) AND if the list of subjects is non-empty
 	if ap.IssuerRaw == nil && len(ap.Subjects) > 0 {
 		var anyPublic bool
 		for _, s := range ap.Subjects {
@@ -174,7 +174,7 @@ func (ap *AutomationPolicy) provision(tlsApp *TLS) error {
 		}
 	}
 
-	// load and provision the issuer module
+	// load and provision any explicitly-configured issuer module
 	if ap.IssuerRaw != nil {
 		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
 		if err != nil {
