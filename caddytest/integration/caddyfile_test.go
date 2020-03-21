@@ -89,7 +89,7 @@ func xTestDefaultSNI(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
-func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
+func xTestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -112,7 +112,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
-func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
+func xTestDefaultSNIWithPortMappingOnly(t *testing.T) {
 
 	// arrange
 	caddytest.InitServer(t, ` 
@@ -213,6 +213,13 @@ func TestDefaultSNIWithJson(t *testing.T) {
               ]
             }
           ]
+        }
+      },
+      "pki": {
+        "certificate_authorities" : {
+          "local" : {
+            "install_trust": false
+          }
         }
       }
     }
