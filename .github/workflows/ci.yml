@@ -18,6 +18,23 @@ jobs:
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         go-version: [ 1.14.x ]
+
+        # Set some variables per OS, usable via ${{ matrix.VAR }}
+        # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
+        # SUCCESS: the typical value for $? per OS (Windows/pwsh returns 'True')
+        include:
+        - os: ubuntu-latest
+          CADDY_BIN_PATH: ./cmd/caddy/caddy
+          SUCCESS: 0
+
+        - os: macos-latest
+          CADDY_BIN_PATH: ./cmd/caddy/caddy
+          SUCCESS: 0
+
+        - os: windows-latest
+          CADDY_BIN_PATH: ./cmd/caddy/caddy.exe
+          SUCCESS: 'True'
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -59,19 +76,11 @@ jobs:
       run: |
         go build -trimpath -a -ldflags="-w -s" -v
 
-    - name: Publish Build Artifact (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: Publish Build Artifact
       uses: actions/upload-artifact@v1
       with:
         name: caddy_v2_${{ matrix.os }}
-        path: ./cmd/caddy/caddy.exe
-
-    - name: Publish Build Artifact (Linux/Mac)
-      if: matrix.os != 'windows-latest'
-      uses: actions/upload-artifact@v1
-      with:
-        name: caddy_v2_${{ matrix.os }}
-        path: ./cmd/caddy/caddy
+        path: ${{ matrix.CADDY_BIN_PATH }}
 
     # Commented bits below were useful to allow the job to continue
     # even if the tests fail, so we can publish the report separately
@@ -93,13 +102,8 @@ jobs:
     #     (cat ./coverage/coverage.json | gocov-xml) > coverage/coverage.xml
 
     # To return the correct result even though we set 'continue-on-error: true'
-    # - name: Coerce correct build result (Windows)
-    #   if: matrix.os == 'windows-latest' && steps.step_test.outputs.status != 'True'
-    #   run: |
-    #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
-    #     exit 1
-    # - name: Coerce correct build result (Linux/Mac)
-    #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != 0
+    # - name: Coerce correct build result
+    #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != ${{ matrix.SUCCESS }}
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
