@@ -107,16 +107,30 @@ func RegisterAdapter(name string, adapter Adapter) error {
 		return fmt.Errorf("%s: already registered", name)
 	}
 	configAdapters[name] = adapter
-	if mod, ok := adapter.(caddy.Module); ok {
-		return caddy.RegisterModule(mod)
-	}
-	return fmt.Errorf("%s: adapter is not a Caddy module", name)
+	return caddy.RegisterModule(adapterModule{name, adapter})
 }
 
 // GetAdapter returns the adapter with the given name,
 // or nil if one with that name is not registered.
 func GetAdapter(name string) Adapter {
 	return configAdapters[name]
+}
+
+// adapterModule is a wrapper type that can turn any config
+// adapter into a Caddy module, which has the benefit of being
+// counted with other modules, even though they do not
+// technically extend the Caddy configuration structure.
+// See caddyserver/caddy#3132.
+type adapterModule struct {
+	name string
+	Adapter
+}
+
+func (am adapterModule) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  caddy.ModuleID("caddy.adapters." + am.name),
+		New: func() caddy.Module { return am },
+	}
 }
 
 var configAdapters = make(map[string]Adapter)

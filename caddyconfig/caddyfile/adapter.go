@@ -27,15 +27,6 @@ type Adapter struct {
 	ServerType ServerType
 }
 
-func (Adapter) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID: "adapters.caddyfile",
-		New: func() caddy.Module {
-			return Adapter{}
-		},
-	}
-}
-
 // Adapt converts the Caddyfile config in body to Caddy JSON.
 func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []caddyconfig.Warning, error) {
 	if a.ServerType == nil {
