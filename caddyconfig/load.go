@@ -125,7 +125,7 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 				if err != nil {
 					caddy.Log().Named("admin.api.load").Error(err.Error())
 				}
-				w.Write(respBody)
+				_, _ = w.Write(respBody)
 			}
 			body = result
 		}
