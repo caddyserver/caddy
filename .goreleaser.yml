@@ -56,8 +56,8 @@ release:
   github:
     owner: caddyserver
     name: caddy
-    draft: true
-    prerelease: auto
+  draft: true
+  prerelease: auto
 changelog:
   sort: asc
   filters:

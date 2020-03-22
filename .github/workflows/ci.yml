@@ -6,8 +6,6 @@ on:
   push:
     branches: 
       - v2
-    tags:
-      - '*'
   pull_request:
     branches: 
       - v2
@@ -68,7 +66,6 @@ jobs:
         env
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
-        echo "::set-output name=closest_tag::$(git describe --abbrev=0)"
 
     # The following steps are for 
     - name: Get dependencies
