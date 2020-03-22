@@ -52,10 +52,17 @@ nfpms:
   files:
     "caddy-dist/init/caddy.service": "/etc/systemd/system/caddy.service"
     "caddy-dist/config/Caddyfile": "/etc/caddy/Caddyfile"
+release:
+  github:
+    owner: caddyserver
+    name: caddy
+    draft: true
+    prerelease: auto
 changelog:
   sort: asc
   filters:
     exclude:
     - '^docs:'
     - '^test:'
+    - '^chore:'
     - '^\w+\s+' # a hack to remove commit messages without colons thus don't correspond to a package

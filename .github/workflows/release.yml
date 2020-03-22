@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  pull_request: # temporarily
+    branches: 
+      - v2
+
+jobs:
+  release:
+    name: Release
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+        go-version: [ 1.14.x ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Print Go version and environment
+      id: vars
+      run: |
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+        # Calculate the short SHA1 hash of the git commit
+        echo "::set-output name=closest_tag::$(git describe --abbrev=0)"
+
+    # So GoReleaser can generate the changelog properly
+    - name: Unshallowify the repo clone
+      run: git fetch --prune --unshallow
+
+    # GoReleaser will take care of publishing those artifacts into the release
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v1
+      with:
+        version: latest
+        args: release --rm-dist --skip-publish
+        # TODO: Figure out signing
+        # key: ${{ secrets.YOUR_PRIVATE_KEY }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ steps.vars.outputs.closest_tag }} #${{ github.ref }}
+

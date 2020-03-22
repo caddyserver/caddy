@@ -48,10 +48,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    # So GoReleaser can generate the changelog properly
-    - name: Unshallow
-      run: git fetch --prune --unshallow
-
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
     # - name: Install test and coverage analysis tools
@@ -73,22 +69,6 @@ jobs:
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
         echo "::set-output name=closest_tag::$(git describe --abbrev=0)"
-
-    # GoReleaser will take care of publishing those artifacts into the release
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v1
-      # if: startsWith(github.ref, 'refs/tags/')
-      with:
-        version: latest
-        args: release --rm-dist --skip-publish
-        # Figure out signing
-        # key: ${{ secrets.YOUR_PRIVATE_KEY }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: ${{ steps.vars.outputs.closest_tag }} #${{ github.ref }}
-
-    - name: Show project tree
-      run: tree
 
     # The following steps are for 
     - name: Get dependencies
