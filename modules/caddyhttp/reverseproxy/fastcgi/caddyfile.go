@@ -51,10 +51,10 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				t.Root = d.Val()
 
 			case "split":
-				if !d.NextArg() {
+				t.SplitPath = d.RemainingArgs()
+				if len(t.SplitPath) == 0 {
 					return d.ArgErr()
 				}
-				t.SplitPath = d.Val()
 
 			case "env":
 				args := d.RemainingArgs()
@@ -173,7 +173,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	}
 
 	// set up the transport for FastCGI, and specifically PHP
-	fcgiTransport := Transport{SplitPath: ".php"}
+	fcgiTransport := Transport{SplitPath: []string{".php"}}
 
 	// create the reverse proxy handler which uses our FastCGI transport
 	rpHandler := &reverseproxy.Handler{
