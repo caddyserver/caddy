@@ -28,21 +28,24 @@ import (
 // directiveOrder specifies the order
 // to apply directives in HTTP routes.
 var directiveOrder = []string{
+	"header",
+
 	"redir",
 	"rewrite",
 
 	"root",
 
+	// URI manipulation
 	"uri",
 	"try_files",
 
-	// middleware handlers that typically wrap responses
+	// middleware handlers; some wrap responses
 	"basicauth",
-	"header",
 	"request_header",
 	"encode",
 	"templates",
 
+	// special routing directives
 	"handle",
 	"route",
 
