@@ -67,7 +67,6 @@ jobs:
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
 
-    # The following steps are for 
     - name: Get dependencies
       run: |
         go get -v -t -d ./...

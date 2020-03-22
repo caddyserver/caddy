@@ -26,6 +26,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    # So GoReleaser can generate the changelog properly
+    - name: Unshallowify the repo clone
+      run: git fetch --prune --unshallow
+
     - name: Print Go version and environment
       id: vars
       run: |
@@ -35,12 +39,7 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-        # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=closest_tag::$(git describe --abbrev=0)"
-
-    # So GoReleaser can generate the changelog properly
-    - name: Unshallowify the repo clone
-      run: git fetch --prune --unshallow
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
