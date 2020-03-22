@@ -47,10 +47,11 @@ type Transport struct {
 	// with the value of SplitPath. The first piece will be assumed as the
 	// actual resource (CGI script) name, and the second piece will be set to
 	// PATH_INFO for the CGI script to use.
+	//
 	// Future enhancements should be careful to avoid CVE-2019-11043,
 	// which can be mitigated with use of a try_files-like behavior
-	// that 404's if the fastcgi path info is not found.
-	SplitPath string `json:"split_path,omitempty"`
+	// that 404s if the fastcgi path info is not found.
+	SplitPath []string `json:"split_path,omitempty"`
 
 	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
@@ -168,7 +169,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 
 	// Split path in preparation for env variables.
 	// Previous canSplit checks ensure this can never be -1.
-	// TODO: I haven't brought over canSplit; make sure this doesn't break
+	// TODO: I haven't brought over canSplit from v1; make sure this doesn't break
 	splitPos := t.splitPos(fpath)
 
 	// Request has the extension; path was split successfully
@@ -284,14 +285,19 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 // splitPos returns the index where path should
 // be split based on t.SplitPath.
 func (t Transport) splitPos(path string) int {
-	// TODO:
+	// TODO: from v1...
 	// if httpserver.CaseSensitivePath {
 	// 	return strings.Index(path, r.SplitPath)
 	// }
-	return strings.Index(strings.ToLower(path), strings.ToLower(t.SplitPath))
+	lowerPath := strings.ToLower(path)
+	for _, split := range t.SplitPath {
+		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
+			return idx
+		}
+	}
+	return -1
 }
 
-// TODO:
 // Map of supported protocols to Apache ssl_mod format
 // Note that these are slightly different from SupportedProtocols in caddytls/config.go
 var tlsProtocolStrings = map[uint16]string{
