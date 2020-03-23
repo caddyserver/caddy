@@ -408,11 +408,18 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
 			for _, result := range results {
-				handler, ok := result.Value.(caddyhttp.Route)
-				if !ok {
-					return nil, h.Errf("%s directive returned something other than an HTTP route: %#v (only handler directives can be used in routes)", dir, result.Value)
+				switch handler := result.Value.(type) {
+				case caddyhttp.Route:
+					sr.Routes = append(sr.Routes, handler)
+				case caddyhttp.Subroute:
+					// directives which return a literal subroute instead of a route
+					// means they intend to keep those handlers together without
+					// them being reordered; we're doing that anyway since we're in
+					// the route directive, so just append its handlers
+					sr.Routes = append(sr.Routes, handler.Routes...)
+				default:
+					return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", dir, result.Value)
 				}
-				sr.Routes = append(sr.Routes, handler)
 			}
 		}
 	}
