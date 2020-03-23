@@ -52,7 +52,7 @@ checksum:
 signs:
 - artifacts: all
   cmd: sh
-  args: 'echo "$key" | gpg --batch --yes --no-tty --output "${signature}" --detach-sign "${artifact}"'
+  args: 'export GPG_TTY=$(tty); echo "$key" | gpg --batch --yes --no-tty --output "${signature}" --detach-sign "${artifact}"'
 release:
   github:
     owner: caddyserver
