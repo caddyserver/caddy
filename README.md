@@ -1,19 +1,10 @@
-Caddy 2
-=======
-
-This is the development branch for Caddy 2, the web server of the Go community.
-
-**Caddy 2 is production-ready, but there may be breaking changes before the stable 2.0 release.** Please test it and deploy it as much as you are able, and submit your feedback!
-
----
-
 <p align="center">
 	<a href="https://caddyserver.com"><img src="https://user-images.githubusercontent.com/1128849/36338535-05fb646a-136f-11e8-987b-e6901e717d5a.png" alt="Caddy" width="450"></a>
 </p>
 <h3 align="center">Every site on HTTPS</h3>
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
-	<a href="https://github.com/caddyserver/caddy/actions?query=workflow%3ACross-Platform"><img src="https://github.com/caddyserver/caddy/workflows/Cross-Platform/badge.svg?branch=v2"></a>
+	<a href="https://github.com/caddyserver/caddy/actions?query=workflow%3ACross-Platform"><img src="https://github.com/caddyserver/caddy/workflows/Cross-Platform/badge.svg"></a>
 	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-blue.svg"></a>
 	<a href="https://app.fuzzit.dev/orgs/caddyserver-gh/dashboard"><img src="https://app.fuzzit.dev/badge?org_id=caddyserver-gh"></a>
 	<br>
@@ -31,6 +22,7 @@ This is the development branch for Caddy 2, the web server of the Go community.
 
 ### Menu
 
+- [Features](#features)
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
@@ -46,6 +38,27 @@ This is the development branch for Caddy 2, the web server of the Go community.
 	<a href="https://github.com/caddyserver/certmagic"><img src="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png" alt="CertMagic" width="250"></a>
 </p>
 
+
+## Features
+
+- **Easy configuration** with the [Caddyfile](https://caddyserver.com/docs/caddyfile)
+- **Powerful configuration** with its [native JSON config](https://caddyserver.com/docs/json/)
+- **Dynamic configuration** with the [JSON API](https://caddyserver.com/api)
+- [**Config adapters**](https://caddyserver.com/docs/config-adapters) if you don't like JSON
+- **Automatic HTTPS** by default
+	- [Let's Encrypt](https://letsencrypt.org) for public sites
+	- Fully-managed local CA for internal names & IPs
+	- Can coordinate with other Caddy instances in a cluster
+- **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
+- **HTTP/1.1, HTTP/2, and experimental HTTP/3** support
+- **Highly extensible** [modular architecture](https://caddyserver.com/docs/extending-caddy) lets Caddy do anything without bloat
+- **Runs anywhere** with **no external dependencies** (not even libc)
+- Written in Go, a language with higher **memory safety guarantees** than other servers
+- Actually **fun to use**
+- So, so much more
+
+
+
 ## Build from source
 
 Requirements:
@@ -54,22 +67,30 @@ Requirements:
 - Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
 ### For development
-
-_**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
  
 ```bash
-$ git clone -b v2 "https://github.com/caddyserver/caddy.git"
+$ git clone "https://github.com/caddyserver/caddy.git"
 $ cd caddy/cmd/caddy/
 $ go build
 ```
 
+_**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions below._
+
 ### With version information and/or plugins
+
+Using [our builder tool](https://github.com/caddyserver/builder)...
+
+```
+$ builder --version CADDY_VERSION
+```
+
+...the following steps are automated:
 
 1. Create a new folder: `mkdir caddy`
 2. Change into it: `cd caddy`
-3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/v2/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
+3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
 4. Initialize a Go module: `go mod init caddy`
-5. Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit.
+5. Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit. You can also pin any plugin versions similarly.
 6. Compile: `go build`
 
 
