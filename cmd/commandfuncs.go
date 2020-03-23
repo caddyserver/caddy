@@ -35,7 +35,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
 
@@ -183,15 +182,6 @@ func cmdRun(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedStartup, err
 		}
 	}
-
-	// set a fitting User-Agent for ACME requests
-	goModule := caddy.GoModule()
-	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
-	certmagic.UserAgent = "Caddy/" + cleanModVersion
-
-	// by using Caddy, user indicates agreement to CA terms
-	// (very important, or ACME account creation will fail!)
-	certmagic.DefaultACME.Agreed = true
 
 	// run the initial config
 	err = caddy.Load(config, true)
