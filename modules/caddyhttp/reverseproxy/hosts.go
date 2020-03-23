@@ -63,10 +63,10 @@ type UpstreamPool []*Upstream
 type Upstream struct {
 	Host `json:"-"`
 
-	// The [network address](/docs/json/apps/http/#servers/listen)
+	// The [network address](/docs/conventions#network-addresses)
 	// to dial to connect to the upstream. Must represent precisely
 	// one socket (i.e. no port ranges). A valid network address
-	// either has a host and port, or is a unix socket address.
+	// either has a host and port or is a unix socket address.
 	//
 	// Placeholders may be used to make the upstream dynamic, but be
 	// aware of the health check implications of this: a single
@@ -79,6 +79,9 @@ type Upstream struct {
 	// this upstream. If set, overrides the global passive health
 	// check UnhealthyRequestCount value.
 	MaxRequests int `json:"max_requests,omitempty"`
+
+	// TODO:...
+	SRV bool
 
 	// TODO: This could be really useful, to bind requests
 	// with certain properties to specific backends
