@@ -196,6 +196,17 @@ func (t *TLS) Validate() error {
 				}
 				hostSet[h] = i
 			}
+
+			if ap.KeyType != "" {
+				repl := caddy.NewReplacer()
+				keyType, err := repl.ReplaceOrErr(ap.KeyType, true, true)
+				if err != nil {
+					return fmt.Errorf("automation policy %d: invalid key type: %s", i, err)
+				}
+				if _, ok := supportedCertKeyTypes[keyType]; !ok {
+					return fmt.Errorf("automation policy %d: invalid key type: %s", i, keyType)
+				}
+			}
 		}
 	}
 	return nil

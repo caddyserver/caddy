@@ -183,8 +183,14 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		ap.Issuer = val.(certmagic.Issuer)
 	}
 
+	keyType := ap.KeyType
+	if keyType != "" {
+		repl := caddy.NewReplacer()
+		keyType = repl.ReplaceAll(ap.KeyType, "")
+	}
+
 	keySource := certmagic.StandardKeyGenerator{
-		KeyType: supportedCertKeyTypes[ap.KeyType],
+		KeyType: supportedCertKeyTypes[keyType],
 	}
 
 	storage := ap.storage
