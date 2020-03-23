@@ -551,7 +551,6 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 // config values. If any changes are made, acmeIssuer is
 // reprovisioned. acmeIssuer must not be nil.
 func (app *App) fillInACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) error {
-	var anyChanges bool
 	if app.HTTPPort > 0 || app.HTTPSPort > 0 {
 		if acmeIssuer.Challenges == nil {
 			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
@@ -564,7 +563,6 @@ func (app *App) fillInACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) error {
 		// don't overwrite existing explicit config
 		if acmeIssuer.Challenges.HTTP.AlternatePort == 0 {
 			acmeIssuer.Challenges.HTTP.AlternatePort = app.HTTPPort
-			anyChanges = true
 		}
 	}
 	if app.HTTPSPort > 0 {
@@ -574,13 +572,14 @@ func (app *App) fillInACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) error {
 		// don't overwrite existing explicit config
 		if acmeIssuer.Challenges.TLSALPN.AlternatePort == 0 {
 			acmeIssuer.Challenges.TLSALPN.AlternatePort = app.HTTPSPort
-			anyChanges = true
 		}
 	}
-	if anyChanges {
-		return acmeIssuer.Provision(app.ctx)
-	}
-	return nil
+	// we must provision all ACME issuers, even if nothing
+	// was changed, because we don't know if they are new
+	// and haven't been provisioned yet; if an ACME issuer
+	// never gets provisioned, its Agree field stays false,
+	// which leads to, um, problems later on
+	return acmeIssuer.Provision(app.ctx)
 }
 
 // automaticHTTPSPhase2 begins certificate management for
