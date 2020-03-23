@@ -21,37 +21,38 @@ builds:
   - linux
   - windows
   - freebsd
+  goarch:
+  - amd64
+  - 386
+  - arm
+  - arm64
+  goarm:
+  - 6
+  - 7
+  ignore:
+    - goos: darwin
+      goarch: 386
   flags:
   - -trimpath
   ldflags:
   - -s -w
 archives:
-- replacements:
-    darwin: Darwin
-    linux: Linux
-    windows: Windows
-    386: i386
-    amd64: x86_64
+  -
+    format_overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: Mac
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
 checksum:
-  algorithm: sha256
-# signs:
-# - artifacts: all
-#   cmd: signify
-#   args: ["-S", "-s", "../seckey", "-m", "${artifact}"]
-nfpms:
-- package_name: caddy
-  homepage: https://caddyserver.com
-  description: Caddy Web Server
-  license: Apache 2.0
-  bindir: /usr/bin
-  formats:
-  - deb
-  - rpm
-  empty_folders:
-  - /etc/caddy
-  files:
-    "caddy-dist/init/caddy.service": "/etc/systemd/system/caddy.service"
-    "caddy-dist/config/Caddyfile": "/etc/caddy/Caddyfile"
+  algorithm: sha512
+signs:
+- artifacts: all
+  cmd: gpg
+  args: ["--output", "${signature}", "--detach-sign", "${artifact}"]
 release:
   github:
     owner: caddyserver
