@@ -154,7 +154,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	}
 
 	// if this automation policy has no Issuer defined, and
-	// none the subjects do not qualify for a public certificate,
+	// none of the subjects qualify for a public certificate,
 	// set the issuer to internal so that these names can all
 	// get certificates; critically, we can only do this if an
 	// issuer is not explictly configured (IssuerRaw, vs. just
@@ -198,7 +198,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		KeySource:          keySource,
 		OnDemand:           ond,
 		Storage:            storage,
-		Issuer:             ap.Issuer, // if nil, certmagic.New() will set default in returned Config
+		Issuer:             ap.Issuer, // if nil, certmagic.New() will create one
 	}
 	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
 		template.Revoker = rev
@@ -210,8 +210,8 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// access to the correct storage and cache so it can solve
 	// ACME challenges -- it's an annoying, inelegant circular
 	// dependency that I don't know how to resolve nicely!)
-	if configger, ok := ap.Issuer.(ConfigSetter); ok {
-		configger.SetConfig(ap.magic)
+	if annoying, ok := ap.Issuer.(ConfigSetter); ok {
+		annoying.SetConfig(ap.magic)
 	}
 
 	return nil
