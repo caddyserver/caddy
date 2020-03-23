@@ -51,8 +51,8 @@ checksum:
   algorithm: sha512
 signs:
 - artifacts: all
-  cmd: gpg
-  # args: ["--batch", "--yes", "--no-tty", "--output", "${signature}", "--detach-sign", "${artifact}"]
+  cmd: sh
+  args: 'echo "$key" | gpg --batch --yes --no-tty --output "${signature}" --detach-sign "${artifact}"'
 release:
   github:
     owner: caddyserver
