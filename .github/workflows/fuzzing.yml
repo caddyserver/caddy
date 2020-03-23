@@ -4,10 +4,10 @@ on:
   # Regression testing
   push:
     branches: 
-      - v2
+      - master
   pull_request:
     branches: 
-      - v2
+      - master
 
   # Daily midnight fuzzing
   schedule:
