@@ -42,6 +42,7 @@ import (
 func cmdStart(fl Flags) (int, error) {
 	startCmdConfigFlag := fl.String("config")
 	startCmdConfigAdapterFlag := fl.String("adapter")
+	startCmdWatchFlag := fl.Bool("watch")
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
@@ -67,6 +68,9 @@ func cmdStart(fl Flags) (int, error) {
 	}
 	if startCmdConfigAdapterFlag != "" {
 		cmd.Args = append(cmd.Args, "--adapter", startCmdConfigAdapterFlag)
+	}
+	if startCmdWatchFlag {
+		cmd.Args = append(cmd.Args, "--watch")
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -145,6 +149,7 @@ func cmdRun(fl Flags) (int, error) {
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")
 	runCmdPrintEnvFlag := fl.Bool("environ")
+	runCmdWatchFlag := fl.Bool("watch")
 	runCmdPingbackFlag := fl.String("pingback")
 
 	// if we are supposed to print the environment, do that first
@@ -171,8 +176,9 @@ func cmdRun(fl Flags) (int, error) {
 		}
 	}
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
+	var configFile string
 	if !runCmdResumeFlag {
-		config, _, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		config, configFile, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		}
@@ -209,6 +215,12 @@ func cmdRun(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("writing confirmation bytes to %s: %v", runCmdPingbackFlag, err)
 		}
+	}
+
+	// if enabled, reload config file automatically on changes
+	// (this better only be used in dev!)
+	if runCmdWatchFlag {
+		go watchConfigFile(configFile, runCmdConfigAdapterFlag)
 	}
 
 	// warn if the environment does not provide enough information about the disk
@@ -266,11 +278,11 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdAddrFlag := fl.String("address")
 
 	// get the config in caddy's native format
-	config, hasConfig, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	config, configFile, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
-	if !hasConfig {
+	if configFile == "" {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
