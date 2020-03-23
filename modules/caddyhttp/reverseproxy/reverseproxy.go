@@ -313,7 +313,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// the dial address may vary per-request if placeholders are
 		// used, so perform those replacements here; the resulting
 		// DialInfo struct should have valid network address syntax
-		dialInfo, err := fillDialInfo(upstream, repl)
+		dialInfo, err := upstream.fillDialInfo(r)
 		if err != nil {
 			return fmt.Errorf("making dial info: %v", err)
 		}

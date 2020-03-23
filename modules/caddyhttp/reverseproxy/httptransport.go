@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"strconv"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -96,14 +95,6 @@ func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 			if dialInfo, ok := GetDialInfo(ctx); ok {
 				network = dialInfo.Network
 				address = dialInfo.Address
-				// TODO: experimental SRV lookups
-				if dialInfo.Upstream.SRV {
-					_, addrs, err := net.DefaultResolver.LookupSRV(ctx, "", "", dialInfo.Host)
-					if err != nil {
-						return nil, err
-					}
-					address = net.JoinHostPort(addrs[0].Target, strconv.Itoa(int(addrs[0].Port)))
-				}
 			}
 			conn, err := dialer.DialContext(ctx, network, address)
 			if err != nil {
