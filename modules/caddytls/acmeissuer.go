@@ -116,7 +116,6 @@ func (m *ACMEIssuer) makeIssuerTemplate() certmagic.ACMEManager {
 	template := certmagic.ACMEManager{
 		CA:                m.CA,
 		Email:             m.Email,
-		Agreed:            true,
 		CertObtainTimeout: time.Duration(m.ACMETimeout),
 		TrustedRoots:      m.rootPool,
 	}

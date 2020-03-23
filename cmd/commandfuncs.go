@@ -189,6 +189,10 @@ func cmdRun(fl Flags) (int, error) {
 	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
+	// by using Caddy, user indicates agreement to CA terms
+	// (very important, or ACME account creation will fail!)
+	certmagic.DefaultACME.Agreed = true
+
 	// run the initial config
 	err = caddy.Load(config, true)
 	if err != nil {
