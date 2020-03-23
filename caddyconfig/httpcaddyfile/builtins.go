@@ -317,7 +317,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var root string
 	for h.Next() {
-		if !h.Next() {
+		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
 		root = h.Val()
