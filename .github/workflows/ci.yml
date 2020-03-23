@@ -5,10 +5,10 @@ name: Cross-Platform
 on:
   push:
     branches: 
-      - v2
+      - master
   pull_request:
     branches: 
-      - v2
+      - master
 
 jobs:
   test:
