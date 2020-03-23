@@ -99,10 +99,10 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // there is no config available. It prints any warnings to stderr,
 // and returns the resulting JSON config bytes along with
 // whether a config file was loaded or not.
-func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
+func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
-		return nil, false, fmt.Errorf("cannot adapt config without config file (use --config)")
+		return nil, "", fmt.Errorf("cannot adapt config without config file (use --config)")
 	}
 
 	// load initial config and adapter
@@ -112,7 +112,7 @@ func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 	if configFile != "" {
 		config, err = ioutil.ReadFile(configFile)
 		if err != nil {
-			return nil, false, fmt.Errorf("reading config file: %v", err)
+			return nil, "", fmt.Errorf("reading config file: %v", err)
 		}
 		caddy.Log().Info("using provided configuration",
 			zap.String("config_file", configFile),
@@ -129,7 +129,7 @@ func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 				cfgAdapter = nil
 			} else if err != nil {
 				// default Caddyfile exists, but error reading it
-				return nil, false, fmt.Errorf("reading default Caddyfile: %v", err)
+				return nil, "", fmt.Errorf("reading default Caddyfile: %v", err)
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
@@ -151,7 +151,7 @@ func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 	if adapterName != "" {
 		cfgAdapter = caddyconfig.GetAdapter(adapterName)
 		if cfgAdapter == nil {
-			return nil, false, fmt.Errorf("unrecognized config adapter: %s", adapterName)
+			return nil, "", fmt.Errorf("unrecognized config adapter: %s", adapterName)
 		}
 	}
 
@@ -161,7 +161,7 @@ func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 			"filename": configFile,
 		})
 		if err != nil {
-			return nil, false, fmt.Errorf("adapting config using %s: %v", adapterName, err)
+			return nil, "", fmt.Errorf("adapting config using %s: %v", adapterName, err)
 		}
 		for _, warn := range warnings {
 			msg := warn.Message
@@ -173,7 +173,85 @@ func loadConfig(configFile, adapterName string) ([]byte, bool, error) {
 		config = adaptedConfig
 	}
 
-	return config, configFile != "", nil
+	return config, configFile, nil
+}
+
+// watchConfigFile watches the config file at filename for changes
+// and reloads the config if the file was updated. This function
+// blocks indefinitely; it only quits if the poller has errors for
+// long enough time. The filename passed in must be the actual
+// config file used, not one to be discovered.
+func watchConfigFile(filename, adapterName string) {
+	// make our logger; since config reloads can change the
+	// default logger, we need to get it dynamically each time
+	logger := func() *zap.Logger {
+		return caddy.Log().
+			Named("watcher").
+			With(zap.String("config_file", filename))
+	}
+
+	// get the initial timestamp on the config file
+	info, err := os.Stat(filename)
+	if err != nil {
+		logger().Error("cannot watch config file", zap.Error(err))
+		return
+	}
+	lastModified := info.ModTime()
+
+	logger().Info("watching config file for changes")
+
+	// if the file disappears or something, we can
+	// stop polling if the error lasts long enough
+	var lastErr time.Time
+	finalError := func(err error) bool {
+		if lastErr.IsZero() {
+			lastErr = time.Now()
+			return false
+		}
+		if time.Since(lastErr) > 30*time.Second {
+			logger().Error("giving up watching config file; too many errors",
+				zap.Error(err))
+			return true
+		}
+		return false
+	}
+
+	// begin poller
+	for range time.Tick(1 * time.Second) {
+		// get the file info
+		info, err := os.Stat(filename)
+		if err != nil {
+			if finalError(err) {
+				return
+			}
+			continue
+		}
+		lastErr = time.Time{} // no error, so clear any memory of one
+
+		// if it hasn't changed, nothing to do
+		if !info.ModTime().After(lastModified) {
+			continue
+		}
+
+		logger().Info("config file changed; reloading")
+
+		// remember this timestamp
+		lastModified = info.ModTime()
+
+		// load the contents of the file
+		config, _, err := loadConfig(filename, adapterName)
+		if err != nil {
+			logger().Error("unable to load latest config", zap.Error(err))
+			continue
+		}
+
+		// apply the updated config
+		err = caddy.Load(config, false)
+		if err != nil {
+			logger().Error("applying latest config", zap.Error(err))
+			continue
+		}
+	}
 }
 
 // Flags wraps a FlagSet so that typed values

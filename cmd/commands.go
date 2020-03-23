@@ -74,7 +74,7 @@ func init() {
 	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
-		Usage: "[--config <path> [[--adapter <name>]]",
+		Usage: "[--config <path> [--adapter <name>]] [--watch]",
 		Short: "Starts the Caddy process in the background and then returns",
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file.
@@ -87,6 +87,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 			fs := flag.NewFlagSet("start", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.Bool("watch", false, "Reload changed config file automatically")
 			return fs
 		}(),
 	})
@@ -94,7 +95,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 	RegisterCommand(Command{
 		Name:  "run",
 		Func:  cmdRun,
-		Usage: "[--config <path> [--adapter <name>]] [--environ]",
+		Usage: "[--config <path> [--adapter <name>]] [--environ] [--watch]",
 		Short: `Starts the Caddy process and blocks indefinitely`,
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file,
@@ -119,13 +120,18 @@ be printed before starting. This is the same as the environ command but does
 not quit after printing, and can be useful for troubleshooting.
 
 The --resume flag will override the --config flag if there is a config auto-
-save file. It is not an error if --resume is used and no autosave file exists.`,
+save file. It is not an error if --resume is used and no autosave file exists.
+
+If --watch is specified, the config file will be loaded automatically after
+changes. ⚠️ This is dangerous in production! Only use this option in a local
+development environment.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
-			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
 			fs.Bool("environ", false, "Print environment")
+			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
+			fs.Bool("watch", false, "Watch config file for changes and reload it automatically")
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
 		}(),
