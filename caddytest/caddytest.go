@@ -68,6 +68,11 @@ func InitServer(t *testing.T, rawConfig string, configType string) {
 // type. The configType must be either "json" or the adapter type.
 func initServer(t *testing.T, rawConfig string, configType string) error {
 
+	if testing.Short() {
+		t.SkipNow()
+		return nil
+	}
+
 	err := validateTestPrerequisites()
 	if err != nil {
 		t.Skipf("skipping tests as failed integration prerequisites. %s", err)
