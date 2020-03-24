@@ -76,18 +76,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	// model to start with.
 	val, ok := repl.Get(h.Source)
 	if ok {
-		lookup := func(key string) (interface{}, bool) {
-			if v, ok := h.internalMap[val]; ok {
-				return v, true
-			}
-			if h.Default != "" {
-				return h.Default, true
-			}
-			return "", false
+		v, ok := h.internalMap[val]
+		if !ok && h.Default != "" {
+			v = h.Default
 		}
-
-		// add the lookup function
-		repl.Map(lookup)
+		repl.Set(h.Destination, v)
 	}
 
 	return next.ServeHTTP(w, r)
@@ -97,7 +90,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 type Item struct {
 	// Key
 	Key string `json:"key,omitempty"`
-
 	// Value
 	Value string `json:"value,omitempty"`
 }
