@@ -301,6 +301,10 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 	}
 
 	loc, err := resp.Location()
+	if err != nil {
+		t.Errorf("requesting \"%s\" expected location: \"%s\" but got error: %s", requestURI, expectedToLocation, err)
+	}
+
 	if expectedToLocation != loc.String() {
 		t.Errorf("requesting \"%s\" expected location: \"%s\" but got \"%s\"", requestURI, expectedToLocation, loc.String())
 	}
