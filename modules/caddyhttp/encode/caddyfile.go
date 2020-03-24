@@ -42,7 +42,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //     encode [<matcher>] <formats...> {
 //         gzip [<level>]
 //         zstd
-//         brotli [<quality>]
 //     }
 //
 // Specifying the formats on the first line will use those formats' defaults.

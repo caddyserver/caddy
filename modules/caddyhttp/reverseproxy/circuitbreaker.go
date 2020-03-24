@@ -24,12 +24,12 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(localCircuitBreaker{})
+	caddy.RegisterModule(internalCircuitBreaker{})
 }
 
-// localCircuitBreaker implements circuit breaking functionality
+// internalCircuitBreaker implements circuit breaking functionality
 // for requests within this process over a sliding time window.
-type localCircuitBreaker struct {
+type internalCircuitBreaker struct {
 	tripped   int32
 	cbFactor  int32
 	threshold float64
@@ -39,15 +39,15 @@ type localCircuitBreaker struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (localCircuitBreaker) CaddyModule() caddy.ModuleInfo {
+func (internalCircuitBreaker) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.circuit_breakers.local",
-		New: func() caddy.Module { return new(localCircuitBreaker) },
+		ID:  "http.reverse_proxy.circuit_breakers.internal",
+		New: func() caddy.Module { return new(internalCircuitBreaker) },
 	}
 }
 
 // Provision sets up a configured circuit breaker.
-func (c *localCircuitBreaker) Provision(ctx caddy.Context) error {
+func (c *internalCircuitBreaker) Provision(ctx caddy.Context) error {
 	f, ok := typeCB[c.Factor]
 	if !ok {
 		return fmt.Errorf("type is not defined")
@@ -77,19 +77,19 @@ func (c *localCircuitBreaker) Provision(ctx caddy.Context) error {
 }
 
 // Ok returns whether the circuit breaker is tripped or not.
-func (c *localCircuitBreaker) Ok() bool {
+func (c *internalCircuitBreaker) Ok() bool {
 	tripped := atomic.LoadInt32(&c.tripped)
 	return tripped == 0
 }
 
 // RecordMetric records a response status code and execution time of a request. This function should be run in a separate goroutine.
-func (c *localCircuitBreaker) RecordMetric(statusCode int, latency time.Duration) {
+func (c *internalCircuitBreaker) RecordMetric(statusCode int, latency time.Duration) {
 	c.metrics.Record(statusCode, latency)
 	c.checkAndSet()
 }
 
 // Ok checks our metrics to see if we should trip our circuit breaker, or if the fallback duration has completed.
-func (c *localCircuitBreaker) checkAndSet() {
+func (c *internalCircuitBreaker) checkAndSet() {
 	var isTripped bool
 
 	switch c.cbFactor {
