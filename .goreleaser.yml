@@ -32,17 +32,18 @@ builds:
   ignore:
     - goos: darwin
       goarch: 386
+    - goos: darwin
+      goarch: arm
   flags:
   - -trimpath
   ldflags:
   - -s -w
 archives:
-  -
-    format_overrides:
+  - format_overrides:
       - goos: windows
         format: zip
     replacements:
-      darwin: Mac
+      darwin: macOS
       linux: Linux
       windows: Windows
       386: i386
