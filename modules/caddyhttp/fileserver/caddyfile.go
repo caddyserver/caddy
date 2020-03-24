@@ -63,7 +63,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 			case "index":
 				fsrv.IndexNames = h.RemainingArgs()
-				if len(fsrv.Hide) == 0 {
+				if len(fsrv.IndexNames) == 0 {
 					return nil, h.ArgErr()
 				}
 			case "root":
