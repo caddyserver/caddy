@@ -173,8 +173,8 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	splitPos := t.splitPos(fpath)
 
 	// Request has the extension; path was split successfully
-	docURI := fpath[:splitPos+len(t.SplitPath)]
-	pathInfo := fpath[splitPos+len(t.SplitPath):]
+	docURI := fpath[:splitPos]
+	pathInfo := fpath[splitPos:]
 	scriptName := fpath
 
 	// Strip PATH_INFO from SCRIPT_NAME
@@ -292,7 +292,7 @@ func (t Transport) splitPos(path string) int {
 	lowerPath := strings.ToLower(path)
 	for _, split := range t.SplitPath {
 		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
-			return idx
+			return idx + len(split)
 		}
 	}
 	return -1
