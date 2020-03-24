@@ -43,6 +43,7 @@ jobs:
 
     - name: Prep GPG env
       run: |
+        export GPG_TTY="$(tty)"
         mkdir -p ~/.gnupg
         echo use-agent >> ~/.gnupg/gpg.conf
         echo pinentry-mode loopback >> ~/.gnupg/gpg.conf
