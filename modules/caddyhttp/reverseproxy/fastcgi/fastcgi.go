@@ -164,7 +164,12 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	ip = strings.Replace(ip, "[", "", 1)
 	ip = strings.Replace(ip, "]", "", 1)
 
-	root := repl.ReplaceAll(t.Root, ".")
+	// make sure file root is absolute
+	root, err := filepath.Abs(repl.ReplaceAll(t.Root, "."))
+	if err != nil {
+		return nil, err
+	}
+
 	fpath := r.URL.Path
 
 	// Split path in preparation for env variables.
