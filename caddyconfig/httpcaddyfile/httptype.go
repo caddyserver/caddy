@@ -319,11 +319,13 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 }
 
 // hostsFromServerBlockKeys returns a list of all the non-empty hostnames
-// found in the keys of the server block sb. If sb has a key that omits
-// the hostname (i.e. is a catch-all/empty host), then the returned list
-// is empty, because the server block effectively matches ALL hosts.
+// found in the keys of the server block sb, unless allowEmpty is true, in
+// which case a key with no host (e.g. ":443") will be added to the list as
+// an empty string. Otherwise, if allowEmpty is false, and if sb has a key
+// that omits the hostname (i.e. is a catch-all/empty host), then the returned
+// list is empty, because the server block effectively matches ALL hosts.
 // The list may not be in a consistent order.
-func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]string, error) {
+func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock, allowEmpty bool) ([]string, error) {
 	// first get each unique hostname
 	hostMap := make(map[string]struct{})
 	for _, sblockKey := range sb.Keys {
@@ -332,7 +334,7 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock) ([]stri
 			return nil, fmt.Errorf("parsing server block key: %v", err)
 		}
 		addr = addr.Normalize()
-		if addr.Host == "" {
+		if addr.Host == "" && !allowEmpty {
 			// server block contains a key like ":443", i.e. the host portion
 			// is empty / catch-all, which means to match all hosts
 			return []string{}, nil
@@ -408,7 +410,7 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+			hosts, err := st.hostsFromServerBlockKeys(sblock.block, false)
 			if err != nil {
 				return nil, err
 			}
@@ -488,14 +490,12 @@ func (st *ServerType) serversFromPairings(
 						LoggerNames: make(map[string]string),
 					}
 				}
-				hosts, err := st.hostsFromServerBlockKeys(sblock.block)
+				hosts, err := st.hostsFromServerBlockKeys(sblock.block, true)
 				if err != nil {
 					return nil, err
 				}
 				for _, h := range hosts {
-					if ncl.name != "" {
-						srv.Logs.LoggerNames[h] = ncl.name
-					}
+					srv.Logs.LoggerNames[h] = ncl.name
 				}
 			}
 		}
