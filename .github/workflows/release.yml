@@ -48,7 +48,6 @@ jobs:
         echo pinentry-mode loopback >> ~/.gnupg/gpg.conf
         echo allow-loopback-pinentry >> ~/.gnupg/gpg-agent.conf
         echo RELOADAGENT | gpg-connect-agent
-        export GPG_TTY=$(tty)
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
