@@ -34,7 +34,7 @@ type RequestBody struct {
 // CaddyModule returns the Caddy module information.
 func (RequestBody) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.request_body", // TODO: better name for this?
+		ID:  "http.handlers.request_body",
 		New: func() caddy.Module { return new(RequestBody) },
 	}
 }
