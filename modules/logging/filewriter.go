@@ -168,7 +168,7 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if err != nil {
 					return d.Errf("parsing size: %v", err)
 				}
-				fw.RollSizeMB = int(size) / 1024 / 1024
+				fw.RollSizeMB = int(size)/1024/1024 + 1
 
 			case "roll_keep":
 				var keepStr string
