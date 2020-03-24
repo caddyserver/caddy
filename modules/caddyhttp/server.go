@@ -172,7 +172,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			logger := accLog
 			if s.Logs != nil && s.Logs.LoggerNames != nil {
-				logger = logger.Named(s.Logs.LoggerNames[r.Host])
+				if loggerName, ok := s.Logs.LoggerNames[r.Host]; ok {
+					logger = logger.Named(loggerName)
+				} else {
+					// see if there's a default log name to attach to
+					logger = logger.Named(s.Logs.LoggerNames[""])
+				}
 			}
 
 			log := logger.Info

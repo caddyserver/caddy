@@ -82,7 +82,7 @@ func (st ServerType) buildTLSApp(
 			// get values that populate an automation policy for this block
 			var ap *caddytls.AutomationPolicy
 
-			sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block)
+			sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block, false)
 			if err != nil {
 				return nil, warnings, err
 			}
