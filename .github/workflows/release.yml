@@ -41,14 +41,6 @@ jobs:
         env
         echo "::set-output name=closest_tag::$(git describe --abbrev=0)"
 
-    - name: Prep GPG env
-      run: |
-        mkdir -p ~/.gnupg
-        echo use-agent >> ~/.gnupg/gpg.conf
-        echo pinentry-mode loopback >> ~/.gnupg/gpg.conf
-        echo allow-loopback-pinentry >> ~/.gnupg/gpg-agent.conf
-        echo RELOADAGENT | gpg-connect-agent
-
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v1
