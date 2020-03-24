@@ -47,7 +47,6 @@ jobs:
       with:
         version: latest
         args: release --rm-dist
-        key: ${{ secrets.SIGNING_KEY }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.closest_tag }} #${{ github.ref }}

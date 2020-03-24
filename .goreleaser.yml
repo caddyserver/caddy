@@ -50,10 +50,6 @@ archives:
       amd64: x86_64
 checksum:
   algorithm: sha512
-signs:
-- artifacts: all
-  cmd: gpg
-  args: ["--batch", "--no-tty", "--batch", "--yes", "-u", "Caddy Web Server <contact@caddyserver.com>", "--output", "${signature}", "--detach-sign", "${artifact}"]
 release:
   github:
     owner: caddyserver
