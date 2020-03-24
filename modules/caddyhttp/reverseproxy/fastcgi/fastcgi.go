@@ -29,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -66,6 +67,7 @@ type Transport struct {
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
 	serverSoftware string
+	logger         *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -77,7 +79,8 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up t.
-func (t *Transport) Provision(_ caddy.Context) error {
+func (t *Transport) Provision(ctx caddy.Context) error {
+	t.logger = ctx.Logger(t)
 	if t.Root == "" {
 		t.Root = "{http.vars.root}"
 	}
@@ -109,6 +112,12 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		network = dialInfo.Network
 		address = dialInfo.Address
 	}
+
+	t.logger.Debug("roundtrip",
+		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
+		zap.String("dial", address),
+		zap.Any("env", env), // TODO: this uses reflection I think
+	)
 
 	fcgiBackend, err := DialContext(ctx, network, address)
 	if err != nil {
