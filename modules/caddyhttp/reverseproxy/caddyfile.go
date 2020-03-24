@@ -177,13 +177,36 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return net.JoinHostPort(host, port), nil
 	}
 
+	// appendUpstream creates an upstream for address and adds
+	// it to the list. If the address starts with "srv+" it is
+	// treated as a SRV-based upstream, and any port will be
+	// dropped.
+	appendUpstream := func(address string) error {
+		isSRV := strings.HasPrefix(address, "srv+")
+		if isSRV {
+			address = strings.TrimPrefix(address, "srv+")
+		}
+		dialAddr, err := upstreamDialAddress(address)
+		if err != nil {
+			return err
+		}
+		if isSRV {
+			if host, _, err := net.SplitHostPort(dialAddr); err == nil {
+				dialAddr = host
+			}
+			h.Upstreams = append(h.Upstreams, &Upstream{LookupSRV: dialAddr})
+		} else {
+			h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
+		}
+		return nil
+	}
+
 	for d.Next() {
 		for _, up := range d.RemainingArgs() {
-			dialAddr, err := upstreamDialAddress(up)
+			err := appendUpstream(up)
 			if err != nil {
 				return err
 			}
-			h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
 		}
 
 		for d.NextBlock(0) {
@@ -194,11 +217,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				for _, up := range args {
-					dialAddr, err := upstreamDialAddress(up)
+					err := appendUpstream(up)
 					if err != nil {
 						return err
 					}
-					h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
 				}
 
 			case "lb_policy":

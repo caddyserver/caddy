@@ -41,7 +41,7 @@ type (
 	// especially A/AAAA pointed at your server.
 	//
 	// Automatic HTTPS can be
-	// [customized or disabled](/docs/json/apps/http/servers/automatic_https/).
+	// [customized or disabled](/docs/modules/http#servers/automatic_https).
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive). Path
