@@ -776,7 +776,7 @@ var (
 // in the config. It also matches adjacent commas so that syntax
 // can be preserved no matter where in the object the field appears.
 // It supports string and most numeric values.
-var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `":\s?(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
+var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `"\s*:\s*(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
 
 const (
 	rawConfigKey = "config"
