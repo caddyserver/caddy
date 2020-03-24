@@ -55,7 +55,7 @@ signs:
   cmd: sh
   args:
     - '-c'
-    - 'echo "$key" | base64 --decode | gpg -vv --no-tty --batch --yes --output "${signature}" --detach-sign "${artifact}"'
+    - 'echo "$key" | base64 --decode | gpg --batch --yes --output "${signature}" --detach-sign "${artifact}"'
 release:
   github:
     owner: caddyserver
