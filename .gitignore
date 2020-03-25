@@ -16,3 +16,8 @@ cmd/caddy/caddy.exe
 
 # go modules
 vendor
+
+# goreleaser artifacts
+dist
+caddy-build
+caddy-dist
