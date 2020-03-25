@@ -40,7 +40,7 @@ jobs:
     # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Get the version
       id: get_version
-      run: echo ::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}
+      run: echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
@@ -51,4 +51,3 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
-
