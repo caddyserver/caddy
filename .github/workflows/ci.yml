@@ -93,7 +93,7 @@ jobs:
       # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile="cover-profile.out" -race ./...
+        go test -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "::set-output name=status::$?"
 
     # Relevant step if we reinvestigate publishing test/coverage reports
