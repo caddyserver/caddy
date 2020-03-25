@@ -1,0 +1,66 @@
+before:
+  hooks:
+    - mkdir -p caddy-build
+    - cp cmd/caddy/main.go caddy-build/main.go
+    - cp ./go.mod caddy-build/go.mod
+    - sed -i.bkp s/github.com\/caddyserver\/caddy\/v2/caddy/g ./caddy-build/go.mod
+    # GoReleaser doesn't seem to offer {{.Tag}} at this stage, so we have to embed it into the env
+    # so we run: TAG=$(git describe --abbrev=0) goreleaser release --rm-dist --skip-publish --skip-validate
+    - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./caddy-build/go.mod
+    - git clone --depth 1 https://github.com/caddyserver/dist caddy-dist
+    - go mod download
+builds:
+- env:
+  - CGO_ENABLED=0
+  - GO111MODULE=on
+  main: main.go
+  dir: ./caddy-build
+  binary: caddy
+  goos:
+  - darwin
+  - linux
+  - windows
+  - freebsd
+  goarch:
+  - amd64
+  - 386
+  - arm
+  - arm64
+  goarm:
+  - 6
+  - 7
+  ignore:
+    - goos: darwin
+      goarch: 386
+    - goos: darwin
+      goarch: arm
+  flags:
+  - -trimpath
+  ldflags:
+  - -s -w
+archives:
+  - format_overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: macOS
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+checksum:
+  algorithm: sha512
+release:
+  github:
+    owner: caddyserver
+    name: caddy
+  draft: true
+  prerelease: auto
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+    - '^chore:'
+    - '^\w+\s+' # a hack to remove commit messages without colons thus don't correspond to a package
