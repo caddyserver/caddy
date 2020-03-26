@@ -97,15 +97,6 @@ type AutomationPolicy struct {
 	// load.
 	OnDemand bool `json:"on_demand,omitempty"`
 
-	// If true, certificate management will be conducted
-	// in the foreground; this will block config reloads
-	// and return errors if there were problems with
-	// obtaining or renewing certificates. This is often
-	// not desirable, especially when serving sites out
-	// of your control. Default: false
-	// TODO: is this really necessary per-policy? why not a global setting...
-	ManageSync bool `json:"manage_sync,omitempty"`
-
 	// Issuer stores the decoded issuer parameters. This is only
 	// used to populate an underlying certmagic.Config's Issuer
 	// field; it is not referenced thereafter.

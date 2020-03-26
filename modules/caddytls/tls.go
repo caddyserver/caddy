@@ -247,8 +247,8 @@ func (t *TLS) Cleanup() error {
 func (t *TLS) Manage(names []string) error {
 	// for a large number of names, we can be more memory-efficient
 	// by making only one certmagic.Config for all the names that
-	// use that config, rather than calling ManageSync/ManageAsync
-	// once for every name; so first, bin names by AutomationPolicy
+	// use that config, rather than calling ManageAsync once for
+	// every name; so first, bin names by AutomationPolicy
 	policyToNames := make(map[*AutomationPolicy][]string)
 	for _, name := range names {
 		ap := t.getAutomationPolicyForName(name)
@@ -257,14 +257,9 @@ func (t *TLS) Manage(names []string) error {
 
 	// now that names are grouped by policy, we can simply make one
 	// certmagic.Config for each (potentially large) group of names
-	// and call ManageSync/ManageAsync just once for the whole batch
+	// and call ManageAsync just once for the whole batch
 	for ap, names := range policyToNames {
-		var err error
-		if ap.ManageSync {
-			err = ap.magic.ManageSync(names)
-		} else {
-			err = ap.magic.ManageAsync(t.ctx.Context, names)
-		}
+		err := ap.magic.ManageAsync(t.ctx.Context, names)
 		if err != nil {
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
