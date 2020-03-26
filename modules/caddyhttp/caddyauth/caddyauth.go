@@ -77,9 +77,9 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set("http.authentication.user.id", user.ID)
+	repl.Set("http.auth.user.id", user.ID)
 	for k, v := range user.Metadata {
-		repl.Set("http.authentication.user.metadata."+k, v)
+		repl.Set("http.auth.user."+k, v)
 	}
 
 	return next.ServeHTTP(w, r)
@@ -95,7 +95,14 @@ type Authenticator interface {
 
 // User represents an authenticated user.
 type User struct {
-	ID       string
+	// The ID of the authenticated user.
+	ID string
+
+	// Any other relevant data about this
+	// user. Keys should be adhere to Caddy
+	// conventions (snake_casing), as all
+	// keys will be made available as
+	// placeholders.
 	Metadata map[string]string
 }
 
