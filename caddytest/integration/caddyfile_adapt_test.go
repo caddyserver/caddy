@@ -16,20 +16,13 @@ func TestHttpOnlyOnLocalhost(t *testing.T) {
   `, "caddyfile", `{
 	"apps": {
 		"http": {
-			"servers": {
-				"srv0": {
+			"_servers": [
+				{
 					"listen": [
 						":80"
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"host": [
-										"localhost"
-									]
-								}
-							],
 							"handle": [
 								{
 									"handler": "subroute",
@@ -53,11 +46,18 @@ func TestHttpOnlyOnLocalhost(t *testing.T) {
 									]
 								}
 							],
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
 							"terminal": true
 						}
 					]
 				}
-			}
+			]
 		}
 	}
 }`)
@@ -73,31 +73,31 @@ func TestHttpOnlyOnAnyAddress(t *testing.T) {
   `, "caddyfile", `{
 	"apps": {
 		"http": {
-			"servers": {
-				"srv0": {
+			"_servers": [
+				{
 					"listen": [
 						":80"
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"path": [
-										"/version"
-									]
-								}
-							],
 							"handle": [
 								{
 									"body": "hello from localhost",
 									"handler": "static_response",
 									"status_code": 200
 								}
+							],
+							"match": [
+								{
+									"path": [
+										"/version"
+									]
+								}
 							]
 						}
 					]
 				}
-			}
+			]
 		}
 	}
 }`)
@@ -113,20 +113,13 @@ func TestHttpsOnDomain(t *testing.T) {
   `, "caddyfile", `{
 	"apps": {
 		"http": {
-			"servers": {
-				"srv0": {
+			"_servers": [
+				{
 					"listen": [
 						":443"
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
 							"handle": [
 								{
 									"handler": "subroute",
@@ -150,11 +143,18 @@ func TestHttpsOnDomain(t *testing.T) {
 									]
 								}
 							],
+							"match": [
+								{
+									"host": [
+										"a.caddy.localhost"
+									]
+								}
+							],
 							"terminal": true
 						}
 					]
 				}
-			}
+			]
 		}
 	}
 }`)
@@ -170,20 +170,18 @@ func TestHttpOnlyOnDomain(t *testing.T) {
   `, "caddyfile", `{
 	"apps": {
 		"http": {
-			"servers": {
-				"srv0": {
+			"_servers": [
+				{
+					"automatic_https": {
+						"skip": [
+							"a.caddy.localhost"
+						]
+					},
 					"listen": [
 						":80"
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
 							"handle": [
 								{
 									"handler": "subroute",
@@ -207,16 +205,61 @@ func TestHttpOnlyOnDomain(t *testing.T) {
 									]
 								}
 							],
+							"match": [
+								{
+									"host": [
+										"a.caddy.localhost"
+									]
+								}
+							],
 							"terminal": true
 						}
-					],
-					"automatic_https": {
-						"skip": [
-							"a.caddy.localhost"
-						]
-					}
+					]
 				}
-			}
+			]
+		}
+	}
+}`)
+}
+
+func TestHttpOnlyOnDomainWithSNI(t *testing.T) {
+	caddytest.AssertAdapt(t, `
+	{
+		default_sni a.caddy.localhost
+	}
+	:80 {
+		respond /version 200 {
+			body "hello from localhost"
+		}
+	}
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"_servers": [
+				{
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "hello from localhost",
+									"handler": "static_response",
+									"status_code": 200
+								}
+							],
+							"match": [
+								{
+									"path": [
+										"/version"
+									]
+								}
+							]
+						}
+					]
+				}
+			]
 		}
 	}
 }`)
@@ -232,20 +275,18 @@ func TestHttpOnlyOnNonStandardPort(t *testing.T) {
   `, "caddyfile", `{
 	"apps": {
 		"http": {
-			"servers": {
-				"srv0": {
+			"_servers": [
+				{
+					"automatic_https": {
+						"skip": [
+							"a.caddy.localhost"
+						]
+					},
 					"listen": [
 						":81"
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
 							"handle": [
 								{
 									"handler": "subroute",
@@ -269,15 +310,158 @@ func TestHttpOnlyOnNonStandardPort(t *testing.T) {
 									]
 								}
 							],
+							"match": [
+								{
+									"host": [
+										"a.caddy.localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			]
+		}
+	}
+}`)
+}
+
+func TestHttpsMultiHostWithAcme(t *testing.T) {
+	caddytest.AssertAdapt(t, `
+	{  
+		default_sni a.caddy.localhost
+	}
+
+	a.caddy.localhost, b.caddy.localhost, http://c.caddy.localhost {
+
+		tls admin@example.com
+
+		respond /version 200 {
+			body "hello from localhost"
+		}
+	}
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"_servers": [
+				{
+					"automatic_https": {
+						"skip": [
+							"c.caddy.localhost"
+						]
+					},
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hello from localhost",
+													"handler": "static_response",
+													"status_code": 200
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/version"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"match": [
+								{
+									"host": [
+										"c.caddy.localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				{
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hello from localhost",
+													"handler": "static_response",
+													"status_code": 200
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/version"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"match": [
+								{
+									"host": [
+										"a.caddy.localhost",
+										"b.caddy.localhost"
+									]
+								}
+							],
 							"terminal": true
 						}
 					],
-					"automatic_https": {
-						"skip": [
-							"a.caddy.localhost"
+					"tls_connection_policies": [
+						{
+							"default_sni": "a.caddy.localhost",
+							"match": {
+								"sni": [
+									"a.caddy.localhost",
+									"b.caddy.localhost"
+								]
+							}
+						},
+						{
+							"default_sni": "a.caddy.localhost"
+						}
+					]
+				}
+			]
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuer": {
+							"email": "admin@example.com",
+							"module": "acme"
+						},
+						"subjects": [
+							"a.caddy.localhost",
+							"b.caddy.localhost",
+							"c.caddy.localhost"
 						]
 					}
-				}
+				]
 			}
 		}
 	}

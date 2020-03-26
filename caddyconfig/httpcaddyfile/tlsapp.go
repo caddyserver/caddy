@@ -368,5 +368,9 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 		return len(aps[i].Subjects) > len(aps[j].Subjects)
 	})
 
+	for i := 0; i < len(aps); i++ {
+		sort.Strings(aps[i].Subjects)
+	}
+
 	return aps
 }

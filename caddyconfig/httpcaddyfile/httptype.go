@@ -367,7 +367,7 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
-		var hasCatchAllTLSConnPolicy bool
+		var requiresCatchAllTLSConnPolicy bool
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
@@ -376,45 +376,65 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts := sblock.hostsFromKeys(false, false)
+			var httpHosts, httpsHosts []string
+			for _, key := range sblock.block.Keys {
+				addr, err := ParseAddress(key)
+				if err != nil {
+					return nil, err
+				}
+				addr = addr.Normalize()
 
-			// tls: connection policies
-			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
-				// tls connection policies
-				for _, cpVal := range cpVals {
-					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+				if addr.Scheme == "http" {
+					httpHosts = append(httpHosts, addr.Host)
+				} else {
+					httpsHosts = append(httpsHosts, addr.Host)
+				}
 
-					// make sure the policy covers all hostnames from the block
-					for _, h := range hosts {
-						if h == defaultSNI {
-							hosts = append(hosts, "")
-							cp.DefaultSNI = defaultSNI
-							break
+				// exclude any hosts that were defined explicitly with
+				// "http://" in the key from automated cert management (issue #2998)
+				if addr.Scheme == "http" {
+					if addr.Host != "" {
+						if srv.AutoHTTPS == nil {
+							srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+						}
+						if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
+							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+							sort.Strings(srv.AutoHTTPS.Skip)
 						}
 					}
-
-					if len(hosts) > 0 {
-						cp.MatchersRaw = caddy.ModuleMap{
-							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
-						}
-					} else {
-						cp.DefaultSNI = defaultSNI
-						hasCatchAllTLSConnPolicy = true
-					}
-
-					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 				}
 			}
 
-			// exclude any hosts that were defined explicitly with
-			// "http://" in the key from automated cert management (issue #2998)
-			for _, addr := range sblock.keys {
-				if addr.Scheme == "http" && addr.Host != "" {
-					if srv.AutoHTTPS == nil {
-						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-					}
-					if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
-						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+			// sort hosts for a predictable config file
+			sort.Strings(httpHosts)
+			sort.Strings(httpsHosts)
+
+			// tls: connection policies
+			if len(httpsHosts) > 0 {
+				if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
+					// tls connection policies
+					for _, cpVal := range cpVals {
+						cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+						// make sure the policy covers all hostnames from the block
+						for _, h := range httpsHosts {
+							if h == defaultSNI {
+								httpHosts = append(httpHosts, "")
+								cp.DefaultSNI = defaultSNI
+								requiresCatchAllTLSConnPolicy = true
+								break
+							}
+						}
+
+						if len(httpsHosts) > 0 {
+							cp.MatchersRaw = caddy.ModuleMap{
+								"sni": caddyconfig.JSON(httpsHosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
+							}
+						} else {
+							cp.DefaultSNI = defaultSNI
+							requiresCatchAllTLSConnPolicy = true
+						}
+
+						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 					}
 				}
 			}
@@ -475,7 +495,7 @@ func (st *ServerType) serversFromPairings(
 		// TODO: maybe a smarter way to handle this might be to just make the
 		// auto-HTTPS logic at provision-time detect if there is any connection
 		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
-		if !hasCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
+		if requiresCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 

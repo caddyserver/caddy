@@ -15,6 +15,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -344,9 +345,14 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 		}
 	}
 
+	orderedResponse, err := reorder(string(result))
+	if err != nil {
+		t.Error(err)
+	}
+
 	diff := difflib.Diff(
 		strings.Split(expectedResponse, "\n"),
-		strings.Split(string(result), "\n"))
+		strings.Split(orderedResponse, "\n"))
 
 	// scan for failure
 	failed := false
@@ -369,5 +375,53 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 			}
 		}
 		t.Fail()
+
+		fmt.Println(orderedResponse)
 	}
+}
+
+type load struct {
+	Apps apps `json:"apps"`
+}
+type apps struct {
+	HTTP hTTP        `json:"http"`
+	TLS  interface{} `json:"tls,omitempty"`
+}
+type hTTP struct {
+	OrderedServers []interface{}          `json:"_servers,omitempty"`
+	Servers        map[string]interface{} `json:"servers,omitempty"`
+}
+
+func reorder(input string) (string, error) {
+
+	var c load
+	err := json.Unmarshal([]byte(input), &c)
+	if err != nil {
+		return "", err
+	}
+
+	getListen := func(v interface{}) string {
+		m := v.(map[string]interface{})
+		s := m["listen"].([]interface{})
+		l := s[0].(string)
+		return l
+	}
+
+	// clone
+	for _, v := range c.Apps.HTTP.Servers {
+		c.Apps.HTTP.OrderedServers = append(c.Apps.HTTP.OrderedServers, v)
+	}
+	c.Apps.HTTP.Servers = nil
+
+	// sort
+	sort.SliceStable(c.Apps.HTTP.OrderedServers, func(i, j int) bool {
+		return getListen(c.Apps.HTTP.OrderedServers[i]) > getListen(c.Apps.HTTP.OrderedServers[j])
+	})
+
+	out, err := json.MarshalIndent(c, "", "\t")
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
 }
