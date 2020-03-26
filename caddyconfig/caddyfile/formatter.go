@@ -20,129 +20,194 @@ import (
 	"unicode"
 )
 
-// Format formats a Caddyfile to conventional standards.
-func Format(body []byte) []byte {
-	reader := bytes.NewReader(body)
-	result := new(bytes.Buffer)
+// Format formats the input Caddyfile to a standard, nice-looking
+// appearance. It works by reading each rune of the input and taking
+// control over all the bracing and whitespace that is written; otherwise,
+// words, comments, placeholders, and escaped characters are all treated
+// literally and written as they appear in the input.
+func Format(input []byte) []byte {
+	input = bytes.TrimSpace(input)
+
+	out := new(bytes.Buffer)
+	rdr := bytes.NewReader(input)
 
 	var (
-		commented,
-		quoted,
-		escaped,
-		environ,
-		lineBegin bool
+		last rune // the last character that was written to the result
 
-		firstIteration = true
+		space           = true // whether current/previous character was whitespace (beginning of input counts as space)
+		beginningOfLine = true // whether we are at beginning of line
 
-		indentation = 0
+		openBrace        bool // whether current word/token is or started with open curly brace
+		openBraceWritten bool // if openBrace, whether that brace was written or not
 
-		prev,
-		curr,
-		next rune
+		newLines int // count of newlines consumed
 
-		err error
+		comment bool // whether we're in a comment
+		quoted  bool // whether we're in a quoted segment
+		escaped bool // whether current char is escaped
+
+		nesting int // indentation level
 	)
 
-	insertTabs := func(num int) {
-		for tabs := num; tabs > 0; tabs-- {
-			result.WriteRune('\t')
+	write := func(ch rune) {
+		out.WriteRune(ch)
+		last = ch
+	}
+
+	indent := func() {
+		for tabs := nesting; tabs > 0; tabs-- {
+			write('\t')
 		}
 	}
 
+	nextLine := func() {
+		write('\n')
+		beginningOfLine = true
+	}
+
 	for {
-		prev = curr
-		curr = next
-
-		if curr < 0 {
-			break
-		}
-
-		next, _, err = reader.ReadRune()
+		ch, _, err := rdr.ReadRune()
 		if err != nil {
 			if err == io.EOF {
-				next = -1
+				break
+			}
+			panic(err)
+		}
+
+		if comment {
+			if ch == '\n' {
+				comment = false
 			} else {
-				panic(err)
+				write(ch)
+				continue
 			}
 		}
 
-		if firstIteration {
-			firstIteration = false
-			lineBegin = true
+		if !escaped && ch == '\\' {
+			if space {
+				write(' ')
+				space = false
+			}
+			write(ch)
+			escaped = true
+			continue
+		}
+
+		if escaped {
+			write(ch)
+			escaped = false
 			continue
 		}
 
 		if quoted {
-			if escaped {
-				escaped = false
-			} else {
-				if curr == '\\' {
-					escaped = true
-				}
-				if curr == '"' {
-					quoted = false
-				}
-			}
-			if curr == '\n' {
+			if ch == '"' {
 				quoted = false
 			}
-		} else if commented {
-			if curr == '\n' {
-				commented = false
-			}
-		} else {
-			if curr == '"' {
-				quoted = true
-			}
-			if curr == '#' {
-				commented = true
-			}
-			if curr == '}' {
-				if environ {
-					environ = false
-				} else if indentation > 0 {
-					indentation--
-				}
-			}
-			if curr == '{' {
-				if unicode.IsSpace(next) {
-					indentation++
+			write(ch)
+			continue
+		}
 
-					if !unicode.IsSpace(prev) && !lineBegin {
-						result.WriteRune(' ')
-					}
-				} else {
-					environ = true
-				}
+		if space && ch == '"' {
+			quoted = true
+		}
+
+		if unicode.IsSpace(ch) {
+			space = true
+			if ch == '\n' {
+				newLines++
 			}
-			if lineBegin {
-				if curr == ' ' || curr == '\t' {
-					continue
-				} else {
-					lineBegin = false
-					if curr == '{' && unicode.IsSpace(next) {
-						// If the block is global, i.e., starts with '{'
-						// One less indentation for these blocks.
-						insertTabs(indentation - 1)
-					} else {
-						insertTabs(indentation)
-					}
-				}
+			continue
+		}
+		spacePrior := space
+		space = false
+
+		//////////////////////////////////////////////////////////
+		// I find it helpful to think of the formatting loop in two
+		// main sections; by the time we reach this point, we
+		// know we are in a "regular" part of the file: we know
+		// the character is not a space, not in a literal segment
+		// like a comment or quoted, it's not escaped, etc.
+		//////////////////////////////////////////////////////////
+
+		if ch == '#' {
+			if !spacePrior && !beginningOfLine {
+				write(' ')
+			}
+			comment = true
+		}
+
+		if openBrace && spacePrior && !openBraceWritten {
+			if nesting == 0 && last == '}' {
+				nextLine()
+				nextLine()
+			}
+
+			openBrace = false
+			if beginningOfLine {
+				indent()
 			} else {
-				if prev == '{' &&
-					(curr == ' ' || curr == '\t') &&
-					(next != '\n' && next != '\r') {
-					curr = '\n'
-				}
+				write(' ')
 			}
+			write('{')
+			nextLine()
+			newLines = 0
+			nesting++
 		}
 
-		if curr == '\n' {
-			lineBegin = true
+		switch {
+		case ch == '{':
+			openBrace = true
+			openBraceWritten = false
+			continue
+
+		case ch == '}' && (spacePrior || !openBrace):
+			if last != '\n' {
+				nextLine()
+			}
+			if nesting > 0 {
+				nesting--
+			}
+			indent()
+			write('}')
+			newLines = 0
+			continue
 		}
 
-		result.WriteRune(curr)
+		if newLines > 2 {
+			newLines = 2
+		}
+		for i := 0; i < newLines; i++ {
+			nextLine()
+		}
+		newLines = 0
+		if beginningOfLine {
+			indent()
+		}
+		if nesting == 0 && last == '}' {
+			nextLine()
+			nextLine()
+		}
+
+		if !beginningOfLine && spacePrior {
+			write(' ')
+		}
+
+		if openBrace && !openBraceWritten {
+			if !beginningOfLine {
+				write(' ')
+			}
+			write('{')
+			openBraceWritten = true
+		}
+		write(ch)
+
+		beginningOfLine = false
 	}
 
-	return result.Bytes()
+	// the Caddyfile does not need any leading or trailing spaces, but...
+	trimmedResult := bytes.TrimSpace(out.Bytes())
+
+	// ...Caddyfiles should, however, end with a newline because
+	// newlines are significant to the syntax of the file
+	return append(trimmedResult, '\n')
 }
