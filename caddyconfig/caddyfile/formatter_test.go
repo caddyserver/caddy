@@ -15,12 +15,28 @@
 package caddyfile
 
 import (
+	"strings"
 	"testing"
 )
 
-func TestFormatBasicIndentation(t *testing.T) {
-	input := []byte(`
-  a
+func TestFormatter(t *testing.T) {
+	for i, tc := range []struct {
+		description string
+		input       string
+		expect      string
+	}{
+		{
+			description: "very simple",
+			input: `abc   def
+	g hi jkl
+mn`,
+			expect: `abc def
+g hi jkl
+mn`,
+		},
+		{
+			description: "basic indentation, line breaks, and nesting",
+			input: `  a
 b
 
 	c {
@@ -29,6 +45,8 @@ b
 
 e { f
 }
+
+
 
 g {
 h {
@@ -44,22 +62,20 @@ l
 m {
 	n { o
 	}
-}
-
-{
-	p
-}
-
-  { q
+	p { q r
+s }
 }
 
 	{
-{ r
+{ t
+		u
+
+	v
+
+w
 }
-}
-`)
-	expected := []byte(`
-a
+}`,
+			expect: `a
 b
 
 c {
@@ -86,49 +102,58 @@ m {
 	n {
 		o
 	}
-}
-
-{
-	p
-}
-
-{
-	q
+	p {
+		q r
+		s
+	}
 }
 
 {
 	{
-		r
-	}
-}
-`)
-	testFormat(t, input, expected)
-}
+		t
+		u
 
-func TestFormatBasicSpacing(t *testing.T) {
-	input := []byte(`
-a{
+		v
+
+		w
+	}
+}`,
+		},
+		{
+			description: "block spacing",
+			input: `a{
 	b
 }
 
 c{ d
-}
-`)
-	expected := []byte(`
-a {
+}`,
+			expect: `a {
 	b
 }
 
 c {
 	d
-}
-`)
-	testFormat(t, input, expected)
+}`,
+		},
+		{
+			description: "advanced spacing",
+			input: `abc {
+	def
+}ghi{
+	jkl mno
+pqr}`,
+			expect: `abc {
+	def
 }
 
-func TestFormatEnvironmentVariable(t *testing.T) {
-	input := []byte(`
-{$A}
+ghi {
+	jkl mno
+	pqr
+}`,
+		},
+		{
+			description: "env var placeholders",
+			input: `{$A}
 
 b {
 {$C}
@@ -139,9 +164,8 @@ d { {$E}
 
 { {$F}
 }
-`)
-	expected := []byte(`
-{$A}
+`,
+			expect: `{$A}
 
 b {
 	{$C}
@@ -153,49 +177,41 @@ d {
 
 {
 	{$F}
-}
-`)
-	testFormat(t, input, expected)
-}
+}`,
+		},
+		{
+			description: "comments",
+			input: `#a "\n"
 
-func TestFormatComments(t *testing.T) {
-	input := []byte(`
-# a "\n"
-
-# b {
+ #b {
 	c
 }
 
 d {
-e # f
+e#f
 # g
 }
 
 h { # i
-}
-`)
-	expected := []byte(`
-# a "\n"
+}`,
+			expect: `#a "\n"
 
-# b {
+#b {
 c
 }
 
 d {
-	e # f
+	e #f
 	# g
 }
 
 h {
 	# i
-}
-`)
-	testFormat(t, input, expected)
-}
-
-func TestFormatQuotesAndEscapes(t *testing.T) {
-	input := []byte(`
-"a \"b\" #c
+}`,
+		},
+		{
+			description: "quotes and escaping",
+			input: `"a \"b\" "#c
 	d
 
 e {
@@ -204,9 +220,16 @@ e {
 
 g { "h"
 }
-`)
-	expected := []byte(`
-"a \"b\" #c
+
+i {
+	"foo
+bar"
+}
+
+j {
+"\"k\" l m"
+}`,
+			expect: `"a \"b\" " #c
 d
 
 e {
@@ -216,13 +239,70 @@ e {
 g {
 	"h"
 }
-`)
-	testFormat(t, input, expected)
+
+i {
+	"foo
+bar"
 }
 
-func testFormat(t *testing.T, input, expected []byte) {
-	output := Format(input)
-	if string(output) != string(expected) {
-		t.Errorf("Expected:\n%s\ngot:\n%s", string(expected), string(output))
+j {
+	"\"k\" l m"
+}`,
+		},
+		{
+			description: "bad nesting (too many open)",
+			input: `a
+{
+	{
+}`,
+			expect: `a {
+	{
+	}
+`,
+		},
+		{
+			description: "bad nesting (too many close)",
+			input: `a
+{
+	{
+}}}`,
+			expect: `a {
+	{
+	}
+}
+}
+`,
+		},
+		{
+			description: "json",
+			input: `foo
+bar      "{\"key\":34}"
+`,
+			expect: `foo
+bar "{\"key\":34}"`,
+		},
+		{
+			description: "escaping after spaces",
+			input:       `foo \"literal\"`,
+			expect:      `foo \"literal\"`,
+		},
+		{
+			description: "simple placeholders",
+			input:       `foo {bar}`,
+			expect:      `foo {bar}`,
+		},
+	} {
+		// the formatter should output a trailing newline,
+		// even if the tests aren't written to expect that
+		if !strings.HasSuffix(tc.expect, "\n") {
+			tc.expect += "\n"
+		}
+
+		actual := Format([]byte(tc.input))
+
+		if string(actual) != tc.expect {
+			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
+				i, tc.description, string(tc.expect), string(actual))
+		}
 	}
 }
