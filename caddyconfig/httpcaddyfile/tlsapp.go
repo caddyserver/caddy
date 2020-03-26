@@ -361,8 +361,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 				aps[i].MustStaple == aps[j].MustStaple &&
 				aps[i].KeyType == aps[j].KeyType &&
 				aps[i].OnDemand == aps[j].OnDemand &&
-				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio &&
-				aps[i].ManageSync == aps[j].ManageSync {
+				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio {
 				if len(aps[i].Subjects) == 0 && len(aps[j].Subjects) > 0 {
 					aps = append(aps[:j], aps[j+1:]...)
 				} else if len(aps[i].Subjects) > 0 && len(aps[j].Subjects) == 0 {
