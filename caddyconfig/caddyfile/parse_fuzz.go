@@ -13,7 +13,6 @@
 // limitations under the License.
 
 // +build gofuzz
-// +build gofuzz_libfuzzer
 
 package caddyfile
 
