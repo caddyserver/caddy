@@ -16,9 +16,9 @@ package caddytls
 
 import (
 	"crypto/tls"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -41,22 +41,8 @@ func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 // Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 	for _, name := range m {
-		if hello.ServerName == name {
+		if certmagic.MatchWildcard(hello.ServerName, name) {
 			return true
-		}
-
-		// check for wildcard match on this name, but only
-		// bother if there is even a wildcard character
-		if !strings.Contains(name, "*") {
-			continue
-		}
-		labels := strings.Split(hello.ServerName, ".")
-		for i := range labels {
-			labels[i] = "*"
-			candidate := strings.Join(labels, ".")
-			if candidate == name {
-				return true
-			}
 		}
 	}
 	return false

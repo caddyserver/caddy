@@ -329,7 +329,7 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 			return ap // no host filter is an automatic match
 		}
 		for _, h := range ap.Subjects {
-			if h == name {
+			if certmagic.MatchWildcard(name, h) {
 				return ap
 			}
 		}
