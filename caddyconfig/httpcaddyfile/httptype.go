@@ -418,7 +418,7 @@ func (st *ServerType) serversFromPairings(
 						// make sure the policy covers all hostnames from the block
 						for _, h := range httpsHosts {
 							if h == defaultSNI {
-								httpHosts = append(httpHosts, "")
+								httpHosts = append(httpHosts, "") //nolint
 								cp.DefaultSNI = defaultSNI
 								requiresCatchAllTLSConnPolicy = true
 								break
