@@ -1,14 +1,6 @@
 name: Fuzzing
 
 on:
-  # Regression testing
-  push:
-    branches: 
-      - master
-  pull_request:
-    branches: 
-      - master
-
   # Daily midnight fuzzing
   schedule:
     - cron: '0 0 * * *'
@@ -68,12 +60,7 @@ jobs:
           ["./replacer_fuzz.go"]="replacer" \
         )
 
-        fuzz_type="local-regression"
-        if [[ "${{ github.event_name }}" == "schedule" ]]; then
-          fuzz_type="fuzzing"
-        fi
-
-        echo "Fuzzing type: $fuzz_type"
+        fuzz_type="fuzzing"
 
         for f in $(find . -name \*_fuzz.go); do
           FUZZER_DIRECTORY=$(dirname "$f")
