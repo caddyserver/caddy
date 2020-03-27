@@ -15,12 +15,12 @@ func TestMap(t *testing.T) {
 		http_port     9080
 		https_port    9443
 	}
-	
+
 	localhost:9080 {
 
 		map http.request.method dest-name {
 			default unknown
-			GET get-called
+			G.T get-called
 			POST post-called
 		}
 

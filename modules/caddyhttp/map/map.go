@@ -16,6 +16,7 @@ package mmap
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -33,7 +34,6 @@ type Handler struct {
 	Destination string `json:"destination,omitempty"`
 	Default     string `json:"default,omitempty"`
 	Items       []Item `json:"items,omitempty"`
-	internalMap map[interface{}]string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -46,22 +46,14 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision -
 func (h *Handler) Provision(_ caddy.Context) error {
-	h.internalMap = make(map[interface{}]string)
 	return nil
 }
 
 // Validate ensures h's configuration is valid.
 func (h Handler) Validate() error {
 
-	//TODO: detect and compile regular expressions
-	//TODO: organise a data structure to determine the order in which
-	// the static keys and regular expressions can be deterministically
-	// evaluated. Static keys first then regular expressions in order?
-	// Or evaluated in order of appearance?
-
-	// load the values
-	for _, v := range h.Items {
-		h.internalMap[v.Key] = v.Value
+	for i := 0; i < len(h.Items); i++ {
+		h.Items[i].compiled = regexp.MustCompile(h.Items[i].Key)
 	}
 	return nil
 }
@@ -71,18 +63,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 	// get the source value, if the source value was not found do no
 	// replacement.
-	//TODO: has the potential to miss changes in variables made later
-	// in the request pipeline but perhaps that is a simplier mental
-	// model to start with.
-	val, ok := repl.Get(h.Source)
+	val, ok := repl.GetString(h.Source)
 	if ok {
-		v, ok := h.internalMap[val]
-		if !ok && h.Default != "" {
-			v = h.Default
+		found := false
+		for i := 0; i < len(h.Items); i++ {
+			if h.Items[i].compiled.Match([]byte(val)) {
+				found = true
+				repl.Set(h.Destination, h.Items[i].Value)
+				break
+			}
 		}
-		repl.Set(h.Destination, v)
-	}
 
+		if !found && h.Default != "" {
+			repl.Set(h.Destination, h.Default)
+		}
+	}
 	return next.ServeHTTP(w, r)
 }
 
@@ -92,6 +87,8 @@ type Item struct {
 	Key string `json:"key,omitempty"`
 	// Value
 	Value string `json:"value,omitempty"`
+	// compiled internal value
+	compiled *regexp.Regexp
 }
 
 // Interface guards
