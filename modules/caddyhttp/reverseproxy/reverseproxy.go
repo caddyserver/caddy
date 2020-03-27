@@ -172,7 +172,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
-		existingHost, loaded := hosts.LoadOrStore(upstream.Dial, host)
+		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
 		if loaded {
 			host = existingHost.(Host)
 		}
@@ -252,7 +252,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		hosts.Delete(upstream.Dial)
+		hosts.Delete(upstream.String())
 	}
 
 	return nil
@@ -446,6 +446,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	}
 
 	h.logger.Debug("upstream roundtrip",
+		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
 		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
 		zap.Duration("duration", duration),

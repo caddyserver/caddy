@@ -96,6 +96,13 @@ type Upstream struct {
 	cb                CircuitBreaker
 }
 
+func (u Upstream) String() string {
+	if u.LookupSRV != "" {
+		return u.LookupSRV
+	}
+	return u.Dial
+}
+
 // Available returns true if the remote host
 // is available to receive requests. This is
 // the method that should be used by selection
