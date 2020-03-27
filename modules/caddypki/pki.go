@@ -53,7 +53,7 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 	// if this app is initialized at all, ensure there's
 	// at least a default CA that can be used
 	if len(p.CAs) == 0 {
-		p.CAs = map[string]*CA{defaultCAID: new(CA)}
+		p.CAs = map[string]*CA{DefaultCAID: new(CA)}
 	}
 
 	for caID, ca := range p.CAs {
