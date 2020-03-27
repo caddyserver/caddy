@@ -55,6 +55,7 @@ type NTLMTransport struct {
 
 	transports   map[string]*http.Transport
 	transportsMu *sync.RWMutex
+	ctx          caddy.Context
 }
 
 // CaddyModule returns the Caddy module information.
@@ -73,6 +74,7 @@ func (NTLMTransport) CaddyModule() caddy.ModuleInfo {
 func (n *NTLMTransport) Provision(ctx caddy.Context) error {
 	n.transports = make(map[string]*http.Transport)
 	n.transportsMu = new(sync.RWMutex)
+	n.ctx = ctx
 
 	if n.HTTPTransport == nil {
 		n.HTTPTransport = new(HTTPTransport)
@@ -141,7 +143,7 @@ func (n *NTLMTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// process, we need to pin it to a specific transport
 	if requestHasAuth(req) {
 		var err error
-		transport, err = n.newTransport()
+		transport, err = n.newTransport(n.ctx)
 		if err != nil {
 			return nil, fmt.Errorf("making new transport for %s: %v", req.RemoteAddr, err)
 		}
@@ -155,9 +157,9 @@ func (n *NTLMTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // newTransport makes an NTLM-compatible transport.
-func (n *NTLMTransport) newTransport() (*http.Transport, error) {
+func (n *NTLMTransport) newTransport(ctx caddy.Context) (*http.Transport, error) {
 	// start with a regular HTTP transport
-	transport, err := n.HTTPTransport.newTransport()
+	transport, err := n.HTTPTransport.newTransport(ctx)
 	if err != nil {
 		return nil, err
 	}
