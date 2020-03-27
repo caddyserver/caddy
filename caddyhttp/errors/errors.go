@@ -18,8 +18,10 @@ package errors
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -83,9 +85,13 @@ func (h ErrorHandler) errorPage(w http.ResponseWriter, r *http.Request, code int
 			return
 		}
 		defer errorPage.Close()
-
+		// Get content type by extension
+		contentType := mime.TypeByExtension(filepath.Ext(pagePath))
+		if contentType == "" {
+			contentType = "text/html; charset=utf-8"
+		}
 		// Copy the page body into the response
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(code)
 		_, err = io.Copy(w, errorPage)
 
