@@ -27,13 +27,20 @@ import (
 
 // directiveOrder specifies the order
 // to apply directives in HTTP routes.
+//
+// The root directive goes first in case rewrites or
+// redirects depend on existence of files, i.e. the
+// file matcher, which must know the root first.
+//
+// The header directive goes second so that headers
+// can be manipulated before doing redirects.
 var directiveOrder = []string{
+	"root",
+
 	"header",
 
 	"redir",
 	"rewrite",
-
-	"root",
 
 	// URI manipulation
 	"uri",

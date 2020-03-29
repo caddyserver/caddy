@@ -199,6 +199,8 @@ func StatusCodeMatches(actual, configured int) bool {
 
 // tlsPlaceholderWrapper is a no-op listener wrapper that marks
 // where the TLS listener should be in a chain of listener wrappers.
+// It should only be used if another listener wrapper must be placed
+// in front of the TLS handshake.
 type tlsPlaceholderWrapper struct{}
 
 func (tlsPlaceholderWrapper) CaddyModule() caddy.ModuleInfo {
