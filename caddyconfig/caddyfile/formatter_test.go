@@ -287,9 +287,23 @@ bar "{\"key\":34}"`,
 			expect:      `foo \"literal\"`,
 		},
 		{
-			description: "simple placeholders",
+			description: "simple placeholders as standalone tokens",
 			input:       `foo {bar}`,
 			expect:      `foo {bar}`,
+		},
+		{
+			description: "simple placeholders within tokens",
+			input:       `foo{bar} foo{bar}baz`,
+			expect:      `foo{bar} foo{bar}baz`,
+		},
+		{
+			description: "placeholders and malformed braces",
+			input:       `foo{bar} foo{ bar}baz`,
+			expect: `foo{bar} foo {
+	bar
+}
+
+baz`,
 		},
 	} {
 		// the formatter should output a trailing newline,
