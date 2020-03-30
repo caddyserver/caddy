@@ -111,6 +111,12 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 			return nil, h.ArgErr()
 		}
 		field := h.Val()
+
+		// sometimes it is habitual for users to suffix a field name with a colon,
+		// as if they were writing a curl command or something; see
+		// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349
+		field = strings.TrimSuffix(field, ":")
+
 		var value, replacement string
 		if h.NextArg() {
 			value = h.Val()
