@@ -86,7 +86,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 			decls.NewFunction(placeholderFuncName,
 				decls.NewOverload(placeholderFuncName+"_httpRequest_string",
 					[]*exprpb.Type{httpRequestObjectType, decls.String},
-					decls.String)),
+					decls.Any)),
 		),
 		cel.CustomTypeAdapter(celHTTPRequestTypeAdapter{}),
 		ext.Strings(),
@@ -210,7 +210,35 @@ func caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	val, _ := repl.Get(string(phStr))
 
-	return types.String(val)
+	// TODO: this is... kinda awful and underwhelming, how can we expand CEL's type system more easily?
+	switch v := val.(type) {
+	case string:
+		return types.String(v)
+	case fmt.Stringer:
+		return types.String(v.String())
+	case error:
+		return types.NewErr(v.Error())
+	case int:
+		return types.Int(v)
+	case int32:
+		return types.Int(v)
+	case int64:
+		return types.Int(v)
+	case uint:
+		return types.Int(v)
+	case uint32:
+		return types.Int(v)
+	case uint64:
+		return types.Int(v)
+	case float32:
+		return types.Double(v)
+	case float64:
+		return types.Double(v)
+	case bool:
+		return types.Bool(v)
+	default:
+		return types.String(fmt.Sprintf("%+v", v))
+	}
 }
 
 // Interface guards

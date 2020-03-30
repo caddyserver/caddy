@@ -31,7 +31,7 @@ import (
 )
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
-	httpVars := func(key string) (string, bool) {
+	httpVars := func(key string) (interface{}, bool) {
 		if req != nil {
 			// query string parameters
 			if strings.HasPrefix(key, reqURIQueryReplPrefix) {
@@ -62,7 +62,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				}
 			}
 
-			// http.request.tls.
+			// http.request.tls.*
 			if strings.HasPrefix(key, reqTLSReplPrefix) {
 				return getReqTLSReplacement(req, key)
 			}
@@ -182,21 +182,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
 				tbl := req.Context().Value(VarsCtxKey).(map[string]interface{})
-				raw, ok := tbl[varName]
-				if !ok {
-					// variables can be dynamic, so always return true
-					// even when it may not be set; treat as empty
-					return "", true
-				}
-				// do our best to convert it to a string efficiently
-				switch val := raw.(type) {
-				case string:
-					return val, true
-				case fmt.Stringer:
-					return val.String(), true
-				default:
-					return fmt.Sprintf("%s", val), true
-				}
+				raw, _ := tbl[varName]
+				// variables can be dynamic, so always return true
+				// even when it may not be set; treat as empty then
+				return raw, true
 			}
 		}
 
@@ -211,19 +200,19 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			}
 		}
 
-		return "", false
+		return nil, false
 	}
 
 	repl.Map(httpVars)
 }
 
-func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
+func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 	if req == nil || req.TLS == nil {
-		return "", false
+		return nil, false
 	}
 
 	if len(key) < len(reqTLSReplPrefix) {
-		return "", false
+		return nil, false
 	}
 
 	field := strings.ToLower(key[len(reqTLSReplPrefix):])
@@ -231,20 +220,20 @@ func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
 	if strings.HasPrefix(field, "client.") {
 		cert := getTLSPeerCert(req.TLS)
 		if cert == nil {
-			return "", false
+			return nil, false
 		}
 
 		switch field {
 		case "client.fingerprint":
 			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
 		case "client.issuer":
-			return cert.Issuer.String(), true
+			return cert.Issuer, true
 		case "client.serial":
-			return fmt.Sprintf("%x", cert.SerialNumber), true
+			return cert.SerialNumber, true
 		case "client.subject":
-			return cert.Subject.String(), true
+			return cert.Subject, true
 		default:
-			return "", false
+			return nil, false
 		}
 	}
 
@@ -254,22 +243,15 @@ func getReqTLSReplacement(req *http.Request, key string) (string, bool) {
 	case "cipher_suite":
 		return tls.CipherSuiteName(req.TLS.CipherSuite), true
 	case "resumed":
-		if req.TLS.DidResume {
-			return "true", true
-		}
-		return "false", true
+		return req.TLS.DidResume, true
 	case "proto":
 		return req.TLS.NegotiatedProtocol, true
 	case "proto_mutual":
-		if req.TLS.NegotiatedProtocolIsMutual {
-			return "true", true
-		}
-		return "false", true
+		return req.TLS.NegotiatedProtocolIsMutual, true
 	case "server_name":
 		return req.TLS.ServerName, true
-	default:
-		return "", false
 	}
+	return nil, false
 }
 
 // getTLSPeerCert retrieves the first peer certificate from a TLS session.

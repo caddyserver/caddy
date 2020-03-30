@@ -173,41 +173,12 @@ func TestReplacer(t *testing.T) {
 	}
 }
 
-func BenchmarkReplacer(b *testing.B) {
-	type testCase struct {
-		name, input, empty string
-	}
-
-	rep := testReplacer()
-
-	for _, bm := range []testCase{
-		{
-			name:  "no placeholder",
-			input: `simple string`,
-		},
-		{
-			name:  "placeholder",
-			input: `{"json": "object"}`,
-		},
-		{
-			name:  "escaped placeholder",
-			input: `\{"json": \{"nested": "{bar}"\}\}`,
-		},
-	} {
-		b.Run(bm.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				rep.ReplaceAll(bm.input, bm.empty)
-			}
-		})
-	}
-}
-
 func TestReplacerSet(t *testing.T) {
 	rep := testReplacer()
 
 	for _, tc := range []struct {
 		variable string
-		value    string
+		value    interface{}
 	}{
 		{
 			variable: "test1",
@@ -216,6 +187,10 @@ func TestReplacerSet(t *testing.T) {
 		{
 			variable: "asdf",
 			value:    "123",
+		},
+		{
+			variable: "numbers",
+			value:    123.456,
 		},
 		{
 			variable: "äöü",
@@ -252,7 +227,7 @@ func TestReplacerSet(t *testing.T) {
 
 	// test if all keys are still there (by length)
 	length := len(rep.static)
-	if len(rep.static) != 7 {
+	if len(rep.static) != 8 {
 		t.Errorf("Expected length '%v' got '%v'", 7, length)
 	}
 }
@@ -261,7 +236,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 	rep := Replacer{
 		providers: []ReplacerFunc{
 			// split our possible vars to two functions (to test if both functions are called)
-			func(key string) (val string, ok bool) {
+			func(key string) (val interface{}, ok bool) {
 				switch key {
 				case "test1":
 					return "val1", true
@@ -275,7 +250,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 					return "NOOO", false
 				}
 			},
-			func(key string) (val string, ok bool) {
+			func(key string) (val interface{}, ok bool) {
 				switch key {
 				case "1":
 					return "test-123", true
@@ -331,7 +306,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 
 func TestReplacerDelete(t *testing.T) {
 	rep := Replacer{
-		static: map[string]string{
+		static: map[string]interface{}{
 			"key1": "val1",
 			"key2": "val2",
 			"key3": "val3",
@@ -366,10 +341,10 @@ func TestReplacerMap(t *testing.T) {
 	rep := testReplacer()
 
 	for i, tc := range []ReplacerFunc{
-		func(key string) (val string, ok bool) {
+		func(key string) (val interface{}, ok bool) {
 			return "", false
 		},
-		func(key string) (val string, ok bool) {
+		func(key string) (val interface{}, ok bool) {
 			return "", false
 		},
 	} {
@@ -434,12 +409,50 @@ func TestReplacerNew(t *testing.T) {
 			}
 		}
 	}
+}
 
+func BenchmarkReplacer(b *testing.B) {
+	type testCase struct {
+		name, input, empty string
+	}
+
+	rep := testReplacer()
+	rep.Set("str", "a string")
+	rep.Set("int", 123.456)
+
+	for _, bm := range []testCase{
+		{
+			name:  "no placeholder",
+			input: `simple string`,
+		},
+		{
+			name:  "string replacement",
+			input: `str={str}`,
+		},
+		{
+			name:  "int replacement",
+			input: `int={int}`,
+		},
+		{
+			name:  "placeholder",
+			input: `{"json": "object"}`,
+		},
+		{
+			name:  "escaped placeholder",
+			input: `\{"json": \{"nested": "{bar}"\}\}`,
+		},
+	} {
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				rep.ReplaceAll(bm.input, bm.empty)
+			}
+		})
+	}
 }
 
 func testReplacer() Replacer {
 	return Replacer{
 		providers: make([]ReplacerFunc, 0),
-		static:    make(map[string]string),
+		static:    make(map[string]interface{}),
 	}
 }
