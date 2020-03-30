@@ -127,7 +127,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		"file": h.JSON(fileserver.MatchFile{
 			TryFiles: []string{"{http.request.uri.path}/index.php"},
 		}),
-		"not": h.JSON(caddyhttp.MatchNegate{
+		"not": h.JSON(caddyhttp.MatchNot{
 			MatchersRaw: caddy.ModuleMap{
 				"path": h.JSON(caddyhttp.MatchPath{"*/"}),
 			},
