@@ -1,14 +1,6 @@
 name: Fuzzing
 
 on:
-  # Regression testing
-  push:
-    branches: 
-      - master
-  pull_request:
-    branches: 
-      - master
-
   # Daily midnight fuzzing
   schedule:
     - cron: '0 0 * * *'
@@ -36,10 +28,6 @@ jobs:
       # If we decide we need to prevent this from running on forks, we can use this line:
       # if: github.repository == 'caddyserver/caddy'
       run: |
-        # Install Clang-7.0 because other versions seem to be missing the file libclang_rt.fuzzer-x86_64.a
-        sudo add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-7 main"
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo apt update && sudo apt install -y clang-7 lldb-7 lld-7
 
         go get -v github.com/dvyukov/go-fuzz/go-fuzz github.com/dvyukov/go-fuzz/go-fuzz-build
         wget -q -O fuzzit https://github.com/fuzzitdev/fuzzit/releases/download/v2.4.77/fuzzit_Linux_x86_64
@@ -51,7 +39,13 @@ jobs:
       continue-on-error: true
       env:
         FUZZIT_API_KEY: ${{ secrets.FUZZIT_API_KEY }}
+        SYSTEM_PULLREQUEST_SOURCEBRANCH: ${{ github.ref }}
+        BUILD_SOURCEVERSION: ${{ github.sha }}
       run: |
+        # debug
+        echo "PR Source Branch: $SYSTEM_PULLREQUEST_SOURCEBRANCH"
+        echo "Source version: $BUILD_SOURCEVERSION"
+
         declare -A fuzzers_funcs=(\
           ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
           ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
@@ -66,19 +60,16 @@ jobs:
           ["./replacer_fuzz.go"]="replacer" \
         )
 
-        fuzz_type="local-regression"
-        if [[ ${{ github.event_name }} == "schedule" ]]; then
-          fuzz_type="fuzzing"
-        fi
-        echo "Github event: ${{ github.event_name }}"
-        echo "Fuzzing type: $fuzz_type"
+        fuzz_type="fuzzing"
 
         for f in $(find . -name \*_fuzz.go); do
-          FUZZER_DIRECTORY=$(dirname $f)
+          FUZZER_DIRECTORY=$(dirname "$f")
+          
           echo "go-fuzz-build func ${fuzzers_funcs[$f]} residing in $f"
-          go-fuzz-build -func "${fuzzers_funcs[$f]}" -libfuzzer -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" $FUZZER_DIRECTORY
-          echo "Generating fuzzer binary of func ${fuzzers_funcs[$f]} which resides in $f"
-          clang-7 -fsanitize=fuzzer "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.a" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}"
-          fuzzit create job caddyserver/${fuzzers_targets[$f]} $FUZZER_DIRECTORY/${fuzzers_targets[$f]} --api-key ${FUZZIT_API_KEY} --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}"
+          
+          go-fuzz-build -func "${fuzzers_funcs[$f]}" -o "$FUZZER_DIRECTORY/${fuzzers_targets[$f]}.zip" "$FUZZER_DIRECTORY"
+          
+          fuzzit create job --engine go-fuzz caddyserver/"${fuzzers_targets[$f]}" "$FUZZER_DIRECTORY"/"${fuzzers_targets[$f]}.zip" --api-key "${FUZZIT_API_KEY}" --type "${fuzz_type}" --branch "${SYSTEM_PULLREQUEST_SOURCEBRANCH}" --revision "${BUILD_SOURCEVERSION}"
+          
           echo "Completed $f"
         done

@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -172,7 +171,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
-		existingHost, loaded := hosts.LoadOrStore(upstream.Dial, host)
+		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
 		if loaded {
 			host = existingHost.(Host)
 		}
@@ -252,7 +251,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		hosts.Delete(upstream.Dial)
+		hosts.Delete(upstream.String())
 	}
 
 	return nil
@@ -328,9 +327,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
 		repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
 		repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-		repl.Set("http.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
-		repl.Set("http.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
-		repl.Set("http.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
+		repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+		repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+		repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 		// mutate request headers according to this upstream;
 		// because we're in a retry loop, we have to copy
@@ -446,6 +445,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	}
 
 	h.logger.Debug("upstream roundtrip",
+		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
 		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
 		zap.Duration("duration", duration),

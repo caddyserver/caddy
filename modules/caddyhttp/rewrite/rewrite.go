@@ -15,8 +15,10 @@
 package rewrite
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -208,11 +210,22 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 
 		// consume the component and write the result
 		comp := qs[:end]
-		comp, _ = repl.ReplaceFunc(comp, func(name, val string) (string, error) {
+		comp, _ = repl.ReplaceFunc(comp, func(name string, val interface{}) (interface{}, error) {
 			if name == "http.request.uri.query" && wroteVal {
 				return val, nil // already escaped
 			}
-			return url.QueryEscape(val), nil
+			var valStr string
+			switch v := val.(type) {
+			case string:
+				valStr = v
+			case fmt.Stringer:
+				valStr = v.String()
+			case int:
+				valStr = strconv.Itoa(v)
+			default:
+				valStr = fmt.Sprintf("%+v", v)
+			}
+			return url.QueryEscape(valStr), nil
 		})
 		if end < len(qs) {
 			end++ // consume delimiter

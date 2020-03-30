@@ -39,6 +39,7 @@ func Format(input []byte) []byte {
 
 		openBrace        bool // whether current word/token is or started with open curly brace
 		openBraceWritten bool // if openBrace, whether that brace was written or not
+		openBraceSpace   bool // whether there was a non-newline space before open brace
 
 		newLines int // count of newlines consumed
 
@@ -145,10 +146,11 @@ func Format(input []byte) []byte {
 			openBrace = false
 			if beginningOfLine {
 				indent()
-			} else {
+			} else if !openBraceSpace {
 				write(' ')
 			}
 			write('{')
+			openBraceWritten = true
 			nextLine()
 			newLines = 0
 			nesting++
@@ -158,6 +160,10 @@ func Format(input []byte) []byte {
 		case ch == '{':
 			openBrace = true
 			openBraceWritten = false
+			openBraceSpace = spacePrior && !beginningOfLine
+			if openBraceSpace {
+				write(' ')
+			}
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
@@ -183,7 +189,7 @@ func Format(input []byte) []byte {
 		if beginningOfLine {
 			indent()
 		}
-		if nesting == 0 && last == '}' {
+		if nesting == 0 && last == '}' && beginningOfLine {
 			nextLine()
 			nextLine()
 		}
@@ -193,9 +199,6 @@ func Format(input []byte) []byte {
 		}
 
 		if openBrace && !openBraceWritten {
-			if !beginningOfLine {
-				write(' ')
-			}
 			write('{')
 			openBraceWritten = true
 		}
