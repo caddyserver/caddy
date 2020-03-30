@@ -27,7 +27,7 @@ import (
 // NewReplacer returns a new Replacer.
 func NewReplacer() *Replacer {
 	rep := &Replacer{
-		static: make(map[string]string),
+		static: make(map[string]interface{}),
 	}
 	rep.providers = []ReplacerFunc{
 		globalDefaultReplacements,
@@ -41,7 +41,7 @@ func NewReplacer() *Replacer {
 // use NewReplacer to make one.
 type Replacer struct {
 	providers []ReplacerFunc
-	static    map[string]string
+	static    map[string]interface{}
 }
 
 // Map adds mapFunc to the list of value providers.
@@ -51,19 +51,19 @@ func (r *Replacer) Map(mapFunc ReplacerFunc) {
 }
 
 // Set sets a custom variable to a static value.
-func (r *Replacer) Set(variable, value string) {
+func (r *Replacer) Set(variable string, value interface{}) {
 	r.static[variable] = value
 }
 
 // Get gets a value from the replacer. It returns
 // the value and whether the variable was known.
-func (r *Replacer) Get(variable string) (string, bool) {
+func (r *Replacer) Get(variable string) (interface{}, bool) {
 	for _, mapFunc := range r.providers {
 		if val, ok := mapFunc(variable); ok {
 			return val, true
 		}
 	}
-	return "", false
+	return nil, false
 }
 
 // Delete removes a variable with a static value
@@ -73,9 +73,9 @@ func (r *Replacer) Delete(variable string) {
 }
 
 // fromStatic provides values from r.static.
-func (r *Replacer) fromStatic(key string) (val string, ok bool) {
-	val, ok = r.static[key]
-	return
+func (r *Replacer) fromStatic(key string) (interface{}, bool) {
+	val, ok := r.static[key]
+	return val, ok
 }
 
 // ReplaceOrErr is like ReplaceAll, but any placeholders
@@ -102,10 +102,9 @@ func (r *Replacer) ReplaceAll(input, empty string) string {
 	return out
 }
 
-// ReplaceFunc calls ReplaceAll  efficiently replaces placeholders in input with
-// their values. All placeholders are replaced in the output
-// whether they are recognized or not. Values that are empty
-// string will be substituted with empty.
+// ReplaceFunc is the same as ReplaceAll, but calls f for every
+// replacement to be made, in case f wants to change or inspect
+// the replacement.
 func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
 	return r.replace(input, "", true, false, false, f)
 }
@@ -125,7 +124,7 @@ func (r *Replacer) replace(input, empty string,
 
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
-	
+
 scan:
 	for i := 0; i < len(input); i++ {
 
@@ -169,9 +168,8 @@ scan:
 				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
 					string(phOpen), key, string(phClose))
 			} else if !treatUnknownAsEmpty {
-				// if treatUnknownAsEmpty is true, we'll
-				// handle an empty val later; so only
-				// continue otherwise
+				// if treatUnknownAsEmpty is true, we'll handle an empty
+				// val later; so only continue otherwise
 				lastWriteCursor = i
 				continue
 			}
@@ -186,9 +184,12 @@ scan:
 			}
 		}
 
+		// convert val to a string as efficiently as possible
+		valStr := toString(val)
+
 		// write the value; if it's empty, either return
 		// an error or write a default value
-		if val == "" {
+		if valStr == "" {
 			if errOnEmpty {
 				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
 					string(phOpen), key, string(phClose))
@@ -196,7 +197,7 @@ scan:
 				sb.WriteString(empty)
 			}
 		} else {
-			sb.WriteString(val)
+			sb.WriteString(valStr)
 		}
 
 		// advance cursor to end of placeholder
@@ -210,14 +211,54 @@ scan:
 	return sb.String(), nil
 }
 
+func toString(val interface{}) string {
+	switch v := val.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case byte:
+		return string(v)
+	case []byte:
+		return string(v)
+	case []rune:
+		return string(v)
+	case int:
+		return strconv.Itoa(v)
+	case int32:
+		return strconv.Itoa(int(v))
+	case int64:
+		return strconv.Itoa(int(v))
+	case uint:
+		return strconv.Itoa(int(v))
+	case uint32:
+		return strconv.Itoa(int(v))
+	case uint64:
+		return strconv.Itoa(int(v))
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	default:
+		return fmt.Sprintf("%+v", v)
+	}
+}
+
 // ReplacerFunc is a function that returns a replacement
 // for the given key along with true if the function is able
 // to service that key (even if the value is blank). If the
 // function does not recognize the key, false should be
 // returned.
-type ReplacerFunc func(key string) (val string, ok bool)
+type ReplacerFunc func(key string) (interface{}, bool)
 
-func globalDefaultReplacements(key string) (string, bool) {
+func globalDefaultReplacements(key string) (interface{}, bool) {
 	// check environment variable
 	const envPrefix = "env."
 	if strings.HasPrefix(key, envPrefix) {
@@ -241,7 +282,7 @@ func globalDefaultReplacements(key string) (string, bool) {
 		return strconv.Itoa(nowFunc().Year()), true
 	}
 
-	return "", false
+	return nil, false
 }
 
 // ReplacementFunc is a function that is called when a
@@ -250,7 +291,7 @@ func globalDefaultReplacements(key string) (string, bool) {
 // will be the replacement, and returns the value that
 // will actually be the replacement, or an error. Note
 // that errors are sometimes ignored by replacers.
-type ReplacementFunc func(variable, val string) (string, error)
+type ReplacementFunc func(variable string, val interface{}) (interface{}, error)
 
 // nowFunc is a variable so tests can change it
 // in order to obtain a deterministic time.

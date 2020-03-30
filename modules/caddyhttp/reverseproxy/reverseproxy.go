@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -328,9 +327,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
 		repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
 		repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-		repl.Set("http.reverse_proxy.upstream.requests", strconv.Itoa(upstream.Host.NumRequests()))
-		repl.Set("http.reverse_proxy.upstream.max_requests", strconv.Itoa(upstream.MaxRequests))
-		repl.Set("http.reverse_proxy.upstream.fails", strconv.Itoa(upstream.Host.Fails()))
+		repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+		repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+		repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 		// mutate request headers according to this upstream;
 		// because we're in a retry loop, we have to copy

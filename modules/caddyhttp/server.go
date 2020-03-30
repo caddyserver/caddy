@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -166,9 +165,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			latency := time.Since(start)
 
-			repl.Set("http.response.status", strconv.Itoa(wrec.Status()))
-			repl.Set("http.response.size", strconv.Itoa(wrec.Size()))
-			repl.Set("http.response.latency", latency.String())
+			repl.Set("http.response.status", wrec.Status())
+			repl.Set("http.response.size", wrec.Size())
+			repl.Set("http.response.latency", latency)
 
 			logger := accLog
 			if s.Logs != nil && s.Logs.LoggerNames != nil {
@@ -360,9 +359,9 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 
 	// add error values to the replacer
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	repl.Set("http.error", err.Error())
+	repl.Set("http.error", err)
 	if handlerErr, ok := err.(HandlerError); ok {
-		repl.Set("http.error.status_code", strconv.Itoa(handlerErr.StatusCode))
+		repl.Set("http.error.status_code", handlerErr.StatusCode)
 		repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
 		repl.Set("http.error.trace", handlerErr.Trace)
 		repl.Set("http.error.id", handlerErr.ID)
