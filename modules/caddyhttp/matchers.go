@@ -99,10 +99,10 @@ type (
 		cidrs []*net.IPNet
 	}
 
-	// MatchNegate matches requests by negating its matchers' results.
+	// MatchNot matches requests by negating its matchers' results.
 	// To use, simply specify a set of matchers like you normally would;
 	// the only difference is that their result will be negated.
-	MatchNegate struct {
+	MatchNot struct {
 		MatchersRaw caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
 
 		Matchers MatcherSet `json:"-"`
@@ -119,7 +119,7 @@ func init() {
 	caddy.RegisterModule(MatchHeaderRE{})
 	caddy.RegisterModule(new(MatchProtocol))
 	caddy.RegisterModule(MatchRemoteIP{})
-	caddy.RegisterModule(MatchNegate{})
+	caddy.RegisterModule(MatchNot{})
 }
 
 // CaddyModule returns the Caddy module information.
@@ -531,10 +531,10 @@ func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // CaddyModule returns the Caddy module information.
-func (MatchNegate) CaddyModule() caddy.ModuleInfo {
+func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.matchers.not",
-		New: func() caddy.Module { return new(MatchNegate) },
+		New: func() caddy.Module { return new(MatchNot) },
 	}
 }
 
@@ -542,17 +542,17 @@ func (MatchNegate) CaddyModule() caddy.ModuleInfo {
 // This is done because we cannot embed the map directly into
 // the struct, but we need a struct because we need another
 // field just for the provisioned modules.
-func (m *MatchNegate) UnmarshalJSON(data []byte) error {
+func (m *MatchNot) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &m.MatchersRaw)
 }
 
 // MarshalJSON marshals m's matchers.
-func (m MatchNegate) MarshalJSON() ([]byte, error) {
+func (m MatchNot) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m.MatchersRaw)
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// first, unmarshal each matcher in the set from its tokens
 
 	matcherMap := make(map[string]RequestMatcher)
@@ -593,7 +593,7 @@ func (m *MatchNegate) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision loads the matcher modules to be negated.
-func (m *MatchNegate) Provision(ctx caddy.Context) error {
+func (m *MatchNot) Provision(ctx caddy.Context) error {
 	mods, err := ctx.LoadModule(m, "MatchersRaw")
 	if err != nil {
 		return fmt.Errorf("loading matchers: %v", err)
@@ -606,7 +606,7 @@ func (m *MatchNegate) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m. Since this matcher negates the
 // embedded matchers, false is returned if any of its matchers match.
-func (m MatchNegate) Match(r *http.Request) bool {
+func (m MatchNot) Match(r *http.Request) bool {
 	return !m.Matchers.Match(r)
 }
 
@@ -851,8 +851,8 @@ var (
 	_ RequestMatcher    = (*MatchProtocol)(nil)
 	_ RequestMatcher    = (*MatchRemoteIP)(nil)
 	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
-	_ RequestMatcher    = (*MatchNegate)(nil)
-	_ caddy.Provisioner = (*MatchNegate)(nil)
+	_ RequestMatcher    = (*MatchNot)(nil)
+	_ caddy.Provisioner = (*MatchNot)(nil)
 	_ caddy.Provisioner = (*MatchRegexp)(nil)
 
 	_ caddyfile.Unmarshaler = (*MatchHost)(nil)
@@ -865,6 +865,6 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchProtocol)(nil)
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 
-	_ json.Marshaler   = (*MatchNegate)(nil)
-	_ json.Unmarshaler = (*MatchNegate)(nil)
+	_ json.Marshaler   = (*MatchNot)(nil)
+	_ json.Unmarshaler = (*MatchNot)(nil)
 )
