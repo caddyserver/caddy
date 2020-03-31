@@ -139,13 +139,16 @@ func (li InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest
 	}, nil
 }
 
-// TODO: borrowing from https://github.com/smallstep/certificates/blob/806abb6232a5691198b891d76b9898ea7f269da0/authority/provisioner/sign_options.go#L191-L211
-// as per https://github.com/smallstep/certificates/issues/198.
 // profileDefaultDuration is a wrapper against x509util.WithOption to conform
 // the SignOption interface.
+//
+// This type is borrowed from the smallstep libraries:
+// https://github.com/smallstep/certificates/blob/806abb6232a5691198b891d76b9898ea7f269da0/authority/provisioner/sign_options.go#L191-L211
+// as per https://github.com/smallstep/certificates/issues/198.
+//
+// TODO: In the future, this approach to custom cert lifetimes may not be necessary
 type profileDefaultDuration time.Duration
 
-// TODO: is there a better way to set cert lifetimes than copying from the smallstep libs?
 func (d profileDefaultDuration) Option(so provisioner.Options) x509util.WithOption {
 	var backdate time.Duration
 	notBefore := so.NotBefore.Time()

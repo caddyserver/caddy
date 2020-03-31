@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -47,6 +48,7 @@ type Handler struct {
 	// The hostname or IP address by which ACME clients
 	// will access the server. This is used to populate
 	// the ACME directory endpoint. Default: localhost.
+	// TODO: this is probably not needed - check with smallstep
 	Host string `json:"host,omitempty"`
 
 	// The path prefix under which to serve all ACME
@@ -104,6 +106,11 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 				&provisioner.ACME{
 					Name: ash.CA,
 					Type: provisioner.TypeACME.String(),
+					Claims: &provisioner.Claims{
+						MinTLSDur:     &provisioner.Duration{Duration: 5 * time.Minute},
+						MaxTLSDur:     &provisioner.Duration{Duration: 24 * time.Hour * 365},
+						DefaultTLSDur: &provisioner.Duration{Duration: 12 * time.Hour},
+					},
 				},
 			},
 		},
@@ -120,7 +127,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 
 	acmeAuth, err := acme.NewAuthority(
 		auth.GetDatabase().(nosql.DB),     // stores all the server state
-		ash.Host,                          // used for directory links
+		ash.Host,                          // used for directory links; TODO: not needed
 		strings.Trim(ash.PathPrefix, "/"), // used for directory links
 		auth)                              // configures the signing authority
 	if err != nil {
