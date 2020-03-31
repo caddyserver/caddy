@@ -16,7 +16,12 @@
 
 package caddyfile
 
+import "bytes"
+
 func FuzzParseCaddyfile(data []byte) (score int) {
+	if bytes.Contains(data, []byte("import")) {
+		return -1
+	}
 	sb, err := Parse("Caddyfile", data)
 	if err != nil {
 		// if both an error is received and some ServerBlocks,
