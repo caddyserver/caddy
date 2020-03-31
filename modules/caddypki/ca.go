@@ -24,6 +24,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
+	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
 
@@ -321,6 +322,27 @@ func (ca CA) newReplacer() *caddy.Replacer {
 	repl := caddy.NewReplacer()
 	repl.Set("pki.ca.name", ca.Name)
 	return repl
+}
+
+// installRoot installs this CA's root certificate into the
+// local trust store(s) if it is not already trusted. The CA
+// must already be provisioned.
+func (ca CA) installRoot() error {
+	// avoid password prompt if already trusted
+	if trusted(ca.root) {
+		ca.log.Info("root certificate is already trusted by system",
+			zap.String("path", ca.rootCertPath))
+		return nil
+	}
+
+	ca.log.Warn("installing root certificate (you might be prompted for password)",
+		zap.String("path", ca.rootCertPath))
+
+	return truststore.Install(ca.root,
+		truststore.WithDebug(),
+		truststore.WithFirefox(),
+		truststore.WithJava(),
+	)
 }
 
 const (

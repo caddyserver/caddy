@@ -372,7 +372,7 @@ func run(newCfg *Config, start bool) error {
 		}
 
 		if newCfg.storage == nil {
-			newCfg.storage = &certmagic.FileStorage{Path: AppDataDir()}
+			newCfg.storage = DefaultStorage
 		}
 		certmagic.Default.Storage = newCfg.storage
 

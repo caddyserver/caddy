@@ -15,6 +15,7 @@
 package caddypki
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -26,6 +27,25 @@ import (
 )
 
 func init() {
+	caddycmd.RegisterCommand(caddycmd.Command{
+		Name:  "trust",
+		Func:  cmdTrust,
+		Short: "Installs a CA certificate into local trust stores",
+		Long: `
+Adds a root certificate into the local trust stores. Intended for
+development environments only.
+
+Since Caddy will install its root certificates into the local trust
+stores automatically when they are first generated, this command is
+only necessary if you need to pre-install the certificates before
+using them; for example, if you have elevated privileges at one
+point but not later, you will want to use this command so that a
+password prompt is not required later.
+
+This command installs the root certificate only for Caddy's
+default CA.`,
+	})
+
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "untrust",
 		Func:  cmdUntrust,
@@ -55,6 +75,30 @@ If no flags are specified, --ca=local is assumed.`,
 			return fs
 		}(),
 	})
+}
+
+func cmdTrust(fs caddycmd.Flags) (int, error) {
+	// we have to create a sort of dummy context so that
+	// the CA can provision itself...
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// provision the CA, which generates and stores a root
+	// certificate if one doesn't already exist in storage
+	ca := CA{
+		storage: caddy.DefaultStorage,
+	}
+	err := ca.Provision(ctx, defaultCAID, caddy.Log())
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	err = ca.installRoot()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdUntrust(fs caddycmd.Flags) (int, error) {
