@@ -337,6 +337,23 @@ func (p *parser) doImport() error {
 			}
 		}
 
+		// Verify none of the found matches are within a prohibited directory.
+		// The verification is done after the glob expansion to account for patterns
+		// such as /*/something.
+		var bannedMatch []string
+		for _, match := range matches {
+			for _, dir := range prohibitedDirs {
+				// filepath.HasPrefix is problematic (see: https://github.com/golang/go/issues/18358)
+				// but our usecase is very simple.
+				if filepath.HasPrefix(match, dir) { //nolint
+					bannedMatch = append(bannedMatch, match)
+				}
+			}
+		}
+		if len(bannedMatch) != 0 {
+			return p.Errf("Expanded import pattern results in traversing prohibited paths (%v): %v", prohibitedDirs, bannedMatch)
+		}
+
 		// collect all the imported tokens
 
 		for _, importFile := range matches {
@@ -534,3 +551,12 @@ func (s Segment) Directive() string {
 // spanOpen and spanClose are used to bound spans that
 // contain the name of an environment variable.
 var spanOpen, spanClose = []byte{'{', '$'}, []byte{'}'}
+
+// prohibitedDirs
+var prohibitedDirs = []string{
+	"/boot/",
+	"/dev/",
+	"/proc/",
+	"/sys/",
+	`C:\Windows\`,
+}

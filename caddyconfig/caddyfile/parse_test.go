@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -440,6 +441,18 @@ func TestParseAll(t *testing.T) {
 
 		{`import notfound/*`, false, [][]string{}},        // glob needn't error with no matches
 		{`import notfound/file.conf`, true, [][]string{}}, // but a specific file should
+		{
+			`import /proc/self/fd/1`, true, [][]string{}, // on Linux, it will either fail for being prohibited; on others, it'll fail for not existing.
+		},
+		{
+			`import /dev/fd/0`, true, [][]string{}, // on *nix
+		},
+		{
+			`import /*/fd/0`, runtime.GOOS != `windows`, [][]string{},
+		},
+		{
+			`import C:\Windows\*`, runtime.GOOS == `windows`, [][]string{},
+		},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
