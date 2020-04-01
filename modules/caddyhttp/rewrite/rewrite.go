@@ -114,7 +114,7 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		r.Method = strings.ToUpper(repl.ReplaceAll(rewr.Method, ""))
 	}
 
-	// uri (path, query string, and fragment... because why not)
+	// uri (path, query string and... fragment, because why not)
 	if uri := rewr.URI; uri != "" {
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
@@ -136,18 +136,43 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 			qsEnd = len(uri)
 		}
 
+		// isolate the three main components of the URI
+		var path, query, frag string
+		if pathStart > -1 {
+			path = uri[pathStart:pathEnd]
+		}
+		if qsStart > -1 {
+			query = uri[qsStart:qsEnd]
+		}
+		if fragStart > -1 {
+			frag = uri[fragStart:]
+		}
+
 		// build components which are specified, and store them
 		// in a temporary variable so that they all read the
 		// same version of the URI
 		var newPath, newQuery, newFrag string
-		if pathStart >= 0 {
-			newPath = repl.ReplaceAll(uri[pathStart:pathEnd], "")
+		if path != "" {
+			newPath = repl.ReplaceAll(path, "")
 		}
-		if qsStart >= 0 {
-			newQuery = buildQueryString(uri[qsStart:qsEnd], repl)
+
+		// before continuing, we need to check if a query string
+		// snuck into the path component during replacements
+		if quPos := strings.Index(newPath, "?"); quPos > -1 {
+			// recompute; new path contains a query string
+			var injectedQuery string
+			newPath, injectedQuery = newPath[:quPos], newPath[quPos+1:]
+			// don't overwrite explicitly-configured query string
+			if query == "" {
+				query = injectedQuery
+			}
 		}
-		if fragStart >= 0 {
-			newFrag = repl.ReplaceAll(uri[fragStart:], "")
+
+		if query != "" {
+			newQuery = buildQueryString(query, repl)
+		}
+		if frag != "" {
+			newFrag = repl.ReplaceAll(frag, "")
 		}
 
 		// update the URI with the new components
