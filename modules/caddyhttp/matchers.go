@@ -42,6 +42,15 @@ type (
 	//
 	// Automatic HTTPS can be
 	// [customized or disabled](/docs/modules/http#servers/automatic_https).
+	//
+	// Wildcards (`*`) may be used to represent exactly one label of the
+	// hostname, in accordance with RFC 1034 (because host matchers are also
+	// used for automatic HTTPS which influences TLS certificates). Thus,
+	// a host of `*` matches hosts like `localhost` or `internal` but not
+	// `example.com`. To catch all hosts, omit the host matcher entirely.
+	//
+	// The wildcard can be useful for matching all subdomains, for example:
+	// `*.example.com` matches `foo.example.com` but not `foo.bar.example.com`.
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive). Path
