@@ -166,7 +166,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 			case "ciphers":
 				for h.NextArg() {
-					if _, ok := caddytls.SupportedCipherSuites[h.Val()]; !ok {
+					if !caddytls.CipherSuiteNameSupported(h.Val()) {
 						return nil, h.Errf("Wrong cipher suite name or cipher suite not supported: '%s'", h.Val())
 					}
 					cp.CipherSuites = append(cp.CipherSuites, h.Val())
