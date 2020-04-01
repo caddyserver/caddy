@@ -345,8 +345,17 @@ func (app *App) Start() error {
 					ln = srv.listenerWrappers[i].WrapListener(ln)
 				}
 
+				// if binding to port 0, the OS chooses a port for us;
+				// but the user won't know the port unless we print it
+				if listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+					app.logger.Info("port 0 listener",
+						zap.String("input_address", lnAddr),
+						zap.String("actual_address", ln.Addr().String()),
+					)
+				}
+
 				app.logger.Debug("starting server loop",
-					zap.String("address", lnAddr),
+					zap.String("address", ln.Addr().String()),
 					zap.Bool("http3", srv.ExperimentalHTTP3),
 					zap.Bool("tls", useTLS),
 				)
