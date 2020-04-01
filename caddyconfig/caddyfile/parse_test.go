@@ -670,5 +670,5 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 }
 
 func testParser(input string) parser {
-	return parser{Dispenser: newTestDispenser(input)}
+	return parser{Dispenser: NewTestDispenser(input)}
 }
