@@ -823,6 +823,119 @@ func TestResponseMatcher(t *testing.T) {
 	}
 }
 
+func TestNotMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		host, path string
+		match      MatchNot
+		expect     bool
+	}{
+		{
+			host: "example.com", path: "/",
+			match:  MatchNot{},
+			expect: true,
+		},
+		{
+			host: "example.com", path: "/foo",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/foo"},
+					},
+				},
+			},
+			expect: false,
+		},
+		{
+			host: "example.com", path: "/bar",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/foo"},
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			host: "example.com", path: "/bar",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/foo"},
+					},
+					{
+						MatchHost{"example.com"},
+					},
+				},
+			},
+			expect: false,
+		},
+		{
+			host: "example.com", path: "/bar",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/bar"},
+					},
+					{
+						MatchHost{"example.com"},
+					},
+				},
+			},
+			expect: false,
+		},
+		{
+			host: "example.com", path: "/foo",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/bar"},
+					},
+					{
+						MatchHost{"sub.example.com"},
+					},
+				},
+			},
+			expect: true,
+		},
+		{
+			host: "example.com", path: "/foo",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/foo"},
+						MatchHost{"example.com"},
+					},
+				},
+			},
+			expect: false,
+		},
+		{
+			host: "example.com", path: "/foo",
+			match: MatchNot{
+				MatcherSets: []MatcherSet{
+					{
+						MatchPath{"/bar"},
+						MatchHost{"example.com"},
+					},
+				},
+			},
+			expect: true,
+		},
+	} {
+		req := &http.Request{Host: tc.host, URL: &url.URL{Path: tc.path}}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req = req.WithContext(ctx)
+
+		actual := tc.match.Match(req)
+		if actual != tc.expect {
+			t.Errorf("Test %d %+v: Expected %t, got %t for: host=%s path=%s'", i, tc.match, tc.expect, actual, tc.host, tc.path)
+			continue
+		}
+	}
+}
+
 func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
 	req := &http.Request{Host: "localhost"}
 	repl := caddy.NewReplacer()
