@@ -214,7 +214,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// add all the cipher suites in order, without duplicates
 	cipherSuitesAdded := make(map[uint16]struct{})
 	for _, csName := range p.CipherSuites {
-		csID := SupportedCipherSuites[csName]
+		csID := CipherSuiteID(csName)
+		if csID == 0 {
+			return fmt.Errorf("unsupported cipher suite: %s", csName)
+		}
 		if _, ok := cipherSuitesAdded[csID]; !ok {
 			cipherSuitesAdded[csID] = struct{}{}
 			cfg.CipherSuites = append(cfg.CipherSuites, csID)
