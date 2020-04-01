@@ -674,8 +674,8 @@ github.com/smallstep/nosql v0.1.1/go.mod h1:qyxCqeyGwkuM6bfJSY3sg+aiXEiD0GbQOPzI
 github.com/smallstep/nosql v0.2.0 h1:IscXK9m9hRyl5GoYgn+Iml//5Bpad3LyIj6R0dZosKM=
 github.com/smallstep/nosql v0.2.0/go.mod h1:qyxCqeyGwkuM6bfJSY3sg+aiXEiD0GbQOPzIF8/ZD8Q=
 github.com/smallstep/truststore v0.9.3/go.mod h1:PRSkpRIhAYBK/KLWkHNgRdYgzWMEy45bN7PSJCfKKGE=
-github.com/smallstep/truststore v0.9.4 h1:HYGtv629TkxRUP63W5R1/9sJGMEL8CrVjIl8z1uvJIM=
-github.com/smallstep/truststore v0.9.4/go.mod h1:HwHKRcBi0RUxxw1LYDpTRhYC4jZUuxPpkHdVonlkoDM=
+github.com/smallstep/truststore v0.9.5 h1:KQ6bFXUadu3PG57sFSIBsu2pb/35NqO+MyS2Pvi62bA=
+github.com/smallstep/truststore v0.9.5/go.mod h1:HwHKRcBi0RUxxw1LYDpTRhYC4jZUuxPpkHdVonlkoDM=
 github.com/smallstep/zcrypto v0.0.0-20191008000232-9fc4bea33f70/go.mod h1:8LA6x9T22WADMj89Ksf6DnOVCOJF3zLKUdSRAcZmW4U=
 github.com/smallstep/zcrypto v0.0.0-20191122194514-76530dff70e7/go.mod h1:8LA6x9T22WADMj89Ksf6DnOVCOJF3zLKUdSRAcZmW4U=
 github.com/smallstep/zlint v0.0.0-20180727184541-d84eaafe274f/go.mod h1:GeHHT7sJDI9ti3oEaFnvx1F4N8n3ZSw2YM1+sbEoxc4=

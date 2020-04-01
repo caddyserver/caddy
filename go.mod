@@ -19,7 +19,7 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/smallstep/certificates v0.14.0-rc.5
 	github.com/smallstep/cli v0.14.0-rc.3
-	github.com/smallstep/truststore v0.9.4
+	github.com/smallstep/truststore v0.9.5
 	github.com/vulcand/oxy v1.1.0
 	github.com/yuin/goldmark v1.1.27
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
