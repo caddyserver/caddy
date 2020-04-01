@@ -42,6 +42,15 @@ type (
 	//
 	// Automatic HTTPS can be
 	// [customized or disabled](/docs/modules/http#servers/automatic_https).
+	//
+	// Wildcards (`*`) may be used to represent exactly one label of the
+	// hostname, in accordance with RFC 1034 (because host matchers are also
+	// used for automatic HTTPS which influences TLS certificates). Thus,
+	// a host of `*` matches hosts like `localhost` or `internal` but not
+	// `example.com`. To catch all hosts, omit the host matcher entirely.
+	//
+	// The wildcard can be useful for matching all subdomains, for example:
+	// `*.example.com` matches `foo.example.com` but not `foo.bar.example.com`.
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive). Path
@@ -99,13 +108,15 @@ type (
 		cidrs []*net.IPNet
 	}
 
-	// MatchNot matches requests by negating its matchers' results.
-	// To use, simply specify a set of matchers like you normally would;
-	// the only difference is that their result will be negated.
+	// MatchNot matches requests by negating the results of its matcher
+	// sets. A single "not" matcher takes one or more matcher sets. Each
+	// matcher set is OR'ed; in other words, if any matcher set returns
+	// true, the final result of the "not" matcher is false. Individual
+	// matchers within a set work the same (i.e. different matchers in
+	// the same set are AND'ed).
 	MatchNot struct {
-		MatchersRaw caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
-
-		Matchers MatcherSet `json:"-"`
+		MatcherSetsRaw []caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
+		MatcherSets    []MatcherSet      `json:"-"`
 	}
 )
 
@@ -538,25 +549,16 @@ func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// UnmarshalJSON unmarshals data into m's unexported map field.
-// This is done because we cannot embed the map directly into
-// the struct, but we need a struct because we need another
-// field just for the provisioned modules.
-func (m *MatchNot) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &m.MatchersRaw)
-}
-
-// MarshalJSON marshals m's matchers.
-func (m MatchNot) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.MatchersRaw)
-}
-
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// first, unmarshal each matcher in the set from its tokens
-
-	matcherMap := make(map[string]RequestMatcher)
+	type matcherPair struct {
+		raw     caddy.ModuleMap
+		decoded MatcherSet
+	}
 	for d.Next() {
+		var mp matcherPair
+		matcherMap := make(map[string]RequestMatcher)
 		for d.NextBlock(0) {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
@@ -572,42 +574,64 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return err
 			}
 			rm := unm.(RequestMatcher)
-			m.Matchers = append(m.Matchers, rm)
 			matcherMap[matcherName] = rm
+			mp.decoded = append(mp.decoded, rm)
 		}
-	}
 
-	// we should now be functional, but we also need
-	// to be able to marshal as JSON, otherwise config
-	// adaptation won't work properly
-	m.MatchersRaw = make(caddy.ModuleMap)
-	for name, matchers := range matcherMap {
-		jsonBytes, err := json.Marshal(matchers)
-		if err != nil {
-			return fmt.Errorf("marshaling matcher %s: %v", name, err)
+		// we should now have a functional 'not' matcher, but we also
+		// need to be able to marshal as JSON, otherwise config
+		// adaptation will be missing the matchers!
+		mp.raw = make(caddy.ModuleMap)
+		for name, matcher := range matcherMap {
+			jsonBytes, err := json.Marshal(matcher)
+			if err != nil {
+				return fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+			}
+			mp.raw[name] = jsonBytes
 		}
-		m.MatchersRaw[name] = jsonBytes
+		m.MatcherSetsRaw = append(m.MatcherSetsRaw, mp.raw)
 	}
-
 	return nil
+}
+
+// UnmarshalJSON satisfies json.Unmarshaler. It puts the JSON
+// bytes directly into m's MatcherSetsRaw field.
+func (m *MatchNot) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.MatcherSetsRaw)
+}
+
+// MarshalJSON satisfies json.Marshaler by marshaling
+// m's raw matcher sets.
+func (m MatchNot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.MatcherSetsRaw)
 }
 
 // Provision loads the matcher modules to be negated.
 func (m *MatchNot) Provision(ctx caddy.Context) error {
-	mods, err := ctx.LoadModule(m, "MatchersRaw")
+	matcherSets, err := ctx.LoadModule(m, "MatcherSetsRaw")
 	if err != nil {
-		return fmt.Errorf("loading matchers: %v", err)
+		return fmt.Errorf("loading matcher sets: %v", err)
 	}
-	for _, modIface := range mods.(map[string]interface{}) {
-		m.Matchers = append(m.Matchers, modIface.(RequestMatcher))
+	for _, modMap := range matcherSets.([]map[string]interface{}) {
+		var ms MatcherSet
+		for _, modIface := range modMap {
+			ms = append(ms, modIface.(RequestMatcher))
+		}
+		m.MatcherSets = append(m.MatcherSets, ms)
 	}
 	return nil
 }
 
-// Match returns true if r matches m. Since this matcher negates the
-// embedded matchers, false is returned if any of its matchers match.
+// Match returns true if r matches m. Since this matcher negates
+// the embedded matchers, false is returned if any of its matcher
+// sets return true.
 func (m MatchNot) Match(r *http.Request) bool {
-	return !m.Matchers.Match(r)
+	for _, ms := range m.MatcherSets {
+		if ms.Match(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // CaddyModule returns the Caddy module information.

@@ -17,6 +17,7 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -53,6 +54,10 @@ type ACMEIssuer struct {
 	// not sent to any Caddy mothership or used for any purpose
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
+
+	// If using an ACME CA that requires an external account
+	// binding, specify the CA-provided credentials here.
+	ExternalAccount *ExternalAccountBinding `json:"external_account,omitempty"`
 
 	// Time to wait before timing out an ACME operation.
 	ACMETimeout caddy.Duration `json:"acme_timeout,omitempty"`
@@ -107,17 +112,35 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	m.template = m.makeIssuerTemplate()
+	var err error
+	m.template, err = m.makeIssuerTemplate()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func (m *ACMEIssuer) makeIssuerTemplate() certmagic.ACMEManager {
+func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 	template := certmagic.ACMEManager{
 		CA:                m.CA,
 		Email:             m.Email,
 		CertObtainTimeout: time.Duration(m.ACMETimeout),
 		TrustedRoots:      m.rootPool,
+	}
+
+	if m.ExternalAccount != nil {
+		hmac, err := base64.StdEncoding.DecodeString(m.ExternalAccount.EncodedHMAC)
+		if err != nil {
+			return template, err
+		}
+		if m.ExternalAccount.KeyID == "" || len(hmac) == 0 {
+			return template, fmt.Errorf("when an external account binding is specified, both key ID and HMAC are required")
+		}
+		template.ExternalAccount = &certmagic.ExternalAccountBinding{
+			KeyID: m.ExternalAccount.KeyID,
+			HMAC:  hmac,
+		}
 	}
 
 	if m.Challenges != nil {
@@ -132,7 +155,7 @@ func (m *ACMEIssuer) makeIssuerTemplate() certmagic.ACMEManager {
 		template.DNSProvider = m.Challenges.DNS
 	}
 
-	return template
+	return template, nil
 }
 
 // SetConfig sets the associated certmagic config for this issuer.
@@ -199,6 +222,16 @@ func onDemandAskRequest(ask string, name string) error {
 // Modules in the tls.dns namespace should implement this interface.
 type DNSProviderMaker interface {
 	NewDNSProvider() (challenge.Provider, error)
+}
+
+// ExternalAccountBinding contains information for
+// binding an external account to an ACME account.
+type ExternalAccountBinding struct {
+	// The key identifier.
+	KeyID string `json:"key_id,omitempty"`
+
+	// The base64-encoded HMAC.
+	EncodedHMAC string `json:"hmac,omitempty"`
 }
 
 // Interface guards

@@ -17,8 +17,10 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -324,8 +326,9 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 // an empty string. Otherwise, if allowEmpty is false, and if sb has a key
 // that omits the hostname (i.e. is a catch-all/empty host), then the returned
 // list is empty, because the server block effectively matches ALL hosts.
-// The list may not be in a consistent order.
-func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock, allowEmpty bool) ([]string, error) {
+// The list may not be in a consistent order. If includePorts is true, then
+// any non-empty, non-standard ports will be included.
+func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock, allowEmpty, includePorts bool) ([]string, error) {
 	// first get each unique hostname
 	hostMap := make(map[string]struct{})
 	for _, sblockKey := range sb.Keys {
@@ -339,7 +342,14 @@ func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock, allowEm
 			// is empty / catch-all, which means to match all hosts
 			return []string{}, nil
 		}
-		hostMap[addr.Host] = struct{}{}
+		if includePorts &&
+			addr.Port != "" &&
+			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPPort) &&
+			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPSPort) {
+			hostMap[net.JoinHostPort(addr.Host, addr.Port)] = struct{}{}
+		} else {
+			hostMap[addr.Host] = struct{}{}
+		}
 	}
 
 	// convert map to slice
@@ -410,7 +420,7 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts, err := st.hostsFromServerBlockKeys(sblock.block, false)
+			hosts, err := st.hostsFromServerBlockKeys(sblock.block, false, false)
 			if err != nil {
 				return nil, err
 			}
@@ -490,7 +500,7 @@ func (st *ServerType) serversFromPairings(
 						LoggerNames: make(map[string]string),
 					}
 				}
-				hosts, err := st.hostsFromServerBlockKeys(sblock.block, true)
+				hosts, err := st.hostsFromServerBlockKeys(sblock.block, true, true)
 				if err != nil {
 					return nil, err
 				}

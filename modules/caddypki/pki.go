@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
 
@@ -71,30 +70,15 @@ func (p *PKI) Start() error {
 	// install roots to trust store, if not disabled
 	for _, ca := range p.CAs {
 		if ca.InstallTrust != nil && !*ca.InstallTrust {
-			ca.log.Warn("root certificate trust store installation disabled; local clients may show warnings",
+			ca.log.Warn("root certificate trust store installation disabled; unconfigured clients may show warnings",
 				zap.String("path", ca.rootCertPath))
 			continue
 		}
 
-		// avoid password prompt if already trusted
-		if trusted(ca.root) {
-			ca.log.Info("root certificate is already trusted by system",
-				zap.String("path", ca.rootCertPath))
-			continue
-		}
-
-		ca.log.Warn("trusting root certificate (you might be prompted for password)",
-			zap.String("path", ca.rootCertPath))
-
-		err := truststore.Install(ca.root,
-			truststore.WithDebug(),
-			truststore.WithFirefox(),
-			truststore.WithJava(),
-		)
-		if err != nil {
+		if err := ca.installRoot(); err != nil {
 			// could be some system dependencies that are missing;
 			// shouldn't totally prevent startup, but we should log it
-			p.log.Error("failed to install root certificate",
+			ca.log.Error("failed to install root certificate",
 				zap.Error(err),
 				zap.String("certificate_file", ca.rootCertPath))
 		}
