@@ -158,6 +158,36 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/bar?a=b"),
 			expect: newRequest(t, "GET", "/foo?a=b#frag"),
 		},
+		{
+			rule:   Rewrite{URI: "/foo{http.request.uri}"},
+			input:  newRequest(t, "GET", "/bar?a=b"),
+			expect: newRequest(t, "GET", "/foo/bar?a=b"),
+		},
+		{
+			rule:   Rewrite{URI: "/foo{http.request.uri}"},
+			input:  newRequest(t, "GET", "/bar"),
+			expect: newRequest(t, "GET", "/foo/bar"),
+		},
+		{
+			rule:   Rewrite{URI: "/foo{http.request.uri}?c=d"},
+			input:  newRequest(t, "GET", "/bar?a=b"),
+			expect: newRequest(t, "GET", "/foo/bar?c=d"),
+		},
+		{
+			rule:   Rewrite{URI: "/foo{http.request.uri}?{http.request.uri.query}&c=d"},
+			input:  newRequest(t, "GET", "/bar?a=b"),
+			expect: newRequest(t, "GET", "/foo/bar?a=b&c=d"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.uri}"},
+			input:  newRequest(t, "GET", "/bar?a=b"),
+			expect: newRequest(t, "GET", "/bar?a=b"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.uri.path}bar?c=d"},
+			input:  newRequest(t, "GET", "/foo/?a=b"),
+			expect: newRequest(t, "GET", "/foo/bar?c=d"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -211,6 +241,7 @@ func TestRewrite(t *testing.T) {
 		}
 
 		// populate the replacer just enough for our tests
+		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
 
