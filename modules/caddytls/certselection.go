@@ -17,6 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -29,7 +30,7 @@ import (
 // This was needed to solve https://github.com/caddyserver/caddy/issues/2588.
 type CustomCertSelectionPolicy struct {
 	// The certificate must have one of these serial numbers.
-	SerialNumber []*big.Int `json:"serial_number,omitempty"`
+	SerialNumber []bigInt `json:"serial_number,omitempty"`
 
 	// The certificate must have one of these organization names.
 	SubjectOrganization []string `json:"subject_organization,omitempty"`
@@ -57,7 +58,7 @@ nextChoice:
 		if len(p.SerialNumber) > 0 {
 			var found bool
 			for _, sn := range p.SerialNumber {
-				if cert.Leaf.SerialNumber.Cmp(sn) == 0 {
+				if cert.Leaf.SerialNumber.Cmp(&sn.Int) == 0 {
 					found = true
 					break
 				}
@@ -120,5 +121,25 @@ nextChoice:
 	return certmagic.DefaultCertificateSelector(hello, viable)
 }
 
-// Interface guard
-var _ certmagic.CertificateSelector = (*CustomCertSelectionPolicy)(nil)
+// bigInt is a big.Int type that interops with JSON encodings as a string.
+type bigInt struct{ big.Int }
+
+func (bi bigInt) MarshalJSON() ([]byte, error) {
+	return json.Marshal(bi.String())
+}
+
+func (bi *bigInt) UnmarshalJSON(p []byte) error {
+	if string(p) == "null" {
+		return nil
+	}
+	var stringRep string
+	err := json.Unmarshal(p, &stringRep)
+	if err != nil {
+		return err
+	}
+	_, ok := bi.SetString(stringRep, 10)
+	if !ok {
+		return fmt.Errorf("not a valid big integer: %s", p)
+	}
+	return nil
+}
