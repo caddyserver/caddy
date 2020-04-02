@@ -171,7 +171,14 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			// more at handshake-time, but I don't know how to practically pre-build
 			// a certmagic config for each combination of conn policy + automation policy...
 			cfg := *tlsApp.getConfigForName(hello.ServerName)
-			cfg.CertSelection = p.CertSelection
+			if p.CertSelection != nil {
+				// you would think we could just set this whether or not
+				// p.CertSelection is nil, but that leads to panics if
+				// it is, because cfg.CertSelection is an interface,
+				// so it will have a non-nil value even if the actual
+				// value underlying it is nil (sigh)
+				cfg.CertSelection = p.CertSelection
+			}
 			cfg.DefaultServerName = p.DefaultSNI
 			return cfg.GetCertificate(hello)
 		},
