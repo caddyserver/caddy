@@ -78,10 +78,10 @@ _**Note:** These steps [will not embed proper version information](https://githu
 
 ### With version information and/or plugins
 
-Using [our builder tool](https://github.com/caddyserver/builder)...
+Using [our builder tool](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ builder --version CADDY_VERSION
+$ xcaddy --version CADDY_VERSION
 ```
 
 ...the following steps are automated:
