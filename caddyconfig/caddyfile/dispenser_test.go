@@ -27,7 +27,7 @@ func TestDispenser_Val_Next(t *testing.T) {
 			  dir1 arg1
 			  dir2 arg2 arg3
 			  dir3`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	if val := d.Val(); val != "" {
 		t.Fatalf("Val(): Should return empty string when no token loaded; got '%s'", val)
@@ -65,7 +65,7 @@ func TestDispenser_NextArg(t *testing.T) {
 	input := `dir1 arg1
 			  dir2 arg2 arg3
 			  dir3`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	assertNext := func(shouldLoad bool, expectedVal string, expectedCursor int) {
 		if d.Next() != shouldLoad {
@@ -112,7 +112,7 @@ func TestDispenser_NextLine(t *testing.T) {
 	input := `host:port
 			  dir1 arg1
 			  dir2 arg2 arg3`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	assertNextLine := func(shouldLoad bool, expectedVal string, expectedCursor int) {
 		if d.NextLine() != shouldLoad {
@@ -145,7 +145,7 @@ func TestDispenser_NextBlock(t *testing.T) {
 			  }
 			  foobar2 {
 			  }`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	assertNextBlock := func(shouldLoad bool, expectedCursor, expectedNesting int) {
 		if loaded := d.NextBlock(0); loaded != shouldLoad {
@@ -175,7 +175,7 @@ func TestDispenser_Args(t *testing.T) {
 			  dir2 arg4 arg5
 			  dir3 arg6 arg7
 			  dir4`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	d.Next() // dir1
 
@@ -242,7 +242,7 @@ func TestDispenser_RemainingArgs(t *testing.T) {
 			  dir2 arg4 arg5
 			  dir3 arg6 { arg7
 			  dir4`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	d.Next() // dir1
 
@@ -279,7 +279,7 @@ func TestDispenser_ArgErr_Err(t *testing.T) {
 	input := `dir1 {
 			  }
 			  dir2 arg1 arg2`
-	d := newTestDispenser(input)
+	d := NewTestDispenser(input)
 
 	d.cursor = 1 // {
 
@@ -307,7 +307,9 @@ func TestDispenser_ArgErr_Err(t *testing.T) {
 	}
 }
 
-func newTestDispenser(input string) *Dispenser {
+// NewTestDispenser parses input into tokens and creates a new
+// Disenser for test purposes only; any errors are fatal.
+func NewTestDispenser(input string) *Dispenser {
 	tokens, err := allTokens("Testfile", []byte(input))
 	if err != nil && err != io.EOF {
 		log.Fatalf("getting all tokens from input: %v", err)

@@ -23,35 +23,27 @@ import (
 	"github.com/klauspost/cpuid"
 )
 
-// SupportedCipherSuites is the unordered map of cipher suite
-// string names to their definition in crypto/tls. All values
-// should be IANA-reserved names. See
-// https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml
-// Two of the cipher suite constants in the standard lib do not use the
-// full IANA name, but we do; see:
-// https://github.com/golang/go/issues/32061 and
-// https://github.com/golang/go/issues/30325#issuecomment-512862374.
-// TODO: might not be needed much longer: https://github.com/golang/go/issues/30325
-var SupportedCipherSuites = map[string]uint16{
-	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-	"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA":            tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
-	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA":            tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-	"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA":          tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
-	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA":          tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-	"TLS_RSA_WITH_AES_128_GCM_SHA256":               tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-	"TLS_RSA_WITH_AES_256_GCM_SHA384":               tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-	"TLS_RSA_WITH_AES_256_CBC_SHA":                  tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-	"TLS_RSA_WITH_AES_128_CBC_SHA256":               tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
-	"TLS_RSA_WITH_AES_128_CBC_SHA":                  tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-	"TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA":           tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
-	"TLS_RSA_WITH_3DES_EDE_CBC_SHA":                 tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+// CipherSuiteNameSupported returns true if name is
+// a supported cipher suite.
+func CipherSuiteNameSupported(name string) bool {
+	return CipherSuiteID(name) != 0
+}
+
+// CipherSuiteID returns the ID of the cipher suite associated with
+// the given name, or 0 if the name is not recognized/supported.
+func CipherSuiteID(name string) uint16 {
+	for _, cs := range SupportedCipherSuites() {
+		if cs.Name == name {
+			return cs.ID
+		}
+	}
+	return 0
+}
+
+// SupportedCipherSuites returns a list of all the cipher suites
+// Caddy supports. The list is NOT ordered by security preference.
+func SupportedCipherSuites() []*tls.CipherSuite {
+	return tls.CipherSuites()
 }
 
 // defaultCipherSuites is the ordered list of all the cipher
@@ -92,12 +84,10 @@ func getOptimalDefaultCipherSuites() []uint16 {
 // SupportedCurves is the unordered map of supported curves.
 // https://golang.org/pkg/crypto/tls/#CurveID
 var SupportedCurves = map[string]tls.CurveID{
-	// TODO: Use IANA names, probably? see https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-8
-	// All named crypto/elliptic curves have secpXXXr1 IANA names.
-	"x25519": tls.X25519,    // x25519, 29
-	"p256":   tls.CurveP256, // secp256r1, 23
-	"p384":   tls.CurveP384, // secp384r1, 24
-	"p521":   tls.CurveP521, // secp521r1, 25
+	"x25519":    tls.X25519,
+	"secp256r1": tls.CurveP256,
+	"secp384r1": tls.CurveP384,
+	"secp521r1": tls.CurveP521,
 }
 
 // supportedCertKeyTypes is all the key types that are supported

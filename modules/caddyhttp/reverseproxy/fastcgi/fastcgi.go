@@ -274,9 +274,9 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 			env["SSL_PROTOCOL"] = v
 		}
 		// and pass the cipher suite in a manner compatible with apache's mod_ssl
-		for k, v := range caddytls.SupportedCipherSuites {
-			if v == r.TLS.CipherSuite {
-				env["SSL_CIPHER"] = k
+		for _, cs := range caddytls.SupportedCipherSuites() {
+			if cs.ID == r.TLS.CipherSuite {
+				env["SSL_CIPHER"] = cs.Name
 				break
 			}
 		}
