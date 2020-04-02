@@ -55,7 +55,7 @@
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
 - Actually **fun to use**
-- So, so much more
+- So, so much more to discover
 
 
 
