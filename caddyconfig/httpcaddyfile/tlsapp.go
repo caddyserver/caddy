@@ -43,26 +43,16 @@ func (st ServerType) buildTLSApp(
 	hostsSharedWithHostlessKey := make(map[string]struct{})
 	for _, pair := range pairings {
 		for _, sb := range pair.serverBlocks {
-			for _, key := range sb.block.Keys {
-				addr, err := ParseAddress(key)
-				if err != nil {
-					return nil, warnings, err
-				}
-				addr = addr.Normalize()
+			for _, addr := range sb.keys {
 				if addr.Host == "" {
 					serverBlocksWithHostlessKey++
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
-					for _, otherKey := range sb.block.Keys {
-						if otherKey == key {
+					for _, otherAddr := range sb.keys {
+						if otherAddr.Original == addr.Original {
 							continue
 						}
-						addr, err := ParseAddress(otherKey)
-						if err != nil {
-							return nil, warnings, err
-						}
-						addr = addr.Normalize()
-						if addr.Host != "" {
+						if otherAddr.Host != "" {
 							hostsSharedWithHostlessKey[addr.Host] = struct{}{}
 						}
 					}
@@ -82,10 +72,7 @@ func (st ServerType) buildTLSApp(
 			// get values that populate an automation policy for this block
 			var ap *caddytls.AutomationPolicy
 
-			sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block, false, false)
-			if err != nil {
-				return nil, warnings, err
-			}
+			sblockHosts := sblock.hostsFromKeys(false, false)
 			if len(sblockHosts) == 0 {
 				ap = catchAllAP
 			}
