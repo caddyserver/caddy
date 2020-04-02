@@ -68,6 +68,11 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 // into JSON. Caddyfile-unmarshaled values
 // will not be used directly; they will be
 // encoded as JSON and then used from that.
+// Implementations must be able to support
+// multiple segments (instances of their
+// directive or batch of tokens); typically
+// this means wrapping all token logic in
+// a loop: `for d.Next() { ... }`.
 type Unmarshaler interface {
 	UnmarshalCaddyfile(d *Dispenser) error
 }

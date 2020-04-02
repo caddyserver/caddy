@@ -57,8 +57,7 @@ func TestDefaultSNI(t *testing.T) {
             "tls_connection_policies": [
               {
                 "certificate_selection": {
-                  "policy": "custom",
-                  "tag": "cert0"
+                  "any_tag": ["cert0"]
                 },
                 "match": {
                   "sni": [
@@ -155,8 +154,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
             "tls_connection_policies": [
               {
                 "certificate_selection": {
-                  "policy": "custom",
-                  "tag": "cert0"
+                  "any_tag": ["cert0"]
                 },
                 "default_sni": "a.caddy.localhost",
                 "match": {
@@ -238,8 +236,7 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
             "tls_connection_policies": [
               {
                 "certificate_selection": {
-                  "policy": "custom",
-                  "tag": "cert0"
+                  "any_tag": ["cert0"]
                 },
                 "default_sni": "a.caddy.localhost"
               }

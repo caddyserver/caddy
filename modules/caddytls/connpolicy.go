@@ -18,12 +18,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/certmagic"
 	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
 )
 
@@ -44,15 +42,6 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		}
 		for _, modIface := range mods.(map[string]interface{}) {
 			cp[i].matchers = append(cp[i].matchers, modIface.(ConnectionMatcher))
-		}
-
-		// certificate selector
-		if pol.CertSelection != nil {
-			val, err := ctx.LoadModule(pol, "CertSelection")
-			if err != nil {
-				return fmt.Errorf("loading certificate selection module: %s", err)
-			}
-			cp[i].certSelector = val.(certmagic.CertificateSelector)
 		}
 
 		// enable HTTP/2 by default
@@ -123,7 +112,7 @@ type ConnectionPolicy struct {
 
 	// How to choose a certificate if more than one matched
 	// the given ServerName (SNI) value.
-	CertSelection json.RawMessage `json:"certificate_selection,omitempty" caddy:"namespace=tls.certificate_selection inline_key=policy"`
+	CertSelection *CustomCertSelectionPolicy `json:"certificate_selection,omitempty"`
 
 	// The list of cipher suites to support. Caddy's
 	// defaults are modern and secure.
@@ -151,8 +140,6 @@ type ConnectionPolicy struct {
 	DefaultSNI string `json:"default_sni,omitempty"`
 
 	matchers     []ConnectionMatcher
-	certSelector certmagic.CertificateSelector
-
 	stdTLSConfig *tls.Config
 }
 
@@ -184,9 +171,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			// more at handshake-time, but I don't know how to practically pre-build
 			// a certmagic config for each combination of conn policy + automation policy...
 			cfg := *tlsApp.getConfigForName(hello.ServerName)
-			if p.certSelector != nil {
-				cfg.CertSelection = p.certSelector
-			}
+			cfg.CertSelection = p.CertSelection
 			cfg.DefaultServerName = p.DefaultSNI
 			return cfg.GetCertificate(hello)
 		},
