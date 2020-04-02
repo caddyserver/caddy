@@ -50,4 +50,4 @@ jobs:
         args: release --rm-dist
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: ${{ steps.vars.outputs.version_tag }}
+        TAG: ${{ steps.get_version.outputs.version_tag }}
