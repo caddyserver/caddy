@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/Masterminds/sprig/v3 v3.0.2
 	github.com/alecthomas/chroma v0.7.2-0.20200305040604-4f3623dce67a
-	github.com/caddyserver/certmagic v0.10.6
+	github.com/caddyserver/certmagic v0.10.7
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.5.0
 	github.com/google/cel-go v0.4.1

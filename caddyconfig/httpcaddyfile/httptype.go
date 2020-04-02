@@ -527,7 +527,11 @@ func (st *ServerType) serversFromPairings(
 		}
 
 		// tidy things up a bit
-		srv.TLSConnPolicies = consolidateConnPolicies(srv.TLSConnPolicies)
+		var err error
+		srv.TLSConnPolicies, err = consolidateConnPolicies(srv.TLSConnPolicies)
+		if err != nil {
+			return nil, fmt.Errorf("consolidating TLS connection policies for server %d: %v", i, err)
+		}
 		srv.Routes = consolidateRoutes(srv.Routes)
 
 		servers[fmt.Sprintf("srv%d", i)] = srv
@@ -538,7 +542,7 @@ func (st *ServerType) serversFromPairings(
 
 // consolidateConnPolicies combines TLS connection policies that are the same,
 // for a cleaner overall output.
-func consolidateConnPolicies(cps caddytls.ConnectionPolicies) caddytls.ConnectionPolicies {
+func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
 	for i := 0; i < len(cps); i++ {
 		for j := 0; j < len(cps); j++ {
 			if j == i {
@@ -551,9 +555,106 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) caddytls.Connectio
 				i--
 				break
 			}
+
+			// if they have the same matcher, try to reconcile each field: either they must
+			// be identical, or we have to be able to combine them safely
+			if reflect.DeepEqual(cps[i].MatchersRaw, cps[j].MatchersRaw) {
+				if len(cps[i].ALPN) > 0 &&
+					len(cps[j].ALPN) > 0 &&
+					!reflect.DeepEqual(cps[i].ALPN, cps[j].ALPN) {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting ALPN: %v vs. %v",
+						cps[i].ALPN, cps[j].ALPN)
+				}
+				if len(cps[i].CipherSuites) > 0 &&
+					len(cps[j].CipherSuites) > 0 &&
+					!reflect.DeepEqual(cps[i].CipherSuites, cps[j].CipherSuites) {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting cipher suites: %v vs. %v",
+						cps[i].CipherSuites, cps[j].CipherSuites)
+				}
+				if cps[i].ClientAuthentication == nil &&
+					cps[j].ClientAuthentication != nil &&
+					!reflect.DeepEqual(cps[i].ClientAuthentication, cps[j].ClientAuthentication) {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting client auth configuration: %+v vs. %+v",
+						cps[i].ClientAuthentication, cps[j].ClientAuthentication)
+				}
+				if len(cps[i].Curves) > 0 &&
+					len(cps[j].Curves) > 0 &&
+					!reflect.DeepEqual(cps[i].Curves, cps[j].Curves) {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting curves: %v vs. %v",
+						cps[i].Curves, cps[j].Curves)
+				}
+				if cps[i].DefaultSNI != "" &&
+					cps[j].DefaultSNI != "" &&
+					cps[i].DefaultSNI != cps[j].DefaultSNI {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting default SNI: %s vs. %s",
+						cps[i].DefaultSNI, cps[j].DefaultSNI)
+				}
+				if cps[i].ProtocolMin != "" &&
+					cps[j].ProtocolMin != "" &&
+					cps[i].ProtocolMin != cps[j].ProtocolMin {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting min protocol: %s vs. %s",
+						cps[i].ProtocolMin, cps[j].ProtocolMin)
+				}
+				if cps[i].ProtocolMax != "" &&
+					cps[j].ProtocolMax != "" &&
+					cps[i].ProtocolMax != cps[j].ProtocolMax {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting max protocol: %s vs. %s",
+						cps[i].ProtocolMax, cps[j].ProtocolMax)
+				}
+				if cps[i].CertSelection != nil && cps[j].CertSelection != nil {
+					// merging fields other than AnyTag is not implemented
+					if !reflect.DeepEqual(cps[i].CertSelection.SerialNumber, cps[j].CertSelection.SerialNumber) ||
+						!reflect.DeepEqual(cps[i].CertSelection.SubjectOrganization, cps[j].CertSelection.SubjectOrganization) ||
+						cps[i].CertSelection.PublicKeyAlgorithm != cps[j].CertSelection.PublicKeyAlgorithm ||
+						!reflect.DeepEqual(cps[i].CertSelection.AllTags, cps[j].CertSelection.AllTags) {
+						return nil, fmt.Errorf("two policies with same match criteria have conflicting cert selections: %+v vs. %+v",
+							cps[i].CertSelection, cps[j].CertSelection)
+					}
+				}
+
+				// by now we've decided that we can merge the two -- we'll keep i and drop j
+
+				if len(cps[i].ALPN) == 0 && len(cps[j].ALPN) > 0 {
+					cps[i].ALPN = cps[j].ALPN
+				}
+				if len(cps[i].CipherSuites) == 0 && len(cps[j].CipherSuites) > 0 {
+					cps[i].CipherSuites = cps[j].CipherSuites
+				}
+				if cps[i].ClientAuthentication == nil && cps[j].ClientAuthentication != nil {
+					cps[i].ClientAuthentication = cps[j].ClientAuthentication
+				}
+				if len(cps[i].Curves) == 0 && len(cps[j].Curves) > 0 {
+					cps[i].Curves = cps[j].Curves
+				}
+				if cps[i].DefaultSNI == "" && cps[j].DefaultSNI != "" {
+					cps[i].DefaultSNI = cps[j].DefaultSNI
+				}
+				if cps[i].ProtocolMin == "" && cps[j].ProtocolMin != "" {
+					cps[i].ProtocolMin = cps[j].ProtocolMin
+				}
+				if cps[i].ProtocolMax == "" && cps[j].ProtocolMax != "" {
+					cps[i].ProtocolMax = cps[j].ProtocolMax
+				}
+
+				if cps[i].CertSelection == nil && cps[j].CertSelection != nil {
+					// if j is the only one with a policy, move it over to i
+					cps[i].CertSelection = cps[j].CertSelection
+				} else if cps[i].CertSelection != nil && cps[j].CertSelection != nil {
+					// if both have one, then combine AnyTag
+					for _, tag := range cps[j].CertSelection.AnyTag {
+						if !sliceContains(cps[i].CertSelection.AnyTag, tag) {
+							cps[i].CertSelection.AnyTag = append(cps[i].CertSelection.AnyTag, tag)
+						}
+					}
+				}
+
+				cps = append(cps[:j], cps[j+1:]...)
+				i--
+				break
+			}
 		}
 	}
-	return cps
+	return cps, nil
 }
 
 // appendSubrouteToRouteList appends the routes in subroute

@@ -71,6 +71,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	cp := new(caddytls.ConnectionPolicy)
 	var fileLoader caddytls.FileLoader
 	var folderLoader caddytls.FolderLoader
+	var certSelector caddytls.CustomCertSelectionPolicy
 	var acmeIssuer *caddytls.ACMEIssuer
 	var internalIssuer *caddytls.InternalIssuer
 	var onDemand bool
@@ -135,8 +136,8 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				// remember this for next time we see this cert file
 				tlsCertTags[certFilename] = tag
 			}
-			certSelector := caddytls.CustomCertSelectionPolicy{Tag: tag}
-			cp.CertSelection = caddyconfig.JSONModuleObject(certSelector, "policy", "custom", h.warnings)
+			certSelector.AnyTag = append(certSelector.AnyTag, tag)
+
 		default:
 			return nil, h.ArgErr()
 		}
@@ -295,6 +296,11 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			Class: "tls.on_demand",
 			Value: true,
 		})
+	}
+
+	// custom certificate selection
+	if len(certSelector.AnyTag) > 0 {
+		cp.CertSelection = &certSelector
 	}
 
 	// connection policy -- always add one, to ensure that TLS
