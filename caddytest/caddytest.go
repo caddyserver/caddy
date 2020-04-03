@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aryann/difflib"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	// plug in Caddy modules here
@@ -58,7 +60,8 @@ func timeElapsed(start time.Time, name string) {
 // InitServer this will configure the server with a configurion of a specific
 // type. The configType must be either "json" or the adapter type.
 func InitServer(t *testing.T, rawConfig string, configType string) {
-	if err := initServer(t, rawConfig, configType); errors.Is(err, &configLoadError{}) {
+
+	if err := initServer(t, rawConfig, configType); err != nil {
 		t.Logf("failed to load config: %s", err)
 		t.Fail()
 	}
@@ -315,4 +318,60 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 	}
 
 	return resp
+}
+
+// AssertAdapt adapts a config and then tests it against an expected result
+func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+
+	cfgAdapter := caddyconfig.GetAdapter(adapterName)
+	if cfgAdapter == nil {
+		t.Errorf("unrecognized config adapter '%s'", adapterName)
+		return
+	}
+
+	options := make(map[string]interface{})
+	options["pretty"] = "true"
+
+	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
+	if err != nil {
+		t.Errorf("adapting config using %s adapter: %v", adapterName, err)
+		return
+	}
+
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			t.Logf("warning: directive: %s : %s", w.Directive, w.Message)
+		}
+	}
+
+	diff := difflib.Diff(
+		strings.Split(expectedResponse, "\n"),
+		strings.Split(string(result), "\n"))
+
+	// scan for failure
+	failed := false
+	for _, d := range diff {
+		switch d.Delta {
+		case difflib.LeftOnly:
+			failed = true
+		case difflib.RightOnly:
+			failed = true
+		}
+	}
+
+	if failed {
+		for _, d := range diff {
+			switch d.Delta {
+			case difflib.Common:
+				fmt.Printf("  %s\n", d.Payload)
+			case difflib.LeftOnly:
+				failed = true
+				fmt.Printf(" - %s\n", d.Payload)
+			case difflib.RightOnly:
+				failed = true
+				fmt.Printf(" + %s\n", d.Payload)
+			}
+		}
+		t.Fail()
+	}
 }
