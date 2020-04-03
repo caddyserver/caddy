@@ -351,11 +351,9 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 	// scan for failure
 	failed := false
 	for _, d := range diff {
-		switch d.Delta {
-		case difflib.LeftOnly:
+		if d.Delta != difflib.Common {
 			failed = true
-		case difflib.RightOnly:
-			failed = true
+			break
 		}
 	}
 
@@ -365,10 +363,8 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 			case difflib.Common:
 				fmt.Printf("  %s\n", d.Payload)
 			case difflib.LeftOnly:
-				failed = true
 				fmt.Printf(" - %s\n", d.Payload)
 			case difflib.RightOnly:
-				failed = true
 				fmt.Printf(" + %s\n", d.Payload)
 			}
 		}
