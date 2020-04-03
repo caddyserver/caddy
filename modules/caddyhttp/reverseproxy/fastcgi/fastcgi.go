@@ -181,14 +181,14 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 
 	fpath := r.URL.Path
 
-	// Split path in preparation for env variables.
-	// Previous canSplit checks ensure this can never be -1.
-	// TODO: I haven't brought over canSplit from v1; make sure this doesn't break
-	splitPos := t.splitPos(fpath)
-
-	// Request has the extension; path was split successfully
-	docURI := fpath[:splitPos]
-	pathInfo := fpath[splitPos:]
+	// split "actual path" from "path info" if configured
+	var docURI, pathInfo string
+	if splitPos := t.splitPos(fpath); splitPos > -1 {
+		docURI = fpath[:splitPos]
+		pathInfo = fpath[splitPos:]
+	} else {
+		docURI = fpath
+	}
 	scriptName := fpath
 
 	// Strip PATH_INFO from SCRIPT_NAME
