@@ -384,10 +384,10 @@ type load struct {
 	Apps apps `json:"apps"`
 }
 type apps struct {
-	HTTP hTTP        `json:"http"`
+	HTTP httpServers `json:"http"`
 	TLS  interface{} `json:"tls,omitempty"`
 }
-type hTTP struct {
+type httpServers struct {
 	OrderedServers []interface{}          `json:"_servers,omitempty"`
 	Servers        map[string]interface{} `json:"servers,omitempty"`
 }
