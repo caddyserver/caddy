@@ -149,7 +149,30 @@ func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.setScheme(req)
-	return h.Transport.RoundTrip(req)
+	var rt http.RoundTripper = h.Transport
+	// if H2C ("HTTP/2 over cleartext") is enabled and this is
+	// an HTTP request, configure an H2C client manually
+	// TODO: some of this setup could be done at provision-time
+	if sliceContains(h.Versions, "h2c") && req.URL.Scheme == "http" {
+		// crafting our own http2.Transport doesn't allow us to utilize
+		// most of the customizations/preferences on the http.Transport,
+		// because, for some reason, only http2.ConfigureTransport()
+		// is allowed to set the unexported field that refers to a base
+		// http.Transport config; oh well
+		h2t := &http2.Transport{
+			// kind of a hack, but for plaintext/H2C
+			// requests, pretend we're dialing TLS
+			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+			AllowHTTP: true,
+		}
+		if h.Compression != nil {
+			h2t.DisableCompression = !*h.Compression
+		}
+		rt = h2t
+	}
+	return rt.RoundTrip(req)
 }
 
 // setScheme ensures that the outbound request req
