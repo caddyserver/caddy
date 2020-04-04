@@ -449,7 +449,9 @@ func (st *ServerType) serversFromPairings(
 					}
 				}
 				for _, h := range sblock.hostsFromKeys(true, true) {
-					srv.Logs.LoggerNames[h] = ncl.name
+					if ncl.name != "" {
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				}
 			}
 		}
@@ -548,10 +550,22 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 	return nil
 }
 
-// consolidateConnPolicies combines TLS connection policies that are the same,
-// for a cleaner overall output.
+// consolidateConnPolicies removes empty TLS connection policies and combines
+// equivalent ones for a cleaner overall output.
 func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
+	empty := new(caddytls.ConnectionPolicy)
+
 	for i := 0; i < len(cps); i++ {
+		// if the connection policy is empty or has
+		// only matchers, we can remove it entirely
+		empty.MatchersRaw = cps[i].MatchersRaw
+		if reflect.DeepEqual(empty, cps[i]) {
+			cps = append(cps[:i], cps[i+1:]...)
+			i--
+			continue
+		}
+
+		// compare it to the others
 		for j := 0; j < len(cps); j++ {
 			if j == i {
 				continue
