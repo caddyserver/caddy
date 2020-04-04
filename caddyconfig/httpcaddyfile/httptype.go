@@ -376,18 +376,13 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			var httpHosts, httpsHosts []string
-			for _, key := range sblock.block.Keys {
-				addr, err := ParseAddress(key)
-				if err != nil {
-					return nil, err
-				}
-				addr = addr.Normalize()
+			var httpHosts, tlsHosts []string
+			for _, addr := range sblock.keys {
 
 				if addr.Scheme == "http" {
 					httpHosts = append(httpHosts, addr.Host)
 				} else {
-					httpsHosts = append(httpsHosts, addr.Host)
+					tlsHosts = append(tlsHosts, addr.Host)
 				}
 
 				// exclude any hosts that were defined explicitly with
@@ -407,16 +402,16 @@ func (st *ServerType) serversFromPairings(
 
 			// sort hosts for a predictable config file
 			sort.Strings(httpHosts)
-			sort.Strings(httpsHosts)
+			sort.Strings(tlsHosts)
 
 			// tls: connection policies
-			if len(httpsHosts) > 0 {
+			if len(tlsHosts) > 0 {
 				if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 					// tls connection policies
 					for _, cpVal := range cpVals {
 						cp := cpVal.Value.(*caddytls.ConnectionPolicy)
 						// make sure the policy covers all hostnames from the block
-						for _, h := range httpsHosts {
+						for _, h := range tlsHosts {
 							if h == defaultSNI {
 								httpHosts = append(httpHosts, "") //nolint
 								cp.DefaultSNI = defaultSNI
@@ -425,9 +420,9 @@ func (st *ServerType) serversFromPairings(
 							}
 						}
 
-						if len(httpsHosts) > 0 {
+						if len(tlsHosts) > 0 {
 							cp.MatchersRaw = caddy.ModuleMap{
-								"sni": caddyconfig.JSON(httpsHosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
+								"sni": caddyconfig.JSON(tlsHosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 							}
 						} else {
 							cp.DefaultSNI = defaultSNI
