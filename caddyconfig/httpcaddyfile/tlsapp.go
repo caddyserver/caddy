@@ -322,8 +322,9 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
+	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts
+	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -362,6 +363,9 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		}
 		if acmeCARoot != nil {
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
+		}
+		if keyType != nil {
+			ap.KeyType = keyType.(string)
 		}
 		ap.Issuer = mgr // we'll encode it later
 	}

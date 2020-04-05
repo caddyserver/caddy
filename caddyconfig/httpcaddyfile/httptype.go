@@ -307,6 +307,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptOnDemand(disp)
 		case "local_certs":
 			val = true
+		case "key_type":
+			val, err = parseOptSingleString(disp)
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
