@@ -239,6 +239,10 @@ type ChallengesConfig struct {
 	// to Caddy from an external server.
 	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=tls.dns inline_key=provider"`
 
+	// Optionally customize the host to which a listener
+	// is bound if required for solving a challenge.
+	BindHost string `json:"bind_host,omitempty"`
+
 	DNS challenge.Provider `json:"-"`
 }
 
