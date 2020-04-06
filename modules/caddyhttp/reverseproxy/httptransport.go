@@ -56,6 +56,8 @@ type HTTPTransport struct {
 	Versions              []string       `json:"versions,omitempty"`
 
 	Transport *http.Transport `json:"-"`
+
+	h2cTransport *http2.Transport
 }
 
 // CaddyModule returns the Caddy module information.
@@ -78,6 +80,28 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		return err
 	}
 	h.Transport = rt
+
+	// if h2c is enabled, configure its transport (std lib http.Transport
+	// does not "HTTP/2 over cleartext TCP")
+	if sliceContains(h.Versions, "h2c") {
+		// crafting our own http2.Transport doesn't allow us to utilize
+		// most of the customizations/preferences on the http.Transport,
+		// because, for some reason, only http2.ConfigureTransport()
+		// is allowed to set the unexported field that refers to a base
+		// http.Transport config; oh well
+		h2t := &http2.Transport{
+			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
+			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+				// TODO: no context, thus potentially wrong dial info
+				return net.Dial(network, addr)
+			},
+			AllowHTTP: true,
+		}
+		if h.Compression != nil {
+			h2t.DisableCompression = !*h.Compression
+		}
+		h.h2cTransport = h2t
+	}
 
 	return nil
 }
@@ -149,30 +173,14 @@ func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.setScheme(req)
-	var rt http.RoundTripper = h.Transport
-	// if H2C ("HTTP/2 over cleartext") is enabled and this is
-	// an HTTP request, configure an H2C client manually
-	// TODO: some of this setup could be done at provision-time
-	if sliceContains(h.Versions, "h2c") && req.URL.Scheme == "http" {
-		// crafting our own http2.Transport doesn't allow us to utilize
-		// most of the customizations/preferences on the http.Transport,
-		// because, for some reason, only http2.ConfigureTransport()
-		// is allowed to set the unexported field that refers to a base
-		// http.Transport config; oh well
-		h2t := &http2.Transport{
-			// kind of a hack, but for plaintext/H2C
-			// requests, pretend we're dialing TLS
-			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
-				return net.Dial(network, addr)
-			},
-			AllowHTTP: true,
-		}
-		if h.Compression != nil {
-			h2t.DisableCompression = !*h.Compression
-		}
-		rt = h2t
+
+	// if H2C ("HTTP/2 over cleartext") is enabled and this is an HTTP
+	// request, use the alternate, H2C-capable transport instead
+	if h.h2cTransport != nil && req.URL.Scheme == "http" {
+		return h.h2cTransport.RoundTrip(req)
 	}
-	return rt.RoundTrip(req)
+
+	return h.RoundTrip(req)
 }
 
 // setScheme ensures that the outbound request req
