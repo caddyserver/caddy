@@ -33,6 +33,8 @@ func init() {
 // The syntax is documented in the Go standard library's
 // [text/template package](https://golang.org/pkg/text/template/).
 //
+// ⚠️ Template functions/actions are still experimental, so they are subject to change.
+//
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
 //
 // In addition to the standard functions and Sprig functions, Caddy adds
