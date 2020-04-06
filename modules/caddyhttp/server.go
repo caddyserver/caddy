@@ -108,6 +108,11 @@ type Server struct {
 	// This field is not subject to compatibility promises.
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
+	// TODO: Experimental. If true, enables H2C (HTTP/2 over Cleartext)
+	// support. This requires using a different HTTP server library
+	// which is not compatible with some of the advanced options.
+	InsecureH2C bool `json:"insecure_h2c,omitempty"`
+
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
