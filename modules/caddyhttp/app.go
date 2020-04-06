@@ -287,6 +287,7 @@ func (app *App) Start() error {
 			Handler:           srv,
 		}
 
+		// experimental: enable h2c if configured
 		if srv.InsecureH2C {
 			h2server := &http2.Server{
 				IdleTimeout: time.Duration(srv.IdleTimeout),

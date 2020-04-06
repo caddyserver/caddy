@@ -108,9 +108,14 @@ type Server struct {
 	// This field is not subject to compatibility promises.
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
-	// TODO: Experimental. If true, enables H2C (HTTP/2 over Cleartext)
-	// support. This requires using a different HTTP server library
-	// which is not compatible with some of the advanced options.
+	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
+	// which will serve HTTP/2 over plaintext TCP connections if
+	// a client support it. Because this is not implemented by the
+	// Go standard library, using H2C is incompatible with most
+	// of the other options for this server. Do not enable this
+	// only to achieve maximum client compatibility. In practice,
+	// very few clients implement H2C, and even fewer require it.
+	// ⚠️ This feature is experimental and is subject to change/removal.
 	InsecureH2C bool `json:"insecure_h2c,omitempty"`
 
 	primaryHandlerChain Handler
