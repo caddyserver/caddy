@@ -559,7 +559,7 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		var mp matcherPair
 		matcherMap := make(map[string]RequestMatcher)
-		for d.NextBlock(0) {
+		for d.NextArg() || d.NextBlock(0) {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
