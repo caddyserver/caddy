@@ -114,6 +114,20 @@ type (
 	// true, the final result of the "not" matcher is false. Individual
 	// matchers within a set work the same (i.e. different matchers in
 	// the same set are AND'ed).
+	//
+	// Note that the generated docs which describe the structure of
+	// this module are wrong because of how this type unmarshals JSON
+	// in a custom way. The correct structure is:
+	//
+	// ```json
+	// [
+	// 	{},
+	// 	{}
+	// ]
+	// ```
+	//
+	// where each of the array elements is a matcher set, i.e. an
+	// object keyed by matcher name.
 	MatchNot struct {
 		MatcherSetsRaw []caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
 		MatcherSets    []MatcherSet      `json:"-"`
