@@ -40,7 +40,7 @@ func init() {
 // In addition to the standard functions and Sprig functions, Caddy adds
 // extra functions and data that are available to a template:
 //
-// ##### **`.Args`**
+// ##### `.Args`
 //
 // Access arguments passed to this page/context, for example as the result of a `include`.
 //
@@ -54,6 +54,14 @@ func init() {
 //
 // ```
 // {{.Cookie "cookiename"}}
+// ```
+//
+// ##### `env`
+//
+// Gets an environment variable.
+//
+// ```
+// {{env "VAR_NAME"}}
 // ```
 //
 // ##### `.Host`
