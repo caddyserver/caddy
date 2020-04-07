@@ -31,7 +31,7 @@ func init() {
 type NetWriter struct {
 	Address string `json:"address,omitempty"`
 
-	addr caddy.ParsedAddress
+	addr caddy.NetworkAddress
 }
 
 // CaddyModule returns the Caddy module information.
