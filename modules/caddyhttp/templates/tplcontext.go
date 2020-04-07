@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -150,6 +151,7 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
+		"env":              c.funcEnv,
 	})
 
 	parsedTpl, err := tpl.Parse(buf.String())
@@ -160,6 +162,10 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	buf.Reset() // reuse buffer for output
 
 	return parsedTpl.Execute(buf, c)
+}
+
+func (templateContext) funcEnv(varName string) string {
+	return os.Getenv(varName)
 }
 
 // Cookie gets the value of a cookie with name name.
@@ -198,7 +204,7 @@ func (c templateContext) Host() (string, error) {
 
 // funcStripHTML returns s without HTML tags. It is fairly naive
 // but works with most valid HTML inputs.
-func (c templateContext) funcStripHTML(s string) string {
+func (templateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
 	var inTag, inQuotes bool
 	var tagStart int
@@ -231,7 +237,7 @@ func (c templateContext) funcStripHTML(s string) string {
 
 // funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
-func (c templateContext) funcMarkdown(input interface{}) (string, error) {
+func (templateContext) funcMarkdown(input interface{}) (string, error) {
 	inputStr := toString(input)
 
 	md := goldmark.New(
@@ -265,7 +271,7 @@ func (c templateContext) funcMarkdown(input interface{}) (string, error) {
 // splitFrontMatter parses front matter out from the beginning of input,
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
-func (c templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
+func (templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
 	meta, body, err := extractFrontMatter(toString(input))
 	if err != nil {
 		return parsedMarkdownDoc{}, err
