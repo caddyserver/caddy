@@ -370,12 +370,12 @@ func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstr
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if !d.NextArg() {
 			return d.ArgErr()
 		}
-		r.Field = d.Val()
+		s.Field = d.Val()
 	}
 	return nil
 }
