@@ -42,19 +42,50 @@ type HTTPTransport struct {
 	// able to borrow/use at least some of these config fields; if so,
 	// maybe move them into a type called CommonTransport and embed it?
 
-	TLS                   *TLSConfig     `json:"tls,omitempty"`
-	KeepAlive             *KeepAlive     `json:"keep_alive,omitempty"`
-	Compression           *bool          `json:"compression,omitempty"`
-	MaxConnsPerHost       int            `json:"max_conns_per_host,omitempty"`
-	DialTimeout           caddy.Duration `json:"dial_timeout,omitempty"`
-	FallbackDelay         caddy.Duration `json:"dial_fallback_delay,omitempty"`
-	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
-	ExpectContinueTimeout caddy.Duration `json:"expect_continue_timeout,omitempty"`
-	MaxResponseHeaderSize int64          `json:"max_response_header_size,omitempty"`
-	WriteBufferSize       int            `json:"write_buffer_size,omitempty"`
-	ReadBufferSize        int            `json:"read_buffer_size,omitempty"`
-	Versions              []string       `json:"versions,omitempty"`
+	// Configures TLS to the upstream. Setting this to an empty struct
+	// is sufficient to enable TLS with reasonable defaults.
+	TLS *TLSConfig `json:"tls,omitempty"`
 
+	// Configures HTTP Keep-Alive (enabled by default). Should only be
+	// necessary if rigorous testing has shown that tuning this helps
+	// improve performance.
+	KeepAlive *KeepAlive `json:"keep_alive,omitempty"`
+
+	// Whether to enable compression to upstream. Default: true
+	Compression *bool `json:"compression,omitempty"`
+
+	// Maximum number of connections per host. Default: 0 (no limit)
+	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
+
+	// How long to wait before timing out trying to connect to
+	// an upstream.
+	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
+
+	// How long to wait before spawning an RFC 6555 Fast Fallback
+	// connection. A negative value disables this.
+	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
+
+	// How long to wait for reading response headers from server.
+	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
+
+	// The length of time to wait for a server's first response
+	// headers after fully writing the request headers if the
+	// request has a header "Expect: 100-continue".
+	ExpectContinueTimeout caddy.Duration `json:"expect_continue_timeout,omitempty"`
+
+	// The maximum bytes to read from response headers.
+	MaxResponseHeaderSize int64 `json:"max_response_header_size,omitempty"`
+
+	// The size of the write buffer in bytes.
+	WriteBufferSize int `json:"write_buffer_size,omitempty"`
+
+	// The size of the read buffer in bytes.
+	ReadBufferSize int `json:"read_buffer_size,omitempty"`
+
+	// The versions of HTTP to support. Default: ["1.1", "2"]
+	Versions []string `json:"versions,omitempty"`
+
+	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 }
 
@@ -73,7 +104,7 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 		h.Versions = []string{"1.1", "2"}
 	}
 
-	rt, err := h.newTransport()
+	rt, err := h.NewTransport()
 	if err != nil {
 		return err
 	}
@@ -82,7 +113,9 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 	return nil
 }
 
-func (h *HTTPTransport) newTransport() (*http.Transport, error) {
+// NewTransport builds a standard-lib-compatible
+// http.Transport value from h.
+func (h *HTTPTransport) NewTransport() (*http.Transport, error) {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -148,20 +181,31 @@ func (h *HTTPTransport) newTransport() (*http.Transport, error) {
 
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	h.setScheme(req)
+	h.SetScheme(req)
 	return h.Transport.RoundTrip(req)
 }
 
-// setScheme ensures that the outbound request req
+// SetScheme ensures that the outbound request req
 // has the scheme set in its URL; the underlying
 // http.Transport requires a scheme to be set.
-func (h *HTTPTransport) setScheme(req *http.Request) {
+func (h *HTTPTransport) SetScheme(req *http.Request) {
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
 		if h.TLS != nil {
 			req.URL.Scheme = "https"
 		}
 	}
+}
+
+// TLSEnabled returns true if TLS is enabled.
+func (h HTTPTransport) TLSEnabled() bool {
+	return h.TLS != nil
+}
+
+// EnableTLS enables TLS on the transport.
+func (h *HTTPTransport) EnableTLS(base *TLSConfig) error {
+	h.TLS = base
+	return nil
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
@@ -173,18 +217,32 @@ func (h HTTPTransport) Cleanup() error {
 	return nil
 }
 
-// TLSConfig holds configuration related to the
-// TLS configuration for the transport/client.
+// TLSConfig holds configuration related to the TLS configuration for the
+// transport/client.
 type TLSConfig struct {
+	// Optional list of base64-encoded DER-encoded CA certificates to trust.
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
-	// Added to the same pool as above, but brought in from files
+
+	// List of PEM-encoded CA certificate files to add to the same trust
+	// store as RootCAPool (or root_ca_pool in the JSON).
 	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`
-	// TODO: Should the client cert+key config use caddytls.CertificateLoader modules?
-	ClientCertificateFile    string         `json:"client_certificate_file,omitempty"`
-	ClientCertificateKeyFile string         `json:"client_certificate_key_file,omitempty"`
-	InsecureSkipVerify       bool           `json:"insecure_skip_verify,omitempty"`
-	HandshakeTimeout         caddy.Duration `json:"handshake_timeout,omitempty"`
-	ServerName               string         `json:"server_name,omitempty"`
+
+	// PEM-encoded client certificate filename to present to servers.
+	ClientCertificateFile string `json:"client_certificate_file,omitempty"`
+
+	// PEM-encoded key to use with the client certificate.
+	ClientCertificateKeyFile string `json:"client_certificate_key_file,omitempty"`
+
+	// If true, TLS verification of server certificates will be disabled.
+	// This is insecure and may be removed in the future. Do not use this
+	// option except in testing or local development environments.
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
+
+	// The duration to allow a TLS handshake to a server.
+	HandshakeTimeout caddy.Duration `json:"handshake_timeout,omitempty"`
+
+	// The server name (SNI) to use in TLS handshakes.
+	ServerName string `json:"server_name,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -244,11 +302,20 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 
 // KeepAlive holds configuration pertaining to HTTP Keep-Alive.
 type KeepAlive struct {
-	Enabled             *bool          `json:"enabled,omitempty"`
-	ProbeInterval       caddy.Duration `json:"probe_interval,omitempty"`
-	MaxIdleConns        int            `json:"max_idle_conns,omitempty"`
-	MaxIdleConnsPerHost int            `json:"max_idle_conns_per_host,omitempty"`
-	IdleConnTimeout     caddy.Duration `json:"idle_timeout,omitempty"` // how long should connections be kept alive when idle
+	// Whether HTTP Keep-Alive is enabled. Default: true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// How often to probe for liveness.
+	ProbeInterval caddy.Duration `json:"probe_interval,omitempty"`
+
+	// Maximum number of idle connections.
+	MaxIdleConns int `json:"max_idle_conns,omitempty"`
+
+	// Maximum number of idle connections per upstream host.
+	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
+
+	// How long connections should be kept alive when idle.
+	IdleConnTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 }
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
@@ -278,4 +345,5 @@ var (
 	_ caddy.Provisioner  = (*HTTPTransport)(nil)
 	_ http.RoundTripper  = (*HTTPTransport)(nil)
 	_ caddy.CleanerUpper = (*HTTPTransport)(nil)
+	_ TLSTransport       = (*HTTPTransport)(nil)
 )
