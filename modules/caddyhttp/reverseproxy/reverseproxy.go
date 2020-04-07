@@ -739,8 +739,19 @@ var hopHeaders = []string{
 
 // DialError is an error that specifically occurs
 // in a call to Dial or DialContext.
-type DialError struct {
-	error
+type DialError struct{ error }
+
+// TLSTransport is implemented by transports
+// that are capable of using TLS.
+type TLSTransport interface {
+	// TLSEnabled returns true if the transport
+	// has TLS enabled, false otherwise.
+	TLSEnabled() bool
+
+	// EnableTLS enables TLS within the transport
+	// if it is not already, using the provided
+	// value as a basis for the TLS config.
+	EnableTLS(base *TLSConfig) error
 }
 
 var bufPool = sync.Pool{
