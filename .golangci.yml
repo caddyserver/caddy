@@ -8,6 +8,8 @@ linters-settings:
 linters:
   enable:
     - bodyclose
+    - prealloc
+    - unconvert
     - errcheck
     - gofmt
     - goimports

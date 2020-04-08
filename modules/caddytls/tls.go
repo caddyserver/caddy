@@ -471,7 +471,7 @@ func (t *TLS) moveCertificates() error {
 	}
 
 	// get list of used CAs
-	var oldCANames []string
+	oldCANames := make([]string, 0, len(oldAcmeCas))
 	for _, fi := range oldAcmeCas {
 		if !fi.IsDir() {
 			continue

@@ -149,7 +149,7 @@ func (admin AdminConfig) allowedOrigins(listen string) []string {
 	if admin.Origins == nil {
 		uniqueOrigins[listen] = struct{}{}
 	}
-	var allowed []string
+	allowed := make([]string, 0, len(uniqueOrigins))
 	for origin := range uniqueOrigins {
 		allowed = append(allowed, origin)
 	}

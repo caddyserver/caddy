@@ -33,7 +33,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	// see what kind of front matter there is, if any
 	var closingFence string
 	var fmParser func([]byte) (map[string]interface{}, error)
-	switch string(firstLine) {
+	switch firstLine {
 	case yamlFrontMatterFenceOpen:
 		fmParser = yamlFrontMatter
 		closingFence = yamlFrontMatterFenceClose

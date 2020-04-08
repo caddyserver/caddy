@@ -76,7 +76,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	hashBase64 := base64.StdEncoding.EncodeToString([]byte(hash))
+	hashBase64 := base64.StdEncoding.EncodeToString(hash)
 
 	fmt.Println(hashBase64)
 
