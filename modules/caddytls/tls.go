@@ -93,10 +93,17 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
 	}
-	t.Automation.defaultAutomationPolicy = new(AutomationPolicy)
-	err := t.Automation.defaultAutomationPolicy.Provision(t)
+	t.Automation.defaultPublicAutomationPolicy = new(AutomationPolicy)
+	err := t.Automation.defaultPublicAutomationPolicy.Provision(t)
 	if err != nil {
-		return fmt.Errorf("provisioning default automation policy: %v", err)
+		return fmt.Errorf("provisioning default public automation policy: %v", err)
+	}
+	t.Automation.defaultInternalAutomationPolicy = &AutomationPolicy{
+		IssuerRaw: json.RawMessage(`{"module":"internal"}`),
+	}
+	err = t.Automation.defaultInternalAutomationPolicy.Provision(t)
+	if err != nil {
+		return fmt.Errorf("provisioning default internal automation policy: %v", err)
 	}
 	for i, ap := range t.Automation.Policies {
 		err := ap.Provision(t)
@@ -318,6 +325,10 @@ func (t *TLS) getConfigForName(name string) *certmagic.Config {
 	return ap.magic
 }
 
+// getAutomationPolicyForName returns the first matching automation policy
+// for the given subject name. If no matching policy can be found, the
+// default policy is used, depending on whether the name qualifies for a
+// public certificate or not.
 func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 	for _, ap := range t.Automation.Policies {
 		if len(ap.Subjects) == 0 {
@@ -329,7 +340,10 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 			}
 		}
 	}
-	return t.Automation.defaultAutomationPolicy
+	if certmagic.SubjectQualifiesForPublicCert(name) {
+		return t.Automation.defaultPublicAutomationPolicy
+	}
+	return t.Automation.defaultInternalAutomationPolicy
 }
 
 // AllMatchingCertificates returns the list of all certificates in

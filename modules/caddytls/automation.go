@@ -53,7 +53,8 @@ type AutomationConfig struct {
 	// a low value.
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
-	defaultAutomationPolicy *AutomationPolicy
+	defaultPublicAutomationPolicy   *AutomationPolicy
+	defaultInternalAutomationPolicy *AutomationPolicy
 }
 
 // AutomationPolicy designates the policy for automating the
@@ -67,7 +68,8 @@ type AutomationPolicy struct {
 	// Which subjects (hostnames or IP addresses) this policy applies to.
 	Subjects []string `json:"subjects,omitempty"`
 
-	// The module that will issue certificates. Default: acme
+	// The module that will issue certificates. Default: internal if all
+	// subjects do not qualify for public certificates; othewise acme.
 	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
 	// If true, certificates will be requested with MustStaple. Not all
