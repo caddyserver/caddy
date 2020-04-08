@@ -170,13 +170,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.response.latency", latency)
 
 			logger := accLog
-			if s.Logs != nil && s.Logs.LoggerNames != nil {
-				if loggerName, ok := s.Logs.LoggerNames[r.Host]; ok {
-					logger = logger.Named(loggerName)
-				} else {
-					// see if there's a default log name to attach to
-					logger = logger.Named(s.Logs.LoggerNames[""])
-				}
+			if loggerName := s.Logs.getLoggerName(r.Host); loggerName != "" {
+				logger = logger.Named(loggerName)
 			}
 
 			log := logger.Info
@@ -205,8 +200,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// prepare the error log
 		logger := errLog
-		if s.Logs != nil && s.Logs.LoggerNames != nil {
-			logger = logger.Named(s.Logs.LoggerNames[r.Host])
+		if loggerName := s.Logs.getLoggerName(r.Host); loggerName != "" {
+			logger = logger.Named(loggerName)
 		}
 
 		// get the values that will be used to log the error
@@ -372,11 +367,22 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 
 // ServerLogConfig describes a server's logging configuration.
 type ServerLogConfig struct {
+	// The logger name for all logs emitted by this server unless
+	// the hostname is found in the LoggerNames (logger_names) map.
+	LoggerName string `json:"log_name,omitempty"`
+
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+}
+
+func (slc ServerLogConfig) getLoggerName(host string) string {
+	if loggerName, ok := slc.LoggerNames[host]; ok {
+		return loggerName
+	}
+	return slc.LoggerName
 }
 
 // errLogValues inspects err and returns the status code

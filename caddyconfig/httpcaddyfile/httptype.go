@@ -378,7 +378,7 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts := sblock.hostsFromKeys(false, false)
+			hosts := sblock.hostsFromKeys(false)
 
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
@@ -450,9 +450,13 @@ func (st *ServerType) serversFromPairings(
 						LoggerNames: make(map[string]string),
 					}
 				}
-				for _, h := range sblock.hostsFromKeys(true, true) {
-					if ncl.name != "" {
-						srv.Logs.LoggerNames[h] = ncl.name
+				if sblock.hasHostCatchAllKey() {
+					srv.Logs.LoggerName = ncl.name
+				} else {
+					for _, h := range sblock.hostsFromKeys(true) {
+						if ncl.name != "" {
+							srv.Logs.LoggerNames[h] = ncl.name
+						}
 					}
 				}
 			}
