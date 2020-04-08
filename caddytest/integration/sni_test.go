@@ -272,3 +272,46 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	// makes a request with no sni
 	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
 }
+
+func TestHttpOnlyOnDomainWithSNI(t *testing.T) {
+	caddytest.AssertAdapt(t, `
+	{
+		default_sni a.caddy.localhost
+	}
+	:80 {
+		respond /version 200 {
+			body "hello from localhost"
+		}
+	}
+	`, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/version"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "hello from localhost",
+									"handler": "static_response",
+									"status_code": 200
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
