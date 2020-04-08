@@ -275,6 +275,15 @@ uniqueDomainsLoop:
 		return err
 	}
 
+	// add the redir domains as an array to the replacer so that
+	// users may choose to handle the redirects themselves
+	// if they have a server block that overrides the redirects
+	domainsArray := []string{}
+	for k := range redirDomains {
+		domainsArray = append(domainsArray, k)
+	}
+	repl.Set("http.autohttps.redir_domains", domainsArray)
+
 	// we need to reduce the mapping, i.e. group domains by address
 	// since new routes are appended to servers by their address
 	domainsByAddr := make(map[string][]string)
