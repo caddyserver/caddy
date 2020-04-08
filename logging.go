@@ -217,7 +217,7 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 
 	multiCore := zapcore.NewTee(cores...)
 
-	return zap.New(multiCore).Named(string(modID))
+	return zap.New(multiCore).Named(modID)
 }
 
 // openWriter opens a writer using opener, and returns true if
@@ -458,7 +458,7 @@ func (cl *CustomLog) buildCore() {
 }
 
 func (cl *CustomLog) matchesModule(moduleID string) bool {
-	return cl.loggerAllowed(string(moduleID), true)
+	return cl.loggerAllowed(moduleID, true)
 }
 
 // loggerAllowed returns true if name is allowed to emit

@@ -245,7 +245,7 @@ func (st ServerType) buildTLSApp(
 				}
 				clVal := reflect.ValueOf(cl)
 				for i := 0; i < clVal.Len(); i++ {
-					combined = reflect.Append(reflect.Value(combined), clVal.Index(i))
+					combined = reflect.Append(combined, clVal.Index(i))
 				}
 				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
 			}

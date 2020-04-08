@@ -148,7 +148,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// none of the subjects qualify for a public certificate,
 	// set the issuer to internal so that these names can all
 	// get certificates; critically, we can only do this if an
-	// issuer is not explictly configured (IssuerRaw, vs. just
+	// issuer is not explicitly configured (IssuerRaw, vs. just
 	// Issuer) AND if the list of subjects is non-empty
 	if ap.IssuerRaw == nil && len(ap.Subjects) > 0 {
 		var anyPublic bool

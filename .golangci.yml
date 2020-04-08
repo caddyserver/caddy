@@ -1,4 +1,6 @@
 linters-settings:
+  maligned:
+    suggest-new: true
   errcheck:
     ignore: fmt:.*,io/ioutil:^Read.*,github.com/caddyserver/caddy/v2/caddyconfig:RegisterAdapter,github.com/caddyserver/caddy/v2:RegisterModule
     ignoretests: true
@@ -8,6 +10,8 @@ linters-settings:
 linters:
   enable:
     - bodyclose
+    - prealloc
+    - unconvert
     - errcheck
     - gofmt
     - goimports
