@@ -105,20 +105,8 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 // Authenticate validates the user credentials in req and returns the user, if valid.
 func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) (User, bool, error) {
 	username, plaintextPasswordStr, ok := req.BasicAuth()
-
-	// if basic auth is missing or invalid, prompt for credentials
 	if !ok {
-		// browsers show a message that says something like:
-		// "The website says: <realm>"
-		// which is kinda dumb, but whatever.
-		realm := hba.Realm
-		if realm == "" {
-			realm = "restricted"
-		}
-
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
-
-		return User{}, false, nil
+		return hba.promptForCredentials(w, nil)
 	}
 
 	plaintextPassword := []byte(plaintextPasswordStr)
@@ -129,13 +117,25 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 
 	same, err := hba.Hash.Compare(account.password, plaintextPassword, account.salt)
 	if err != nil {
-		return User{}, false, err
+		return hba.promptForCredentials(w, err)
 	}
 	if !same || !accountExists {
-		return User{}, false, nil
+		return hba.promptForCredentials(w, nil)
 	}
 
 	return User{ID: username}, true, nil
+}
+
+func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) (User, bool, error) {
+	// browsers show a message that says something like:
+	// "The website says: <realm>"
+	// which is kinda dumb, but whatever.
+	realm := hba.Realm
+	if realm == "" {
+		realm = "restricted"
+	}
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
+	return User{}, false, err
 }
 
 // Comparer is a type that can securely compare
