@@ -199,6 +199,38 @@ func TestLexer(t *testing.T) {
 				{Line: 1, Text: ":8080"},
 			},
 		},
+		{
+			input: "simple `backtick quoted` string",
+			expected: []Token{
+				{Line: 1, Text: `simple`},
+				{Line: 1, Text: `backtick quoted`},
+				{Line: 1, Text: `string`},
+			},
+		},
+		{
+			input: "multiline `backtick\nquoted\n` string",
+			expected: []Token{
+				{Line: 1, Text: `multiline`},
+				{Line: 1, Text: "backtick\nquoted\n"},
+				{Line: 3, Text: `string`},
+			},
+		},
+		{
+			input: "nested `\"quotes inside\" backticks` string",
+			expected: []Token{
+				{Line: 1, Text: `nested`},
+				{Line: 1, Text: `"quotes inside" backticks`},
+				{Line: 1, Text: `string`},
+			},
+		},
+		{
+			input: "reverse-nested \"`backticks` inside\" quotes",
+			expected: []Token{
+				{Line: 1, Text: `reverse-nested`},
+				{Line: 1, Text: "`backticks` inside"},
+				{Line: 1, Text: `quotes`},
+			},
+		},
 	}
 
 	for i, testCase := range testCases {
