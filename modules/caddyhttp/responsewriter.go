@@ -74,17 +74,6 @@ type HTTPInterfaces interface {
 // ResponseWriter does not implement the required method.
 var ErrNotImplemented = fmt.Errorf("method not implemented")
 
-/*
-struct of size 64 bytes could be of size 56 bytes:
-	ResponseWriterWrapper	*github.com/caddyserver/caddy/v2/modules/caddyhttp.ResponseWriterWrapper,
-	statusCode           	int,
-	buf                  	*bytes.Buffer,
-	shouldBuffer         	github.com/caddyserver/caddy/v2/modules/caddyhttp.ShouldBufferFunc,
-	size                 	int,
-	header               	net/http.Header,
-	wroteHeader          	bool,
-	stream               	bool,
-*/
 type responseRecorder struct {
 	*ResponseWriterWrapper
 	statusCode   int
