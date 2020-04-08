@@ -85,6 +85,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return host, true
 			case "http.request.port":
 				_, port, _ := net.SplitHostPort(req.Host)
+				if portNum, err := strconv.Atoi(port); err == nil {
+					return portNum, true
+				}
 				return port, true
 			case "http.request.hostport":
 				return req.Host, true
@@ -98,6 +101,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return host, true
 			case "http.request.remote.port":
 				_, port, _ := net.SplitHostPort(req.RemoteAddr)
+				if portNum, err := strconv.Atoi(port); err == nil {
+					return portNum, true
+				}
 				return port, true
 
 			// current URI, including any internal rewrites

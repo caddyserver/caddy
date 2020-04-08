@@ -74,6 +74,16 @@ func (r RandomSelection) Select(pool UpstreamPool, request *http.Request) *Upstr
 	return randomHost
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *RandomSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // RandomChoiceSelection is a policy that selects
 // two or more available hosts at random, then
 // chooses the one with the least load.
@@ -192,6 +202,16 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	return bestHost
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // RoundRobinSelection is a policy that selects
 // a host based on round-robin ordering.
 type RoundRobinSelection struct {
@@ -222,6 +242,16 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request) *Upstre
 	return nil
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *RoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // FirstSelection is a policy that selects
 // the first available host.
 type FirstSelection struct{}
@@ -239,6 +269,16 @@ func (FirstSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
 	for _, host := range pool {
 		if host.Available() {
 			return host
+		}
+	}
+	return nil
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *FirstSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
 		}
 	}
 	return nil
@@ -265,6 +305,16 @@ func (IPHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 	return hostByHashing(pool, clientIP)
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *IPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // URIHashSelection is a policy that selects a
 // host by hashing the request URI.
 type URIHashSelection struct{}
@@ -280,6 +330,16 @@ func (URIHashSelection) CaddyModule() caddy.ModuleInfo {
 // Select returns an available host, if any.
 func (URIHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
 	return hostByHashing(pool, req.RequestURI)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
 }
 
 // HeaderHashSelection is a policy that selects
@@ -307,6 +367,17 @@ func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstr
 		return RandomSelection{}.Select(pool, req)
 	}
 	return hostByHashing(pool, val)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		s.Field = d.Val()
+	}
+	return nil
 }
 
 // leastRequests returns the host with the

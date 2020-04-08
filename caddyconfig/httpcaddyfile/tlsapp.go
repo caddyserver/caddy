@@ -43,26 +43,16 @@ func (st ServerType) buildTLSApp(
 	hostsSharedWithHostlessKey := make(map[string]struct{})
 	for _, pair := range pairings {
 		for _, sb := range pair.serverBlocks {
-			for _, key := range sb.block.Keys {
-				addr, err := ParseAddress(key)
-				if err != nil {
-					return nil, warnings, err
-				}
-				addr = addr.Normalize()
+			for _, addr := range sb.keys {
 				if addr.Host == "" {
 					serverBlocksWithHostlessKey++
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
-					for _, otherKey := range sb.block.Keys {
-						if otherKey == key {
+					for _, otherAddr := range sb.keys {
+						if otherAddr.Original == addr.Original {
 							continue
 						}
-						addr, err := ParseAddress(otherKey)
-						if err != nil {
-							return nil, warnings, err
-						}
-						addr = addr.Normalize()
-						if addr.Host != "" {
+						if otherAddr.Host != "" {
 							hostsSharedWithHostlessKey[addr.Host] = struct{}{}
 						}
 					}
@@ -82,10 +72,7 @@ func (st ServerType) buildTLSApp(
 			// get values that populate an automation policy for this block
 			var ap *caddytls.AutomationPolicy
 
-			sblockHosts, err := st.hostsFromServerBlockKeys(sblock.block, false, false)
-			if err != nil {
-				return nil, warnings, err
-			}
+			sblockHosts := sblock.hostsFromKeys(false, false)
 			if len(sblockHosts) == 0 {
 				ap = catchAllAP
 			}
@@ -113,15 +100,58 @@ func (st ServerType) buildTLSApp(
 							return nil, warnings, err
 						}
 					}
-					encoded := caddyconfig.JSONModuleObject(issuer, "module", issuer.(caddy.Module).CaddyModule().ID.Name(), &warnings)
-					if ap == catchAllAP && ap.IssuerRaw != nil && !bytes.Equal(ap.IssuerRaw, encoded) {
-						return nil, warnings, fmt.Errorf("conflicting issuer configuration: %s != %s", ap.IssuerRaw, encoded)
+					if ap == catchAllAP && !reflect.DeepEqual(ap.Issuer, issuer) {
+						return nil, warnings, fmt.Errorf("automation policy from site block is also default/catch-all policy because of key without hostname, and the two are in conflict: %#v != %#v", ap.Issuer, issuer)
 					}
-					ap.IssuerRaw = encoded
+					ap.Issuer = issuer
 				}
 			}
 
+			// custom bind host
+			for _, cfgVal := range sblock.pile["bind"] {
+				// either an existing issuer is already configured (and thus, ap is not
+				// nil), or we need to configure an issuer, so we need ap to be non-nil
+				if ap == nil {
+					ap, err = newBaseAutomationPolicy(options, warnings, true)
+					if err != nil {
+						return nil, warnings, err
+					}
+				}
+
+				// if an issuer was already configured and it is NOT an ACME
+				// issuer, skip, since we intend to adjust only ACME issuers
+				var acmeIssuer *caddytls.ACMEIssuer
+				if ap.Issuer != nil {
+					var ok bool
+					if acmeIssuer, ok = ap.Issuer.(*caddytls.ACMEIssuer); !ok {
+						break
+					}
+				}
+
+				// proceed to configure the ACME issuer's bind host, without
+				// overwriting any existing settings
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.BindHost == "" {
+					// only binding to one host is supported
+					var bindHost string
+					if bindHosts, ok := cfgVal.Value.([]string); ok && len(bindHosts) > 0 {
+						bindHost = bindHosts[0]
+					}
+					acmeIssuer.Challenges.BindHost = bindHost
+				}
+				ap.Issuer = acmeIssuer // we'll encode it later
+			}
+
 			if ap != nil {
+				// encode issuer now that it's all set up
+				issuerName := ap.Issuer.(caddy.Module).CaddyModule().ID.Name()
+				ap.IssuerRaw = caddyconfig.JSONModuleObject(ap.Issuer, "module", issuerName, &warnings)
+
 				// first make sure this block is allowed to create an automation policy;
 				// doing so is forbidden if it has a key with no host (i.e. ":443")
 				// and if there is a different server block that also has a key with no
@@ -235,6 +265,11 @@ func (st ServerType) buildTLSApp(
 
 	// if there is a global/catch-all automation policy, ensure it goes last
 	if catchAllAP != nil {
+		// first, encode its issuer
+		issuerName := catchAllAP.Issuer.(caddy.Module).CaddyModule().ID.Name()
+		catchAllAP.IssuerRaw = caddyconfig.JSONModuleObject(catchAllAP.Issuer, "module", issuerName, &warnings)
+
+		// then append it to the end of the policies list
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
@@ -287,8 +322,9 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
+	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts
+	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -303,7 +339,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 
 	if localCerts != nil {
 		// internal issuer enabled trumps any ACME configurations; useful in testing
-		ap.IssuerRaw = caddyconfig.JSONModuleObject(caddytls.InternalIssuer{}, "module", "internal", &warnings)
+		ap.Issuer = new(caddytls.InternalIssuer) // we'll encode it later
 	} else {
 		if acmeCA == nil {
 			acmeCA = ""
@@ -311,7 +347,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		if email == nil {
 			email = ""
 		}
-		mgr := caddytls.ACMEIssuer{
+		mgr := &caddytls.ACMEIssuer{
 			CA:    acmeCA.(string),
 			Email: email.(string),
 		}
@@ -328,7 +364,10 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		if acmeCARoot != nil {
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
 		}
-		ap.IssuerRaw = caddyconfig.JSONModuleObject(mgr, "module", "acme", &warnings)
+		if keyType != nil {
+			ap.KeyType = keyType.(string)
+		}
+		ap.Issuer = mgr // we'll encode it later
 	}
 
 	return ap, nil

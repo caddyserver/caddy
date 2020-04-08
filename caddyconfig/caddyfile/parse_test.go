@@ -568,10 +568,6 @@ func TestSnippets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range blocks {
-		t.Log(b.Keys)
-		t.Log(b.Segments)
-	}
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
 	}
@@ -616,10 +612,6 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range blocks {
-		t.Log(b.Keys)
-		t.Log(b.Segments)
-	}
 	auth := blocks[0].Segments[0]
 	line := auth[0].Text + " " + auth[1].Text + " " + auth[2].Text + " " + auth[3].Text
 	if line != "basicauth / import password" {
@@ -650,10 +642,6 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	blocks, err := p.parseAll()
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, b := range blocks {
-		t.Log(b.Keys)
-		t.Log(b.Segments)
 	}
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))

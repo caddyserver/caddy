@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"reflect"
 	"sort"
 	"strconv"
@@ -308,6 +307,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptOnDemand(disp)
 		case "local_certs":
 			val = true
+		case "key_type":
+			val, err = parseOptSingleString(disp)
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
@@ -318,47 +319,6 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 	}
 
 	return serverBlocks[1:], nil
-}
-
-// hostsFromServerBlockKeys returns a list of all the non-empty hostnames
-// found in the keys of the server block sb, unless allowEmpty is true, in
-// which case a key with no host (e.g. ":443") will be added to the list as
-// an empty string. Otherwise, if allowEmpty is false, and if sb has a key
-// that omits the hostname (i.e. is a catch-all/empty host), then the returned
-// list is empty, because the server block effectively matches ALL hosts.
-// The list may not be in a consistent order. If includePorts is true, then
-// any non-empty, non-standard ports will be included.
-func (st *ServerType) hostsFromServerBlockKeys(sb caddyfile.ServerBlock, allowEmpty, includePorts bool) ([]string, error) {
-	// first get each unique hostname
-	hostMap := make(map[string]struct{})
-	for _, sblockKey := range sb.Keys {
-		addr, err := ParseAddress(sblockKey)
-		if err != nil {
-			return nil, fmt.Errorf("parsing server block key: %v", err)
-		}
-		addr = addr.Normalize()
-		if addr.Host == "" && !allowEmpty {
-			// server block contains a key like ":443", i.e. the host portion
-			// is empty / catch-all, which means to match all hosts
-			return []string{}, nil
-		}
-		if includePorts &&
-			addr.Port != "" &&
-			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPPort) &&
-			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPSPort) {
-			hostMap[net.JoinHostPort(addr.Host, addr.Port)] = struct{}{}
-		} else {
-			hostMap[addr.Host] = struct{}{}
-		}
-	}
-
-	// convert map to slice
-	sblockHosts := make([]string, 0, len(hostMap))
-	for host := range hostMap {
-		sblockHosts = append(sblockHosts, host)
-	}
-
-	return sblockHosts, nil
 }
 
 // serversFromPairings creates the servers for each pairing of addresses
@@ -384,11 +344,10 @@ func (st *ServerType) serversFromPairings(
 		// descending sort by length of host then path
 		sort.SliceStable(p.serverBlocks, func(i, j int) bool {
 			// TODO: we could pre-process the specificities for efficiency,
-			// but I don't expect many blocks will have SO many keys...
+			// but I don't expect many blocks will have THAT many keys...
 			var iLongestPath, jLongestPath string
 			var iLongestHost, jLongestHost string
-			for _, key := range p.serverBlocks[i].block.Keys {
-				addr, _ := ParseAddress(key)
+			for _, addr := range p.serverBlocks[i].keys {
 				if specificity(addr.Host) > specificity(iLongestHost) {
 					iLongestHost = addr.Host
 				}
@@ -396,8 +355,7 @@ func (st *ServerType) serversFromPairings(
 					iLongestPath = addr.Path
 				}
 			}
-			for _, key := range p.serverBlocks[j].block.Keys {
-				addr, _ := ParseAddress(key)
+			for _, addr := range p.serverBlocks[j].keys {
 				if specificity(addr.Host) > specificity(jLongestHost) {
 					jLongestHost = addr.Host
 				}
@@ -415,15 +373,12 @@ func (st *ServerType) serversFromPairings(
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
-			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock.block)
+			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock)
 			if err != nil {
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts, err := st.hostsFromServerBlockKeys(sblock.block, false, false)
-			if err != nil {
-				return nil, err
-			}
+			hosts := sblock.hostsFromKeys(false, false)
 
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
@@ -455,12 +410,7 @@ func (st *ServerType) serversFromPairings(
 
 			// exclude any hosts that were defined explicitly with
 			// "http://" in the key from automated cert management (issue #2998)
-			for _, key := range sblock.block.Keys {
-				addr, err := ParseAddress(key)
-				if err != nil {
-					return nil, err
-				}
-				addr = addr.Normalize()
+			for _, addr := range sblock.keys {
 				if addr.Scheme == "http" && addr.Host != "" {
 					if srv.AutoHTTPS == nil {
 						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
@@ -500,14 +450,19 @@ func (st *ServerType) serversFromPairings(
 						LoggerNames: make(map[string]string),
 					}
 				}
-				hosts, err := st.hostsFromServerBlockKeys(sblock.block, true, true)
-				if err != nil {
-					return nil, err
-				}
-				for _, h := range hosts {
-					srv.Logs.LoggerNames[h] = ncl.name
+				for _, h := range sblock.hostsFromKeys(true, true) {
+					if ncl.name != "" {
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				}
 			}
+		}
+
+		// a server cannot (natively) serve both HTTP and HTTPS at the
+		// same time, so make sure the configuration isn't in conflict
+		err := detectConflictingSchemes(srv, p.serverBlocks, options)
+		if err != nil {
+			return nil, err
 		}
 
 		// a catch-all TLS conn policy is necessary to ensure TLS can
@@ -527,7 +482,6 @@ func (st *ServerType) serversFromPairings(
 		}
 
 		// tidy things up a bit
-		var err error
 		srv.TLSConnPolicies, err = consolidateConnPolicies(srv.TLSConnPolicies)
 		if err != nil {
 			return nil, fmt.Errorf("consolidating TLS connection policies for server %d: %v", i, err)
@@ -540,10 +494,80 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
-// consolidateConnPolicies combines TLS connection policies that are the same,
-// for a cleaner overall output.
+func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]interface{}) error {
+	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
+	if hp, ok := options["http_port"].(int); ok {
+		httpPort = strconv.Itoa(hp)
+	}
+	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
+	if hsp, ok := options["https_port"].(int); ok {
+		httpsPort = strconv.Itoa(hsp)
+	}
+
+	var httpOrHTTPS string
+	checkAndSetHTTP := func(addr Address) error {
+		if httpOrHTTPS == "HTTPS" {
+			errMsg := fmt.Errorf("server listening on %v is configured for HTTPS and cannot natively multiplex HTTP and HTTPS: %s",
+				srv.Listen, addr.Original)
+			if addr.Scheme == "" && addr.Host == "" {
+				errMsg = fmt.Errorf("%s (try specifying https:// in the address)", errMsg)
+			}
+			return errMsg
+		}
+		if len(srv.TLSConnPolicies) > 0 {
+			// any connection policies created for an HTTP server
+			// is a logical conflict, as it would enable HTTPS
+			return fmt.Errorf("server listening on %v is HTTP, but attempts to configure TLS connection policies", srv.Listen)
+		}
+		httpOrHTTPS = "HTTP"
+		return nil
+	}
+	checkAndSetHTTPS := func(addr Address) error {
+		if httpOrHTTPS == "HTTP" {
+			return fmt.Errorf("server listening on %v is configured for HTTP and cannot natively multiplex HTTP and HTTPS: %s",
+				srv.Listen, addr.Original)
+		}
+		httpOrHTTPS = "HTTPS"
+		return nil
+	}
+
+	for _, sblock := range serverBlocks {
+		for _, addr := range sblock.keys {
+			if addr.Scheme == "http" || addr.Port == httpPort {
+				if err := checkAndSetHTTP(addr); err != nil {
+					return err
+				}
+			} else if addr.Scheme == "https" || addr.Port == httpsPort {
+				if err := checkAndSetHTTPS(addr); err != nil {
+					return err
+				}
+			} else if addr.Host == "" {
+				if err := checkAndSetHTTP(addr); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// consolidateConnPolicies removes empty TLS connection policies and combines
+// equivalent ones for a cleaner overall output.
 func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
+	empty := new(caddytls.ConnectionPolicy)
+
 	for i := 0; i < len(cps); i++ {
+		// if the connection policy is empty or has
+		// only matchers, we can remove it entirely
+		empty.MatchersRaw = cps[i].MatchersRaw
+		if reflect.DeepEqual(empty, cps[i]) {
+			cps = append(cps[:i], cps[i+1:]...)
+			i--
+			continue
+		}
+
+		// compare it to the others
 		for j := 0; j < len(cps); j++ {
 			if j == i {
 				continue
@@ -664,18 +688,34 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 	matcherSetsEnc []caddy.ModuleMap,
 	p sbAddrAssociation,
 	warnings *[]caddyconfig.Warning) caddyhttp.RouteList {
+
+	// nothing to do if... there's nothing to do
+	if len(matcherSetsEnc) == 0 && len(subroute.Routes) == 0 && subroute.Errors == nil {
+		return routeList
+	}
+
 	if len(matcherSetsEnc) == 0 && len(p.serverBlocks) == 1 {
 		// no need to wrap the handlers in a subroute if this is
 		// the only server block and there is no matcher for it
 		routeList = append(routeList, subroute.Routes...)
 	} else {
-		routeList = append(routeList, caddyhttp.Route{
-			MatcherSetsRaw: matcherSetsEnc,
-			HandlersRaw: []json.RawMessage{
+		route := caddyhttp.Route{
+			// the semantics of a site block in the Caddyfile dictate
+			// that only the first matching one is evaluated, since
+			// site blocks do not cascade nor inherit
+			Terminal: true,
+		}
+		if len(matcherSetsEnc) > 0 {
+			route.MatcherSetsRaw = matcherSetsEnc
+		}
+		if len(subroute.Routes) > 0 || subroute.Errors != nil {
+			route.HandlersRaw = []json.RawMessage{
 				caddyconfig.JSONModuleObject(subroute, "handler", "subroute", warnings),
-			},
-			Terminal: true, // only first matching site block should be evaluated
-		})
+			}
+		}
+		if len(route.MatcherSetsRaw) > 0 || len(route.HandlersRaw) > 0 {
+			routeList = append(routeList, route)
+		}
 	}
 	return routeList
 }
@@ -822,7 +862,7 @@ func matcherSetFromMatcherToken(
 	return nil, false, nil
 }
 
-func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([]caddy.ModuleMap, error) {
+func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.ModuleMap, error) {
 	type hostPathPair struct {
 		hostm caddyhttp.MatchHost
 		pathm caddyhttp.MatchPath
@@ -832,13 +872,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	var matcherPairs []*hostPathPair
 
 	var catchAllHosts bool
-	for _, key := range sblock.Keys {
-		addr, err := ParseAddress(key)
-		if err != nil {
-			return nil, fmt.Errorf("server block %v: parsing and standardizing address '%s': %v", sblock.Keys, key, err)
-		}
-		addr = addr.Normalize()
-
+	for _, addr := range sblock.keys {
 		// choose a matcher pair that should be shared by this
 		// server block; if none exists yet, create one
 		var chosenMatcherPair *hostPathPair
@@ -905,7 +939,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock caddyfile.ServerBlock) ([
 	for _, ms := range matcherSets {
 		msEncoded, err := encodeMatcherSet(ms)
 		if err != nil {
-			return nil, fmt.Errorf("server block %v: %v", sblock.Keys, err)
+			return nil, fmt.Errorf("server block %v: %v", sblock.block.Keys, err)
 		}
 		matcherSetsEnc = append(matcherSetsEnc, msEncoded)
 	}

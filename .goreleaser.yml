@@ -23,15 +23,12 @@ builds:
   - freebsd
   goarch:
   - amd64
-  - 386
   - arm
   - arm64
   goarm:
   - 6
   - 7
   ignore:
-    - goos: darwin
-      goarch: 386
     - goos: darwin
       goarch: arm
   flags:
@@ -43,11 +40,7 @@ archives:
       - goos: windows
         format: zip
     replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: i386
-      amd64: x86_64
+      darwin: mac
 checksum:
   algorithm: sha512
 release:
@@ -60,7 +53,8 @@ changelog:
   sort: asc
   filters:
     exclude:
-    - '^docs:'
-    - '^test:'
     - '^chore:'
+    - '^ci:'
+    - '^docs?:'
+    - '^tests?:'
     - '^\w+\s+' # a hack to remove commit messages without colons thus don't correspond to a package

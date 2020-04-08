@@ -53,6 +53,7 @@ type MatchExpression struct {
 
 	expandedExpr string
 	prg          cel.Program
+	ta           ref.TypeAdapter
 }
 
 // CaddyModule returns the Caddy module information.
@@ -79,6 +80,9 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 	// light (and possibly naïve) syntactic sugar
 	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
 
+	// our type adapter expands CEL's standard type support
+	m.ta = celTypeAdapter{}
+
 	// create the CEL environment
 	env, err := cel.NewEnv(
 		cel.Declarations(
@@ -88,7 +92,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 					[]*exprpb.Type{httpRequestObjectType, decls.String},
 					decls.Any)),
 		),
-		cel.CustomTypeAdapter(celHTTPRequestTypeAdapter{}),
+		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
 	)
 	if err != nil {
@@ -112,7 +116,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 		cel.Functions(
 			&functions.Overload{
 				Operator: placeholderFuncName,
-				Binary:   caddyPlaceholderFunc,
+				Binary:   m.caddyPlaceholderFunc,
 			},
 		),
 	)
@@ -143,57 +147,9 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// httpRequestCELType is the type representation of a native HTTP request.
-var httpRequestCELType = types.NewTypeValue("http.Request", traits.ReceiverType)
-
-// cellHTTPRequest wraps an http.Request with
-// methods to satisfy the ref.Val interface.
-type celHTTPRequest struct {
-	*http.Request
-}
-
-func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
-	return cr.Request, nil
-}
-func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
-	panic("not implemented")
-}
-func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
-	if o, ok := other.Value().(celHTTPRequest); ok {
-		return types.Bool(o.Request == cr.Request)
-	}
-	return types.ValOrErr(other, "%v is not comparable type", other)
-}
-func (celHTTPRequest) Type() ref.Type        { return httpRequestCELType }
-func (cr celHTTPRequest) Value() interface{} { return cr }
-
-// celHTTPRequestTypeAdapter can adapt a
-// celHTTPRequest to a CEL value.
-type celHTTPRequestTypeAdapter struct{}
-
-func (celHTTPRequestTypeAdapter) NativeToValue(value interface{}) ref.Val {
-	if celReq, ok := value.(celHTTPRequest); ok {
-		return celReq
-	}
-	return types.DefaultTypeAdapter.NativeToValue(value)
-}
-
-// Variables used for replacing Caddy placeholders in CEL
-// expressions with a proper CEL function call; this is
-// just for syntactic sugar.
-var (
-	placeholderRegexp    = regexp.MustCompile(`{([\w.-]+)}`)
-	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
-)
-
-var httpRequestObjectType = decls.NewObjectType("http.Request")
-
-// The name of the CEL function which accesses Replacer values.
-const placeholderFuncName = "caddyPlaceholder"
-
-// caddyPlaceholderFunc implements the custom CEL function that
-// accesses the Replacer on a request and gets values from it.
-func caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
+// caddyPlaceholderFunc implements the custom CEL function that accesses the
+// Replacer on a request and gets values from it.
+func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	celReq, ok := lhs.(celHTTPRequest)
 	if !ok {
 		return types.NewErr(
@@ -210,36 +166,56 @@ func caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	val, _ := repl.Get(string(phStr))
 
-	// TODO: this is... kinda awful and underwhelming, how can we expand CEL's type system more easily?
-	switch v := val.(type) {
-	case string:
-		return types.String(v)
-	case fmt.Stringer:
-		return types.String(v.String())
-	case error:
-		return types.NewErr(v.Error())
-	case int:
-		return types.Int(v)
-	case int32:
-		return types.Int(v)
-	case int64:
-		return types.Int(v)
-	case uint:
-		return types.Int(v)
-	case uint32:
-		return types.Int(v)
-	case uint64:
-		return types.Int(v)
-	case float32:
-		return types.Double(v)
-	case float64:
-		return types.Double(v)
-	case bool:
-		return types.Bool(v)
-	default:
-		return types.String(fmt.Sprintf("%+v", v))
-	}
+	return m.ta.NativeToValue(val)
 }
+
+// httpRequestCELType is the type representation of a native HTTP request.
+var httpRequestCELType = types.NewTypeValue("http.Request", traits.ReceiverType)
+
+// cellHTTPRequest wraps an http.Request with
+// methods to satisfy the ref.Val interface.
+type celHTTPRequest struct{ *http.Request }
+
+func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	return cr.Request, nil
+}
+func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
+	panic("not implemented")
+}
+func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
+	if o, ok := other.Value().(celHTTPRequest); ok {
+		return types.Bool(o.Request == cr.Request)
+	}
+	return types.ValOrErr(other, "%v is not comparable type", other)
+}
+func (celHTTPRequest) Type() ref.Type        { return httpRequestCELType }
+func (cr celHTTPRequest) Value() interface{} { return cr }
+
+// celTypeAdapter can adapt our custom types to a CEL value.
+type celTypeAdapter struct{}
+
+func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
+	switch v := value.(type) {
+	case celHTTPRequest:
+		return v
+	case error:
+		types.NewErr(v.Error())
+	}
+	return types.DefaultTypeAdapter.NativeToValue(value)
+}
+
+// Variables used for replacing Caddy placeholders in CEL
+// expressions with a proper CEL function call; this is
+// just for syntactic sugar.
+var (
+	placeholderRegexp    = regexp.MustCompile(`{([\w.-]+)}`)
+	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
+)
+
+var httpRequestObjectType = decls.NewObjectType("http.Request")
+
+// The name of the CEL function which accesses Replacer values.
+const placeholderFuncName = "caddyPlaceholder"
 
 // Interface guards
 var (

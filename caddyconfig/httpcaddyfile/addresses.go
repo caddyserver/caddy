@@ -106,12 +106,22 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 		// server block are only the ones which use the address; but
 		// the contents (tokens) are of course the same
 		for addr, keys := range addrToKeys {
+			// parse keys so that we only have to do it once
+			parsedKeys := make([]Address, 0, len(keys))
+			for _, key := range keys {
+				addr, err := ParseAddress(key)
+				if err != nil {
+					return nil, fmt.Errorf("parsing key '%s': %v", key, err)
+				}
+				parsedKeys = append(parsedKeys, addr.Normalize())
+			}
 			sbmap[addr] = append(sbmap[addr], serverBlock{
 				block: caddyfile.ServerBlock{
 					Keys:     keys,
 					Segments: sblock.block.Segments,
 				},
 				pile: sblock.pile,
+				keys: parsedKeys,
 			})
 		}
 	}
@@ -165,7 +175,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 
 	// figure out the HTTP and HTTPS ports; either
 	// use defaults, or override with user config
-	httpPort, httpsPort := strconv.Itoa(certmagic.HTTPPort), strconv.Itoa(certmagic.HTTPSPort)
+	httpPort, httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPPort), strconv.Itoa(caddyhttp.DefaultHTTPSPort)
 	if hport, ok := options["http_port"]; ok {
 		httpPort = strconv.Itoa(hport.(int))
 	}

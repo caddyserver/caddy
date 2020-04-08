@@ -16,7 +16,9 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -381,12 +383,49 @@ func parseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return buildSubroute(allResults, h.groupCounter)
 }
 
-// serverBlock pairs a Caddyfile server block
-// with a "pile" of config values, keyed by class
-// name.
+// serverBlock pairs a Caddyfile server block with
+// a "pile" of config values, keyed by class name,
+// as well as its parsed keys for convenience.
 type serverBlock struct {
 	block caddyfile.ServerBlock
 	pile  map[string][]ConfigValue // config values obtained from directives
+	keys  []Address
+}
+
+// hostsFromKeys returns a list of all the non-empty hostnames found in
+// the keys of the server block sb, unless allowEmpty is true, in which
+// case a key with no host (e.g. ":443") will be added to the list as an
+// empty string. Otherwise, if allowEmpty is false, and if sb has a key
+// that omits the hostname (i.e. is a catch-all/empty host), then the returned
+// list is empty, because the server block effectively matches ALL hosts.
+// The list may not be in a consistent order. If includePorts is true, then
+// any non-empty, non-standard ports will be included.
+func (sb serverBlock) hostsFromKeys(allowEmpty, includePorts bool) []string {
+	// first get each unique hostname
+	hostMap := make(map[string]struct{})
+	for _, addr := range sb.keys {
+		if addr.Host == "" && !allowEmpty {
+			// server block contains a key like ":443", i.e. the host portion
+			// is empty / catch-all, which means to match all hosts
+			return []string{}
+		}
+		if includePorts &&
+			addr.Port != "" &&
+			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPPort) &&
+			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPSPort) {
+			hostMap[net.JoinHostPort(addr.Host, addr.Port)] = struct{}{}
+		} else {
+			hostMap[addr.Host] = struct{}{}
+		}
+	}
+
+	// convert map to slice
+	sblockHosts := make([]string, 0, len(hostMap))
+	for host := range hostMap {
+		sblockHosts = append(sblockHosts, host)
+	}
+
+	return sblockHosts
 }
 
 type (
