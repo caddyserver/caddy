@@ -50,7 +50,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	// chosen to handle a request - we actually will make each
 	// server block's route terminal so that only one will run
 	sbKeys := make(map[string]struct{})
-	var serverBlocks []serverBlock
+	serverBlocks := make([]serverBlock, 0, len(originalServerBlocks))
 	for i, sblock := range originalServerBlocks {
 		for j, k := range sblock.Keys {
 			if _, ok := sbKeys[k]; ok {
@@ -939,7 +939,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	}
 
 	// finally, encode each of the matcher sets
-	var matcherSetsEnc []caddy.ModuleMap
+	matcherSetsEnc := make([]caddy.ModuleMap, 0, len(matcherSets))
 	for _, ms := range matcherSets {
 		msEncoded, err := encodeMatcherSet(ms)
 		if err != nil {

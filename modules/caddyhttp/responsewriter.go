@@ -76,13 +76,13 @@ var ErrNotImplemented = fmt.Errorf("method not implemented")
 
 type responseRecorder struct {
 	*ResponseWriterWrapper
-	wroteHeader  bool
 	statusCode   int
 	buf          *bytes.Buffer
 	shouldBuffer ShouldBufferFunc
-	stream       bool
 	size         int
 	header       http.Header
+	wroteHeader  bool
+	stream       bool
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be

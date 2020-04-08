@@ -255,7 +255,7 @@ func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expected
 	if !strings.Contains(body, expectedBody) {
 		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", requestURI, expectedBody, body)
 	}
-	return resp, string(body)
+	return resp, body
 }
 
 // AssertGetResponseBody request a URI and assert the status code matches

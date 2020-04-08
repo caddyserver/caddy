@@ -138,7 +138,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
 func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]serverBlock) []sbAddrAssociation {
-	var sbaddrs []sbAddrAssociation
+	sbaddrs := make([]sbAddrAssociation, 0, len(addrToServerBlocks))
 	for addr, sblocks := range addrToServerBlocks {
 		// we start with knowing that at least this address
 		// maps to these server blocks
@@ -199,7 +199,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// the bind directive specifies hosts, but is optional
-	var lnHosts []string
+	lnHosts := make([]string, 0, len(sblock.pile))
 	for _, cfgVal := range sblock.pile["bind"] {
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
@@ -219,7 +219,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// now turn map into list
-	var listenersList []string
+	listenersList := make([]string, 0, len(listeners))
 	for lnStr := range listeners {
 		listenersList = append(listenersList, lnStr)
 	}

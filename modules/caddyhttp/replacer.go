@@ -188,7 +188,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
 				tbl := req.Context().Value(VarsCtxKey).(map[string]interface{})
-				raw, _ := tbl[varName]
+				raw := tbl[varName]
 				// variables can be dynamic, so always return true
 				// even when it may not be set; treat as empty then
 				return raw, true
