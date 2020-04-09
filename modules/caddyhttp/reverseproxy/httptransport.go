@@ -99,12 +99,12 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
-func (h *HTTPTransport) Provision(_ caddy.Context) error {
+func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	if len(h.Versions) == 0 {
 		h.Versions = []string{"1.1", "2"}
 	}
 
-	rt, err := h.NewTransport()
+	rt, err := h.NewTransport(ctx)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (h *HTTPTransport) Provision(_ caddy.Context) error {
 
 // NewTransport builds a standard-lib-compatible
 // http.Transport value from h.
-func (h *HTTPTransport) NewTransport() (*http.Transport, error) {
+func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
