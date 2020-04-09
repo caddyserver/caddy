@@ -157,6 +157,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.accessLogger = app.logger.Named("log.access")
 		}
 
+		// add the redirect domains list to be added to the replacer
+		redirDomains, ok := repl.Get("http.autohttps.redir_domains")
+		if !ok {
+			return fmt.Errorf("failed to get redir_domains")
+		}
+		srv.redirDomains = redirDomains.([]string)
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI

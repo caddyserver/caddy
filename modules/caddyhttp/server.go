@@ -132,6 +132,8 @@ type Server struct {
 	errorLogger  *zap.Logger
 
 	h3server *http3.Server
+
+	redirDomains []string
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -147,6 +149,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
+
+	repl.Set("http.autohttps.redir_domains", s.redirDomains)
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary

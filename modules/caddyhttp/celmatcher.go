@@ -144,7 +144,6 @@ func (m MatchExpression) Match(r *http.Request) bool {
 		return outBool
 	}
 	return false
-
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
