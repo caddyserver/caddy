@@ -167,7 +167,7 @@ func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
 // This should only be done once: after all the routes have
 // been provisioned, and before serving requests.
 func (routes RouteList) Compile(next Handler) Handler {
-	var mid []Middleware
+	mid := make([]Middleware, 0, len(routes))
 	for _, route := range routes {
 		mid = append(mid, wrapRoute(route))
 	}

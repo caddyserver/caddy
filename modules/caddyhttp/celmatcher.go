@@ -24,6 +24,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/gogo/protobuf/proto"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
@@ -99,16 +100,16 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 		return fmt.Errorf("setting up CEL environment: %v", err)
 	}
 
-	// parse the expression
-	parsed, issues := env.Parse(m.expandedExpr)
+	// parse and type-check the expression
+	checked, issues := env.Compile(m.expandedExpr)
 	if issues != nil && issues.Err() != nil {
-		return fmt.Errorf("parsing CEL program: %s", issues.Err())
+		return fmt.Errorf("compiling CEL program: %s", issues.Err())
 	}
 
-	// type-check it
-	checked, issues := env.Check(parsed)
-	if issues != nil && issues.Err() != nil {
-		return fmt.Errorf("type-checking CEL program: %s", issues.Err())
+	// request matching is a boolean operation, so we don't really know
+	// what to do if the expression returns a non-boolean type
+	if !proto.Equal(checked.ResultType(), decls.Bool) {
+		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.ResultType())
 	}
 
 	// compile the "program"

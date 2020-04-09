@@ -210,7 +210,7 @@ func GetModules(scope string) []ModuleInfo {
 	var mods []ModuleInfo
 iterateModules:
 	for id, m := range modules {
-		modParts := strings.Split(string(id), ".")
+		modParts := strings.Split(id, ".")
 
 		// match only the next level of nesting
 		if len(modParts) != len(scopeParts)+1 {
@@ -241,9 +241,9 @@ func Modules() []string {
 	modulesMu.RLock()
 	defer modulesMu.RUnlock()
 
-	var names []string
+	names := make([]string, 0, len(modules))
 	for name := range modules {
-		names = append(names, string(name))
+		names = append(names, name)
 	}
 
 	sort.Strings(names)

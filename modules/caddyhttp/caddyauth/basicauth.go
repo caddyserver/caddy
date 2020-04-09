@@ -77,8 +77,8 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 		}
 
 		acct.Username = repl.ReplaceAll(acct.Username, "")
-		acct.Password = repl.ReplaceAll(string(acct.Password), "")
-		acct.Salt = repl.ReplaceAll(string(acct.Salt), "")
+		acct.Password = repl.ReplaceAll(acct.Password, "")
+		acct.Salt = repl.ReplaceAll(acct.Salt, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
