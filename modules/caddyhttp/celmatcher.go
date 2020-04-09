@@ -112,8 +112,11 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 
 	// request matching is a boolean operation, so we don't really know
 	// what to do if the expression returns a non-boolean type
-	if !proto.Equal(checked.ResultType(), decls.Bool) {
-		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.ResultType())
+	// TODO: for now, we're allowing Dyn because certain expressions can't have
+	// their type inferred if there's ambiguity.
+	// See https://github.com/caddyserver/caddy/pull/3246#issuecomment-611256387
+	if !proto.Equal(checked.ResultType(), decls.Bool) && !proto.Equal(checked.ResultType(), decls.Dyn) {
+		return fmt.Errorf("CEL request matcher expects return type of bool or dyn, not %s", checked.ResultType())
 	}
 
 	// compile the "program"
