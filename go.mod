@@ -12,6 +12,7 @@ require (
 	github.com/go-acme/lego/v3 v3.5.0
 	github.com/gogo/protobuf v1.3.1
 	github.com/google/cel-go v0.4.1
+	github.com/imdario/mergo v0.3.9 // indirect
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.10.4
 	github.com/klauspost/cpuid v1.2.3
@@ -20,8 +21,8 @@ require (
 	github.com/miekg/dns v1.1.29 // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
-	github.com/smallstep/certificates v0.14.0
-	github.com/smallstep/cli v0.14.1-0.20200409171222-b2faa7c2f880
+	github.com/smallstep/certificates v0.14.1
+	github.com/smallstep/cli v0.14.1
 	github.com/smallstep/truststore v0.9.5
 	github.com/vulcand/oxy v1.1.0
 	github.com/yuin/goldmark v1.1.27
