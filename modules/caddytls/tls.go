@@ -89,29 +89,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 	t.certCache = certmagic.NewCache(cacheOpts)
 
-	// automation/management policies
-	if t.Automation == nil {
-		t.Automation = new(AutomationConfig)
-	}
-	t.Automation.defaultPublicAutomationPolicy = new(AutomationPolicy)
-	err := t.Automation.defaultPublicAutomationPolicy.Provision(t)
-	if err != nil {
-		return fmt.Errorf("provisioning default public automation policy: %v", err)
-	}
-	t.Automation.defaultInternalAutomationPolicy = &AutomationPolicy{
-		IssuerRaw: json.RawMessage(`{"module":"internal"}`),
-	}
-	err = t.Automation.defaultInternalAutomationPolicy.Provision(t)
-	if err != nil {
-		return fmt.Errorf("provisioning default internal automation policy: %v", err)
-	}
-	for i, ap := range t.Automation.Policies {
-		err := ap.Provision(t)
-		if err != nil {
-			return fmt.Errorf("provisioning automation policy %d: %v", i, err)
-		}
-	}
-
 	// certificate loaders
 	val, err := ctx.LoadModule(t, "CertificatesRaw")
 	if err != nil {
@@ -119,9 +96,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 	for modName, modIface := range val.(map[string]interface{}) {
 		if modName == "automate" {
-			// special case; these will be loaded in later
-			// using our automation facilities, which we
-			// want to avoid during provisioning
+			// special case; these will be loaded in later using our automation facilities,
+			// which we want to avoid doing during provisioning
 			if automateNames, ok := modIface.(*AutomateLoader); ok && automateNames != nil {
 				t.automateNames = []string(*automateNames)
 			} else {
@@ -130,6 +106,38 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			continue
 		}
 		t.certificateLoaders = append(t.certificateLoaders, modIface.(CertificateLoader))
+	}
+
+	// automation/management policies
+	if t.Automation == nil {
+		t.Automation = new(AutomationConfig)
+	}
+	t.Automation.defaultPublicAutomationPolicy = new(AutomationPolicy)
+	err = t.Automation.defaultPublicAutomationPolicy.Provision(t)
+	if err != nil {
+		return fmt.Errorf("provisioning default public automation policy: %v", err)
+	}
+	for _, n := range t.automateNames {
+		// if any names specified by the "automate" loader do not qualify for a public
+		// certificate, we should initialize a default internal automation policy
+		// (but we don't want to do this unnecessarily, since it may prompt for password!)
+		if certmagic.SubjectQualifiesForPublicCert(n) {
+			continue
+		}
+		t.Automation.defaultInternalAutomationPolicy = &AutomationPolicy{
+			IssuerRaw: json.RawMessage(`{"module":"internal"}`),
+		}
+		err = t.Automation.defaultInternalAutomationPolicy.Provision(t)
+		if err != nil {
+			return fmt.Errorf("provisioning default internal automation policy: %v", err)
+		}
+		break
+	}
+	for i, ap := range t.Automation.Policies {
+		err := ap.Provision(t)
+		if err != nil {
+			return fmt.Errorf("provisioning automation policy %d: %v", i, err)
+		}
 	}
 
 	// session ticket ephemeral keys (STEK) service and provider
@@ -340,7 +348,7 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 			}
 		}
 	}
-	if certmagic.SubjectQualifiesForPublicCert(name) {
+	if certmagic.SubjectQualifiesForPublicCert(name) || t.Automation.defaultInternalAutomationPolicy == nil {
 		return t.Automation.defaultPublicAutomationPolicy
 	}
 	return t.Automation.defaultInternalAutomationPolicy

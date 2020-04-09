@@ -339,7 +339,7 @@ uniqueDomainsLoop:
 		}
 		redirTo += "{http.request.uri}"
 		routes = append(routes, Route{
-			MatcherSets: []MatcherSet{MatcherSet{MatchProtocol("http")}},
+			MatcherSets: []MatcherSet{{MatchProtocol("http")}},
 			Handlers: []MiddlewareHandler{
 				StaticResponse{
 					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),

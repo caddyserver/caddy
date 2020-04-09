@@ -54,7 +54,7 @@ type AutomationConfig struct {
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
 	defaultPublicAutomationPolicy   *AutomationPolicy
-	defaultInternalAutomationPolicy *AutomationPolicy
+	defaultInternalAutomationPolicy *AutomationPolicy // only initialized if necessary
 }
 
 // AutomationPolicy designates the policy for automating the
