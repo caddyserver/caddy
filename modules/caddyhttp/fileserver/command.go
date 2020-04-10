@@ -85,7 +85,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 
 	if domain != "" {
 		route.MatcherSetsRaw = []caddy.ModuleMap{
-			caddy.ModuleMap{
+			{
 				"host": caddyconfig.JSON(caddyhttp.MatchHost{domain}, nil),
 			},
 		}

@@ -423,7 +423,8 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		// only allow colorized output if this log is going to stdout or stderr
 		var colorize bool
 		switch cl.writerOpener.(type) {
-		case *StdoutWriter, *StderrWriter:
+		case StdoutWriter, StderrWriter,
+			*StdoutWriter, *StderrWriter:
 			colorize = true
 		}
 		cl.encoder = newDefaultProductionLogEncoder(colorize)

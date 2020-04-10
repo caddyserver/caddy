@@ -332,6 +332,11 @@ func (st *ServerType) serversFromPairings(
 	servers := make(map[string]*caddyhttp.Server)
 	defaultSNI := tryString(options["default_sni"], warnings)
 
+	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
+	if hp, ok := options["http_port"].(int); ok {
+		httpPort = strconv.Itoa(hp)
+	}
+
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
@@ -369,7 +374,7 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
-		var hasCatchAllTLSConnPolicy bool
+		var hasCatchAllTLSConnPolicy, usesTLS bool
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
@@ -418,6 +423,9 @@ func (st *ServerType) serversFromPairings(
 					if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
 						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
+				}
+				if addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort {
+					usesTLS = true
 				}
 			}
 
@@ -481,7 +489,9 @@ func (st *ServerType) serversFromPairings(
 		// TODO: maybe a smarter way to handle this might be to just make the
 		// auto-HTTPS logic at provision-time detect if there is any connection
 		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
-		if !hasCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
+		if usesTLS &&
+			!hasCatchAllTLSConnPolicy &&
+			(len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
@@ -559,18 +569,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 // consolidateConnPolicies removes empty TLS connection policies and combines
 // equivalent ones for a cleaner overall output.
 func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
-	empty := new(caddytls.ConnectionPolicy)
-
 	for i := 0; i < len(cps); i++ {
-		// if the connection policy is empty or has
-		// only matchers, we can remove it entirely
-		empty.MatchersRaw = cps[i].MatchersRaw
-		if reflect.DeepEqual(empty, cps[i]) {
-			cps = append(cps[:i], cps[i+1:]...)
-			i--
-			continue
-		}
-
 		// compare it to the others
 		for j := 0; j < len(cps); j++ {
 			if j == i {

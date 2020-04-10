@@ -170,8 +170,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.response.latency", latency)
 
 			logger := accLog
-			if loggerName := s.Logs.getLoggerName(r.Host); loggerName != "" {
-				logger = logger.Named(loggerName)
+			if s.Logs != nil {
+				logger = s.Logs.wrapLogger(logger, r.Host)
 			}
 
 			log := logger.Info
@@ -200,8 +200,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// prepare the error log
 		logger := errLog
-		if loggerName := s.Logs.getLoggerName(r.Host); loggerName != "" {
-			logger = logger.Named(loggerName)
+		if s.Logs != nil {
+			logger = s.Logs.wrapLogger(logger, r.Host)
 		}
 
 		// get the values that will be used to log the error
@@ -376,6 +376,14 @@ type ServerLogConfig struct {
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+}
+
+// wrapLogger wraps logger in a logger named according to user preferences for the given host.
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
+	if loggerName := slc.getLoggerName(host); loggerName != "" {
+		return logger.Named(loggerName)
+	}
+	return logger
 }
 
 func (slc ServerLogConfig) getLoggerName(host string) string {

@@ -51,7 +51,7 @@
 	- Can coordinate with other Caddy instances in a cluster
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **HTTP/1.1, HTTP/2, and experimental HTTP/3** support
-- **Highly extensible** [modular architecture](https://caddyserver.com/docs/extending-caddy) lets Caddy do anything without bloat
+- **Highly extensible** [modular architecture](https://caddyserver.com/docs/architecture) lets Caddy do anything without bloat
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
 - Actually **fun to use**
@@ -81,7 +81,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 Using [our builder tool](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ xcaddy --version CADDY_VERSION
+$ xcaddy build <caddy_version>
 ```
 
 ...the following steps are automated:
