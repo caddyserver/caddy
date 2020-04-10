@@ -139,6 +139,14 @@ func TestJoinNetworkAddress(t *testing.T) {
 			expect: "unix//foo/bar",
 		},
 		{
+			network: "unix", host: "/foo/bar", port: "0",
+			expect: "unix//foo/bar",
+		},
+		{
+			network: "unix", host: "/foo/bar", port: "1234",
+			expect: "unix//foo/bar",
+		},
+		{
 			network: "", host: "::1", port: "1234",
 			expect: "[::1]:1234",
 		},
