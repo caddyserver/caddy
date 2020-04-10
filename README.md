@@ -81,7 +81,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 Using [our builder tool](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ xcaddy --version CADDY_VERSION
+$ xcaddy build <caddy_version>
 ```
 
 ...the following steps are automated:
