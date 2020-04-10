@@ -14,62 +14,62 @@ func TestHostsFromKeys(t *testing.T) {
 	}{
 		{
 			[]Address{
-				Address{Original: "foo", Host: "foo"},
+				{Original: "foo", Host: "foo"},
 			},
 			[]string{"foo"},
 			[]string{"foo"},
 		},
 		{
 			[]Address{
-				Address{Original: "foo", Host: "foo"},
-				Address{Original: "bar", Host: "bar"},
+				{Original: "foo", Host: "foo"},
+				{Original: "bar", Host: "bar"},
 			},
 			[]string{"bar", "foo"},
 			[]string{"bar", "foo"},
 		},
 		{
 			[]Address{
-				Address{Original: ":2015", Port: "2015"},
+				{Original: ":2015", Port: "2015"},
 			},
 			[]string{}, []string{},
 		},
 		{
 			[]Address{
-				Address{Original: ":443", Port: "443"},
+				{Original: ":443", Port: "443"},
 			},
 			[]string{}, []string{},
 		},
 		{
 			[]Address{
-				Address{Original: "foo", Host: "foo"},
-				Address{Original: ":2015", Port: "2015"},
+				{Original: "foo", Host: "foo"},
+				{Original: ":2015", Port: "2015"},
 			},
 			[]string{}, []string{"foo"},
 		},
 		{
 			[]Address{
-				Address{Original: "example.com:2015", Host: "example.com", Port: "2015"},
+				{Original: "example.com:2015", Host: "example.com", Port: "2015"},
 			},
 			[]string{"example.com"},
 			[]string{"example.com:2015"},
 		},
 		{
 			[]Address{
-				Address{Original: "example.com:80", Host: "example.com", Port: "80"},
+				{Original: "example.com:80", Host: "example.com", Port: "80"},
 			},
 			[]string{"example.com"},
 			[]string{"example.com"},
 		},
 		{
 			[]Address{
-				Address{Original: "https://:2015/foo", Scheme: "https", Port: "2015", Path: "/foo"},
+				{Original: "https://:2015/foo", Scheme: "https", Port: "2015", Path: "/foo"},
 			},
 			[]string{},
 			[]string{},
 		},
 		{
 			[]Address{
-				Address{Original: "https://example.com:2015/foo", Scheme: "https", Host: "example.com", Port: "2015", Path: "/foo"},
+				{Original: "https://example.com:2015/foo", Scheme: "https", Host: "example.com", Port: "2015", Path: "/foo"},
 			},
 			[]string{"example.com"},
 			[]string{"example.com:2015"},
