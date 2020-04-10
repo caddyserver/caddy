@@ -289,14 +289,31 @@ func (na NetworkAddress) PortRangeSize() uint {
 	return (na.EndPort - na.StartPort) + 1
 }
 
-// String reconstructs the address string to the form expected
-// by ParseNetworkAddress().
-func (na NetworkAddress) String() string {
-	port := strconv.FormatUint(uint64(na.StartPort), 10)
-	if na.StartPort != na.EndPort {
-		port += "-" + strconv.FormatUint(uint64(na.EndPort), 10)
+func (na NetworkAddress) isLoopback() bool {
+	if na.IsUnixNetwork() {
+		return true
 	}
-	return JoinNetworkAddress(na.Network, na.Host, port)
+	if na.Host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(na.Host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+func (na NetworkAddress) port() string {
+	if na.StartPort == na.EndPort {
+		return strconv.FormatUint(uint64(na.StartPort), 10)
+	}
+	return fmt.Sprintf("%d-%d", na.StartPort, na.EndPort)
+}
+
+// String reconstructs the address string to the form expected
+// by ParseNetworkAddress(). If the address is a unix socket,
+// any non-zero port will be dropped.
+func (na NetworkAddress) String() string {
+	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
 func isUnixNetwork(netw string) bool {
@@ -378,7 +395,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if host != "" && port == "" {
+	if (host != "" && port == "") || isUnixNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
