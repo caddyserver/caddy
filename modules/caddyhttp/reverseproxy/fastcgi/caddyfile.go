@@ -123,10 +123,83 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		return nil, h.ArgErr()
 	}
 
+    // set up the transport for FastCGI, and specifically PHP
+    fcgiTransport := Transport{}
+
+	// set up the set of file extensions allowed to execute PHP code
+    extensions := []string{".php"}
+
+	// set the default index file for the try_files rewrites
+	indexFile := "index.php"
+
+	// fetch the current dispenser state so we can rewind it
+	// after having read the php_fastcgi-specific subdirectives
+	cursor, nesting := h.CurrentState()
+
+	// read the subdirectives that we allow as overrides to
+	// the php_fastcgi shortcut
+	// NOTE: we delete the tokens as we go so that the reverse_proxy
+	// unmarshal doesn't see these subdirectives which it cannot handle
+	for h.Next() {
+		for h.NextBlock(0) {
+			switch h.Val() {
+			case "root":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				fcgiTransport.Root = h.Val()
+				h.Delete()
+				h.Delete()
+
+			case "split":
+				extensions = h.RemainingArgs()
+				h.Delete()
+				for i := 0; i < len(extensions); i++ {
+					h.Delete()
+				}
+				if len(extensions) == 0 {
+					return nil, h.ArgErr()
+				}
+
+			case "env":
+				args := h.RemainingArgs()
+				h.Delete()
+				for i := 0; i < len(args); i++ {
+					h.Delete()
+				}
+				if len(args) != 2 {
+					return nil, h.ArgErr()
+				}
+				if fcgiTransport.EnvVars == nil {
+					fcgiTransport.EnvVars = make(map[string]string)
+				}
+				fcgiTransport.EnvVars[args[0]] = args[1]
+
+			case "index":
+				args := h.RemainingArgs()
+				h.Delete()
+				for i := 0; i < len(args); i++ {
+					h.Delete()
+				}
+				if len(args) != 1 {
+					return nil, h.ArgErr()
+				}
+				indexFile = args[0]
+			}
+		}
+	}	
+
+	// rewind to the dispenser state before having read the block
+	// so that the reverse_proxy unmarshaler can read it as well
+	h.Rewind(cursor, nesting)
+
+    // set the list of allowed path segments on which to split
+    fcgiTransport.SplitPath = extensions
+
 	// route to redirect to canonical path if index PHP file
 	redirMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
-			TryFiles: []string{"{http.request.uri.path}/index.php"},
+			TryFiles: []string{"{http.request.uri.path}/" + indexFile},
 		}),
 		"not": h.JSON(caddyhttp.MatchNot{
 			MatcherSetsRaw: []caddy.ModuleMap{
@@ -148,8 +221,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// route to rewrite to PHP index file
 	rewriteMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
-			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
-			SplitPath: []string{".php"},
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile},
+			SplitPath: extensions,
 		}),
 	}
 	rewriteHandler := rewrite.Rewrite{
@@ -162,8 +235,12 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// route to actually reverse proxy requests to PHP files;
 	// match only requests that are for PHP files
+	pathList := []string{}
+	for i := 0; i < len(extensions); i++ {
+		pathList = append(pathList, "*" + extensions[i])
+	}
 	rpMatcherSet := caddy.ModuleMap{
-		"path": h.JSON([]string{"*.php"}),
+		"path": h.JSON(pathList),
 	}
 
 	// if the user specified a matcher token, use that
@@ -175,9 +252,6 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	if err != nil {
 		return nil, err
 	}
-
-	// set up the transport for FastCGI, and specifically PHP
-	fcgiTransport := Transport{SplitPath: []string{".php"}}
 
 	// create the reverse proxy handler which uses our FastCGI transport
 	rpHandler := &reverseproxy.Handler{
