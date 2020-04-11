@@ -44,6 +44,10 @@ func init() {
 // This enables complex logic to be expressed using a comfortable,
 // familiar syntax.
 //
+// This matcher's JSON interface is actually a string, not a struct.
+// The generated docs are not correct because this type has custom
+// marshaling logic.
+//
 // COMPATIBILITY NOTE: This module is still experimental and is not
 // subject to Caddy's compatibility guarantee.
 type MatchExpression struct {
