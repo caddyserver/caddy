@@ -187,7 +187,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				indexFile = args[0]
 			}
 		}
-	}	
+	}
 
 	// rewind to the dispenser state before having read the block
 	// so that the reverse_proxy unmarshaler can read it as well
