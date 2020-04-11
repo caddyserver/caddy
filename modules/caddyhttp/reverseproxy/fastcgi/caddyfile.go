@@ -245,7 +245,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// match only requests that are for PHP files
 	pathList := []string{}
 	for i := 0; i < len(extensions); i++ {
-		pathList = append(pathList, "*" + extensions[i])
+		pathList = append(pathList, "*"+extensions[i])
 	}
 	rpMatcherSet := caddy.ModuleMap{
 		"path": h.JSON(pathList),
