@@ -30,10 +30,7 @@ import (
 func init() {
 	weakrand.Seed(time.Now().UnixNano())
 
-	err := caddy.RegisterModule(tlsPlaceholderWrapper{})
-	if err != nil {
-		caddy.Log().Fatal(err.Error())
-	}
+	caddy.RegisterModule(tlsPlaceholderWrapper{})
 }
 
 // RequestMatcher is a type that can match to a request.

@@ -125,33 +125,32 @@ type ModuleMap map[string]json.RawMessage
 // be properly recorded, this should be called in the
 // init phase of runtime. Typically, the module package
 // will do this as a side-effect of being imported.
-// This function returns an error if the module's info
-// is incomplete or invalid, or if the module is
-// already registered.
-func RegisterModule(instance Module) error {
+// This function panics if the module's info is
+// incomplete or invalid, or if the module is already
+// registered.
+func RegisterModule(instance Module) {
 	mod := instance.CaddyModule()
 
 	if mod.ID == "" {
-		return fmt.Errorf("module ID missing")
+		panic("module ID missing")
 	}
 	if mod.ID == "caddy" || mod.ID == "admin" {
-		return fmt.Errorf("module ID '%s' is reserved", mod.ID)
+		panic(fmt.Sprintf("module ID '%s' is reserved", mod.ID))
 	}
 	if mod.New == nil {
-		return fmt.Errorf("missing ModuleInfo.New")
+		panic("missing ModuleInfo.New")
 	}
 	if val := mod.New(); val == nil {
-		return fmt.Errorf("ModuleInfo.New must return a non-nil module instance")
+		panic("ModuleInfo.New must return a non-nil module instance")
 	}
 
 	modulesMu.Lock()
 	defer modulesMu.Unlock()
 
 	if _, ok := modules[string(mod.ID)]; ok {
-		return fmt.Errorf("module already registered: %s", mod.ID)
+		panic(fmt.Sprintf("module already registered: %s", mod.ID))
 	}
 	modules[string(mod.ID)] = mod
-	return nil
 }
 
 // GetModule returns module information from its ID (full name).
