@@ -29,6 +29,8 @@ func init() {
 
 // Authentication is a middleware which provides user authentication.
 // Rejects requests with HTTP 401 if the request is not authenticated.
+//
+// Its API is still experimental and may be subject to change.
 type Authentication struct {
 	// A set of authentication providers. If none are specified,
 	// all requests will always be unauthenticated.

@@ -109,6 +109,10 @@ func TestKeyNormalization(t *testing.T) {
 		expect string
 	}{
 		{
+			input:  "example.com",
+			expect: "example.com",
+		},
+		{
 			input:  "http://host:1234/path",
 			expect: "http://host:1234/path",
 		},
@@ -123,6 +127,22 @@ func TestKeyNormalization(t *testing.T) {
 		{
 			input:  "A:2015/Path",
 			expect: "a:2015/Path",
+		},
+		{
+			input:  "sub.{env.MY_DOMAIN}",
+			expect: "sub.{env.MY_DOMAIN}",
+		},
+		{
+			input:  "sub.ExAmPle",
+			expect: "sub.example",
+		},
+		{
+			input:  "sub.\\{env.MY_DOMAIN\\}",
+			expect: "sub.\\{env.my_domain\\}",
+		},
+		{
+			input:  "sub.{env.MY_DOMAIN}.com",
+			expect: "sub.{env.MY_DOMAIN}.com",
 		},
 		{
 			input:  ":80",
@@ -156,7 +176,7 @@ func TestKeyNormalization(t *testing.T) {
 			continue
 		}
 		if actual := addr.Normalize().Key(); actual != tc.expect {
-			t.Errorf("Test %d: Normalized key for address '%s' was '%s' but expected '%s'", i, tc.input, actual, tc.expect)
+			t.Errorf("Test %d: Input '%s': Expected '%s' but got '%s'", i, tc.input, tc.expect, actual)
 		}
 
 	}
