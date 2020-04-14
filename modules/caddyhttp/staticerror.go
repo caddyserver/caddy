@@ -34,11 +34,11 @@ func init() {
 // Since this handler does not write a response, the error information
 // is for use by the server to know how to handle the error.
 type StaticError struct {
-	// The recommended HTTP status code. Can be either an integer or a
-	// string if placeholders are needed. Optional. Default is 500.
+	// The error message. Optional. Default is no error message.
 	Error string `json:"error,omitempty"`
 
-	// The error message. Optional. Default is no error message.
+	// The recommended HTTP status code. Can be either an integer or a
+	// string if placeholders are needed. Optional. Default is 500.
 	StatusCode WeakString `json:"status_code,omitempty"`
 }
 

@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -333,8 +334,8 @@ func (a Address) Normalize() Address {
 
 	return Address{
 		Original: a.Original,
-		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(host),
+		Scheme:   lowerExceptPlaceholders(a.Scheme),
+		Host:     lowerExceptPlaceholders(host),
 		Port:     a.Port,
 		Path:     path,
 	}
@@ -360,4 +361,32 @@ func (a Address) Key() string {
 		res += a.Path
 	}
 	return res
+}
+
+// lowerExceptPlaceholders lowercases s except within
+// placeholders (substrings in non-escaped '{ }' spans).
+// See https://github.com/caddyserver/caddy/issues/3264
+func lowerExceptPlaceholders(s string) string {
+	var sb strings.Builder
+	var escaped, inPlaceholder bool
+	for _, ch := range s {
+		if ch == '\\' && !escaped {
+			escaped = true
+			sb.WriteRune(ch)
+			continue
+		}
+		if ch == '{' && !escaped {
+			inPlaceholder = true
+		}
+		if ch == '}' && inPlaceholder && !escaped {
+			inPlaceholder = false
+		}
+		if inPlaceholder {
+			sb.WriteRune(ch)
+		} else {
+			sb.WriteRune(unicode.ToLower(ch))
+		}
+		escaped = false
+	}
+	return sb.String()
 }
