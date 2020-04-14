@@ -132,43 +132,44 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// set the default index file for the try_files rewrites
 	indexFile := "index.php"
 
-	// fetch the current dispenser state so we can rewind it
-	// after having read the php_fastcgi-specific subdirectives
-	cursor, nesting := h.CurrentState()
+	// make a new dispenser from the remaining tokens so that we
+	// can reset the dispenser back to this point for the
+	// reverse_proxy unmarshaler to read from it as well
+	dispenser := h.NewFromNextSegment()
 
 	// read the subdirectives that we allow as overrides to
 	// the php_fastcgi shortcut
 	// NOTE: we delete the tokens as we go so that the reverse_proxy
 	// unmarshal doesn't see these subdirectives which it cannot handle
-	for h.Next() {
-		for h.NextBlock(0) {
-			switch h.Val() {
+	for dispenser.Next() {
+		for dispenser.NextBlock(0) {
+			switch dispenser.Val() {
 			case "root":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
+				if !dispenser.NextArg() {
+					return nil, dispenser.ArgErr()
 				}
-				fcgiTransport.Root = h.Val()
-				h.Delete()
-				h.Delete()
+				fcgiTransport.Root = dispenser.Val()
+				dispenser.Delete()
+				dispenser.Delete()
 
 			case "split":
-				extensions = h.RemainingArgs()
-				h.Delete()
+				extensions = dispenser.RemainingArgs()
+				dispenser.Delete()
 				for i := 0; i < len(extensions); i++ {
-					h.Delete()
+					dispenser.Delete()
 				}
 				if len(extensions) == 0 {
-					return nil, h.ArgErr()
+					return nil, dispenser.ArgErr()
 				}
 
 			case "env":
-				args := h.RemainingArgs()
-				h.Delete()
+				args := dispenser.RemainingArgs()
+				dispenser.Delete()
 				for i := 0; i < len(args); i++ {
-					h.Delete()
+					dispenser.Delete()
 				}
 				if len(args) != 2 {
-					return nil, h.ArgErr()
+					return nil, dispenser.ArgErr()
 				}
 				if fcgiTransport.EnvVars == nil {
 					fcgiTransport.EnvVars = make(map[string]string)
@@ -176,22 +177,22 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				fcgiTransport.EnvVars[args[0]] = args[1]
 
 			case "index":
-				args := h.RemainingArgs()
-				h.Delete()
+				args := dispenser.RemainingArgs()
+				dispenser.Delete()
 				for i := 0; i < len(args); i++ {
-					h.Delete()
+					dispenser.Delete()
 				}
 				if len(args) != 1 {
-					return nil, h.ArgErr()
+					return nil, dispenser.ArgErr()
 				}
 				indexFile = args[0]
 			}
 		}
 	}
 
-	// rewind to the dispenser state before having read the block
-	// so that the reverse_proxy unmarshaler can read it as well
-	h.Rewind(cursor, nesting)
+	// reset the dispenser after we're done so that the reverse_proxy
+	// unmarshaler can read it from the start
+	dispenser.Reset()
 
 	// set up a route list that we'll append to
 	routes := caddyhttp.RouteList{}
@@ -270,7 +271,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// using the reverse_proxy directive syntax
 	// TODO: this can overwrite our fcgiTransport that we encoded and
 	// set on the rpHandler... even with a non-fastcgi transport!
-	err = rpHandler.UnmarshalCaddyfile(h.Dispenser)
+	err = rpHandler.UnmarshalCaddyfile(dispenser)
 	if err != nil {
 		return nil, err
 	}

@@ -307,19 +307,6 @@ func (d *Dispenser) Reset() {
 	d.nesting = 0
 }
 
-// CurrentState returns a tuple of the current cursor
-// and nesting level of the dispense.
-func (d *Dispenser) CurrentState() (int, int) {
-	return d.cursor, d.nesting
-}
-
-// Rewind sets d's cursor and nesting level
-// to an arbitrary point.
-func (d *Dispenser) Rewind(cursor int, nesting int) {
-	d.cursor = cursor
-	d.nesting = nesting
-}
-
 // ArgErr returns an argument error, meaning that another
 // argument was expected but not found. In other words,
 // a line break or open curly brace was encountered instead of
