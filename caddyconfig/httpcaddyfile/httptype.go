@@ -964,7 +964,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		// handle more than one segment); otherwise, we'd overwrite other
 		// instances of the matcher in this set
 		tokensByMatcherName := make(map[string][]caddyfile.Token)
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
+		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 			matcherName := d.Val()
 			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
 		}
