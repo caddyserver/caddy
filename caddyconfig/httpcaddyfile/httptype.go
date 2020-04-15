@@ -284,39 +284,18 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		var val interface{}
 		var err error
 		disp := caddyfile.NewDispenser(segment)
-		switch dir {
-		case "debug":
-			val = true
-		case "http_port":
-			val, err = parseOptHTTPPort(disp)
-		case "https_port":
-			val, err = parseOptHTTPSPort(disp)
-		case "default_sni":
-			val, err = parseOptSingleString(disp)
-		case "order":
-			val, err = parseOptOrder(disp)
-		case "experimental_http3":
-			val, err = parseOptExperimentalHTTP3(disp)
-		case "storage":
-			val, err = parseOptStorage(disp)
-		case "acme_ca", "acme_dns", "acme_ca_root":
-			val, err = parseOptSingleString(disp)
-		case "email":
-			val, err = parseOptSingleString(disp)
-		case "admin":
-			val, err = parseOptAdmin(disp)
-		case "on_demand_tls":
-			val, err = parseOptOnDemand(disp)
-		case "local_certs":
-			val = true
-		case "key_type":
-			val, err = parseOptSingleString(disp)
-		default:
-			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
+
+		dirFunc, ok := registeredGlobalOptions[dir]
+		if !ok {
+			tkn := segment[0]
+			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, dir)
 		}
+
+		val, err = dirFunc(disp)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %v", dir, err)
+			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 		}
+
 		options[dir] = val
 	}
 
