@@ -93,7 +93,7 @@ We suggest reading [How to Report Bugs Effectively](http://www.chiark.greenend.o
 
 Please be kind. :smile: Remember that Caddy comes at no cost to you, and you're getting free support when we fix your issues. If we helped you, please consider helping someone else!
 
-#### Bug reporting requirements
+#### Bug reporting expectations
 
 Maintainers---or more generally, developers---need three things to act on bugs:
 
