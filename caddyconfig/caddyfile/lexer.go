@@ -74,6 +74,7 @@ func (l *lexer) load(input io.Reader) error {
 func (l *lexer) next() bool {
 	var val []rune
 	var comment, quoted, escaped bool
+	var spacePrior = true
 
 	makeToken := func() bool {
 		l.token.Text = string(val)
@@ -119,6 +120,7 @@ func (l *lexer) next() bool {
 		}
 
 		if unicode.IsSpace(ch) {
+			spacePrior = true
 			if ch == '\r' {
 				continue
 			}
@@ -138,9 +140,12 @@ func (l *lexer) next() bool {
 			continue
 		}
 
-		if ch == '#' {
+		if ch == '#' && spacePrior {
 			comment = true
 		}
+
+		spacePrior = false
+
 		if comment {
 			continue
 		}
