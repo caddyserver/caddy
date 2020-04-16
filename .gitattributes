@@ -1,0 +1,21 @@
+# shell scripts should not use tabs to indent!
+*.bash    text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.sh      text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+
+# files for systemd (shell-similar)
+*.path    text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.service text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.timer   text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+
+# go fmt will enforce this, but in case a user has not called "go fmt" allow GIT to catch this:
+*.go      text eol=lf core.whitespace whitespace=indent-with-non-tab,trailing-space,tabwidth=4
+go.mod    text eol=lf
+go.sum    text eol=lf
+
+*.txt     text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.tpl     text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.htm     text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.html    text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.md      text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+*.yml     text eol=lf core.whitespace whitespace=tab-in-indent,trailing-space,tabwidth=2
+.git*     text eol=auto core.whitespace whitespace=trailing-space
