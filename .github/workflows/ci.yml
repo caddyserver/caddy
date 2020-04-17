@@ -49,7 +49,7 @@ jobs:
     - name: Cache the build cache
       uses: actions/cache@v1
       with:
-        path: ~/.cache/go-build
+        path: ${{ env.GOCACHE }}
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
@@ -85,7 +85,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -trimpath -a -ldflags="-w -s" -v
+        go build -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v1
