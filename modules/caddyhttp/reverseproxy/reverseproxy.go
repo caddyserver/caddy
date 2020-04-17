@@ -74,11 +74,19 @@ type Handler struct {
 	// Upstreams is the list of backends to proxy to.
 	Upstreams UpstreamPool `json:"upstreams,omitempty"`
 
+	// Adjusts how often to flush the response buffer. A
+	// negative value disables response buffering.
 	// TODO: figure out good defaults and write docs for this
 	// (see https://github.com/caddyserver/caddy/issues/1460)
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
 
 	// Headers manipulates headers between Caddy and the backend.
+	// By default, all headers are passed-thru without changes,
+	// with the exceptions of special hop-by-hop headers.
+	//
+	// X-Forwarded-For and X-Forwarded-Proto are also set
+	// implicitly, but this may change in the future if the official
+	// standardized Forwarded header field gains more adoption.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
 	// If true, the entire request body will be read and buffered
@@ -422,6 +430,13 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		}
 		req.Header.Set("X-Forwarded-For", clientIP)
 	}
+
+	// set X-Forwarded-Proto; many backend apps expect this too
+	proto := "https"
+	if req.TLS == nil {
+		proto = "http"
+	}
+	req.Header.Set("X-Forwarded-Proto", proto)
 
 	return nil
 }
