@@ -174,9 +174,9 @@ Collaborators have push rights to the repository. We grant this permission after
 - The ends justify the means, if the means are good. A good tree won't produce bad fruit. But if we cut corners or are hasty in our process, the end result will not be good.
 
 
-## Coordinated Disclosure
+## Security Policy
 
-If you've found a security vulnerability, please email me, the author, directly: Matthew dot Holt at Gmail. I'll need enough information to verify the bug and make a patch. It will speed things up if you suggest a working patch. If your report is valid and a patch is released, we will not reveal your identity by default. If you wish to be credited, please give me the name to use. Thanks for responsibly helping Caddy&mdash;and thousands of websites&mdash;be more secure!
+If you think you've found a security vulnerability, please refer to our [Security Policy](https://github.com/caddyserver/caddy/security/policy) document.
 
 
 ## Thank you
