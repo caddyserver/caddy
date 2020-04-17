@@ -46,6 +46,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Cache the build cache
+      uses: actions/cache@v1
+      with:
+        path: ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
     # - name: Install test and coverage analysis tools
