@@ -92,6 +92,12 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
+			input: "# comment at beginning of file\n# comment at beginning of line\nhost:123",
+			expected: []Token{
+				{Line: 3, Text: "host:123"},
+			},
+		},
+		{
 			input: `a "quoted value" b
 					foobar`,
 			expected: []Token{
