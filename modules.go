@@ -65,7 +65,12 @@ type ModuleInfo struct {
 
 	// New returns a pointer to a new, empty
 	// instance of the module's type. This
-	// function must not have any side-effects.
+	// method must not have any side-effects,
+	// and no other initialization should
+	// occur within it. Any initialization
+	// of the returned value should be done
+	// in a Provision() method (see the
+	// Provisioner interface).
 	New func() Module
 }
 
