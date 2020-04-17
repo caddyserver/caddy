@@ -46,14 +46,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Cache the build cache
-      uses: actions/cache@v1
-      with:
-        path: ${{ env.GOCACHE }}
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
     # - name: Install test and coverage analysis tools
@@ -74,6 +66,15 @@ jobs:
         env
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "::set-output name=go_cache::$(go env GOCACHE)"
+
+    - name: Cache the build cache
+      uses: actions/cache@v1
+      with:
+        path: ${{ steps.vars.outputs.go_cache }}
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
 
     - name: Get dependencies
       run: |
