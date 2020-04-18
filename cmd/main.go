@@ -346,7 +346,7 @@ func loadEnvFromFile(envFile string) error {
 
 	for k, v := range envMap {
 		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("setting environment variables")
+			return fmt.Errorf("setting environment variables: %v", err)
 		}
 	}
 
