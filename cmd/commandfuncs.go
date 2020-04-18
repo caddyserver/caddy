@@ -147,9 +147,18 @@ func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")
+	runCmdLoadEnvfile := fl.String("envfile")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdWatchFlag := fl.Bool("watch")
 	runCmdPingbackFlag := fl.String("pingback")
+
+	// load all additional envs as soon as possible
+	if runCmdLoadEnvfile != "" {
+		if err := loadEnvFromFile(runCmdLoadEnvfile); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
 
 	// if we are supposed to print the environment, do that first
 	if runCmdPrintEnvFlag {
