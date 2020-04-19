@@ -18,8 +18,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"fmt"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -145,6 +145,11 @@ func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigVal
 		return nil, h.Errf("segment was not parsed as a subroute")
 	}
 
+	// make a matcher on the path and everything below it
+	pathMatcher := caddy.ModuleMap{
+		"path": h.JSON(caddyhttp.MatchPath{path + "*"}),
+	}
+
 	// build a rewrite handler to strip the path prefix
 	rewriteHandler := Rewrite{
 		StripPathPrefix: path,
@@ -153,18 +158,9 @@ func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigVal
 		HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(rewriteHandler, "handler", "rewrite", nil)},
 	}
 
-	fmt.Printf("%+v\n", handler)
-	fmt.Printf("%+v\n", subroute)
-
 	// prepend the route to the subroute
 	subroute.Routes = append([]caddyhttp.Route{route}, subroute.Routes...)
 
-	fmt.Printf("%+v\n", subroute)
-
-	return []httpcaddyfile.ConfigValue{
-		{
-			Class: "route",
-			Value: *subroute,
-		},
-	}, nil
+	// build and return a route from the subroute
+	return h.NewRoute(pathMatcher, subroute), nil
 }

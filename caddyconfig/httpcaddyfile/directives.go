@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -270,14 +269,11 @@ func ParseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var allResults []ConfigValue
 
 	for h.Next() {
-		fmt.Printf("Helper: %+v\n", h.Dispenser)
 		// slice the linear list of tokens into top-level segments
 		var segments []caddyfile.Segment
 		for nesting := h.Nesting(); h.NextBlock(nesting); {
 			segments = append(segments, h.NextSegment())
 		}
-
-		fmt.Printf("Segments: %+v\n", segments)
 
 		// copy existing matcher definitions so we can augment
 		// new ones that are defined only in this scope
