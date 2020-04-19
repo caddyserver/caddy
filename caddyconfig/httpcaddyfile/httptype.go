@@ -854,6 +854,8 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 			r.Value = route
 		}
 
+		fmt.Printf("Route: %T %+v\n", r.Value, r.Value)
+
 		switch route := r.Value.(type) {
 		case caddyhttp.Subroute:
 			// if a route-class config value is actually a Subroute handler

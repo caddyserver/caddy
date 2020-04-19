@@ -442,11 +442,11 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 }
 
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	return parseSegmentAsSubroute(h)
+	return ParseSegmentAsSubroute(h)
 }
 
 func parseHandleErrors(h Helper) ([]ConfigValue, error) {
-	subroute, err := parseSegmentAsSubroute(h)
+	subroute, err := ParseSegmentAsSubroute(h)
 	if err != nil {
 		return nil, err
 	}
