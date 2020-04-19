@@ -45,3 +45,58 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestHandlePathDirective(t *testing.T) {
+	caddytest.AssertAdapt(t, `
+	:80
+	handle_path /api/v1 {
+		respond "API v1"
+	}
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/api/v1*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "rewrite",
+													"strip_path_prefix": "/api/v1"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"body": "API v1",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
