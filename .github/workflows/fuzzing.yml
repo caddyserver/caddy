@@ -48,14 +48,12 @@ jobs:
 
         declare -A fuzzers_funcs=(\
           ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="FuzzParseAddress" \
-          ["./caddyconfig/caddyfile/parse_fuzz.go"]="FuzzParseCaddyfile" \
           ["./listeners_fuzz.go"]="FuzzParseNetworkAddress" \
           ["./replacer_fuzz.go"]="FuzzReplacer" \
         )
 
         declare -A fuzzers_targets=(\
           ["./caddyconfig/httpcaddyfile/addresses_fuzz.go"]="parse-address" \
-          ["./caddyconfig/caddyfile/parse_fuzz.go"]="parse-caddyfile" \
           ["./listeners_fuzz.go"]="parse-network-address" \
           ["./replacer_fuzz.go"]="replacer" \
         )
