@@ -213,8 +213,8 @@ func prependCaddyFilePath(rawConfig string) string {
 	return r
 }
 
-// creates a testing transport that forces call dialing connections to happen locally
-func createTestingTransport() *http.Transport {
+// CreateTestingTransport creates a testing transport that forces call dialing connections to happen locally
+func CreateTestingTransport() *http.Transport {
 
 	dialer := net.Dialer{
 		Timeout:   5 * time.Second,
@@ -241,6 +241,18 @@ func createTestingTransport() *http.Transport {
 	}
 }
 
+// ReadBody will correctly read the body as a string
+func ReadBody(t *testing.T, resp *http.Response) string {
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("unable to read the response body %s", err)
+	}
+
+	return string(body)
+}
+
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
 	err := initServer(t, rawConfig, configType)
@@ -249,41 +261,54 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 	}
 }
 
+// AssertResponseCode will execute the request and verify the status code, returns a response for additional assertions
+func AssertResponseCode(t *testing.T, req *http.Request, expectedStatusCode int) *http.Response {
+
+	client := &http.Client{
+		Transport: CreateTestingTransport(),
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to call server %s", err)
+	}
+
+	if expectedStatusCode != resp.StatusCode {
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.RequestURI, expectedStatusCode, resp.StatusCode)
+	}
+
+	return resp
+}
+
 // AssertGetResponse request a URI and assert the status code and the body contains a string
-func AssertGetResponse(t *testing.T, requestURI string, statusCode int, expectedBody string) (*http.Response, string) {
-	resp, body := AssertGetResponseBody(t, requestURI, statusCode)
+func AssertGetResponse(t *testing.T, requestURI string, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+
+	req, err := http.NewRequest("GET", requestURI, nil)
+	if err != nil {
+		t.Fatalf("unable to create request %s", err)
+	}
+
+	resp := AssertResponseCode(t, req, expectedStatusCode)
+	body := ReadBody(t, resp)
+
 	if !strings.Contains(body, expectedBody) {
 		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", requestURI, expectedBody, body)
 	}
+
 	return resp, body
 }
 
 // AssertGetResponseBody request a URI and assert the status code matches
 func AssertGetResponseBody(t *testing.T, requestURI string, expectedStatusCode int) (*http.Response, string) {
 
-	client := &http.Client{
-		Transport: createTestingTransport(),
-	}
-
-	resp, err := client.Get(requestURI)
+	req, err := http.NewRequest("GET", requestURI, nil)
 	if err != nil {
-		t.Errorf("failed to call server %s", err)
-		return nil, ""
+		t.Fatalf("unable to create request %s", err)
 	}
 
-	defer resp.Body.Close()
+	resp := AssertResponseCode(t, req, expectedStatusCode)
 
-	if expectedStatusCode != resp.StatusCode {
-		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Errorf("unable to read the response body %s", err)
-		return nil, ""
-	}
-
-	return resp, string(body)
+	return resp, ReadBody(t, resp)
 }
 
 // AssertRedirect makes a request and asserts the redirection happens
@@ -295,7 +320,7 @@ func AssertRedirect(t *testing.T, requestURI string, expectedToLocation string, 
 
 	client := &http.Client{
 		CheckRedirect: redirectPolicyFunc,
-		Transport:     createTestingTransport(),
+		Transport:     CreateTestingTransport(),
 	}
 
 	resp, err := client.Get(requestURI)
