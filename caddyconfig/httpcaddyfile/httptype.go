@@ -343,10 +343,25 @@ func (st *ServerType) serversFromPairings(
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
 	}
+	autoHTTPS := "on"
+	if ah, ok := options["auto_https"].(string); ok {
+		autoHTTPS = ah
+	}
 
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
+		}
+
+		// handle the auto_https global option
+		if autoHTTPS != "on" {
+			srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+			if autoHTTPS == "off" {
+				srv.AutoHTTPS.Disabled = true
+			}
+			if autoHTTPS == "disable_redirects" {
+				srv.AutoHTTPS.DisableRedir = true
+			}
 		}
 
 		// sort server blocks by their keys; this is important because
@@ -382,7 +397,7 @@ func (st *ServerType) serversFromPairings(
 		})
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
-		autoHTTPSWillAddConnPolicy := true
+		autoHTTPSWillAddConnPolicy := autoHTTPS != "off"
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
