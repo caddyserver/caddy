@@ -82,7 +82,6 @@ type responseRecorder struct {
 	shouldBuffer ShouldBufferFunc
 	stream       bool
 	size         int
-	header       http.Header
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be
@@ -122,44 +121,32 @@ type responseRecorder struct {
 //     }
 //     // process the buffered response here
 //
-// After a response has been buffered, remember that any upstream header
-// manipulations are only manifest in the recorder's Header(), not the
-// Header() of the underlying ResponseWriter. Thus if you wish to inspect
-// or change response headers, you either need to use rec.Header(), or
-// copy rec.Header() into w.Header() first (see caddyhttp.CopyHeader).
+// The header map is not buffered; i.e. the ResponseRecorder's Header()
+// method returns the same header map of the underlying ResponseWriter.
+// This is a crucial design decision to allow HTTP trailers to be
+// flushed properly (https://github.com/caddyserver/caddy/issues/3236).
 //
-// Once you are ready to write the response, there are two ways you can do
-// it. The easier way is to have the recorder do it:
+// Once you are ready to write the response, there are two ways you can
+// do it. The easier way is to have the recorder do it:
 //
 //     rec.WriteResponse()
 //
 // This writes the recorded response headers as well as the buffered body.
 // Or, you may wish to do it yourself, especially if you manipulated the
-// buffered body. First you will need to copy the recorded headers, then
-// write the headers with the recorded status code, then write the body
-// (this example writes the recorder's body buffer, but you might have
-// your own body to write instead):
+// buffered body. First you will need to write the headers with the
+// recorded status code, then write the body (this example writes the
+// recorder's body buffer, but you might have your own body to write
+// instead):
 //
-//     caddyhttp.CopyHeader(w.Header(), rec.Header())
 //     w.WriteHeader(rec.Status())
 //     io.Copy(w, rec.Buffer())
 //
 func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
-	// copy the current response header into this buffer so
-	// that any header manipulations on the buffered header
-	// are consistent with what would be written out
-	hdr := make(http.Header)
-	CopyHeader(hdr, w.Header())
 	return &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 		buf:                   buf,
 		shouldBuffer:          shouldBuffer,
-		header:                hdr,
 	}
-}
-
-func (rr *responseRecorder) Header() http.Header {
-	return rr.header
 }
 
 func (rr *responseRecorder) WriteHeader(statusCode int) {
@@ -173,12 +160,11 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.shouldBuffer == nil {
 		rr.stream = true
 	} else {
-		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.header)
+		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
 	}
 
 	// if not buffered, immediately write header
 	if rr.stream {
-		CopyHeader(rr.ResponseWriterWrapper.Header(), rr.header)
 		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	}
 }
@@ -224,7 +210,6 @@ func (rr *responseRecorder) WriteResponse() error {
 	if rr.stream {
 		return nil
 	}
-	CopyHeader(rr.ResponseWriterWrapper.Header(), rr.header)
 	if rr.statusCode == 0 {
 		// could happen if no handlers actually wrote anything,
 		// and this prevents a panic; status must be > 0
