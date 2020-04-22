@@ -27,6 +27,25 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
+// Tester represents an instance of a test client.
+type Tester struct {
+	Client *http.Client
+	t      *testing.T
+}
+
+// NewTester returns an instance of a test client.
+func NewTester(t *testing.T) *Tester {
+	return &Tester{
+		Client: &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+			Transport: createTestingTransport(),
+		},
+		t: t,
+	}
+}
+
 // Defaults store any configuration required to make the tests run
 type Defaults struct {
 	// Port we expect caddy to listening on
@@ -370,4 +389,76 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 		}
 		t.Fail()
 	}
+}
+
+// AssertPostResponse asserts whether POST request returns expected status code and body.
+func AssertPostResponse(t *testing.T, requestURI string, requestHeaders []string, requestBody *bytes.Buffer, statusCode int, expectedBody string) (*http.Response, string) {
+	tester := NewTester(t)
+	return tester.AssertPostResponse(requestURI, requestHeaders, requestBody, statusCode, expectedBody)
+}
+
+// AssertPostResponse asserts whether POST request returns expected status code and body.
+func (tc *Tester) AssertPostResponse(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, statusCode int, expectedBody string) (*http.Response, string) {
+	resp, body := AssertPostResponseBody(tc, requestURI, requestHeaders, requestBody, statusCode)
+	if !strings.Contains(body, expectedBody) {
+		tc.t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", requestURI, expectedBody, body)
+	}
+	return resp, body
+}
+
+// AssertPostResponseBody performs http call to assert whether POST request returns expected status code and body.
+func AssertPostResponseBody(tc *Tester, requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int) (*http.Response, string) {
+
+	client := tc.Client
+	t := tc.t
+
+	requestMethod := "POST"
+
+	t.Logf("%s Request URI %s", requestMethod, requestURI)
+	req, err := http.NewRequest(requestMethod, requestURI, requestBody)
+	if err != nil {
+		t.Errorf("failed to create request %s", err)
+		return nil, ""
+	}
+
+	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	requestContentType := ""
+	for _, requestHeader := range requestHeaders {
+		arr := strings.SplitAfterN(requestHeader, ":", 2)
+		k := strings.TrimRight(arr[0], ":")
+		v := strings.TrimSpace(arr[1])
+		if k == "Content-Type" {
+			requestContentType = v
+		}
+		t.Logf("Request header: %s => %s", k, v)
+		req.Header.Set(k, v)
+	}
+
+	if requestContentType == "" {
+		t.Errorf("Content-Type header not provided")
+		return nil, ""
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("failed to call server %s", err)
+		return nil, ""
+	}
+
+	defer resp.Body.Close()
+
+	if expectedStatusCode != resp.StatusCode {
+		t.Errorf("requesting \"%s\" expected status code: %d but got %d", requestURI, expectedStatusCode, resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Errorf("unable to read the response body %s", err)
+		return nil, ""
+	}
+
+	return resp, string(body)
 }
