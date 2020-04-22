@@ -51,8 +51,6 @@ nfpms:
     package_name: caddy
 
     # file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
-    replacements:
-      darwin: mac
 
     vendor: Light Code Labs
     homepage: https://caddyserver.com

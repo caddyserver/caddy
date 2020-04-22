@@ -43,7 +43,9 @@ jobs:
     # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Get the version
       id: get_version
-      run: echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
+      run: |
+        echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
+        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
@@ -55,3 +57,10 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: v2.0.0-rc.3
         # TAG: ${{ steps.get_version.outputs.version_tag }}
+
+    - name: Publish Build Artifact
+      uses: actions/upload-artifact@v2-preview
+      with:
+        name: caddy_v2_${{ steps.get_version.outputs.short_sha }}
+        path: dist/caddy*.deb
+        # path: dist/caddy_v2.0.0-rc.3-SNAPSHOT-${{ steps.vars.outputs.short_sha }}_linux_amd64.deb
