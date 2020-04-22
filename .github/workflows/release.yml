@@ -30,6 +30,7 @@ jobs:
     - name: Unshallowify the repo clone
       run: git fetch --prune --unshallow
 
+    # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Print Go version and environment
       id: vars
       run: |
@@ -39,11 +40,6 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-    
-    # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
-    - name: Get the version
-      id: vars
-      run: |
         echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
         echo "::set-output name=go_cache::$(go env GOCACHE)"
