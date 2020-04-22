@@ -46,7 +46,7 @@ archives:
 checksum:
   algorithm: sha512
 
-nfpm:
+nfpms:
   - id: default
     package_name: caddy
 
