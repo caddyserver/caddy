@@ -153,6 +153,7 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 			template.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
 		}
 		template.DNSProvider = m.Challenges.DNS
+		template.ListenHost = m.Challenges.BindHost
 	}
 
 	return template, nil

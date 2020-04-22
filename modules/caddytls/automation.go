@@ -53,7 +53,8 @@ type AutomationConfig struct {
 	// a low value.
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
-	defaultAutomationPolicy *AutomationPolicy
+	defaultPublicAutomationPolicy   *AutomationPolicy
+	defaultInternalAutomationPolicy *AutomationPolicy // only initialized if necessary
 }
 
 // AutomationPolicy designates the policy for automating the
@@ -67,7 +68,8 @@ type AutomationPolicy struct {
 	// Which subjects (hostnames or IP addresses) this policy applies to.
 	Subjects []string `json:"subjects,omitempty"`
 
-	// The module that will issue certificates. Default: acme
+	// The module that will issue certificates. Default: internal if all
+	// subjects do not qualify for public certificates; othewise acme.
 	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
 	// If true, certificates will be requested with MustStaple. Not all
@@ -148,7 +150,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// none of the subjects qualify for a public certificate,
 	// set the issuer to internal so that these names can all
 	// get certificates; critically, we can only do this if an
-	// issuer is not explictly configured (IssuerRaw, vs. just
+	// issuer is not explicitly configured (IssuerRaw, vs. just
 	// Issuer) AND if the list of subjects is non-empty
 	if ap.IssuerRaw == nil && len(ap.Subjects) > 0 {
 		var anyPublic bool
@@ -238,6 +240,10 @@ type ChallengesConfig struct {
 	// type which does not require a direct connection
 	// to Caddy from an external server.
 	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=tls.dns inline_key=provider"`
+
+	// Optionally customize the host to which a listener
+	// is bound if required for solving a challenge.
+	BindHost string `json:"bind_host,omitempty"`
 
 	DNS challenge.Provider `json:"-"`
 }

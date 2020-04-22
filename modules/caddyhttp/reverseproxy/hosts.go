@@ -138,7 +138,7 @@ func (u *Upstream) Full() bool {
 // field is used. Note that the returned value is not a pointer.
 func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	var addr caddy.ParsedAddress
+	var addr caddy.NetworkAddress
 
 	if u.LookupSRV != "" {
 		// perform DNS lookup for SRV records and choose one

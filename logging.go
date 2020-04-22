@@ -217,7 +217,7 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 
 	multiCore := zapcore.NewTee(cores...)
 
-	return zap.New(multiCore).Named(string(modID))
+	return zap.New(multiCore).Named(modID)
 }
 
 // openWriter opens a writer using opener, and returns true if
@@ -396,17 +396,6 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		}
 	}
 
-	if cl.EncoderRaw != nil {
-		mod, err := ctx.LoadModule(cl, "EncoderRaw")
-		if err != nil {
-			return fmt.Errorf("loading log encoder module: %v", err)
-		}
-		cl.encoder = mod.(zapcore.Encoder)
-	}
-	if cl.encoder == nil {
-		cl.encoder = newDefaultProductionLogEncoder()
-	}
-
 	if cl.WriterRaw != nil {
 		mod, err := ctx.LoadModule(cl, "WriterRaw")
 		if err != nil {
@@ -421,6 +410,24 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 	cl.writer, _, err = logging.openWriter(cl.writerOpener)
 	if err != nil {
 		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
+	}
+
+	if cl.EncoderRaw != nil {
+		mod, err := ctx.LoadModule(cl, "EncoderRaw")
+		if err != nil {
+			return fmt.Errorf("loading log encoder module: %v", err)
+		}
+		cl.encoder = mod.(zapcore.Encoder)
+	}
+	if cl.encoder == nil {
+		// only allow colorized output if this log is going to stdout or stderr
+		var colorize bool
+		switch cl.writerOpener.(type) {
+		case StdoutWriter, StderrWriter,
+			*StdoutWriter, *StderrWriter:
+			colorize = true
+		}
+		cl.encoder = newDefaultProductionLogEncoder(colorize)
 	}
 
 	cl.buildCore()
@@ -458,7 +465,7 @@ func (cl *CustomLog) buildCore() {
 }
 
 func (cl *CustomLog) matchesModule(moduleID string) bool {
-	return cl.loggerAllowed(string(moduleID), true)
+	return cl.loggerAllowed(moduleID, true)
 }
 
 // loggerAllowed returns true if name is allowed to emit
@@ -650,7 +657,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	cl.encoder = newDefaultProductionLogEncoder()
+	cl.encoder = newDefaultProductionLogEncoder(true)
 	cl.levelEnabler = zapcore.InfoLevel
 
 	cl.buildCore()
@@ -661,14 +668,16 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	}, nil
 }
 
-func newDefaultProductionLogEncoder() zapcore.Encoder {
+func newDefaultProductionLogEncoder(colorize bool) zapcore.Encoder {
 	encCfg := zap.NewProductionEncoderConfig()
 	if terminal.IsTerminal(int(os.Stdout.Fd())) {
 		// if interactive terminal, make output more human-readable by default
 		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 			encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
 		}
-		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		if colorize {
+			encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		}
 		return zapcore.NewConsoleEncoder(encCfg)
 	}
 	return zapcore.NewJSONEncoder(encCfg)

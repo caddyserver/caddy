@@ -50,7 +50,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	// chosen to handle a request - we actually will make each
 	// server block's route terminal so that only one will run
 	sbKeys := make(map[string]struct{})
-	var serverBlocks []serverBlock
+	serverBlocks := make([]serverBlock, 0, len(originalServerBlocks))
 	for i, sblock := range originalServerBlocks {
 		for j, k := range sblock.Keys {
 			if _, ok := sbKeys[k]; ok {
@@ -252,18 +252,6 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 	}
-	if len(customLogs) > 0 {
-		if cfg.Logging == nil {
-			cfg.Logging = &caddy.Logging{
-				Logs: make(map[string]*caddy.CustomLog),
-			}
-		}
-		for _, ncl := range customLogs {
-			if ncl.name != "" {
-				cfg.Logging.Logs[ncl.name] = ncl.log
-			}
-		}
-	}
 
 	return cfg, warnings, nil
 }
@@ -307,6 +295,8 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			val, err = parseOptOnDemand(disp)
 		case "local_certs":
 			val = true
+		case "key_type":
+			val, err = parseOptSingleString(disp)
 		default:
 			return nil, fmt.Errorf("unrecognized parameter name: %s", dir)
 		}
@@ -329,6 +319,11 @@ func (st *ServerType) serversFromPairings(
 ) (map[string]*caddyhttp.Server, error) {
 	servers := make(map[string]*caddyhttp.Server)
 	defaultSNI := tryString(options["default_sni"], warnings)
+
+	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
+	if hp, ok := options["http_port"].(int); ok {
+		httpPort = strconv.Itoa(hp)
+	}
 
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
@@ -367,7 +362,7 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
-		var hasCatchAllTLSConnPolicy bool
+		var hasCatchAllTLSConnPolicy, usesTLS bool
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
@@ -376,7 +371,7 @@ func (st *ServerType) serversFromPairings(
 				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
 			}
 
-			hosts := sblock.hostsFromKeys(false, false)
+			hosts := sblock.hostsFromKeys(false)
 
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
@@ -417,6 +412,9 @@ func (st *ServerType) serversFromPairings(
 						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
+				if addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort {
+					usesTLS = true
+				}
 			}
 
 			// set up each handler directive, making sure to honor directive order
@@ -448,9 +446,13 @@ func (st *ServerType) serversFromPairings(
 						LoggerNames: make(map[string]string),
 					}
 				}
-				for _, h := range sblock.hostsFromKeys(true, true) {
-					if ncl.name != "" {
-						srv.Logs.LoggerNames[h] = ncl.name
+				if sblock.hasHostCatchAllKey() {
+					srv.Logs.LoggerName = ncl.name
+				} else {
+					for _, h := range sblock.hostsFromKeys(true) {
+						if ncl.name != "" {
+							srv.Logs.LoggerNames[h] = ncl.name
+						}
 					}
 				}
 			}
@@ -475,7 +477,9 @@ func (st *ServerType) serversFromPairings(
 		// TODO: maybe a smarter way to handle this might be to just make the
 		// auto-HTTPS logic at provision-time detect if there is any connection
 		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
-		if !hasCatchAllTLSConnPolicy && (len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
+		if usesTLS &&
+			!hasCatchAllTLSConnPolicy &&
+			(len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
@@ -553,18 +557,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 // consolidateConnPolicies removes empty TLS connection policies and combines
 // equivalent ones for a cleaner overall output.
 func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
-	empty := new(caddytls.ConnectionPolicy)
-
 	for i := 0; i < len(cps); i++ {
-		// if the connection policy is empty or has
-		// only matchers, we can remove it entirely
-		empty.MatchersRaw = cps[i].MatchersRaw
-		if reflect.DeepEqual(empty, cps[i]) {
-			cps = append(cps[:i], cps[i+1:]...)
-			i--
-			continue
-		}
-
 		// compare it to the others
 		for j := 0; j < len(cps); j++ {
 			if j == i {
@@ -933,7 +926,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	}
 
 	// finally, encode each of the matcher sets
-	var matcherSetsEnc []caddy.ModuleMap
+	matcherSetsEnc := make([]caddy.ModuleMap, 0, len(matcherSets))
 	for _, ms := range matcherSets {
 		msEncoded, err := encodeMatcherSet(ms)
 		if err != nil {

@@ -114,6 +114,20 @@ type (
 	// true, the final result of the "not" matcher is false. Individual
 	// matchers within a set work the same (i.e. different matchers in
 	// the same set are AND'ed).
+	//
+	// Note that the generated docs which describe the structure of
+	// this module are wrong because of how this type unmarshals JSON
+	// in a custom way. The correct structure is:
+	//
+	// ```json
+	// [
+	// 	{},
+	// 	{}
+	// ]
+	// ```
+	//
+	// where each of the array elements is a matcher set, i.e. an
+	// object keyed by matcher name.
 	MatchNot struct {
 		MatcherSetsRaw []caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
 		MatcherSets    []MatcherSet      `json:"-"`
@@ -145,6 +159,9 @@ func (MatchHost) CaddyModule() caddy.ModuleInfo {
 func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
+		if d.NextBlock(0) {
+			return d.Err("malformed host matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -271,6 +288,9 @@ func (m MatchPath) Match(r *http.Request) bool {
 func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
+		if d.NextBlock(0) {
+			return d.Err("malformed path matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -301,6 +321,9 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
+		if d.NextBlock(0) {
+			return d.Err("malformed method matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -339,6 +362,9 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
 		}
 		url.Values(*m).Set(parts[0], parts[1])
+		if d.NextBlock(0) {
+			return d.Err("malformed query matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -374,9 +400,12 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		var field, val string
 		if !d.Args(&field, &val) {
-			return d.Errf("expected both field and value")
+			return d.Errf("malformed header matcher: expected both field and value")
 		}
 		http.Header(*m).Set(field, val)
+		if d.NextBlock(0) {
+			return d.Err("malformed header matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -461,6 +490,10 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
+
+		if d.NextBlock(0) {
+			return d.Err("malformed header_regexp matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -559,7 +592,7 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		var mp matcherPair
 		matcherMap := make(map[string]RequestMatcher)
-		for d.NextBlock(0) {
+		for d.NextArg() || d.NextBlock(0) {
 			matcherName := d.Val()
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
@@ -646,6 +679,9 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		m.Ranges = append(m.Ranges, d.RemainingArgs()...)
+		if d.NextBlock(0) {
+			return d.Err("malformed remote_ip matcher: blocks are not supported")
+		}
 	}
 	return nil
 }
@@ -795,6 +831,9 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			mre.Pattern = args[1]
 		default:
 			return d.ArgErr()
+		}
+		if d.NextBlock(0) {
+			return d.Err("malformed path_regexp matcher: blocks are not supported")
 		}
 	}
 	return nil

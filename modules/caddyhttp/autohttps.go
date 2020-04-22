@@ -82,7 +82,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 	// this maps domain names for automatic HTTP->HTTPS
 	// redirects to their destination server address
-	redirDomains := make(map[string]caddy.ParsedAddress)
+	redirDomains := make(map[string]caddy.NetworkAddress)
 
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
@@ -339,7 +339,7 @@ uniqueDomainsLoop:
 		}
 		redirTo += "{http.request.uri}"
 		routes = append(routes, Route{
-			MatcherSets: []MatcherSet{MatcherSet{MatchProtocol("http")}},
+			MatcherSets: []MatcherSet{{MatchProtocol("http")}},
 			Handlers: []MiddlewareHandler{
 				StaticResponse{
 					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),

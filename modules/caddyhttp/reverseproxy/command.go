@@ -121,7 +121,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	urlHost := fromURL.Hostname()
 	if urlHost != "" {
 		route.MatcherSetsRaw = []caddy.ModuleMap{
-			caddy.ModuleMap{
+			{
 				"host": caddyconfig.JSON(caddyhttp.MatchHost{urlHost}, nil),
 			},
 		}

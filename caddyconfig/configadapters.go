@@ -101,13 +101,14 @@ func JSONIndent(val interface{}) ([]byte, error) {
 }
 
 // RegisterAdapter registers a config adapter with the given name.
-// This should usually be done at init-time.
-func RegisterAdapter(name string, adapter Adapter) error {
+// This should usually be done at init-time. It panics if the
+// adapter cannot be registered successfully.
+func RegisterAdapter(name string, adapter Adapter) {
 	if _, ok := configAdapters[name]; ok {
-		return fmt.Errorf("%s: already registered", name)
+		panic(fmt.Errorf("%s: already registered", name))
 	}
 	configAdapters[name] = adapter
-	return caddy.RegisterModule(adapterModule{name, adapter})
+	caddy.RegisterModule(adapterModule{name, adapter})
 }
 
 // GetAdapter returns the adapter with the given name,

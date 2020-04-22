@@ -31,7 +31,6 @@ package templates
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -48,7 +47,7 @@ func TestMarkdown(t *testing.T) {
 
 	for i, test := range []struct {
 		body   string
-		expect template.HTML
+		expect string
 	}{
 		{
 			body:   "- str1\n- str2\n",

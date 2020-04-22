@@ -393,23 +393,30 @@ type serverBlock struct {
 }
 
 // hostsFromKeys returns a list of all the non-empty hostnames found in
-// the keys of the server block sb, unless allowEmpty is true, in which
-// case a key with no host (e.g. ":443") will be added to the list as an
-// empty string. Otherwise, if allowEmpty is false, and if sb has a key
-// that omits the hostname (i.e. is a catch-all/empty host), then the returned
-// list is empty, because the server block effectively matches ALL hosts.
-// The list may not be in a consistent order. If includePorts is true, then
-// any non-empty, non-standard ports will be included.
-func (sb serverBlock) hostsFromKeys(allowEmpty, includePorts bool) []string {
-	// first get each unique hostname
+// the keys of the server block sb. If logger mode is false, a key with
+// an empty hostname portion will return an empty slice, since that
+// server block is interpreted to effectively match all hosts. An empty
+// string is never added to the slice.
+//
+// If loggerMode is true, then the non-standard ports of keys will be
+// joined to the hostnames. This is to effectively match the Host
+// header of requests that come in for that key.
+//
+// The resulting slice is not sorted but will never have duplicates.
+func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
+	// ensure each entry in our list is unique
 	hostMap := make(map[string]struct{})
 	for _, addr := range sb.keys {
-		if addr.Host == "" && !allowEmpty {
-			// server block contains a key like ":443", i.e. the host portion
-			// is empty / catch-all, which means to match all hosts
-			return []string{}
+		if addr.Host == "" {
+			if !loggerMode {
+				// server block contains a key like ":443", i.e. the host portion
+				// is empty / catch-all, which means to match all hosts
+				return []string{}
+			}
+			// never append an empty string
+			continue
 		}
-		if includePorts &&
+		if loggerMode &&
 			addr.Port != "" &&
 			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPPort) &&
 			addr.Port != strconv.Itoa(caddyhttp.DefaultHTTPSPort) {
@@ -426,6 +433,17 @@ func (sb serverBlock) hostsFromKeys(allowEmpty, includePorts bool) []string {
 	}
 
 	return sblockHosts
+}
+
+// hasHostCatchAllKey returns true if sb has a key that
+// omits a host portion, i.e. it "catches all" hosts.
+func (sb serverBlock) hasHostCatchAllKey() bool {
+	for _, addr := range sb.keys {
+		if addr.Host == "" {
+			return true
+		}
+	}
+	return false
 }
 
 type (

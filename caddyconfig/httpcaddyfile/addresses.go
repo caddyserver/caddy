@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -138,7 +139,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
 func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]serverBlock) []sbAddrAssociation {
-	var sbaddrs []sbAddrAssociation
+	sbaddrs := make([]sbAddrAssociation, 0, len(addrToServerBlocks))
 	for addr, sblocks := range addrToServerBlocks {
 		// we start with knowing that at least this address
 		// maps to these server blocks
@@ -199,7 +200,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// the bind directive specifies hosts, but is optional
-	var lnHosts []string
+	lnHosts := make([]string, 0, len(sblock.pile))
 	for _, cfgVal := range sblock.pile["bind"] {
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
@@ -219,7 +220,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// now turn map into list
-	var listenersList []string
+	listenersList := make([]string, 0, len(listeners))
 	for lnStr := range listeners {
 		listenersList = append(listenersList, lnStr)
 	}
@@ -333,8 +334,8 @@ func (a Address) Normalize() Address {
 
 	return Address{
 		Original: a.Original,
-		Scheme:   strings.ToLower(a.Scheme),
-		Host:     strings.ToLower(host),
+		Scheme:   lowerExceptPlaceholders(a.Scheme),
+		Host:     lowerExceptPlaceholders(host),
 		Port:     a.Port,
 		Path:     path,
 	}
@@ -360,4 +361,32 @@ func (a Address) Key() string {
 		res += a.Path
 	}
 	return res
+}
+
+// lowerExceptPlaceholders lowercases s except within
+// placeholders (substrings in non-escaped '{ }' spans).
+// See https://github.com/caddyserver/caddy/issues/3264
+func lowerExceptPlaceholders(s string) string {
+	var sb strings.Builder
+	var escaped, inPlaceholder bool
+	for _, ch := range s {
+		if ch == '\\' && !escaped {
+			escaped = true
+			sb.WriteRune(ch)
+			continue
+		}
+		if ch == '{' && !escaped {
+			inPlaceholder = true
+		}
+		if ch == '}' && inPlaceholder && !escaped {
+			inPlaceholder = false
+		}
+		if inPlaceholder {
+			sb.WriteRune(ch)
+		} else {
+			sb.WriteRune(unicode.ToLower(ch))
+		}
+		escaped = false
+	}
+	return sb.String()
 }

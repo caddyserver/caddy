@@ -146,7 +146,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 	// if there are query strings in the list, we have to split into
 	// a separate route for each item with a query string, because
 	// the rewrite is different for that item
-	var try []string
+	try := make([]string, 0, len(tryFiles))
 	for _, item := range tryFiles {
 		if idx := strings.Index(item, "?"); idx >= 0 {
 			if len(try) > 0 {

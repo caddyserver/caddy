@@ -6,7 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
-func TestServerType(t *testing.T) {
+func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
 		input       string
 		expectWarn  bool
@@ -15,7 +15,7 @@ func TestServerType(t *testing.T) {
 		{
 			input: `http://localhost
 			@debug {
-			  query showdebug=1
+				query showdebug=1
 			}
 			`,
 			expectWarn:  false,
@@ -24,11 +24,31 @@ func TestServerType(t *testing.T) {
 		{
 			input: `http://localhost
 			@debug {
-			  query bad format
+				query bad format
 			}
 			`,
 			expectWarn:  false,
 			expectError: true,
+		},
+		{
+			input: `http://localhost
+			@debug {
+				not {
+					path /somepath*
+				}
+			}
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `http://localhost
+			@debug {
+				not path /somepath*
+			}
+			`,
+			expectWarn:  false,
+			expectError: false,
 		},
 	} {
 

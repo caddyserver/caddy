@@ -17,14 +17,15 @@ package templates
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
@@ -57,7 +58,7 @@ func (c templateContext) OriginalReq() http.Request {
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
-func (c templateContext) funcInclude(filename string, args ...interface{}) (template.HTML, error) {
+func (c templateContext) funcInclude(filename string, args ...interface{}) (string, error) {
 	if c.Root == nil {
 		return "", fmt.Errorf("root file system not specified")
 	}
@@ -84,14 +85,14 @@ func (c templateContext) funcInclude(filename string, args ...interface{}) (temp
 		return "", err
 	}
 
-	return template.HTML(bodyBuf.String()), nil
+	return bodyBuf.String(), nil
 }
 
 // funcHTTPInclude returns the body of a virtual (lightweight) request
 // to the given URI on the same server. Note that included bodies
 // are NOT escaped, so you should only include trusted resources.
 // If it is not trusted, be sure to use escaping functions yourself.
-func (c templateContext) funcHTTPInclude(uri string) (template.HTML, error) {
+func (c templateContext) funcHTTPInclude(uri string) (string, error) {
 	// prevent virtual request loops by counting how many levels
 	// deep we are; and if we get too deep, return an error
 	recursionCount := 1
@@ -132,7 +133,7 @@ func (c templateContext) funcHTTPInclude(uri string) (template.HTML, error) {
 		return "", err
 	}
 
-	return template.HTML(buf.String()), nil
+	return buf.String(), nil
 }
 
 func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
@@ -150,6 +151,7 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
+		"env":              c.funcEnv,
 	})
 
 	parsedTpl, err := tpl.Parse(buf.String())
@@ -160,6 +162,10 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	buf.Reset() // reuse buffer for output
 
 	return parsedTpl.Execute(buf, c)
+}
+
+func (templateContext) funcEnv(varName string) string {
+	return os.Getenv(varName)
 }
 
 // Cookie gets the value of a cookie with name name.
@@ -198,7 +204,7 @@ func (c templateContext) Host() (string, error) {
 
 // funcStripHTML returns s without HTML tags. It is fairly naive
 // but works with most valid HTML inputs.
-func (c templateContext) funcStripHTML(s string) string {
+func (templateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
 	var inTag, inQuotes bool
 	var tagStart int
@@ -231,7 +237,7 @@ func (c templateContext) funcStripHTML(s string) string {
 
 // funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
-func (c templateContext) funcMarkdown(input interface{}) (template.HTML, error) {
+func (templateContext) funcMarkdown(input interface{}) (string, error) {
 	inputStr := toString(input)
 
 	md := goldmark.New(
@@ -259,13 +265,13 @@ func (c templateContext) funcMarkdown(input interface{}) (template.HTML, error) 
 
 	md.Convert([]byte(inputStr), buf)
 
-	return template.HTML(buf.String()), nil
+	return buf.String(), nil
 }
 
 // splitFrontMatter parses front matter out from the beginning of input,
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
-func (c templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
+func (templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
 	meta, body, err := extractFrontMatter(toString(input))
 	if err != nil {
 		return parsedMarkdownDoc{}, err
@@ -338,14 +344,12 @@ func toString(input interface{}) string {
 	switch v := input.(type) {
 	case string:
 		return v
-	case template.HTML:
-		return string(v)
 	case fmt.Stringer:
 		return v.String()
 	case error:
 		return v.Error()
 	default:
-		return fmt.Sprintf("%s", input)
+		return fmt.Sprintf("%v", input)
 	}
 }
 
@@ -357,6 +361,6 @@ var bufPool = sync.Pool{
 
 // at time of writing, sprig.FuncMap() makes a copy, thus
 // involves iterating the whole map, so do it just once
-var sprigFuncMap = sprig.FuncMap()
+var sprigFuncMap = sprig.TxtFuncMap()
 
 const recursionPreventionHeader = "Caddy-Templates-Include"

@@ -551,26 +551,20 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	// verify transport configuration, and finally encode it
 	if transport != nil {
-		// TODO: these two cases are identical, but I don't know how to reuse the code
-		switch ht := transport.(type) {
-		case *HTTPTransport:
-			if commonScheme == "https" && ht.TLS == nil {
-				ht.TLS = new(TLSConfig)
+		if te, ok := transport.(TLSTransport); ok {
+			if commonScheme == "https" && !te.TLSEnabled() {
+				err := te.EnableTLS(new(TLSConfig))
+				if err != nil {
+					return err
+				}
 			}
-			if ht.TLS != nil && commonScheme == "http" {
+			if commonScheme == "http" && te.TLSEnabled() {
 				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
 			}
-
-		case *NTLMTransport:
-			if commonScheme == "https" && ht.TLS == nil {
-				ht.TLS = new(TLSConfig)
-			}
-			if ht.TLS != nil && commonScheme == "http" {
-				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
-			}
+		} else if commonScheme == "https" {
+			return d.Errf("upstreams are configured for HTTPS but transport module does not support TLS: %T", transport)
 		}
-
-		if !reflect.DeepEqual(transport, new(HTTPTransport)) {
+		if !reflect.DeepEqual(transport, reflect.New(reflect.TypeOf(transport).Elem()).Interface()) {
 			h.TransportRaw = caddyconfig.JSONModuleObject(transport, "protocol", transportModuleName, nil)
 		}
 	}

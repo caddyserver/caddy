@@ -32,10 +32,7 @@ import (
 )
 
 func init() {
-	err := caddy.RegisterModule(App{})
-	if err != nil {
-		caddy.Log().Fatal(err.Error())
-	}
+	caddy.RegisterModule(App{})
 }
 
 // App is a robust, production-ready HTTP server.

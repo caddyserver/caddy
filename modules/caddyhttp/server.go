@@ -35,7 +35,9 @@ import (
 type Server struct {
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
-	// that may include port ranges.
+	// that may include port ranges. Listener addresses must
+	// be unique; they cannot be repeated across all defined
+	// servers.
 	Listen []string `json:"listen,omitempty"`
 
 	// A list of listener wrapper modules, which can modify the behavior
@@ -180,13 +182,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.response.latency", latency)
 
 			logger := accLog
-			if s.Logs != nil && s.Logs.LoggerNames != nil {
-				if loggerName, ok := s.Logs.LoggerNames[r.Host]; ok {
-					logger = logger.Named(loggerName)
-				} else {
-					// see if there's a default log name to attach to
-					logger = logger.Named(s.Logs.LoggerNames[""])
-				}
+			if s.Logs != nil {
+				logger = s.Logs.wrapLogger(logger, r.Host)
 			}
 
 			log := logger.Info
@@ -215,8 +212,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// prepare the error log
 		logger := errLog
-		if s.Logs != nil && s.Logs.LoggerNames != nil {
-			logger = logger.Named(s.Logs.LoggerNames[r.Host])
+		if s.Logs != nil {
+			logger = s.Logs.wrapLogger(logger, r.Host)
 		}
 
 		// get the values that will be used to log the error
@@ -382,11 +379,30 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 
 // ServerLogConfig describes a server's logging configuration.
 type ServerLogConfig struct {
+	// The logger name for all logs emitted by this server unless
+	// the hostname is found in the LoggerNames (logger_names) map.
+	LoggerName string `json:"log_name,omitempty"`
+
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+}
+
+// wrapLogger wraps logger in a logger named according to user preferences for the given host.
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
+	if loggerName := slc.getLoggerName(host); loggerName != "" {
+		return logger.Named(loggerName)
+	}
+	return logger
+}
+
+func (slc ServerLogConfig) getLoggerName(host string) string {
+	if loggerName, ok := slc.LoggerNames[host]; ok {
+		return loggerName
+	}
+	return slc.LoggerName
 }
 
 // errLogValues inspects err and returns the status code
@@ -443,7 +459,7 @@ func cloneURL(from, to *url.URL) {
 
 const (
 	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
+	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
 
 	// commonLogEmptyValue is the common empty log value.
 	commonLogEmptyValue = "-"

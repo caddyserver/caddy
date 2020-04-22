@@ -54,7 +54,7 @@ type CertKeyPEMPair struct {
 
 // LoadCertificates returns the certificates contained in pl.
 func (pl PEMLoader) LoadCertificates() ([]Certificate, error) {
-	var certs []Certificate
+	certs := make([]Certificate, 0, len(pl))
 	for i, pair := range pl {
 		cert, err := tls.X509KeyPair([]byte(pair.CertificatePEM), []byte(pair.KeyPEM))
 		if err != nil {

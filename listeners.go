@@ -254,49 +254,76 @@ type globalListener struct {
 	pc         net.PacketConn
 }
 
-// ParsedAddress contains the individual components
+// NetworkAddress contains the individual components
 // for a parsed network address of the form accepted
 // by ParseNetworkAddress(). Network should be a
 // network value accepted by Go's net package. Port
 // ranges are given by [StartPort, EndPort].
-type ParsedAddress struct {
+type NetworkAddress struct {
 	Network   string
 	Host      string
 	StartPort uint
 	EndPort   uint
 }
 
-// IsUnixNetwork returns true if pa.Network is
+// IsUnixNetwork returns true if na.Network is
 // unix, unixgram, or unixpacket.
-func (pa ParsedAddress) IsUnixNetwork() bool {
-	return isUnixNetwork(pa.Network)
+func (na NetworkAddress) IsUnixNetwork() bool {
+	return isUnixNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
-func (pa ParsedAddress) JoinHostPort(offset uint) string {
-	if pa.IsUnixNetwork() {
-		return pa.Host
+func (na NetworkAddress) JoinHostPort(offset uint) string {
+	if na.IsUnixNetwork() {
+		return na.Host
 	}
-	return net.JoinHostPort(pa.Host, strconv.Itoa(int(pa.StartPort+offset)))
+	return net.JoinHostPort(na.Host, strconv.Itoa(int(na.StartPort+offset)))
 }
 
 // PortRangeSize returns how many ports are in
 // pa's port range. Port ranges are inclusive,
 // so the size is the difference of start and
 // end ports plus one.
-func (pa ParsedAddress) PortRangeSize() uint {
-	return (pa.EndPort - pa.StartPort) + 1
+func (na NetworkAddress) PortRangeSize() uint {
+	return (na.EndPort - na.StartPort) + 1
+}
+
+func (na NetworkAddress) isLoopback() bool {
+	if na.IsUnixNetwork() {
+		return true
+	}
+	if na.Host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(na.Host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+func (na NetworkAddress) isWildcardInterface() bool {
+	if na.Host == "" {
+		return true
+	}
+	if ip := net.ParseIP(na.Host); ip != nil {
+		return ip.IsUnspecified()
+	}
+	return false
+}
+
+func (na NetworkAddress) port() string {
+	if na.StartPort == na.EndPort {
+		return strconv.FormatUint(uint64(na.StartPort), 10)
+	}
+	return fmt.Sprintf("%d-%d", na.StartPort, na.EndPort)
 }
 
 // String reconstructs the address string to the form expected
-// by ParseNetworkAddress().
-func (pa ParsedAddress) String() string {
-	port := strconv.FormatUint(uint64(pa.StartPort), 10)
-	if pa.StartPort != pa.EndPort {
-		port += "-" + strconv.FormatUint(uint64(pa.EndPort), 10)
-	}
-	return JoinNetworkAddress(pa.Network, pa.Host, port)
+// by ParseNetworkAddress(). If the address is a unix socket,
+// any non-zero port will be dropped.
+func (na NetworkAddress) String() string {
+	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
 func isUnixNetwork(netw string) bool {
@@ -311,17 +338,17 @@ func isUnixNetwork(netw string) bool {
 //
 // Network addresses are distinct from URLs and do not
 // use URL syntax.
-func ParseNetworkAddress(addr string) (ParsedAddress, error) {
+func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
 	if network == "" {
 		network = "tcp"
 	}
 	if err != nil {
-		return ParsedAddress{}, err
+		return NetworkAddress{}, err
 	}
 	if isUnixNetwork(network) {
-		return ParsedAddress{
+		return NetworkAddress{
 			Network: network,
 			Host:    host,
 		}, nil
@@ -333,19 +360,19 @@ func ParseNetworkAddress(addr string) (ParsedAddress, error) {
 	var start, end uint64
 	start, err = strconv.ParseUint(ports[0], 10, 16)
 	if err != nil {
-		return ParsedAddress{}, fmt.Errorf("invalid start port: %v", err)
+		return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
 	}
 	end, err = strconv.ParseUint(ports[1], 10, 16)
 	if err != nil {
-		return ParsedAddress{}, fmt.Errorf("invalid end port: %v", err)
+		return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
 	}
 	if end < start {
-		return ParsedAddress{}, fmt.Errorf("end port must not be less than start port")
+		return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
 	}
 	if (end - start) > maxPortSpan {
-		return ParsedAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+		return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 	}
-	return ParsedAddress{
+	return NetworkAddress{
 		Network:   network,
 		Host:      host,
 		StartPort: uint(start),
@@ -378,7 +405,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if host != "" && port == "" {
+	if (host != "" && port == "") || isUnixNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)

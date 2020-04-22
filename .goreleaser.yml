@@ -56,5 +56,5 @@ changelog:
     - '^chore:'
     - '^ci:'
     - '^docs?:'
-    - '^test:'
+    - '^tests?:'
     - '^\w+\s+' # a hack to remove commit messages without colons thus don't correspond to a package

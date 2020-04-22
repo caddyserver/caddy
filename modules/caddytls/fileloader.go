@@ -57,7 +57,7 @@ type CertKeyFilePair struct {
 
 // LoadCertificates returns the certificates to be loaded by fl.
 func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
-	var certs []Certificate
+	certs := make([]Certificate, 0, len(fl))
 	for _, pair := range fl {
 		certData, err := ioutil.ReadFile(pair.Certificate)
 		if err != nil {

@@ -43,7 +43,7 @@
 
 - **Easy configuration** with the [Caddyfile](https://caddyserver.com/docs/caddyfile)
 - **Powerful configuration** with its [native JSON config](https://caddyserver.com/docs/json/)
-- **Dynamic configuration** with the [JSON API](https://caddyserver.com/api)
+- **Dynamic configuration** with the [JSON API](https://caddyserver.com/docs/api)
 - [**Config adapters**](https://caddyserver.com/docs/config-adapters) if you don't like JSON
 - **Automatic HTTPS** by default
 	- [Let's Encrypt](https://letsencrypt.org) for public sites
@@ -51,7 +51,7 @@
 	- Can coordinate with other Caddy instances in a cluster
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **HTTP/1.1, HTTP/2, and experimental HTTP/3** support
-- **Highly extensible** [modular architecture](https://caddyserver.com/docs/extending-caddy) lets Caddy do anything without bloat
+- **Highly extensible** [modular architecture](https://caddyserver.com/docs/architecture) lets Caddy do anything without bloat
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
 - Actually **fun to use**
@@ -81,7 +81,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 Using [our builder tool](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ xcaddy --version CADDY_VERSION
+$ xcaddy build <caddy_version>
 ```
 
 ...the following steps are automated:
@@ -140,7 +140,7 @@ The docs are also open source. You can contribute to them here: https://github.c
 
 - Individuals can exchange help for free on our community forum at https://caddy.community. Remember that people give help out of their spare time and good will. The best way to get help is to give it first!
 
-Please use our [issue tracker](/caddyserver/caddy/issues) only for bug reports and feature requests, i.e. actionable development items (support questions will usually be referred to the forums).
+Please use our [issue tracker](https://github.com/caddyserver/caddy/issues) only for bug reports and feature requests, i.e. actionable development items (support questions will usually be referred to the forums).
 
 
 

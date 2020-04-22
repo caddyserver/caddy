@@ -85,6 +85,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return host, true
 			case "http.request.port":
 				_, port, _ := net.SplitHostPort(req.Host)
+				if portNum, err := strconv.Atoi(port); err == nil {
+					return portNum, true
+				}
 				return port, true
 			case "http.request.hostport":
 				return req.Host, true
@@ -98,6 +101,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return host, true
 			case "http.request.remote.port":
 				_, port, _ := net.SplitHostPort(req.RemoteAddr)
+				if portNum, err := strconv.Atoi(port); err == nil {
+					return portNum, true
+				}
 				return port, true
 
 			// current URI, including any internal rewrites
@@ -182,7 +188,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
 				tbl := req.Context().Value(VarsCtxKey).(map[string]interface{})
-				raw, _ := tbl[varName]
+				raw := tbl[varName]
 				// variables can be dynamic, so always return true
 				// even when it may not be set; treat as empty then
 				return raw, true
