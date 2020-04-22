@@ -53,4 +53,5 @@ jobs:
         args: release --rm-dist --skip-publish
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: ${{ steps.get_version.outputs.version_tag }}
+        TAG: v2.0.0-rc.3
+        # TAG: ${{ steps.get_version.outputs.version_tag }}
