@@ -63,7 +63,7 @@ nfpms:
       - deb
       # - rpm
 
-    bindir: /usr/local/bin
+    bindir: /usr/bin
     files:
       ./caddy-dist/init/caddy.service: /lib/systemd/system/caddy.service
       ./caddy-dist/init/caddy-api.service: /lib/systemd/system/caddy-api.service
