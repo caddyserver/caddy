@@ -252,18 +252,6 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			}
 		}
 	}
-	if len(customLogs) > 0 {
-		if cfg.Logging == nil {
-			cfg.Logging = &caddy.Logging{
-				Logs: make(map[string]*caddy.CustomLog),
-			}
-		}
-		for _, ncl := range customLogs {
-			if ncl.name != "" {
-				cfg.Logging.Logs[ncl.name] = ncl.log
-			}
-		}
-	}
 
 	return cfg, warnings, nil
 }
