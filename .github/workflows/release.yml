@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  pull_request:
+    branches:
+      - master
 
 jobs:
   release:
@@ -47,7 +50,7 @@ jobs:
       uses: goreleaser/goreleaser-action@v1
       with:
         version: latest
-        args: release --rm-dist
+        args: release --rm-dist --snapshot --skip-publish
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.get_version.outputs.version_tag }}
