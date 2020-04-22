@@ -35,7 +35,9 @@ import (
 type Server struct {
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
-	// that may include port ranges.
+	// that may include port ranges. Listener addresses must
+	// be unique; they cannot be repeated across all defined
+	// servers.
 	Listen []string `json:"listen,omitempty"`
 
 	// A list of listener wrapper modules, which can modify the behavior

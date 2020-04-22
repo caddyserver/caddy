@@ -26,6 +26,7 @@ func init() {
 
 // FileStorage is a certmagic.Storage wrapper for certmagic.FileStorage.
 type FileStorage struct {
+	// The base path to the folder used for storage.
 	Root string `json:"root,omitempty"`
 }
 
