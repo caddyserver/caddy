@@ -449,7 +449,7 @@ func cloneURL(from, to *url.URL) {
 
 const (
 	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
+	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
 
 	// commonLogEmptyValue is the common empty log value.
 	commonLogEmptyValue = "-"
