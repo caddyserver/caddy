@@ -82,7 +82,10 @@ type HTTPTransport struct {
 	// The size of the read buffer in bytes.
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 
-	// The versions of HTTP to support. Default: ["1.1", "2"]
+	// The versions of HTTP to support. As a special case, "h2c"
+	// can be specified to use H2C (HTTP/2 over Cleartext) to the
+	// upstream (this feature is experimental and subject to
+	// change or removal). Default: ["1.1", "2"]
 	Versions []string `json:"versions,omitempty"`
 
 	// The pre-configured underlying HTTP transport.
@@ -207,9 +210,9 @@ func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.SetScheme(req)
 
-	// if H2C ("HTTP/2 over cleartext") is enabled and this is an HTTP
-	// request, use the alternate, H2C-capable transport instead
-	if h.h2cTransport != nil && req.URL.Scheme == "http" {
+	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
+	// HTTP/2 without TLS, use the alternate H2C-capable transport instead
+	if req.ProtoMajor == 2 && req.URL.Scheme == "http" && h.h2cTransport != nil {
 		return h.h2cTransport.RoundTrip(req)
 	}
 

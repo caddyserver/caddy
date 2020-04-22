@@ -117,8 +117,9 @@ type Server struct {
 	// of the other options for this server. Do not enable this
 	// only to achieve maximum client compatibility. In practice,
 	// very few clients implement H2C, and even fewer require it.
-	// ⚠️ This feature is experimental and is subject to change/removal.
-	InsecureH2C bool `json:"insecure_h2c,omitempty"`
+	// This setting applies only to unencrypted HTTP listeners.
+	// ⚠️ Experimental feature; subject to change or removal.
+	AllowH2C bool `json:"allow_h2c,omitempty"`
 
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
