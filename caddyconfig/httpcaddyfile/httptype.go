@@ -250,6 +250,17 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			if ncl.name != "" {
 				cfg.Logging.Logs[ncl.name] = ncl.log
 			}
+			// most users seem to prefer not writing access logs
+			// to the default log when they are directed to a
+			// file or have any other special customization
+			if len(ncl.log.Include) > 0 {
+				defaultLog, ok := cfg.Logging.Logs["default"]
+				if !ok {
+					defaultLog = new(caddy.CustomLog)
+					cfg.Logging.Logs["default"] = defaultLog
+				}
+				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
+			}
 		}
 	}
 
