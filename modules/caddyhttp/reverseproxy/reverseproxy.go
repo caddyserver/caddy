@@ -135,6 +135,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.CB = mod.(CircuitBreaker)
 	}
 
+	// ensure any embedded headers handler module gets provisioned
+	// (see https://caddy.community/t/set-cookie-manipulation-in-reverse-proxy/7666?u=matt
+	// for what happens if we forget to provision it)
+	if h.Headers != nil {
+		err := h.Headers.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning embedded headers handler: %v", err)
+		}
+	}
+
 	// set up transport
 	if h.Transport == nil {
 		t := &HTTPTransport{
