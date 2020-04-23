@@ -280,6 +280,10 @@ func (m MatchFile) firstSplit(path string) string {
 	for _, split := range m.SplitPath {
 		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
 			pos := idx + len(split)
+			// skip the split if it's not the final part of the filename
+			if pos != len(path) && !strings.HasPrefix(path[pos:], "/") {
+				continue
+			}
 			return path[:pos]
 		}
 	}
