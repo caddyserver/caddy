@@ -68,6 +68,15 @@ type MatchFile struct {
 	//
 	// Default is first_exist.
 	TryPolicy string `json:"try_policy,omitempty"`
+
+	// A list of delimiters to use to split the path in two
+	// when trying files. If empty, no splitting will
+	// occur, and the path will be tried as-is. For each
+	// split value, the left-hand side of the split,
+	// including the split value, will be the path tried.
+	// For example, the path `/remote.php/dav/` using the
+	// split value `.php` would try the file `/remote.php`.
+	SplitPath []string `json:"split_path,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -105,6 +114,11 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				m.TryPolicy = d.Val()
+			case "split":
+				m.SplitPath = d.RemainingArgs()
+				if len(m.SplitPath) == 0 {
+					return d.ArgErr()
+				}
 			}
 		}
 	}
@@ -167,7 +181,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
-			suffix := path.Clean(repl.ReplaceAll(f, ""))
+			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
 			fullpath := sanitizedPathJoin(root, suffix)
 			if strictFileExists(fullpath) {
 				return suffix, fullpath, true
@@ -179,7 +193,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var largestFilename string
 		var largestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := path.Clean(repl.ReplaceAll(f, ""))
+			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
@@ -195,7 +209,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var smallestFilename string
 		var smallestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := path.Clean(repl.ReplaceAll(f, ""))
+			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
@@ -211,7 +225,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var recentFilename string
 		var recentSuffix string
 		for _, f := range m.TryFiles {
-			suffix := path.Clean(repl.ReplaceAll(f, ""))
+			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
 			fullpath := sanitizedPathJoin(root, suffix)
 			info, err := os.Stat(fullpath)
 			if err == nil &&
@@ -254,6 +268,22 @@ func strictFileExists(file string) bool {
 	// by convention, file paths NOT ending
 	// in a slash must NOT be a directory
 	return !stat.IsDir()
+}
+
+// firstSplit returns the first result where the path
+// can be split in two by a value in m.SplitPath. The
+// result is the first piece of the path that ends with
+// in the split value. Returns the path as-is if the
+// path cannot be split.
+func (m MatchFile) firstSplit(path string) string {
+	lowerPath := strings.ToLower(path)
+	for _, split := range m.SplitPath {
+		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
+			pos := idx + len(split)
+			return path[:pos]
+		}
+	}
+	return path
 }
 
 const (
