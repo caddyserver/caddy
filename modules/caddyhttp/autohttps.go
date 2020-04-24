@@ -129,6 +129,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 
 		// find all qualifying domain names (deduplicated) in this server
+		// (this is where we need the provisioned, decoded request matchers)
 		serverDomainSet := make(map[string]struct{})
 		for routeIdx, route := range srv.Routes {
 			for matcherSetIdx, matcherSet := range route.MatcherSets {
@@ -150,9 +151,14 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			}
 		}
 
-		// nothing more to do here if there are no
-		// domains that qualify for automatic HTTPS
-		if len(serverDomainSet) == 0 {
+		// nothing more to do here if there are no domains that qualify for
+		// automatic HTTPS or there are no explicit TLS connection policies;
+		// if there is at least one domain but no TLS conn policy, we'll add
+		// one below; if there is a TLS conn policy (meaning TLS is enabled)
+		// and no domains, it could be a catch-all with on-demand TLS, and
+		// in that case we would still need HTTP->HTTPS redirects, which we
+		// do below
+		if len(serverDomainSet) == 0 || len(srv.TLSConnPolicies) == 0 {
 			continue
 		}
 
@@ -207,6 +213,17 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
 			}
 
+			// this address might not have a hostname, i.e. might be a
+			// catch-all address for a particular port; we need to keep
+			// track if it is, so we can set up redirects for it anyway
+			// (e.g. the user might have enabled on-demand TLS); we use
+			// an empty string to indicate a catch-all, which we have to
+			// treat special later
+			if len(serverDomainSet) == 0 {
+				redirDomains[""] = addr
+				continue
+			}
+
 			// ...and associate it with each domain in this server
 			for d := range serverDomainSet {
 				// if this domain is used on more than one HTTPS-enabled
@@ -258,11 +275,6 @@ uniqueDomainsLoop:
 		return err
 	}
 
-	// we're done if there are no HTTP->HTTPS redirects to add
-	if len(redirDomains) == 0 {
-		return nil
-	}
-
 	// we need to reduce the mapping, i.e. group domains by address
 	// since new routes are appended to servers by their address
 	domainsByAddr := make(map[string][]string)
@@ -275,17 +287,18 @@ uniqueDomainsLoop:
 	// and the routes for those servers which actually
 	// respond with the redirects
 	redirServerAddrs := make(map[string]struct{})
+	redirServers := make(map[string][]Route)
 	var redirRoutes RouteList
 
-	redirServers := make(map[string][]Route)
-
 	for addrStr, domains := range domainsByAddr {
-		// build the matcher set for this redirect route
-		// (note that we happen to bypass Provision and
-		// Validate steps for these matcher modules)
-		matcherSet := MatcherSet{
-			MatchProtocol("http"),
-			MatchHost(domains),
+		// build the matcher set for this redirect route; (note that we happen
+		// to bypass Provision and Validate steps for these matcher modules)
+		matcherSet := MatcherSet{MatchProtocol("http")}
+		// match on known domain names, unless it's our special case of a
+		// catch-all which is an empty string (common among catch-all sites
+		// that enable on-demand TLS for yet-unknown domain names)
+		if !(len(domains) == 1 && domains[0] == "") {
+			matcherSet = append(matcherSet, MatchHost(domains))
 		}
 
 		// build the address to which to redirect
