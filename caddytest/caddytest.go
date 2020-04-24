@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"path"
 	"regexp"
@@ -30,6 +31,7 @@ import (
 // Tester represents an instance of a test client.
 type Tester struct {
 	Client *http.Client
+	Jar    *cookiejar.Jar
 	t      *testing.T
 }
 
