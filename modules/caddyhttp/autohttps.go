@@ -158,7 +158,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		// and no domains, it could be a catch-all with on-demand TLS, and
 		// in that case we would still need HTTP->HTTPS redirects, which we
 		// do below
-		if len(serverDomainSet) == 0 || len(srv.TLSConnPolicies) == 0 {
+		if len(serverDomainSet) == 0 && len(srv.TLSConnPolicies) == 0 {
 			continue
 		}
 
