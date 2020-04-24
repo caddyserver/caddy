@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -29,6 +30,16 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
+
+// NewTestReplacer creates a replacer for an http.Request
+// for use in tests that are not in this package
+func NewTestReplacer(req *http.Request) *caddy.Replacer {
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	*req = *req.WithContext(ctx)
+	addHTTPVarsToReplacer(repl, req, nil)
+	return repl
+}
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	httpVars := func(key string) (interface{}, bool) {
