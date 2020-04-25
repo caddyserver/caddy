@@ -113,6 +113,19 @@ func init() {
 // {{.RemoteIP}}
 // ```
 //
+// ##### `.Req`
+//
+// Accesses the current HTTP request, which has various fields, including:
+//
+//    - `.Method` - the method
+//    - `.URL` - the URL, which in turn has component fields (Scheme, Host, Path, etc.)
+//    - `.Header` - the header fields
+//    - `.Host` - the Host or :authority header of the request
+//
+// ```
+// {{.Req.Header.Get "User-Agent"}}
+// ```
+//
 // ##### `.RespHeader.Add`
 //
 // Adds a header field to the HTTP response.
