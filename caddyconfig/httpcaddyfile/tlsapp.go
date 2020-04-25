@@ -20,9 +20,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
 )
@@ -36,17 +38,26 @@ func (st ServerType) buildTLSApp(
 	tlsApp := &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
 	var certLoaders []caddytls.CertificateLoader
 
-	// count how many server blocks have a key with no host,
-	// and find all hosts that share a server block with a
-	// hostless key, so that they don't get forgotten/omitted
+	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
+	if hsp, ok := options["https_port"].(int); ok {
+		httpsPort = strconv.Itoa(hsp)
+	}
+
+	// count how many server blocks have a TLS-enabled key with
+	// no host, and find all hosts that share a server block with
+	// a hostless key, so that they don't get forgotten/omitted
 	// by auto-HTTPS (since they won't appear in route matchers)
-	var serverBlocksWithHostlessKey int
+	var serverBlocksWithTLSHostlessKey int
 	hostsSharedWithHostlessKey := make(map[string]struct{})
 	for _, pair := range pairings {
 		for _, sb := range pair.serverBlocks {
 			for _, addr := range sb.keys {
 				if addr.Host == "" {
-					serverBlocksWithHostlessKey++
+					// this address has no hostname, but if it's explicitly set
+					// to HTTPS, then we need to count it as being TLS-enabled
+					if addr.Scheme == "https" || addr.Port == httpsPort {
+						serverBlocksWithTLSHostlessKey++
+					}
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
 					for _, otherAddr := range sb.keys {
@@ -149,9 +160,11 @@ func (st ServerType) buildTLSApp(
 			}
 
 			if ap != nil {
-				// encode issuer now that it's all set up
-				issuerName := ap.Issuer.(caddy.Module).CaddyModule().ID.Name()
-				ap.IssuerRaw = caddyconfig.JSONModuleObject(ap.Issuer, "module", issuerName, &warnings)
+				if ap.Issuer != nil {
+					// encode issuer now that it's all set up
+					issuerName := ap.Issuer.(caddy.Module).CaddyModule().ID.Name()
+					ap.IssuerRaw = caddyconfig.JSONModuleObject(ap.Issuer, "module", issuerName, &warnings)
+				}
 
 				// first make sure this block is allowed to create an automation policy;
 				// doing so is forbidden if it has a key with no host (i.e. ":443")
@@ -163,12 +176,12 @@ func (st ServerType) buildTLSApp(
 				// this is an example of a poor mapping from Caddyfile to JSON but that's
 				// the least-leaky abstraction I could figure out
 				if len(sblockHosts) == 0 {
-					if serverBlocksWithHostlessKey > 1 {
+					if serverBlocksWithTLSHostlessKey > 1 {
 						// this server block and at least one other has a key with no host,
 						// making the two indistinguishable; it is misleading to define such
 						// a policy within one server block since it actually will apply to
 						// others as well
-						return nil, warnings, fmt.Errorf("cannot make a TLS automation policy from a server block that has a host-less address when there are other server block addresses lacking a host")
+						return nil, warnings, fmt.Errorf("cannot make a TLS automation policy from a server block that has a host-less address when there are other TLS-enabled server block addresses lacking a host")
 					}
 					if catchAllAP == nil {
 						// this server block has a key with no hosts, but there is not yet
@@ -293,9 +306,11 @@ func (st ServerType) buildTLSApp(
 
 	// if there is a global/catch-all automation policy, ensure it goes last
 	if catchAllAP != nil {
-		// first, encode its issuer
-		issuerName := catchAllAP.Issuer.(caddy.Module).CaddyModule().ID.Name()
-		catchAllAP.IssuerRaw = caddyconfig.JSONModuleObject(catchAllAP.Issuer, "module", issuerName, &warnings)
+		// first, encode its issuer, if there is one
+		if catchAllAP.Issuer != nil {
+			issuerName := catchAllAP.Issuer.(caddy.Module).CaddyModule().ID.Name()
+			catchAllAP.IssuerRaw = caddyconfig.JSONModuleObject(catchAllAP.Issuer, "module", issuerName, &warnings)
+		}
 
 		// then append it to the end of the policies list
 		if tlsApp.Automation == nil {
