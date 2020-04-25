@@ -324,6 +324,10 @@ func (st *ServerType) serversFromPairings(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
+	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
+	if hsp, ok := options["https_port"].(int); ok {
+		httpsPort = strconv.Itoa(hsp)
+	}
 
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
@@ -362,7 +366,8 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
-		var hasCatchAllTLSConnPolicy, usesTLS bool
+		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
+		autoHTTPSWillAddConnPolicy := true
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
@@ -401,9 +406,9 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
-			// exclude any hosts that were defined explicitly with
-			// "http://" in the key from automated cert management (issue #2998)
 			for _, addr := range sblock.keys {
+				// exclude any hosts that were defined explicitly with "http://"
+				// in the key from automated cert management (issue #2998)
 				if addr.Scheme == "http" && addr.Host != "" {
 					if srv.AutoHTTPS == nil {
 						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
@@ -412,9 +417,16 @@ func (st *ServerType) serversFromPairings(
 						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
-				if addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort {
-					usesTLS = true
+				// we'll need to remember if the address qualifies for auto-HTTPS, so we
+				// can add a TLS conn policy if necessary
+				if addr.Scheme == "https" ||
+					(addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort) {
+					addressQualifiesForTLS = true
 				}
+				// predict whether auto-HTTPS will add the conn policy for us; if so, we
+				// may not need to add one for this server
+				autoHTTPSWillAddConnPolicy = autoHTTPSWillAddConnPolicy &&
+					(addr.Port == httpsPort || (addr.Port != httpPort && addr.Host != ""))
 			}
 
 			// set up each handler directive, making sure to honor directive order
@@ -477,9 +489,9 @@ func (st *ServerType) serversFromPairings(
 		// TODO: maybe a smarter way to handle this might be to just make the
 		// auto-HTTPS logic at provision-time detect if there is any connection
 		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
-		if usesTLS &&
+		if addressQualifiesForTLS &&
 			!hasCatchAllTLSConnPolicy &&
-			(len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
+			(len(srv.TLSConnPolicies) > 0 || !autoHTTPSWillAddConnPolicy || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
@@ -539,7 +551,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 				if err := checkAndSetHTTP(addr); err != nil {
 					return err
 				}
-			} else if addr.Scheme == "https" || addr.Port == httpsPort {
+			} else if addr.Scheme == "https" || addr.Port == httpsPort || len(srv.TLSConnPolicies) > 0 {
 				if err := checkAndSetHTTPS(addr); err != nil {
 					return err
 				}

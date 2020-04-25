@@ -152,12 +152,12 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 
 		// nothing more to do here if there are no domains that qualify for
-		// automatic HTTPS or there are no explicit TLS connection policies;
-		// if there is at least one domain but no TLS conn policy, we'll add
-		// one below; if there is a TLS conn policy (meaning TLS is enabled)
-		// and no domains, it could be a catch-all with on-demand TLS, and
-		// in that case we would still need HTTP->HTTPS redirects, which we
-		// do below
+		// automatic HTTPS and there are no explicit TLS connection policies:
+		// if there is at least one domain but no TLS conn policy (F&&T), we'll
+		// add one below; if there are no domains but at least one TLS conn
+		// policy (meaning TLS is enabled) (T&&F), it could be a catch-all with
+		// on-demand TLS -- and in that case we would still need HTTP->HTTPS
+		// redirects, which we set up below; hence these two conditions
 		if len(serverDomainSet) == 0 && len(srv.TLSConnPolicies) == 0 {
 			continue
 		}
@@ -345,6 +345,13 @@ uniqueDomainsLoop:
 	// not entirely clear what the redirect destination should be,
 	// so I'm going to just hard-code the app's HTTPS port and call
 	// it good for now...
+	// TODO: This implies that all plaintext requests will be blindly
+	// redirected to their HTTPS equivalent, even if this server
+	// doesn't handle that hostname at all; I don't think this is a
+	// bad thing, and it also obscures the actual hostnames that this
+	// server is configured to match on, which may be desirable, but
+	// it's not something that should be relied on. We can change this
+	// if we want to.
 	appendCatchAll := func(routes []Route) []Route {
 		redirTo := "https://{http.request.host}"
 		if app.httpsPort() != DefaultHTTPSPort {
