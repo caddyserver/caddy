@@ -69,3 +69,12 @@ jobs:
         name: caddy_v2_${{ steps.vars.outputs.short_sha }}
         path: dist/caddy*.deb
         # path: dist/caddy_v2.0.0-rc.3-SNAPSHOT-${{ steps.vars.outputs.short_sha }}_linux_amd64.deb
+
+    - name: Publish .deb to Gemfury
+      env:
+        GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
+      run: |
+        curl -F package=@dist/caddy*linux_armv6.deb https://{$GEMFURY_PUSH_TOKEN}@push.fury.io/caddy/
+        curl -F package=@dist/caddy*linux_armv7.deb https://{$GEMFURY_PUSH_TOKEN}@push.fury.io/caddy/
+        curl -F package=@dist/caddy*linux_arm64.deb https://{$GEMFURY_PUSH_TOKEN}@push.fury.io/caddy/
+        curl -F package=@dist/caddy*linux_amd64.deb https://{$GEMFURY_PUSH_TOKEN}@push.fury.io/caddy/
