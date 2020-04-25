@@ -72,9 +72,9 @@ nfpms:
       ./caddy-dist/config/Caddyfile: /etc/caddy/Caddyfile
 
     scripts:
-      preinstall: ./caddy-dist/scripts/preinstall.sh
       postinstall: ./caddy-dist/scripts/postinstall.sh
       preremove: ./caddy-dist/scripts/preremove.sh
+      postremove: ./caddy-dist/scripts/postremove.sh
 
 
 release:
