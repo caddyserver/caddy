@@ -206,7 +206,7 @@ func onDemandAskRequest(ask string, name string) error {
 
 	resp, err := onDemandAskClient.Get(askURL.String())
 	if err != nil {
-		return fmt.Errorf("error checking %v to deterine if certificate for hostname '%s' should be allowed: %v",
+		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
 			ask, name, err)
 	}
 	resp.Body.Close()
