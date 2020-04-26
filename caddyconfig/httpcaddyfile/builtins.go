@@ -35,6 +35,7 @@ func init() {
 	RegisterHandlerDirective("root", parseRoot)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
+	RegisterHandlerDirective("status_code", parseStatusCode)
 	RegisterHandlerDirective("route", parseRoute)
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
@@ -386,6 +387,16 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 // parseRespond parses the respond directive.
 func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.StaticResponse)
+	err := sr.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return sr, nil
+}
+
+// parseStatusCode parses the status_code directive.
+func parseStatusCode(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	sr := new(caddyhttp.StatusCode)
 	err := sr.UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err
