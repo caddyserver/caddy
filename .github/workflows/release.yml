@@ -4,9 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  pull_request:
-    branches:
-      - master
 
 jobs:
   release:
@@ -57,24 +54,15 @@ jobs:
       uses: goreleaser/goreleaser-action@v1
       with:
         version: latest
-        args: release --rm-dist --skip-publish
+        args: release --rm-dist
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: v2.0.0-rc.3
-        # TAG: ${{ steps.vars.outputs.version_tag }}
-
-    - name: Publish Build Artifact
-      uses: actions/upload-artifact@v2-preview
-      with:
-        name: caddy_v2_${{ steps.vars.outputs.short_sha }}
-        path: dist/caddy*.deb
-        # path: dist/caddy_v2.0.0-rc.3-SNAPSHOT-${{ steps.vars.outputs.short_sha }}_linux_amd64.deb
+        TAG: ${{ steps.vars.outputs.version_tag }}
 
     - name: Publish .deb to Gemfury
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
-        echo "Token length: ${#GEMFURY_PUSH_TOKEN}"
         for filename in dist/*.deb; do
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
