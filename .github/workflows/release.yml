@@ -74,6 +74,7 @@ jobs:
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
+        echo "Token length: ${#GEMFURY_PUSH_TOKEN}"
         for filename in dist/*.deb; do
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
