@@ -100,9 +100,9 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
-	// Customizes how access logs are handled in this server. To
-	// minimally enable access logs, simply set this to a non-null,
-	// empty struct.
+	// Enables access logging and configures how access logs are handled
+	// in this server. To minimally enable access logs, simply set this
+	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
 	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
@@ -369,25 +369,23 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 
 // shouldLogRequest returns true if this request should be logged.
 func (s *Server) shouldLogRequest(r *http.Request) bool {
-	if s.accessLogger == nil {
+	if s.accessLogger == nil || s.Logs == nil {
 		// logging is disabled
 		return false
 	}
-	if s.Logs != nil {
-		for _, dh := range s.Logs.SkipHosts {
-			// logging for this particular host is disabled
-			if r.Host == dh {
-				return false
-			}
-		}
-		if _, ok := s.Logs.LoggerNames[r.Host]; ok {
-			// this host is mapped to a particular logger name
-			return true
-		}
-		if s.Logs.SkipUnmappedHosts {
-			// this host is not mapped and thus must not be logged
+	for _, dh := range s.Logs.SkipHosts {
+		// logging for this particular host is disabled
+		if r.Host == dh {
 			return false
 		}
+	}
+	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+		// this host is mapped to a particular logger name
+		return true
+	}
+	if s.Logs.SkipUnmappedHosts {
+		// this host is not mapped and thus must not be logged
+		return false
 	}
 	return true
 }
