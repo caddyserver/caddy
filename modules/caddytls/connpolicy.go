@@ -264,6 +264,19 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	return nil
 }
 
+// SettingsEmpty returns true if p's settings (fields
+// except the matchers) are all empty/unset.
+func (p ConnectionPolicy) SettingsEmpty() bool {
+	return p.CertSelection == nil &&
+		p.CipherSuites == nil &&
+		p.Curves == nil &&
+		p.ALPN == nil &&
+		p.ProtocolMin == "" &&
+		p.ProtocolMax == "" &&
+		p.ClientAuthentication == nil &&
+		p.DefaultSNI == ""
+}
+
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
 	// A list of base64 DER-encoded CA certificates
