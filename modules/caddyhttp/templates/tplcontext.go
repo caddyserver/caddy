@@ -41,7 +41,7 @@ import (
 type templateContext struct {
 	Root       http.FileSystem
 	Req        *http.Request
-	Args       []interface{} // defined by arguments to .Include
+	Args       []interface{} // defined by arguments to funcInclude
 	RespHeader tplWrappedHeader
 
 	config *Templates
