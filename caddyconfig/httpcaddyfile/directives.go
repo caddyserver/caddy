@@ -52,6 +52,7 @@ var directiveOrder = []string{
 	"basicauth",
 	"request_header",
 	"encode",
+	"status_code",
 	"templates",
 
 	// special routing directives

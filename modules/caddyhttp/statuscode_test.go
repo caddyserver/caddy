@@ -29,7 +29,7 @@ func TestStatusCodeHandler(t *testing.T) {
 		StatusCode: WeakString(strconv.Itoa(http.StatusNotFound)),
 	}
 
-	err := s.ServeHTTP(w, r, nil)
+	err := s.ServeHTTP(w, r, emptyHandler)
 	if err != nil {
 		t.Errorf("did not expect an error, but got: %v", err)
 	}

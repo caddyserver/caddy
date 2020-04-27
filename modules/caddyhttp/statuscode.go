@@ -58,7 +58,7 @@ func (s *StatusCode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (s StatusCode) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
+func (s StatusCode) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// get the status code
@@ -71,10 +71,14 @@ func (s StatusCode) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler)
 		statusCode = intVal
 	}
 
-	// write headers
-	w.WriteHeader(statusCode)
+	// wrap the response writer so we can modify the status
+	// without repercursions (i.e. writing it twice)
+	wrapper := NewResponseRecorder(w, nil, nil)
 
-	return nil
+	// write headers
+	wrapper.WriteHeader(statusCode)
+
+	return next.ServeHTTP(wrapper, r)
 }
 
 // Interface guards
