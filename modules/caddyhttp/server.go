@@ -156,7 +156,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		loggableReq,
 	)
 
-	if s.accessLogger != nil {
+	if s.shouldLogRequest(r) {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 
@@ -367,17 +367,54 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	return r
 }
 
-// ServerLogConfig describes a server's logging configuration.
+// shouldLogRequest returns true if this request should be logged.
+func (s *Server) shouldLogRequest(r *http.Request) bool {
+	if s.accessLogger == nil {
+		// logging is disabled
+		return false
+	}
+	if s.Logs != nil {
+		for _, dh := range s.Logs.SkipHosts {
+			// logging for this particular host is disabled
+			if r.Host == dh {
+				return false
+			}
+		}
+		if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+			// this host is mapped to a particular logger name
+			return true
+		}
+		if s.Logs.SkipUnmappedHosts {
+			// this host is not mapped and thus must not be logged
+			return false
+		}
+	}
+	return true
+}
+
+// ServerLogConfig describes a server's logging configuration. If
+// enabled without customization, all requests to this server are
+// logged to the default logger; logger destinations may be
+// customized per-request-host.
 type ServerLogConfig struct {
-	// The logger name for all logs emitted by this server unless
-	// the hostname is found in the LoggerNames (logger_names) map.
-	LoggerName string `json:"log_name,omitempty"`
+	// The default logger name for all logs emitted by this server for
+	// hostnames that are not in the LoggerNames (logger_names) map.
+	LoggerName string `json:"logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+
+	// By default, all requests to this server will be logged if
+	// access logging is enabled. This field lists the request
+	// hosts for which access logging should be disabled.
+	SkipHosts []string `json:"skip_hosts,omitempty"`
+
+	// If true, requests to any host not appearing in the
+	// LoggerNames (logger_names) map will not be logged.
+	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
 }
 
 // wrapLogger wraps logger in a logger named according to user preferences for the given host.
