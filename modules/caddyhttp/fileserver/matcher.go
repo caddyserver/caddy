@@ -76,6 +76,8 @@ type MatchFile struct {
 	// including the split value, will be the path tried.
 	// For example, the path `/remote.php/dav/` using the
 	// split value `.php` would try the file `/remote.php`.
+	// Each delimiter must appear at the end of a URI path
+	// component in order to be used as a split delimiter.
 	SplitPath []string `json:"split_path,omitempty"`
 }
 
