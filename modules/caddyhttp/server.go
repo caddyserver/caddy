@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -307,8 +308,30 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 			continue
 		}
 
-		// host must be the same and port must fall within port range
-		if (thisAddrs.Host == laddrs.Host) &&
+		// Apparently, Linux requires all bound ports to be distinct
+		// *regardless of host interface* even if the addresses are
+		// in fact different; binding "192.168.0.1:9000" and then
+		// ":9000" will fail for ":9000" because "address is already
+		// in use" even though it's not, and the same bindings work
+		// fine on macOS. I also found on Linux that listening on
+		// "[::]:9000" would fail with a similar error, except with
+		// the address "0.0.0.0:9000", as if deliberately ignoring
+		// that I specified the IPv6 interface explicitly. This seems
+		// to be a major bug in the Linux network stack and I don't
+		// know why it hasn't been fixed yet, so for now we have to
+		// special-case ourselves around Linux like a doting parent.
+		// The second issue seems very similar to a discussion here:
+		// https://github.com/nodejs/node/issues/9390
+		//
+		// This is very easy to reproduce by creating an HTTP server
+		// that listens to both addresses or just one with a host
+		// interface; or for a more confusing reproduction, try
+		// listening on "127.0.0.1:80" and ":443" and you'll see
+		// the error, if you take away the GOOS condition below.
+		//
+		// So, an address is equivalent if the port is in the port
+		// range, and if not on Linux, the host is the same... sigh.
+		if (runtime.GOOS == "linux" || thisAddrs.Host == laddrs.Host) &&
 			(laddrs.StartPort <= thisAddrs.EndPort) &&
 			(laddrs.StartPort >= thisAddrs.StartPort) {
 			return true
