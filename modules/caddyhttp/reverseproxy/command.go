@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
@@ -40,10 +40,15 @@ func init() {
 A simple but production-ready reverse proxy. Useful for quick deployments,
 demos, and development.
 
-Simply shuttles HTTP traffic from the --from address to the --to address.
+Simply shuttles HTTP(S) traffic from the --from address to the --to address.
 
-If the --from address has a domain name, Caddy will attempt to serve the
-proxy over HTTPS with a certificate.
+Unless otherwise specified in the addresses, the --from address will be
+assumed to be HTTPS if a hostname is given, and the --to address will be
+assumed to be HTTP.
+
+If the --from address has a host or IP, Caddy will attempt to serve the
+proxy over HTTPS with a certificate (unless overridden by the HTTP scheme
+or port).
 
 If --change-host-header is set, the Host header on the request will be modified
 from its original incoming value to the address of the upstream. (Otherwise, by
@@ -51,7 +56,7 @@ default, all incoming headers are passed through unmodified.)
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("file-server", flag.ExitOnError)
-			fs.String("from", "localhost:443", "Address on which to receive traffic")
+			fs.String("from", "localhost", "Address on which to receive traffic")
 			fs.String("to", "", "Upstream address to which to to proxy traffic")
 			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
 			return fs
@@ -64,43 +69,69 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	to := fs.String("to")
 	changeHost := fs.Bool("change-host-header")
 
-	if from == "" {
-		from = "localhost:443"
+	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
+	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
+
+	if to == "" {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("--to is required")
 	}
 
-	// URLs need a scheme in order to parse successfully
-	if !strings.Contains(from, "://") {
-		from = "http://" + from
-	}
-	if !strings.Contains(to, "://") {
-		to = "http://" + to
-	}
-
-	fromURL, err := url.Parse(from)
+	// set up the downstream address; assume missing information from given parts
+	fromAddr, err := httpcaddyfile.ParseAddress(from)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("parsing 'from' URL: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid downstream address %s: %v", from, err)
 	}
-	toURL, err := url.Parse(to)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("parsing 'to' URL: %v", err)
+	if fromAddr.Path != "" {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("paths are not allowed: %s", from)
 	}
-
-	if toURL.Port() == "" {
-		toPort := "80"
-		if toURL.Scheme == "https" {
-			toPort = "443"
+	if fromAddr.Scheme == "" {
+		if fromAddr.Port == httpPort || fromAddr.Host == "" {
+			fromAddr.Scheme = "http"
+		} else {
+			fromAddr.Scheme = "https"
 		}
-		toURL.Host = net.JoinHostPort(toURL.Host, toPort)
 	}
+	if fromAddr.Port == "" {
+		if fromAddr.Scheme == "http" {
+			fromAddr.Port = httpPort
+		} else if fromAddr.Scheme == "https" {
+			fromAddr.Port = httpsPort
+		}
+	}
+
+	// set up the upstream address; assume missing information from given parts
+	toAddr, err := httpcaddyfile.ParseAddress(to)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", to, err)
+	}
+	if toAddr.Path != "" {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("paths are not allowed: %s", to)
+	}
+	if toAddr.Scheme == "" {
+		if toAddr.Port == httpsPort {
+			toAddr.Scheme = "https"
+		} else {
+			toAddr.Scheme = "http"
+		}
+	}
+	if toAddr.Port == "" {
+		if toAddr.Scheme == "http" {
+			toAddr.Port = httpPort
+		} else if toAddr.Scheme == "https" {
+			toAddr.Port = httpsPort
+		}
+	}
+
+	// proceed to build the handler and server
 
 	ht := HTTPTransport{}
-	if toURL.Scheme == "https" {
+	if toAddr.Scheme == "https" {
 		ht.TLS = new(TLSConfig)
 	}
 
 	handler := Handler{
 		TransportRaw: caddyconfig.JSONModuleObject(ht, "protocol", "http", nil),
-		Upstreams:    UpstreamPool{{Dial: toURL.Host}},
+		Upstreams:    UpstreamPool{{Dial: net.JoinHostPort(toAddr.Host, toAddr.Port)}},
 	}
 
 	if changeHost {
@@ -118,23 +149,17 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 			caddyconfig.JSONModuleObject(handler, "handler", "reverse_proxy", nil),
 		},
 	}
-	urlHost := fromURL.Hostname()
-	if urlHost != "" {
+	if fromAddr.Host != "" {
 		route.MatcherSetsRaw = []caddy.ModuleMap{
 			{
-				"host": caddyconfig.JSON(caddyhttp.MatchHost{urlHost}, nil),
+				"host": caddyconfig.JSON(caddyhttp.MatchHost{fromAddr.Host}, nil),
 			},
 		}
 	}
 
-	listen := ":443"
-	if urlPort := fromURL.Port(); urlPort != "" {
-		listen = ":" + urlPort
-	}
-
 	server := &caddyhttp.Server{
 		Routes: caddyhttp.RouteList{route},
-		Listen: []string{listen},
+		Listen: []string{":" + fromAddr.Port},
 	}
 
 	httpApp := caddyhttp.App{
@@ -153,7 +178,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	fmt.Printf("Caddy 2 proxying from %s to %s\n", fromURL, toURL)
+	fmt.Printf("Caddy proxying %s -> %s\n", fromAddr.String(), toAddr.String())
 
 	select {}
 }
