@@ -71,7 +71,7 @@ jobs:
     - name: Trigger event on caddyserver/dist
       uses: peter-evans/repository-dispatch@v1
       with:
-        token: ${{ secrets.CADDYSERVER_DIST_TOKEN }}
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/dist
         event-type: release-tagged
         client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
@@ -79,7 +79,7 @@ jobs:
     - name: Trigger event on caddyserver/caddy-docker
       uses: peter-evans/repository-dispatch@v1
       with:
-        token: ${{ secrets.CADDYSERVER_DOCKER_TOKEN }}
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/caddy-docker
         event-type: release-tagged
         client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
