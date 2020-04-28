@@ -669,6 +669,16 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				h.TLS.RootCAPEMFiles = args
 
+			case "tls_server_name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
+				h.TLS.ServerName = d.Val()
+
 			case "keepalive":
 				if !d.NextArg() {
 					return d.ArgErr()
