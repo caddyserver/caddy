@@ -153,9 +153,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// to capture the original request in case it gets
 	// modified during handling
 	loggableReq := zap.Object("request", LoggableHTTPRequest{r})
-	errLog := s.errorLogger.With(
-		loggableReq,
-	)
+	errLog := s.errorLogger.With(loggableReq)
+
+	var duration time.Duration
 
 	if s.shouldLogRequest(r) {
 		wrec := NewResponseRecorder(w, nil, nil)
@@ -164,13 +164,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
-		start := time.Now()
 		defer func() {
-			latency := time.Since(start)
-
 			repl.Set("http.response.status", wrec.Status())
 			repl.Set("http.response.size", wrec.Size())
-			repl.Set("http.response.latency", latency)
+			repl.Set("http.response.duration", duration)
 
 			logger := accLog
 			if s.Logs != nil {
@@ -184,7 +181,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			log("handled request",
 				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
-				zap.Duration("latency", latency),
+				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
 				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
@@ -192,51 +189,60 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	start := time.Now()
+
 	// guarantee ACME HTTP challenges; handle them
 	// separately from any user-defined handlers
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
+		duration = time.Since(start)
 		return
 	}
 
 	// execute the primary handler chain
 	err := s.primaryHandlerChain.ServeHTTP(w, r)
-	if err != nil {
-		// prepare the error log
-		logger := errLog
-		if s.Logs != nil {
-			logger = s.Logs.wrapLogger(logger, r.Host)
-		}
+	duration = time.Since(start)
 
-		// get the values that will be used to log the error
-		errStatus, errMsg, errFields := errLogValues(err)
+	// if no errors, we're done!
+	if err == nil {
+		return
+	}
 
-		// add HTTP error information to request context
-		r = s.Errors.WithError(r, err)
+	// prepare the error log
+	logger := errLog
+	if s.Logs != nil {
+		logger = s.Logs.wrapLogger(logger, r.Host)
+	}
+	logger = logger.With(zap.Duration("duration", duration))
 
-		if s.Errors != nil && len(s.Errors.Routes) > 0 {
-			// execute user-defined error handling route
-			err2 := s.errorHandlerChain.ServeHTTP(w, r)
-			if err2 == nil {
-				// user's error route handled the error response
-				// successfully, so now just log the error
-				if errStatus >= 500 {
-					logger.Error(errMsg, errFields...)
-				}
-			} else {
-				// well... this is awkward
-				errFields = append([]zapcore.Field{
-					zap.String("error", err2.Error()),
-					zap.Namespace("first_error"),
-					zap.String("msg", errMsg),
-				}, errFields...)
-				logger.Error("error handling handler error", errFields...)
-			}
-		} else {
+	// get the values that will be used to log the error
+	errStatus, errMsg, errFields := errLogValues(err)
+
+	// add HTTP error information to request context
+	r = s.Errors.WithError(r, err)
+
+	if s.Errors != nil && len(s.Errors.Routes) > 0 {
+		// execute user-defined error handling route
+		err2 := s.errorHandlerChain.ServeHTTP(w, r)
+		if err2 == nil {
+			// user's error route handled the error response
+			// successfully, so now just log the error
 			if errStatus >= 500 {
 				logger.Error(errMsg, errFields...)
 			}
-			w.WriteHeader(errStatus)
+		} else {
+			// well... this is awkward
+			errFields = append([]zapcore.Field{
+				zap.String("error", err2.Error()),
+				zap.Namespace("first_error"),
+				zap.String("msg", errMsg),
+			}, errFields...)
+			logger.Error("error handling handler error", errFields...)
 		}
+	} else {
+		if errStatus >= 500 {
+			logger.Error(errMsg, errFields...)
+		}
+		w.WriteHeader(errStatus)
 	}
 }
 
