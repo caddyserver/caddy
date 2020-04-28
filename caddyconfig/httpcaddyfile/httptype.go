@@ -463,7 +463,7 @@ func (st *ServerType) serversFromPairings(
 				if sblock.hasHostCatchAllKey() {
 					// all requests for hosts not able to be listed should use
 					// this log because it's a catch-all-hosts server block
-					srv.Logs.LoggerName = ncl.name
+					srv.Logs.DefaultLoggerName = ncl.name
 				} else {
 					// map each host to the user's desired logger name
 					for _, h := range sblockLogHosts {

@@ -397,7 +397,7 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 type ServerLogConfig struct {
 	// The default logger name for all logs emitted by this server for
 	// hostnames that are not in the LoggerNames (logger_names) map.
-	LoggerName string `json:"logger_name,omitempty"`
+	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
@@ -427,7 +427,7 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	if loggerName, ok := slc.LoggerNames[host]; ok {
 		return loggerName
 	}
-	return slc.LoggerName
+	return slc.DefaultLoggerName
 }
 
 // errLogValues inspects err and returns the status code
