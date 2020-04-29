@@ -293,7 +293,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 
 		val, err = dirFunc(disp)
 		if err != nil {
-			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %w", dir, err)
+			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 		}
 
 		options[dir] = val
