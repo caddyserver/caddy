@@ -29,6 +29,7 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
@@ -152,6 +153,7 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
 		"env":              c.funcEnv,
+		"placeholder":      c.placeholder,
 	})
 
 	parsedTpl, err := tpl.Parse(buf.String())
@@ -162,6 +164,23 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	buf.Reset() // reuse buffer for output
 
 	return parsedTpl.Execute(buf, c)
+}
+
+func (c templateContext) placeholder(name string) string {
+	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	value, has := repl.Get(name)
+
+	if !has {
+		name = placeholderShorthandsReplacer.Replace(name)
+		value, has = repl.Get(name)
+	}
+
+	if !has {
+		return ""
+	}
+
+	return fmt.Sprintf("%v", value)
 }
 
 func (templateContext) funcEnv(varName string) string {
@@ -361,5 +380,6 @@ var bufPool = sync.Pool{
 // at time of writing, sprig.FuncMap() makes a copy, thus
 // involves iterating the whole map, so do it just once
 var sprigFuncMap = sprig.TxtFuncMap()
+var placeholderShorthandsReplacer = strings.NewReplacer(caddyhttp.PlaceholderShorthands...)
 
 const recursionPreventionHeader = "Caddy-Templates-Include"
