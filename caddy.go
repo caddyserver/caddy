@@ -486,7 +486,7 @@ func Validate(cfg *Config) error {
 // Duration can be an integer or a string. An integer is
 // interpreted as nanoseconds. If a string, it is a Go
 // time.Duration value such as `300ms`, `1.5h`, or `2h45m`;
-// valid units are `ns`, `us`/`µs`, `ms`, `s`, `m`, and `h`.
+// valid units are `ns`, `us`/`µs`, `ms`, `s`, `m`, `h`, and `d`.
 type Duration time.Duration
 
 // UnmarshalJSON satisfies json.Unmarshaler.
@@ -497,12 +497,27 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	var dur time.Duration
 	var err error
 	if b[0] == byte('"') && b[len(b)-1] == byte('"') {
-		dur, err = time.ParseDuration(strings.Trim(string(b), `"`))
+		dur, err = ParseDuration(strings.Trim(string(b), `"`))
 	} else {
 		err = json.Unmarshal(b, &dur)
 	}
 	*d = Duration(dur)
 	return err
+}
+
+// ParseDuration parses a duration string, adding
+// support for the "d" suffix for number of days.
+func ParseDuration(s string) (time.Duration, error) {
+	// Add support for days suffix (24 hours)
+	if strings.HasSuffix(s, "d") {
+		value, err := strconv.ParseInt(s[0:len(s)-1], 0, 32)
+		if err != nil {
+			return time.Duration(0), err
+		}
+		value = value * 24
+		return time.ParseDuration(strconv.Itoa(int(value)) + "h")
+	}
+	return time.ParseDuration(s)
 }
 
 // GoModule returns the build info of this Caddy
