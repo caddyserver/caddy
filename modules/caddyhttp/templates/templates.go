@@ -66,10 +66,11 @@ func init() {
 //
 // ##### `placeholder`
 //
-// Gets an [placerholder variable](/docs/conventions#placeholders). Omit the braces `{` & `}`.
+// Gets an [placerholder variable](/docs/conventions#placeholders). Shorthands are not supported at the moment.
+// The braces (`{}`) have to be omitted.
 //
 // ```
-// {{placeholder "path"}}
+// {{placeholder "http.request.uri.path"}}
 // {{placeholder "http.error.status_code"}}
 // ```
 //
