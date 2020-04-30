@@ -86,8 +86,8 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 // Provision sets up m.
 func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 	// DNS providers
-	if m.Challenges != nil && m.Challenges.DNSRaw != nil {
-		val, err := ctx.LoadModule(m.Challenges, "DNSRaw")
+	if m.Challenges != nil && m.Challenges.DNS != nil && m.Challenges.DNS.ProviderRaw != nil {
+		val, err := ctx.LoadModule(m.Challenges.DNS, "ProviderRaw")
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
@@ -95,7 +95,7 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("making DNS provider: %v", err)
 		}
-		m.Challenges.DNS = prov
+		m.Challenges.DNS.provider = prov
 	}
 
 	// add any custom CAs to trust store
@@ -152,7 +152,9 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 			template.DisableTLSALPNChallenge = m.Challenges.TLSALPN.Disabled
 			template.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
 		}
-		template.DNSProvider = m.Challenges.DNS
+		if m.Challenges.DNS != nil {
+			template.DNSProvider = m.Challenges.DNS.provider
+		}
 		template.ListenHost = m.Challenges.BindHost
 	}
 
