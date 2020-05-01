@@ -9,7 +9,7 @@ require (
 	github.com/caddyserver/certmagic v0.10.12
 	github.com/cenkalti/backoff/v4 v4.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
-	github.com/go-acme/lego/v3 v3.5.0
+	github.com/go-acme/lego/v3 v3.6.0
 	github.com/gogo/protobuf v1.3.1
 	github.com/google/cel-go v0.4.1
 	github.com/imdario/mergo v0.3.9 // indirect
