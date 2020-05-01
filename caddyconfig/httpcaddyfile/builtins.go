@@ -205,19 +205,26 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				if !h.Next() {
 					return nil, h.ArgErr()
 				}
+				provName := h.Val()
 				if acmeIssuer == nil {
 					acmeIssuer = new(caddytls.ACMEIssuer)
 				}
-				provName := h.Val()
 				if acmeIssuer.Challenges == nil {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
-				dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
+				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
 				if err != nil {
 					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
 				}
-				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "name", provName, h.warnings)
+				dnsProvModuleInstance := dnsProvModule.New()
+				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
+					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					if err != nil {
+						return nil, err
+					}
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, h.warnings)
 
 			case "ca_root":
 				arg := h.RemainingArgs()
