@@ -34,12 +34,18 @@ type Defaults struct {
 	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
 	Certifcates []string
+	// TestRequestTimeout is the time to wait for a http request to
+	TestRequestTimeout time.Duration
+	// LoadRequestTimeout is the time to wait for the config to be loaded against the caddy server
+	LoadRequestTimeout time.Duration
 }
 
 // Default testing values
 var Default = Defaults{
-	AdminPort:   2019,
-	Certifcates: []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
+	AdminPort:          2019,
+	Certifcates:        []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
+	TestRequestTimeout: 5 * time.Second,
+	LoadRequestTimeout: 5 * time.Second,
 }
 
 var (
@@ -65,7 +71,7 @@ func NewTester(t *testing.T) *Tester {
 		Client: &http.Client{
 			Transport: CreateTestingTransport(),
 			Jar:       jar,
-			Timeout:   5 * time.Second,
+			Timeout:   Default.TestRequestTimeout,
 		},
 		t: t,
 	}
@@ -125,7 +131,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 
 	rawConfig = prependCaddyFilePath(rawConfig)
 	client := &http.Client{
-		Timeout: time.Second * 2,
+		Timeout: Default.LoadRequestTimeout,
 	}
 	start := time.Now()
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
@@ -209,7 +215,7 @@ func validateTestPrerequisites() error {
 func isCaddyAdminRunning() error {
 	// assert that caddy is running
 	client := &http.Client{
-		Timeout: time.Second * 2,
+		Timeout: Default.LoadRequestTimeout,
 	}
 	_, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 	if err != nil {
