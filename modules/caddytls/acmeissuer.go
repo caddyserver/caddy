@@ -91,11 +91,7 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		prov, err := val.(DNSProviderMaker).NewDNSProvider()
-		if err != nil {
-			return fmt.Errorf("making DNS provider: %v", err)
-		}
-		m.Challenges.DNS.provider = prov
+		m.Challenges.DNS.provider = val.(challenge.Provider)
 	}
 
 	// add any custom CAs to trust store
@@ -219,12 +215,6 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
-}
-
-// DNSProviderMaker is a type that can create a new DNS provider.
-// Modules in the tls.dns namespace should implement this interface.
-type DNSProviderMaker interface {
-	NewDNSProvider() (challenge.Provider, error)
 }
 
 // ExternalAccountBinding contains information for
