@@ -136,14 +136,13 @@ func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
 }
 
 func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
-	if !d.Next() {
+	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
-	args := d.RemainingArgs()
-	if len(args) != 1 {
+	if !d.Next() { // get storage module name
 		return nil, d.ArgErr()
 	}
-	modName := args[0]
+	modName := d.Val()
 	mod, err := caddy.GetModule("caddy.storage." + modName)
 	if err != nil {
 		return nil, d.Errf("getting storage module '%s': %v", modName, err)
