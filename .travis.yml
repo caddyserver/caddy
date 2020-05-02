@@ -1,0 +1,24 @@
+branches:
+  only:
+  - master
+language: go
+go:
+  - 1.14.x
+dist: bionic
+arch:
+  - ppc64le
+  - s390x
+env:
+  - GO111MODULE=on CGO_ENABLED=0
+cache:
+  directories:
+    - $GOPATH/pkg/mod
+    - /home/travis/.cache/go-build
+git:
+  depth: 1
+
+install:
+  - go get -v -t -d ./...
+script:
+  - go test -v -short ./...
+  - go build -trimpath -ldflags="-w -s" -v -o cmd/caddy/caddy cmd/caddy/main.go
