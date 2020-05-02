@@ -113,7 +113,8 @@ type PassiveHealthChecks struct {
 
 // CircuitBreaker is a type that can act as an early-warning
 // system for the health checker when backends are getting
-// overloaded.
+// overloaded. This interface is still experimental and is
+// subject to change.
 type CircuitBreaker interface {
 	OK() bool
 	RecordMetric(statusCode int, latency time.Duration)
