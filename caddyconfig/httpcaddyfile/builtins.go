@@ -202,7 +202,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				acmeIssuer.CA = arg[0]
 
 			case "dns":
-				if !h.Next() {
+				if !h.NextArg() {
 					return nil, h.ArgErr()
 				}
 				provName := h.Val()
