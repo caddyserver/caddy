@@ -10,6 +10,7 @@ env:
 cache:
   directories:
     - $GOPATH/pkg/mod
+    - /home/travis/.cache/go-build
 git:
   depth: 1
 
