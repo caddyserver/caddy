@@ -24,7 +24,6 @@ require (
 	github.com/smallstep/certificates v0.14.2
 	github.com/smallstep/cli v0.14.2
 	github.com/smallstep/truststore v0.9.5
-	github.com/vulcand/oxy v1.1.0
 	github.com/yuin/goldmark v1.1.28
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.14.1
