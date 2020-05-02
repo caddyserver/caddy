@@ -91,7 +91,21 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		m.Challenges.DNS.provider = val.(challenge.Provider)
+		// TODO: For a temporary amount of time, we are allowing the use of
+		// DNS providers from go-acme/lego since there are so many implemented
+		// for it -- they are adapted as Caddy modules in this repository:
+		// https://github.com/caddy-dns/lego-deprecated - that module is
+		// a challenge.Provider value, so we use it directly. The user must set
+		// environment variables to configure it. Remove this shim once a sufficient
+		// number of DNS providers are implemented for the libdns APIs instead.
+		if grandfatheredProvider, ok := val.(challenge.Provider); ok {
+			m.Challenges.DNS.provider = grandfatheredProvider
+		} else {
+			m.Challenges.DNS.provider = &solver{
+				recordManager: val.(recordManager),
+				TTL:           time.Duration(m.Challenges.DNS.TTL),
+			}
+		}
 	}
 
 	// add any custom CAs to trust store
