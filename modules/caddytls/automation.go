@@ -287,7 +287,7 @@ type TLSALPNChallengeConfig struct {
 type DNSChallengeConfig struct {
 	// The DNS provider module to use which will manage
 	// the DNS records relevant to the ACME challenge.
-	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=tls.dns inline_key=name"`
+	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 
 	// The TTL of the TXT record used for the DNS challenge.
 	TTL caddy.Duration `json:"ttl,omitempty"`
