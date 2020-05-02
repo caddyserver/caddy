@@ -120,53 +120,6 @@ jobs:
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
 
-  test-non-amd64:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch:
-          - name: IBM Z and LinuxONE
-            architecture: "s390x"
-          - name: POWER8
-            architecture: "ppc64le"
-    
-    runs-on: ubuntu-latest
-    name: Build on ${{ matrix.arch.name }} 
-    steps:
-      - uses: actions/checkout@v2
-      - uses: uraimo/run-on-arch-action@master
-        env:
-          GOARCH: ${{ matrix.arch.architecture }}
-          CGO_ENABLED: 0
-        with:
-          architecture: ${{ matrix.arch.architecture }}
-          distribution: ubuntu18.04
-          additionalArgs: -e GOARCH -e CGO_ENABLED
-          run: |
-            apt-get update
-            apt dist-upgrade
-            apt install -y apt-transport-https curl wget
-            latestGo=$(curl "https://golang.org/VERSION?m=text")
-            wget "https://dl.google.com/go/${latestGo}.linux-${GOARCH}.tar.gz"
-            rm -f $(which go)
-            rm -rf /usr/local/go
-            tar -C /usr/local -xzf "${latestGo}.linux-${GOARCH}.tar.gz"
-            export PATH=/usr/local/go/bin:$PATH
-            printf "Using go at: $(which go)\n"
-            printf "Go version: $(go version)\n"
-            printf "\n\nGo environment:\n\n"
-            go env
-            printf "\n\nSystem environment:\n\n"
-            env
-            go get -insecure -v -t -d ./...
-            go test ./...
-            cd ./cmd/caddy
-            go build -trimpath -ldflags="-w -s" -v
-      - uses: actions/upload-artifact@v1
-        with:
-          name: caddy_v2_linux_${{ matrix.arch.architecture }}
-          path: ./cmd/caddy/caddy
-
   # From https://github.com/reviewdog/action-golangci-lint
   golangci-lint:
     name: runner / golangci-lint
