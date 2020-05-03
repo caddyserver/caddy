@@ -59,6 +59,11 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
+//         clients	 {
+//                     mode	              [request|require|verify_if_given|require_and_verify]
+//                     trusted_ca_certs   <trusted_ca_certs...>
+//                     trusted_leaf_certs <trusted_leaf_certs...>
+//					 }
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
@@ -179,6 +184,36 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 						return nil, h.Errf("Wrong curve name or curve not supported: '%s'", h.Val())
 					}
 					cp.Curves = append(cp.Curves, h.Val())
+				}
+
+			case "clients":
+				ch := h.NewFromNextSegment() // new helper for client auth config
+				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
+				for ch.Next() {
+					for ch.NextBlock(0) {
+						switch ch.Val() {
+						case "mode":
+							for ch.NextArg() {
+								cp.ClientAuthentication.Mode = ch.Val()
+							}
+						case "trusted_ca_certs":
+							for ch.NextArg() {
+								if _, err := caddytls.DecodeBase64DERCert(ch.Val()); err != nil {
+									return nil, h.Errf("cannot decode trusted CA certificate '%s'", ch.Val())
+								}
+								cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, ch.Val())
+							}
+						case "trusted_leaf_certs":
+							for ch.NextArg() {
+								if _, err := caddytls.DecodeBase64DERCert(ch.Val()); err != nil {
+									return nil, h.Errf("cannot decode trusted leaf certificate '%s'", ch.Val())
+								}
+								cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, ch.Val())
+							}
+						default:
+							return nil, h.Errf("Unknown param for Client Certificate Check: '%s'", ch.Val())
+						}
+					}
 				}
 
 			case "alpn":

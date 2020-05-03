@@ -336,7 +336,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	if len(clientauth.TrustedCACerts) > 0 {
 		caPool := x509.NewCertPool()
 		for _, clientCAString := range clientauth.TrustedCACerts {
-			clientCA, err := decodeBase64DERCert(clientCAString)
+			clientCA, err := DecodeBase64DERCert(clientCAString)
 			if err != nil {
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
@@ -350,7 +350,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		clientauth.trustedLeafCerts = []*x509.Certificate{}
 
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
-			clientCert, err := decodeBase64DERCert(clientCertString)
+			clientCert, err := DecodeBase64DERCert(clientCertString)
 			if err != nil {
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
@@ -397,7 +397,7 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 }
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
-func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
+func DecodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	// decode base64
 	derBytes, err := base64.StdEncoding.DecodeString(certStr)
 	if err != nil {
