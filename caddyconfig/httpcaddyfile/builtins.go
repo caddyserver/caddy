@@ -59,11 +59,11 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
-//         clients	 {
-//                     mode	              [request|require|verify_if_given|require_and_verify]
-//                     trusted_ca_certs   <trusted_ca_certs...>
-//                     trusted_leaf_certs <trusted_leaf_certs...>
-//					 }
+//         clients {
+//             mode	              [request|require|verify_if_given|require_and_verify]
+//             trusted_ca_certs   <trusted_ca_certs...>
+//             trusted_leaf_certs <trusted_leaf_certs...>
+//         }
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
