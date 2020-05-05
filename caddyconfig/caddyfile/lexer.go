@@ -73,7 +73,7 @@ func (l *lexer) load(input io.Reader) error {
 // a token was loaded; false otherwise.
 func (l *lexer) next() bool {
 	var val []rune
-	var comment, quoted, escaped bool
+	var comment, quoted, btQuoted, escaped bool
 
 	makeToken := func() bool {
 		l.token.Text = string(val)
@@ -92,13 +92,13 @@ func (l *lexer) next() bool {
 			panic(err)
 		}
 
-		if !escaped && ch == '\\' {
+		if !escaped && !btQuoted && ch == '\\' {
 			escaped = true
 			continue
 		}
 
-		if quoted {
-			if escaped {
+		if quoted || btQuoted {
+			if quoted && escaped {
 				// all is literal in quoted area,
 				// so only escape quotes
 				if ch != '"' {
@@ -106,7 +106,10 @@ func (l *lexer) next() bool {
 				}
 				escaped = false
 			} else {
-				if ch == '"' {
+				if quoted && ch == '"' {
+					return makeToken()
+				}
+				if btQuoted && ch == '`' {
 					return makeToken()
 				}
 			}
@@ -149,6 +152,10 @@ func (l *lexer) next() bool {
 			l.token = Token{Line: l.line}
 			if ch == '"' {
 				quoted = true
+				continue
+			}
+			if ch == '`' {
+				btQuoted = true
 				continue
 			}
 		}
