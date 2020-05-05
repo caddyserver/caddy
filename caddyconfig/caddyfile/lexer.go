@@ -141,7 +141,7 @@ func (l *lexer) next() bool {
 			continue
 		}
 
-		if ch == '#' {
+		if ch == '#' && len(val) == 0 {
 			comment = true
 		}
 		if comment {

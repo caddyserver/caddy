@@ -78,6 +78,26 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
+			input: `host:123 {
+						# hash inside string is not a comment
+						redir / /some/#/path
+					}`,
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 1, Text: "{"},
+				{Line: 3, Text: "redir"},
+				{Line: 3, Text: "/"},
+				{Line: 3, Text: "/some/#/path"},
+				{Line: 4, Text: "}"},
+			},
+		},
+		{
+			input: "# comment at beginning of file\n# comment at beginning of line\nhost:123",
+			expected: []Token{
+				{Line: 3, Text: "host:123"},
+			},
+		},
+		{
 			input: `a "quoted value" b
 					foobar`,
 			expected: []Token{
