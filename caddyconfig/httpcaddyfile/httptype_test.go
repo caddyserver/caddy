@@ -50,6 +50,13 @@ func TestMatcherSyntax(t *testing.T) {
 			expectWarn:  false,
 			expectError: false,
 		},
+		{
+			input: `http://localhost
+			@debug not path /somepath*
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{

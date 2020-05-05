@@ -283,3 +283,83 @@ func TestHttpOnlyOnNonStandardPort(t *testing.T) {
 	}
 }`)
 }
+
+func TestMatcherSyntax(t *testing.T) {
+	caddytest.AssertAdapt(t, ` 
+	:80 {
+		@matcher {
+			method GET
+		}
+		respond @matcher "get"
+
+		@matcher2 method POST
+		respond @matcher2 "post"
+
+		@matcher3 not method PUT
+		respond @matcher3 "not put"
+	}
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"method": [
+										"GET"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "get",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"method": [
+										"POST"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "post",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"method": [
+												"PUT"
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "not put",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
