@@ -27,6 +27,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func init() {
@@ -280,6 +282,14 @@ func (app *App) Start() error {
 			IdleTimeout:       time.Duration(srv.IdleTimeout),
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
+		}
+
+		// enable h2c if configured
+		if srv.AllowH2C {
+			h2server := &http2.Server{
+				IdleTimeout: time.Duration(srv.IdleTimeout),
+			}
+			s.Handler = h2c.NewHandler(srv, h2server)
 		}
 
 		for _, lnAddr := range srv.Listen {

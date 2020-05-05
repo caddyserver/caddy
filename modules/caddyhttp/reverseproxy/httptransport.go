@@ -82,11 +82,16 @@ type HTTPTransport struct {
 	// The size of the read buffer in bytes.
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 
-	// The versions of HTTP to support. Default: ["1.1", "2"]
+	// The versions of HTTP to support. As a special case, "h2c"
+	// can be specified to use H2C (HTTP/2 over Cleartext) to the
+	// upstream (this feature is experimental and subject to
+	// change or removal). Default: ["1.1", "2"]
 	Versions []string `json:"versions,omitempty"`
 
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
+
+	h2cTransport *http2.Transport
 }
 
 // CaddyModule returns the Caddy module information.
@@ -109,6 +114,28 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 		return err
 	}
 	h.Transport = rt
+
+	// if h2c is enabled, configure its transport (std lib http.Transport
+	// does not "HTTP/2 over cleartext TCP")
+	if sliceContains(h.Versions, "h2c") {
+		// crafting our own http2.Transport doesn't allow us to utilize
+		// most of the customizations/preferences on the http.Transport,
+		// because, for some reason, only http2.ConfigureTransport()
+		// is allowed to set the unexported field that refers to a base
+		// http.Transport config; oh well
+		h2t := &http2.Transport{
+			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
+			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+				// TODO: no context, thus potentially wrong dial info
+				return net.Dial(network, addr)
+			},
+			AllowHTTP: true,
+		}
+		if h.Compression != nil {
+			h2t.DisableCompression = !*h.Compression
+		}
+		h.h2cTransport = h2t
+	}
 
 	return nil
 }
@@ -182,6 +209,13 @@ func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.SetScheme(req)
+
+	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
+	// HTTP/2 without TLS, use the alternate H2C-capable transport instead
+	if req.ProtoMajor == 2 && req.URL.Scheme == "http" && h.h2cTransport != nil {
+		return h.h2cTransport.RoundTrip(req)
+	}
+
 	return h.Transport.RoundTrip(req)
 }
 

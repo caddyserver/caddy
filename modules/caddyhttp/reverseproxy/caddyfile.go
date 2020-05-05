@@ -584,6 +584,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //         tls_trusted_ca_certs <cert_files...>
 //         keepalive [off|<duration>]
 //         keepalive_idle_conns <max_count>
+//         versions <versions...>
 //     }
 //
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -700,6 +701,12 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.KeepAlive.MaxIdleConns = num
 				h.KeepAlive.MaxIdleConnsPerHost = num
+
+			case "versions":
+				h.Versions = d.RemainingArgs()
+				if len(h.Versions) == 0 {
+					return d.ArgErr()
+				}
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
