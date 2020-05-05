@@ -74,11 +74,19 @@ type Handler struct {
 	// Upstreams is the list of backends to proxy to.
 	Upstreams UpstreamPool `json:"upstreams,omitempty"`
 
+	// Adjusts how often to flush the response buffer. A
+	// negative value disables response buffering.
 	// TODO: figure out good defaults and write docs for this
 	// (see https://github.com/caddyserver/caddy/issues/1460)
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
 
 	// Headers manipulates headers between Caddy and the backend.
+	// By default, all headers are passed-thru without changes,
+	// with the exceptions of special hop-by-hop headers.
+	//
+	// X-Forwarded-For and X-Forwarded-Proto are also set
+	// implicitly, but this may change in the future if the official
+	// standardized Forwarded header field gains more adoption.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
 	// If true, the entire request body will be read and buffered
@@ -125,6 +133,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading circuit breaker: %s", err)
 		}
 		h.CB = mod.(CircuitBreaker)
+	}
+
+	// ensure any embedded headers handler module gets provisioned
+	// (see https://caddy.community/t/set-cookie-manipulation-in-reverse-proxy/7666?u=matt
+	// for what happens if we forget to provision it)
+	if h.Headers != nil {
+		err := h.Headers.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning embedded headers handler: %v", err)
+		}
 	}
 
 	// set up transport
@@ -423,6 +441,13 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		req.Header.Set("X-Forwarded-For", clientIP)
 	}
 
+	// set X-Forwarded-Proto; many backend apps expect this too
+	proto := "https"
+	if req.TLS == nil {
+		proto = "http"
+	}
+	req.Header.Set("X-Forwarded-Proto", proto)
+
 	return nil
 }
 
@@ -598,19 +623,17 @@ func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Requ
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
 func (h Handler) directRequest(req *http.Request, di DialInfo) {
-	if req.URL.Host == "" {
-		// we need a host, so set the upstream's host address
-		reqHost := di.Address
+	// we need a host, so set the upstream's host address
+	reqHost := di.Address
 
-		// if the port equates to the scheme, strip the port because
-		// it's weird to make a request like http://example.com:80/.
-		if (req.URL.Scheme == "http" && di.Port == "80") ||
-			(req.URL.Scheme == "https" && di.Port == "443") {
-			reqHost = di.Host
-		}
-
-		req.URL.Host = reqHost
+	// if the port equates to the scheme, strip the port because
+	// it's weird to make a request like http://example.com:80/.
+	if (req.URL.Scheme == "http" && di.Port == "80") ||
+		(req.URL.Scheme == "https" && di.Port == "443") {
+		reqHost = di.Host
 	}
+
+	req.URL.Host = reqHost
 }
 
 // shouldPanicOnCopyError reports whether the reverse proxy should

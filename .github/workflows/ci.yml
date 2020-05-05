@@ -66,6 +66,15 @@ jobs:
         env
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "::set-output name=go_cache::$(go env GOCACHE)"
+
+    - name: Cache the build cache
+      uses: actions/cache@v1
+      with:
+        path: ${{ steps.vars.outputs.go_cache }}
+        key: ${{ runner.os }}-go-ci-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-ci
 
     - name: Get dependencies
       run: |
@@ -77,7 +86,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -trimpath -a -ldflags="-w -s" -v
+        go build -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v1

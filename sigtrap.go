@@ -53,20 +53,29 @@ func trapSignalsCrossPlatform() {
 }
 
 // gracefulStop exits the process as gracefully as possible.
+// It always exits, even if there are errors shutting down.
 func gracefulStop(sigName string) {
 	exitCode := ExitCodeSuccess
+	defer func() {
+		Log().Info("shutdown done", zap.String("signal", sigName))
+		os.Exit(exitCode)
+	}()
 
 	err := stopAndCleanup()
 	if err != nil {
-		Log().Error("stopping",
+		Log().Error("stopping config",
 			zap.String("signal", sigName),
-			zap.Error(err),
-		)
+			zap.Error(err))
 		exitCode = ExitCodeFailedQuit
 	}
 
-	Log().Info("shutdown done", zap.String("signal", sigName))
-	os.Exit(exitCode)
+	err = stopAdminServer(adminServer)
+	if err != nil {
+		Log().Error("stopping admin endpoint",
+			zap.String("signal", sigName),
+			zap.Error(err))
+		exitCode = ExitCodeFailedQuit
+	}
 }
 
 // Exit codes. Generally, you should NOT

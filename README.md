@@ -43,7 +43,7 @@
 
 - **Easy configuration** with the [Caddyfile](https://caddyserver.com/docs/caddyfile)
 - **Powerful configuration** with its [native JSON config](https://caddyserver.com/docs/json/)
-- **Dynamic configuration** with the [JSON API](https://caddyserver.com/api)
+- **Dynamic configuration** with the [JSON API](https://caddyserver.com/docs/api)
 - [**Config adapters**](https://caddyserver.com/docs/config-adapters) if you don't like JSON
 - **Automatic HTTPS** by default
 	- [Let's Encrypt](https://letsencrypt.org) for public sites
@@ -140,7 +140,7 @@ The docs are also open source. You can contribute to them here: https://github.c
 
 - Individuals can exchange help for free on our community forum at https://caddy.community. Remember that people give help out of their spare time and good will. The best way to get help is to give it first!
 
-Please use our [issue tracker](/caddyserver/caddy/issues) only for bug reports and feature requests, i.e. actionable development items (support questions will usually be referred to the forums).
+Please use our [issue tracker](https://github.com/caddyserver/caddy/issues) only for bug reports and feature requests, i.e. actionable development items (support questions will usually be referred to the forums).
 
 
 

@@ -302,6 +302,16 @@ func (na NetworkAddress) isLoopback() bool {
 	return false
 }
 
+func (na NetworkAddress) isWildcardInterface() bool {
+	if na.Host == "" {
+		return true
+	}
+	if ip := net.ParseIP(na.Host); ip != nil {
+		return ip.IsUnspecified()
+	}
+	return false
+}
+
 func (na NetworkAddress) port() string {
 	if na.StartPort == na.EndPort {
 		return strconv.FormatUint(uint64(na.StartPort), 10)

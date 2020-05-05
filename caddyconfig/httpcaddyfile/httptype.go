@@ -38,7 +38,7 @@ type ServerType struct {
 }
 
 // Setup makes a config from the tokens.
-func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
+func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
@@ -50,15 +50,15 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	// chosen to handle a request - we actually will make each
 	// server block's route terminal so that only one will run
 	sbKeys := make(map[string]struct{})
-	serverBlocks := make([]serverBlock, 0, len(originalServerBlocks))
-	for i, sblock := range originalServerBlocks {
+	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
+	for i, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
 			if _, ok := sbKeys[k]; ok {
 				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
 			}
 			sbKeys[k] = struct{}{}
 		}
-		serverBlocks = append(serverBlocks, serverBlock{
+		originalServerBlocks = append(originalServerBlocks, serverBlock{
 			block: sblock,
 			pile:  make(map[string][]ConfigValue),
 		})
@@ -66,12 +66,12 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 
 	// apply any global options
 	var err error
-	serverBlocks, err = st.evaluateGlobalOptionsBlock(serverBlocks, options)
+	originalServerBlocks, err = st.evaluateGlobalOptionsBlock(originalServerBlocks, options)
 	if err != nil {
 		return nil, warnings, err
 	}
 
-	for _, sb := range serverBlocks {
+	for _, sb := range originalServerBlocks {
 		// replace shorthand placeholders (which are
 		// convenient when writing a Caddyfile) with
 		// their actual placeholder identifiers or
@@ -155,7 +155,7 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	}
 
 	// map
-	sbmap, err := st.mapAddressToServerBlocks(serverBlocks, options)
+	sbmap, err := st.mapAddressToServerBlocks(originalServerBlocks, options)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -193,21 +193,24 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 	// extract any custom logs, and enforce configured levels
 	var customLogs []namedCustomLog
 	var hasDefaultLog bool
-	for _, sb := range serverBlocks {
-		for _, clVal := range sb.pile["custom_log"] {
-			ncl := clVal.Value.(namedCustomLog)
-			if ncl.name == "" {
-				continue
+	for _, p := range pairings {
+		for _, sb := range p.serverBlocks {
+			for _, clVal := range sb.pile["custom_log"] {
+				ncl := clVal.Value.(namedCustomLog)
+				if ncl.name == "" {
+					continue
+				}
+				if ncl.name == "default" {
+					hasDefaultLog = true
+				}
+				if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+					ncl.log.Level = "DEBUG"
+				}
+				customLogs = append(customLogs, ncl)
 			}
-			if ncl.name == "default" {
-				hasDefaultLog = true
-			}
-			if _, ok := options["debug"]; ok && ncl.log.Level == "" {
-				ncl.log.Level = "DEBUG"
-			}
-			customLogs = append(customLogs, ncl)
 		}
 	}
+
 	if !hasDefaultLog {
 		// if the default log was not customized, ensure we
 		// configure it with any applicable options
@@ -250,17 +253,16 @@ func (st ServerType) Setup(originalServerBlocks []caddyfile.ServerBlock,
 			if ncl.name != "" {
 				cfg.Logging.Logs[ncl.name] = ncl.log
 			}
-		}
-	}
-	if len(customLogs) > 0 {
-		if cfg.Logging == nil {
-			cfg.Logging = &caddy.Logging{
-				Logs: make(map[string]*caddy.CustomLog),
-			}
-		}
-		for _, ncl := range customLogs {
-			if ncl.name != "" {
-				cfg.Logging.Logs[ncl.name] = ncl.log
+			// most users seem to prefer not writing access logs
+			// to the default log when they are directed to a
+			// file or have any other special customization
+			if len(ncl.log.Include) > 0 {
+				defaultLog, ok := cfg.Logging.Logs["default"]
+				if !ok {
+					defaultLog = new(caddy.CustomLog)
+					cfg.Logging.Logs["default"] = defaultLog
+				}
+				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
 			}
 		}
 	}
@@ -336,6 +338,10 @@ func (st *ServerType) serversFromPairings(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
+	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
+	if hsp, ok := options["https_port"].(int); ok {
+		httpsPort = strconv.Itoa(hsp)
+	}
 
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
@@ -374,7 +380,8 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
-		var hasCatchAllTLSConnPolicy, usesTLS bool
+		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
+		autoHTTPSWillAddConnPolicy := true
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
@@ -413,9 +420,9 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
-			// exclude any hosts that were defined explicitly with
-			// "http://" in the key from automated cert management (issue #2998)
 			for _, addr := range sblock.keys {
+				// exclude any hosts that were defined explicitly with "http://"
+				// in the key from automated cert management (issue #2998)
 				if addr.Scheme == "http" && addr.Host != "" {
 					if srv.AutoHTTPS == nil {
 						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
@@ -424,9 +431,16 @@ func (st *ServerType) serversFromPairings(
 						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
-				if addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort {
-					usesTLS = true
+				// we'll need to remember if the address qualifies for auto-HTTPS, so we
+				// can add a TLS conn policy if necessary
+				if addr.Scheme == "https" ||
+					(addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort) {
+					addressQualifiesForTLS = true
 				}
+				// predict whether auto-HTTPS will add the conn policy for us; if so, we
+				// may not need to add one for this server
+				autoHTTPSWillAddConnPolicy = autoHTTPSWillAddConnPolicy &&
+					(addr.Port == httpsPort || (addr.Port != httpPort && addr.Host != ""))
 			}
 
 			// set up each handler directive, making sure to honor directive order
@@ -451,22 +465,45 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// add log associations
+			// see https://github.com/caddyserver/caddy/issues/3310
+			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
 				if srv.Logs == nil {
-					srv.Logs = &caddyhttp.ServerLogConfig{
-						LoggerNames: make(map[string]string),
-					}
+					srv.Logs = new(caddyhttp.ServerLogConfig)
 				}
 				if sblock.hasHostCatchAllKey() {
-					srv.Logs.LoggerName = ncl.name
+					// all requests for hosts not able to be listed should use
+					// this log because it's a catch-all-hosts server block
+					srv.Logs.DefaultLoggerName = ncl.name
 				} else {
-					for _, h := range sblock.hostsFromKeys(true) {
-						if ncl.name != "" {
+					// map each host to the user's desired logger name
+					for _, h := range sblockLogHosts {
+						// if the custom logger name is non-empty, add it to
+						// the map; otherwise, only map to an empty logger
+						// name if the server block has a catch-all host (in
+						// which case only requests with mapped hostnames will
+						// be access-logged, so it'll be necessary to add them
+						// to the map even if they use default logger)
+						if ncl.name != "" || len(hosts) == 0 {
+							if srv.Logs.LoggerNames == nil {
+								srv.Logs.LoggerNames = make(map[string]string)
+							}
 							srv.Logs.LoggerNames[h] = ncl.name
 						}
 					}
 				}
+			}
+			if srv.Logs != nil && len(sblock.pile["custom_log"]) == 0 {
+				// server has access logs enabled, but this server block does not
+				// enable access logs; therefore, all hosts of this server block
+				// should not be access-logged
+				if len(hosts) == 0 {
+					// if the server block has a catch-all-hosts key, then we should
+					// not log reqs to any host unless it appears in the map
+					srv.Logs.SkipUnmappedHosts = true
+				}
+				srv.Logs.SkipHosts = append(srv.Logs.SkipHosts, sblockLogHosts...)
 			}
 		}
 
@@ -489,9 +526,9 @@ func (st *ServerType) serversFromPairings(
 		// TODO: maybe a smarter way to handle this might be to just make the
 		// auto-HTTPS logic at provision-time detect if there is any connection
 		// policy missing for any HTTPS-enabled hosts, if so, add it... maybe?
-		if usesTLS &&
+		if addressQualifiesForTLS &&
 			!hasCatchAllTLSConnPolicy &&
-			(len(srv.TLSConnPolicies) > 0 || defaultSNI != "") {
+			(len(srv.TLSConnPolicies) > 0 || !autoHTTPSWillAddConnPolicy || defaultSNI != "") {
 			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI})
 		}
 
@@ -551,7 +588,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 				if err := checkAndSetHTTP(addr); err != nil {
 					return err
 				}
-			} else if addr.Scheme == "https" || addr.Port == httpsPort {
+			} else if addr.Scheme == "https" || addr.Port == httpsPort || len(srv.TLSConnPolicies) > 0 {
 				if err := checkAndSetHTTPS(addr); err != nil {
 					return err
 				}

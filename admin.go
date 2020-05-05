@@ -60,10 +60,11 @@ type AdminConfig struct {
 	// default.
 	EnforceOrigin bool `json:"enforce_origin,omitempty"`
 
-	// The list of allowed origins for API requests. Only used if
-	// `enforce_origin` is true. If not set, the listener address
-	// will be the default value. If set but empty, no origins will
-	// be allowed.
+	// The list of allowed origins/hosts for API requests. Only needed
+	// if accessing the admin endpoint from a host different from the
+	// socket's network interface or if `enforce_origin` is true. If not
+	// set, the listener address will be the default value. If set but
+	// empty, no origins will be allowed.
 	Origins []string `json:"origins,omitempty"`
 
 	// Options related to configuration management.
@@ -99,6 +100,7 @@ func (admin AdminConfig) listenAddr() (NetworkAddress, error) {
 func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 	muxWrap := adminHandler{
 		enforceOrigin:  admin.EnforceOrigin,
+		enforceHost:    !addr.isWildcardInterface(),
 		allowedOrigins: admin.allowedOrigins(addr),
 		mux:            http.NewServeMux(),
 	}
@@ -234,12 +236,15 @@ func replaceAdmin(cfg *Config) error {
 
 	go adminServer.Serve(ln)
 
-	Log().Named("admin").Info(
-		"admin endpoint started",
+	Log().Named("admin").Info("admin endpoint started",
 		zap.String("address", addr.String()),
 		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
-		zap.Strings("origins", handler.allowedOrigins),
-	)
+		zap.Strings("origins", handler.allowedOrigins))
+
+	if !handler.enforceHost {
+		Log().Named("admin").Warn("admin endpoint on open interface; host checking disabled",
+			zap.String("address", addr.String()))
+	}
 
 	return nil
 }
@@ -271,6 +276,7 @@ type AdminRoute struct {
 
 type adminHandler struct {
 	enforceOrigin  bool
+	enforceHost    bool
 	allowedOrigins []string
 	mux            *http.ServeMux
 }
@@ -292,11 +298,13 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // be called more than once per request, for example if a request
 // is rewritten (i.e. internal redirect).
 func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	// DNS rebinding mitigation
-	err := h.checkHost(r)
-	if err != nil {
-		h.handleError(w, r, err)
-		return
+	if h.enforceHost {
+		// DNS rebinding mitigation
+		err := h.checkHost(r)
+		if err != nil {
+			h.handleError(w, r, err)
+			return
+		}
 	}
 
 	if h.enforceOrigin {

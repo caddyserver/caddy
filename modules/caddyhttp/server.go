@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -35,7 +36,9 @@ import (
 type Server struct {
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
-	// that may include port ranges.
+	// that may include port ranges. Listener addresses must
+	// be unique; they cannot be repeated across all defined
+	// servers.
 	Listen []string `json:"listen,omitempty"`
 
 	// A list of listener wrapper modules, which can modify the behavior
@@ -98,9 +101,9 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
-	// Customizes how access logs are handled in this server. To
-	// minimally enable access logs, simply set this to a non-null,
-	// empty struct.
+	// Enables access logging and configures how access logs are handled
+	// in this server. To minimally enable access logs, simply set this
+	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
 	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
@@ -150,24 +153,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// to capture the original request in case it gets
 	// modified during handling
 	loggableReq := zap.Object("request", LoggableHTTPRequest{r})
-	errLog := s.errorLogger.With(
-		loggableReq,
-	)
+	errLog := s.errorLogger.With(loggableReq)
 
-	if s.accessLogger != nil {
+	var duration time.Duration
+
+	if s.shouldLogRequest(r) {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
-		start := time.Now()
 		defer func() {
-			latency := time.Since(start)
-
 			repl.Set("http.response.status", wrec.Status())
 			repl.Set("http.response.size", wrec.Size())
-			repl.Set("http.response.latency", latency)
+			repl.Set("http.response.duration", duration)
 
 			logger := accLog
 			if s.Logs != nil {
@@ -181,7 +181,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			log("handled request",
 				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
-				zap.Duration("latency", latency),
+				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
 				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
@@ -189,51 +189,60 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	start := time.Now()
+
 	// guarantee ACME HTTP challenges; handle them
 	// separately from any user-defined handlers
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
+		duration = time.Since(start)
 		return
 	}
 
 	// execute the primary handler chain
 	err := s.primaryHandlerChain.ServeHTTP(w, r)
-	if err != nil {
-		// prepare the error log
-		logger := errLog
-		if s.Logs != nil {
-			logger = s.Logs.wrapLogger(logger, r.Host)
-		}
+	duration = time.Since(start)
 
-		// get the values that will be used to log the error
-		errStatus, errMsg, errFields := errLogValues(err)
+	// if no errors, we're done!
+	if err == nil {
+		return
+	}
 
-		// add HTTP error information to request context
-		r = s.Errors.WithError(r, err)
+	// prepare the error log
+	logger := errLog
+	if s.Logs != nil {
+		logger = s.Logs.wrapLogger(logger, r.Host)
+	}
+	logger = logger.With(zap.Duration("duration", duration))
 
-		if s.Errors != nil && len(s.Errors.Routes) > 0 {
-			// execute user-defined error handling route
-			err2 := s.errorHandlerChain.ServeHTTP(w, r)
-			if err2 == nil {
-				// user's error route handled the error response
-				// successfully, so now just log the error
-				if errStatus >= 500 {
-					logger.Error(errMsg, errFields...)
-				}
-			} else {
-				// well... this is awkward
-				errFields = append([]zapcore.Field{
-					zap.String("error", err2.Error()),
-					zap.Namespace("first_error"),
-					zap.String("msg", errMsg),
-				}, errFields...)
-				logger.Error("error handling handler error", errFields...)
-			}
-		} else {
+	// get the values that will be used to log the error
+	errStatus, errMsg, errFields := errLogValues(err)
+
+	// add HTTP error information to request context
+	r = s.Errors.WithError(r, err)
+
+	if s.Errors != nil && len(s.Errors.Routes) > 0 {
+		// execute user-defined error handling route
+		err2 := s.errorHandlerChain.ServeHTTP(w, r)
+		if err2 == nil {
+			// user's error route handled the error response
+			// successfully, so now just log the error
 			if errStatus >= 500 {
 				logger.Error(errMsg, errFields...)
 			}
-			w.WriteHeader(errStatus)
+		} else {
+			// well... this is awkward
+			errFields = append([]zapcore.Field{
+				zap.String("error", err2.Error()),
+				zap.Namespace("first_error"),
+				zap.String("msg", errMsg),
+			}, errFields...)
+			logger.Error("error handling handler error", errFields...)
 		}
+	} else {
+		if errStatus >= 500 {
+			logger.Error(errMsg, errFields...)
+		}
+		w.WriteHeader(errStatus)
 	}
 }
 
@@ -305,8 +314,30 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 			continue
 		}
 
-		// host must be the same and port must fall within port range
-		if (thisAddrs.Host == laddrs.Host) &&
+		// Apparently, Linux requires all bound ports to be distinct
+		// *regardless of host interface* even if the addresses are
+		// in fact different; binding "192.168.0.1:9000" and then
+		// ":9000" will fail for ":9000" because "address is already
+		// in use" even though it's not, and the same bindings work
+		// fine on macOS. I also found on Linux that listening on
+		// "[::]:9000" would fail with a similar error, except with
+		// the address "0.0.0.0:9000", as if deliberately ignoring
+		// that I specified the IPv6 interface explicitly. This seems
+		// to be a major bug in the Linux network stack and I don't
+		// know why it hasn't been fixed yet, so for now we have to
+		// special-case ourselves around Linux like a doting parent.
+		// The second issue seems very similar to a discussion here:
+		// https://github.com/nodejs/node/issues/9390
+		//
+		// This is very easy to reproduce by creating an HTTP server
+		// that listens to both addresses or just one with a host
+		// interface; or for a more confusing reproduction, try
+		// listening on "127.0.0.1:80" and ":443" and you'll see
+		// the error, if you take away the GOOS condition below.
+		//
+		// So, an address is equivalent if the port is in the port
+		// range, and if not on Linux, the host is the same... sigh.
+		if (runtime.GOOS == "linux" || thisAddrs.Host == laddrs.Host) &&
 			(laddrs.StartPort <= thisAddrs.EndPort) &&
 			(laddrs.StartPort >= thisAddrs.StartPort) {
 			return true
@@ -365,17 +396,52 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	return r
 }
 
-// ServerLogConfig describes a server's logging configuration.
+// shouldLogRequest returns true if this request should be logged.
+func (s *Server) shouldLogRequest(r *http.Request) bool {
+	if s.accessLogger == nil || s.Logs == nil {
+		// logging is disabled
+		return false
+	}
+	for _, dh := range s.Logs.SkipHosts {
+		// logging for this particular host is disabled
+		if r.Host == dh {
+			return false
+		}
+	}
+	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+		// this host is mapped to a particular logger name
+		return true
+	}
+	if s.Logs.SkipUnmappedHosts {
+		// this host is not mapped and thus must not be logged
+		return false
+	}
+	return true
+}
+
+// ServerLogConfig describes a server's logging configuration. If
+// enabled without customization, all requests to this server are
+// logged to the default logger; logger destinations may be
+// customized per-request-host.
 type ServerLogConfig struct {
-	// The logger name for all logs emitted by this server unless
-	// the hostname is found in the LoggerNames (logger_names) map.
-	LoggerName string `json:"log_name,omitempty"`
+	// The default logger name for all logs emitted by this server for
+	// hostnames that are not in the LoggerNames (logger_names) map.
+	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+
+	// By default, all requests to this server will be logged if
+	// access logging is enabled. This field lists the request
+	// hosts for which access logging should be disabled.
+	SkipHosts []string `json:"skip_hosts,omitempty"`
+
+	// If true, requests to any host not appearing in the
+	// LoggerNames (logger_names) map will not be logged.
+	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
 }
 
 // wrapLogger wraps logger in a logger named according to user preferences for the given host.
@@ -390,7 +456,7 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	if loggerName, ok := slc.LoggerNames[host]; ok {
 		return loggerName
 	}
-	return slc.LoggerName
+	return slc.DefaultLoggerName
 }
 
 // errLogValues inspects err and returns the status code
@@ -447,7 +513,7 @@ func cloneURL(from, to *url.URL) {
 
 const (
 	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.authentication.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
+	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
 
 	// commonLogEmptyValue is the common empty log value.
 	commonLogEmptyValue = "-"
