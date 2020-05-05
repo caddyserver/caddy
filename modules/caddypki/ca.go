@@ -15,6 +15,7 @@
 package caddypki
 
 import (
+	"crypto"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
+	"github.com/smallstep/certificates/authority"
+	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
@@ -169,6 +172,52 @@ func (ca CA) IntermediateKey() interface{} {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.interKey
+}
+
+// NewAuthority returns a new Smallstep-powered signing authority for this CA.
+func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
+	cfg := &authority.Config{
+		// TODO: eliminate these placeholders / needless values
+		// see https://github.com/smallstep/certificates/issues/218
+		Address:          "placeholder_Address:1",
+		Root:             []string{"placeholder_Root"},
+		IntermediateCert: "placeholder_IntermediateCert",
+		IntermediateKey:  "placeholder_IntermediateKey",
+		DNSNames:         []string{"placeholder_DNSNames"},
+
+		AuthorityConfig: authorityConfig.AuthConfig,
+		DB:              authorityConfig.DB,
+	}
+	// TODO: this also seems unnecessary, see above issue
+	if cfg.AuthorityConfig == nil {
+		cfg.AuthorityConfig = new(authority.AuthConfig)
+	}
+
+	// get the root certificate and the issuer cert+key
+	rootCert := ca.RootCertificate()
+	var issuerCert *x509.Certificate
+	var issuerKey interface{}
+	if authorityConfig.SignWithRoot {
+		issuerCert = rootCert
+		var err error
+		issuerKey, err = ca.RootKey()
+		if err != nil {
+			return nil, fmt.Errorf("loading signing key: %v", err)
+		}
+	} else {
+		issuerCert = ca.IntermediateCertificate()
+		issuerKey = ca.IntermediateKey()
+	}
+
+	auth, err := authority.New(cfg,
+		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
+		authority.WithX509RootCerts(rootCert),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("initializing certificate authority: %v", err)
+	}
+
+	return auth, nil
 }
 
 func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, err error) {
@@ -345,8 +394,20 @@ func (ca CA) installRoot() error {
 	)
 }
 
+// AuthorityConfig is used to help a CA configure
+// the underlying signing authority.
+type AuthorityConfig struct {
+	SignWithRoot bool
+
+	// TODO: should we just embed the underlying authority.Config struct type?
+	DB         *db.Config
+	AuthConfig *authority.AuthConfig
+}
+
 const (
-	defaultCAID                   = "local"
+	// DefaultCAID is the default CA ID.
+	DefaultCAID = "local"
+
 	defaultCAName                 = "Caddy Local Authority"
 	defaultRootCommonName         = "{pki.ca.name} - {time.now.year} ECC Root"
 	defaultIntermediateCommonName = "{pki.ca.name} - ECC Intermediate"

@@ -9,6 +9,7 @@ require (
 	github.com/caddyserver/certmagic v0.10.12
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.6.0
+	github.com/go-chi/chi v4.0.2+incompatible
 	github.com/gogo/protobuf v1.3.1
 	github.com/google/cel-go v0.4.1
 	github.com/jsternberg/zap-logfmt v1.2.0
@@ -20,6 +21,7 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/smallstep/certificates v0.14.2
 	github.com/smallstep/cli v0.14.2
+	github.com/smallstep/nosql v0.2.0
 	github.com/smallstep/truststore v0.9.5
 	github.com/yuin/goldmark v1.1.28
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691

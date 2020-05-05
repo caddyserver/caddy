@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"golang.org/x/net/http2"
 )
 
@@ -140,9 +141,8 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// NewTransport builds a standard-lib-compatible
-// http.Transport value from h.
-func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
+// NewTransport builds a standard-lib-compatible http.Transport value from h.
+func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error) {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -175,9 +175,8 @@ func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 
 	if h.TLS != nil {
 		rt.TLSHandshakeTimeout = time.Duration(h.TLS.HandshakeTimeout)
-
 		var err error
-		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig()
+		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
@@ -267,6 +266,10 @@ type TLSConfig struct {
 	// PEM-encoded key to use with the client certificate.
 	ClientCertificateKeyFile string `json:"client_certificate_key_file,omitempty"`
 
+	// If specified, Caddy will use and automate a client certificate
+	// with this subject name.
+	ClientCertificateAutomate string `json:"client_certificate_automate,omitempty"`
+
 	// If true, TLS verification of server certificates will be disabled.
 	// This is insecure and may be removed in the future. Do not use this
 	// option except in testing or local development environments.
@@ -281,7 +284,7 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
+func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	// client auth
@@ -297,6 +300,28 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 			return nil, fmt.Errorf("loading client certificate key pair: %v", err)
 		}
 		cfg.Certificates = []tls.Certificate{cert}
+	}
+	if t.ClientCertificateAutomate != "" {
+		tlsAppIface, err := ctx.App("tls")
+		if err != nil {
+			return nil, fmt.Errorf("getting tls app: %v", err)
+		}
+		tlsApp := tlsAppIface.(*caddytls.TLS)
+		err = tlsApp.Manage([]string{t.ClientCertificateAutomate})
+		if err != nil {
+			return nil, fmt.Errorf("managing client certificate: %v", err)
+		}
+		cfg.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			certs := tlsApp.AllMatchingCertificates(t.ClientCertificateAutomate)
+			var err error
+			for _, cert := range certs {
+				err = cri.SupportsCertificate(&cert.Certificate)
+				if err == nil {
+					return &cert.Certificate, nil
+				}
+			}
+			return nil, err
+		}
 	}
 
 	// trusted root CAs
