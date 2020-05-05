@@ -416,7 +416,10 @@ func (st *ServerType) serversFromPairings(
 						hasCatchAllTLSConnPolicy = true
 					}
 
-					srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
+					// only append this policy if it actually changes something
+					if !cp.SettingsEmpty() {
+						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
+					}
 				}
 			}
 
