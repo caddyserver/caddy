@@ -34,13 +34,18 @@ builds:
   ignore:
     - goos: darwin
       goarch: arm
-    - goarch:
-      - ppc64le
-      - s390x
-      goos: 
-        - darwin
-        - windows
-        - freebsd
+    - goos: darwin
+      goarch: ppc64le
+    - goos: darwin
+      goarch: s390x
+    - goos: windows
+      goarch: ppc64le
+    - goos: windows
+      goarch: s390x
+    - goos: freebsd
+      goarch: ppc64le
+    - goos: freebsd
+      goarch: s390x
   flags:
   - -trimpath
   ldflags:
