@@ -395,7 +395,7 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 		return fmt.Errorf("no client certificate provided")
 	}
 
-	remoteLeafCert, err := x509.ParseCertificate(rawCerts[len(rawCerts)-1])
+	remoteLeafCert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}
