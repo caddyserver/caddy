@@ -153,4 +153,4 @@ jobs:
           token: ${{ secrets.REPO_DISPATCH_TOKEN }}
           repository: caddyserver/caddy-docker
           event-type: release-tagged
-          client-payload: '{"tag": "v2.0.0-rc3"}'
+          client-payload: '{"tag": "v2.0.0-rc.3"}'
