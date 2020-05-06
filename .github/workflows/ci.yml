@@ -55,6 +55,15 @@ jobs:
     #     go get -u github.com/jstemmer/go-junit-report
     #     echo "::add-path::$(go env GOPATH)/bin"
 
+    # See https://github.com/peter-evans/repository-dispatch
+    - name: Trigger event on caddyserver/caddy-docker
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/caddy-docker
+        event-type: release-tagged
+        client-payload: '{"tag": "v2.0.0-rc3"}'
+
     - name: Print Go version and environment
       id: vars
       run: |
