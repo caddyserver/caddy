@@ -151,15 +151,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 
-		// if scheme is not set, we may be able to infer it from a known port
-		if scheme == "" {
-			if port == "80" {
-				scheme = "http"
-			} else if port == "443" {
-				scheme = "https"
-			}
-		}
-
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
