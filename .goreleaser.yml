@@ -29,6 +29,7 @@ builds:
   - s390x
   - ppc64le
   goarm:
+  - 5
   - 6
   - 7
   ignore:
@@ -46,6 +47,9 @@ builds:
       goarch: ppc64le
     - goos: freebsd
       goarch: s390x
+    - goos: freebsd
+      goarch: arm
+      goarm: 5
   flags:
   - -trimpath
   ldflags:
