@@ -176,23 +176,6 @@ func (ca CA) IntermediateKey() interface{} {
 
 // NewAuthority returns a new Smallstep-powered signing authority for this CA.
 func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
-	cfg := &authority.Config{
-		// TODO: eliminate these placeholders / needless values
-		// see https://github.com/smallstep/certificates/issues/218
-		Address:          "placeholder_Address:1",
-		Root:             []string{"placeholder_Root"},
-		IntermediateCert: "placeholder_IntermediateCert",
-		IntermediateKey:  "placeholder_IntermediateKey",
-		DNSNames:         []string{"placeholder_DNSNames"},
-
-		AuthorityConfig: authorityConfig.AuthConfig,
-		DB:              authorityConfig.DB,
-	}
-	// TODO: this also seems unnecessary, see above issue
-	if cfg.AuthorityConfig == nil {
-		cfg.AuthorityConfig = new(authority.AuthConfig)
-	}
-
 	// get the root certificate and the issuer cert+key
 	rootCert := ca.RootCertificate()
 	var issuerCert *x509.Certificate
@@ -209,7 +192,11 @@ func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority
 		issuerKey = ca.IntermediateKey()
 	}
 
-	auth, err := authority.New(cfg,
+	auth, err := authority.NewEmbedded(
+		authority.WithConfig(&authority.Config{
+			AuthorityConfig: authorityConfig.AuthConfig,
+			DB:              authorityConfig.DB,
+		}),
 		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
 		authority.WithX509RootCerts(rootCert),
 	)
