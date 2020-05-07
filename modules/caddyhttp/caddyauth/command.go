@@ -68,7 +68,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 	if len(plaintext) == 0 {
 		if terminal.IsTerminal(int(os.Stdin.Fd())) {
-			fmt.Print("Plaintext: ")
+			fmt.Print("Enter password: ")
 			plaintext, err = terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
 
@@ -76,7 +76,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 				return caddy.ExitCodeFailedStartup, err
 			}
 
-			fmt.Print("Confirm Plaintext: ")
+			fmt.Print("Confirm password: ")
 			confirmation, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
 
@@ -85,7 +85,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 			}
 
 			if !bytes.Equal(plaintext, confirmation) {
-				return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext does not match")
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("password does not match")
 			}
 		} else {
 			rd := bufio.NewReader(os.Stdin)
