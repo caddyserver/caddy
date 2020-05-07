@@ -68,15 +68,21 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 	if len(plaintext) == 0 {
 		if terminal.IsTerminal(int(os.Stdin.Fd())) {
-			var confirmation []byte
-
 			fmt.Print("Plaintext: ")
 			plaintext, err = terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
 
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
 			fmt.Print("Confirm Plaintext: ")
-			confirmation, err = terminal.ReadPassword(int(os.Stdin.Fd()))
+			confirmation, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
+
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
 
 			if !bytes.Equal(plaintext, confirmation) {
 				return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext does not match")
@@ -84,15 +90,16 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		} else {
 			rd := bufio.NewReader(os.Stdin)
 			plaintext, err = rd.ReadBytes('\n')
+
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
 			plaintext = plaintext[:len(plaintext)-1] // Trailing newline
 		}
 
 		if len(plaintext) == 0 {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext is required")
-		}
-
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, err
 		}
 	}
 
