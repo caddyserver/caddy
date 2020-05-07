@@ -84,7 +84,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		} else {
 			rd := bufio.NewReader(os.Stdin)
 			plaintext, err = rd.ReadBytes('\n')
-			plaintext = plaintext[:len(plaintext) - 1]  // Trailing newline
+			plaintext = plaintext[:len(plaintext)-1] // Trailing newline
 		}
 
 		if len(plaintext) == 0 {
