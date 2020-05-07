@@ -506,6 +506,15 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
 
+	if validateCmdConfigFlag == "" {
+		validateCmdConfigFlag = "Caddyfile"
+	}
+	_, err := os.Stat(validateCmdConfigFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("file doesn't exist: %v", err)
+	}
+
 	input, _, err := loadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
