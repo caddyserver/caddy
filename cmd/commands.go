@@ -27,7 +27,7 @@ type Command struct {
 	// Required.
 	Name string
 
-	// Run is a function that executes a subcommand using
+	// Func is a function that executes a subcommand using
 	// the parsed flags. It returns an exit code and any
 	// associated error.
 	// Required.
