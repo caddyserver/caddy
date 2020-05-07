@@ -71,7 +71,6 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 			fmt.Print("Enter password: ")
 			plaintext, err = terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
-
 			if err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}
@@ -79,7 +78,6 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 			fmt.Print("Confirm password: ")
 			confirmation, err := terminal.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
-
 			if err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}
@@ -90,7 +88,6 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		} else {
 			rd := bufio.NewReader(os.Stdin)
 			plaintext, err = rd.ReadBytes('\n')
-
 			if err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}
