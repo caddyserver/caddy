@@ -15,25 +15,33 @@
 package caddyauth
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/scrypt"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
 		Func:  cmdHashPassword,
-		Usage: "--plaintext <password> [--salt <string>] [--algorithm <name>]",
+		Usage: "[--algorithm <name>] [--salt <string>] [--plaintext <password>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
 hash is written to stdout as a base64 string.
+
+--plaintext, when omitted, will be read from stdin. If
+Caddy is attached to a controlling tty, the plaintext will
+not be echoed.
 
 --algorithm may be bcrypt or scrypt. If script, the default
 parameters are used.
@@ -52,16 +60,43 @@ be provided (scrypt).
 }
 
 func cmdHashPassword(fs caddycmd.Flags) (int, error) {
+	var err error
+
 	algorithm := fs.String("algorithm")
 	plaintext := []byte(fs.String("plaintext"))
 	salt := []byte(fs.String("salt"))
 
 	if len(plaintext) == 0 {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("password is required")
+		if terminal.IsTerminal(int(os.Stdin.Fd())) {
+			var confirmation []byte
+
+			fmt.Print("Plaintext: ")
+			plaintext, err = terminal.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println()
+
+			fmt.Print("Confirm Plaintext: ")
+			confirmation, err = terminal.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println()
+
+			if !bytes.Equal(plaintext, confirmation) {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext does not match")
+			}
+		} else {
+			rd := bufio.NewReader(os.Stdin)
+			plaintext, err = rd.ReadBytes('\n')
+			plaintext = plaintext[:len(plaintext) - 1]  // Trailing newline
+		}
+
+		if len(plaintext) == 0 {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext is required")
+		}
+
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
 	}
 
 	var hash []byte
-	var err error
 	switch algorithm {
 	case "bcrypt":
 		hash, err = bcrypt.GenerateFromPassword(plaintext, bcrypt.DefaultCost)
