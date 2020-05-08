@@ -27,7 +27,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -468,12 +467,20 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	if loggerName, ok := slc.LoggerNames[host]; ok {
 		return loggerName
 	}
+
 	// Try matching wildcard domains if other non-specific loggers exist
-	for potentialHost, loggerName := range slc.LoggerNames {
-		if certmagic.MatchWildcard(host, potentialHost) {
+	labels := strings.Split(host, ".")
+	for i := range labels {
+		if labels[i] == "" {
+			continue
+		}
+		labels[i] = "*"
+		wildcardHost := strings.Join(labels, ".")
+		if loggerName, ok := slc.LoggerNames[wildcardHost]; ok {
 			return loggerName
 		}
 	}
+
 	return slc.DefaultLoggerName
 }
 
