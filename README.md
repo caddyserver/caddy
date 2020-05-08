@@ -26,7 +26,7 @@
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
-- [Getting started](#getting-started)
+- [Quick start](#quick-start)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
 - [Getting help](#getting-help)
