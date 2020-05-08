@@ -465,6 +465,10 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logg
 }
 
 func (slc ServerLogConfig) getLoggerName(host string) string {
+	if loggerName, ok := slc.LoggerNames[host]; ok {
+		return loggerName
+	}
+	// Try matching wildcard domains if other non-specific loggers exist
 	for potentialHost, loggerName := range slc.LoggerNames {
 		if certmagic.MatchWildcard(host, potentialHost) {
 			return loggerName
