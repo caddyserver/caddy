@@ -363,3 +363,55 @@ func TestMatcherSyntax(t *testing.T) {
 	}
 }`)
 }
+
+func TestNotBlockMerging(t *testing.T) {
+	caddytest.AssertAdapt(t, ` 
+	:80
+
+	@test {
+		not {
+			header Abc "123"
+			header Bcd "123"
+		}
+	}
+	respond @test 403
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"header": {
+												"Abc": [
+													"123"
+												],
+												"Bcd": [
+													"123"
+												]
+											}
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"status_code": 403
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
