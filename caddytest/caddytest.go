@@ -55,8 +55,9 @@ var (
 
 // Tester represents an instance of a test client.
 type Tester struct {
-	Client *http.Client
-	t      *testing.T
+	Client       *http.Client
+	configLoaded bool
+	t            *testing.T
 }
 
 // NewTester will create a new testing client with an attached cookie jar
@@ -73,7 +74,8 @@ func NewTester(t *testing.T) *Tester {
 			Jar:       jar,
 			Timeout:   Default.TestRequestTimeout,
 		},
-		t: t,
+		configLoaded: false,
+		t:            t,
 	}
 }
 
@@ -114,7 +116,8 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	}
 
 	tc.t.Cleanup(func() {
-		if tc.t.Failed() {
+		if tc.t.Failed() && tc.configLoaded {
+
 			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 			if err != nil {
 				tc.t.Log("unable to read the current config")
@@ -164,6 +167,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		return configLoadError{Response: string(body)}
 	}
 
+	tc.configLoaded = true
 	return nil
 }
 
