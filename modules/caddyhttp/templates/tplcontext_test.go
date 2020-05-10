@@ -284,6 +284,51 @@ func TestFileListing(t *testing.T) {
 	}
 }
 
+func TestSplitFrontMatter(t *testing.T) {
+	context := getContextOrFail(t)
+
+	for i, test := range []struct {
+		input  string
+		expect string
+	}{
+		{
+			// yaml with windows newline
+			input:  "---\r\ntitle: Welcome\r\n---\r\n# Test\\r\\n",
+			expect: `Welcome`,
+		},
+		{
+			// yaml
+			input: `---
+title: Welcome
+---
+### Test`,
+			expect: `Welcome`,
+		},
+		{
+			// toml
+			input: `+++
+title = "Welcome"
++++
+### Test`,
+			expect: `Welcome`,
+		},
+		{
+			// json
+			input: `{
+    "title": "Welcome"
+}
+### Test`,
+			expect: `Welcome`,
+		},
+	} {
+		result, _ := context.funcSplitFrontMatter(test.input)
+		if result.Meta["title"] != test.expect {
+			t.Errorf("Test %d: Expected %s, found %s. Input was SplitFrontMatter(%s)", i, test.expect, result.Meta["title"], test.input)
+		}
+	}
+
+}
+
 func getContextOrFail(t *testing.T) templateContext {
 	context, err := initTestContext()
 	if err != nil {
