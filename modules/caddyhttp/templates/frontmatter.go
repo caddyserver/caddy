@@ -29,7 +29,8 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 		lineEmpty = lineEmpty && unicode.IsSpace(b)
 	}
 	firstLine := input[firstLineStart:firstLineEnd]
-
+	//ensure residue windows newline is removed
+	firstLine = strings.Trim(firstLine, "\r")
 	// see what kind of front matter there is, if any
 	var closingFence string
 	var fmParser func([]byte) (map[string]interface{}, error)
