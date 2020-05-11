@@ -103,6 +103,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		var network, scheme, host, port string
 
 		if strings.Contains(upstreamAddr, "://") {
+			// we get a parsing error if a placeholder is specified
+			// so we return a more user-friendly error message instead
+			// to explain what to do instead
+			if strings.Contains(upstreamAddr, "{") {
+				return "", d.Err("for now, placeholders are not allowed when specifying a scheme; instead, omit the scheme and use the transport subdirective if you need tls support")
+			}
+
 			toURL, err := url.Parse(upstreamAddr)
 			if err != nil {
 				return "", d.Errf("parsing upstream URL: %v", err)
