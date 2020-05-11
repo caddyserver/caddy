@@ -120,6 +120,17 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 	})
 }
 
+// RegisterGlobalOption registers a unique global option opt with
+// an associated unmarshaling (setup) function. When the global
+// option opt is encountered in a Caddyfile, setupFunc will be
+// called to unmarshal its tokens.
+func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
+	if _, ok := registeredGlobalOptions[opt]; ok {
+		panic("global option " + opt + " already registered")
+	}
+	registeredGlobalOptions[opt] = setupFunc
+}
+
 // Helper is a type which helps setup a value from
 // Caddyfile tokens.
 type Helper struct {
@@ -454,6 +465,13 @@ type (
 	// for you. These are passed to a call to
 	// RegisterHandlerDirective.
 	UnmarshalHandlerFunc func(h Helper) (caddyhttp.MiddlewareHandler, error)
+
+	// UnmarshalGlobalFunc is a function which can unmarshal Caddyfile
+	// tokens into a global option config value using a Helper type.
+	// These are passed in a call to RegisterGlobalOption.
+	UnmarshalGlobalFunc func(d *caddyfile.Dispenser) (interface{}, error)
 )
 
 var registeredDirectives = make(map[string]UnmarshalFunc)
+
+var registeredGlobalOptions = make(map[string]UnmarshalGlobalFunc)
