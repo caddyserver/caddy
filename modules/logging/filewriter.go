@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -194,7 +193,7 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.AllArgs(&keepForStr) {
 					return d.ArgErr()
 				}
-				keepFor, err := time.ParseDuration(keepForStr)
+				keepFor, err := caddy.ParseDuration(keepForStr)
 				if err != nil {
 					return d.Errf("parsing roll_keep_for duration: %v", err)
 				}

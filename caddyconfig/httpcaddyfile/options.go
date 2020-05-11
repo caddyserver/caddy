@@ -16,7 +16,6 @@ package httpcaddyfile
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -227,7 +226,7 @@ func parseOptOnDemand(d *caddyfile.Dispenser) (interface{}, error) {
 				if !d.NextArg() {
 					return nil, d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return nil, err
 				}
