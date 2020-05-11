@@ -506,16 +506,29 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 }
 
 // ParseDuration parses a duration string, adding
-// support for the "d" suffix for number of days.
+// support for the "d" unit meaning number of days,
+// where a day is assumed to be 24h.
 func ParseDuration(s string) (time.Duration, error) {
-	// Add support for days suffix (24 hours)
-	if strings.HasSuffix(s, "d") {
-		value, err := strconv.ParseInt(s[0:len(s)-1], 0, 32)
-		if err != nil {
-			return time.Duration(0), err
+	var inNumber bool
+	var numStart int
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch == 'd' {
+			daysStr := s[numStart:i]
+			days, err := strconv.ParseFloat(daysStr, 64)
+			if err != nil {
+				return 0, err
+			}
+			hours := days * 24.0
+			hoursStr := strconv.FormatFloat(hours, 'f', -1, 64)
+			s = s[:numStart] + hoursStr + "h" + s[i+1:]
+			i--
+			continue
 		}
-		value = value * 24
-		return time.ParseDuration(strconv.Itoa(int(value)) + "h")
+		if !inNumber {
+			numStart = i
+		}
+		inNumber = (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+'
 	}
 	return time.ParseDuration(s)
 }
