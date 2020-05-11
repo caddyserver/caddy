@@ -456,6 +456,20 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	if loggerName, ok := slc.LoggerNames[host]; ok {
 		return loggerName
 	}
+
+	// Try matching wildcard domains if other non-specific loggers exist
+	labels := strings.Split(host, ".")
+	for i := range labels {
+		if labels[i] == "" {
+			continue
+		}
+		labels[i] = "*"
+		wildcardHost := strings.Join(labels, ".")
+		if loggerName, ok := slc.LoggerNames[wildcardHost]; ok {
+			return loggerName
+		}
+	}
+
 	return slc.DefaultLoggerName
 }
 
