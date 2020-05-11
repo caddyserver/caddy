@@ -311,7 +311,7 @@ func (f Flags) Float64(name string) float64 {
 // is not a duration type. It panics if the flag is
 // not in the flag set.
 func (f Flags) Duration(name string) time.Duration {
-	val, _ := time.ParseDuration(f.String(name))
+	val, _ := caddy.ParseDuration(f.String(name))
 	return val
 }
 

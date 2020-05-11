@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -250,7 +249,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.LoadBalancing == nil {
 					h.LoadBalancing = new(LoadBalancing)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value %s: %v", d.Val(), err)
 				}
@@ -263,7 +262,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.LoadBalancing == nil {
 					h.LoadBalancing = new(LoadBalancing)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
@@ -307,7 +306,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Active == nil {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad interval value %s: %v", d.Val(), err)
 				}
@@ -323,7 +322,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Active == nil {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value %s: %v", d.Val(), err)
 				}
@@ -387,7 +386,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Passive == nil {
 					h.HealthChecks.Passive = new(PassiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
@@ -441,7 +440,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Passive == nil {
 					h.HealthChecks.Passive = new(PassiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
@@ -454,7 +453,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if fi, err := strconv.Atoi(d.Val()); err == nil {
 					h.FlushInterval = caddy.Duration(fi)
 				} else {
-					dur, err := time.ParseDuration(d.Val())
+					dur, err := caddy.ParseDuration(d.Val())
 					if err != nil {
 						return d.Errf("bad duration value '%s': %v", d.Val(), err)
 					}
@@ -606,7 +605,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
@@ -641,7 +640,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
@@ -683,7 +682,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.KeepAlive.Enabled = &disable
 					break
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
