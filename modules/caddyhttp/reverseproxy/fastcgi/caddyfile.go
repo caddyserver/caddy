@@ -123,11 +123,11 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		return nil, h.ArgErr()
 	}
 
-    // set up the transport for FastCGI, and specifically PHP
-    fcgiTransport := Transport{}
+	// set up the transport for FastCGI, and specifically PHP
+	fcgiTransport := Transport{}
 
 	// set up the set of file extensions allowed to execute PHP code
-    extensions := []string{".php"}
+	extensions := []string{".php"}
 
 	// set the default index file for the try_files rewrites
 	indexFile := "index.php"
@@ -197,8 +197,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// set up a route list that we'll append to
 	routes := caddyhttp.RouteList{}
 
-    // set the list of allowed path segments on which to split
-    fcgiTransport.SplitPath = extensions
+	// set the list of allowed path segments on which to split
+	fcgiTransport.SplitPath = extensions
 
 	// if the index is turned off, we skip the redirect and try_files
 	if indexFile != "off" {
@@ -227,8 +227,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		// route to rewrite to PHP index file
 		rewriteMatcherSet := caddy.ModuleMap{
 			"file": h.JSON(fileserver.MatchFile{
-				TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile},
-                SplitPath: extensions,
+				TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile},
+				SplitPath: extensions,
 			}),
 		}
 		rewriteHandler := rewrite.Rewrite{
