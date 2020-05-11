@@ -543,7 +543,7 @@ func TestLogRollDays(t *testing.T) {
 func TestShorthandParameterizedPlaceholders(t *testing.T) {
 	caddytest.AssertAdapt(t, `
 	localhost:80
-	respond * "{header.content-type} {labels.0} {query.p} {path.0} {r.name.0}"
+	respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
 	`, "caddyfile", `{
 	"apps": {
 		"http": {
