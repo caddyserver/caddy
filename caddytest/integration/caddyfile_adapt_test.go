@@ -45,3 +45,193 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestPhpFastCgiSubdirectives(t *testing.T) {
+	caddytest.AssertAdapt(t, ` 
+	:8884
+
+	php_fastcgi localhost:9000 {
+		# some php_fastcgi-specific subdirectives
+		split .php .php5
+		env VAR1 value1
+		env VAR2 value2
+		root /var/www
+		index index.php5
+
+		# passed through to reverse_proxy (directive order doesn't matter!)
+		lb_policy random
+	}	
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"file": {
+										"try_files": [
+											"{http.request.uri.path}/index.php5"
+										]
+									},
+									"not": [
+										{
+											"path": [
+												"*/"
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"headers": {
+										"Location": [
+											"{http.request.uri.path}/"
+										]
+									},
+									"status_code": 308
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"file": {
+										"try_files": [
+											"{http.request.uri.path}",
+											"{http.request.uri.path}/index.php5",
+											"index.php5"
+										],
+										"split_path": [
+											".php",
+											".php5"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "rewrite",
+									"uri": "{http.matchers.file.relative}"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"*.php",
+										"*.php5"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"selection_policy": {
+											"policy": "random"
+										}
+									},
+									"transport": {
+										"env": {
+											"VAR1": "value1",
+											"VAR2": "value2"
+										},
+										"protocol": "fastcgi",
+										"root": "/var/www",
+										"split_path": [
+											".php",
+											".php5"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
+
+func TestPhpFastCgiSubdirectivesIndexOff(t *testing.T) {
+	caddytest.AssertAdapt(t, ` 
+	:8884
+
+	php_fastcgi localhost:9000 {
+		# some php_fastcgi-specific subdirectives
+		split .php .php5
+		env VAR1 value1
+		env VAR2 value2
+		root /var/www
+		index off
+
+		# passed through to reverse_proxy (directive order doesn't matter!)
+		lb_policy random
+	}	
+  `, "caddyfile", `{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"*.php",
+										"*.php5"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"selection_policy": {
+											"policy": "random"
+										}
+									},
+									"transport": {
+										"env": {
+											"VAR1": "value1",
+											"VAR2": "value2"
+										},
+										"protocol": "fastcgi",
+										"root": "/var/www",
+										"split_path": [
+											".php",
+											".php5"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}`)
+}
