@@ -438,7 +438,6 @@ func (st *ServerType) serversFromPairings(
 					"wrapper",
 					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
 					warnings)
-
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
 			}
 
