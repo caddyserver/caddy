@@ -425,8 +425,7 @@ func (st *ServerType) serversFromPairings(
 					(addr.Port == httpsPort || (addr.Port != httpPort && addr.Host != ""))
 			}
 
-			// Look for any config values that provide listener wrappers on the
-			// server block
+			// Look for any config values that provide listener wrappers on the server block
 			for _, listenerConfig := range sblock.pile["listener_wrapper"] {
 				listenerWrapper, ok := listenerConfig.Value.(caddy.ListenerWrapper)
 				if !ok {
