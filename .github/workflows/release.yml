@@ -27,6 +27,7 @@ jobs:
     - name: Unshallowify the repo clone
       run: git fetch --prune --unshallow
 
+    # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Print Go version and environment
       id: vars
       run: |
@@ -36,11 +37,17 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-    
-    # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
-    - name: Get the version
-      id: get_version
-      run: echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
+        echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
+        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "::set-output name=go_cache::$(go env GOCACHE)"
+
+    - name: Cache the build cache
+      uses: actions/cache@v1
+      with:
+        path: ${{ steps.vars.outputs.go_cache }}
+        key: ${{ runner.os }}-go-release-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-release
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
@@ -50,4 +57,31 @@ jobs:
         args: release --rm-dist
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: ${{ steps.get_version.outputs.version_tag }}
+        TAG: ${{ steps.vars.outputs.version_tag }}
+
+    - name: Publish .deb to Gemfury
+      env:
+        GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
+      run: |
+        for filename in dist/*.deb; do
+          curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
+        done
+
+    # See https://github.com/peter-evans/repository-dispatch
+    - name: Trigger event on caddyserver/dist
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/dist
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
+
+    - name: Trigger event on caddyserver/caddy-docker
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/caddy-docker
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
+
+

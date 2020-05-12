@@ -17,6 +17,7 @@ package fastcgi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -136,7 +137,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		}),
 	}
 	redirHandler := caddyhttp.StaticResponse{
-		StatusCode: caddyhttp.WeakString("308"),
+		StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
 		Headers:    http.Header{"Location": []string{"{http.request.uri.path}/"}},
 	}
 	redirRoute := caddyhttp.Route{
@@ -148,6 +149,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	rewriteMatcherSet := caddy.ModuleMap{
 		"file": h.JSON(fileserver.MatchFile{
 			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+			SplitPath: []string{".php"},
 		}),
 	}
 	rewriteHandler := rewrite.Rewrite{

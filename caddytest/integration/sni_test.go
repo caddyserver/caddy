@@ -9,7 +9,8 @@ import (
 func TestDefaultSNI(t *testing.T) {
 
 	// arrange
-	caddytest.InitServer(t, `{
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
     "apps": {
       "http": {
         "http_port": 9080,
@@ -98,13 +99,14 @@ func TestDefaultSNI(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
 func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 
 	// arrange
-	caddytest.InitServer(t, ` 
+	tester := caddytest.NewTester(t)
+	tester.InitServer(` 
   {
     "apps": {
       "http": {
@@ -198,13 +200,14 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
 func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 
 	// arrange
-	caddytest.InitServer(t, ` 
+	tester := caddytest.NewTester(t)
+	tester.InitServer(` 
   {
     "apps": {
       "http": {
@@ -270,7 +273,7 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	caddytest.AssertGetResponse(t, "https://127.0.0.1:9443/version", 200, "hello from a")
+	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a")
 }
 
 func TestHttpOnlyOnDomainWithSNI(t *testing.T) {

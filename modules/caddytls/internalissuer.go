@@ -17,7 +17,6 @@ package caddytls
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -26,7 +25,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/certmagic"
-	"github.com/smallstep/certificates/authority"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/cli/crypto/x509util"
 )
@@ -73,7 +71,7 @@ func (li *InternalIssuer) Provision(ctx caddy.Context) error {
 	}
 	pkiApp := appModule.(*caddypki.PKI)
 	if li.CA == "" {
-		li.CA = defaultInternalCAName
+		li.CA = caddypki.DefaultCAID
 	}
 	ca, ok := pkiApp.CAs[li.CA]
 	if !ok {
@@ -98,40 +96,20 @@ func (li InternalIssuer) IssuerKey() string {
 // Issue issues a certificate to satisfy the CSR.
 func (li InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
 	// prepare the signing authority
-	// TODO: eliminate placeholders / needless values
-	cfg := &authority.Config{
-		Address:          "placeholder_Address:1",
-		Root:             []string{"placeholder_Root"},
-		IntermediateCert: "placeholder_IntermediateCert",
-		IntermediateKey:  "placeholder_IntermediateKey",
-		DNSNames:         []string{"placeholder_DNSNames"},
-		AuthorityConfig: &authority.AuthConfig{
-			Provisioners: provisioner.List{},
-		},
+	authCfg := caddypki.AuthorityConfig{
+		SignWithRoot: li.SignWithRoot,
+	}
+	auth, err := li.ca.NewAuthority(authCfg)
+	if err != nil {
+		return nil, err
 	}
 
-	// get the root certificate and the issuer cert+key
-	rootCert := li.ca.RootCertificate()
+	// get the cert (public key) that will be used for signing
 	var issuerCert *x509.Certificate
-	var issuerKey interface{}
 	if li.SignWithRoot {
-		issuerCert = rootCert
-		var err error
-		issuerKey, err = li.ca.RootKey()
-		if err != nil {
-			return nil, fmt.Errorf("loading signing key: %v", err)
-		}
+		issuerCert = li.ca.RootCertificate()
 	} else {
 		issuerCert = li.ca.IntermediateCertificate()
-		issuerKey = li.ca.IntermediateKey()
-	}
-
-	auth, err := authority.New(cfg,
-		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
-		authority.WithX509RootCerts(rootCert),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("initializing certificate authority: %v", err)
 	}
 
 	// ensure issued certificate does not expire later than its issuer
@@ -161,13 +139,16 @@ func (li InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest
 	}, nil
 }
 
-// TODO: borrowing from https://github.com/smallstep/certificates/blob/806abb6232a5691198b891d76b9898ea7f269da0/authority/provisioner/sign_options.go#L191-L211
-// as per https://github.com/smallstep/certificates/issues/198.
 // profileDefaultDuration is a wrapper against x509util.WithOption to conform
 // the SignOption interface.
+//
+// This type is borrowed from the smallstep libraries:
+// https://github.com/smallstep/certificates/blob/806abb6232a5691198b891d76b9898ea7f269da0/authority/provisioner/sign_options.go#L191-L211
+// as per https://github.com/smallstep/certificates/issues/198.
+//
+// TODO: In the future, this approach to custom cert lifetimes may not be necessary
 type profileDefaultDuration time.Duration
 
-// TODO: is there a better way to set cert lifetimes than copying from the smallstep libs?
 func (d profileDefaultDuration) Option(so provisioner.Options) x509util.WithOption {
 	var backdate time.Duration
 	notBefore := so.NotBefore.Time()
@@ -188,7 +169,6 @@ func (d profileDefaultDuration) Option(so provisioner.Options) x509util.WithOpti
 }
 
 const (
-	defaultInternalCAName       = "local"
 	defaultInternalCertLifetime = 12 * time.Hour
 )
 

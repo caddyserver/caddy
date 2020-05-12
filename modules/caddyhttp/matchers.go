@@ -592,8 +592,17 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		var mp matcherPair
 		matcherMap := make(map[string]RequestMatcher)
-		for d.NextArg() || d.NextBlock(0) {
+
+		// in case there are multiple instances of the same matcher, concatenate
+		// their tokens (we expect that UnmarshalCaddyfile should be able to
+		// handle more than one segment); otherwise, we'd overwrite other
+		// instances of the matcher in this set
+		tokensByMatcherName := make(map[string][]caddyfile.Token)
+		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 			matcherName := d.Val()
+			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+		}
+		for matcherName, tokens := range tokensByMatcherName {
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
 				return d.Errf("getting matcher module '%s': %v", matcherName, err)
@@ -602,11 +611,14 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
 			}
-			err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+			err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
 			if err != nil {
 				return err
 			}
-			rm := unm.(RequestMatcher)
+			rm, ok := unm.(RequestMatcher)
+			if !ok {
+				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+			}
 			matcherMap[matcherName] = rm
 			mp.decoded = append(mp.decoded, rm)
 		}

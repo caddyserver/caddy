@@ -4,10 +4,10 @@ name: Cross-Platform
 
 on:
   push:
-    branches: 
+    branches:
       - master
   pull_request:
-    branches: 
+    branches:
       - master
 
 jobs:
@@ -72,9 +72,9 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ${{ steps.vars.outputs.go_cache }}
-        key: ${{ runner.os }}-go-gocache-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go-ci-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-
+          ${{ runner.os }}-go-ci
 
     - name: Get dependencies
       run: |
@@ -133,3 +133,15 @@ jobs:
         # uses: docker://reviewdog/action-golangci-lint:v1 # pre-build docker image
         with:
           github_token: ${{ secrets.github_token }}
+
+  goreleaser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - uses: goreleaser/goreleaser-action@v1
+        with:
+          version: latest
+          args: check
+        env:
+          TAG: ${{ steps.vars.outputs.version_tag }}

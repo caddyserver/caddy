@@ -86,16 +86,26 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 // Provision sets up m.
 func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 	// DNS providers
-	if m.Challenges != nil && m.Challenges.DNSRaw != nil {
-		val, err := ctx.LoadModule(m.Challenges, "DNSRaw")
+	if m.Challenges != nil && m.Challenges.DNS != nil && m.Challenges.DNS.ProviderRaw != nil {
+		val, err := ctx.LoadModule(m.Challenges.DNS, "ProviderRaw")
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		prov, err := val.(DNSProviderMaker).NewDNSProvider()
-		if err != nil {
-			return fmt.Errorf("making DNS provider: %v", err)
+		// TODO: For a temporary amount of time, we are allowing the use of
+		// DNS providers from go-acme/lego since there are so many implemented
+		// for it -- they are adapted as Caddy modules in this repository:
+		// https://github.com/caddy-dns/lego-deprecated - that module is
+		// a challenge.Provider value, so we use it directly. The user must set
+		// environment variables to configure it. Remove this shim once a sufficient
+		// number of DNS providers are implemented for the libdns APIs instead.
+		if grandfatheredProvider, ok := val.(challenge.Provider); ok {
+			m.Challenges.DNS.provider = grandfatheredProvider
+		} else {
+			m.Challenges.DNS.provider = &solver{
+				recordManager: val.(recordManager),
+				TTL:           time.Duration(m.Challenges.DNS.TTL),
+			}
 		}
-		m.Challenges.DNS = prov
 	}
 
 	// add any custom CAs to trust store
@@ -152,7 +162,9 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 			template.DisableTLSALPNChallenge = m.Challenges.TLSALPN.Disabled
 			template.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
 		}
-		template.DNSProvider = m.Challenges.DNS
+		if m.Challenges.DNS != nil {
+			template.DNSProvider = m.Challenges.DNS.provider
+		}
 		template.ListenHost = m.Challenges.BindHost
 	}
 
@@ -206,7 +218,7 @@ func onDemandAskRequest(ask string, name string) error {
 
 	resp, err := onDemandAskClient.Get(askURL.String())
 	if err != nil {
-		return fmt.Errorf("error checking %v to deterine if certificate for hostname '%s' should be allowed: %v",
+		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
 			ask, name, err)
 	}
 	resp.Body.Close()
@@ -217,12 +229,6 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
-}
-
-// DNSProviderMaker is a type that can create a new DNS provider.
-// Modules in the tls.dns namespace should implement this interface.
-type DNSProviderMaker interface {
-	NewDNSProvider() (challenge.Provider, error)
 }
 
 // ExternalAccountBinding contains information for

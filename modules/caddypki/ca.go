@@ -15,6 +15,7 @@
 package caddypki
 
 import (
+	"crypto"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
+	"github.com/smallstep/certificates/authority"
+	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 )
@@ -169,6 +172,39 @@ func (ca CA) IntermediateKey() interface{} {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.interKey
+}
+
+// NewAuthority returns a new Smallstep-powered signing authority for this CA.
+func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
+	// get the root certificate and the issuer cert+key
+	rootCert := ca.RootCertificate()
+	var issuerCert *x509.Certificate
+	var issuerKey interface{}
+	if authorityConfig.SignWithRoot {
+		issuerCert = rootCert
+		var err error
+		issuerKey, err = ca.RootKey()
+		if err != nil {
+			return nil, fmt.Errorf("loading signing key: %v", err)
+		}
+	} else {
+		issuerCert = ca.IntermediateCertificate()
+		issuerKey = ca.IntermediateKey()
+	}
+
+	auth, err := authority.NewEmbedded(
+		authority.WithConfig(&authority.Config{
+			AuthorityConfig: authorityConfig.AuthConfig,
+			DB:              authorityConfig.DB,
+		}),
+		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
+		authority.WithX509RootCerts(rootCert),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("initializing certificate authority: %v", err)
+	}
+
+	return auth, nil
 }
 
 func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, err error) {
@@ -345,8 +381,20 @@ func (ca CA) installRoot() error {
 	)
 }
 
+// AuthorityConfig is used to help a CA configure
+// the underlying signing authority.
+type AuthorityConfig struct {
+	SignWithRoot bool
+
+	// TODO: should we just embed the underlying authority.Config struct type?
+	DB         *db.Config
+	AuthConfig *authority.AuthConfig
+}
+
 const (
-	defaultCAID                   = "local"
+	// DefaultCAID is the default CA ID.
+	DefaultCAID = "local"
+
 	defaultCAName                 = "Caddy Local Authority"
 	defaultRootCommonName         = "{pki.ca.name} - {time.now.year} ECC Root"
 	defaultIntermediateCommonName = "{pki.ca.name} - ECC Intermediate"

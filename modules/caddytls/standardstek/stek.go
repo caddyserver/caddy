@@ -16,6 +16,7 @@ package standardstek
 
 import (
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -81,6 +82,11 @@ func (s *standardSTEKProvider) Next(doneChan <-chan struct{}) <-chan [][32]byte 
 // rotate rotates keys on a regular basis, sending each updated set of
 // keys down keysChan, until doneChan is closed.
 func (s *standardSTEKProvider) rotate(doneChan <-chan struct{}, keysChan chan<- [][32]byte) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] standard STEK rotation: %v\n%s", err, debug.Stack())
+		}
+	}()
 	for {
 		select {
 		case now := <-s.timer.C:

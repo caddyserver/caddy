@@ -35,8 +35,15 @@ type AutomationConfig struct {
 
 	// On-Demand TLS defers certificate operations to the
 	// moment they are needed, e.g. during a TLS handshake.
-	// Useful when you don't know all the hostnames up front.
-	// Caddy was the first web server to deploy this technology.
+	// Useful when you don't know all the hostnames at
+	// config-time, or when you are not in control of the
+	// domain names you are managing certificates for.
+	// In 2015, Caddy became the first web server to
+	// implement this experimental technology.
+	//
+	// Note that this field does not enable on-demand TLS,
+	// it only configures it for when it is used. To enable
+	// it, create an automation policy with `on_demand`.
 	OnDemand *OnDemandConfig `json:"on_demand,omitempty"`
 
 	// Caddy staples OCSP (and caches the response) for all
@@ -239,13 +246,14 @@ type ChallengesConfig struct {
 	// not enabled by default. This is the only challenge
 	// type which does not require a direct connection
 	// to Caddy from an external server.
-	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=tls.dns inline_key=provider"`
+	// NOTE: DNS providers are currently being upgraded,
+	// and this API is subject to change, but should be
+	// stabilized soon.
+	DNS *DNSChallengeConfig `json:"dns,omitempty"`
 
 	// Optionally customize the host to which a listener
 	// is bound if required for solving a challenge.
 	BindHost string `json:"bind_host,omitempty"`
-
-	DNS challenge.Provider `json:"-"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.
@@ -274,12 +282,25 @@ type TLSALPNChallengeConfig struct {
 	AlternatePort int `json:"alternate_port,omitempty"`
 }
 
+// DNSChallengeConfig configures the ACME DNS challenge.
+// NOTE: This API is still experimental and is subject to change.
+type DNSChallengeConfig struct {
+	// The DNS provider module to use which will manage
+	// the DNS records relevant to the ACME challenge.
+	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
+
+	// The TTL of the TXT record used for the DNS challenge.
+	TTL caddy.Duration `json:"ttl,omitempty"`
+
+	provider challenge.Provider
+}
+
 // OnDemandConfig configures on-demand TLS, for obtaining
 // needed certificates at handshake-time. Because this
-// feature can easily be abused, you should set up rate
-// limits and/or an internal endpoint that Caddy can
-// "ask" if it should be allowed to manage certificates
-// for a given hostname.
+// feature can easily be abused, you should use this to
+// establish rate limits and/or an internal endpoint that
+// Caddy can "ask" if it should be allowed to manage
+// certificates for a given hostname.
 type OnDemandConfig struct {
 	// An optional rate limit to throttle the
 	// issuance of certificates from handshakes.

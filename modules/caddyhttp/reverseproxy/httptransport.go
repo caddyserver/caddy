@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"golang.org/x/net/http2"
 )
 
@@ -82,11 +83,16 @@ type HTTPTransport struct {
 	// The size of the read buffer in bytes.
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 
-	// The versions of HTTP to support. Default: ["1.1", "2"]
+	// The versions of HTTP to support. As a special case, "h2c"
+	// can be specified to use H2C (HTTP/2 over Cleartext) to the
+	// upstream (this feature is experimental and subject to
+	// change or removal). Default: ["1.1", "2"]
 	Versions []string `json:"versions,omitempty"`
 
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
+
+	h2cTransport *http2.Transport
 }
 
 // CaddyModule returns the Caddy module information.
@@ -110,12 +116,33 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	}
 	h.Transport = rt
 
+	// if h2c is enabled, configure its transport (std lib http.Transport
+	// does not "HTTP/2 over cleartext TCP")
+	if sliceContains(h.Versions, "h2c") {
+		// crafting our own http2.Transport doesn't allow us to utilize
+		// most of the customizations/preferences on the http.Transport,
+		// because, for some reason, only http2.ConfigureTransport()
+		// is allowed to set the unexported field that refers to a base
+		// http.Transport config; oh well
+		h2t := &http2.Transport{
+			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
+			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
+				// TODO: no context, thus potentially wrong dial info
+				return net.Dial(network, addr)
+			},
+			AllowHTTP: true,
+		}
+		if h.Compression != nil {
+			h2t.DisableCompression = !*h.Compression
+		}
+		h.h2cTransport = h2t
+	}
+
 	return nil
 }
 
-// NewTransport builds a standard-lib-compatible
-// http.Transport value from h.
-func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
+// NewTransport builds a standard-lib-compatible http.Transport value from h.
+func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error) {
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -148,9 +175,8 @@ func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 
 	if h.TLS != nil {
 		rt.TLSHandshakeTimeout = time.Duration(h.TLS.HandshakeTimeout)
-
 		var err error
-		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig()
+		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
@@ -182,6 +208,13 @@ func (h *HTTPTransport) NewTransport(_ caddy.Context) (*http.Transport, error) {
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.SetScheme(req)
+
+	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
+	// HTTP/2 without TLS, use the alternate H2C-capable transport instead
+	if req.ProtoMajor == 2 && req.URL.Scheme == "http" && h.h2cTransport != nil {
+		return h.h2cTransport.RoundTrip(req)
+	}
+
 	return h.Transport.RoundTrip(req)
 }
 
@@ -233,6 +266,10 @@ type TLSConfig struct {
 	// PEM-encoded key to use with the client certificate.
 	ClientCertificateKeyFile string `json:"client_certificate_key_file,omitempty"`
 
+	// If specified, Caddy will use and automate a client certificate
+	// with this subject name.
+	ClientCertificateAutomate string `json:"client_certificate_automate,omitempty"`
+
 	// If true, TLS verification of server certificates will be disabled.
 	// This is insecure and may be removed in the future. Do not use this
 	// option except in testing or local development environments.
@@ -247,7 +284,7 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
+func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	// client auth
@@ -263,6 +300,28 @@ func (t TLSConfig) MakeTLSClientConfig() (*tls.Config, error) {
 			return nil, fmt.Errorf("loading client certificate key pair: %v", err)
 		}
 		cfg.Certificates = []tls.Certificate{cert}
+	}
+	if t.ClientCertificateAutomate != "" {
+		tlsAppIface, err := ctx.App("tls")
+		if err != nil {
+			return nil, fmt.Errorf("getting tls app: %v", err)
+		}
+		tlsApp := tlsAppIface.(*caddytls.TLS)
+		err = tlsApp.Manage([]string{t.ClientCertificateAutomate})
+		if err != nil {
+			return nil, fmt.Errorf("managing client certificate: %v", err)
+		}
+		cfg.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			certs := tlsApp.AllMatchingCertificates(t.ClientCertificateAutomate)
+			var err error
+			for _, cert := range certs {
+				err = cri.SupportsCertificate(&cert.Certificate)
+				if err == nil {
+					return &cert.Certificate, nil
+				}
+			}
+			return nil, err
+		}
 	}
 
 	// trusted root CAs

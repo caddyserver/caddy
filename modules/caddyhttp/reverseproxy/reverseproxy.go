@@ -135,6 +135,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.CB = mod.(CircuitBreaker)
 	}
 
+	// ensure any embedded headers handler module gets provisioned
+	// (see https://caddy.community/t/set-cookie-manipulation-in-reverse-proxy/7666?u=matt
+	// for what happens if we forget to provision it)
+	if h.Headers != nil {
+		err := h.Headers.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning embedded headers handler: %v", err)
+		}
+	}
+
 	// set up transport
 	if h.Transport == nil {
 		t := &HTTPTransport{
@@ -613,19 +623,17 @@ func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Requ
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
 func (h Handler) directRequest(req *http.Request, di DialInfo) {
-	if req.URL.Host == "" {
-		// we need a host, so set the upstream's host address
-		reqHost := di.Address
+	// we need a host, so set the upstream's host address
+	reqHost := di.Address
 
-		// if the port equates to the scheme, strip the port because
-		// it's weird to make a request like http://example.com:80/.
-		if (req.URL.Scheme == "http" && di.Port == "80") ||
-			(req.URL.Scheme == "https" && di.Port == "443") {
-			reqHost = di.Host
-		}
-
-		req.URL.Host = reqHost
+	// if the port equates to the scheme, strip the port because
+	// it's weird to make a request like http://example.com:80/.
+	if (req.URL.Scheme == "http" && di.Port == "80") ||
+		(req.URL.Scheme == "https" && di.Port == "443") {
+		reqHost = di.Host
 	}
+
+	req.URL.Host = reqHost
 }
 
 // shouldPanicOnCopyError reports whether the reverse proxy should

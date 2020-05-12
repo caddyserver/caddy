@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -195,6 +197,12 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 // long enough time. The filename passed in must be the actual
 // config file used, not one to be discovered.
 func watchConfigFile(filename, adapterName string) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] watching config file: %v\n%s", err, debug.Stack())
+		}
+	}()
+
 	// make our logger; since config reloads can change the
 	// default logger, we need to get it dynamically each time
 	logger := func() *zap.Logger {
@@ -312,7 +320,7 @@ func (f Flags) Float64(name string) float64 {
 // is not a duration type. It panics if the flag is
 // not in the flag set.
 func (f Flags) Duration(name string) time.Duration {
-	val, _ := time.ParseDuration(f.String(name))
+	val, _ := caddy.ParseDuration(f.String(name))
 	return val
 }
 

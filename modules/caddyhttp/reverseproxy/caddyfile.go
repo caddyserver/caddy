@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -151,15 +150,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 
-		// if scheme is not set, we may be able to infer it from a known port
-		if scheme == "" {
-			if port == "80" {
-				scheme = "http"
-			} else if port == "443" {
-				scheme = "https"
-			}
-		}
-
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
@@ -259,7 +249,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.LoadBalancing == nil {
 					h.LoadBalancing = new(LoadBalancing)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value %s: %v", d.Val(), err)
 				}
@@ -272,7 +262,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.LoadBalancing == nil {
 					h.LoadBalancing = new(LoadBalancing)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
@@ -316,7 +306,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Active == nil {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad interval value %s: %v", d.Val(), err)
 				}
@@ -332,7 +322,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Active == nil {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value %s: %v", d.Val(), err)
 				}
@@ -396,7 +386,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Passive == nil {
 					h.HealthChecks.Passive = new(PassiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
@@ -450,7 +440,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Passive == nil {
 					h.HealthChecks.Passive = new(PassiveHealthChecks)
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
@@ -463,7 +453,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if fi, err := strconv.Atoi(d.Val()); err == nil {
 					h.FlushInterval = caddy.Duration(fi)
 				} else {
-					dur, err := time.ParseDuration(d.Val())
+					dur, err := caddy.ParseDuration(d.Val())
 					if err != nil {
 						return d.Errf("bad duration value '%s': %v", d.Val(), err)
 					}
@@ -584,6 +574,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //         tls_trusted_ca_certs <cert_files...>
 //         keepalive [off|<duration>]
 //         keepalive_idle_conns <max_count>
+//         versions <versions...>
 //     }
 //
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -614,7 +605,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
@@ -649,7 +640,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
@@ -669,6 +660,16 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				h.TLS.RootCAPEMFiles = args
 
+			case "tls_server_name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
+				h.TLS.ServerName = d.Val()
+
 			case "keepalive":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -681,7 +682,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.KeepAlive.Enabled = &disable
 					break
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
@@ -700,6 +701,12 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.KeepAlive.MaxIdleConns = num
 				h.KeepAlive.MaxIdleConnsPerHost = num
+
+			case "versions":
+				h.Versions = d.RemainingArgs()
+				if len(h.Versions) == 0 {
+					return d.ArgErr()
+				}
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
