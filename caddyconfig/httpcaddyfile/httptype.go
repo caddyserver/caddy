@@ -429,7 +429,6 @@ func (st *ServerType) serversFromPairings(
 			// server block
 			for _, listenerConfig := range sblock.pile["listener_wrapper"] {
 				listenerWrapper, ok := listenerConfig.Value.(caddy.ListenerWrapper)
-
 				if !ok {
 					return nil, fmt.Errorf("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
 				}
