@@ -19,10 +19,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -124,6 +126,11 @@ type CircuitBreaker interface {
 // regular basis and blocks until
 // h.HealthChecks.Active.stopChan is closed.
 func (h *Handler) activeHealthChecker() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] active health checks: %v\n%s", err, debug.Stack())
+		}
+	}()
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
 	h.doActiveHealthCheckForAllHosts()
 	for {
@@ -143,6 +150,11 @@ func (h *Handler) activeHealthChecker() {
 func (h *Handler) doActiveHealthCheckForAllHosts() {
 	for _, upstream := range h.Upstreams {
 		go func(upstream *Upstream) {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("[PANIC] active health check: %v\n%s", err, debug.Stack())
+				}
+			}()
 			networkAddr := upstream.Dial
 			addr, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
@@ -335,6 +347,11 @@ func (h *Handler) countFailure(upstream *Upstream) {
 
 	// forget it later
 	go func(host Host, failDuration time.Duration) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[PANIC] health check failure forgetter: %v\n%s", err, debug.Stack())
+			}
+		}()
 		time.Sleep(failDuration)
 		err := host.CountFail(-1)
 		if err != nil {

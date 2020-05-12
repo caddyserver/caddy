@@ -20,10 +20,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -194,6 +196,12 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 // long enough time. The filename passed in must be the actual
 // config file used, not one to be discovered.
 func watchConfigFile(filename, adapterName string) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] watching config file: %v\n%s", err, debug.Stack())
+		}
+	}()
+
 	// make our logger; since config reloads can change the
 	// default logger, we need to get it dynamically each time
 	logger := func() *zap.Logger {
