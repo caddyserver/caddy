@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -118,6 +120,12 @@ func (s *SessionTicketService) start() error {
 // the keys whenever new ones are sent. It reads
 // from keysChan until s.stop() is called.
 func (s *SessionTicketService) stayUpdated() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] session ticket service: %v\n%s", err, debug.Stack())
+		}
+	}()
+
 	// this call is essential when Initialize()
 	// returns without error, because the stop
 	// channel is the only way the key source
