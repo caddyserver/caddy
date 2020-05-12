@@ -1,0 +1,37 @@
+:80 {
+    respond /version 200 {
+        body "hello from localhost"
+    }
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/version"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "hello from localhost",
+									"handler": "static_response",
+									"status_code": 200
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
