@@ -1,7 +1,7 @@
 a.caddy.localhost {
-    respond /version 200 {
-        body "hello from localhost"
-    }
+	respond /version 200 {
+		body "hello from localhost"
+	}
 }
 ----------
 {
