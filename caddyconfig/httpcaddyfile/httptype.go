@@ -432,7 +432,6 @@ func (st *ServerType) serversFromPairings(
 				if !ok {
 					return nil, fmt.Errorf("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
 				}
-
 				jsonListenerWrapper := caddyconfig.JSONModuleObject(
 					listenerWrapper,
 					"wrapper",
