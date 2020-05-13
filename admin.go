@@ -21,6 +21,7 @@ import (
 	"expvar"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -546,13 +547,6 @@ func handleUnload(w http.ResponseWriter, r *http.Request) error {
 			Err:  fmt.Errorf("method not allowed"),
 		}
 	}
-	currentCfgMu.RLock()
-	hasCfg := currentCfg != nil
-	currentCfgMu.RUnlock()
-	if !hasCfg {
-		Log().Named("admin.api").Info("nothing to unload")
-		return nil
-	}
 	Log().Named("admin.api").Info("unloading")
 	if err := stopAndCleanup(); err != nil {
 		Log().Named("admin.api").Error("error unloading", zap.Error(err))
@@ -801,11 +795,26 @@ var (
 	}
 )
 
+// PIDFile writes a pidfile to the file at filename. It
+// will get deleted before the process gracefully exits.
+func PIDFile(filename string) error {
+	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+	err := ioutil.WriteFile(filename, pid, 0644)
+	if err != nil {
+		return err
+	}
+	pidfile = filename
+	return nil
+}
+
 // idRegexp is used to match ID fields and their associated values
 // in the config. It also matches adjacent commas so that syntax
 // can be preserved no matter where in the object the field appears.
 // It supports string and most numeric values.
 var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `"\s*:\s*(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
+
+// pidfile is the name of the pidfile, if any.
+var pidfile string
 
 const (
 	rawConfigKey = "config"
