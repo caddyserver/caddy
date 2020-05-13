@@ -37,6 +37,7 @@ func init() {
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(URIHashSelection{})
 	caddy.RegisterModule(HeaderHashSelection{})
+	caddy.RegisterModule(CookieHashSelection{})
 
 	weakrand.Seed(time.Now().UTC().UnixNano())
 }
@@ -409,13 +410,12 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 	}
 	cookie, err := req.Cookie(s.Field)
 	var cookieValue string
-	if err != nil {
+	if err != nil || cookie == nil {
 		cookieValue = caddy.RandomString(16)
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: cookieValue, Secure: false})
+		http.SetCookie(w, &http.Cookie{Name: s.Field, Value: cookieValue, Secure: false})
 	} else {
 		cookieValue = cookie.Value
 	}
-	cookieValue = cookie.Value
 	return hostByHashing(pool, cookieValue)
 }
 
@@ -497,6 +497,7 @@ var (
 	_ Selector = (*IPHashSelection)(nil)
 	_ Selector = (*URIHashSelection)(nil)
 	_ Selector = (*HeaderHashSelection)(nil)
+	_ Selector = (*CookieHashSelection)(nil)
 
 	_ caddy.Validator   = (*RandomChoiceSelection)(nil)
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
