@@ -316,7 +316,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	var proxyErr error
 	for {
 		// choose an available upstream
-		upstream := h.LoadBalancing.SelectionPolicy.Select(h.Upstreams, r)
+		upstream := h.LoadBalancing.SelectionPolicy.Select(h.Upstreams, r, w)
 		if upstream == nil {
 			if proxyErr == nil {
 				proxyErr = fmt.Errorf("no upstreams available")
@@ -739,7 +739,7 @@ type LoadBalancing struct {
 
 // Selector selects an available upstream from the pool.
 type Selector interface {
-	Select(UpstreamPool, *http.Request) *Upstream
+	Select(UpstreamPool, *http.Request, http.ResponseWriter) *Upstream
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.

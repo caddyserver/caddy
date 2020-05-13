@@ -54,7 +54,7 @@ func (RandomSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (r RandomSelection) Select(pool UpstreamPool, request *http.Request) *Upstream {
+func (r RandomSelection) Select(pool UpstreamPool, request *http.Request, _ http.ResponseWriter) *Upstream {
 	// use reservoir sampling because the number of available
 	// hosts isn't known: https://en.wikipedia.org/wiki/Reservoir_sampling
 	var randomHost *Upstream
@@ -134,7 +134,7 @@ func (r RandomChoiceSelection) Validate() error {
 }
 
 // Select returns an available host, if any.
-func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
+func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	k := r.Choose
 	if k > len(pool) {
 		k = len(pool)
@@ -174,7 +174,7 @@ func (LeastConnSelection) CaddyModule() caddy.ModuleInfo {
 // Select selects the up host with the least number of connections in the
 // pool. If more than one host has the same least number of connections,
 // one of the hosts is chosen at random.
-func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
+func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	var bestHost *Upstream
 	var count int
 	leastReqs := -1
@@ -227,7 +227,7 @@ func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
+func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	n := uint32(len(pool))
 	if n == 0 {
 		return nil
@@ -265,7 +265,7 @@ func (FirstSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (FirstSelection) Select(pool UpstreamPool, _ *http.Request) *Upstream {
+func (FirstSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	for _, host := range pool {
 		if host.Available() {
 			return host
@@ -297,7 +297,7 @@ func (IPHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (IPHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
+func (IPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
 	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		clientIP = req.RemoteAddr
@@ -328,7 +328,7 @@ func (URIHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (URIHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
+func (URIHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
 	return hostByHashing(pool, req.RequestURI)
 }
 
@@ -358,19 +358,62 @@ func (HeaderHashSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstream {
+func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
 	if s.Field == "" {
 		return nil
 	}
 	val := req.Header.Get(s.Field)
 	if val == "" {
-		return RandomSelection{}.Select(pool, req)
+		return RandomSelection{}.Select(pool, req, nil)
 	}
 	return hostByHashing(pool, val)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		s.Field = d.Val()
+	}
+	return nil
+}
+
+// CookieHashSelection is a policy that selects
+// a host based on a given cookie name.
+type CookieHashSelection struct {
+	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
+	Field string `json:"field,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (CookieHashSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.cookie",
+		New: func() caddy.Module { return new(CookieHashSelection) },
+	}
+}
+
+// Select returns an available host, if any.
+func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
+	if s.Field == "" {
+		return nil
+	}
+	cookie, err := req.Cookie(s.Field)
+	var cookieValue string
+	if err != nil {
+		cookieValue = caddy.RandomString(16)
+		http.SetCookie(w, &http.Cookie{Name: "order", Value: cookieValue, Secure: false})
+	} else {
+		cookieValue = cookie.Value
+	}
+	cookieValue = cookie.Value
+	return hostByHashing(pool, cookieValue)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if !d.NextArg() {
 			return d.ArgErr()
