@@ -42,7 +42,8 @@ func init() {
 // MatchExpression matches requests by evaluating a
 // [CEL](https://github.com/google/cel-spec) expression.
 // This enables complex logic to be expressed using a comfortable,
-// familiar syntax. The standard definitions of CEL functions and operators can be found [here](https://github.com/google/cel-spec/blob/master/doc/langdef.md#standard-definitions).
+// familiar syntax. Please refer to
+// [the standard definitions of CEL functions and operators](https://github.com/google/cel-spec/blob/master/doc/langdef.md#standard-definitions).
 //
 // This matcher's JSON interface is actually a string, not a struct.
 // The generated docs are not correct because this type has custom
