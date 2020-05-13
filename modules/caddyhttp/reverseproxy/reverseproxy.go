@@ -510,6 +510,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		res.Header.Del(h)
 	}
 
+	// apply any response header operations
+	if h.Headers != nil && h.Headers.Response != nil {
+		if h.Headers.Response.Require == nil ||
+			h.Headers.Response.Require.Match(res.StatusCode, res.Header) {
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			h.Headers.Response.ApplyTo(res.Header, repl)
+		}
+	}
+
 	copyHeader(rw.Header(), res.Header)
 
 	// The "Trailer" header isn't included in the Transport's response,
@@ -521,15 +530,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 			trailerKeys = append(trailerKeys, k)
 		}
 		rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
-	}
-
-	// apply any response header operations
-	if h.Headers != nil && h.Headers.Response != nil {
-		if h.Headers.Response.Require == nil ||
-			h.Headers.Response.Require.Match(res.StatusCode, rw.Header()) {
-			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-			h.Headers.Response.ApplyTo(rw.Header(), repl)
-		}
 	}
 
 	// TODO: there should be an option to return an error if the response
