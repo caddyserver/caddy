@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -193,6 +194,11 @@ func (s *Provider) rotateKeys(oldSTEK distributedSTEK) (distributedSTEK, error) 
 // rotate rotates keys on a regular basis, sending each updated set of
 // keys down keysChan, until doneChan is closed.
 func (s *Provider) rotate(doneChan <-chan struct{}, keysChan chan<- [][32]byte) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] distributed STEK rotation: %v\n%s", err, debug.Stack())
+		}
+	}()
 	for {
 		select {
 		case <-s.timer.C:
