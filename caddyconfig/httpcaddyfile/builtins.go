@@ -15,8 +15,11 @@
 package httpcaddyfile
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"html"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strings"
@@ -60,9 +63,11 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
 //         clients {
-//             mode	              [request|require|verify_if_given|require_and_verify]
-//             trusted_ca_certs   <trusted_ca_certs...>
-//             trusted_leaf_certs <trusted_leaf_certs...>
+//             mode                    [request|require|verify_if_given|require_and_verify]
+//             trusted_ca_certs        <trusted_ca_certs...>
+//             trusted_ca_certs_file   <filename...>
+//             trusted_leaf_certs      <trusted_leaf_certs...>
+//             trusted_leaf_certs_file <filename...>
 //         }
 //         alpn      <values...>
 //         load      <paths...>
@@ -203,12 +208,42 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 								}
 								cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, ch.Val())
 							}
+						case "trusted_ca_certs_file":
+							for ch.NextArg() {
+								filename := ch.Val()
+								// read PEM file
+								certDataPEM, err := ioutil.ReadFile(filename)
+								if err != nil {
+									return nil, err
+								}
+								// safe repack PEM file
+								block, _ := pem.Decode(certDataPEM)
+								if block == nil || block.Type != "CERTIFICATE" {
+									return nil, h.Errf("cannot decode trusted CA certificate file'%s'", ch.Val())
+								}
+								cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, base64.StdEncoding.EncodeToString(block.Bytes))
+							}
 						case "trusted_leaf_certs":
 							for ch.NextArg() {
 								if _, err := caddytls.DecodeBase64DERCert(ch.Val()); err != nil {
 									return nil, h.Errf("cannot decode trusted leaf certificate '%s'", ch.Val())
 								}
 								cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, ch.Val())
+							}
+						case "trusted_leaf_certs_file":
+							for ch.NextArg() {
+								filename := ch.Val()
+								// read PEM file
+								certDataPEM, err := ioutil.ReadFile(filename)
+								if err != nil {
+									return nil, err
+								}
+								// safe repack PEM file
+								block, _ := pem.Decode(certDataPEM)
+								if block == nil || block.Type != "CERTIFICATE" {
+									return nil, h.Errf("cannot decode trusted leaf certificate file'%s'", ch.Val())
+								}
+								cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, base64.StdEncoding.EncodeToString(block.Bytes))
 							}
 						default:
 							return nil, h.Errf("Unknown param for Client Certificate Check: '%s'", ch.Val())
