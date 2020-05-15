@@ -96,7 +96,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 	RegisterCommand(Command{
 		Name:  "run",
 		Func:  cmdRun,
-		Usage: "[--config <path> [--adapter <name>]] [--environ] [--resume] [--watch] [--pidfile <fil>]",
+		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--environ] [--resume] [--watch] [--pidfile <fil>]",
 		Short: `Starts the Caddy process and blocks indefinitely`,
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file,
@@ -116,6 +116,9 @@ As a special case, if the current working directory has a file called
 that file will be loaded and used to configure Caddy, even without any command
 line flags.
 
+If --envfile is specified, an environment file with environment variables in
+the KEY=VALUE format will be loaded into the Caddy process.
+
 If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
 not quit after printing, and can be useful for troubleshooting.
@@ -130,6 +133,7 @@ development environment.`,
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.String("envfile", "", "Environment file to load")
 			fs.Bool("environ", false, "Print environment")
 			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
 			fs.Bool("watch", false, "Watch config file for changes and reload it automatically")

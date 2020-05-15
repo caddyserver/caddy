@@ -15,6 +15,7 @@
 package caddycmd
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -337,6 +338,73 @@ func flagHelp(fs *flag.FlagSet) string {
 	fs.SetOutput(buf)
 	fs.PrintDefaults()
 	return buf.String()
+}
+
+func loadEnvFromFile(envFile string) error {
+	file, err := os.Open(envFile)
+	if err != nil {
+		return fmt.Errorf("reading environment file: %v", err)
+	}
+	defer file.Close()
+
+	envMap, err := parseEnvFile(file)
+	if err != nil {
+		return fmt.Errorf("parsing environment file: %v", err)
+	}
+
+	for k, v := range envMap {
+		if err := os.Setenv(k, v); err != nil {
+			return fmt.Errorf("setting environment variables: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func parseEnvFile(envInput io.Reader) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	scanner := bufio.NewScanner(envInput)
+	var line string
+	lineNumber := 0
+
+	for scanner.Scan() {
+		line = strings.TrimSpace(scanner.Text())
+		lineNumber++
+
+		// skip lines starting with comment
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// skip empty line
+		if len(line) == 0 {
+			continue
+		}
+
+		fields := strings.SplitN(line, "=", 2)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("can't parse line %d; line should be in KEY=VALUE format", lineNumber)
+		}
+
+		if strings.Contains(fields[0], " ") {
+			return nil, fmt.Errorf("bad key on line %d: contains whitespace", lineNumber)
+		}
+
+		key := fields[0]
+		val := fields[1]
+
+		if key == "" {
+			return nil, fmt.Errorf("missing or empty key on line %d", lineNumber)
+		}
+		envMap[key] = val
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return envMap, nil
 }
 
 func printEnvironment() {
