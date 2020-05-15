@@ -23,21 +23,47 @@ import (
 )
 
 func TestAllTokens(t *testing.T) {
-	input := []byte("a b c\nd e")
-	expected := []string{"a", "b", "c", "d", "e"}
-	tokens, err := allTokens("TestAllTokens", input)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "not-empty",
+			input:    "a b c\nd e",
+			expected: []string{"a", "b", "c", "d", "e"},
+		}, {
+			name:  "empty",
+			input: "",
+		}, {
+			name:  "newline",
+			input: "\n",
+		}, {
+			name:  "space",
+			input: " ",
+		}, {
+			name:  "tab and newline",
+			input: "\t\n",
+		},
 	}
-	if len(tokens) != len(expected) {
-		t.Fatalf("Expected %d tokens, got %d", len(expected), len(tokens))
-	}
 
-	for i, val := range expected {
-		if tokens[i].Text != val {
-			t.Errorf("Token %d should be '%s' but was '%s'", i, val, tokens[i].Text)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, err := allTokens("TestAllTokens", []byte(tt.input))
+
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+			if len(tokens) != len(tt.expected) {
+				t.Fatalf("Expected %d tokens, got %d", len(tt.expected), len(tokens))
+			}
+
+			for i, val := range tt.expected {
+				if tokens[i].Text != val {
+					t.Errorf("Token %d should be '%s' but was '%s'", i, val, tokens[i].Text)
+				}
+			}
+		})
 	}
 }
 
