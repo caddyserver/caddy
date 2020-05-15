@@ -201,7 +201,7 @@ c
 }
 
 d {
-	e #f
+	e#f
 	# g
 }
 
@@ -229,7 +229,7 @@ bar"
 j {
 "\"k\" l m"
 }`,
-			expect: `"a \"b\" " #c
+			expect: `"a \"b\" "#c
 d
 
 e {
@@ -304,6 +304,11 @@ bar "{\"key\":34}"`,
 }
 
 baz`,
+		},
+		{
+			description: "hash within string is not a comment",
+			input:       `redir / /some/#/path`,
+			expect:      `redir / /some/#/path`,
 		},
 	} {
 		// the formatter should output a trailing newline,

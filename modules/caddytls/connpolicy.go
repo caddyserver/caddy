@@ -264,6 +264,19 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	return nil
 }
 
+// SettingsEmpty returns true if p's settings (fields
+// except the matchers) are all empty/unset.
+func (p ConnectionPolicy) SettingsEmpty() bool {
+	return p.CertSelection == nil &&
+		p.CipherSuites == nil &&
+		p.Curves == nil &&
+		p.ALPN == nil &&
+		p.ProtocolMin == "" &&
+		p.ProtocolMax == "" &&
+		p.ClientAuthentication == nil &&
+		p.DefaultSNI == ""
+}
+
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
 	// A list of base64 DER-encoded CA certificates
@@ -382,7 +395,7 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 		return fmt.Errorf("no client certificate provided")
 	}
 
-	remoteLeafCert, err := x509.ParseCertificate(rawCerts[len(rawCerts)-1])
+	remoteLeafCert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}

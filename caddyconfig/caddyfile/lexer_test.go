@@ -78,6 +78,26 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
+			input: `host:123 {
+						# hash inside string is not a comment
+						redir / /some/#/path
+					}`,
+			expected: []Token{
+				{Line: 1, Text: "host:123"},
+				{Line: 1, Text: "{"},
+				{Line: 3, Text: "redir"},
+				{Line: 3, Text: "/"},
+				{Line: 3, Text: "/some/#/path"},
+				{Line: 4, Text: "}"},
+			},
+		},
+		{
+			input: "# comment at beginning of file\n# comment at beginning of line\nhost:123",
+			expected: []Token{
+				{Line: 3, Text: "host:123"},
+			},
+		},
+		{
 			input: `a "quoted value" b
 					foobar`,
 			expected: []Token{
@@ -197,6 +217,38 @@ func TestLexer(t *testing.T) {
 			input: "\xEF\xBB\xBF:8080", // test with leading byte order mark
 			expected: []Token{
 				{Line: 1, Text: ":8080"},
+			},
+		},
+		{
+			input: "simple `backtick quoted` string",
+			expected: []Token{
+				{Line: 1, Text: `simple`},
+				{Line: 1, Text: `backtick quoted`},
+				{Line: 1, Text: `string`},
+			},
+		},
+		{
+			input: "multiline `backtick\nquoted\n` string",
+			expected: []Token{
+				{Line: 1, Text: `multiline`},
+				{Line: 1, Text: "backtick\nquoted\n"},
+				{Line: 3, Text: `string`},
+			},
+		},
+		{
+			input: "nested `\"quotes inside\" backticks` string",
+			expected: []Token{
+				{Line: 1, Text: `nested`},
+				{Line: 1, Text: `"quotes inside" backticks`},
+				{Line: 1, Text: `string`},
+			},
+		},
+		{
+			input: "reverse-nested \"`backticks` inside\" quotes",
+			expected: []Token{
+				{Line: 1, Text: `reverse-nested`},
+				{Line: 1, Text: "`backticks` inside"},
+				{Line: 1, Text: `quotes`},
 			},
 		},
 	}

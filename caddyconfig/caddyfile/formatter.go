@@ -131,9 +131,6 @@ func Format(input []byte) []byte {
 		//////////////////////////////////////////////////////////
 
 		if ch == '#' {
-			if !spacePrior && !beginningOfLine {
-				write(' ')
-			}
 			comment = true
 		}
 

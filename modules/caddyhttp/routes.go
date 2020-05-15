@@ -113,7 +113,7 @@ func (r Route) Empty() bool {
 // create a middleware chain.
 type RouteList []Route
 
-// Provision sets up both the matchers and handlers in the route.
+// Provision sets up both the matchers and handlers in the routes.
 func (routes RouteList) Provision(ctx caddy.Context) error {
 	err := routes.ProvisionMatchers(ctx)
 	if err != nil {
@@ -284,7 +284,7 @@ type RawMatcherSets []caddy.ModuleMap
 type MatcherSets []MatcherSet
 
 // AnyMatch returns true if req matches any of the
-// matcher sets in mss or if there are no matchers,
+// matcher sets in ms or if there are no matchers,
 // in which case the request always matches.
 func (ms MatcherSets) AnyMatch(req *http.Request) bool {
 	for _, m := range ms {

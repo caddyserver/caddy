@@ -111,6 +111,17 @@ type Server struct {
 	// This field is not subject to compatibility promises.
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
+	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
+	// which will serve HTTP/2 over plaintext TCP connections if
+	// a client support it. Because this is not implemented by the
+	// Go standard library, using H2C is incompatible with most
+	// of the other options for this server. Do not enable this
+	// only to achieve maximum client compatibility. In practice,
+	// very few clients implement H2C, and even fewer require it.
+	// This setting applies only to unencrypted HTTP listeners.
+	// ⚠️ Experimental feature; subject to change or removal.
+	AllowH2C bool `json:"allow_h2c,omitempty"`
+
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
@@ -134,19 +145,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// set up the context for the request
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
-	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
-	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
-	var url2 url.URL // avoid letting this escape to the heap
-	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
-	r = r.WithContext(ctx)
-
-	// once the pointer to the request won't change
-	// anymore, finish setting up the replacer
-	addHTTPVarsToReplacer(repl, r, w)
+	r = PrepareRequest(r, repl, w, s)
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary
@@ -456,7 +456,40 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	if loggerName, ok := slc.LoggerNames[host]; ok {
 		return loggerName
 	}
+
+	// Try matching wildcard domains if other non-specific loggers exist
+	labels := strings.Split(host, ".")
+	for i := range labels {
+		if labels[i] == "" {
+			continue
+		}
+		labels[i] = "*"
+		wildcardHost := strings.Join(labels, ".")
+		if loggerName, ok := slc.LoggerNames[wildcardHost]; ok {
+			return loggerName
+		}
+	}
+
 	return slc.DefaultLoggerName
+}
+
+// PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
+// be nil, but the handlers will lose response placeholders and access to the server.
+func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
+	// set up the context for the request
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, ServerCtxKey, s)
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+	var url2 url.URL // avoid letting this escape to the heap
+	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
+	r = r.WithContext(ctx)
+
+	// once the pointer to the request won't change
+	// anymore, finish setting up the replacer
+	addHTTPVarsToReplacer(repl, r, w)
+
+	return r
 }
 
 // errLogValues inspects err and returns the status code

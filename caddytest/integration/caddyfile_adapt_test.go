@@ -1,286 +1,48 @@
 package integration
 import (
+	"io/ioutil"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-func TestHttpOnlyOnLocalhost(t *testing.T) {
-	caddytest.AssertAdapt(t, ` 
-	localhost:80 {
-		respond /version 200 {
-			body "hello from localhost"
-		}
+func TestCaddyfileAdaptToJSON(t *testing.T) {
+	// load the list of test files from the dir
+	files, err := ioutil.ReadDir("./caddyfile_adapt")
+	if err != nil {
+		t.Errorf("failed to read caddyfile_adapt dir: %s", err)
 	}
-  `, "caddyfile", `{
-	"apps": {
-		"http": {
-			"servers": {
-				"srv0": {
-					"listen": [
-						":80"
-					],
-					"routes": [
-						{
-							"match": [
-								{
-									"host": [
-										"localhost"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "hello from localhost",
-													"handler": "static_response",
-													"status_code": 200
-												}
-											],
-											"match": [
-												{
-													"path": [
-														"/version"
-													]
-												}
-											]
-										}
-									]
-								}
-							],
-							"terminal": true
-						}
-					]
-				}
-			}
-		}
-	}
-}`)
-}
 
-func TestHttpOnlyOnAnyAddress(t *testing.T) {
-	caddytest.AssertAdapt(t, ` 
-	:80 {
-		respond /version 200 {
-			body "hello from localhost"
-		}
-	}
-  `, "caddyfile", `{
-	"apps": {
-		"http": {
-			"servers": {
-				"srv0": {
-					"listen": [
-						":80"
-					],
-					"routes": [
-						{
-							"match": [
-								{
-									"path": [
-										"/version"
-									]
-								}
-							],
-							"handle": [
-								{
-									"body": "hello from localhost",
-									"handler": "static_response",
-									"status_code": 200
-								}
-							]
-						}
-					]
-				}
-			}
-		}
-	}
-}`)
-}
+	// prep a regexp to fix strings on windows
+	winNewlines := regexp.MustCompile(`\r?\n`)
 
-func TestHttpsOnDomain(t *testing.T) {
-	caddytest.AssertAdapt(t, ` 
-	a.caddy.localhost {
-		respond /version 200 {
-			body "hello from localhost"
+	for _, f := range files {
+		if f.IsDir() {
+			continue
 		}
-	}
-  `, "caddyfile", `{
-	"apps": {
-		"http": {
-			"servers": {
-				"srv0": {
-					"listen": [
-						":443"
-					],
-					"routes": [
-						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "hello from localhost",
-													"handler": "static_response",
-													"status_code": 200
-												}
-											],
-											"match": [
-												{
-													"path": [
-														"/version"
-													]
-												}
-											]
-										}
-									]
-								}
-							],
-							"terminal": true
-						}
-					]
-				}
-			}
-		}
-	}
-}`)
-}
 
-func TestHttpOnlyOnDomain(t *testing.T) {
-	caddytest.AssertAdapt(t, ` 
-	http://a.caddy.localhost {
-		respond /version 200 {
-			body "hello from localhost"
+		// read the test file
+		filename := f.Name()
+		data, err := ioutil.ReadFile("./caddyfile_adapt/" + filename)
+		if err != nil {
+			t.Errorf("failed to read %s dir: %s", filename, err)
 		}
-	}
-  `, "caddyfile", `{
-	"apps": {
-		"http": {
-			"servers": {
-				"srv0": {
-					"listen": [
-						":80"
-					],
-					"routes": [
-						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "hello from localhost",
-													"handler": "static_response",
-													"status_code": 200
-												}
-											],
-											"match": [
-												{
-													"path": [
-														"/version"
-													]
-												}
-											]
-										}
-									]
-								}
-							],
-							"terminal": true
-						}
-					],
-					"automatic_https": {
-						"skip": [
-							"a.caddy.localhost"
-						]
-					}
-				}
-			}
-		}
-	}
-}`)
-}
 
-func TestHttpOnlyOnNonStandardPort(t *testing.T) {
-	caddytest.AssertAdapt(t, ` 
-	http://a.caddy.localhost:81 {
-		respond /version 200 {
-			body "hello from localhost"
+		// split the Caddyfile (first) and JSON (second) parts
+		parts := strings.Split(string(data), "----------")
+		caddyfile, json := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+
+		// replace windows newlines in the json with unix newlines
+		json = winNewlines.ReplaceAllString(json, "\n")
+
+		// run the test
+		ok := caddytest.CompareAdapt(t, caddyfile, "caddyfile", json)
+		if !ok {
+			t.Errorf("failed to adapt %s", filename)
 		}
 	}
-  `, "caddyfile", `{
-	"apps": {
-		"http": {
-			"servers": {
-				"srv0": {
-					"listen": [
-						":81"
-					],
-					"routes": [
-						{
-							"match": [
-								{
-									"host": [
-										"a.caddy.localhost"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "hello from localhost",
-													"handler": "static_response",
-													"status_code": 200
-												}
-											],
-											"match": [
-												{
-													"path": [
-														"/version"
-													]
-												}
-											]
-										}
-									]
-								}
-							],
-							"terminal": true
-						}
-					],
-					"automatic_https": {
-						"skip": [
-							"a.caddy.localhost"
-						]
-					}
-				}
-			}
-		}
-	}
-}`)
 }
 
 

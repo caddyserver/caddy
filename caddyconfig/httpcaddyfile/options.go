@@ -16,14 +16,35 @@ package httpcaddyfile
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
-func parseOptHTTPPort(d *caddyfile.Dispenser) (int, error) {
+func init() {
+	RegisterGlobalOption("debug", parseOptTrue)
+	RegisterGlobalOption("http_port", parseOptHTTPPort)
+	RegisterGlobalOption("https_port", parseOptHTTPSPort)
+	RegisterGlobalOption("default_sni", parseOptSingleString)
+	RegisterGlobalOption("order", parseOptOrder)
+	RegisterGlobalOption("experimental_http3", parseOptTrue)
+	RegisterGlobalOption("storage", parseOptStorage)
+	RegisterGlobalOption("acme_ca", parseOptSingleString)
+	RegisterGlobalOption("acme_dns", parseOptSingleString)
+	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
+	RegisterGlobalOption("email", parseOptSingleString)
+	RegisterGlobalOption("admin", parseOptAdmin)
+	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
+	RegisterGlobalOption("local_certs", parseOptTrue)
+	RegisterGlobalOption("key_type", parseOptSingleString)
+}
+
+func parseOptTrue(d *caddyfile.Dispenser) (interface{}, error) {
+	return true, nil
+}
+
+func parseOptHTTPPort(d *caddyfile.Dispenser) (interface{}, error) {
 	var httpPort int
 	for d.Next() {
 		var httpPortStr string
@@ -39,7 +60,7 @@ func parseOptHTTPPort(d *caddyfile.Dispenser) (int, error) {
 	return httpPort, nil
 }
 
-func parseOptHTTPSPort(d *caddyfile.Dispenser) (int, error) {
+func parseOptHTTPSPort(d *caddyfile.Dispenser) (interface{}, error) {
 	var httpsPort int
 	for d.Next() {
 		var httpsPortStr string
@@ -55,11 +76,7 @@ func parseOptHTTPSPort(d *caddyfile.Dispenser) (int, error) {
 	return httpsPort, nil
 }
 
-func parseOptExperimentalHTTP3(d *caddyfile.Dispenser) (bool, error) {
-	return true, nil
-}
-
-func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
+func parseOptOrder(d *caddyfile.Dispenser) (interface{}, error) {
 	newOrder := directiveOrder
 
 	for d.Next() {
@@ -135,7 +152,7 @@ func parseOptOrder(d *caddyfile.Dispenser) ([]string, error) {
 	return newOrder, nil
 }
 
-func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
+func parseOptStorage(d *caddyfile.Dispenser) (interface{}, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
@@ -162,7 +179,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (caddy.StorageConverter, error) {
 	return storage, nil
 }
 
-func parseOptSingleString(d *caddyfile.Dispenser) (string, error) {
+func parseOptSingleString(d *caddyfile.Dispenser) (interface{}, error) {
 	d.Next() // consume parameter name
 	if !d.Next() {
 		return "", d.ArgErr()
@@ -174,7 +191,7 @@ func parseOptSingleString(d *caddyfile.Dispenser) (string, error) {
 	return val, nil
 }
 
-func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
+func parseOptAdmin(d *caddyfile.Dispenser) (interface{}, error) {
 	if d.Next() {
 		var listenAddress string
 		if !d.AllArgs(&listenAddress) {
@@ -188,7 +205,7 @@ func parseOptAdmin(d *caddyfile.Dispenser) (string, error) {
 	return "", nil
 }
 
-func parseOptOnDemand(d *caddyfile.Dispenser) (*caddytls.OnDemandConfig, error) {
+func parseOptOnDemand(d *caddyfile.Dispenser) (interface{}, error) {
 	var ond *caddytls.OnDemandConfig
 	for d.Next() {
 		if d.NextArg() {
@@ -209,7 +226,7 @@ func parseOptOnDemand(d *caddyfile.Dispenser) (*caddytls.OnDemandConfig, error) 
 				if !d.NextArg() {
 					return nil, d.ArgErr()
 				}
-				dur, err := time.ParseDuration(d.Val())
+				dur, err := caddy.ParseDuration(d.Val())
 				if err != nil {
 					return nil, err
 				}

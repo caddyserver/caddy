@@ -120,6 +120,17 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 	})
 }
 
+// RegisterGlobalOption registers a unique global option opt with
+// an associated unmarshaling (setup) function. When the global
+// option opt is encountered in a Caddyfile, setupFunc will be
+// called to unmarshal its tokens.
+func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
+	if _, ok := registeredGlobalOptions[opt]; ok {
+		panic("global option " + opt + " already registered")
+	}
+	registeredGlobalOptions[opt] = setupFunc
+}
+
 // Helper is a type which helps setup a value from
 // Caddyfile tokens.
 type Helper struct {
@@ -276,53 +287,45 @@ func sortRoutes(routes []ConfigValue) {
 		dirPositions[dir] = i
 	}
 
-	// while we are sorting, we will need to decode a route's path matcher
-	// in order to sub-sort by path length; we can amortize this operation
-	// for efficiency by storing the decoded matchers in a slice
-	decodedMatchers := make([]caddyhttp.MatchPath, len(routes))
-
 	sort.SliceStable(routes, func(i, j int) bool {
+		// if the directives are different, just use the established directive order
 		iDir, jDir := routes[i].directive, routes[j].directive
-		if iDir == jDir {
-			// directives are the same; sub-sort by path matcher length
-			// if there's only one matcher set and one path (common case)
-			iRoute, ok := routes[i].Value.(caddyhttp.Route)
-			if !ok {
-				return false
-			}
-			jRoute, ok := routes[j].Value.(caddyhttp.Route)
-			if !ok {
-				return false
-			}
-
-			// use already-decoded matcher, or decode if it's the first time seeing it
-			iPM, jPM := decodedMatchers[i], decodedMatchers[j]
-			if iPM == nil && len(iRoute.MatcherSetsRaw) == 1 {
-				var pathMatcher caddyhttp.MatchPath
-				_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-				decodedMatchers[i] = pathMatcher
-				iPM = pathMatcher
-			}
-			if jPM == nil && len(jRoute.MatcherSetsRaw) == 1 {
-				var pathMatcher caddyhttp.MatchPath
-				_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &pathMatcher)
-				decodedMatchers[j] = pathMatcher
-				jPM = pathMatcher
-			}
-
-			// sort by longer path (more specific) first; missing
-			// path matchers are treated as zero-length paths
-			var iPathLen, jPathLen int
-			if iPM != nil {
-				iPathLen = len(iPM[0])
-			}
-			if jPM != nil {
-				jPathLen = len(jPM[0])
-			}
-			return iPathLen > jPathLen
+		if iDir != jDir {
+			return dirPositions[iDir] < dirPositions[jDir]
 		}
 
-		return dirPositions[iDir] < dirPositions[jDir]
+		// directives are the same; sub-sort by path matcher length if there's
+		// only one matcher set and one path (this is a very common case and
+		// usually -- but not always -- helpful/expected, oh well; user can
+		// always take manual control of order using handler or route blocks)
+		iRoute, ok := routes[i].Value.(caddyhttp.Route)
+		if !ok {
+			return false
+		}
+		jRoute, ok := routes[j].Value.(caddyhttp.Route)
+		if !ok {
+			return false
+		}
+
+		// decode the path matchers, if there is just one of them
+		var iPM, jPM caddyhttp.MatchPath
+		if len(iRoute.MatcherSetsRaw) == 1 {
+			_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &iPM)
+		}
+		if len(jRoute.MatcherSetsRaw) == 1 {
+			_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &jPM)
+		}
+
+		// sort by longer path (more specific) first; missing path
+		// matchers or multi-matchers are treated as zero-length paths
+		var iPathLen, jPathLen int
+		if len(iPM) > 0 {
+			iPathLen = len(iPM[0])
+		}
+		if len(jPM) > 0 {
+			jPathLen = len(jPM[0])
+		}
+		return iPathLen > jPathLen
 	})
 }
 
@@ -462,6 +465,13 @@ type (
 	// for you. These are passed to a call to
 	// RegisterHandlerDirective.
 	UnmarshalHandlerFunc func(h Helper) (caddyhttp.MiddlewareHandler, error)
+
+	// UnmarshalGlobalFunc is a function which can unmarshal Caddyfile
+	// tokens into a global option config value using a Helper type.
+	// These are passed in a call to RegisterGlobalOption.
+	UnmarshalGlobalFunc func(d *caddyfile.Dispenser) (interface{}, error)
 )
 
 var registeredDirectives = make(map[string]UnmarshalFunc)
+
+var registeredGlobalOptions = make(map[string]UnmarshalGlobalFunc)

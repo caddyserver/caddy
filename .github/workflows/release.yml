@@ -66,3 +66,22 @@ jobs:
         for filename in dist/*.deb; do
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
+
+    # See https://github.com/peter-evans/repository-dispatch
+    - name: Trigger event on caddyserver/dist
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/dist
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
+
+    - name: Trigger event on caddyserver/caddy-docker
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/caddy-docker
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ steps.vars.outputs.version_tag }}"}'
+
+

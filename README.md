@@ -26,7 +26,7 @@
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
-- [Getting started](#getting-started)
+- [Quick start](#quick-start)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
 - [Getting help](#getting-help)
@@ -64,7 +64,6 @@
 Requirements:
 
 - [Go 1.14 or newer](https://golang.org/dl/)
-- Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
 ### For development
  
@@ -81,7 +80,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 Using [our builder tool](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ xcaddy build <caddy_version>
+$ xcaddy build
 ```
 
 ...the following steps are automated:
@@ -90,8 +89,9 @@ $ xcaddy build <caddy_version>
 2. Change into it: `cd caddy`
 3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
 4. Initialize a Go module: `go mod init caddy`
-5. Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit. You can also pin any plugin versions similarly.
-6. Compile: `go build`
+5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit.
+6. (Optional) Add plugins by adding their import: `_ "IMPORT_PATH"`
+7. Compile: `go build`
 
 
 

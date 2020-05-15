@@ -1,0 +1,47 @@
+:80
+
+log {
+	output file /var/log/access.log {
+		roll_size 1gb
+		roll_keep 5
+		roll_keep_for 90d
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"filename": "/var/log/access.log",
+					"output": "file",
+					"roll_keep": 5,
+					"roll_keep_days": 90,
+					"roll_size_mb": 954
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}

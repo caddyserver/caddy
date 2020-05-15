@@ -26,12 +26,30 @@ builds:
   - amd64
   - arm
   - arm64
+  - s390x
+  - ppc64le
   goarm:
+  - 5
   - 6
   - 7
   ignore:
     - goos: darwin
       goarch: arm
+    - goos: darwin
+      goarch: ppc64le
+    - goos: darwin
+      goarch: s390x
+    - goos: windows
+      goarch: ppc64le
+    - goos: windows
+      goarch: s390x
+    - goos: freebsd
+      goarch: ppc64le
+    - goos: freebsd
+      goarch: s390x
+    - goos: freebsd
+      goarch: arm
+      goarm: 5
   flags:
   - -trimpath
   ldflags:

@@ -27,7 +27,7 @@ type Command struct {
 	// Required.
 	Name string
 
-	// Run is a function that executes a subcommand using
+	// Func is a function that executes a subcommand using
 	// the parsed flags. It returns an exit code and any
 	// associated error.
 	// Required.
@@ -74,7 +74,7 @@ func init() {
 	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
-		Usage: "[--config <path> [--adapter <name>]] [--watch]",
+		Usage: "[--config <path> [--adapter <name>]] [--watch] [--pidfile <file>]",
 		Short: "Starts the Caddy process in the background and then returns",
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file.
@@ -87,6 +87,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 			fs := flag.NewFlagSet("start", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.String("pidfile", "", "Path of file to which to write process ID")
 			fs.Bool("watch", false, "Reload changed config file automatically")
 			return fs
 		}(),
@@ -95,7 +96,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 	RegisterCommand(Command{
 		Name:  "run",
 		Func:  cmdRun,
-		Usage: "[--config <path> [--adapter <name>]] [--environ] [--watch]",
+		Usage: "[--config <path> [--adapter <name>]] [--environ] [--resume] [--watch] [--pidfile <fil>]",
 		Short: `Starts the Caddy process and blocks indefinitely`,
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file,
@@ -132,6 +133,7 @@ development environment.`,
 			fs.Bool("environ", false, "Print environment")
 			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
 			fs.Bool("watch", false, "Watch config file for changes and reload it automatically")
+			fs.String("pidfile", "", "Path of file to which to write process ID")
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
 		}(),
