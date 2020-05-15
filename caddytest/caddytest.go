@@ -321,13 +321,13 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 	return resp
 }
 
-// AssertAdapt adapts a config and then tests it against an expected result
-func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+// CompareAdapt adapts a config and then compares it against an expected result
+func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) bool {
 
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
-		t.Errorf("unrecognized config adapter '%s'", adapterName)
-		return
+		t.Logf("unrecognized config adapter '%s'", adapterName)
+		return false
 	}
 
 	options := make(map[string]interface{})
@@ -335,8 +335,8 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 
 	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
 	if err != nil {
-		t.Errorf("adapting config using %s adapter: %v", adapterName, err)
-		return
+		t.Logf("adapting config using %s adapter: %v", adapterName, err)
+		return false
 	}
 
 	if len(warnings) > 0 {
@@ -369,6 +369,15 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 				fmt.Printf(" + %s\n", d.Payload)
 			}
 		}
+		return false
+	}
+	return true
+}
+
+// AssertAdapt adapts a config and then tests it against an expected result
+func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+	ok := CompareAdapt(t, rawConfig, adapterName, expectedResponse)
+	if !ok {
 		t.Fail()
 	}
 }
