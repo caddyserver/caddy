@@ -384,18 +384,18 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 
 		fields := strings.SplitN(line, "=", 2)
 		if len(fields) != 2 {
-			return nil, fmt.Errorf("Can't parse line %d; line should be in KEY=VALUE format", lineNumber)
+			return nil, fmt.Errorf("can't parse line %d; line should be in KEY=VALUE format", lineNumber)
 		}
 
 		if strings.Contains(fields[0], " ") {
-			return nil, fmt.Errorf("Can't parse line %d; KEY contains whitespace", lineNumber)
+			return nil, fmt.Errorf("bad key on line %d: contains whitespace", lineNumber)
 		}
 
 		key := fields[0]
 		val := fields[1]
 
 		if key == "" {
-			return nil, fmt.Errorf("Can't parse line %d; KEY can't be empty string", lineNumber)
+			return nil, fmt.Errorf("missing or empty key on line %d", lineNumber)
 		}
 		envMap[key] = val
 	}
