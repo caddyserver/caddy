@@ -155,7 +155,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			case "split":
 				extensions = dispenser.RemainingArgs()
 				dispenser.Delete()
-				for i := 0; i < len(extensions); i++ {
+				for range extensions {
 					dispenser.Delete()
 				}
 				if len(extensions) == 0 {
@@ -165,7 +165,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			case "env":
 				args := dispenser.RemainingArgs()
 				dispenser.Delete()
-				for i := 0; i < len(args); i++ {
+				for range args {
 					dispenser.Delete()
 				}
 				if len(args) != 2 {
@@ -179,7 +179,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			case "index":
 				args := dispenser.RemainingArgs()
 				dispenser.Delete()
-				for i := 0; i < len(args); i++ {
+				for range args {
 					dispenser.Delete()
 				}
 				if len(args) != 1 {
@@ -245,8 +245,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// route to actually reverse proxy requests to PHP files;
 	// match only requests that are for PHP files
 	pathList := []string{}
-	for i := 0; i < len(extensions); i++ {
-		pathList = append(pathList, "*"+extensions[i])
+	for _, ext := range extensions {
+		pathList = append(pathList, "*"+ext)
 	}
 	rpMatcherSet := caddy.ModuleMap{
 		"path": h.JSON(pathList),
