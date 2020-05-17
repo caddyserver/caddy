@@ -4,14 +4,14 @@ go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.1.0
-	github.com/alecthomas/chroma v0.7.2
+	github.com/alecthomas/chroma v0.7.4-0.20200517063913-500529fd43c1
 	github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a
 	github.com/caddyserver/certmagic v0.10.13
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.7.0
 	github.com/go-chi/chi v4.1.1+incompatible
 	github.com/gogo/protobuf v1.3.1
-	github.com/google/cel-go v0.4.2
+	github.com/google/cel-go v0.5.0
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.10.5
 	github.com/klauspost/cpuid v1.2.4
@@ -30,6 +30,6 @@ require (
 	golang.org/x/net v0.0.0-20200425230154-ff2c4b7c35a0
 	google.golang.org/genproto v0.0.0-20200413115906-b5235f65be36
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.2.8
+	gopkg.in/yaml.v2 v2.3.0
 	howett.net/plist v0.0.0-20200225050739-77e249a2e2ba // indirect
 )
