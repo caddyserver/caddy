@@ -539,6 +539,11 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 func parseLog(h Helper) ([]ConfigValue, error) {
 	var configValues []ConfigValue
 	for h.Next() {
+		// log does not currently support any arguments
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+
 		cl := new(caddy.CustomLog)
 
 		for h.NextBlock(0) {
