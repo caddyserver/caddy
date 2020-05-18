@@ -30,7 +30,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	}
 	firstLine := input[firstLineStart:firstLineEnd]
 
-	// ensure residue windows newline is removed
+	// ensure residue windows carriage return byte is removed
 	firstLine = strings.TrimSpace(firstLine)
 
 	// see what kind of front matter there is, if any
