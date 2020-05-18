@@ -46,6 +46,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			hashName = "bcrypt"
 		case 1:
 			hashName = args[0]
+		case 2:
+			hashName = args[0]
+			ba.Realm = args[1]
 		default:
 			return nil, h.ArgErr()
 		}
