@@ -1,0 +1,66 @@
+:8884
+
+php_fastcgi localhost:9000 {
+    # some php_fastcgi-specific subdirectives
+    split .php .php5
+    env VAR1 value1
+    env VAR2 value2
+    root /var/www
+    index off
+
+    # passed through to reverse_proxy (directive order doesn't matter!)
+    lb_policy random
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"*.php",
+										"*.php5"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"selection_policy": {
+											"policy": "random"
+										}
+									},
+									"transport": {
+										"env": {
+											"VAR1": "value1",
+											"VAR2": "value2"
+										},
+										"protocol": "fastcgi",
+										"root": "/var/www",
+										"split_path": [
+											".php",
+											".php5"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
