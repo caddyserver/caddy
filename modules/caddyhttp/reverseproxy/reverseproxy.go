@@ -465,10 +465,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
-	if err != nil {
-		return err
-	}
-
 	h.logger.Debug("upstream roundtrip",
 		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
@@ -476,6 +472,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		zap.Duration("duration", duration),
 		zap.Int("status", res.StatusCode),
 	)
+	if err != nil {
+		return err
+	}
 
 	// update circuit breaker on current conditions
 	if di.Upstream.cb != nil {
