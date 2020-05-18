@@ -31,7 +31,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	firstLine := input[firstLineStart:firstLineEnd]
 
 	// ensure residue windows newline is removed
-	firstLine = strings.Trim(firstLine, "\r")
+	firstLine = strings.TrimSpace(firstLine)
 
 	// see what kind of front matter there is, if any
 	var closingFence string
