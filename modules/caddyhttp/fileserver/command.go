@@ -61,6 +61,8 @@ respond with a file listing.`,
 }
 
 func cmdFileServer(fs caddycmd.Flags) (int, error) {
+	caddy.TrapSignals()
+
 	domain := fs.String("domain")
 	root := fs.String("root")
 	listen := fs.String("listen")
