@@ -38,6 +38,7 @@ func init() {
 	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
 	RegisterGlobalOption("local_certs", parseOptTrue)
 	RegisterGlobalOption("key_type", parseOptSingleString)
+	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser) (interface{}, error) {
@@ -263,4 +264,19 @@ func parseOptOnDemand(d *caddyfile.Dispenser) (interface{}, error) {
 		return nil, d.Err("expected at least one config parameter for on_demand_tls")
 	}
 	return ond, nil
+}
+
+func parseOptAutoHTTPS(d *caddyfile.Dispenser) (interface{}, error) {
+	d.Next() // consume parameter name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val != "off" && val != "disable_redirects" {
+		return "", d.Errf("auto_https must be either 'off' or 'disable_redirects'")
+	}
+	return val, nil
 }
