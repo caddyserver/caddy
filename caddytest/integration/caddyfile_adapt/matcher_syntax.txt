@@ -9,6 +9,8 @@
 
 	@matcher3 not method PUT
 	respond @matcher3 "not put"
+
+	respond *.txt "text"
 }
 ----------
 {
@@ -20,6 +22,21 @@
 						":80"
 					],
 					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"*.txt"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "text",
+									"handler": "static_response"
+								}
+							]
+						},
 						{
 							"match": [
 								{
