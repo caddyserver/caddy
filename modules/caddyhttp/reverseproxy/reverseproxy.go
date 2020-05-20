@@ -441,12 +441,14 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		req.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	// set X-Forwarded-Proto; many backend apps expect this too
-	proto := "https"
-	if req.TLS == nil {
-		proto = "http"
+	if req.Header.Get("X-Forwarded-Proto") == "" {
+		// set X-Forwarded-Proto; many backend apps expect this too
+		proto := "https"
+		if req.TLS == nil {
+			proto = "http"
+		}
+		req.Header.Set("X-Forwarded-Proto", proto)
 	}
-	req.Header.Set("X-Forwarded-Proto", proto)
 
 	return nil
 }
