@@ -54,6 +54,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
 	for i, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
+			if j == 0 && strings.HasPrefix(k, "@") {
+				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
+			}
 			if _, ok := sbKeys[k]; ok {
 				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
 			}
