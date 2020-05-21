@@ -299,6 +299,14 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // be called more than once per request, for example if a request
 // is rewritten (i.e. internal redirect).
 func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
+		// I've never been able demonstrate a vulnerability myself, but apparently
+		// WebSocket connections originating from browsers aren't subject to CORS
+		// restrictions, so we'll just be on the safe side
+		h.handleError(w, r, fmt.Errorf("websocket connections aren't allowed"))
+		return
+	}
+
 	if h.enforceHost {
 		// DNS rebinding mitigation
 		err := h.checkHost(r)
