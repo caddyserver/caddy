@@ -148,6 +148,8 @@ func cmdStart(fl Flags) (int, error) {
 }
 
 func cmdRun(fl Flags) (int, error) {
+	caddy.TrapSignals()
+
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")

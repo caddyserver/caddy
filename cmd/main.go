@@ -51,8 +51,6 @@ func init() {
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() if your program.
 func Main() {
-	caddy.TrapSignals()
-
 	switch len(os.Args) {
 	case 0:
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")

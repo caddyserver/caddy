@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -67,17 +68,29 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	salt := []byte(fs.String("salt"))
 
 	if len(plaintext) == 0 {
-		if terminal.IsTerminal(int(os.Stdin.Fd())) {
-			fmt.Print("Enter password: ")
-			plaintext, err = terminal.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Println()
+		fd := int(os.Stdin.Fd())
+		if terminal.IsTerminal(fd) {
+			// ensure the terminal state is restored on SIGINT
+			state, _ := terminal.GetState(fd)
+			c := make(chan os.Signal)
+			signal.Notify(c, os.Interrupt)
+			go func() {
+				<-c
+				_ = terminal.Restore(fd, state)
+				os.Exit(caddy.ExitCodeFailedStartup)
+			}()
+			defer signal.Stop(c)
+
+			fmt.Fprint(os.Stderr, "Enter password: ")
+			plaintext, err = terminal.ReadPassword(fd)
+			fmt.Fprintln(os.Stderr)
 			if err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}
 
-			fmt.Print("Confirm password: ")
-			confirmation, err := terminal.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Println()
+			fmt.Fprint(os.Stderr, "Confirm password: ")
+			confirmation, err := terminal.ReadPassword(fd)
+			fmt.Fprintln(os.Stderr)
 			if err != nil {
 				return caddy.ExitCodeFailedStartup, err
 			}
