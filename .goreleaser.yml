@@ -82,9 +82,9 @@ nfpms:
       ./caddy-dist/init/caddy.service: /lib/systemd/system/caddy.service
       ./caddy-dist/init/caddy-api.service: /lib/systemd/system/caddy-api.service
       ./caddy-dist/welcome/index.html: /usr/share/caddy/index.html
+      ./caddy-dist/scripts/completions/bash-completion: /etc/bash_completion.d/caddy
     config_files:
       ./caddy-dist/config/Caddyfile: /etc/caddy/Caddyfile
-      ./caddy-dist/scripts/completions/bash-completion: /etc/bash_completion.d/caddy
 
     scripts:
       postinstall: ./caddy-dist/scripts/postinstall.sh
