@@ -276,6 +276,8 @@ func globalDefaultReplacements(key string) (interface{}, bool) {
 		return runtime.GOOS, true
 	case "system.arch":
 		return runtime.GOARCH, true
+	case "time.now":
+		return nowFunc(), true
 	case "time.now.common_log":
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":

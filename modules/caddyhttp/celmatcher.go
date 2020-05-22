@@ -21,10 +21,12 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
@@ -204,6 +206,9 @@ func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
 	switch v := value.(type) {
 	case celHTTPRequest:
 		return v
+	case time.Time:
+		// TODO: eliminate direct protobuf dependency, sigh -- just wrap stdlib time.Time instead...
+		return types.Timestamp{Timestamp: &timestamp.Timestamp{Seconds: v.Unix(), Nanos: int32(v.Nanosecond())}}
 	case error:
 		types.NewErr(v.Error())
 	}
