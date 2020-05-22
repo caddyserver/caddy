@@ -11,7 +11,8 @@ require (
 	github.com/go-acme/lego/v3 v3.7.0
 	github.com/go-chi/chi v4.1.1+incompatible
 	github.com/gogo/protobuf v1.3.1
-	github.com/google/cel-go v0.5.0
+	github.com/golang/protobuf v1.3.4
+	github.com/google/cel-go v0.5.1
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.10.5
 	github.com/klauspost/cpuid v1.2.4

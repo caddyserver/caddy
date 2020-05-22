@@ -286,8 +286,8 @@ github.com/golangci/revgrep v0.0.0-20180812185044-276a5c0a1039/go.mod h1:qOQCunE
 github.com/golangci/unconvert v0.0.0-20180507085042-28b1c447d1f4/go.mod h1:Izgrg8RkN3rCIMLGE9CyYmU9pY2Jer6DgANEnZ/L/cQ=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/btree v1.0.0/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
-github.com/google/cel-go v0.5.0 h1:mKsiw/KmT+VlDZnYFd2SE5ULrbe8RPlb0rHBem2Bv7I=
-github.com/google/cel-go v0.5.0/go.mod h1:9SvtVVTtZV4DTB1/RuAD1D2HhuqEIdmZEE/r/lrFyKE=
+github.com/google/cel-go v0.5.1 h1:oDsbtAwlwFPEcC8dMoRWNuVzWJUDeDZeHjoet9rXjTs=
+github.com/google/cel-go v0.5.1/go.mod h1:9SvtVVTtZV4DTB1/RuAD1D2HhuqEIdmZEE/r/lrFyKE=
 github.com/google/cel-spec v0.4.0/go.mod h1:2pBM5cU4UKjbPDXBgwWkiwBsVgnxknuEJ7C5TDWwORQ=
 github.com/google/certificate-transparency-go v1.1.0/go.mod h1:i+Q7XY+ArBveOUT36jiHGfuSK1fHICIg6sUkRxPAbCs=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
