@@ -115,6 +115,14 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 	return rewr, nil
 }
 
+// parseCaddyfileHandlePath parses the handle_path directive. Syntax:
+//
+//     handle_path [<matcher>] {
+//         <directives...>
+//     }
+//
+// Only path matchers (with a `/` prefix) are supported as this is a shortcut
+// for the handle directive with a strip_prefix rewrite.
 func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -126,7 +134,18 @@ func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigVal
 	// read the prefix to strip
 	path := h.Val()
 	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+		return nil, h.Errf("path matcher must begin with '/', got %s", path)
+	}
+
+	// we only want to strip what comes before the '/' if
+	// the user specified it (e.g. /api/* should only strip /api)
+	var stripPath string
+	if strings.HasSuffix(path, "/*") {
+		stripPath = path[:len(path)-2]
+	} else if strings.HasSuffix(path, "*") {
+		stripPath = path[:len(path)-1]
+	} else {
+		stripPath = path
 	}
 
 	// the ParseSegmentAsSubroute function expects the cursor
@@ -147,15 +166,16 @@ func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigVal
 
 	// make a matcher on the path and everything below it
 	pathMatcher := caddy.ModuleMap{
-		"path": h.JSON(caddyhttp.MatchPath{path + "*"}),
+		"path": h.JSON(caddyhttp.MatchPath{path}),
 	}
 
-	// build a rewrite handler to strip the path prefix
-	rewriteHandler := Rewrite{
-		StripPathPrefix: path,
-	}
+	// build a route with a rewrite handler to strip the path prefix
 	route := caddyhttp.Route{
-		HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(rewriteHandler, "handler", "rewrite", nil)},
+		HandlersRaw: []json.RawMessage{
+			caddyconfig.JSONModuleObject(Rewrite{
+				StripPathPrefix: stripPath,
+			}, "handler", "rewrite", nil),
+		},
 	}
 
 	// prepend the route to the subroute
