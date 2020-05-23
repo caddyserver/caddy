@@ -107,7 +107,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			// so we return a more user-friendly error message instead
 			// to explain what to do instead
 			if strings.Contains(upstreamAddr, "{") {
-				return "", d.Err("for now, placeholders are not allowed when specifying a scheme; instead, omit the scheme and use the transport subdirective if you need tls support")
+				return "", d.Err("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
 			}
 
 			toURL, err := url.Parse(upstreamAddr)
