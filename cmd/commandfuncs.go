@@ -566,11 +566,15 @@ func cmdFmt(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
 	}
-
 	output := caddyfile.Format(input)
 
 	if overwrite {
-		err = ioutil.WriteFile(formatCmdConfigFile, output, 0644)
+		s, err := os.Stat(formatCmdConfigFile)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("reading input file permissions: %v", err)
+		}
+		err = ioutil.WriteFile(formatCmdConfigFile, output, s.Mode().Perm())
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, nil
 		}
