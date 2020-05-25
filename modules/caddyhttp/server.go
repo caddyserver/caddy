@@ -186,6 +186,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				zap.Int("status", wrec.Status()),
 				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
 			)
+
+			if !wrec.(ResponseRecorder).WroteHeader() {
+				s.logger.Debug("no handler wrote to the response", loggableReq)
+			}
 		}()
 	}
 

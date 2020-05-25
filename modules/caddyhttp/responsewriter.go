@@ -206,6 +206,11 @@ func (rr *responseRecorder) Buffered() bool {
 	return !rr.stream
 }
 
+// WroteHeader returns whether rr has written a header to the response.
+func (rr *responseRecorder) WroteHeader() bool {
+	return rr.wroteHeader
+}
+
 func (rr *responseRecorder) WriteResponse() error {
 	if rr.stream {
 		return nil
@@ -230,6 +235,7 @@ type ResponseRecorder interface {
 	Buffered() bool
 	Size() int
 	WriteResponse() error
+	WroteHeader() bool
 }
 
 // ShouldBufferFunc is a function that returns true if the
