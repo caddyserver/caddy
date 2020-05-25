@@ -94,7 +94,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 	// create the CEL environment
 	env, err := cel.NewEnv(
 		cel.Declarations(
-			decls.NewIdent("request", httpRequestObjectType, nil),
+			decls.NewVar("request", httpRequestObjectType),
 			decls.NewFunction(placeholderFuncName,
 				decls.NewOverload(placeholderFuncName+"_httpRequest_string",
 					[]*exprpb.Type{httpRequestObjectType, decls.String},
