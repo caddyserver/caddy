@@ -6,6 +6,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.1.0
 	github.com/alecthomas/chroma v0.7.4-0.20200517063913-500529fd43c1
 	github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a
+	github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23
 	github.com/caddyserver/certmagic v0.10.13
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.7.0

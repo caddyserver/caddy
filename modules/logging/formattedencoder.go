@@ -65,15 +65,14 @@ func (se FormattedEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field
 	repl := caddy.NewReplacer()
 	buf, err := se.Encoder.EncodeEntry(ent, fields)
 	if err != nil {
-		return nil, err
+		return buf, err
 	}
 	appName := strings.SplitN(ent.LoggerName, ".", 2)[0]
 	// set the vals in the replacer
 	err = jsonparser.ObjectEach(buf.Bytes(), visitor(appName, repl))
 	buf.Reset() // the buffer is only used to collect placeholders' values anyway
-	buf.Free()
 	if err != nil {
-		return nil, err
+		return buf, err
 	}
 
 	out := repl.ReplaceKnown(se.Template, "")
@@ -82,7 +81,6 @@ func (se FormattedEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field
 	if !strings.HasSuffix(out, "\n") {
 		buf.AppendByte('\n')
 	}
-
 	return buf, err
 }
 
