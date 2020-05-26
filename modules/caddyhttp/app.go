@@ -217,13 +217,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
-		primaryRoute := emptyHandler
+		primaryRoute := emptyHandlerWithLog
 		if srv.Routes != nil {
 			err := srv.Routes.ProvisionHandlers(ctx)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
-			primaryRoute = srv.Routes.Compile(emptyHandler)
+			primaryRoute = srv.Routes.Compile(emptyHandlerWithLog)
 		}
 		srv.primaryHandlerChain = srv.wrapPrimaryRoute(primaryRoute)
 

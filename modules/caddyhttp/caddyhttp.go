@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -77,6 +78,16 @@ type MiddlewareHandler interface {
 
 // emptyHandler is used as a no-op handler.
 var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
+
+// emptyHandlerWithLog is used as a no-op handler, but emits
+// a debug log line if encountered to help with debugging
+// requests that are unhandled.
+var emptyHandlerWithLog Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	caddy.Log().Debug("request went unhandled",
+		zap.Object("request", LoggableHTTPRequest{r}),
+	)
+	return nil
+})
 
 // An implicit suffix middleware that, if reached, sets the StatusCode to the
 // error stored in the ErrorCtxKey. This is to prevent situations where the
