@@ -17,6 +17,8 @@ package caddyfile
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 )
 
@@ -35,6 +37,16 @@ func NewDispenser(tokens []Token) *Dispenser {
 		tokens: tokens,
 		cursor: -1,
 	}
+}
+
+// NewTestDispenser parses input into tokens and creates a new
+// Disenser for test purposes only; any errors are fatal.
+func NewTestDispenser(input string) *Dispenser {
+	tokens, err := allTokens("Testfile", []byte(input))
+	if err != nil && err != io.EOF {
+		log.Fatalf("getting all tokens from input: %v", err)
+	}
+	return NewDispenser(tokens)
 }
 
 // Next loads the next token. Returns true if a token
