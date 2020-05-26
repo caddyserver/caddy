@@ -449,6 +449,21 @@ func TestHeaderMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchHeader{"Field1": []string{"foo*"}},
+			input:  http.Header{"Field1": []string{"foo"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"Field1": []string{"foo*"}},
+			input:  http.Header{"Field1": []string{"asdf", "foobar"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"Field1": []string{"*bar"}},
+			input:  http.Header{"Field1": []string{"asdf", "foobar"}},
+			expect: true,
+		},
+		{
 			match:  MatchHeader{"host": []string{"localhost"}},
 			input:  http.Header{},
 			host:   "localhost",
@@ -812,6 +827,24 @@ func TestResponseMatcher(t *testing.T) {
 				},
 			},
 			hdr:    http.Header{"Foo": []string{"bar"}, "Foo2": []string{"baz"}},
+			expect: true,
+		},
+		{
+			require: ResponseMatcher{
+				Headers: http.Header{
+					"Foo": []string{"foo*"},
+				},
+			},
+			hdr:    http.Header{"Foo": []string{"foobar"}},
+			expect: true,
+		},
+		{
+			require: ResponseMatcher{
+				Headers: http.Header{
+					"Foo": []string{"foo*"},
+				},
+			},
+			hdr:    http.Header{"Foo": []string{"foobar"}},
 			expect: true,
 		},
 	} {
