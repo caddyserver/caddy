@@ -132,13 +132,13 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 	}
 
 	// we're the lucky first goroutine to re-dial the connection
-	var err2 error
-	if conn, err2 = reconn.dial(); err2 == nil {
+	conn2, err2 := reconn.dial()
+	if err2 != nil {
 		return
 	}
-	if n, err = conn.Write(b); err == nil {
+	if n, err = conn2.Write(b); err == nil {
 		reconn.Conn.Close()
-		reconn.Conn = conn
+		reconn.Conn = conn2
 	}
 	return
 }
