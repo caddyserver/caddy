@@ -40,7 +40,7 @@ func NewDispenser(tokens []Token) *Dispenser {
 }
 
 // NewTestDispenser parses input into tokens and creates a new
-// Disenser for test purposes only; any errors are fatal.
+// Dispenser for test purposes only; any errors are fatal.
 func NewTestDispenser(input string) *Dispenser {
 	tokens, err := allTokens("Testfile", []byte(input))
 	if err != nil && err != io.EOF {
