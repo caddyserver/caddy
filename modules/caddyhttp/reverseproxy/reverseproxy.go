@@ -587,20 +587,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	rw.WriteHeader(res.StatusCode)
 
 	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-	if err != nil {
-		defer res.Body.Close()
-		// Since we're streaming the response, if we run into an error all we can do
-		// is abort the request. Issue golang/go#23643: ReverseProxy should use ErrAbortHandler
-		// on read error while copying body.
-		// TODO: Look into whether we want to panic at all in our case...
-		if !shouldPanicOnCopyError(req) {
-			// p.logf("suppressing panic for copyResponse error in test; copy error: %v", err)
-			return err
-		}
-
-		panic(http.ErrAbortHandler)
-	}
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if err != nil {
+		// we're streaming the response and we've already written headers, so
+		// there's nothing an error handler can do to recover at this point;
+		// the standard lib's proxy panics at this point, but we'll just log
+		// the error and abort the stream here
+		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		return nil
+	}
 
 	if len(res.Trailer) > 0 {
 		// Force chunking if we saw a response trailer.
@@ -677,27 +672,6 @@ func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	}
 
 	req.URL.Host = reqHost
-}
-
-// shouldPanicOnCopyError reports whether the reverse proxy should
-// panic with http.ErrAbortHandler. This is the right thing to do by
-// default, but Go 1.10 and earlier did not, so existing unit tests
-// weren't expecting panics. Only panic in our own tests, or when
-// running under the HTTP server.
-// TODO: I don't know if we want this at all...
-func shouldPanicOnCopyError(req *http.Request) bool {
-	// if inOurTests {
-	// 	// Our tests know to handle this panic.
-	// 	return true
-	// }
-	if req.Context().Value(http.ServerContextKey) != nil {
-		// We seem to be running under an HTTP server, so
-		// it'll recover the panic.
-		return true
-	}
-	// Otherwise act like Go 1.10 and earlier to not break
-	// existing tests.
-	return false
 }
 
 func copyHeader(dst, src http.Header) {
