@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -73,7 +74,15 @@ func (nw NetWriter) WriterKey() string {
 
 // OpenWriter opens a new network connection.
 func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
-	return net.Dial(nw.addr.Network, nw.addr.JoinHostPort(0))
+	reconn := &redialerConn{nw: nw}
+	conn, err := reconn.dial()
+	if err != nil {
+		return nil, err
+	}
+	reconn.connMu.Lock()
+	reconn.Conn = conn
+	reconn.connMu.Unlock()
+	return reconn, nil
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
@@ -91,6 +100,51 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// redialerConn wraps an underlying Conn so that if any
+// writes fail, the connection is redialed and the write
+// is retried.
+type redialerConn struct {
+	net.Conn
+	connMu sync.RWMutex
+	nw     NetWriter
+}
+
+// Write wraps the underlying Conn.Write method, but if that fails,
+// it will re-dial the connection anew and try writing again.
+func (reconn *redialerConn) Write(b []byte) (n int, err error) {
+	reconn.connMu.RLock()
+	conn := reconn.Conn
+	reconn.connMu.RUnlock()
+	if n, err = conn.Write(b); err == nil {
+		return
+	}
+
+	// problem with the connection - lock it and try to fix it
+	reconn.connMu.Lock()
+	defer reconn.connMu.Unlock()
+
+	// if multiple concurrent writes failed on the same broken conn, then
+	// one of them might have already re-dialed by now; try writing again
+	if n, err = reconn.Conn.Write(b); err == nil {
+		return
+	}
+
+	// we're the lucky first goroutine to re-dial the connection
+	conn2, err2 := reconn.dial()
+	if err2 != nil {
+		return
+	}
+	if n, err = conn2.Write(b); err == nil {
+		reconn.Conn.Close()
+		reconn.Conn = conn2
+	}
+	return
+}
+
+func (reconn *redialerConn) dial() (net.Conn, error) {
+	return net.Dial(reconn.nw.addr.Network, reconn.nw.addr.JoinHostPort(0))
 }
 
 // Interface guards
