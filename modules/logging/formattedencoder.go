@@ -1,9 +1,7 @@
 package logging
 
 import (
-	"bytes"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/buger/jsonparser"
@@ -17,7 +15,7 @@ func init() {
 	caddy.RegisterModule(FormattedEncoder{})
 }
 
-const commonLogFormat = `{http.common_log}`
+const commonLogFormat = `{common_log}`
 
 // FormattedEncoder allows the user to provide custom template for log prints. The
 // encoder builds atop the json encoder, thus it follows its message structure. The placeholders
@@ -67,63 +65,34 @@ func (se FormattedEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field
 	if err != nil {
 		return buf, err
 	}
-	appName := strings.SplitN(ent.LoggerName, ".", 2)[0]
-	// set the vals in the replacer
-	err = jsonparser.ObjectEach(buf.Bytes(), visitor(appName, repl))
-	buf.Reset() // the buffer is only used to collect placeholders' values anyway
-	if err != nil {
-		return buf, err
-	}
+	repl.Map(func(key string) (interface{}, bool) {
+		path := strings.Split(key, ">")
+		value, dataType, _, err := jsonparser.Get(buf.Bytes(), path...)
+		if err != nil {
+			return nil, false
+		}
+		switch dataType {
+		case jsonparser.NotExist:
+			return nil, false
+		case jsonparser.Array, jsonparser.Boolean, jsonparser.Null, jsonparser.Number, jsonparser.Object, jsonparser.String, jsonparser.Unknown:
+			// if a value exists, return it as is. A byte is a byte is a byte. The replacer handles them just fine.
+			return value, true
+		default:
+			return nil, false
+		}
+	})
 
 	out := repl.ReplaceKnown(se.Template, "")
+	// The buffer is only used to find the values of placeholders.
+	// The content has served its purpose. It's time for it to go to repurpose the buffer.
+	buf.Reset()
+
 	// Unescape escaped quotes
 	buf.AppendString(strings.Replace(out, `\"`, `"`, -1))
 	if !strings.HasSuffix(out, "\n") {
 		buf.AppendByte('\n')
 	}
 	return buf, err
-}
-
-func visitor(prefix string, repl *caddy.Replacer) func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
-	format := fmt.Sprintf("%s.%%s", prefix)
-	keyFormat := func(itemKey string) string {
-		return fmt.Sprintf(format, itemKey)
-	}
-	return func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
-		switch dataType {
-		case jsonparser.NotExist:
-			panic("unimplemented jsonparser visitor for NotExist")
-		case jsonparser.String:
-			repl.Set(keyFormat(string(key)), string(value))
-		case jsonparser.Number:
-			// see: https://github.com/buger/jsonparser/issues/85
-			if bytes.IndexByte(value, '.') > -1 {
-				v, _ := strconv.ParseFloat(string(value), 64)
-				repl.Set(keyFormat(string(key)), v)
-			} else {
-				v, _ := strconv.ParseUint(string(value), 10, 64)
-				repl.Set(keyFormat(string(key)), v)
-			}
-		case jsonparser.Object:
-			// recurse
-			err := jsonparser.ObjectEach(value, visitor(keyFormat(string(key)), repl))
-			if err != nil {
-				return err
-			}
-		case jsonparser.Array:
-			repl.Set(keyFormat(string(key)), value)
-		case jsonparser.Boolean:
-			v, _ := strconv.ParseBool(string(value))
-			repl.Set(keyFormat(string(key)), v)
-		case jsonparser.Null:
-			panic("unimplemented jsonparser visitor for Null")
-		case jsonparser.Unknown:
-			panic("unimplemented jsonparser visitor for Unknown")
-		default:
-			panic("completely unknown dataType")
-		}
-		return nil
-	}
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
