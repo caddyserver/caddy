@@ -51,14 +51,13 @@ func JSON(val interface{}, warnings *[]Warning) json.RawMessage {
 	return b
 }
 
-// JSONModuleObject is like JSON, except it marshals val into a JSON object
-// and then adds a key to that object named fieldName with the value fieldVal.
-// This is useful for JSON-encoding module values where the module name has to
-// be described within the object by a certain key; for example,
-// "responder": "file_server" for a file server HTTP responder. The val must
-// encode into a map[string]interface{} (i.e. it must be a struct or map),
-// and any errors are converted into warnings, so this can be conveniently
-// used when filling a struct. For correct code, there should be no errors.
+// JSONModuleObject is like JSON(), except it marshals val into a JSON object
+// with an added key named fieldName with the value fieldVal. This is useful
+// for encoding module values where the module name has to be described within
+// the object by a certain key; for example, `"handler": "file_server"` for a
+// file server HTTP handler (fieldName="handler" and fieldVal="file_server").
+// The val parameter must encode into a map[string]interface{} (i.e. it must be
+// a struct or map). Any errors are converted into warnings.
 func JSONModuleObject(val interface{}, fieldName, fieldVal string, warnings *[]Warning) json.RawMessage {
 	// encode to a JSON object first
 	enc, err := json.Marshal(val)
