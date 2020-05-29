@@ -54,6 +54,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
 	for i, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
+			if j == 0 && strings.HasPrefix(k, "@") {
+				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
+			}
 			if _, ok := sbKeys[k]; ok {
 				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
 			}
@@ -343,10 +346,25 @@ func (st *ServerType) serversFromPairings(
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
 	}
+	autoHTTPS := "on"
+	if ah, ok := options["auto_https"].(string); ok {
+		autoHTTPS = ah
+	}
 
 	for i, p := range pairings {
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
+		}
+
+		// handle the auto_https global option
+		if autoHTTPS != "on" {
+			srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+			if autoHTTPS == "off" {
+				srv.AutoHTTPS.Disabled = true
+			}
+			if autoHTTPS == "disable_redirects" {
+				srv.AutoHTTPS.DisableRedir = true
+			}
 		}
 
 		// sort server blocks by their keys; this is important because
@@ -382,7 +400,7 @@ func (st *ServerType) serversFromPairings(
 		})
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
-		autoHTTPSWillAddConnPolicy := true
+		autoHTTPSWillAddConnPolicy := autoHTTPS != "off"
 
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {

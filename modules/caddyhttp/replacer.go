@@ -16,9 +16,14 @@ package caddyhttp
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
 	"fmt"
 	"net"
 	"net/http"
@@ -243,6 +248,18 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		switch field {
 		case "client.fingerprint":
 			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
+		case "client.public_key", "client.public_key_sha256":
+			if cert.PublicKey == nil {
+				return nil, true
+			}
+			pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
+			if err != nil {
+				return nil, true
+			}
+			if strings.HasSuffix(field, "_sha256") {
+				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
+			}
+			return fmt.Sprintf("%x", pubKeyBytes), true
 		case "client.issuer":
 			return cert.Issuer, true
 		case "client.serial":
@@ -269,6 +286,19 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		return req.TLS.ServerName, true
 	}
 	return nil, false
+}
+
+// marshalPublicKey returns the byte encoding of pubKey.
+func marshalPublicKey(pubKey interface{}) ([]byte, error) {
+	switch key := pubKey.(type) {
+	case *rsa.PublicKey:
+		return asn1.Marshal(key)
+	case *ecdsa.PublicKey:
+		return elliptic.Marshal(key.Curve, key.X, key.Y), nil
+	case ed25519.PublicKey:
+		return key, nil
+	}
+	return nil, fmt.Errorf("unrecognized public key type: %T", pubKey)
 }
 
 // getTLSPeerCert retrieves the first peer certificate from a TLS session.

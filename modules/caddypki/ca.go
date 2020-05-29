@@ -51,7 +51,10 @@ type CA struct {
 	// and Mozilla Firefox trust stores. Default: true.
 	InstallTrust *bool `json:"install_trust,omitempty"`
 
-	Root         *KeyPair `json:"root,omitempty"`
+	// The root certificate to use; if empty, one will be generated.
+	Root *KeyPair `json:"root,omitempty"`
+
+	// The intermediate (signing) certificate; if empty, one will be generated.
 	Intermediate *KeyPair `json:"intermediate,omitempty"`
 
 	// Optionally configure a separate storage module associated with this

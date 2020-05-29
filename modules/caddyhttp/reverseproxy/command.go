@@ -66,6 +66,8 @@ default, all incoming headers are passed through unmodified.)
 }
 
 func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
+	caddy.TrapSignals()
+
 	from := fs.String("from")
 	to := fs.String("to")
 	changeHost := fs.Bool("change-host-header")

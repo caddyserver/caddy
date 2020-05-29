@@ -33,7 +33,7 @@ func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
 		Func:  cmdFileServer,
-		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--access-log]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -55,17 +55,21 @@ respond with a file listing.`,
 			fs.String("listen", "", "The address to which to bind the listener")
 			fs.Bool("browse", false, "Enable directory browsing")
 			fs.Bool("templates", false, "Enable template rendering")
+			fs.Bool("access-log", false, "Enable the access log")
 			return fs
 		}(),
 	})
 }
 
 func cmdFileServer(fs caddycmd.Flags) (int, error) {
+	caddy.TrapSignals()
+
 	domain := fs.String("domain")
 	root := fs.String("root")
 	listen := fs.String("listen")
 	browse := fs.Bool("browse")
 	templates := fs.Bool("templates")
+	accessLog := fs.Bool("access-log")
 
 	var handlers []json.RawMessage
 
@@ -105,6 +109,9 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		}
 	}
 	server.Listen = []string{listen}
+	if accessLog {
+		server.Logs = &caddyhttp.ServerLogConfig{}
+	}
 
 	httpApp := caddyhttp.App{
 		Servers: map[string]*caddyhttp.Server{"static": server},

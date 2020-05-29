@@ -198,7 +198,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host Host) error {
 	// create the URL for the request that acts as a health check
 	scheme := "http"
-	if ht, ok := h.Transport.(*http.Transport); ok && ht.TLSClientConfig != nil {
+	if ht, ok := h.Transport.(TLSTransport); ok && ht.TLSEnabled() {
 		// this is kind of a hacky way to know if we should use HTTPS, but whatever
 		scheme = "https"
 	}
