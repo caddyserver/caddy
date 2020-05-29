@@ -233,7 +233,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// certificate loaders
-			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
+			if clVals, ok := sblock.pile["tls.cert_loader"]; ok {
 				for _, clVal := range clVals {
 					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}

@@ -329,13 +329,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	// certificate loaders
 	if len(fileLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: fileLoader,
 		})
 	}
 	if len(folderLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: folderLoader,
 		})
 	}

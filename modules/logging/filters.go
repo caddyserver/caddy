@@ -27,9 +27,7 @@ func init() {
 }
 
 // LogFieldFilter can filter (or manipulate)
-// a field in a log entry. If delete is true,
-// out will be ignored and the field will be
-// removed from the output.
+// a field in a log entry.
 type LogFieldFilter interface {
 	Filter(zapcore.Field) zapcore.Field
 }
