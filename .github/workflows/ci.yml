@@ -120,6 +120,32 @@ jobs:
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
 
+  s390x-test:
+    name: Test IBM Linux on Z
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code into the Go module directory
+        uses: actions/checkout@v2
+      # - name: Run Tests
+      #   run: |
+      #     mkdir -p ~/.ssh && echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_rsa && chmod og-rwx ~/.ssh/id_rsa
+
+      #     # short sha is enough?
+      #     short_sha=$(git rev-parse --short HEAD)
+
+      #     # The environment is fresh, so there's no point in keeping accepting and adding the key.
+      #     rsync -arz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --progress --delete --exclude '.git' . caddy-ci@test-server:/var/tmp/"$short_sha"
+      #     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t caddy-ci@test-server "cd /var/tmp/$short_sha; CGO_ENABLED=0 /usr/local/go/bin/go test -v ./..."
+      #     test_result=$?
+
+      #     # There's no need leaving the files around
+      #     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null caddy-ci@test-server "rm -rf /var/tmp/'$short_sha'"
+
+      #     echo "Test exit code: $test_result"
+      #     exit $test_result
+      #   with:
+      #     SSH_KEY: ${{ secrets.ssh_key }}
+
   # From https://github.com/reviewdog/action-golangci-lint
   golangci-lint:
     name: runner / golangci-lint
