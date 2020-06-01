@@ -1,0 +1,49 @@
+example.com
+
+import testdata/import_respond.txt Groot Rocket
+import testdata/import_respond.txt you "the confused man"
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "'I am Groot', hears Rocket",
+													"handler": "static_response"
+												},
+												{
+													"body": "'I am you', hears the confused man",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

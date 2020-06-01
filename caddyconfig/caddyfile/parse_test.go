@@ -182,13 +182,16 @@ func TestParseOneAndImport(t *testing.T) {
 			"host1",
 		}, []int{1, 2}},
 
-		{`import testdata/import_test1.txt testdata/import_test2.txt`, true, []string{}, []int{}},
-
 		{`import testdata/not_found.txt`, true, []string{}, []int{}},
 
 		{`""`, false, []string{}, []int{}},
 
 		{``, false, []string{}, []int{}},
+
+		// import with args
+		{`import testdata/import_args0.txt a`, false, []string{"a"}, []int{}},
+		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
+		{`import testdata/import_args*.txt a b`, false, []string{"a"}, []int{2}},
 
 		// test cases found by fuzzing!
 		{`import }{$"`, true, []string{}, []int{}},
@@ -210,6 +213,7 @@ func TestParseOneAndImport(t *testing.T) {
 			t.Errorf("Test %d: Expected no error, but got: %v", i, err)
 		}
 
+		// t.Logf("%+v\n", result)
 		if len(result.Keys) != len(test.keys) {
 			t.Errorf("Test %d: Expected %d keys, got %d",
 				i, len(test.keys), len(result.Keys))
