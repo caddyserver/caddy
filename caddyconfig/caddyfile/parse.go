@@ -20,7 +20,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // Parse parses the input just enough to group tokens, in
@@ -292,11 +295,19 @@ func (p *parser) doImport() error {
 	if importPattern == "" {
 		return p.Err("Import requires a non-empty filepath")
 	}
-	if p.NextArg() {
-		return p.Err("Import takes only one argument (glob pattern or file)")
+
+	// grab remaining args as placeholder replacements
+	args := p.RemainingArgs()
+
+	// add args to the replacer
+	repl := caddy.NewReplacer()
+	for index, arg := range args {
+		repl.Set("args."+strconv.Itoa(index), arg)
 	}
-	// splice out the import directive and its argument (2 tokens total)
-	tokensBefore := p.tokens[:p.cursor-1]
+
+	// splice out the import directive and its arguments
+	// (2 tokens, plus the length of args)
+	tokensBefore := p.tokens[:p.cursor-1-len(args)]
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
 
@@ -348,10 +359,20 @@ func (p *parser) doImport() error {
 		}
 	}
 
+	// copy the tokens so we don't overwrite p.definedSnippets
+	tokensCopy := make([]Token, len(importedTokens))
+	copy(tokensCopy, importedTokens)
+
+	// run the argument replacer on the tokens
+	for index, token := range tokensCopy {
+		token.Text = repl.ReplaceKnown(token.Text, "")
+		tokensCopy[index] = token
+	}
+
 	// splice the imported tokens in the place of the import statement
 	// and rewind cursor so Next() will land on first imported token
-	p.tokens = append(tokensBefore, append(importedTokens, tokensAfter...)...)
-	p.cursor--
+	p.tokens = append(tokensBefore, append(tokensCopy, tokensAfter...)...)
+	p.cursor -= len(args) + 1
 
 	return nil
 }
