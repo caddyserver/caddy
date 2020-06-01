@@ -409,7 +409,7 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 	return fmt.Errorf("client leaf certificate failed validation")
 }
 
-// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+// DecodeBase64DERCert base64-decodes, then DER-decodes, certStr.
 func DecodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	// decode base64
 	derBytes, err := base64.StdEncoding.DecodeString(certStr)
