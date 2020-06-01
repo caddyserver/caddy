@@ -465,6 +465,20 @@ func (st *ServerType) serversFromPairings(
 					(addr.Port == httpsPort || (addr.Port != httpPort && addr.Host != ""))
 			}
 
+			// Look for any config values that provide listener wrappers on the server block
+			for _, listenerConfig := range sblock.pile["listener_wrapper"] {
+				listenerWrapper, ok := listenerConfig.Value.(caddy.ListenerWrapper)
+				if !ok {
+					return nil, fmt.Errorf("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
+				}
+				jsonListenerWrapper := caddyconfig.JSONModuleObject(
+					listenerWrapper,
+					"wrapper",
+					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					warnings)
+				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
+			}
+
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
 			siteSubroute, err := buildSubroute(dirRoutes, groupCounter)
