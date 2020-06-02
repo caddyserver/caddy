@@ -134,6 +134,7 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 	template := certmagic.ACMEManager{
 		CA:                m.CA,
+		TestCA:            m.TestCA,
 		Email:             m.Email,
 		CertObtainTimeout: time.Duration(m.ACMETimeout),
 		TrustedRoots:      m.rootPool,
