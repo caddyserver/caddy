@@ -35,6 +35,7 @@ func init() {
 // If no hash algorithm is supplied, bcrypt will be assumed.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var ba HTTPBasicAuth
+	ba.HashCache = new(Cache)
 
 	for h.Next() {
 		var cmp Comparer
