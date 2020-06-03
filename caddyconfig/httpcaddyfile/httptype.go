@@ -377,7 +377,11 @@ func (st *ServerType) serversFromPairings(
 			// but I don't expect many blocks will have THAT many keys...
 			var iLongestPath, jLongestPath string
 			var iLongestHost, jLongestHost string
+			var iWildcardHost, jWildcardHost bool
 			for _, addr := range p.serverBlocks[i].keys {
+				if strings.Contains(addr.Host, "*.") {
+					iWildcardHost = true
+				}
 				if specificity(addr.Host) > specificity(iLongestHost) {
 					iLongestHost = addr.Host
 				}
@@ -386,12 +390,21 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 			for _, addr := range p.serverBlocks[j].keys {
+				if strings.Contains(addr.Host, "*.") {
+					jWildcardHost = true
+				}
 				if specificity(addr.Host) > specificity(jLongestHost) {
 					jLongestHost = addr.Host
 				}
 				if specificity(addr.Path) > specificity(jLongestPath) {
 					jLongestPath = addr.Path
 				}
+			}
+			if iWildcardHost != jWildcardHost {
+				// site blocks that have a key with a wildcard in the hostname
+				// must always be less specific than blocks without one; see
+				// https://github.com/caddyserver/caddy/issues/3410
+				return jWildcardHost && !iWildcardHost
 			}
 			if specificity(iLongestHost) == specificity(jLongestHost) {
 				return len(iLongestPath) > len(jLongestPath)
