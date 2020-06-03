@@ -69,12 +69,14 @@ func gracefulStop(sigName string) {
 		exitCode = ExitCodeFailedQuit
 	}
 
-	err = stopAdminServer(adminServer)
-	if err != nil {
-		Log().Error("stopping admin endpoint",
-			zap.String("signal", sigName),
-			zap.Error(err))
-		exitCode = ExitCodeFailedQuit
+	if adminServer != nil {
+		err = stopAdminServer(adminServer)
+		if err != nil {
+			Log().Error("stopping admin endpoint",
+				zap.String("signal", sigName),
+				zap.Error(err))
+			exitCode = ExitCodeFailedQuit
+		}
 	}
 }
 
