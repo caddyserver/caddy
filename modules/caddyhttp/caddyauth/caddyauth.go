@@ -75,6 +75,10 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 	if !authed {
+		e, ok := err.(caddyhttp.Error)
+		if ok {
+			return e
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
