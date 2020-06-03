@@ -48,13 +48,20 @@ type Handler struct {
 	// The hostname or IP address by which ACME clients
 	// will access the server. This is used to populate
 	// the ACME directory endpoint. Default: localhost.
-	// TODO: this is probably not needed - check with smallstep
+	// COMPATIBILITY NOTE / TODO: This property may go away in the
+	// future, as it is currently only required due to
+	// limitations in the underlying library. Do not rely
+	// on this property long-term; check release notes.
 	Host string `json:"host,omitempty"`
 
 	// The path prefix under which to serve all ACME
 	// endpoints. All other requests will not be served
 	// by this handler and will be passed through to
 	// the next one. Default: "/acme/"
+	// COMPATIBILITY NOTE / TODO: This property may go away in the
+	// future, as it is currently only required due to
+	// limitations in the underlying library. Do not rely
+	// on this property long-term; check release notes.
 	PathPrefix string `json:"path_prefix,omitempty"`
 
 	acmeEndpoints http.Handler

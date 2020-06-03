@@ -56,14 +56,15 @@ var directiveOrder = []string{
 
 	// special routing directives
 	"handle",
-	"route",
 	"handle_path",
+	"route",
 
 	// handlers that typically respond to requests
 	"respond",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
+	"acme_server",
 }
 
 // directiveIsOrdered returns true if dir is
