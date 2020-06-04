@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -531,15 +532,32 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		}
 	}
 
+	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
-		if len(rh.Routes) == 0 {
-			continue
-		}
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
 			continue
 		}
-		res.Body.Close()
+
 		repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+		// if configured to only change the status code, do that then continue regular proxy response
+		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
+			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+			if statusCode != 0 {
+				res.StatusCode = statusCode
+			}
+			break
+		}
+
+		// otherwise, if there are any routes configured, execute those as the
+		// actual response instead of what we got from the proxy backend
+		if len(rh.Routes) == 0 {
+			continue
+		}
+		res.Body.Close()
 		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 		repl.Set("http.reverse_proxy.status_text", res.Status)
 		h.logger.Debug("handling response", zap.Int("handler", i))
