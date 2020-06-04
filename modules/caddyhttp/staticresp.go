@@ -121,8 +121,16 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 		w.Header()["Content-Type"] = nil
 	}
 
-	// get the status code
+	// get the status code; if this handler exists in an error route,
+	// use the recommended status code as the default; otherwise 200
 	statusCode := http.StatusOK
+	if reqErr, ok := r.Context().Value(ErrorCtxKey).(error); ok {
+		if handlerErr, ok := reqErr.(HandlerError); ok {
+			if handlerErr.StatusCode > 0 {
+				statusCode = handlerErr.StatusCode
+			}
+		}
+	}
 	if codeStr := s.StatusCode.String(); codeStr != "" {
 		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
 		if err != nil {
