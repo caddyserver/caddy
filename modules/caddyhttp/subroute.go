@@ -80,36 +80,6 @@ func (sr *Subroute) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handl
 	return err
 }
 
-// ResponseHandler pairs a response matcher with a route list.
-// It is useful for executing handler routes based on the
-// properties of an HTTP response that has not been written
-// out to the client yet.
-//
-// To use this type, provision it at module load time, then
-// when ready to use, match the response against its matcher;
-// if it matches (or doesn't have a matcher), invoke the routes
-// by calling `rh.Routes.Compile(next).ServeHTTP(rw, req)` (or
-// similar).
-type ResponseHandler struct {
-	// The response matcher for this handler. If empty/nil,
-	// it always matches.
-	Match *ResponseMatcher `json:"match,omitempty"`
-
-	// The list of HTTP routes to execute.
-	Routes RouteList `json:"routes,omitempty"`
-}
-
-// Provision sets up the routse in rh.
-func (rh *ResponseHandler) Provision(ctx caddy.Context) error {
-	if rh.Routes != nil {
-		err := rh.Routes.Provision(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Interface guards
 var (
 	_ caddy.Provisioner = (*Subroute)(nil)
