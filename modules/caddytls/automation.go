@@ -49,15 +49,13 @@ type AutomationConfig struct {
 	// Caddy staples OCSP (and caches the response) for all
 	// qualifying certificates by default. This setting
 	// changes how often it scans responses for freshness,
-	// and updates them if they are getting stale.
+	// and updates them if they are getting stale. Default: 1h
 	OCSPCheckInterval caddy.Duration `json:"ocsp_interval,omitempty"`
 
 	// Every so often, Caddy will scan all loaded, managed
 	// certificates for expiration. This setting changes how
 	// frequently the scan for expiring certificates is
-	// performed. If your certificate lifetimes are very
-	// short (less than ~24 hours), you should set this to
-	// a low value.
+	// performed. Default: 10m
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
 	defaultPublicAutomationPolicy   *AutomationPolicy
