@@ -334,7 +334,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		case "require_and_verify":
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		default:
-			return fmt.Errorf("client auth mode %s not allowed", clientauth.Mode)
+			return fmt.Errorf("client auth mode not recognized: %s", clientauth.Mode)
 		}
 	} else {
 		// otherwise, set a safe default mode
@@ -349,7 +349,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	if len(clientauth.TrustedCACerts) > 0 {
 		caPool := x509.NewCertPool()
 		for _, clientCAString := range clientauth.TrustedCACerts {
-			clientCA, err := DecodeBase64DERCert(clientCAString)
+			clientCA, err := decodeBase64DERCert(clientCAString)
 			if err != nil {
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
@@ -361,18 +361,15 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	// enforce leaf verification by writing our own verify function
 	if len(clientauth.TrustedLeafCerts) > 0 {
 		clientauth.trustedLeafCerts = []*x509.Certificate{}
-
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
-			clientCert, err := DecodeBase64DERCert(clientCertString)
+			clientCert, err := decodeBase64DERCert(clientCertString)
 			if err != nil {
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
 			clientauth.trustedLeafCerts = append(clientauth.trustedLeafCerts, clientCert)
 		}
-
 		// if a custom verification function already exists, wrap it
 		clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
-
 		cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
 	}
 
@@ -409,15 +406,12 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 	return fmt.Errorf("client leaf certificate failed validation")
 }
 
-// DecodeBase64DERCert base64-decodes, then DER-decodes, certStr.
-func DecodeBase64DERCert(certStr string) (*x509.Certificate, error) {
-	// decode base64
+// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	derBytes, err := base64.StdEncoding.DecodeString(certStr)
 	if err != nil {
 		return nil, err
 	}
-
-	// parse the DER-encoded certificate
 	return x509.ParseCertificate(derBytes)
 }
 
