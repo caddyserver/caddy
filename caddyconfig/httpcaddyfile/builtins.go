@@ -15,8 +15,11 @@
 package httpcaddyfile
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"html"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strings"
@@ -59,6 +62,13 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
+//         client_auth {
+//             mode                   [request|require|verify_if_given|require_and_verify]
+//             trusted_ca_cert        <base64_der>
+//             trusted_ca_cert_file   <filename>
+//             trusted_leaf_cert      <base64_der>
+//             trusted_leaf_cert_file <filename>
+//         }
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
@@ -143,7 +153,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 		var hasBlock bool
-		for h.NextBlock(0) {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
 			hasBlock = true
 
 			switch h.Val() {
@@ -179,6 +189,57 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 						return nil, h.Errf("Wrong curve name or curve not supported: '%s'", h.Val())
 					}
 					cp.Curves = append(cp.Curves, h.Val())
+				}
+
+			case "client_auth":
+				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					subdir := h.Val()
+					switch subdir {
+					case "mode":
+						if !h.Args(&cp.ClientAuthentication.Mode) {
+							return nil, h.ArgErr()
+						}
+						if h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+					case "trusted_ca_cert",
+						"trusted_leaf_cert":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						if subdir == "trusted_ca_cert" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, h.Val())
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, h.Val())
+						}
+
+					case "trusted_ca_cert_file",
+						"trusted_leaf_cert_file":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						filename := h.Val()
+						certDataPEM, err := ioutil.ReadFile(filename)
+						if err != nil {
+							return nil, err
+						}
+						block, _ := pem.Decode(certDataPEM)
+						if block == nil || block.Type != "CERTIFICATE" {
+							return nil, h.Errf("no CERTIFICATE pem block found in %s", h.Val())
+						}
+						if subdir == "trusted_ca_cert_file" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						}
+
+					default:
+						return nil, h.Errf("unknown subdirective for client_auth: %s", subdir)
+					}
 				}
 
 			case "alpn":
