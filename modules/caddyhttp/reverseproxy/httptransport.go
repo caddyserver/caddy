@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	weakrand "math/rand"
 	"net"
 	"net/http"
 	"reflect"
@@ -42,6 +43,8 @@ type HTTPTransport struct {
 	// TODO: It's possible that other transports (like fastcgi) might be
 	// able to borrow/use at least some of these config fields; if so,
 	// maybe move them into a type called CommonTransport and embed it?
+
+	Resolver *UpstreamResolver `json:"resolver,omitempty"`
 
 	// Configures TLS to the upstream. Setting this to an empty struct
 	// is sufficient to enable TLS with reasonable defaults.
@@ -146,7 +149,59 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
-		// TODO: Resolver
+	}
+
+	if h.Resolver != nil {
+		// Setup the boostrap logic
+		if len(h.Resolver.Bootstrap) != 0 {
+			for _, v := range h.Resolver.Bootstrap {
+				addr, err := caddy.ParseNetworkAddress(v)
+				if err != nil {
+					return nil, err
+				}
+				if addr.PortRangeSize() != 1 {
+					return nil, fmt.Errorf("bootstrap resolver address must have exactly one address; cannot call %v", addr)
+				}
+				if bootstrapIP := net.ParseIP(addr.Host); bootstrapIP != nil {
+					h.Resolver.bootstrapAddrs = append(h.Resolver.bootstrapAddrs, addr)
+				} else {
+					return nil, fmt.Errorf("bootstrap resolver bootstrap address must be an IP address to avoid mutually recursive lookup; cannot use %v", addr)
+				}
+			}
+			d := &net.Dialer{
+				Timeout:       time.Duration(h.DialTimeout),
+				FallbackDelay: time.Duration(h.FallbackDelay),
+			}
+			net.DefaultResolver = &net.Resolver{
+				PreferGo: true,
+				Dial: func(stdctx context.Context, _, _ string) (net.Conn, error) {
+					addr := h.Resolver.bootstrapAddrs[weakrand.Intn(len(h.Resolver.bootstrapAddrs))]
+					return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+				},
+			}
+		}
+
+		for _, v := range h.Resolver.Addresses {
+			addr, err := caddy.ParseNetworkAddress(v)
+			if err != nil {
+				return nil, err
+			}
+			if addr.PortRangeSize() != 1 {
+				return nil, fmt.Errorf("resolver address must have exactly one address; cannot call %v", addr)
+			}
+			h.Resolver.netAddrs = append(h.Resolver.netAddrs, addr)
+		}
+		d := &net.Dialer{
+			Timeout:       time.Duration(h.DialTimeout),
+			FallbackDelay: time.Duration(h.FallbackDelay),
+		}
+		dialer.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				addr := h.Resolver.netAddrs[weakrand.Intn(len(h.Resolver.netAddrs))]
+				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+			},
+		}
 	}
 
 	rt := &http.Transport{
@@ -201,7 +256,6 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			return nil, err
 		}
 	}
-
 	return rt, nil
 }
 
@@ -357,6 +411,21 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+type UpstreamResolver struct {
+	// Specifies the addresses of the [DNS resolvers of upstram addresses resolvers]
+	// (/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/addresses).
+	// It accepts [network addresses](/docs/conventions#network-addresses)
+	// with port range of only 1.
+	Bootstrap      []string `json:"bootstrap,omitempty"`
+	bootstrapAddrs []caddy.NetworkAddress
+
+	// Specifies the addresses of the DNS resolvers of upstram addresses.
+	// It accepts [network addresses](/docs/conventions#network-addresses)
+	// with port range of only 1.
+	Addresses []string `json:"addresses,omitempty"`
+	netAddrs  []caddy.NetworkAddress
 }
 
 // KeepAlive holds configuration pertaining to HTTP Keep-Alive.
