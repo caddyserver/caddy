@@ -44,6 +44,7 @@ type HTTPTransport struct {
 	// able to borrow/use at least some of these config fields; if so,
 	// maybe move them into a type called CommonTransport and embed it?
 
+	// Configures the resolver used to resolve the IP address of upstream hostnames.
 	Resolver *UpstreamResolver `json:"resolver,omitempty"`
 
 	// Configures TLS to the upstream. Setting this to an empty struct
@@ -152,35 +153,6 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 	}
 
 	if h.Resolver != nil {
-		// Setup the boostrap logic
-		if len(h.Resolver.Bootstrap) != 0 {
-			for _, v := range h.Resolver.Bootstrap {
-				addr, err := caddy.ParseNetworkAddress(v)
-				if err != nil {
-					return nil, err
-				}
-				if addr.PortRangeSize() != 1 {
-					return nil, fmt.Errorf("bootstrap resolver address must have exactly one address; cannot call %v", addr)
-				}
-				if bootstrapIP := net.ParseIP(addr.Host); bootstrapIP != nil {
-					h.Resolver.bootstrapAddrs = append(h.Resolver.bootstrapAddrs, addr)
-				} else {
-					return nil, fmt.Errorf("bootstrap resolver bootstrap address must be an IP address to avoid mutually recursive lookup; cannot use %v", addr)
-				}
-			}
-			d := &net.Dialer{
-				Timeout:       time.Duration(h.DialTimeout),
-				FallbackDelay: time.Duration(h.FallbackDelay),
-			}
-			net.DefaultResolver = &net.Resolver{
-				PreferGo: true,
-				Dial: func(stdctx context.Context, _, _ string) (net.Conn, error) {
-					addr := h.Resolver.bootstrapAddrs[weakrand.Intn(len(h.Resolver.bootstrapAddrs))]
-					return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
-				},
-			}
-		}
-
 		for _, v := range h.Resolver.Addresses {
 			addr, err := caddy.ParseNetworkAddress(v)
 			if err != nil {
@@ -195,6 +167,32 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			Timeout:       time.Duration(h.DialTimeout),
 			FallbackDelay: time.Duration(h.FallbackDelay),
 		}
+
+		// Setup the boostrap logic
+		if len(h.Resolver.Bootstrap) != 0 {
+			for _, v := range h.Resolver.Bootstrap {
+				addr, err := caddy.ParseNetworkAddress(v)
+				if err != nil {
+					return nil, err
+				}
+				if addr.PortRangeSize() != 1 {
+					return nil, fmt.Errorf("bootstrap resolver address must have exactly one address; cannot call %v", addr)
+				}
+				h.Resolver.bootstrapAddrs = append(h.Resolver.bootstrapAddrs, addr)
+			}
+			bootstrapDialer := &net.Dialer{
+				Timeout:       time.Duration(h.DialTimeout),
+				FallbackDelay: time.Duration(h.FallbackDelay),
+			}
+			d.Resolver = &net.Resolver{
+				PreferGo: true,
+				Dial: func(stdctx context.Context, _, _ string) (net.Conn, error) {
+					addr := h.Resolver.bootstrapAddrs[weakrand.Intn(len(h.Resolver.bootstrapAddrs))]
+					return bootstrapDialer.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+				},
+			}
+		}
+
 		dialer.Resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
