@@ -619,15 +619,19 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.DialTimeout = caddy.Duration(dur)
 
 			case "tls_client_auth":
-				args := d.RemainingArgs()
-				if len(args) != 2 {
-					return d.ArgErr()
-				}
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
 				}
-				h.TLS.ClientCertificateFile = args[0]
-				h.TLS.ClientCertificateKeyFile = args[1]
+				args := d.RemainingArgs()
+				switch len(args) {
+				case 1:
+					h.TLS.ClientCertificateAutomate = args[0]
+				case 2:
+					h.TLS.ClientCertificateFile = args[0]
+					h.TLS.ClientCertificateKeyFile = args[1]
+				default:
+					return d.ArgErr()
+				}
 
 			case "tls":
 				if h.TLS == nil {
@@ -664,7 +668,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
 				}
-
 				h.TLS.RootCAPEMFiles = args
 
 			case "tls_server_name":
@@ -674,7 +677,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
 				}
-
 				h.TLS.ServerName = d.Val()
 
 			case "keepalive":
