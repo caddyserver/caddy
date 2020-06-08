@@ -1,10 +1,16 @@
 before:
   hooks:
-    - cp ./go.mod ./cmd/caddy/go.mod
-    - sed -i.bkp 's|github.com/caddyserver/caddy/v2|caddy|g' ./cmd/caddy/go.mod
+    # The build is done in this particular way to build Caddy in a designated directory named in .gitignore.
+    # This is so we can run goreleaser on tag without Git complaining of being dirty. The main.go in cmd/caddy directory 
+    # cannot be built within that directory due to changes necessary for the build causing Git to be dirty, which
+    # subsequently causes gorleaser to refuse running.
+    - mkdir -p caddy-build
+    - cp cmd/caddy/main.go caddy-build/main.go
+    - cp ./go.mod caddy-build/go.mod
+    - sed -i.bkp 's|github.com/caddyserver/caddy/v2|caddy|g' ./caddy-build/go.mod
     # GoReleaser doesn't seem to offer {{.Tag}} at this stage, so we have to embed it into the env
     # so we run: TAG=$(git describe --abbrev=0) goreleaser release --rm-dist --skip-publish --skip-validate
-    - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./cmd/caddy/go.mod
+    - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./caddy-build/go.mod
     - git clone --depth 1 https://github.com/caddyserver/dist caddy-dist
     - go mod download
 
@@ -13,7 +19,7 @@ builds:
   - CGO_ENABLED=0
   - GO111MODULE=on
   main: main.go
-  dir: ./cmd/caddy
+  dir: ./caddy-build
   binary: caddy
   goos:
   - darwin
