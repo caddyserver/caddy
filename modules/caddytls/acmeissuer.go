@@ -17,7 +17,6 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -141,16 +140,12 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 	}
 
 	if m.ExternalAccount != nil {
-		hmac, err := base64.StdEncoding.DecodeString(m.ExternalAccount.EncodedHMAC)
-		if err != nil {
-			return template, err
-		}
-		if m.ExternalAccount.KeyID == "" || len(hmac) == 0 {
+		if m.ExternalAccount.KeyID == "" || m.ExternalAccount.HMAC == "" {
 			return template, fmt.Errorf("when an external account binding is specified, both key ID and HMAC are required")
 		}
 		template.ExternalAccount = &certmagic.ExternalAccountBinding{
 			KeyID: m.ExternalAccount.KeyID,
-			HMAC:  hmac,
+			HMAC:  m.ExternalAccount.HMAC,
 		}
 	}
 
@@ -238,8 +233,8 @@ type ExternalAccountBinding struct {
 	// The key identifier.
 	KeyID string `json:"key_id,omitempty"`
 
-	// The base64-encoded HMAC.
-	EncodedHMAC string `json:"hmac,omitempty"`
+	// The HMAC.
+	HMAC string `json:"hmac,omitempty"`
 }
 
 // Interface guards
