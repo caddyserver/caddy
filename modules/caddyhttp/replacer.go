@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -163,7 +164,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			if strings.HasPrefix(key, reqHostLabelsReplPrefix) {
 				idxStr := key[len(reqHostLabelsReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
-				if err != nil {
+				if err != nil || idx < 0 {
 					return "", false
 				}
 				reqHost, _, err := net.SplitHostPort(req.Host)
@@ -171,9 +172,6 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 					reqHost = req.Host // OK; assume there was no port
 				}
 				hostLabels := strings.Split(reqHost, ".")
-				if idx < 0 {
-					return "", false
-				}
 				if idx > len(hostLabels) {
 					return "", true
 				}
@@ -243,6 +241,64 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		cert := getTLSPeerCert(req.TLS)
 		if cert == nil {
 			return nil, false
+		}
+
+		// subject alternate names (SANs)
+		if strings.HasPrefix(field, "client.san.") {
+			field = field[len("client.san."):]
+			var fieldName string
+			var fieldValue interface{}
+			switch {
+			case strings.HasPrefix(field, "dns_names"):
+				fieldName = "dns_names"
+				fieldValue = cert.DNSNames
+			case strings.HasPrefix(field, "emails"):
+				fieldName = "emails"
+				fieldValue = cert.EmailAddresses
+			case strings.HasPrefix(field, "ips"):
+				fieldName = "ips"
+				fieldValue = cert.IPAddresses
+			case strings.HasPrefix(field, "uris"):
+				fieldName = "uris"
+				fieldValue = cert.URIs
+			default:
+				return nil, false
+			}
+			field = field[len(fieldName):]
+
+			// if no index was specified, return the whole list
+			if field == "" {
+				return fieldValue, true
+			}
+			if len(field) < 2 || field[0] != '.' {
+				return nil, false
+			}
+			field = field[1:] // trim '.' between field name and index
+
+			// get the numeric index
+			idx, err := strconv.Atoi(field)
+			if err != nil || idx < 0 {
+				return nil, false
+			}
+
+			// access the indexed element and return it
+			switch v := fieldValue.(type) {
+			case []string:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			case []net.IP:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			case []*url.URL:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			}
 		}
 
 		switch field {

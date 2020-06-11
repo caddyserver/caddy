@@ -72,9 +72,15 @@ func init() {
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
 // `{http.request.tls.server_name}` | The server name requested by the client, if any
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
+// `{http.request.tls.client.public_key}` | The public key of the client certificate.
+// `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
 // `{http.request.tls.client.subject}` | The subject DN of the client certificate
+// `{http.request.tls.client.san.dns_names.*}` | SAN DNS names(index optional)
+// `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
+// `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
+// `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
