@@ -66,7 +66,7 @@ func init() {
 //
 // ##### `placeholder`
 //
-// Gets an [placerholder variable](/docs/conventions#placeholders). Shorthands are not supported at the moment.
+// Gets an [placeholder variable](/docs/conventions#placeholders).
 // The braces (`{}`) have to be omitted.
 //
 // ```
