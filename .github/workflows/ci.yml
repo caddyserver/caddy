@@ -121,7 +121,7 @@ jobs:
     #     exit 1
 
   s390x-test:
-    name: Test IBM Linux on Z
+    name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code into the Go module directory
