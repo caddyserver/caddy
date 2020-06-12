@@ -130,6 +130,7 @@ jobs:
       - name: Run Tests
         if: github.repository == 'caddyserver/caddy'
         run: |
+          echo $GITHUB_REPOSITORY
           mkdir -p ~/.ssh && echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_ecdsa && chmod og-rwx ~/.ssh/id_ecdsa
 
           # short sha is enough?
