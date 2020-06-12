@@ -7,12 +7,12 @@
 	storage file_system {
 		root /data
 	}
-	acme_ca https://example.com {
+	acme_ca https://example.com
+	acme_eab {
 		key_id 4K2scIVbBpNd-78scadB2g
-		hmac abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+		hmac   abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 	}
 	acme_ca_root /path/to/ca.crt
-
 	email test@example.com
 	admin off
 	on_demand_tls {
