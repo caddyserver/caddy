@@ -123,14 +123,12 @@ jobs:
   s390x-test:
     name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
-    #if: github.repository == 'caddyserver/caddy'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout code into the Go module directory
         uses: actions/checkout@v2
       - name: Run Tests
-        if: github.repository == 'caddyserver/caddy'
         run: |
-          echo $GITHUB_REPOSITORY
           mkdir -p ~/.ssh && echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_ecdsa && chmod og-rwx ~/.ssh/id_ecdsa
 
           # short sha is enough?
