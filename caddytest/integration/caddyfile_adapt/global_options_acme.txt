@@ -8,8 +8,11 @@
 		root /data
 	}
 	acme_ca https://example.com
+	acme_eab {
+		key_id 4K2scIVbBpNd-78scadB2g
+		hmac   abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+	}
 	acme_ca_root /path/to/ca.crt
-
 	email test@example.com
 	admin off
 	on_demand_tls {
@@ -17,7 +20,7 @@
 		interval 30s
 		burst 20
 	}
-	local_certs
+
 	key_type ed25519
 }
 
@@ -55,8 +58,18 @@
 				"policies": [
 					{
 						"issuer": {
-							"module": "internal"
-						}
+							"ca": "https://example.com",
+							"email": "test@example.com",
+							"external_account": {
+								"hmac": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh",
+								"key_id": "4K2scIVbBpNd-78scadB2g"
+							},
+							"module": "acme",
+							"trusted_roots_pem_files": [
+								"/path/to/ca.crt"
+							]
+						},
+						"key_type": "ed25519"
 					}
 				],
 				"on_demand": {
