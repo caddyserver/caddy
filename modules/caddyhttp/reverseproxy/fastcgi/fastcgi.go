@@ -303,6 +303,10 @@ func (t Transport) splitPos(path string) int {
 	// if httpserver.CaseSensitivePath {
 	// 	return strings.Index(path, r.SplitPath)
 	// }
+	if len(t.SplitPath) == 0 {
+		return 0
+	}
+
 	lowerPath := strings.ToLower(path)
 	for _, split := range t.SplitPath {
 		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
