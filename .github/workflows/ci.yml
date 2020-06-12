@@ -123,6 +123,7 @@ jobs:
   s390x-test:
     name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
+    if: ${{ github.repository == 'caddyserver/caddy' }}
     steps:
       - name: Checkout code into the Go module directory
         uses: actions/checkout@v2
