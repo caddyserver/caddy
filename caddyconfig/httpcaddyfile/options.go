@@ -30,9 +30,10 @@ func init() {
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("experimental_http3", parseOptTrue)
 	RegisterGlobalOption("storage", parseOptStorage)
-	RegisterGlobalOption("acme_ca", parseOptAcmeCa)
-	RegisterGlobalOption("acme_dns", parseOptSingleString)
+	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
+	RegisterGlobalOption("acme_dns", parseOptSingleString)
+	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
 	RegisterGlobalOption("email", parseOptSingleString)
 	RegisterGlobalOption("admin", parseOptAdmin)
 	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
@@ -180,36 +181,32 @@ func parseOptStorage(d *caddyfile.Dispenser) (interface{}, error) {
 	return storage, nil
 }
 
-func parseOptAcmeCa(d *caddyfile.Dispenser) (interface{}, error) {
+func parseOptACMEEAB(d *caddyfile.Dispenser) (interface{}, error) {
+	eab := new(caddytls.ExternalAccountBinding)
+	for d.Next() {
+		if d.NextArg() {
+			return nil, d.ArgErr()
+		}
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			switch d.Val() {
+			case "key_id":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				eab.KeyID = d.Val()
 
-	if !d.Next() { // consume option name
-		return nil, d.ArgErr()
-	}
-	if !d.Next() { // get url value
-		return nil, d.ArgErr()
-	}
-	acme := new(caddytls.ACMECAConfig)
-	acme.CA = d.Val()
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
-		switch d.Val() {
-		case "key_id":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
+			case "hmac":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				eab.HMAC = d.Val()
+
+			default:
+				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 			}
-			acme.KeyID = d.Val()
-
-		case "hmac":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			acme.HMAC = d.Val()
-
-		default:
-			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 		}
 	}
-
-	return acme, nil
+	return eab, nil
 }
 
 func parseOptSingleString(d *caddyfile.Dispenser) (interface{}, error) {

@@ -326,16 +326,6 @@ type RateLimit struct {
 	Burst int `json:"burst,omitempty"`
 }
 
-// ACME CA Config stores configuration specific
-// to a custom ACME CA
-type ACMECAConfig struct {
-	CA string
-	//External account binding key id
-	KeyID string `json:"key_id,omitempty"`
-	//External account binding hmac key
-	HMAC string `json:"hmac,omitempty"`
-}
-
 // ConfigSetter is implemented by certmagic.Issuers that
 // need access to a parent certmagic.Config as part of
 // their provisioning phase. For example, the ACMEIssuer

@@ -348,14 +348,15 @@ func (st ServerType) buildTLSApp(
 // true, a non-nil value will always be returned (unless there is an error).
 func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
 	acmeCA, hasACMECA := options["acme_ca"]
-	acmeDNS, hasACMEDNS := options["acme_dns"]
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
+	acmeDNS, hasACMEDNS := options["acme_dns"]
+	acmeEAB, hasACMEEAB := options["acme_eab"]
 
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasACMECA || hasACMECARoot || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -372,20 +373,14 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		// internal issuer enabled trumps any ACME configurations; useful in testing
 		ap.Issuer = new(caddytls.InternalIssuer) // we'll encode it later
 	} else {
-		var caConfig *caddytls.ACMECAConfig
-
-		if !hasACMECA {
-			fmt.Println("********* DOH SHOULD NOT HERE ****************")
-			caConfig = new(caddytls.ACMECAConfig)
-		} else {
-			caConfig = acmeCA.(*caddytls.ACMECAConfig)
+		if acmeCA == nil {
+			acmeCA = ""
 		}
-
 		if email == nil {
 			email = ""
 		}
 		mgr := &caddytls.ACMEIssuer{
-			CA:    caConfig.CA,
+			CA:    acmeCA.(string),
 			Email: email.(string),
 		}
 		if acmeDNS != nil {
@@ -403,14 +398,9 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		if acmeCARoot != nil {
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
 		}
-
-		if caConfig.KeyID != "" && caConfig.HMAC != "" {
-			mgr.ExternalAccount = &caddytls.ExternalAccountBinding{
-				KeyID: caConfig.KeyID,
-				HMAC:  caConfig.HMAC,
-			}
+		if acmeEAB != nil {
+			mgr.ExternalAccount = acmeEAB.(*caddytls.ExternalAccountBinding)
 		}
-
 		if keyType != nil {
 			ap.KeyType = keyType.(string)
 		}
