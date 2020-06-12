@@ -350,14 +350,12 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	acmeCA, hasACMECA := options["acme_ca"]
 	acmeDNS, hasACMEDNS := options["acme_dns"]
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
-	acmeEabKeyId, hasACMEEabKeyId := options["acme_eab_kid"]
-	acmeEabHmacKey, hasACMEEabHmacKey := options["acme_eab_hmac_key"]
 
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	
-	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasACMEEabKeyId || hasACMEEabHmacKey || hasEmail || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -374,14 +372,20 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		// internal issuer enabled trumps any ACME configurations; useful in testing
 		ap.Issuer = new(caddytls.InternalIssuer) // we'll encode it later
 	} else {
-		if acmeCA == nil {
-			acmeCA = ""
+		var caConfig *caddytls.ACMECAConfig
+
+		if !hasACMECA {
+			fmt.Println("********* DOH SHOULD NOT HERE ****************")
+			caConfig = new(caddytls.ACMECAConfig)
+		} else {
+			caConfig = acmeCA.(*caddytls.ACMECAConfig)
 		}
+
 		if email == nil {
 			email = ""
 		}
 		mgr := &caddytls.ACMEIssuer{
-			CA:    acmeCA.(string),
+			CA:    caConfig.CA,
 			Email: email.(string),
 		}
 		if acmeDNS != nil {
@@ -400,10 +404,10 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
 		}
 
-		if acmeEabKeyId != nil && acmeEabHmacKey != nil {
+		if caConfig.KeyID != "" && caConfig.HMAC != "" {
 			mgr.ExternalAccount = &caddytls.ExternalAccountBinding{
-				KeyID: acmeEabKeyId.(string),
-				HMAC: acmeEabHmacKey.(string),
+				KeyID: caConfig.KeyID,
+				HMAC: caConfig.HMAC,
 			}
 		}
 

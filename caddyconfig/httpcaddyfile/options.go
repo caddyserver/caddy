@@ -30,9 +30,7 @@ func init() {
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("experimental_http3", parseOptTrue)
 	RegisterGlobalOption("storage", parseOptStorage)
-	RegisterGlobalOption("acme_ca", parseOptSingleString)
-	RegisterGlobalOption("acme_eab_kid", parseOptSingleString)
-	RegisterGlobalOption("acme_eab_hmac_key", parseOptSingleString)
+	RegisterGlobalOption("acme_ca", parseOptAcmeCa)
 	RegisterGlobalOption("acme_dns", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("email", parseOptSingleString)
@@ -180,6 +178,38 @@ func parseOptStorage(d *caddyfile.Dispenser) (interface{}, error) {
 		return nil, d.Errf("module %s is not a StorageConverter", mod.ID)
 	}
 	return storage, nil
+}
+
+func parseOptAcmeCa(d *caddyfile.Dispenser) (interface{}, error) {
+
+	if !d.Next() { // consume option name
+		return nil, d.ArgErr()
+	}
+	if !d.Next() { // get url value
+		return nil, d.ArgErr()
+	}
+	acme := new(caddytls.ACMECAConfig)
+	acme.CA = d.Val()
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "key_id":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			acme.KeyID = d.Val()
+
+		case "hmac":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			acme.HMAC = d.Val()
+
+		default:
+			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
+		}
+	}
+
+	return acme, nil
 }
 
 func parseOptSingleString(d *caddyfile.Dispenser) (interface{}, error) {

@@ -7,7 +7,6 @@
 	storage file_system {
 		root /data
 	}
-	acme_ca https://example.com
 	acme_ca_root /path/to/ca.crt
 
 	email test@example.com
