@@ -335,6 +335,7 @@ type ACMECAConfig struct {
 	//External account binding hmac key
 	HMAC string `json:"hmac,omitempty"`
 }
+
 // ConfigSetter is implemented by certmagic.Issuers that
 // need access to a parent certmagic.Config as part of
 // their provisioning phase. For example, the ACMEIssuer

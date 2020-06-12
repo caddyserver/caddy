@@ -354,7 +354,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
-	
+
 	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
@@ -407,7 +407,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		if caConfig.KeyID != "" && caConfig.HMAC != "" {
 			mgr.ExternalAccount = &caddytls.ExternalAccountBinding{
 				KeyID: caConfig.KeyID,
-				HMAC: caConfig.HMAC,
+				HMAC:  caConfig.HMAC,
 			}
 		}
 
