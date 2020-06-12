@@ -21,3 +21,5 @@ vendor
 dist
 caddy-build
 caddy-dist
+
+tags
