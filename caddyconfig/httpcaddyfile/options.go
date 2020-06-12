@@ -31,6 +31,8 @@ func init() {
 	RegisterGlobalOption("experimental_http3", parseOptTrue)
 	RegisterGlobalOption("storage", parseOptStorage)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
+	RegisterGlobalOption("acme_eab_kid", parseOptSingleString)
+	RegisterGlobalOption("acme_eab_hmac_key", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("email", parseOptSingleString)
