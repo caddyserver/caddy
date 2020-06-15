@@ -305,6 +305,14 @@ title: Welcome
 			expect: `Welcome`,
 		},
 		{
+			// yaml with dots for closer
+			input: `---
+title: Welcome
+...
+### Test`,
+			expect: `Welcome`,
+		},
+		{
 			// toml
 			input: `+++
 title = "Welcome"
