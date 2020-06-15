@@ -49,11 +49,13 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	}
 
 	// find end of front matter
+	var fmEndFence string
 	fmEndFenceStart := -1
 	for _, fence := range closingFence {
 		index := strings.Index(input[firstLineEnd:], "\n"+fence)
 		if index >= 0 {
 			fmEndFenceStart = index
+			fmEndFence = fence
 		}
 	}
 	if fmEndFenceStart < 0 {
@@ -69,7 +71,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	}
 
 	// the rest is the body
-	body := input[fmEndFenceStart+len(closingFence):]
+	body := input[fmEndFenceStart+len(fmEndFence):]
 
 	return fm, body, nil
 }
