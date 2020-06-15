@@ -26,8 +26,8 @@ func init() {
 // parseCaddyfile sets up the handler for a map from
 // Caddyfile tokens. Syntax:
 //     The map takes a <source> variable and maps it into the <dest> variable. The mapping process
-//     will check the <source> variable for the first succesful match against a list of regular expressions.
-//     If a succesful match is found the <dest> variable will contain the <replacement> value.
+//     will check the <source> variable for the first successful match against a list of regular expressions.
+//     If a successful match is found the <dest> variable will contain the <replacement> value.
 //     If no successful match is found and the <default> is specified then the <dest> will contain the <default> value.
 //
 //     map <source> <dest> {
