@@ -44,17 +44,16 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision -
+// Provision will compile all regular expressions
 func (h *Handler) Provision(_ caddy.Context) error {
+	for i := 0; i < len(h.Items); i++ {
+		h.Items[i].compiled = regexp.MustCompile(h.Items[i].Expression)
+	}
 	return nil
 }
 
 // Validate ensures h's configuration is valid.
 func (h Handler) Validate() error {
-
-	for i := 0; i < len(h.Items); i++ {
-		h.Items[i].compiled = regexp.MustCompile(h.Items[i].Key)
-	}
 	return nil
 }
 
@@ -67,7 +66,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	if ok {
 		found := false
 		for i := 0; i < len(h.Items); i++ {
-			if h.Items[i].compiled.Match([]byte(val)) {
+			if h.Items[i].compiled.MatchString(val) {
 				found = true
 				repl.Set(h.Destination, h.Items[i].Value)
 				break
@@ -81,13 +80,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	return next.ServeHTTP(w, r)
 }
 
-// Item defines manipulations for HTTP headers.
+// Item defines each entry in the map
 type Item struct {
-	// Key
-	Key string `json:"key,omitempty"`
-	// Value
+	// Expression is the regular expression searched for
+	Expression string `json:"expression,omitempty"`
+	// Value to use once the expression has been found
 	Value string `json:"value,omitempty"`
-	// compiled internal value
+	// compiled expression, internal use
 	compiled *regexp.Regexp
 }
 

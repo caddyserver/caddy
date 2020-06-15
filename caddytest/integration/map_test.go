@@ -91,11 +91,11 @@ func TestMapAsJson(t *testing.T) {
 								"default": "unknown",
 								"items": [
 									{
-									"key": "GET",
+									"expression": "GET",
 									"value": "get-called"
 									},
 									{
-									"key": "POST",
+									"expression": "POST",
 									"value": "post-called"
 									}
 								]

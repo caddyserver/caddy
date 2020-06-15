@@ -25,10 +25,15 @@ func init() {
 
 // parseCaddyfile sets up the handler for a map from
 // Caddyfile tokens. Syntax:
+//     The map takes a <source> variable and maps it into the <dest> variable. The mapping process
+//     will check the <source> variable for the first succesful match against a list of regular expressions.
+//     If a succesful match is found the <dest> variable will contain the <replacement> value.
+//     If no successful match is found and the <default> is specified then the <dest> will contain the <default> value.
 //
-//     map source dest {
-//         [[default] value]
-//         [+][<value|regexp> [<replacement>]]
+//     map <source> <dest> {
+//         [default <default>] - used if not match is found
+//         [<regexp> <replacement>] - regular expression to match against the sourceo find and the matching replacement
+//         ...
 //     }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -45,8 +50,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 		// load the rules
 		for h.NextBlock(0) {
-			key := h.Val()
-			if key == "default" {
+			expression := h.Val()
+			if expression == "default" {
 				args := h.RemainingArgs()
 				if len(args) != 1 {
 					return m, h.ArgErr()
@@ -57,7 +62,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if len(args) != 1 {
 					return m, h.ArgErr()
 				}
-				m.Items = append(m.Items, Item{Key: key, Value: args[0]})
+				m.Items = append(m.Items, Item{Expression: expression, Value: args[0]})
 			}
 		}
 	}
