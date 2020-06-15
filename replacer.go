@@ -69,12 +69,8 @@ func (r *Replacer) Get(variable string) (interface{}, bool) {
 // GetString gets a value from the replacer. It returns
 // the value and whether the variable was known.
 func (r *Replacer) GetString(variable string) (string, bool) {
-	for _, mapFunc := range r.providers {
-		if val, ok := mapFunc(variable); ok {
-			return toString(val), true
-		}
-	}
-	return "", false
+	s, found := r.Get(variable)
+	return toString(s), found
 }
 
 // Delete removes a variable with a static value
