@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package mmap
+package maphandler
 
 import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
