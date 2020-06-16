@@ -528,6 +528,24 @@ func TestQueryMatcher(t *testing.T) {
 			input:    "/?someparam",
 			expect:   false,
 		},
+		{
+			scenario: "nil matcher value should match empty query",
+			match:    MatchQuery(nil),
+			input:    "/?",
+			expect:   true,
+		},
+		{
+			scenario: "nil matcher value should NOT match a non-empty query",
+			match:    MatchQuery(nil),
+			input:    "/?foo=bar",
+			expect:   false,
+		},
+		{
+			scenario: "non-nil matcher should NOT match an empty query",
+			match:    MatchQuery{"": []string{}},
+			input:    "/?",
+			expect:   false,
+		},
 	} {
 
 		u, _ := url.Parse(tc.input)

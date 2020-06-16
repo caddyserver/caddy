@@ -349,18 +349,20 @@ func (MatchQuery) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	if *m == nil {
-		*m = make(map[string][]string)
-	}
-
 	for d.Next() {
 		var query string
 		if !d.Args(&query) {
 			return d.ArgErr()
 		}
+		if query == "" {
+			continue
+		}
 		parts := strings.SplitN(query, "=", 2)
 		if len(parts) != 2 {
 			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
+		}
+		if *m == nil {
+			*m = make(map[string][]string)
 		}
 		url.Values(*m).Set(parts[0], parts[1])
 		if d.NextBlock(0) {
@@ -372,6 +374,9 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchQuery) Match(r *http.Request) bool {
+	if m == nil {
+		return len(r.URL.Query()) == 0
+	}
 	for param, vals := range m {
 		paramVal, found := r.URL.Query()[param]
 		if found {
