@@ -26,14 +26,27 @@ func init() {
 	caddy.RegisterModule(Handler{})
 }
 
-// Handler - Map
+// Handler is a middleware that maps a source placeholder to a destination
+// placeholder.
 //
+// The mapping process happens early in the request handling lifecycle so that
+// the Destination placeholder is calculated and available for substitution.
+// The Items array contains pairs of regex expressions and values, the
+// Source is matched against the expression, if they match then the destination
+// placeholder is set to the value.
+//
+// The Default is optional, if no Item expression is matched then the value of
+// the Default will be used.
 //
 type Handler struct {
-	Source      string `json:"source,omitempty"`
+	// Source is a placeholder
+	Source string `json:"source,omitempty"`
+	// Destination is a new placeholder
 	Destination string `json:"destination,omitempty"`
-	Default     string `json:"default,omitempty"`
-	Items       []Item `json:"items,omitempty"`
+	// Default is an optional value to use if no other was found
+	Default string `json:"default,omitempty"`
+	// Items is an array of regex expressions and values
+	Items []Item `json:"items,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -49,11 +62,6 @@ func (h *Handler) Provision(_ caddy.Context) error {
 	for i := 0; i < len(h.Items); i++ {
 		h.Items[i].compiled = regexp.MustCompile(h.Items[i].Expression)
 	}
-	return nil
-}
-
-// Validate ensures h's configuration is valid.
-func (h Handler) Validate() error {
 	return nil
 }
 

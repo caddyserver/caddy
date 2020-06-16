@@ -23,18 +23,18 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("map", parseCaddyfile)
 }
 
-// parseCaddyfile sets up the handler for a map from
-// Caddyfile tokens. Syntax:
-//     The map takes a <source> variable and maps it into the <dest> variable. The mapping process
-//     will check the <source> variable for the first successful match against a list of regular expressions.
-//     If a successful match is found the <dest> variable will contain the <replacement> value.
-//     If no successful match is found and the <default> is specified then the <dest> will contain the <default> value.
+// parseCaddyfile sets up the handler for a map from Caddyfile tokens. Syntax:
 //
 //     map <source> <dest> {
 //         [default <default>] - used if not match is found
-//         [<regexp> <replacement>] - regular expression to match against the sourceo find and the matching replacement
+//         [<regexp> <replacement>] - regular expression to match against the source find and the matching replacement value
 //         ...
 //     }
+//
+// The map takes a source variable and maps it into the dest variable. The mapping process
+// will check the source variable for the first successful match against a list of regular expressions.
+// If a successful match is found the dest variable will contain the replacement value.
+// If no successful match is found and the default is specified then the dest will contain the default value.
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	m := new(Handler)

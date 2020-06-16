@@ -39,7 +39,9 @@ import (
 var directiveOrder = []string{
 	"map",
 	"root",
+
 	"header",
+
 	"redir",
 	"rewrite",
 

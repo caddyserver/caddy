@@ -66,8 +66,8 @@ func (r *Replacer) Get(variable string) (interface{}, bool) {
 	return nil, false
 }
 
-// GetString gets a value from the replacer. It returns
-// the value and whether the variable was known.
+// GetString  is the same as Get, but coerces the value to a
+// string representation.
 func (r *Replacer) GetString(variable string) (string, bool) {
 	s, found := r.Get(variable)
 	return toString(s), found
