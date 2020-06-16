@@ -352,11 +352,13 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string][]string)
 	}
-
 	for d.Next() {
 		var query string
 		if !d.Args(&query) {
 			return d.ArgErr()
+		}
+		if query == "" {
+			continue
 		}
 		parts := strings.SplitN(query, "=", 2)
 		if len(parts) != 2 {
@@ -370,7 +372,7 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Match returns true if r matches m.
+// Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
 	for param, vals := range m {
 		paramVal, found := r.URL.Query()[param]
@@ -382,7 +384,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 			}
 		}
 	}
-	return false
+	return len(m) == 0 && len(r.URL.Query()) == 0
 }
 
 // CaddyModule returns the Caddy module information.
