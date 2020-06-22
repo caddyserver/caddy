@@ -132,6 +132,16 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// set the default index file for the try_files rewrites
 	indexFile := "index.php"
 
+	// if the user specified a matcher token, use that
+	// matcher in a route that wraps both of our routes;
+	// either way, strip the matcher token and pass
+	// the remaining tokens to the unmarshaler so that
+	// we can gain the rest of the reverse_proxy syntax
+	userMatcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+
 	// make a new dispenser from the remaining tokens so that we
 	// can reset the dispenser back to this point for the
 	// reverse_proxy unmarshaler to read from it as well
@@ -250,16 +260,6 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	}
 	rpMatcherSet := caddy.ModuleMap{
 		"path": h.JSON(pathList),
-	}
-
-	// if the user specified a matcher token, use that
-	// matcher in a route that wraps both of our routes;
-	// either way, strip the matcher token and pass
-	// the remaining tokens to the unmarshaler so that
-	// we can gain the rest of the reverse_proxy syntax
-	userMatcherSet, err := h.ExtractMatcherSet()
-	if err != nil {
-		return nil, err
 	}
 
 	// create the reverse proxy handler which uses our FastCGI transport
