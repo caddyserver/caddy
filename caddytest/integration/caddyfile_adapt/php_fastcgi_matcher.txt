@@ -1,0 +1,112 @@
+:8884
+
+@api host example.com
+php_fastcgi @api localhost:9000
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"headers": {
+														"Location": [
+															"{http.request.uri.path}/"
+														]
+													},
+													"status_code": 308
+												}
+											],
+											"match": [
+												{
+													"file": {
+														"try_files": [
+															"{http.request.uri.path}/index.php"
+														]
+													},
+													"not": [
+														{
+															"path": [
+																"*/"
+															]
+														}
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "{http.matchers.file.relative}"
+												}
+											],
+											"match": [
+												{
+													"file": {
+														"split_path": [
+															".php"
+														],
+														"try_files": [
+															"{http.request.uri.path}",
+															"{http.request.uri.path}/index.php",
+															"index.php"
+														]
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"transport": {
+														"protocol": "fastcgi",
+														"split_path": [
+															".php"
+														]
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:9000"
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"*.php"
+													]
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
