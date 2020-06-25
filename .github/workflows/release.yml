@@ -73,7 +73,7 @@ jobs:
 
     # Only publish on non-special tags (e.g. non-beta)
     - name: Publish .deb to Gemfury
-      if: ${{ steps.vars.outputs.tag_special == "" }}
+      if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
