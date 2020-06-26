@@ -453,11 +453,27 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logg
 }
 
 func (slc ServerLogConfig) getLoggerName(host string) string {
-	if loggerName, ok := slc.LoggerNames[host]; ok {
+	tryHost := func(key string) (string, bool) {
+		// first try exact match
+		if loggerName, ok := slc.LoggerNames[key]; ok {
+			return loggerName, ok
+		}
+		// strip port and try again (i.e. Host header of "example.com:1234" should
+		// match "example.com" if there is no "example.com:1234" in the map)
+		hostOnly, _, err := net.SplitHostPort(key)
+		if err != nil {
+			return "", false
+		}
+		loggerName, ok := slc.LoggerNames[hostOnly]
+		return loggerName, ok
+	}
+
+	// try the exact hostname first
+	if loggerName, ok := tryHost(host); ok {
 		return loggerName
 	}
 
-	// Try matching wildcard domains if other non-specific loggers exist
+	// try matching wildcard domains if other non-specific loggers exist
 	labels := strings.Split(host, ".")
 	for i := range labels {
 		if labels[i] == "" {
@@ -465,7 +481,7 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 		}
 		labels[i] = "*"
 		wildcardHost := strings.Join(labels, ".")
-		if loggerName, ok := slc.LoggerNames[wildcardHost]; ok {
+		if loggerName, ok := tryHost(wildcardHost); ok {
 			return loggerName
 		}
 	}
