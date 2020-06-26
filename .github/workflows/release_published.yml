@@ -22,7 +22,7 @@ jobs:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/dist
         event-type: release-tagged
-        client-payload: '{"tag": "${{ github.release.tag_name }}"}'
+        client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
 
     - name: Trigger event on caddyserver/caddy-docker
       uses: peter-evans/repository-dispatch@v1
