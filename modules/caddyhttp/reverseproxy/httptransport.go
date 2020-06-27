@@ -412,14 +412,13 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 }
 
 type UpstreamResolver struct {
-	// Specifies the addresses of the [DNS resolvers of upstram addresses resolvers]
-	// (/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/addresses).
+	// Specifies the addresses of the [DNS resolvers of upstream addresses resolvers](/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/addresses).
 	// It accepts [network addresses](/docs/conventions#network-addresses)
 	// with port range of only 1.
 	Bootstrap      []string `json:"bootstrap,omitempty"`
 	bootstrapAddrs []caddy.NetworkAddress
 
-	// Specifies the addresses of the DNS resolvers of upstram addresses.
+	// The addresses of DNS resolvers to use when looking up the addresses of proxy upstreams.
 	// It accepts [network addresses](/docs/conventions#network-addresses)
 	// with port range of only 1.
 	Addresses []string `json:"addresses,omitempty"`
