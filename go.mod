@@ -10,7 +10,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-acme/lego/v3 v3.7.0
 	github.com/go-chi/chi v4.1.2+incompatible
-	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/cel-go v0.5.1
 	github.com/jsternberg/zap-logfmt v1.2.0
