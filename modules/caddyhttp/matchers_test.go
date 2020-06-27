@@ -528,11 +528,46 @@ func TestQueryMatcher(t *testing.T) {
 			input:    "/?someparam",
 			expect:   false,
 		},
+		{
+			scenario: "empty matcher value should match empty query",
+			match:    MatchQuery{},
+			input:    "/?",
+			expect:   true,
+		},
+		{
+			scenario: "nil matcher value should NOT match a non-empty query",
+			match:    MatchQuery{},
+			input:    "/?foo=bar",
+			expect:   false,
+		},
+		{
+			scenario: "non-nil matcher should NOT match an empty query",
+			match:    MatchQuery{"": nil},
+			input:    "/?",
+			expect:   false,
+		},
+		{
+			scenario: "match against a placeholder value",
+			match:    MatchQuery{"debug": []string{"{http.vars.debug}"}},
+			input:    "/?debug=1",
+			expect:   true,
+		},
+		{
+			scenario: "match against a placeholder key",
+			match:    MatchQuery{"{http.vars.key}": []string{"1"}},
+			input:    "/?somekey=1",
+			expect:   true,
+		},
 	} {
 
 		u, _ := url.Parse(tc.input)
 
 		req := &http.Request{URL: u}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		repl.Set("http.vars.debug", "1")
+		repl.Set("http.vars.key", "somekey")
+		req = req.WithContext(ctx)
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)

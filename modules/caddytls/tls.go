@@ -57,6 +57,9 @@ type TLS struct {
 	// Configures session ticket ephemeral keys (STEKs).
 	SessionTickets *SessionTicketService `json:"session_tickets,omitempty"`
 
+	// Configures the in-memory certificate cache.
+	Cache *CertCacheOptions `json:"cache,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      []string
 	certCache          *certmagic.Cache
@@ -88,6 +91,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if t.Automation != nil {
 		cacheOpts.OCSPCheckInterval = time.Duration(t.Automation.OCSPCheckInterval)
 		cacheOpts.RenewCheckInterval = time.Duration(t.Automation.RenewCheckInterval)
+	}
+	if t.Cache != nil {
+		cacheOpts.Capacity = t.Cache.Capacity
 	}
 	t.certCache = certmagic.NewCache(cacheOpts)
 
@@ -213,6 +219,11 @@ func (t *TLS) Validate() error {
 				}
 				hostSet[h] = i
 			}
+		}
+	}
+	if t.Cache != nil {
+		if t.Cache.Capacity < 0 {
+			return fmt.Errorf("cache capacity must be >= 0")
 		}
 	}
 	return nil
@@ -443,6 +454,15 @@ func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
 		ID:  "tls.certificates.automate",
 		New: func() caddy.Module { return new(AutomateLoader) },
 	}
+}
+
+// CertCacheOptions configures the certificate cache.
+type CertCacheOptions struct {
+	// Maximum number of certificates to allow in the
+	// cache. If reached, certificates will be randomly
+	// evicted to make room for new ones. Default: 0
+	// (no limit).
+	Capacity int `json:"capacity,omitempty"`
 }
 
 // Variables related to storage cleaning.

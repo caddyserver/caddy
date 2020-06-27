@@ -400,6 +400,11 @@ func (st *ServerType) serversFromPairings(
 					jLongestPath = addr.Path
 				}
 			}
+			if specificity(jLongestHost) == 0 {
+				// catch-all blocks (blocks with no hostname) should always go
+				// last, even after blocks with wildcard hosts
+				return true
+			}
 			if iWildcardHost != jWildcardHost {
 				// site blocks that have a key with a wildcard in the hostname
 				// must always be less specific than blocks without one; see
