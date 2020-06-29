@@ -168,31 +168,6 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			FallbackDelay: time.Duration(h.FallbackDelay),
 		}
 
-		// Setup the boostrap logic
-		if len(h.Resolver.Bootstrap) != 0 {
-			for _, v := range h.Resolver.Bootstrap {
-				addr, err := caddy.ParseNetworkAddress(v)
-				if err != nil {
-					return nil, err
-				}
-				if addr.PortRangeSize() != 1 {
-					return nil, fmt.Errorf("bootstrap resolver address must have exactly one address; cannot call %v", addr)
-				}
-				h.Resolver.bootstrapAddrs = append(h.Resolver.bootstrapAddrs, addr)
-			}
-			bootstrapDialer := &net.Dialer{
-				Timeout:       time.Duration(h.DialTimeout),
-				FallbackDelay: time.Duration(h.FallbackDelay),
-			}
-			d.Resolver = &net.Resolver{
-				PreferGo: true,
-				Dial: func(stdctx context.Context, _, _ string) (net.Conn, error) {
-					addr := h.Resolver.bootstrapAddrs[weakrand.Intn(len(h.Resolver.bootstrapAddrs))]
-					return bootstrapDialer.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
-				},
-			}
-		}
-
 		dialer.Resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -412,21 +387,10 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 }
 
 type UpstreamResolver struct {
-	// Specifies the addresses of the [DNS resolvers of upstream addresses resolvers](/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/addresses).
-	// It accepts [network addresses](/docs/conventions#network-addresses)
-	// with port range of only 1. It is used if the host in [Addresses](/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/addresses)
-	// is not an IP address. If the bootstrap address is also not an IP address, it falls back to the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library
-	// to resolve the bootstrap address.
-	// This field is optional.
-	Bootstrap      []string `json:"bootstrap,omitempty"`
-	bootstrapAddrs []caddy.NetworkAddress
-
 	// The addresses of DNS resolvers to use when looking up the addresses of proxy upstreams.
 	// It accepts [network addresses](/docs/conventions#network-addresses)
 	// with port range of only 1. If the host is an IP address, it will be dialed directly to resolve the upstream server.
-	// If the host is not an IP address and [Bootstrap](/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/bootstrap)
-	// is not empty, then the addresses will be resolved using a random [Bootstrap](/docs/json/apps/http/servers/routes/handle/reverse_proxy/transport/http/resolver/bootstrap) server;
-	// otherwise the host of the address is resolved following the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library.
+	// If the host is not an IP address, the addresses are resolved using the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library.
 	Addresses []string `json:"addresses,omitempty"`
 	netAddrs  []caddy.NetworkAddress
 }
