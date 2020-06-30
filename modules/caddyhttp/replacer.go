@@ -172,7 +172,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 					reqHost = req.Host // OK; assume there was no port
 				}
 				hostLabels := strings.Split(reqHost, ".")
-				if idx > len(hostLabels) {
+				if idx >= len(hostLabels) {
 					return "", true
 				}
 				return hostLabels[len(hostLabels)-idx-1], true

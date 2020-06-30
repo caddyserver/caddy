@@ -108,6 +108,10 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expect: "example",
 		},
 		{
+			input:  "{http.request.host.labels.2}",
+			expect: "<empty>",
+		},
+		{
 			input:  "{http.request.tls.cipher_suite}",
 			expect: "TLS_AES_256_GCM_SHA384",
 		},
