@@ -101,7 +101,7 @@ type browseListing struct {
 
 	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
-	
+
 	// If ≠0 then Items starting from that many elements.
 	ItemsFrom int
 }
@@ -161,9 +161,9 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 			sort.Sort(byTime(*l))
 		}
 	}
-	
+
 	if fromParam != "" {
-		from, _ := strconv.Atoi(fromParam)	
+		from, _ := strconv.Atoi(fromParam)
 		if from > 0 && from <= len(l.Items) {
 			l.Items = l.Items[from:]
 			l.ItemsFrom = from
@@ -171,8 +171,8 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 	}
 
 	if limitParam != "" {
-		limit, _ := strconv.Atoi(limitParam)		
-		
+		limit, _ := strconv.Atoi(limitParam)
+
 		if limit > 0 && limit <= len(l.Items) {
 			l.Items = l.Items[:limit]
 			l.ItemsLimitedTo = limit
