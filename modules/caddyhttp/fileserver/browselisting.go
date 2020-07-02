@@ -101,6 +101,9 @@ type browseListing struct {
 
 	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
+	
+	// If ≠0 then Items starting from that many elements.
+	ItemsFrom int
 }
 
 // Breadcrumbs returns l.Path where every element maps
@@ -131,7 +134,7 @@ func (l browseListing) Breadcrumbs() []crumb {
 	return result
 }
 
-func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string) {
+func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string, fromParam string) {
 	l.Sort = sortParam
 	l.Order = orderParam
 
@@ -158,9 +161,18 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 			sort.Sort(byTime(*l))
 		}
 	}
+	
+	if fromParam != "" {
+		from, _ := strconv.Atoi(fromParam)	
+		if from > 0 && from <= len(l.Items) {
+			l.Items = l.Items[from:]
+			l.ItemsFrom = from
+		}
+	}
 
 	if limitParam != "" {
-		limit, _ := strconv.Atoi(limitParam)
+		limit, _ := strconv.Atoi(limitParam)		
+		
 		if limit > 0 && limit <= len(l.Items) {
 			l.Items = l.Items[:limit]
 			l.ItemsLimitedTo = limit
