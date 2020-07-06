@@ -254,7 +254,6 @@ func (templateContext) funcMarkdown(input interface{}) (string, error) {
 			parser.WithAutoHeadingID(),
 		),
 		goldmark.WithRendererOptions(
-			gmhtml.WithHardWraps(),
 			gmhtml.WithUnsafe(), // TODO: this is not awesome, maybe should be configurable?
 		),
 	)
