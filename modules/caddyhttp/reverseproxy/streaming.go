@@ -96,6 +96,11 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Durat
 		return -1 // negative means immediately
 	}
 
+	// for h2 and h2c upstream streaming data to client
+	if req.ProtoMajor == 2 && res.ContentLength == -1 {
+		return -1
+	}
+
 	// TODO: more specific cases? e.g. res.ContentLength == -1? (this TODO is from the std lib)
 	return time.Duration(h.FlushInterval)
 }
