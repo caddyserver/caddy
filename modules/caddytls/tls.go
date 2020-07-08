@@ -373,9 +373,9 @@ func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
 	return t.certCache.AllMatchingCertificates(san)
 }
 
-// keepStorageClean immediately cleans up all known storage units
-// if it was not recently done, and starts a goroutine that runs
-// the operation at every tick from t.storageCleanTicker.
+// keepStorageClean starts a goroutine that immediately cleans up all
+// known storage units if it was not recently done, and then runs the
+// operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
 	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
 	t.storageCleanStop = make(chan struct{})
@@ -385,6 +385,7 @@ func (t *TLS) keepStorageClean() {
 				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
 			}
 		}()
+		t.cleanStorageUnits()
 		for {
 			select {
 			case <-t.storageCleanStop:
@@ -394,7 +395,6 @@ func (t *TLS) keepStorageClean() {
 			}
 		}
 	}()
-	t.cleanStorageUnits()
 }
 
 func (t *TLS) cleanStorageUnits() {
