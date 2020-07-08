@@ -317,6 +317,17 @@ title: Welcome
 			body:   "\n### Test",
 		},
 		{
+			// yaml with non-fence '...' line after closing fence (i.e. first matching closing fence should be used)
+			input: `---
+title: Welcome
+---
+### Test
+...
+yeah`,
+			expect: `Welcome`,
+			body:   "\n### Test\n...\nyeah",
+		},
+		{
 			// toml
 			input: `+++
 title = "Welcome"

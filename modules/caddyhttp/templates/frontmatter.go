@@ -56,6 +56,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 		if index >= 0 {
 			fmEndFenceStart = index
 			fmEndFence = fence
+			break
 		}
 	}
 	if fmEndFenceStart < 0 {
