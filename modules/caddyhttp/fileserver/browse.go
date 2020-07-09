@@ -106,7 +106,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
-	fromParam := r.URL.Query().Get("from")
+	offsetParam := r.URL.Query().Get("offset")
 
 	// first figure out what to sort by
 	switch sortParam {
