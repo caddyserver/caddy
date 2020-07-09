@@ -106,6 +106,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
+	offsetParam := r.URL.Query().Get("offset")
 
 	// first figure out what to sort by
 	switch sortParam {
@@ -130,7 +131,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	}
 
 	// finally, apply the sorting and limiting
-	listing.applySortAndLimit(sortParam, orderParam, limitParam)
+	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
 }
 
 func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
