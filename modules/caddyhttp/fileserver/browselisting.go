@@ -134,7 +134,7 @@ func (l browseListing) Breadcrumbs() []crumb {
 	return result
 }
 
-func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string, fromParam string) {
+func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {
 	l.Sort = sortParam
 	l.Order = orderParam
 
@@ -162,11 +162,11 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 		}
 	}
 
-	if fromParam != "" {
-		from, _ := strconv.Atoi(fromParam)
-		if from > 0 && from <= len(l.Items) {
-			l.Items = l.Items[from:]
-			l.ItemsFrom = from
+	if offsetParam != "" {
+		offset, _ := strconv.Atoi(offsetParam)
+		if offset > 0 && offset <= len(l.Items) {
+			l.Items = l.Items[offset:]
+			l.ItemOffset = offset
 		}
 	}
 
