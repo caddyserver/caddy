@@ -131,7 +131,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	}
 
 	// finally, apply the sorting and limiting
-	listing.applySortAndLimit(sortParam, orderParam, limitParam, fromParam)
+	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
 }
 
 func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
