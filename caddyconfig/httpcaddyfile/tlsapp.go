@@ -321,6 +321,9 @@ func (st ServerType) buildTLSApp(
 
 	// do a little verification & cleanup
 	if tlsApp.Automation != nil {
+		// consolidate automation policies that are the exact same
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
 		// for convenience)
@@ -333,9 +336,6 @@ func (st ServerType) buildTLSApp(
 				automationHostSet[s] = struct{}{}
 			}
 		}
-
-		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
 	}
 
 	return tlsApp, warnings, nil
