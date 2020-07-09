@@ -103,7 +103,7 @@ type browseListing struct {
 	ItemsLimitedTo int
 
 	// If ≠0 then Items starting from that many elements.
-	ItemsFrom int
+	ItemOffset int
 }
 
 // Breadcrumbs returns l.Path where every element maps
