@@ -611,8 +611,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 
 	rw.WriteHeader(res.StatusCode)
 
-	// for some apps which need a correct response header to start http2 streaming,
-	// it's important to explicit flush headers to the client before copy streaming data.
+	// some apps need the response headers before starting to stream content with http2,
+	// so it's important to explicitly flush the headers to the client before streaming the data.
 	if req.ProtoMajor == 2 && res.ContentLength == -1 {
 		if wf, ok := rw.(http.Flusher); ok {
 			wf.Flush()
