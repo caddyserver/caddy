@@ -202,6 +202,12 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
 	scriptName = path.Join(pathPrefix, scriptName)
 
+	// Ensure the SCRIPT_NAME has a leading slash for compliance with RFC3875
+	// Info: https://tools.ietf.org/html/rfc3875#section-4.1.13
+	if scriptName != "" && !strings.HasPrefix(scriptName, "/") {
+		scriptName = "/" + scriptName
+	}
+
 	// Get the request URL from context. The context stores the original URL in case
 	// it was changed by a middleware such as rewrite. By default, we pass the
 	// original URI in as the value of REQUEST_URI (the user can overwrite this
@@ -244,7 +250,6 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REQUEST_METHOD":    r.Method,
 		"REQUEST_SCHEME":    requestScheme,
 		"SERVER_NAME":       reqHost,
-		"SERVER_PORT":       reqPort,
 		"SERVER_PROTOCOL":   r.Proto,
 		"SERVER_SOFTWARE":   t.serverSoftware,
 
@@ -262,6 +267,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
 		env["PATH_TRANSLATED"] = filepath.Join(root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
+	}
+
+	// compliance with the CGI specification requires that
+	// SERVER_PORT should only exist if it's a valid numeric value.
+	// Info: https://www.ietf.org/rfc/rfc3875 Page 18
+	if reqPort != "" {
+		env["SERVER_PORT"] = reqPort
 	}
 
 	// Some web apps rely on knowing HTTPS or not
