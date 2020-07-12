@@ -31,8 +31,8 @@ func init() {
 
 // Handler is a middleware for manipulating the request body.
 type Handler struct {
-	Resources []Resource         `json:"resources,omitempty"`
-	Headers   *headers.HeaderOps `json:"headers,omitempty"`
+	Resources []Resource    `json:"resources,omitempty"`
+	Headers   *HeaderConfig `json:"headers,omitempty"`
 
 	logger *zap.Logger
 }
@@ -110,16 +110,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	return nil
 }
 
-// Resource represents a request for a resource to push.
-type Resource struct {
-	// Method is the request method, which must be GET or HEAD.
-	// Default is GET.
-	Method string `json:"method,omitempty"`
-
-	// Target is the path to the resource being pushed.
-	Target string `json:"target,omitempty"`
-}
-
 func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) http.Header {
 	hdr := make(http.Header)
 
@@ -157,7 +147,7 @@ outer:
 			if _, ok := resource.params["nopush"]; ok {
 				continue
 			}
-			if h.isRemoteResource(resource.uri) {
+			if isRemoteResource(resource.uri) {
 				continue
 			}
 			err := pusher.Push(resource.uri, &http.PushOptions{
@@ -170,9 +160,24 @@ outer:
 	}
 }
 
+// Resource represents a request for a resource to push.
+type Resource struct {
+	// Method is the request method, which must be GET or HEAD.
+	// Default is GET.
+	Method string `json:"method,omitempty"`
+
+	// Target is the path to the resource being pushed.
+	Target string `json:"target,omitempty"`
+}
+
+// HeaderConfig configures headers for synthetic push requests.
+type HeaderConfig struct {
+	headers.HeaderOps
+}
+
 // isRemoteResource returns true if resource starts with
 // a scheme or is a protocol-relative URI.
-func (Handler) isRemoteResource(resource string) bool {
+func isRemoteResource(resource string) bool {
 	return strings.HasPrefix(resource, "//") ||
 		strings.HasPrefix(resource, "http://") ||
 		strings.HasPrefix(resource, "https://")
