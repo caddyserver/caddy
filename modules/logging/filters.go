@@ -18,6 +18,7 @@ import (
 	"net"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -44,6 +45,11 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
 // Filter filters the input field.
 func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 	in.Type = zapcore.SkipType
@@ -66,6 +72,11 @@ func (IPMaskFilter) CaddyModule() caddy.ModuleInfo {
 		ID:  "caddy.logging.encoders.filter.ip_mask",
 		New: func() caddy.Module { return new(IPMaskFilter) },
 	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
 }
 
 // Filter filters the input field.
@@ -93,3 +104,12 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	}
 	return in
 }
+
+// Interface guards
+var (
+	_ LogFieldFilter = (*DeleteFilter)(nil)
+	_ LogFieldFilter = (*IPMaskFilter)(nil)
+
+	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
+	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+)
