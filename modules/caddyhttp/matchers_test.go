@@ -123,6 +123,11 @@ func TestHostMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchHost{"www.*.*"},
+			input:  "www.example.com",
+			expect: true,
+		},
+		{
 			match:  MatchHost{"example.com"},
 			input:  "example.com:5555",
 			expect: true,
