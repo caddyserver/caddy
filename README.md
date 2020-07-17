@@ -12,9 +12,9 @@
 	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
 </p>
 <p align="center">
-	<a href="https://github.com/caddyserver/caddy/releases">Download</a> ·
+	<a href="https://github.com/caddyserver/caddy/releases">Releases</a> ·
 	<a href="https://caddyserver.com/docs/">Documentation</a> ·
-	<a href="https://caddy.community">Community</a>
+	<a href="https://caddy.community">Get Help</a>
 </p>
 
 
@@ -76,7 +76,7 @@ _**Note:** These steps [will not embed proper version information](https://githu
 
 ### With version information and/or plugins
 
-Using [our builder tool](https://github.com/caddyserver/xcaddy)...
+Using [our builder tool, `xcaddy`](https://github.com/caddyserver/xcaddy)...
 
 ```
 $ xcaddy build
@@ -88,8 +88,8 @@ $ xcaddy build
 2. Change into it: `cd caddy`
 3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
 4. Initialize a Go module: `go mod init caddy`
-5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit.
-6. (Optional) Add plugins by adding their import: `_ "IMPORT_PATH"`
+5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag or commit.
+6. (Optional) Add plugins by adding their import: `_ "import/path/here"`
 7. Compile: `go build`
 
 
