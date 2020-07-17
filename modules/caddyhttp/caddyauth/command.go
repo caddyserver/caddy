@@ -116,7 +116,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hash []byte
 	switch algorithm {
 	case "bcrypt":
-		hash, err = bcrypt.GenerateFromPassword(plaintext, bcrypt.DefaultCost)
+		hash, err = bcrypt.GenerateFromPassword(plaintext, 14)
 	case "scrypt":
 		def := ScryptHash{}
 		def.SetDefaults()
