@@ -219,7 +219,7 @@ var safeHeaders = []string{
 
 // pushHeader is a header field that gets added to push requests
 // in order to avoid recursive/infinite pushes.
-const pushHeader = "X-Caddy-Push"
+const pushHeader = "Caddy-Push"
 
 // pushedLink is the key for the variable on the request
 // context that we use to remember whether we have already
