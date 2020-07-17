@@ -91,20 +91,19 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 		}
 	}
 
-	// serve only after pushing!
-	if err := next.ServeHTTP(w, r); err != nil {
-		return err
+	// wrap the response writer so that we can initiate push of any resources
+	// described in Link header fields before the response is written
+	lp := linkPusher{
+		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+		handler:               h,
+		pusher:                pusher,
+		header:                hdr,
+		request:               r,
 	}
 
-	// finally, push any resources described by Link fields that were
-	// written to the response header, only if another push handler
-	// hasn't already done so
-	if links, ok := w.Header()["Link"]; ok {
-		if val := caddyhttp.GetVar(r.Context(), pushedLink); val == nil {
-			h.logger.Debug("pushing Link resources", zap.Strings("linked", links))
-			caddyhttp.SetVar(r.Context(), pushedLink, true)
-			h.servePreloadLinks(pusher, hdr, links)
-		}
+	// serve only after pushing!
+	if err := next.ServeHTTP(lp, r); err != nil {
+		return err
 	}
 
 	return nil
@@ -141,7 +140,6 @@ func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) ht
 // attribute or describes an external entity (meaning, the resource
 // URI includes a scheme), it will not be pushed.
 func (h Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, resources []string) {
-outer:
 	for _, resource := range resources {
 		for _, resource := range parseLinkHeader(resource) {
 			if _, ok := resource.params["nopush"]; ok {
@@ -154,7 +152,7 @@ outer:
 				Header: hdr,
 			})
 			if err != nil {
-				break outer
+				return
 			}
 		}
 	}
@@ -173,6 +171,30 @@ type Resource struct {
 // HeaderConfig configures headers for synthetic push requests.
 type HeaderConfig struct {
 	headers.HeaderOps
+}
+
+// linkPusher is a http.ResponseWriter that intercepts
+// the WriteHeader() call to ensure that any resources
+// described by Link response headers get pushed before
+// the response is allowed to be written.
+type linkPusher struct {
+	*caddyhttp.ResponseWriterWrapper
+	handler Handler
+	pusher  http.Pusher
+	header  http.Header
+	request *http.Request
+}
+
+func (lp linkPusher) WriteHeader(statusCode int) {
+	if links, ok := lp.ResponseWriter.Header()["Link"]; ok {
+		// only initiate these pushes if it hasn't been done yet
+		if val := caddyhttp.GetVar(lp.request.Context(), pushedLink); val == nil {
+			lp.handler.logger.Debug("pushing Link resources", zap.Strings("linked", links))
+			caddyhttp.SetVar(lp.request.Context(), pushedLink, true)
+			lp.handler.servePreloadLinks(lp.pusher, lp.header, links)
+		}
+	}
+	lp.ResponseWriter.WriteHeader(statusCode)
 }
 
 // isRemoteResource returns true if resource starts with
@@ -210,4 +232,5 @@ const pushedLink = "http.handlers.push.pushed_link"
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
+	_ caddyhttp.HTTPInterfaces    = (*linkPusher)(nil)
 )
