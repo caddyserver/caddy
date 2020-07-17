@@ -562,11 +562,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Errf("upstreams are configured for HTTPS but transport module does not support TLS: %T", transport)
 		}
 
-		// if the transport is the same as the default,
-		// i.e. http and with no transport options, then
-		// we'll omit setting TransportRaw to avoid redundant
-		// JSON configuration.
-		if transportModuleName != "http" || !reflect.DeepEqual(transport, reflect.New(reflect.TypeOf(transport).Elem()).Interface()) {
+		// no need to encode empty default transport
+		if !reflect.DeepEqual(transport, new(HTTPTransport)) {
 			h.TransportRaw = caddyconfig.JSONModuleObject(transport, "protocol", transportModuleName, nil)
 		}
 	}
