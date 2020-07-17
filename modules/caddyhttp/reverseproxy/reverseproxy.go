@@ -329,10 +329,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
 
-	// we will need the original headers and Host
-	// value if header operations are configured
-	reqHeader := r.Header
+	// we will need the original headers and Host value if
+	// header operations are configured; and we should
+	// restore them after we're done if they are changed
+	// (for example, changing the outbound Host header
+	// should not permanently change r.Host; issue #3509)
 	reqHost := r.Host
+	reqHeader := r.Header
+	defer func() {
+		r.Host = reqHost
+		r.Header = reqHeader
+	}()
 
 	start := time.Now()
 
