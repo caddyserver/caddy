@@ -226,6 +226,11 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		reqHost = r.Host
 	}
 
+	authUser := ""
+	if val, ok := repl.Get("http.auth.user.id"); ok {
+		authUser = val.(string)
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -240,7 +245,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
 		"REMOTE_PORT":       port,
 		"REMOTE_IDENT":      "", // Not used
-		"REMOTE_USER":       "", // TODO: once there are authentication handlers, populate this
+		"REMOTE_USER":       authUser,
 		"REQUEST_METHOD":    r.Method,
 		"REQUEST_SCHEME":    requestScheme,
 		"SERVER_NAME":       reqHost,
