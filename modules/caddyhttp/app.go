@@ -47,6 +47,7 @@ func init() {
 //
 // Placeholder | Description
 // ------------|---------------
+// `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.header.*}` | Specific request header field
 // `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
