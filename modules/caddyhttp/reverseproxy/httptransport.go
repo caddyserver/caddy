@@ -44,7 +44,7 @@ type HTTPTransport struct {
 	// able to borrow/use at least some of these config fields; if so,
 	// maybe move them into a type called CommonTransport and embed it?
 
-	// Configures the resolver used to resolve the IP address of upstream hostnames.
+	// Configures the DNS resolver used to resolve the IP address of upstream hostnames.
 	Resolver *UpstreamResolver `json:"resolver,omitempty"`
 
 	// Configures TLS to the upstream. Setting this to an empty struct
@@ -167,7 +167,6 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			Timeout:       time.Duration(h.DialTimeout),
 			FallbackDelay: time.Duration(h.FallbackDelay),
 		}
-
 		dialer.Resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -229,6 +228,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			return nil, err
 		}
 	}
+
 	return rt, nil
 }
 
@@ -386,11 +386,14 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	return cfg, nil
 }
 
+// UpstreamResolver holds the set of addresses of DNS resolvers of
+// upstream addresses
 type UpstreamResolver struct {
 	// The addresses of DNS resolvers to use when looking up the addresses of proxy upstreams.
 	// It accepts [network addresses](/docs/conventions#network-addresses)
 	// with port range of only 1. If the host is an IP address, it will be dialed directly to resolve the upstream server.
 	// If the host is not an IP address, the addresses are resolved using the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library.
+	// If the array contains more than 1 resolver address, one is chosen at random.
 	Addresses []string `json:"addresses,omitempty"`
 	netAddrs  []caddy.NetworkAddress
 }
