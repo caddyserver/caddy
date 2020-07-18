@@ -39,6 +39,7 @@ func init() {
 //         root <path>
 //         split <at>
 //         env <key> <value>
+//         resolve_root_symlink
 //     }
 //
 func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -66,6 +67,9 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					t.EnvVars = make(map[string]string)
 				}
 				t.EnvVars[args[0]] = args[1]
+
+			case "resolve_root_symlink":
+				t.ResolveRootSymlink = true
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
@@ -196,6 +200,14 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.ArgErr()
 				}
 				indexFile = args[0]
+
+			case "resolve_root_symlink":
+				args := dispenser.RemainingArgs()
+				dispenser.Delete()
+				for range args {
+					dispenser.Delete()
+				}
+				fcgiTransport.ResolveRootSymlink = true
 			}
 		}
 	}
