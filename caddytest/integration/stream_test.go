@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// (see https://github.com/caddyserver/caddy/issues/3556 for use case)
 func TestH2ToH2CStream(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
@@ -107,8 +108,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	r, w := io.Pipe()
 	req := &http.Request{
 		Method: "PUT",
-		// Host:   httpSettings.getRandomHost(),
-		Body: ioutil.NopCloser(r),
+		Body:   ioutil.NopCloser(r),
 		URL: &url.URL{
 			Scheme: "https",
 			Host:   "127.0.0.1:9443",
