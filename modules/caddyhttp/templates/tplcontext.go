@@ -29,6 +29,7 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
@@ -152,6 +153,7 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
 		"env":              c.funcEnv,
+		"placeholder":      c.placeholder,
 	})
 
 	parsedTpl, err := tpl.Parse(buf.String())
@@ -162,6 +164,12 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	buf.Reset() // reuse buffer for output
 
 	return parsedTpl.Execute(buf, c)
+}
+
+func (c templateContext) placeholder(name string) string {
+	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	value, _ := repl.GetString(name)
+	return value
 }
 
 func (templateContext) funcEnv(varName string) string {
