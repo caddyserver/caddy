@@ -168,14 +168,8 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 
 func (c templateContext) placeholder(name string) string {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-
-	value, has := repl.Get(name)
-
-	if !has {
-		return ""
-	}
-
-	return fmt.Sprintf("%v", value)
+	value, _ := repl.GetString(name)
+	return value
 }
 
 func (templateContext) funcEnv(varName string) string {
