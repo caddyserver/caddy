@@ -54,6 +54,14 @@ type Transport struct {
 	// that 404s if the fastcgi path info is not found.
 	SplitPath []string `json:"split_path,omitempty"`
 
+	// Path declared as root directory will be resolved to its absolute value
+	// after the evaluation of any symbolic links.
+	// Due to the nature of PHP opcache, root directory path is cached: when
+	// using a symlinked directory as root this could generate errors when
+	// symlink is changed without php-fpm being restarted; enabling this
+	// directive will set $_SERVER['DOCUMENT_ROOT'] to the real directory path.
+	ResolveRootSymlink bool `json:"resolve_root_symlink,omitempty"`
+
 	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
 
@@ -177,6 +185,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	root, err := filepath.Abs(repl.ReplaceAll(t.Root, "."))
 	if err != nil {
 		return nil, err
+	}
+
+	if t.ResolveRootSymlink {
+		root, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	fpath := r.URL.Path
