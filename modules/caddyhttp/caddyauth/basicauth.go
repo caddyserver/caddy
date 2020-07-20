@@ -21,6 +21,8 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -40,6 +42,8 @@ type HTTPBasicAuth struct {
 
 	Accounts map[string]Account `json:"-"`
 	Hash     Comparer           `json:"-"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -52,6 +56,8 @@ func (HTTPBasicAuth) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions the HTTP basic auth provider.
 func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
+	hba.logger = ctx.Logger(hba)
+
 	if hba.HashRaw == nil {
 		hba.HashRaw = json.RawMessage(`{"algorithm": "bcrypt"}`)
 	}
@@ -104,22 +110,32 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 // Authenticate validates the user credentials in req and returns the user, if valid.
 func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) (User, bool, error) {
-	username, plaintextPasswordStr, ok := req.BasicAuth()
+	username, plaintextPassword, ok := req.BasicAuth()
 	if !ok {
 		return hba.promptForCredentials(w, nil)
 	}
-
-	plaintextPassword := []byte(plaintextPasswordStr)
 
 	account, accountExists := hba.Accounts[username]
 	// don't return early if account does not exist; we want
 	// to try to avoid side-channels that leak existence
 
-	same, err := hba.Hash.Compare(account.password, plaintextPassword, account.salt)
+	passwordMatches, err := hba.Hash.Compare(account.password, []byte(plaintextPassword), account.salt)
 	if err != nil {
 		return hba.promptForCredentials(w, err)
 	}
-	if !same || !accountExists {
+
+	// emit appropriate log message if any credentials were provided
+	if username != "" || plaintextPassword != "" {
+		logger := hba.logger.With(zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}))
+		if !accountExists {
+			logger.Warn("wrong username", zap.String("username", username))
+		} else if !passwordMatches {
+			logger.Warn("wrong password", zap.String("username", username))
+		}
+	}
+
+	// reject if account not found or password mismatch
+	if !accountExists || !passwordMatches {
 		return hba.promptForCredentials(w, nil)
 	}
 
