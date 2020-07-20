@@ -55,10 +55,11 @@ var directiveOrder = []string{
 	"encode",
 	"templates",
 
-	// special routing directives
+	// special routing & dispatching directives
 	"handle",
 	"handle_path",
 	"route",
+	"push",
 
 	// handlers that typically respond to requests
 	"respond",
