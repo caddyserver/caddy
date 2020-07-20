@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"unicode"
 )
@@ -167,4 +168,22 @@ func (l *lexer) next() bool {
 
 		val = append(val, ch)
 	}
+}
+
+// Tokenize takes bytes as input and lexes it into
+// a list of tokens that can be parsed as a Caddyfile.
+// Also takes a filename to fill the token's File as
+// the source of the tokens, which is important to
+// determine relative paths for `import` directives.
+func Tokenize(input []byte, filename string) ([]Token, error) {
+	l := lexer{}
+	if err := l.load(bytes.NewReader(input)); err != nil {
+		return nil, err
+	}
+	var tokens []Token
+	for l.next() {
+		l.token.File = filename
+		tokens = append(tokens, l.token)
+	}
+	return tokens, nil
 }
