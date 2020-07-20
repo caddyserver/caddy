@@ -87,15 +87,9 @@ func allTokens(filename string, input []byte) ([]Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := new(lexer)
-	err = l.load(bytes.NewReader(input))
+	tokens, err := Tokenize(input, filename)
 	if err != nil {
 		return nil, err
-	}
-	var tokens []Token
-	for l.next() {
-		l.token.File = filename
-		tokens = append(tokens, l.token)
 	}
 	return tokens, nil
 }
