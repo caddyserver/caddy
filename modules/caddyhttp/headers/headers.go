@@ -54,15 +54,15 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up h's configuration.
-func (h *Handler) Provision(_ caddy.Context) error {
+func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.Request != nil {
-		err := h.Request.provision()
+		err := h.Request.Provision(ctx)
 		if err != nil {
 			return err
 		}
 	}
 	if h.Response != nil {
-		err := h.Response.provision()
+		err := h.Response.Provision(ctx)
 		if err != nil {
 			return err
 		}
@@ -125,7 +125,8 @@ type HeaderOps struct {
 	Replace map[string][]Replacement `json:"replace,omitempty"`
 }
 
-func (ops *HeaderOps) provision() error {
+// Provision sets up the header operations.
+func (ops *HeaderOps) Provision(_ caddy.Context) error {
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
 			if r.SearchRegexp != "" {
