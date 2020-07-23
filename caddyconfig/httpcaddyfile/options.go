@@ -241,15 +241,9 @@ func parseOptAdmin(d *caddyfile.Dispenser) (interface{}, error) {
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			switch d.Val() {
 			case "enforce_origin":
-				if adminCfg == nil {
-					adminCfg = new(caddy.AdminConfig)
-				}
 				adminCfg.EnforceOrigin = true
 
 			case "origins":
-				if adminCfg == nil {
-					adminCfg = new(caddy.AdminConfig)
-				}
 				adminCfg.Origins = d.RemainingArgs()
 
 			default:
@@ -257,7 +251,7 @@ func parseOptAdmin(d *caddyfile.Dispenser) (interface{}, error) {
 			}
 		}
 	}
-	if adminCfg.Listen == "" {
+	if adminCfg.Listen == "" && !adminCfg.Disabled {
 		adminCfg.Listen = caddy.DefaultAdminListen
 	}
 	return adminCfg, nil
