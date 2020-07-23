@@ -222,17 +222,45 @@ func parseOptSingleString(d *caddyfile.Dispenser) (interface{}, error) {
 }
 
 func parseOptAdmin(d *caddyfile.Dispenser) (interface{}, error) {
-	if d.Next() {
-		var listenAddress string
-		if !d.AllArgs(&listenAddress) {
-			return "", d.ArgErr()
+	adminCfg := new(caddy.AdminConfig)
+	for d.Next() {
+		if d.NextArg() {
+			listenAddress := d.Val()
+			if listenAddress == "off" {
+				adminCfg.Disabled = true
+				if d.Next() { // Do not accept any remaining options including block
+					return nil, d.Err("No more option is allowed after turning off admin config")
+				}
+			} else {
+				adminCfg.Listen = listenAddress
+				if d.NextArg() { // At most 1 arg is allowed
+					return nil, d.Err("At most 1 argument is allowed in admin config")
+				}
+			}
 		}
-		if listenAddress == "" {
-			listenAddress = caddy.DefaultAdminListen
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			switch d.Val() {
+			case "enforce_origin":
+				if adminCfg == nil {
+					adminCfg = new(caddy.AdminConfig)
+				}
+				adminCfg.EnforceOrigin = true
+
+			case "origins":
+				if adminCfg == nil {
+					adminCfg = new(caddy.AdminConfig)
+				}
+				adminCfg.Origins = d.RemainingArgs()
+
+			default:
+				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
+			}
 		}
-		return listenAddress, nil
 	}
-	return "", nil
+	if adminCfg.Listen == "" {
+		adminCfg.Listen = caddy.DefaultAdminListen
+	}
+	return adminCfg, nil
 }
 
 func parseOptOnDemand(d *caddyfile.Dispenser) (interface{}, error) {
