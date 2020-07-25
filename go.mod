@@ -20,7 +20,7 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/smallstep/certificates v0.14.6
 	github.com/smallstep/cli v0.14.6
-	github.com/smallstep/nosql v0.3.0
+	github.com/smallstep/nosql v0.3.1
 	github.com/smallstep/truststore v0.9.6
 	github.com/yuin/goldmark v1.1.33
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
