@@ -471,7 +471,7 @@ func stopAndCleanup() error {
 	}
 	certmagic.CleanUpOwnLocks()
 	if pidfile != "" {
-		os.Remove(pidfile)
+		return os.Remove(pidfile)
 	}
 	return nil
 }
