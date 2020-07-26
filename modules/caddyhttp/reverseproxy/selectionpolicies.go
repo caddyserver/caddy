@@ -401,6 +401,9 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 			best = append(best, upstream)
 		}
 	}
+	if len(best) == 0 {
+		return nil
+	}
 	return best[weakrand.Intn(len(best))]
 }
 
