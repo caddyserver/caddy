@@ -1,0 +1,51 @@
+name: Cross-Build Check
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  cross-build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
+        go-version: [ 1.14.x ]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Print Go version and environment
+        id: vars
+        run: |
+          printf "Using go at: $(which go)\n"
+          printf "Go version: $(go version)\n"
+          printf "\n\nGo environment:\n\n"
+          go env
+          printf "\n\nSystem environment:\n\n"
+          env
+          echo "::set-output name=go_cache::$(go env GOCACHE)"
+      - name: Cache the build cache
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.vars.outputs.go_cache }}
+          key: cross-build-go-${{ matrix.goos }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            cross-build-go-${{ matrix.goos }}
+      - name: Checkout code into the Go module directory
+        uses: actions/checkout@v2
+      - name: Run Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+        shell: bash
+        working-directory: ./cmd/caddy
+        run: |
+          GOOS=$GOOS go build -trimpath -o caddy-"$GOOS"-amd64
