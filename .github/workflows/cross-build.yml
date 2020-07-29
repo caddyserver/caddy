@@ -46,6 +46,7 @@ jobs:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
         shell: bash
+        continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
           GOOS=$GOOS go build -trimpath -o caddy-"$GOOS"-amd64
