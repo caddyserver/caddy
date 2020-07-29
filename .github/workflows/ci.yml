@@ -120,6 +120,52 @@ jobs:
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
 
+  cross-build-check:
+    name: Cross-Build Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Print Go version and environment
+        id: vars
+        run: |
+          printf "Using go at: $(which go)\n"
+          printf "Go version: $(go version)\n"
+          printf "\n\nGo environment:\n\n"
+          go env
+          printf "\n\nSystem environment:\n\n"
+          env
+          echo "::set-output name=go_cache::$(go env GOCACHE)"
+      - name: Cache the build cache
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.vars.outputs.go_cache }}
+          key: cross-build-go-ci-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            cross-build-go-ci
+      - name: Checkout code into the Go module directory
+        uses: actions/checkout@v2
+      - name: Run Builds
+        env:
+          CGO_ENABLED: '0'
+        shell: bash
+        working-directory: ./cmd/caddy
+        run: |
+
+          geese=('android' 'linux' 'solaris' 'illumos' 'dragonfly' 'freebsd' 'openbsd' 'plan9' 'windows' 'darwin' 'netbsd')
+          failed=()
+          for GOOS in "${geese[@]}"; do
+            echo "Building GOOS: $GOOS"
+            GOOS=$GOOS go build -trimpath -o caddy-"$GOOS"-amd64 || {
+              echo "Failed: $GOOS"
+              failed+=("$GOOS")
+            }
+          done
+
+          if [ ${#failed[@]} -ne 0 ]; then
+            echo "The following geese failed: " "${failed[@]}"
+            exit 1
+          fi
+
   s390x-test:
     name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
