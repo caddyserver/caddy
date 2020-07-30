@@ -119,6 +119,13 @@ func (je *JSONEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // LogfmtEncoder encodes log entries as logfmt:
 // https://www.brandur.org/logfmt
+//
+// Note that logfmt does not encode nested structures
+// properly, so it is not a good fit for most logs.
+//
+// ⚠️ DEPRECATED. Do not use. It will eventually be removed
+// from the standard Caddy modules. For more information,
+// see https://github.com/caddyserver/caddy/issues/3575.
 type LogfmtEncoder struct {
 	zapcore.Encoder `json:"-"`
 	LogEncoderConfig
@@ -133,7 +140,10 @@ func (LogfmtEncoder) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the encoder.
-func (lfe *LogfmtEncoder) Provision(_ caddy.Context) error {
+func (lfe *LogfmtEncoder) Provision(ctx caddy.Context) error {
+	ctx.Logger(lfe).Warn("the logfmt encoder is DEPRECATED and will soon be removed from the standard modules",
+		zap.String("recommendation", "switch to a log format that isn't broken"),
+		zap.String("more_info", "https://github.com/caddyserver/caddy/issues/3575"))
 	lfe.Encoder = zaplogfmt.NewEncoder(lfe.ZapcoreEncoderConfig())
 	return nil
 }

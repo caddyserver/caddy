@@ -284,6 +284,79 @@ func TestFileListing(t *testing.T) {
 	}
 }
 
+func TestSplitFrontMatter(t *testing.T) {
+	context := getContextOrFail(t)
+
+	for i, test := range []struct {
+		input  string
+		expect string
+		body   string
+	}{
+		{
+			// yaml with windows newline
+			input:  "---\r\ntitle: Welcome\r\n---\r\n# Test\\r\\n",
+			expect: `Welcome`,
+			body:   "\r\n# Test\\r\\n",
+		},
+		{
+			// yaml
+			input: `---
+title: Welcome
+---
+### Test`,
+			expect: `Welcome`,
+			body:   "\n### Test",
+		},
+		{
+			// yaml with dots for closer
+			input: `---
+title: Welcome
+...
+### Test`,
+			expect: `Welcome`,
+			body:   "\n### Test",
+		},
+		{
+			// yaml with non-fence '...' line after closing fence (i.e. first matching closing fence should be used)
+			input: `---
+title: Welcome
+---
+### Test
+...
+yeah`,
+			expect: `Welcome`,
+			body:   "\n### Test\n...\nyeah",
+		},
+		{
+			// toml
+			input: `+++
+title = "Welcome"
++++
+### Test`,
+			expect: `Welcome`,
+			body:   "\n### Test",
+		},
+		{
+			// json
+			input: `{
+    "title": "Welcome"
+}
+### Test`,
+			expect: `Welcome`,
+			body:   "\n### Test",
+		},
+	} {
+		result, _ := context.funcSplitFrontMatter(test.input)
+		if result.Meta["title"] != test.expect {
+			t.Errorf("Test %d: Expected %s, found %s. Input was SplitFrontMatter(%s)", i, test.expect, result.Meta["title"], test.input)
+		}
+		if result.Body != test.body {
+			t.Errorf("Test %d: Expected body %s, found %s. Input was SplitFrontMatter(%s)", i, test.body, result.Body, test.input)
+		}
+	}
+
+}
+
 func getContextOrFail(t *testing.T) templateContext {
 	context, err := initTestContext()
 	if err != nil {

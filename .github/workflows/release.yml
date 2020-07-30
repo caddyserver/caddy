@@ -41,6 +41,18 @@ jobs:
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
         echo "::set-output name=go_cache::$(go env GOCACHE)"
 
+        # Parse semver
+        TAG=${GITHUB_REF/refs\/tags\//}
+        SEMVER_RE='[^0-9]*\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)\([0-9A-Za-z\.-]*\)'
+        TAG_MAJOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\1#"`
+        TAG_MINOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\2#"`
+        TAG_PATCH=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\3#"`
+        TAG_SPECIAL=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\4#"`
+        echo "::set-output name=tag_major::${TAG_MAJOR}"
+        echo "::set-output name=tag_minor::${TAG_MINOR}"
+        echo "::set-output name=tag_patch::${TAG_PATCH}"
+        echo "::set-output name=tag_special::${TAG_SPECIAL}"
+
     - name: Cache the build cache
       uses: actions/cache@v1
       with:
@@ -59,10 +71,13 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
 
+    # Only publish on non-special tags (e.g. non-beta)
     - name: Publish .deb to Gemfury
+      if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
         for filename in dist/*.deb; do
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
+

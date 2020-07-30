@@ -21,10 +21,10 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
@@ -33,6 +33,8 @@ import (
 	"github.com/google/cel-go/ext"
 	"github.com/google/cel-go/interpreter/functions"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
+	"google.golang.org/protobuf/proto"
+	timestamp "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func init() {
@@ -42,7 +44,8 @@ func init() {
 // MatchExpression matches requests by evaluating a
 // [CEL](https://github.com/google/cel-spec) expression.
 // This enables complex logic to be expressed using a comfortable,
-// familiar syntax.
+// familiar syntax. Please refer to
+// [the standard definitions of CEL functions and operators](https://github.com/google/cel-spec/blob/master/doc/langdef.md#standard-definitions).
 //
 // This matcher's JSON interface is actually a string, not a struct.
 // The generated docs are not correct because this type has custom
@@ -91,7 +94,7 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 	// create the CEL environment
 	env, err := cel.NewEnv(
 		cel.Declarations(
-			decls.NewIdent("request", httpRequestObjectType, nil),
+			decls.NewVar("request", httpRequestObjectType),
 			decls.NewFunction(placeholderFuncName,
 				decls.NewOverload(placeholderFuncName+"_httpRequest_string",
 					[]*exprpb.Type{httpRequestObjectType, decls.String},
@@ -203,6 +206,9 @@ func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
 	switch v := value.(type) {
 	case celHTTPRequest:
 		return v
+	case time.Time:
+		// TODO: eliminate direct protobuf dependency, sigh -- just wrap stdlib time.Time instead...
+		return types.Timestamp{Timestamp: &timestamp.Timestamp{Seconds: v.Unix(), Nanos: int32(v.Nanosecond())}}
 	case error:
 		types.NewErr(v.Error())
 	}

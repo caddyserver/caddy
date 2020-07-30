@@ -30,26 +30,35 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	}
 	firstLine := input[firstLineStart:firstLineEnd]
 
+	// ensure residue windows carriage return byte is removed
+	firstLine = strings.TrimSpace(firstLine)
+
 	// see what kind of front matter there is, if any
-	var closingFence string
+	var closingFence []string
 	var fmParser func([]byte) (map[string]interface{}, error)
-	switch firstLine {
-	case yamlFrontMatterFenceOpen:
-		fmParser = yamlFrontMatter
-		closingFence = yamlFrontMatterFenceClose
-	case tomlFrontMatterFenceOpen:
-		fmParser = tomlFrontMatter
-		closingFence = tomlFrontMatterFenceClose
-	case jsonFrontMatterFenceOpen:
-		fmParser = jsonFrontMatter
-		closingFence = jsonFrontMatterFenceClose
-	default:
+	for _, fmType := range supportedFrontMatterTypes {
+		if firstLine == fmType.FenceOpen {
+			closingFence = fmType.FenceClose
+			fmParser = fmType.ParseFunc
+		}
+	}
+
+	if fmParser == nil {
 		// no recognized front matter; whole document is body
 		return nil, input, nil
 	}
 
 	// find end of front matter
-	fmEndFenceStart := strings.Index(input[firstLineEnd:], "\n"+closingFence)
+	var fmEndFence string
+	fmEndFenceStart := -1
+	for _, fence := range closingFence {
+		index := strings.Index(input[firstLineEnd:], "\n"+fence)
+		if index >= 0 {
+			fmEndFenceStart = index
+			fmEndFence = fence
+			break
+		}
+	}
 	if fmEndFenceStart < 0 {
 		return nil, "", fmt.Errorf("unterminated front matter")
 	}
@@ -63,7 +72,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	}
 
 	// the rest is the body
-	body := input[fmEndFenceStart+len(closingFence):]
+	body := input[fmEndFenceStart+len(fmEndFence):]
 
 	return fm, body, nil
 }
@@ -93,8 +102,26 @@ type parsedMarkdownDoc struct {
 	Body string                 `json:"body,omitempty"`
 }
 
-const (
-	yamlFrontMatterFenceOpen, yamlFrontMatterFenceClose = "---", "---"
-	tomlFrontMatterFenceOpen, tomlFrontMatterFenceClose = "+++", "+++"
-	jsonFrontMatterFenceOpen, jsonFrontMatterFenceClose = "{", "}"
-)
+type frontMatterType struct {
+	FenceOpen  string
+	FenceClose []string
+	ParseFunc  func(input []byte) (map[string]interface{}, error)
+}
+
+var supportedFrontMatterTypes = []frontMatterType{
+	{
+		FenceOpen:  "---",
+		FenceClose: []string{"---", "..."},
+		ParseFunc:  yamlFrontMatter,
+	},
+	{
+		FenceOpen:  "+++",
+		FenceClose: []string{"+++"},
+		ParseFunc:  tomlFrontMatter,
+	},
+	{
+		FenceOpen:  "{",
+		FenceClose: []string{"}"},
+		ParseFunc:  jsonFrontMatter,
+	},
+}

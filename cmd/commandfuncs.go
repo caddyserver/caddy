@@ -16,6 +16,7 @@ package caddycmd
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,7 @@ import (
 func cmdStart(fl Flags) (int, error) {
 	startCmdConfigFlag := fl.String("config")
 	startCmdConfigAdapterFlag := fl.String("adapter")
+	startCmdPidfileFlag := fl.String("pidfile")
 	startCmdWatchFlag := fl.Bool("watch")
 
 	// open a listener to which the child process will connect when
@@ -70,6 +72,9 @@ func cmdStart(fl Flags) (int, error) {
 	}
 	if startCmdWatchFlag {
 		cmd.Args = append(cmd.Args, "--watch")
+	}
+	if startCmdPidfileFlag != "" {
+		cmd.Args = append(cmd.Args, "--pidfile", startCmdPidfileFlag)
 	}
 	stdinpipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -144,12 +149,24 @@ func cmdStart(fl Flags) (int, error) {
 }
 
 func cmdRun(fl Flags) (int, error) {
+	caddy.TrapSignals()
+
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")
+	runCmdLoadEnvfileFlag := fl.String("envfile")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdWatchFlag := fl.Bool("watch")
+	runCmdPidfileFlag := fl.String("pidfile")
 	runCmdPingbackFlag := fl.String("pingback")
+
+	// load all additional envs as soon as possible
+	if runCmdLoadEnvfileFlag != "" {
+		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
 
 	// if we are supposed to print the environment, do that first
 	if runCmdPrintEnvFlag {
@@ -225,6 +242,16 @@ func cmdRun(fl Flags) (int, error) {
 		go watchConfigFile(configFile, runCmdConfigAdapterFlag)
 	}
 
+	// create pidfile
+	if runCmdPidfileFlag != "" {
+		err := caddy.PIDFile(runCmdPidfileFlag)
+		if err != nil {
+			caddy.Log().Error("unable to write PID file",
+				zap.String("pidfile", runCmdPidfileFlag),
+				zap.Error(err))
+		}
+	}
+
 	// warn if the environment does not provide enough information about the disk
 	hasXDG := os.Getenv("XDG_DATA_HOME") != "" &&
 		os.Getenv("XDG_CONFIG_HOME") != "" &&
@@ -250,24 +277,9 @@ func cmdRun(fl Flags) (int, error) {
 func cmdStop(fl Flags) (int, error) {
 	stopCmdAddrFlag := fl.String("address")
 
-	adminAddr := caddy.DefaultAdminListen
-	if stopCmdAddrFlag != "" {
-		adminAddr = stopCmdAddrFlag
-	}
-	stopEndpoint := fmt.Sprintf("http://%s/stop", adminAddr)
-
-	req, err := http.NewRequest(http.MethodPost, stopEndpoint, nil)
+	err := apiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("making request: %v", err)
-	}
-	req.Header.Set("Origin", adminAddr)
-
-	err = apiRequest(req)
-	if err != nil {
-		caddy.Log().Warn("failed using API to stop instance",
-			zap.String("endpoint", stopEndpoint),
-			zap.Error(err),
-		)
+		caddy.Log().Warn("failed using API to stop instance", zap.Error(err))
 		return caddy.ExitCodeFailedStartup, err
 	}
 
@@ -288,7 +300,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	// get the address of the admin listener and craft endpoint URL
+	// get the address of the admin listener; use flag if specified
 	adminAddr := reloadCmdAddrFlag
 	if adminAddr == "" && len(config) > 0 {
 		var tmpStruct struct {
@@ -301,20 +313,8 @@ func cmdReload(fl Flags) (int, error) {
 		}
 		adminAddr = tmpStruct.Admin.Listen
 	}
-	if adminAddr == "" {
-		adminAddr = caddy.DefaultAdminListen
-	}
-	loadEndpoint := fmt.Sprintf("http://%s/load", adminAddr)
 
-	// prepare the request to update the configuration
-	req, err := http.NewRequest(http.MethodPost, loadEndpoint, bytes.NewReader(config))
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("making request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", adminAddr)
-
-	err = apiRequest(req)
+	err = apiRequest(adminAddr, http.MethodPost, "/load", bytes.NewReader(config))
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("sending configuration to instance: %v", err)
 	}
@@ -619,8 +619,62 @@ commands:
 	return caddy.ExitCodeSuccess, nil
 }
 
-func apiRequest(req *http.Request) error {
-	resp, err := http.DefaultClient.Do(req)
+// apiRequest makes an API request to the endpoint adminAddr with the
+// given HTTP method and request URI. If body is non-nil, it will be
+// assumed to be Content-Type application/json.
+func apiRequest(adminAddr, method, uri string, body io.Reader) error {
+	// parse the admin address
+	if adminAddr == "" {
+		adminAddr = caddy.DefaultAdminListen
+	}
+	parsedAddr, err := caddy.ParseNetworkAddress(adminAddr)
+	if err != nil || parsedAddr.PortRangeSize() > 1 {
+		return fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
+	}
+	origin := parsedAddr.JoinHostPort(0)
+	if parsedAddr.IsUnixNetwork() {
+		origin = "unixsocket" // hack so that http.NewRequest() is happy
+	}
+
+	// form the request
+	req, err := http.NewRequest(method, "http://"+origin+uri, body)
+	if err != nil {
+		return fmt.Errorf("making request: %v", err)
+	}
+	if parsedAddr.IsUnixNetwork() {
+		// When listening on a unix socket, the admin endpoint doesn't
+		// accept any Host header because there is no host:port for
+		// a unix socket's address. The server's host check is fairly
+		// strict for security reasons, so we don't allow just any
+		// Host header. For unix sockets, the Host header must be
+		// empty. Unfortunately, Go makes it impossible to make HTTP
+		// requests with an empty Host header... except with this one
+		// weird trick. (Hopefully they don't fix it. It's already
+		// hard enough to use HTTP over unix sockets.)
+		//
+		// An equivalent curl command would be something like:
+		// $ curl --unix-socket caddy.sock http:/:$REQUEST_URI
+		req.URL.Host = " "
+		req.Host = ""
+	} else {
+		req.Header.Set("Origin", origin)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	// make an HTTP client that dials our network type, since admin
+	// endpoints aren't always TCP, which is what the default transport
+	// expects; reuse is not of particular concern here
+	client := http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial(parsedAddr.Network, parsedAddr.JoinHostPort(0))
+			},
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("performing request: %v", err)
 	}

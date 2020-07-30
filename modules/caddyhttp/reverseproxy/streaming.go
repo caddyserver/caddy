@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Most of the code in this file was initially borrowed from the Go
-// standard library, which has this copyright notice:
-// Copyright 2011 The Go Authors.
+// standard library and modified; It had this copyright notice:
+// Copyright 2011 The Go Authors
 
 package reverseproxy
 
@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request, res *http.Response) {
@@ -47,7 +49,20 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 		// p.getErrorHandler()(rw, req, fmt.Errorf("internal error: 101 switching protocols response with non-writable body"))
 		return
 	}
-	defer backConn.Close()
+
+	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
+	backConnCloseCh := make(chan struct{})
+	go func() {
+		// Ensure that the cancelation of a request closes the backend.
+		// See issue https://golang.org/issue/35559.
+		select {
+		case <-req.Context().Done():
+		case <-backConnCloseCh:
+		}
+		backConn.Close()
+	}()
+	defer close(backConnCloseCh)
+
 	conn, brw, err := hj.Hijack()
 	if err != nil {
 		// p.getErrorHandler()(rw, req, fmt.Errorf("Hijack failed on protocol switch: %v", err))
@@ -81,6 +96,11 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Durat
 		return -1 // negative means immediately
 	}
 
+	// for h2 and h2c upstream streaming data to client (issue #3556)
+	if req.ProtoMajor == 2 && res.ContentLength == -1 {
+		return -1
+	}
+
 	// TODO: more specific cases? e.g. res.ContentLength == -1? (this TODO is from the std lib)
 	return time.Duration(h.FlushInterval)
 }
@@ -97,19 +117,8 @@ func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.D
 		}
 	}
 
-	// TODO: Figure out how we want to do this... using custom buffer pool type seems unnecessary
-	// or maybe it is, depending on how we want to handle errors,
-	// see: https://github.com/golang/go/issues/21814
-	// buf := bufPool.Get().(*bytes.Buffer)
-	// buf.Reset()
-	// defer bufPool.Put(buf)
-	// _, err := io.CopyBuffer(dst, src, )
-	var buf []byte
-	// if h.BufferPool != nil {
-	// 	buf = h.BufferPool.Get()
-	// 	defer h.BufferPool.Put(buf)
-	// }
-	// // we could also see about a pool that returns values like this: make([]byte, 32*1024)
+	buf := streamingBufPool.Get().([]byte)
+	defer streamingBufPool.Put(buf)
 	_, err := h.copyBuffer(dst, src, buf)
 	return err
 }
@@ -131,6 +140,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 			// something we need to report to the client, but read errors are a problem on our
 			// end for sure. so we need to decide what we want.)
 			// p.logf("copyBuffer: ReverseProxy read error during body copy: %v", rerr)
+			h.logger.Error("reading from backend", zap.Error(rerr))
 		}
 		if nr > 0 {
 			nw, werr := dst.Write(buf[:nr])
@@ -220,4 +230,10 @@ func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 	_, err := io.Copy(c.backend, c.user)
 	errc <- err
+}
+
+var streamingBufPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 32*1024)
+	},
 }

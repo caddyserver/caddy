@@ -1,5 +1,9 @@
 before:
   hooks:
+    # The build is done in this particular way to build Caddy in a designated directory named in .gitignore.
+    # This is so we can run goreleaser on tag without Git complaining of being dirty. The main.go in cmd/caddy directory 
+    # cannot be built within that directory due to changes necessary for the build causing Git to be dirty, which
+    # subsequently causes gorleaser to refuse running.
     - mkdir -p caddy-build
     - cp cmd/caddy/main.go caddy-build/main.go
     - cp ./go.mod caddy-build/go.mod
@@ -26,12 +30,30 @@ builds:
   - amd64
   - arm
   - arm64
+  - s390x
+  - ppc64le
   goarm:
+  - 5
   - 6
   - 7
   ignore:
     - goos: darwin
       goarch: arm
+    - goos: darwin
+      goarch: ppc64le
+    - goos: darwin
+      goarch: s390x
+    - goos: windows
+      goarch: ppc64le
+    - goos: windows
+      goarch: s390x
+    - goos: freebsd
+      goarch: ppc64le
+    - goos: freebsd
+      goarch: s390x
+    - goos: freebsd
+      goarch: arm
+      goarm: 5
   flags:
   - -trimpath
   ldflags:
@@ -66,6 +88,7 @@ nfpms:
       ./caddy-dist/init/caddy.service: /lib/systemd/system/caddy.service
       ./caddy-dist/init/caddy-api.service: /lib/systemd/system/caddy-api.service
       ./caddy-dist/welcome/index.html: /usr/share/caddy/index.html
+      ./caddy-dist/scripts/completions/bash-completion: /etc/bash_completion.d/caddy
     config_files:
       ./caddy-dist/config/Caddyfile: /etc/caddy/Caddyfile
 
@@ -89,5 +112,6 @@ changelog:
     - '^chore:'
     - '^ci:'
     - '^docs?:'
+    - '^readme:'
     - '^tests?:'
     - '^\w+\s+' # a hack to remove commit messages without colons thus don't correspond to a package

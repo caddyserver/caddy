@@ -91,7 +91,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the matcher from Caddyfile tokens. Syntax:
 //
-//     file {
+//     file <files...> {
 //         root <path>
 //         try_files <files...>
 //         try_policy first_exist|smallest_size|largest_size|most_recently_modified
@@ -99,6 +99,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 //
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
+		m.TryFiles = append(m.TryFiles, d.RemainingArgs()...)
 		for d.NextBlock(0) {
 			switch d.Val() {
 			case "root":
@@ -107,7 +108,7 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				m.Root = d.Val()
 			case "try_files":
-				m.TryFiles = d.RemainingArgs()
+				m.TryFiles = append(m.TryFiles, d.RemainingArgs()...)
 				if len(m.TryFiles) == 0 {
 					return d.ArgErr()
 				}

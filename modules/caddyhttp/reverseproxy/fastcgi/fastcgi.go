@@ -54,6 +54,14 @@ type Transport struct {
 	// that 404s if the fastcgi path info is not found.
 	SplitPath []string `json:"split_path,omitempty"`
 
+	// Path declared as root directory will be resolved to its absolute value
+	// after the evaluation of any symbolic links.
+	// Due to the nature of PHP opcache, root directory path is cached: when
+	// using a symlinked directory as root this could generate errors when
+	// symlink is changed without php-fpm being restarted; enabling this
+	// directive will set $_SERVER['DOCUMENT_ROOT'] to the real directory path.
+	ResolveRootSymlink bool `json:"resolve_root_symlink,omitempty"`
+
 	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
 
@@ -179,6 +187,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		return nil, err
 	}
 
+	if t.ResolveRootSymlink {
+		root, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	fpath := r.URL.Path
 
 	// split "actual path" from "path info" if configured
@@ -201,6 +216,12 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// have difficulty discovering its URL.
 	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
 	scriptName = path.Join(pathPrefix, scriptName)
+
+	// Ensure the SCRIPT_NAME has a leading slash for compliance with RFC3875
+	// Info: https://tools.ietf.org/html/rfc3875#section-4.1.13
+	if scriptName != "" && !strings.HasPrefix(scriptName, "/") {
+		scriptName = "/" + scriptName
+	}
 
 	// Get the request URL from context. The context stores the original URL in case
 	// it was changed by a middleware such as rewrite. By default, we pass the
@@ -226,6 +247,11 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		reqHost = r.Host
 	}
 
+	authUser := ""
+	if val, ok := repl.Get("http.auth.user.id"); ok {
+		authUser = val.(string)
+	}
+
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
 	env = map[string]string{
@@ -240,11 +266,10 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 		"REMOTE_HOST":       ip, // For speed, remote host lookups disabled
 		"REMOTE_PORT":       port,
 		"REMOTE_IDENT":      "", // Not used
-		"REMOTE_USER":       "", // TODO: once there are authentication handlers, populate this
+		"REMOTE_USER":       authUser,
 		"REQUEST_METHOD":    r.Method,
 		"REQUEST_SCHEME":    requestScheme,
 		"SERVER_NAME":       reqHost,
-		"SERVER_PORT":       reqPort,
 		"SERVER_PROTOCOL":   r.Proto,
 		"SERVER_SOFTWARE":   t.serverSoftware,
 
@@ -262,6 +287,13 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
 		env["PATH_TRANSLATED"] = filepath.Join(root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
+	}
+
+	// compliance with the CGI specification requires that
+	// SERVER_PORT should only exist if it's a valid numeric value.
+	// Info: https://www.ietf.org/rfc/rfc3875 Page 18
+	if reqPort != "" {
+		env["SERVER_PORT"] = reqPort
 	}
 
 	// Some web apps rely on knowing HTTPS or not
@@ -303,6 +335,10 @@ func (t Transport) splitPos(path string) int {
 	// if httpserver.CaseSensitivePath {
 	// 	return strings.Index(path, r.SplitPath)
 	// }
+	if len(t.SplitPath) == 0 {
+		return 0
+	}
+
 	lowerPath := strings.ToLower(path)
 	for _, split := range t.SplitPath {
 		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {

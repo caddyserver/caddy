@@ -64,6 +64,16 @@ func init() {
 // {{env "VAR_NAME"}}
 // ```
 //
+// ##### `placeholder`
+//
+// Gets an [placeholder variable](/docs/conventions#placeholders).
+// The braces (`{}`) have to be omitted.
+//
+// ```
+// {{placeholder "http.request.uri.path"}}
+// {{placeholder "http.error.status_code"}}
+// ```
+//
 // ##### `.Host`
 //
 // Returns the hostname portion (no port) of the Host header of the HTTP request.

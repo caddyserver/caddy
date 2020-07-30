@@ -22,12 +22,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
-	"github.com/go-acme/lego/v3/challenge"
+	"github.com/mholt/acmez"
 	"go.uber.org/zap"
 )
 
-// AutomationConfig designates configuration for the
-// construction and use of ACME clients.
+// AutomationConfig governs the automated management of TLS certificates.
 type AutomationConfig struct {
 	// The list of automation policies. The first matching
 	// policy will be applied for a given certificate/name.
@@ -35,22 +34,27 @@ type AutomationConfig struct {
 
 	// On-Demand TLS defers certificate operations to the
 	// moment they are needed, e.g. during a TLS handshake.
-	// Useful when you don't know all the hostnames up front.
-	// Caddy was the first web server to deploy this technology.
+	// Useful when you don't know all the hostnames at
+	// config-time, or when you are not in control of the
+	// domain names you are managing certificates for.
+	// In 2015, Caddy became the first web server to
+	// implement this experimental technology.
+	//
+	// Note that this field does not enable on-demand TLS,
+	// it only configures it for when it is used. To enable
+	// it, create an automation policy with `on_demand`.
 	OnDemand *OnDemandConfig `json:"on_demand,omitempty"`
 
 	// Caddy staples OCSP (and caches the response) for all
 	// qualifying certificates by default. This setting
 	// changes how often it scans responses for freshness,
-	// and updates them if they are getting stale.
+	// and updates them if they are getting stale. Default: 1h
 	OCSPCheckInterval caddy.Duration `json:"ocsp_interval,omitempty"`
 
 	// Every so often, Caddy will scan all loaded, managed
 	// certificates for expiration. This setting changes how
 	// frequently the scan for expiring certificates is
-	// performed. If your certificate lifetimes are very
-	// short (less than ~24 hours), you should set this to
-	// a low value.
+	// performed. Default: 10m
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
 	defaultPublicAutomationPolicy   *AutomationPolicy
@@ -203,6 +207,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		OnDemand:           ond,
 		Storage:            storage,
 		Issuer:             ap.Issuer, // if nil, certmagic.New() will create one
+		Logger:             tlsApp.logger,
 	}
 	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
 		template.Revoker = rev
@@ -239,13 +244,15 @@ type ChallengesConfig struct {
 	// not enabled by default. This is the only challenge
 	// type which does not require a direct connection
 	// to Caddy from an external server.
-	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=tls.dns inline_key=provider"`
+	//
+	// NOTE: DNS providers are currently being upgraded,
+	// and this API is subject to change, but should be
+	// stabilized soon.
+	DNS *DNSChallengeConfig `json:"dns,omitempty"`
 
 	// Optionally customize the host to which a listener
 	// is bound if required for solving a challenge.
 	BindHost string `json:"bind_host,omitempty"`
-
-	DNS challenge.Provider `json:"-"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.
@@ -274,12 +281,29 @@ type TLSALPNChallengeConfig struct {
 	AlternatePort int `json:"alternate_port,omitempty"`
 }
 
+// DNSChallengeConfig configures the ACME DNS challenge.
+//
+// NOTE: This API is still experimental and is subject to change.
+type DNSChallengeConfig struct {
+	// The DNS provider module to use which will manage
+	// the DNS records relevant to the ACME challenge.
+	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
+
+	// The TTL of the TXT record used for the DNS challenge.
+	TTL caddy.Duration `json:"ttl,omitempty"`
+
+	// How long to wait for DNS record to propagate.
+	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
+
+	solver acmez.Solver
+}
+
 // OnDemandConfig configures on-demand TLS, for obtaining
 // needed certificates at handshake-time. Because this
-// feature can easily be abused, you should set up rate
-// limits and/or an internal endpoint that Caddy can
-// "ask" if it should be allowed to manage certificates
-// for a given hostname.
+// feature can easily be abused, you should use this to
+// establish rate limits and/or an internal endpoint that
+// Caddy can "ask" if it should be allowed to manage
+// certificates for a given hostname.
 type OnDemandConfig struct {
 	// An optional rate limit to throttle the
 	// issuance of certificates from handshakes.

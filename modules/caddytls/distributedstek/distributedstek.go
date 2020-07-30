@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -52,6 +53,7 @@ type Provider struct {
 	storage    certmagic.Storage
 	stekConfig *caddytls.SessionTicketService
 	timer      *time.Timer
+	ctx        caddy.Context
 }
 
 // CaddyModule returns the Caddy module information.
@@ -64,6 +66,8 @@ func (Provider) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions s.
 func (s *Provider) Provision(ctx caddy.Context) error {
+	s.ctx = ctx
+
 	// unpack the storage module to use, if different from the default
 	if s.Storage != nil {
 		val, err := ctx.LoadModule(s, "Storage")
@@ -141,7 +145,7 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 // current STEK is outdated (NextRotation time is in the past),
 // then it is rotated and persisted. The resulting STEK is returned.
 func (s *Provider) getSTEK() (distributedSTEK, error) {
-	s.storage.Lock(stekLockName)
+	s.storage.Lock(s.ctx, stekLockName)
 	defer s.storage.Unlock(stekLockName)
 
 	// load the current STEKs from storage
@@ -193,6 +197,11 @@ func (s *Provider) rotateKeys(oldSTEK distributedSTEK) (distributedSTEK, error) 
 // rotate rotates keys on a regular basis, sending each updated set of
 // keys down keysChan, until doneChan is closed.
 func (s *Provider) rotate(doneChan <-chan struct{}, keysChan chan<- [][32]byte) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] distributed STEK rotation: %v\n%s", err, debug.Stack())
+		}
+	}()
 	for {
 		select {
 		case <-s.timer.C:

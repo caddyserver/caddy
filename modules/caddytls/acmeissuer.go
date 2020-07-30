@@ -17,7 +17,6 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -25,7 +24,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
-	"github.com/go-acme/lego/v3/challenge"
+	"github.com/mholt/acmez"
+	"github.com/mholt/acmez/acme"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -57,7 +58,7 @@ type ACMEIssuer struct {
 
 	// If using an ACME CA that requires an external account
 	// binding, specify the CA-provided credentials here.
-	ExternalAccount *ExternalAccountBinding `json:"external_account,omitempty"`
+	ExternalAccount *acme.EAB `json:"external_account,omitempty"`
 
 	// Time to wait before timing out an ACME operation.
 	ACMETimeout caddy.Duration `json:"acme_timeout,omitempty"`
@@ -73,6 +74,7 @@ type ACMEIssuer struct {
 	rootPool *x509.CertPool
 	template certmagic.ACMEManager
 	magic    *certmagic.Config
+	logger   *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -85,17 +87,31 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up m.
 func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
+	m.logger = ctx.Logger(m)
+
 	// DNS providers
-	if m.Challenges != nil && m.Challenges.DNSRaw != nil {
-		val, err := ctx.LoadModule(m.Challenges, "DNSRaw")
+	if m.Challenges != nil && m.Challenges.DNS != nil && m.Challenges.DNS.ProviderRaw != nil {
+		val, err := ctx.LoadModule(m.Challenges.DNS, "ProviderRaw")
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		prov, err := val.(DNSProviderMaker).NewDNSProvider()
-		if err != nil {
-			return fmt.Errorf("making DNS provider: %v", err)
+
+		if deprecatedProvider, ok := val.(acmez.Solver); ok {
+			// TODO: For a temporary amount of time, we are allowing the use of DNS
+			// providers from go-acme/lego since there are so many providers implemented
+			// using that API -- they are adapted as an all-in-one Caddy module in this
+			// repository: https://github.com/caddy-dns/lego-deprecated - the module is a
+			// acmez.Solver type, so we use it directly. The user must set environment
+			// variables to configure it. Remove this shim once a sufficient number of
+			// DNS providers are implemented for the libdns APIs instead.
+			m.Challenges.DNS.solver = deprecatedProvider
+		} else {
+			m.Challenges.DNS.solver = &certmagic.DNS01Solver{
+				DNSProvider:        val.(certmagic.ACMEDNSProvider),
+				TTL:                time.Duration(m.Challenges.DNS.TTL),
+				PropagationTimeout: time.Duration(m.Challenges.DNS.PropagationTimeout),
+			}
 		}
-		m.Challenges.DNS = prov
 	}
 
 	// add any custom CAs to trust store
@@ -124,23 +140,12 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 	template := certmagic.ACMEManager{
 		CA:                m.CA,
+		TestCA:            m.TestCA,
 		Email:             m.Email,
 		CertObtainTimeout: time.Duration(m.ACMETimeout),
 		TrustedRoots:      m.rootPool,
-	}
-
-	if m.ExternalAccount != nil {
-		hmac, err := base64.StdEncoding.DecodeString(m.ExternalAccount.EncodedHMAC)
-		if err != nil {
-			return template, err
-		}
-		if m.ExternalAccount.KeyID == "" || len(hmac) == 0 {
-			return template, fmt.Errorf("when an external account binding is specified, both key ID and HMAC are required")
-		}
-		template.ExternalAccount = &certmagic.ExternalAccountBinding{
-			KeyID: m.ExternalAccount.KeyID,
-			HMAC:  hmac,
-		}
+		ExternalAccount:   m.ExternalAccount,
+		Logger:            m.logger,
 	}
 
 	if m.Challenges != nil {
@@ -152,7 +157,9 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 			template.DisableTLSALPNChallenge = m.Challenges.TLSALPN.Disabled
 			template.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
 		}
-		template.DNSProvider = m.Challenges.DNS
+		if m.Challenges.DNS != nil {
+			template.DNS01Solver = m.Challenges.DNS.solver
+		}
 		template.ListenHost = m.Challenges.BindHost
 	}
 
@@ -172,8 +179,8 @@ func (m *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 // we find the right place to do that just once and then re-use?
 
 // PreCheck implements the certmagic.PreChecker interface.
-func (m *ACMEIssuer) PreCheck(names []string, interactive bool) error {
-	return certmagic.NewACMEManager(m.magic, m.template).PreCheck(names, interactive)
+func (m *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
+	return certmagic.NewACMEManager(m.magic, m.template).PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
@@ -187,8 +194,8 @@ func (m *ACMEIssuer) IssuerKey() string {
 }
 
 // Revoke revokes the given certificate.
-func (m *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource) error {
-	return certmagic.NewACMEManager(m.magic, m.template).Revoke(ctx, cert)
+func (m *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
+	return certmagic.NewACMEManager(m.magic, m.template).Revoke(ctx, cert, reason)
 }
 
 // onDemandAskRequest makes a request to the ask URL
@@ -217,22 +224,6 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
-}
-
-// DNSProviderMaker is a type that can create a new DNS provider.
-// Modules in the tls.dns namespace should implement this interface.
-type DNSProviderMaker interface {
-	NewDNSProvider() (challenge.Provider, error)
-}
-
-// ExternalAccountBinding contains information for
-// binding an external account to an ACME account.
-type ExternalAccountBinding struct {
-	// The key identifier.
-	KeyID string `json:"key_id,omitempty"`
-
-	// The base64-encoded HMAC.
-	EncodedHMAC string `json:"hmac,omitempty"`
 }
 
 // Interface guards

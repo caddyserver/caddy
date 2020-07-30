@@ -92,6 +92,7 @@ func (ctx *Context) OnCancel(f func()) {
 //
 //    json.RawMessage              => interface{}
 //    []json.RawMessage            => []interface{}
+//    [][]json.RawMessage          => [][]interface{}
 //    map[string]json.RawMessage   => map[string]interface{}
 //    []map[string]json.RawMessage => []map[string]interface{}
 //
@@ -176,6 +177,27 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 					return nil, fmt.Errorf("position %d: %v", i, err)
 				}
 				all = append(all, val)
+			}
+			result = all
+
+		} else if typ.Elem().Kind() == reflect.Slice && isJSONRawMessage(typ.Elem().Elem()) {
+			// val is `[][]json.RawMessage`
+
+			if inlineModuleKey == "" {
+				panic("unable to determine module name without inline_key because type is not a ModuleMap")
+			}
+			var all [][]interface{}
+			for i := 0; i < val.Len(); i++ {
+				innerVal := val.Index(i)
+				var allInner []interface{}
+				for j := 0; j < innerVal.Len(); j++ {
+					innerInnerVal, err := ctx.loadModuleInline(inlineModuleKey, moduleNamespace, innerVal.Index(j).Interface().(json.RawMessage))
+					if err != nil {
+						return nil, fmt.Errorf("position %d: %v", j, err)
+					}
+					allInner = append(allInner, innerInnerVal)
+				}
+				all = append(all, allInner)
 			}
 			result = all
 

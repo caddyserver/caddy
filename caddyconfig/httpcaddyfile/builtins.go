@@ -15,8 +15,11 @@
 package httpcaddyfile
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"html"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strings"
@@ -26,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/mholt/acmez/acme"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -59,6 +63,13 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
+//         client_auth {
+//             mode                   [request|require|verify_if_given|require_and_verify]
+//             trusted_ca_cert        <base64_der>
+//             trusted_ca_cert_file   <filename>
+//             trusted_leaf_cert      <base64_der>
+//             trusted_leaf_cert_file <filename>
+//         }
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
@@ -143,7 +154,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 		var hasBlock bool
-		for h.NextBlock(0) {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
 			hasBlock = true
 
 			switch h.Val() {
@@ -181,6 +192,57 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					cp.Curves = append(cp.Curves, h.Val())
 				}
 
+			case "client_auth":
+				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					subdir := h.Val()
+					switch subdir {
+					case "mode":
+						if !h.Args(&cp.ClientAuthentication.Mode) {
+							return nil, h.ArgErr()
+						}
+						if h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+					case "trusted_ca_cert",
+						"trusted_leaf_cert":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						if subdir == "trusted_ca_cert" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, h.Val())
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, h.Val())
+						}
+
+					case "trusted_ca_cert_file",
+						"trusted_leaf_cert_file":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						filename := h.Val()
+						certDataPEM, err := ioutil.ReadFile(filename)
+						if err != nil {
+							return nil, err
+						}
+						block, _ := pem.Decode(certDataPEM)
+						if block == nil || block.Type != "CERTIFICATE" {
+							return nil, h.Errf("no CERTIFICATE pem block found in %s", h.Val())
+						}
+						if subdir == "trusted_ca_cert_file" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						}
+
+					default:
+						return nil, h.Errf("unknown subdirective for client_auth: %s", subdir)
+					}
+				}
+
 			case "alpn":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
@@ -201,22 +263,43 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.CA = arg[0]
 
-			case "dns":
-				if !h.Next() {
+			case "eab":
+				arg := h.RemainingArgs()
+				if len(arg) != 2 {
 					return nil, h.ArgErr()
 				}
 				if acmeIssuer == nil {
 					acmeIssuer = new(caddytls.ACMEIssuer)
 				}
+				acmeIssuer.ExternalAccount = &acme.EAB{
+					KeyID:  arg[0],
+					MACKey: arg[1],
+				}
+
+			case "dns":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
 				provName := h.Val()
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
 				if acmeIssuer.Challenges == nil {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
-				dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
+				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
 				if err != nil {
 					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
 				}
-				acmeIssuer.Challenges.DNSRaw = caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, h.warnings)
+				dnsProvModuleInstance := dnsProvModule.New()
+				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
+					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					if err != nil {
+						return nil, err
+					}
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, h.warnings)
 
 			case "ca_root":
 				arg := h.RemainingArgs()
@@ -251,13 +334,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	// certificate loaders
 	if len(fileLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: fileLoader,
 		})
 	}
 	if len(folderLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: folderLoader,
 		})
 	}
@@ -434,11 +517,11 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 }
 
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	return parseSegmentAsSubroute(h)
+	return ParseSegmentAsSubroute(h)
 }
 
 func parseHandleErrors(h Helper) ([]ConfigValue, error) {
-	subroute, err := parseSegmentAsSubroute(h)
+	subroute, err := ParseSegmentAsSubroute(h)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +544,11 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 func parseLog(h Helper) ([]ConfigValue, error) {
 	var configValues []ConfigValue
 	for h.Next() {
+		// log does not currently support any arguments
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+
 		cl := new(caddy.CustomLog)
 
 		for h.NextBlock(0) {

@@ -9,6 +9,8 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/encode/zstd"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/fileserver"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/map"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/push"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/requestbody"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi"

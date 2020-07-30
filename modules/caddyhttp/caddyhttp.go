@@ -92,6 +92,45 @@ var errorEmptyHandler Handler = HandlerFunc(func(w http.ResponseWriter, r *http.
 	return nil
 })
 
+// ResponseHandler pairs a response matcher with custom handling
+// logic. Either the status code can be changed to something else
+// while using the original response body, or, if a status code
+// is not set, it can execute a custom route list; this is useful
+// for executing handler routes based on the properties of an HTTP
+// response that has not been written out to the client yet.
+//
+// To use this type, provision it at module load time, then when
+// ready to use, match the response against its matcher; if it
+// matches (or doesn't have a matcher), change the status code on
+// the response if configured; otherwise invoke the routes by
+// calling `rh.Routes.Compile(next).ServeHTTP(rw, req)` (or similar).
+type ResponseHandler struct {
+	// The response matcher for this handler. If empty/nil,
+	// it always matches.
+	Match *ResponseMatcher `json:"match,omitempty"`
+
+	// To write the original response body but with a different
+	// status code, set this field to the desired status code.
+	// If set, this takes priority over routes.
+	StatusCode WeakString `json:"status_code,omitempty"`
+
+	// The list of HTTP routes to execute if no status code is
+	// specified. If evaluated, the original response body
+	// will not be written.
+	Routes RouteList `json:"routes,omitempty"`
+}
+
+// Provision sets up the routse in rh.
+func (rh *ResponseHandler) Provision(ctx caddy.Context) error {
+	if rh.Routes != nil {
+		err := rh.Routes.Provision(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // WeakString is a type that unmarshals any JSON value
 // as a string literal, with the following exceptions:
 //

@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/acme"
 )
 
 func (st ServerType) buildTLSApp(
@@ -233,7 +234,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// certificate loaders
-			if clVals, ok := sblock.pile["tls.certificate_loader"]; ok {
+			if clVals, ok := sblock.pile["tls.cert_loader"]; ok {
 				for _, clVal := range clVals {
 					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}
@@ -321,6 +322,9 @@ func (st ServerType) buildTLSApp(
 
 	// do a little verification & cleanup
 	if tlsApp.Automation != nil {
+		// consolidate automation policies that are the exact same
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
 		// for convenience)
@@ -333,9 +337,6 @@ func (st ServerType) buildTLSApp(
 				automationHostSet[s] = struct{}{}
 			}
 		}
-
-		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
 	}
 
 	return tlsApp, warnings, nil
@@ -348,13 +349,15 @@ func (st ServerType) buildTLSApp(
 // true, a non-nil value will always be returned (unless there is an error).
 func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
 	acmeCA, hasACMECA := options["acme_ca"]
-	acmeDNS, hasACMEDNS := options["acme_dns"]
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
+	acmeDNS, hasACMEDNS := options["acme_dns"]
+	acmeEAB, hasACMEEAB := options["acme_eab"]
+
 	email, hasEmail := options["email"]
 	localCerts, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasACMECA || hasACMEDNS || hasACMECARoot || hasEmail || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasACMECA || hasACMECARoot || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -383,16 +386,21 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		}
 		if acmeDNS != nil {
 			provName := acmeDNS.(string)
-			dnsProvModule, err := caddy.GetModule("tls.dns." + provName)
+			dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
 			if err != nil {
 				return nil, fmt.Errorf("getting DNS provider module named '%s': %v", provName, err)
 			}
 			mgr.Challenges = &caddytls.ChallengesConfig{
-				DNSRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "provider", provName, &warnings),
+				DNS: &caddytls.DNSChallengeConfig{
+					ProviderRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "name", provName, &warnings),
+				},
 			}
 		}
 		if acmeCARoot != nil {
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
+		}
+		if acmeEAB != nil {
+			mgr.ExternalAccount = acmeEAB.(*acme.EAB)
 		}
 		if keyType != nil {
 			ap.KeyType = keyType.(string)

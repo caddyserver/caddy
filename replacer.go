@@ -66,6 +66,13 @@ func (r *Replacer) Get(variable string) (interface{}, bool) {
 	return nil, false
 }
 
+// GetString  is the same as Get, but coerces the value to a
+// string representation.
+func (r *Replacer) GetString(variable string) (string, bool) {
+	s, found := r.Get(variable)
+	return toString(s), found
+}
+
 // Delete removes a variable with a static value
 // that was created using Set.
 func (r *Replacer) Delete(variable string) {
@@ -276,6 +283,8 @@ func globalDefaultReplacements(key string) (interface{}, bool) {
 		return runtime.GOOS, true
 	case "system.arch":
 		return runtime.GOARCH, true
+	case "time.now":
+		return nowFunc(), true
 	case "time.now.common_log":
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":

@@ -101,6 +101,9 @@ type browseListing struct {
 
 	// If ≠0 then Items have been limited to that many elements.
 	ItemsLimitedTo int
+
+	// If ≠0 then Items starting from that many elements.
+	ItemOffset int
 }
 
 // Breadcrumbs returns l.Path where every element maps
@@ -131,7 +134,7 @@ func (l browseListing) Breadcrumbs() []crumb {
 	return result
 }
 
-func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string) {
+func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {
 	l.Sort = sortParam
 	l.Order = orderParam
 
@@ -159,8 +162,17 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 		}
 	}
 
+	if offsetParam != "" {
+		offset, _ := strconv.Atoi(offsetParam)
+		if offset > 0 && offset <= len(l.Items) {
+			l.Items = l.Items[offset:]
+			l.ItemOffset = offset
+		}
+	}
+
 	if limitParam != "" {
 		limit, _ := strconv.Atoi(limitParam)
+
 		if limit > 0 && limit <= len(l.Items) {
 			l.Items = l.Items[:limit]
 			l.ItemsLimitedTo = limit

@@ -21,6 +21,7 @@ import (
 	"expvar"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -298,6 +299,14 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // be called more than once per request, for example if a request
 // is rewritten (i.e. internal redirect).
 func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
+		// I've never been able demonstrate a vulnerability myself, but apparently
+		// WebSocket connections originating from browsers aren't subject to CORS
+		// restrictions, so we'll just be on the safe side
+		h.handleError(w, r, fmt.Errorf("websocket connections aren't allowed"))
+		return
+	}
+
 	if h.enforceHost {
 		// DNS rebinding mitigation
 		err := h.checkHost(r)
@@ -520,16 +529,19 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		Log().Named("admin.api").Error("unload error", zap.Error(err))
 	}
-	go func() {
-		err := stopAdminServer(adminServer)
-		var exitCode int
-		if err != nil {
-			exitCode = ExitCodeFailedQuit
-			Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
-		}
-		Log().Named("admin.api").Info("stopping now, bye!! 👋")
-		os.Exit(exitCode)
-	}()
+	if adminServer != nil {
+		// use goroutine so that we can finish responding to API request
+		go func() {
+			err := stopAdminServer(adminServer)
+			var exitCode int
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
+			}
+			Log().Named("admin.api").Info("stopping now, bye!! 👋")
+			os.Exit(exitCode)
+		}()
+	}
 	return nil
 }
 
@@ -542,13 +554,6 @@ func handleUnload(w http.ResponseWriter, r *http.Request) error {
 			Code: http.StatusMethodNotAllowed,
 			Err:  fmt.Errorf("method not allowed"),
 		}
-	}
-	currentCfgMu.RLock()
-	hasCfg := currentCfg != nil
-	currentCfgMu.RUnlock()
-	if !hasCfg {
-		Log().Named("admin.api").Info("nothing to unload")
-		return nil
 	}
 	Log().Named("admin.api").Info("unloading")
 	if err := stopAndCleanup(); err != nil {
@@ -798,11 +803,26 @@ var (
 	}
 )
 
+// PIDFile writes a pidfile to the file at filename. It
+// will get deleted before the process gracefully exits.
+func PIDFile(filename string) error {
+	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+	err := ioutil.WriteFile(filename, pid, 0644)
+	if err != nil {
+		return err
+	}
+	pidfile = filename
+	return nil
+}
+
 // idRegexp is used to match ID fields and their associated values
 // in the config. It also matches adjacent commas so that syntax
 // can be preserved no matter where in the object the field appears.
 // It supports string and most numeric values.
 var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `"\s*:\s*(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
+
+// pidfile is the name of the pidfile, if any.
+var pidfile string
 
 const (
 	rawConfigKey = "config"

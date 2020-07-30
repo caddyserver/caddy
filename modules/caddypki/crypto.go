@@ -120,9 +120,17 @@ func trusted(cert *x509.Certificate) bool {
 // KeyPair represents a public-private key pair, where the
 // public key is also called a certificate.
 type KeyPair struct {
+	// The certificate. By default, this should be the path to
+	// a PEM file unless format is something else.
 	Certificate string `json:"certificate,omitempty"`
-	PrivateKey  string `json:"private_key,omitempty"`
-	Format      string `json:"format,omitempty"`
+
+	// The private key. By default, this should be the path to
+	// a PEM file unless format is something else.
+	PrivateKey string `json:"private_key,omitempty"`
+
+	// The format in which the certificate and private
+	// key are provided. Default: pem_file
+	Format string `json:"format,omitempty"`
 }
 
 // Load loads the certificate and key.

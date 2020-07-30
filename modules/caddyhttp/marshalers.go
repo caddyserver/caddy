@@ -26,11 +26,11 @@ type LoggableHTTPRequest struct{ *http.Request }
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("method", r.Method)
-	enc.AddString("uri", r.RequestURI)
-	enc.AddString("proto", r.Proto)
 	enc.AddString("remote_addr", r.RemoteAddr)
+	enc.AddString("proto", r.Proto)
+	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
+	enc.AddString("uri", r.RequestURI)
 	enc.AddObject("headers", LoggableHTTPHeader(r.Header))
 	if r.TLS != nil {
 		enc.AddObject("tls", LoggableTLSConnState(*r.TLS))
