@@ -212,7 +212,6 @@ func GetModules(scope string) []ModuleInfo {
 	}
 
 	var mods []ModuleInfo
-iterateModules:
 	for id, m := range modules {
 		modParts := strings.Split(id, ".")
 
