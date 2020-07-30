@@ -20,6 +20,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/mholt/acmez/acme"
 )
 
 func init() {
@@ -182,7 +183,7 @@ func parseOptStorage(d *caddyfile.Dispenser) (interface{}, error) {
 }
 
 func parseOptACMEEAB(d *caddyfile.Dispenser) (interface{}, error) {
-	eab := new(caddytls.ExternalAccountBinding)
+	eab := new(acme.EAB)
 	for d.Next() {
 		if d.NextArg() {
 			return nil, d.ArgErr()
@@ -195,11 +196,11 @@ func parseOptACMEEAB(d *caddyfile.Dispenser) (interface{}, error) {
 				}
 				eab.KeyID = d.Val()
 
-			case "hmac":
+			case "mac_key":
 				if !d.NextArg() {
 					return nil, d.ArgErr()
 				}
-				eab.HMAC = d.Val()
+				eab.MACKey = d.Val()
 
 			default:
 				return nil, d.Errf("unrecognized parameter '%s'", d.Val())

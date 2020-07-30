@@ -22,12 +22,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
-	"github.com/go-acme/lego/v3/challenge"
+	"github.com/mholt/acmez"
 	"go.uber.org/zap"
 )
 
-// AutomationConfig designates configuration for the
-// construction and use of ACME clients.
+// AutomationConfig governs the automated management of TLS certificates.
 type AutomationConfig struct {
 	// The list of automation policies. The first matching
 	// policy will be applied for a given certificate/name.
@@ -208,6 +207,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		OnDemand:           ond,
 		Storage:            storage,
 		Issuer:             ap.Issuer, // if nil, certmagic.New() will create one
+		Logger:             tlsApp.logger,
 	}
 	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
 		template.Revoker = rev
@@ -244,6 +244,7 @@ type ChallengesConfig struct {
 	// not enabled by default. This is the only challenge
 	// type which does not require a direct connection
 	// to Caddy from an external server.
+	//
 	// NOTE: DNS providers are currently being upgraded,
 	// and this API is subject to change, but should be
 	// stabilized soon.
@@ -281,6 +282,7 @@ type TLSALPNChallengeConfig struct {
 }
 
 // DNSChallengeConfig configures the ACME DNS challenge.
+//
 // NOTE: This API is still experimental and is subject to change.
 type DNSChallengeConfig struct {
 	// The DNS provider module to use which will manage
@@ -290,7 +292,10 @@ type DNSChallengeConfig struct {
 	// The TTL of the TXT record used for the DNS challenge.
 	TTL caddy.Duration `json:"ttl,omitempty"`
 
-	provider challenge.Provider
+	// How long to wait for DNS record to propagate.
+	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
+
+	solver acmez.Solver
 }
 
 // OnDemandConfig configures on-demand TLS, for obtaining

@@ -29,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/mholt/acmez/acme"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -261,6 +262,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer = new(caddytls.ACMEIssuer)
 				}
 				acmeIssuer.CA = arg[0]
+
+			case "eab":
+				arg := h.RemainingArgs()
+				if len(arg) != 2 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				acmeIssuer.ExternalAccount = &acme.EAB{
+					KeyID:  arg[0],
+					MACKey: arg[1],
+				}
 
 			case "dns":
 				if !h.NextArg() {
