@@ -22,12 +22,12 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
+	"github.com/mholt/acmez"
 )
 
-// ConnectionPolicies is an ordered group of connection policies;
-// the first matching policy will be used to configure TLS
-// connections at handshake-time.
+// ConnectionPolicies govern the establishment of TLS connections. It is
+// an ordered group of connection policies; the first matching policy will
+// be used to configure TLS connections at handshake-time.
 type ConnectionPolicies []*ConnectionPolicy
 
 // Provision sets up each connection policy. It should be called
@@ -229,13 +229,13 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// ensure ALPN includes the ACME TLS-ALPN protocol
 	var alpnFound bool
 	for _, a := range p.ALPN {
-		if a == tlsalpn01.ACMETLS1Protocol {
+		if a == acmez.ACMETLS1Protocol {
 			alpnFound = true
 			break
 		}
 	}
 	if !alpnFound {
-		cfg.NextProtos = append(cfg.NextProtos, tlsalpn01.ACMETLS1Protocol)
+		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
 
 	// min and max protocol versions
