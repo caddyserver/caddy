@@ -96,8 +96,8 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Durat
 		return -1 // negative means immediately
 	}
 
-	// for h2 and h2c upstream streaming data to client (issue #3556)
-	if req.ProtoMajor == 2 && res.ContentLength == -1 {
+	// for h2 and h2c upstream streaming data to client (issue #3556,#3606)
+	if req.ProtoMajor == 2 && res.ContentLength == -1 && req.Header.Get("Accept-Encoding") == "identity" {
 		return -1
 	}
 

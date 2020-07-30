@@ -614,7 +614,12 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	// some apps need the response headers before starting to stream content with http2,
 	// so it's important to explicitly flush the headers to the client before streaming the data.
 	// (see https://github.com/caddyserver/caddy/issues/3556 for use case)
-	if req.ProtoMajor == 2 && res.ContentLength == -1 {
+	// we have to check encoding here, only flush headers with identity encoding.
+	// Non-identity encoding might combine with "encode gzip" directive,
+	// in that case, if body size larger than enc.MinLength,
+	// upper level encode handle might have Content-Encoding header to write.
+	// (see https://github.com/caddyserver/caddy/issues/3606 for use case)
+	if req.ProtoMajor == 2 && res.ContentLength == -1 && req.Header.Get("Accept-Encoding") == "identity" {
 		if wf, ok := rw.(http.Flusher); ok {
 			wf.Flush()
 		}
