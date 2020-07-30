@@ -1,4 +1,4 @@
-name: Cross-Build (Advisory Check)
+name: Cross-Build
 
 on:
   push:

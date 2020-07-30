@@ -1,6 +1,6 @@
 # Used as inspiration: https://github.com/mvdan/github-actions-golang
 
-name: Cross-Platform Tests
+name: Tests
 
 on:
   push:
