@@ -719,6 +719,14 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
+			case "compression":
+				if d.NextArg() {
+					if d.Val() == "off" {
+						var disable bool
+						h.Compression = &disable
+					}
+				}
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
