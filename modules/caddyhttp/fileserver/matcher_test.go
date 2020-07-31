@@ -39,6 +39,11 @@ func TestPHPFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
+			path:         "/index.PHP/somewhere",
+			expectedPath: "/index.PHP",
+			matched:      true,
+		},
+		{
 			path:         "/remote.php",
 			expectedPath: "/remote.php",
 			matched:      true,
@@ -69,11 +74,6 @@ func TestPHPFileMatcher(t *testing.T) {
 		{
 			path:         "/foo.php.php/index.php",
 			expectedPath: "/foo.php.php/index.php",
-			matched:      true,
-		},
-		{
-			path:         "/foo.php.PHP/index.php",
-			expectedPath: "/foo.php.PHP/index.php",
 			matched:      true,
 		},
 		{
