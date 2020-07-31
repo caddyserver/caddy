@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"expvar"
 	"fmt"
 	"io"
@@ -235,15 +236,20 @@ func replaceAdmin(cfg *Config) error {
 		MaxHeaderBytes:    1024 * 64,
 	}
 
-	go adminServer.Serve(ln)
+	adminLogger := Log().Named("admin")
+	go func() {
+		if err := adminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			adminLogger.Error("admin server shutdown for unknown reason", zap.Error(err))
+		}
+	}()
 
-	Log().Named("admin").Info("admin endpoint started",
+	adminLogger.Info("admin endpoint started",
 		zap.String("address", addr.String()),
 		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
 		zap.Strings("origins", handler.allowedOrigins))
 
 	if !handler.enforceHost {
-		Log().Named("admin").Warn("admin endpoint on open interface; host checking disabled",
+		adminLogger.Warn("admin endpoint on open interface; host checking disabled",
 			zap.String("address", addr.String()))
 	}
 
