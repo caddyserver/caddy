@@ -90,7 +90,7 @@ func TestCookie(t *testing.T) {
 		},
 		{
 			// cookie with optional fields
-			cookie:     &http.Cookie{Name: "cookie", Value: "cookieValue", Path: "/path", Domain: "https://localhost", Expires: (time.Now().Add(10 * time.Minute)), MaxAge: 120},
+			cookie:     &http.Cookie{Name: "cookie", Value: "cookieValue", Path: "/path", Domain: "https://localhost", Expires: time.Now().Add(10 * time.Minute), MaxAge: 120},
 			cookieName: "cookie",
 			expect:     "cookieValue",
 		},

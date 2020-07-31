@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/acme"
 )
 
 func (st ServerType) buildTLSApp(
@@ -399,7 +400,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 			mgr.TrustedRootsPEMFiles = []string{acmeCARoot.(string)}
 		}
 		if acmeEAB != nil {
-			mgr.ExternalAccount = acmeEAB.(*caddytls.ExternalAccountBinding)
+			mgr.ExternalAccount = acmeEAB.(*acme.EAB)
 		}
 		if keyType != nil {
 			ap.KeyType = keyType.(string)

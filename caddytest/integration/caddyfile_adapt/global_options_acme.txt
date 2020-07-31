@@ -9,8 +9,8 @@
 	}
 	acme_ca https://example.com
 	acme_eab {
-		key_id 4K2scIVbBpNd-78scadB2g
-		hmac   abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+		key_id  4K2scIVbBpNd-78scadB2g
+		mac_key abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 	}
 	acme_ca_root /path/to/ca.crt
 	email test@example.com
@@ -61,8 +61,8 @@
 							"ca": "https://example.com",
 							"email": "test@example.com",
 							"external_account": {
-								"hmac": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh",
-								"key_id": "4K2scIVbBpNd-78scadB2g"
+								"key_id": "4K2scIVbBpNd-78scadB2g",
+								"mac_key": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
 							},
 							"module": "acme",
 							"trusted_roots_pem_files": [
