@@ -235,7 +235,7 @@ func parseOptAdmin(d *caddyfile.Dispenser) (interface{}, error) {
 			} else {
 				adminCfg.Listen = listenAddress
 				if d.NextArg() { // At most 1 arg is allowed
-					return nil, d.Err("At most 1 argument is allowed in admin config")
+					return nil, d.ArgErr()
 				}
 			}
 		}
