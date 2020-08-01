@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -199,6 +200,27 @@ func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
 func (celHTTPRequest) Type() ref.Type        { return httpRequestCELType }
 func (cr celHTTPRequest) Value() interface{} { return cr }
 
+var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
+
+// celPkixName wraps an pkix.Name with
+// methods to satisfy the ref.Val interface.
+type celPkixName struct{ *pkix.Name }
+
+func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+	return pn.Name, nil
+}
+func (celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
+	panic("not implemented")
+}
+func (pn celPkixName) Equal(other ref.Val) ref.Val {
+	if o, ok := other.Value().(string); ok {
+		return types.Bool(pn.Name.String() == o)
+	}
+	return types.ValOrErr(other, "%v is not comparable type", other)
+}
+func (celPkixName) Type() ref.Type        { return pkixNameCELType }
+func (pn celPkixName) Value() interface{} { return pn }
+
 // celTypeAdapter can adapt our custom types to a CEL value.
 type celTypeAdapter struct{}
 
@@ -206,6 +228,8 @@ func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
 	switch v := value.(type) {
 	case celHTTPRequest:
 		return v
+	case pkix.Name:
+		return celPkixName{&v}
 	case time.Time:
 		// TODO: eliminate direct protobuf dependency, sigh -- just wrap stdlib time.Time instead...
 		return types.Timestamp{Timestamp: &timestamp.Timestamp{Seconds: v.Unix(), Nanos: int32(v.Nanosecond())}}
