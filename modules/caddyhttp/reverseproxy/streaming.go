@@ -96,26 +96,31 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Durat
 		return -1 // negative means immediately
 	}
 
-	// for h2 and h2c upstream streaming data to client (issue #3556,#3606)
-	if h.biStream(req, res) {
+	// for h2 and h2c upstream streaming data to client (issues #3556 and #3606)
+	if h.isBidirectionalStream(req, res) {
 		return -1
 	}
 
-	// TODO: more specific cases? e.g. res.ContentLength == -1? (this TODO is from the std lib)
+	// TODO: more specific cases? e.g. res.ContentLength == -1? (this TODO is from the std lib, but
+	// strangely similar to our isBidirectionalStream function that we implemented ourselves)
 	return time.Duration(h.FlushInterval)
 }
 
-// biStream returns whether we should work in bi-directional stream mode.
-func (h Handler) biStream(req *http.Request, res *http.Response) bool {
-	if req.ProtoMajor == 2 &&
+// isBidirectionalStream returns whether we should work in bi-directional stream mode.
+//
+// See https://github.com/caddyserver/caddy/pull/3620 for discussion of nuances.
+func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bool {
+	// We have to check the encoding here; only flush headers with identity encoding.
+	// Non-identity encoding might combine with "encode" directive, and in that case,
+	// if body size larger than enc.MinLength, upper level encode handle might have
+	// Content-Encoding header to write.
+	// (see https://github.com/caddyserver/caddy/issues/3606 for use case)
+	ae := req.Header.Get("Accept-Encoding")
+
+	return req.ProtoMajor == 2 &&
 		res.ProtoMajor == 2 &&
-		res.ContentLength == -1 {
-		ae := req.Header.Get("Accept-Encoding")
-		if ae == "identity" || ae == "" {
-			return true
-		}
-	}
-	return false
+		res.ContentLength == -1 &&
+		(ae == "identity" || ae == "")
 }
 
 func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.Duration) error {
