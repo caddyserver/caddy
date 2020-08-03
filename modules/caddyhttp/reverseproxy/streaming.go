@@ -97,12 +97,25 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Durat
 	}
 
 	// for h2 and h2c upstream streaming data to client (issue #3556,#3606)
-	if req.ProtoMajor == 2 && res.ContentLength == -1 && req.Header.Get("Accept-Encoding") == "identity" {
+	if h.biStream(req, res) {
 		return -1
 	}
 
 	// TODO: more specific cases? e.g. res.ContentLength == -1? (this TODO is from the std lib)
 	return time.Duration(h.FlushInterval)
+}
+
+// biStream returns whether we should work in bi-directional stream mode.
+func (h Handler) biStream(req *http.Request, res *http.Response) bool {
+	if req.ProtoMajor == 2 &&
+		res.ProtoMajor == 2 &&
+		res.ContentLength == -1 {
+		ae := req.Header.Get("Accept-Encoding")
+		if ae == "identity" || ae == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.Duration) error {

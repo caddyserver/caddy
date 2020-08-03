@@ -619,7 +619,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	// in that case, if body size larger than enc.MinLength,
 	// upper level encode handle might have Content-Encoding header to write.
 	// (see https://github.com/caddyserver/caddy/issues/3606 for use case)
-	if req.ProtoMajor == 2 && res.ContentLength == -1 && req.Header.Get("Accept-Encoding") == "identity" {
+	if h.biStream(req, res) {
 		if wf, ok := rw.(http.Flusher); ok {
 			wf.Flush()
 		}
