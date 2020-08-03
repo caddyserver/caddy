@@ -164,6 +164,58 @@ func TestGlobalOptions(t *testing.T) {
 			expectWarn:  false,
 			expectError: true,
 		},
+		{
+			input: `
+				{
+					admin {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 192.168.1.1:2020 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
+		{
+			input: `
+				{
+					admin off {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{
