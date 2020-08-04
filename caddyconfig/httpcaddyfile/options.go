@@ -20,6 +20,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/acme"
 )
 
@@ -35,6 +36,7 @@ func init() {
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptSingleString)
 	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
+	RegisterGlobalOption("cert_issuer", parseOptCertIssuer)
 	RegisterGlobalOption("email", parseOptSingleString)
 	RegisterGlobalOption("admin", parseOptAdmin)
 	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
@@ -208,6 +210,33 @@ func parseOptACMEEAB(d *caddyfile.Dispenser) (interface{}, error) {
 		}
 	}
 	return eab, nil
+}
+
+func parseOptCertIssuer(d *caddyfile.Dispenser) (interface{}, error) {
+	if !d.Next() { // consume option name
+		return nil, d.ArgErr()
+	}
+	if !d.Next() { // get issuer module name
+		return nil, d.ArgErr()
+	}
+	modName := d.Val()
+	mod, err := caddy.GetModule("tls.issuance." + modName)
+	if err != nil {
+		return nil, d.Errf("getting issuer module '%s': %v", modName, err)
+	}
+	unm, ok := mod.New().(caddyfile.Unmarshaler)
+	if !ok {
+		return nil, d.Errf("issuer module '%s' is not a Caddyfile unmarshaler", mod.ID)
+	}
+	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+	if err != nil {
+		return nil, err
+	}
+	iss, ok := unm.(certmagic.Issuer)
+	if !ok {
+		return nil, d.Errf("module %s is not a certmagic.Issuer", mod.ID)
+	}
+	return iss, nil
 }
 
 func parseOptSingleString(d *caddyfile.Dispenser) (interface{}, error) {

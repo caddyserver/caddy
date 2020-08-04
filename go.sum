@@ -86,8 +86,8 @@ github.com/bombsimon/wsl/v2 v2.0.0/go.mod h1:mf25kr/SqFEPhhcxW1+7pxzGlW+hIl/hYTK
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/caddyserver/certmagic v0.11.3-0.20200730200704-7d9dfc3fe638 h1:yG2XwuzF6kQni6HscKZRj6Qr6mrpXsRTUzl0m+zH6o0=
-github.com/caddyserver/certmagic v0.11.3-0.20200730200704-7d9dfc3fe638/go.mod h1:z0loWzjr6Sr8rOG2pdsiwajDpAcck2wfF8E7hTV0qT4=
+github.com/caddyserver/certmagic v0.11.3-0.20200804205533-c6afa6e7a22e h1:R/EmX2RTXml60AI685PL+eXA+q5w0HKZDHEXYhIIlR8=
+github.com/caddyserver/certmagic v0.11.3-0.20200804205533-c6afa6e7a22e/go.mod h1:z0loWzjr6Sr8rOG2pdsiwajDpAcck2wfF8E7hTV0qT4=
 github.com/census-instrumentation/opencensus-proto v0.2.0/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=

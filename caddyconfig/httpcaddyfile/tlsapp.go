@@ -135,8 +135,11 @@ func (st ServerType) buildTLSApp(
 				// issuer, skip, since we intend to adjust only ACME issuers
 				var acmeIssuer *caddytls.ACMEIssuer
 				if ap.Issuer != nil {
-					var ok bool
-					if acmeIssuer, ok = ap.Issuer.(*caddytls.ACMEIssuer); !ok {
+					// ensure we include any issuer that embeds/wraps an underlying ACME issuer
+					type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
+					if acmeWrapper, ok := ap.Issuer.(acmeCapable); ok {
+						acmeIssuer = acmeWrapper.GetACMEIssuer()
+					} else {
 						break
 					}
 				}
@@ -348,6 +351,8 @@ func (st ServerType) buildTLSApp(
 // returned if there are no default/global options. However, if always is
 // true, a non-nil value will always be returned (unless there is an error).
 func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
+	issuer, hasIssuer := options["cert_issuer"]
+
 	acmeCA, hasACMECA := options["acme_ca"]
 	acmeCARoot, hasACMECARoot := options["acme_ca_root"]
 	acmeDNS, hasACMEDNS := options["acme_dns"]
@@ -357,7 +362,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	localCerts, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasACMECA || hasACMECARoot || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasIssuer || hasACMECA || hasACMECARoot || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -369,8 +374,16 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	}
 
 	ap := new(caddytls.AutomationPolicy)
+	if keyType != nil {
+		ap.KeyType = keyType.(string)
+	}
 
-	if localCerts != nil {
+	if hasIssuer {
+		if hasACMECA || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts {
+			return nil, fmt.Errorf("global options are ambiguous: cert_issuer is confusing combined with acme_*, email, or local_certs options")
+		}
+		ap.Issuer = issuer.(certmagic.Issuer)
+	} else if localCerts != nil {
 		// internal issuer enabled trumps any ACME configurations; useful in testing
 		ap.Issuer = new(caddytls.InternalIssuer) // we'll encode it later
 	} else {
@@ -401,9 +414,6 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		}
 		if acmeEAB != nil {
 			mgr.ExternalAccount = acmeEAB.(*acme.EAB)
-		}
-		if keyType != nil {
-			ap.KeyType = keyType.(string)
 		}
 		ap.Issuer = mgr // we'll encode it later
 	}
