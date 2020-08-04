@@ -261,12 +261,8 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			storageCvtr.(caddy.Module).CaddyModule().ID.Name(),
 			&warnings)
 	}
-	if adminConfig, ok := options["admin"].(string); ok && adminConfig != "" {
-		if adminConfig == "off" {
-			cfg.Admin = &caddy.AdminConfig{Disabled: true}
-		} else {
-			cfg.Admin = &caddy.AdminConfig{Listen: adminConfig}
-		}
+	if adminConfig, ok := options["admin"].(*caddy.AdminConfig); ok && adminConfig != nil {
+		cfg.Admin = adminConfig
 	}
 	if len(customLogs) > 0 {
 		if cfg.Logging == nil {
