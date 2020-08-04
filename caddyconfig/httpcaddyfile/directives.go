@@ -269,6 +269,18 @@ func (h Helper) NewBindAddresses(addrs []string) []ConfigValue {
 // are themselves treated as directives, from which a subroute is built
 // and returned.
 func ParseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	allResults, err := parseSegmentAsConfig(h)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildSubroute(allResults, h.groupCounter)
+}
+
+// parseSegmentAsConfig parses the segment such that its subdirectives
+// are themselves treated as directives, including named matcher definitions,
+// and the raw Config structs are returned.
+func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 	var allResults []ConfigValue
 
 	for h.Next() {
@@ -319,7 +331,7 @@ func ParseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 
-	return buildSubroute(allResults, h.groupCounter)
+	return allResults, nil
 }
 
 // ConfigValue represents a value to be added to the final
