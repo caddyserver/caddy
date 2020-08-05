@@ -87,7 +87,7 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision sets up m.
+// Provision sets up iss.
 func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger(iss)
 
