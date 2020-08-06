@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go-version: [ 1.14.x ]
+        go-version: [ 1.15.0-rc1 ]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
+          stable: 'false'
       - name: Print Go version and environment
         id: vars
         run: |
