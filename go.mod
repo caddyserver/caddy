@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/Masterminds/sprig/v3 v3.1.0
-	github.com/alecthomas/chroma v0.7.4-0.20200517063913-500529fd43c1
+	github.com/alecthomas/chroma v0.8.0
 	github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a
 	github.com/caddyserver/certmagic v0.11.3-0.20200730200704-7d9dfc3fe638
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
@@ -21,13 +21,13 @@ require (
 	github.com/smallstep/cli v0.14.6
 	github.com/smallstep/nosql v0.3.0
 	github.com/smallstep/truststore v0.9.6
-	github.com/yuin/goldmark v1.1.33
+	github.com/yuin/goldmark v1.2.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.15.0
 	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de
-	golang.org/x/net v0.0.0-20200625001655-4c5254603344
-	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
-	google.golang.org/protobuf v1.23.1-0.20200526195155-81db48ad09cc
+	golang.org/x/net v0.0.0-20200707034311-ab3426394381
+	google.golang.org/genproto v0.0.0-20200806141610-86f49bd18e98
+	google.golang.org/protobuf v1.24.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.3.0
 )
