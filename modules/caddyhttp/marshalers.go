@@ -73,10 +73,14 @@ type LoggableTLSConnState tls.ConnectionState
 func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("resumed", t.DidResume)
 	enc.AddUint16("version", t.Version)
-	enc.AddUint16("ciphersuite", t.CipherSuite)
+	enc.AddUint16("cipher_suite", t.CipherSuite)
 	enc.AddString("proto", t.NegotiatedProtocol)
 	enc.AddBool("proto_mutual", t.NegotiatedProtocolIsMutual)
 	enc.AddString("server_name", t.ServerName)
+	if len(t.PeerCertificates) > 0 {
+		enc.AddString("client_common_name", t.PeerCertificates[0].Subject.CommonName)
+		enc.AddString("client_serial", t.PeerCertificates[0].SerialNumber.String())
+	}
 	return nil
 }
 
