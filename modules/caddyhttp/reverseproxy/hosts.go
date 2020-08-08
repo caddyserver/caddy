@@ -177,7 +177,7 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 // of the state of a remote host. It implements the
 // Host interface.
 type upstreamHost struct {
-	numRequests int64 // must be first field to be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails       int64
 	unhealthy   int32
 }
