@@ -39,8 +39,7 @@ func init() {
 type ZeroSSLIssuer struct {
 	*ACMEIssuer
 
-	// The API key (or "access key") for using the ZeroSSL
-	// API (required).
+	// The API key (or "access key") for using the ZeroSSL API.
 	APIKey string `json:"api_key,omitempty"`
 
 	mu     sync.Mutex
@@ -80,13 +79,31 @@ func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.
 }
 
 func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB, error) {
-	apiKey := caddy.NewReplacer().ReplaceAll(iss.APIKey, "")
-	if apiKey == "" {
-		return nil, fmt.Errorf("missing API key: '%v'", iss.APIKey)
-	}
+	var qs url.Values
+	var endpoint string
 
-	qs := url.Values{"access_key": []string{apiKey}}
-	endpoint := fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
+	// there are two ways to generate EAB credentials: authenticated with
+	// their API key, or unauthenticated with their email address
+	switch {
+	case iss.APIKey != "":
+		apiKey := caddy.NewReplacer().ReplaceAll(iss.APIKey, "")
+		if apiKey == "" {
+			return nil, fmt.Errorf("missing API key: '%v'", iss.APIKey)
+		}
+		qs = url.Values{"access_key": []string{apiKey}}
+		endpoint = fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
+
+	case iss.Email != "":
+		email := caddy.NewReplacer().ReplaceAll(iss.Email, "")
+		if email == "" {
+			return nil, fmt.Errorf("missing email: '%v'", iss.Email)
+		}
+		qs = url.Values{"email": []string{email}}
+		endpoint = fmt.Sprintf("%s/eab-credentials-email?%s", zerosslAPIBase, qs.Encode())
+
+	default:
+		return nil, fmt.Errorf("must configure either an API key or email address to use ZeroSSL without explicit EAB")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {

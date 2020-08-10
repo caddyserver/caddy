@@ -405,7 +405,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
-			Value: acmeIssuer,
+			Value: disambiguateACMEIssuer(acmeIssuer),
 		})
 	}
 

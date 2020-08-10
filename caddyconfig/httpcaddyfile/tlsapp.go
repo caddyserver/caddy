@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -380,7 +381,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 
 	if hasIssuer {
 		if hasACMECA || hasACMEDNS || hasACMEEAB || hasEmail || hasLocalCerts {
-			return nil, fmt.Errorf("global options are ambiguous: cert_issuer is confusing combined with acme_*, email, or local_certs options")
+			return nil, fmt.Errorf("global options are ambiguous: cert_issuer is confusing when combined with acme_*, email, or local_certs options")
 		}
 		ap.Issuer = issuer.(certmagic.Issuer)
 	} else if localCerts != nil {
@@ -415,10 +416,23 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		if acmeEAB != nil {
 			mgr.ExternalAccount = acmeEAB.(*acme.EAB)
 		}
-		ap.Issuer = mgr // we'll encode it later
+		ap.Issuer = disambiguateACMEIssuer(mgr) // we'll encode it later
 	}
 
 	return ap, nil
+}
+
+// disambiguateACMEIssuer returns an issuer based on the properties of acmeIssuer.
+// If acmeIssuer implicitly configures a certain kind of ACMEIssuer (for example,
+// ZeroSSL), the proper wrapper over acmeIssuer will be returned instead.
+func disambiguateACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) certmagic.Issuer {
+	// as a special case, we integrate with ZeroSSL's ACME endpoint if it looks like an
+	// implicit ZeroSSL configuration (this requires a  wrapper type over ACMEIssuer
+	// because of the EAB generation; if EAB is provided, we can use plain ACMEIssuer)
+	if strings.Contains(acmeIssuer.CA, "acme.zerossl.com") && acmeIssuer.ExternalAccount == nil {
+		return &caddytls.ZeroSSLIssuer{ACMEIssuer: acmeIssuer}
+	}
+	return acmeIssuer
 }
 
 // consolidateAutomationPolicies combines automation policies that are the same,
