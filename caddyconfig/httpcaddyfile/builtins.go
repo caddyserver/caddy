@@ -516,36 +516,23 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.Subroute)
 
-	for h.Next() {
-		for nesting := h.Nesting(); h.NextBlock(nesting); {
-			dir := h.Val()
+	allResults, err := parseSegmentAsConfig(h)
+	if err != nil {
+		return nil, err
+	}
 
-			dirFunc, ok := registeredDirectives[dir]
-			if !ok {
-				return nil, h.Errf("unrecognized directive: %s", dir)
-			}
-
-			subHelper := h
-			subHelper.Dispenser = h.NewFromNextSegment()
-
-			results, err := dirFunc(subHelper)
-			if err != nil {
-				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
-			}
-			for _, result := range results {
-				switch handler := result.Value.(type) {
-				case caddyhttp.Route:
-					sr.Routes = append(sr.Routes, handler)
-				case caddyhttp.Subroute:
-					// directives which return a literal subroute instead of a route
-					// means they intend to keep those handlers together without
-					// them being reordered; we're doing that anyway since we're in
-					// the route directive, so just append its handlers
-					sr.Routes = append(sr.Routes, handler.Routes...)
-				default:
-					return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", dir, result.Value)
-				}
-			}
+	for _, result := range allResults {
+		switch handler := result.Value.(type) {
+		case caddyhttp.Route:
+			sr.Routes = append(sr.Routes, handler)
+		case caddyhttp.Subroute:
+			// directives which return a literal subroute instead of a route
+			// means they intend to keep those handlers together without
+			// them being reordered; we're doing that anyway since we're in
+			// the route directive, so just append its handlers
+			sr.Routes = append(sr.Routes, handler.Routes...)
+		default:
+			return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", result.directive, result.Value)
 		}
 	}
 

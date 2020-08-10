@@ -468,7 +468,12 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 				} else if len(aps[i].Subjects) > 0 && len(aps[j].Subjects) == 0 {
 					aps = append(aps[:i], aps[i+1:]...)
 				} else {
-					aps[i].Subjects = append(aps[i].Subjects, aps[j].Subjects...)
+					// avoid repeated subjects
+					for _, subj := range aps[j].Subjects {
+						if !sliceContains(aps[i].Subjects, subj) {
+							aps[i].Subjects = append(aps[i].Subjects, subj)
+						}
+					}
 					aps = append(aps[:j], aps[j+1:]...)
 				}
 				i--
