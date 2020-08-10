@@ -166,24 +166,25 @@ func (iss *ZeroSSLIssuer) initialize() {
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ZeroSSLIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
 	iss.initialize()
-	return certmagic.NewACMEManager(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return iss.ACMEIssuer.PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ZeroSSLIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
 	iss.initialize()
-	return certmagic.NewACMEManager(iss.magic, iss.template).Issue(ctx, csr)
+	return iss.ACMEIssuer.Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ZeroSSLIssuer) IssuerKey() string {
-	return certmagic.NewACMEManager(iss.magic, iss.template).IssuerKey()
+	iss.initialize()
+	return iss.ACMEIssuer.IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
 	iss.initialize()
-	return certmagic.NewACMEManager(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return iss.ACMEIssuer.Revoke(ctx, cert, reason)
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
