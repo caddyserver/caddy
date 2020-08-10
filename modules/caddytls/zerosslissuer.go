@@ -19,8 +19,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/caddyserver/caddy/v2"
@@ -79,8 +81,8 @@ func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.
 }
 
 func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB, error) {
-	var qs url.Values
 	var endpoint string
+	var body io.Reader
 
 	// there are two ways to generate EAB credentials: authenticated with
 	// their API key, or unauthenticated with their email address
@@ -90,7 +92,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 		if apiKey == "" {
 			return nil, fmt.Errorf("missing API key: '%v'", iss.APIKey)
 		}
-		qs = url.Values{"access_key": []string{apiKey}}
+		qs := url.Values{"access_key": []string{apiKey}}
 		endpoint = fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
 
 	case iss.Email != "":
@@ -98,16 +100,20 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 		if email == "" {
 			return nil, fmt.Errorf("missing email: '%v'", iss.Email)
 		}
-		qs = url.Values{"email": []string{email}}
-		endpoint = fmt.Sprintf("%s/eab-credentials-email?%s", zerosslAPIBase, qs.Encode())
+		endpoint = zerosslAPIBase + "/eab-credentials-email"
+		form := url.Values{"email": []string{email}}
+		body = strings.NewReader(form.Encode())
 
 	default:
 		return nil, fmt.Errorf("must configure either an API key or email address to use ZeroSSL without explicit EAB")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
 		return nil, fmt.Errorf("forming request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	req.Header.Set("User-Agent", certmagic.UserAgent)
 
