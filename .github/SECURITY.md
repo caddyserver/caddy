@@ -11,12 +11,12 @@ Please note that we consider publicly-registered domain names to be public infor
 | Version | Supported          |
 | ------- | ------------------ |
 | 2.x     | :white_check_mark: |
-| 1.x     | :white_check_mark: (deprecating soon) |
+| 1.x     | :white_check_mark: (EOL 1 Oct 2020) |
 | < 1.x   | :x:                |
 
 ## Reporting a Vulnerability
 
-Please email Matt Holt (the author) directly: matt [at] lightcodelabs [dot com].
+Please email Matt Holt (the author) directly: matt [at] ardanlabs [dot com].
 
 We'll need enough information to verify the bug and make a patch. It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, resources permitting. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. Thank you for understanding.
 

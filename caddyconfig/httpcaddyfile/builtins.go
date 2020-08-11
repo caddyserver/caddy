@@ -77,6 +77,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         ca_root   <pem_file>
 //         dns       <provider_name>
 //         on_demand
+//         eab    <key_id> <mac_key>
 //         issuer <module_name> ...
 //     }
 //
