@@ -86,8 +86,8 @@ github.com/bombsimon/wsl/v2 v2.0.0/go.mod h1:mf25kr/SqFEPhhcxW1+7pxzGlW+hIl/hYTK
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/caddyserver/certmagic v0.11.3-0.20200808143826-2e100d6d0bcf h1:Srcj7CdiavYImKMLDj8sSJKS3htwwwJB3bjPRTXh+P0=
-github.com/caddyserver/certmagic v0.11.3-0.20200808143826-2e100d6d0bcf/go.mod h1:z0loWzjr6Sr8rOG2pdsiwajDpAcck2wfF8E7hTV0qT4=
+github.com/caddyserver/certmagic v0.11.3-0.20200810220624-10a8b5c72339 h1:wTD+Y63XoBtiTJhe/Xn7WLrwKenmjkt2WxH3FP+Y0DM=
+github.com/caddyserver/certmagic v0.11.3-0.20200810220624-10a8b5c72339/go.mod h1:mqOzOvKa7UcC+TWbBLcP0ZLRut/xaaQBw0hRGWHBIkY=
 github.com/census-instrumentation/opencensus-proto v0.2.0/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=
@@ -384,8 +384,8 @@ github.com/mattn/go-runewidth v0.0.7/go.mod h1:H031xJmbD/WCDINGzjvQ9THkh0rPKHF+m
 github.com/mattn/go-sqlite3 v1.10.0/go.mod h1:FPy6KqzDD04eiIsT53CuJW3U88zkxoIYsOqkbpncsNc=
 github.com/mattn/goveralls v0.0.2/go.mod h1:8d1ZMHsd7fW6IRPKQh46F2WRpyib5/X4FOpevwGNQEw=
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
-github.com/mholt/acmez v0.1.0 h1:LL7WQVCjZvwbo3pjAUdsqEao5kI8nyHubAGtCzrTS5g=
-github.com/mholt/acmez v0.1.0/go.mod h1:rNLSzYu5VR6ggyarXDKDCNefo06cOkJn+VObTDJCk0U=
+github.com/mholt/acmez v0.1.1-0.20200810215816-dbe88fc6cf09 h1:J7NVJ46iBFeWsUc5aeVv8QNO2mLhI6rJKIbpAsH7d7g=
+github.com/mholt/acmez v0.1.1-0.20200810215816-dbe88fc6cf09/go.mod h1:8qnn8QA/Ewx8E3ZSsmscqsIjhhpxuy9vqdgbX2ceceM=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=
 github.com/miekg/dns v1.1.30 h1:Qww6FseFn8PRfw07jueqIXqodm0JKiiKuK0DeXSqfyo=
 github.com/miekg/dns v1.1.30/go.mod h1:KNUDUusw/aVsxyTYZM1oqvCicbwhgbNgztCETuNZ7xM=

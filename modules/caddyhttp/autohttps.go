@@ -451,8 +451,8 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		if ap.Issuer == nil {
 			ap.Issuer = new(caddytls.ACMEIssuer)
 		}
-		if acmeIssuer, ok := ap.Issuer.(*caddytls.ACMEIssuer); ok {
-			err := app.fillInACMEIssuer(acmeIssuer)
+		if acmeIssuer, ok := ap.Issuer.(acmeCapable); ok {
+			err := app.fillInACMEIssuer(acmeIssuer.GetACMEIssuer())
 			if err != nil {
 				return err
 			}
@@ -470,9 +470,13 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		basePolicy = new(caddytls.AutomationPolicy)
 	}
 
-	// if the basePolicy has an existing ACMEIssuer, let's
-	// use it, otherwise we'll make one
-	baseACMEIssuer, _ := basePolicy.Issuer.(*caddytls.ACMEIssuer)
+	// if the basePolicy has an existing ACMEIssuer (particularly to
+	// include any type that embeds/wraps an ACMEIssuer), let's use it,
+	// otherwise we'll make one
+	var baseACMEIssuer *caddytls.ACMEIssuer
+	if acmeWrapper, ok := basePolicy.Issuer.(acmeCapable); ok {
+		baseACMEIssuer = acmeWrapper.GetACMEIssuer()
+	}
 	if baseACMEIssuer == nil {
 		// note that this happens if basePolicy.Issuer is nil
 		// OR if it is not nil but is not an ACMEIssuer
@@ -630,3 +634,5 @@ func (app *App) automaticHTTPSPhase2() error {
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
 }
+
+type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }

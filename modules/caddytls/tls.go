@@ -313,8 +313,10 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	if ap.magic.Issuer == nil {
 		return false
 	}
-	if am, ok := ap.magic.Issuer.(*ACMEIssuer); ok {
-		return certmagic.NewACMEManager(am.magic, am.template).HandleHTTPChallenge(w, r)
+	type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
+	if am, ok := ap.magic.Issuer.(acmeCapable); ok {
+		iss := am.GetACMEIssuer()
+		return certmagic.NewACMEManager(iss.magic, iss.template).HandleHTTPChallenge(w, r)
 	}
 	return false
 }
