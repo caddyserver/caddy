@@ -398,6 +398,15 @@ func sortRoutes(routes []ConfigValue) {
 		if len(jPM) > 0 {
 			jPathLen = len(jPM[0])
 		}
+
+		// sort the "root" directive in reverse because we want the
+		// most-specific path last such that the root variable
+		// overrides a less-specific one.
+		if iDir == "root" {
+			return iPathLen < jPathLen
+		}
+
+		// sort any other directives with the most-specific path first
 		return iPathLen > jPathLen
 	})
 }
