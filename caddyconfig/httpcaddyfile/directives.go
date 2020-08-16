@@ -399,6 +399,12 @@ func sortRoutes(routes []ConfigValue) {
 			jPathLen = len(jPM[0])
 		}
 
+		// if both directives have no path matcher, use whichever one
+		// has any kind of matcher defined first.
+		if iPathLen == 0 && jPathLen == 0 {
+			return len(iRoute.MatcherSetsRaw) > len(jRoute.MatcherSetsRaw)
+		}
+
 		// sort the "root" directive in reverse because we want the
 		// most-specific path last such that the root variable
 		// overrides a less-specific one.
