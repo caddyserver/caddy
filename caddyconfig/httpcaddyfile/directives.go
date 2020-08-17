@@ -73,7 +73,7 @@ var directiveOrder = []string{
 // directive should be sorted in reverse, compared to the
 // default of most-specific path matcher ordered first.
 // This is typically relevant for directives that have
-// "override" behaviour, where you want the most specific
+// "override" behavior, where you want the most specific
 // matcher to override a directive with a less specific matcher.
 var directiveShouldSortReversed = map[string]bool{
 	"root":    true,
