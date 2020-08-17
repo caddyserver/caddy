@@ -402,14 +402,7 @@ func sortRoutes(routes []ConfigValue) {
 		// if both directives have no path matcher, use whichever one
 		// has any kind of matcher defined first.
 		if iPathLen == 0 && jPathLen == 0 {
-			var iMatchers, jMatchers int
-			if len(iRoute.MatcherSetsRaw) > 0 {
-				iMatchers = 1
-			}
-			if len(jRoute.MatcherSetsRaw) > 0 {
-				jMatchers = 1
-			}
-			return iMatchers > jMatchers
+			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
 		}
 
 		// sort with the most-specific (longest) path first
