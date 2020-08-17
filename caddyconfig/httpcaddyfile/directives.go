@@ -69,18 +69,6 @@ var directiveOrder = []string{
 	"acme_server",
 }
 
-// directiveShouldSortReversed specifies whether a particular
-// directive should be sorted in reverse, compared to the
-// default of most-specific path matcher ordered first.
-// This is typically relevant for directives that have
-// "override" behavior, where you want the most specific
-// matcher to override a directive with a less specific matcher.
-var directiveShouldSortReversed = map[string]bool{
-	"root":    true,
-	"header":  true,
-	"rewrite": true,
-}
-
 // directiveIsOrdered returns true if dir is
 // a known, ordered (sorted) directive.
 func directiveIsOrdered(dir string) bool {
@@ -424,15 +412,7 @@ func sortRoutes(routes []ConfigValue) {
 			return iMatchers > jMatchers
 		}
 
-		// if the directive is marked to be sorted in reverse,
-		// we will do so, because we want the order to be by
-		// most-specific path last such that the directive
-		// overrides a less-specific one.
-		if _, ok := directiveShouldSortReversed[iDir]; ok {
-			return iPathLen < jPathLen
-		}
-
-		// sort any other directives with the most-specific path first
+		// sort with the most-specific (longest) path first
 		return iPathLen > jPathLen
 	})
 }
