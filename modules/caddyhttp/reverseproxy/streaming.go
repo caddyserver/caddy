@@ -145,7 +145,7 @@ func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.D
 // of bytes written.
 func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, error) {
 	if len(buf) == 0 {
-		buf = make([]byte, 32*1024)
+		buf = make([]byte, defaultBufferSize)
 	}
 	var written int64
 	for {
@@ -252,6 +252,8 @@ func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 
 var streamingBufPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 32*1024)
+		return make([]byte, defaultBufferSize)
 	},
 }
+
+const defaultBufferSize = 32 * 1024
