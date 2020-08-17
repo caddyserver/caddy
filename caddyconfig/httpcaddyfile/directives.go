@@ -398,6 +398,14 @@ func sortRoutes(routes []ConfigValue) {
 		if len(jPM) > 0 {
 			jPathLen = len(jPM[0])
 		}
+
+		// if both directives have no path matcher, use whichever one
+		// has any kind of matcher defined first.
+		if iPathLen == 0 && jPathLen == 0 {
+			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
+		}
+
+		// sort with the most-specific (longest) path first
 		return iPathLen > jPathLen
 	})
 }

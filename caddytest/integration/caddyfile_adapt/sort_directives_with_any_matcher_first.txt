@@ -1,0 +1,55 @@
+:80
+
+file_server
+
+@untrusted not remote_ip 10.1.1.0/24
+file_server @untrusted
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"remote_ip": {
+												"ranges": [
+													"10.1.1.0/24"
+												]
+											}
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"Caddyfile"
+									]
+								}
+							]
+						},
+						{
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
