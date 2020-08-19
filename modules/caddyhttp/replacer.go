@@ -345,7 +345,7 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		case "client.subject":
 			return cert.Subject, true
 		case "client.certificate_pem":
-			block := pem.Block{Type: "message", Headers: map[string]string{}, Bytes: cert.Raw}
+			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), false
 		default:
 			return nil, false
