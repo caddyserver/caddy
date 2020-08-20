@@ -11,14 +11,14 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go-version: [ 1.14.x ]
+        go: [ '1.15' ]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install Go
-      uses: actions/setup-go@v1
+      uses: actions/setup-go@v2
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version: ${{ matrix.go }}
 
     - name: Checkout code
       uses: actions/checkout@v2
@@ -57,9 +57,9 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ${{ steps.vars.outputs.go_cache }}
-        key: ${{ runner.os }}-go-release-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-release
+          ${{ runner.os }}-go${{ matrix.go }}-release
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
