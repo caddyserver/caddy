@@ -167,7 +167,7 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
-      - uses: goreleaser/goreleaser-action@v1
+      - uses: goreleaser/goreleaser-action@v2
         with:
           version: latest
           args: check

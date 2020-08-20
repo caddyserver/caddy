@@ -63,7 +63,7 @@ jobs:
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v1
+      uses: goreleaser/goreleaser-action@v2
       with:
         version: latest
         args: release --rm-dist
