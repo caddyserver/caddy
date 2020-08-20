@@ -249,7 +249,7 @@ func DisabledTest(t *testing.T) {
 	log.Println("test:", "post data (more than 60KB)")
 	data := ""
 	for i := 0x00; i < 0xff; i++ {
-		v0 := strings.Repeat(string(i), 256)
+		v0 := strings.Repeat(fmt.Sprint(i), 256)
 		h := md5.New()
 		_, _ = io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
@@ -266,7 +266,7 @@ func DisabledTest(t *testing.T) {
 	log.Println("test:", "post forms (256 keys, more than 1MB)")
 	p1 := make(map[string]string, 1)
 	for i := 0x00; i < 0xff; i++ {
-		v0 := strings.Repeat(string(i), 4096)
+		v0 := strings.Repeat(fmt.Sprint(i), 4096)
 		h := md5.New()
 		_, _ = io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
