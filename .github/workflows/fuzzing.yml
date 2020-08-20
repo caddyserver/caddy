@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go: [ '1.15' ]
+        go: [ '1.14' ]
     runs-on: ${{ matrix.os }}
 
     steps:
