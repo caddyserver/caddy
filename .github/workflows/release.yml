@@ -54,7 +54,7 @@ jobs:
         echo "::set-output name=tag_special::${TAG_SPECIAL}"
 
     - name: Cache the build cache
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: ${{ steps.vars.outputs.go_cache }}
         key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}

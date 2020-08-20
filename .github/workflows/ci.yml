@@ -69,7 +69,7 @@ jobs:
         echo "::set-output name=go_cache::$(go env GOCACHE)"
 
     - name: Cache the build cache
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: ${{ steps.vars.outputs.go_cache }}
         key: ${{ runner.os }}-${{ matrix.go }}-go-ci-${{ hashFiles('**/go.sum') }}
