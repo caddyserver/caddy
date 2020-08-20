@@ -13,7 +13,7 @@ require (
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.10.10
 	github.com/klauspost/cpuid v1.2.5
-	github.com/lucas-clemente/quic-go v0.17.3
+	github.com/lucas-clemente/quic-go v0.18.0
 	github.com/mholt/acmez v0.1.1-0.20200810215816-dbe88fc6cf09
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
