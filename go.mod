@@ -17,8 +17,8 @@ require (
 	github.com/mholt/acmez v0.1.1-0.20200810215816-dbe88fc6cf09
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
-	github.com/smallstep/certificates v0.14.6
-	github.com/smallstep/cli v0.14.6
+	github.com/smallstep/certificates v0.15.1
+	github.com/smallstep/cli v0.15.0
 	github.com/smallstep/nosql v0.3.0
 	github.com/smallstep/truststore v0.9.6
 	github.com/yuin/goldmark v1.2.1

@@ -27,7 +27,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/certmagic"
 	"github.com/smallstep/certificates/authority/provisioner"
-	"github.com/smallstep/cli/crypto/x509util"
 )
 
 func init() {
@@ -120,9 +119,7 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 		lifetime = issuerCert.NotAfter.Sub(time.Now())
 	}
 
-	certChain, err := auth.Sign(csr, provisioner.Options{},
-		profileDefaultDuration(iss.Lifetime),
-	)
+	certChain, err := auth.Sign(csr, provisioner.SignOptions{}, customCertLifetime(iss.Lifetime))
 	if err != nil {
 		return nil, err
 	}
@@ -160,33 +157,14 @@ func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// profileDefaultDuration is a wrapper against x509util.WithOption to conform
-// the SignOption interface.
-//
-// This type is borrowed from the smallstep libraries:
-// https://github.com/smallstep/certificates/blob/806abb6232a5691198b891d76b9898ea7f269da0/authority/provisioner/sign_options.go#L191-L211
-// as per https://github.com/smallstep/certificates/issues/198.
-//
-// TODO: In the future, this approach to custom cert lifetimes may not be necessary
-type profileDefaultDuration time.Duration
+// customCertLifetime allows us to customize certificates that are issued
+// by Smallstep libs, particularly the NotBefore & NotAfter dates.
+type customCertLifetime time.Duration
 
-func (d profileDefaultDuration) Option(so provisioner.Options) x509util.WithOption {
-	var backdate time.Duration
-	notBefore := so.NotBefore.Time()
-	if notBefore.IsZero() {
-		notBefore = time.Now().Truncate(time.Second)
-		backdate = -1 * so.Backdate
-	}
-	notAfter := so.NotAfter.RelativeTime(notBefore)
-	return func(p x509util.Profile) error {
-		fn := x509util.WithNotBeforeAfterDuration(notBefore, notAfter, time.Duration(d))
-		if err := fn(p); err != nil {
-			return err
-		}
-		crt := p.Subject()
-		crt.NotBefore = crt.NotBefore.Add(backdate)
-		return nil
-	}
+func (d customCertLifetime) Modify(cert *x509.Certificate, _ provisioner.SignOptions) error {
+	cert.NotBefore = time.Now()
+	cert.NotAfter = cert.NotBefore.Add(time.Duration(d))
+	return nil
 }
 
 const (
@@ -195,6 +173,7 @@ const (
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*InternalIssuer)(nil)
-	_ certmagic.Issuer  = (*InternalIssuer)(nil)
+	_ caddy.Provisioner               = (*InternalIssuer)(nil)
+	_ certmagic.Issuer                = (*InternalIssuer)(nil)
+	_ provisioner.CertificateModifier = (*customCertLifetime)(nil)
 )
