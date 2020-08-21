@@ -22,7 +22,7 @@
 					],
 					"routes": [
 						{
-							"group": "group4",
+							"group": "group3",
 							"match": [
 								{
 									"path": [
@@ -55,7 +55,7 @@
 							]
 						},
 						{
-							"group": "group4",
+							"group": "group3",
 							"match": [
 								{
 									"path": [
@@ -80,7 +80,7 @@
 							]
 						},
 						{
-							"group": "group4",
+							"group": "group3",
 							"handle": [
 								{
 									"handler": "subroute",

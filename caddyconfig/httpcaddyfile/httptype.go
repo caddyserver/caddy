@@ -862,7 +862,17 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 		// root directives would overwrite previously-matched ones; they should not cascade
 		"root": {},
 	}
-	for meDir, info := range mutuallyExclusiveDirs {
+
+	// we want to deterministicly loop over the set of dirs
+	keys := make([]string, 0, len(mutuallyExclusiveDirs))
+	for k := range mutuallyExclusiveDirs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, meDir := range keys {
+		info := mutuallyExclusiveDirs[meDir]
+
 		// see how many instances of the directive there are
 		for _, r := range routes {
 			if r.directive == meDir {
