@@ -257,7 +257,7 @@ provisioning stages.`,
 	RegisterCommand(Command{
 		Name:  "fmt",
 		Func:  cmdFmt,
-		Usage: "[--overwrite] [<path>]",
+		Usage: "[--stdin] [--overwrite] [<path>]",
 		Short: "Formats a Caddyfile",
 		Long: `
 Formats the Caddyfile by adding proper indentation and spaces to improve
@@ -268,6 +268,7 @@ directly instead of printing it.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("format", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
+			fs.Bool("stdin", false, "Read input from stdin instead of a file")
 			return fs
 		}(),
 	})
