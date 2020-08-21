@@ -1,0 +1,105 @@
+:80 {
+	handle /api/* {
+		respond "api"
+	}
+
+	handle_path /static/* {
+		respond "static"
+	}
+
+	handle {
+		respond "handle"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"group": "group4",
+							"match": [
+								{
+									"path": [
+										"/static/*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "rewrite",
+													"strip_path_prefix": "/static"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"body": "static",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"group": "group4",
+							"match": [
+								{
+									"path": [
+										"/api/*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "api",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"group": "group4",
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "handle",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

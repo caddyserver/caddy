@@ -172,6 +172,14 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
+
+			// as a special case, we want "handle_path" to be sorted
+			// at the same level as "handle" so we force them to use
+			// the same directive name after their parsing is complete
+			if dir == "handle_path" {
+				dir = "handle"
+			}
+
 			for _, result := range results {
 				result.directive = dir
 				sb.pile[result.Class] = append(sb.pile[result.Class], result)
