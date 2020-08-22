@@ -112,6 +112,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				DNSProvider:        val.(certmagic.ACMEDNSProvider),
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
+				Resolvers:          iss.Challenges.DNS.Resolvers,
 			}
 		}
 	}

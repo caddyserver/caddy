@@ -295,6 +295,10 @@ type DNSChallengeConfig struct {
 	// How long to wait for DNS record to propagate.
 	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
 
+	// Custom DNS resolvers to prefer over system/built-in defaults.
+	// Often necessary to configure when using split-horizon DNS.
+	Resolvers []string `json:"resolvers,omitempty"`
+
 	solver acmez.Solver
 }
 
