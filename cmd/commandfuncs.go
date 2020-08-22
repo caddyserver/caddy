@@ -529,7 +529,13 @@ func cmdValidateConfig(fl Flags) (int, error) {
 }
 
 func cmdFmt(fl Flags) (int, error) {
-	if fl.Bool("stdin") {
+	formatCmdConfigFile := fl.Arg(0)
+	if formatCmdConfigFile == "" {
+		formatCmdConfigFile = "Caddyfile"
+	}
+
+	// Read from stdin if the file name is "-"
+	if formatCmdConfigFile == "-" {
 		input, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
@@ -538,11 +544,6 @@ func cmdFmt(fl Flags) (int, error) {
 
 		fmt.Print(string(caddyfile.Format(input)))
 		return caddy.ExitCodeSuccess, nil
-	}
-
-	formatCmdConfigFile := fl.Arg(0)
-	if formatCmdConfigFile == "" {
-		formatCmdConfigFile = "Caddyfile"
 	}
 
 	input, err := ioutil.ReadFile(formatCmdConfigFile)
@@ -554,7 +555,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := ioutil.WriteFile(formatCmdConfigFile, output, 0644); err != nil {
+		if err := ioutil.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, nil
 		}
 	} else {
