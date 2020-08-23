@@ -478,6 +478,7 @@ func TestParseAll(t *testing.T) {
 
 func TestEnvironmentReplacement(t *testing.T) {
 	os.Setenv("FOOBAR", "foobar")
+	os.Setenv("CHAINED", "$FOOBAR")
 
 	for i, test := range []struct {
 		input  string
@@ -522,6 +523,22 @@ func TestEnvironmentReplacement(t *testing.T) {
 		{
 			input:  "{$FOOBAR}{$FOOBAR}",
 			expect: "foobarfoobar",
+		},
+		{
+			input:  "{$CHAINED}",
+			expect: "foobar",
+		},
+		{
+			input:  "{$FOO:-default}",
+			expect: "default",
+		},
+		{
+			input:  "foo{$BAR:-bar}baz",
+			expect: "foobarbaz",
+		},
+		{
+			input:  "foo{$BAR:-$FOOBAR}baz",
+			expect: "foofoobarbaz",
 		},
 		{
 			input:  "{$FOOBAR",
