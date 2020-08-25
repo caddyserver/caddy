@@ -23,7 +23,6 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -323,7 +322,18 @@ func sanitizedPathJoin(root, reqPath string) string {
 	if root == "" {
 		root = "."
 	}
-	return filepath.Join(root, filepath.FromSlash(path.Clean("/"+reqPath)))
+
+	path := filepath.Join(root, filepath.Clean("/"+reqPath))
+
+	// filepath.Join also cleans the path, and cleaning strips
+	// the trailing slash, so we need to re-add it afterwards.
+	// if the length is 1, then it's a path to the root,
+	// and that should return ".", so we don't append the separator.
+	if strings.HasSuffix(reqPath, "/") && len(reqPath) > 1 {
+		path += string(filepath.Separator)
+	}
+
+	return path
 }
 
 // fileHidden returns true if filename is hidden

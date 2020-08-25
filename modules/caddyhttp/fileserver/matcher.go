@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -183,11 +184,20 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		m.TryFiles = []string{r.URL.Path}
 	}
 
+	// common preparation of the file into parts
+	prepareFilePath := func(file string) (string, string) {
+		suffix := m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
+		if strings.HasSuffix(file, "/") {
+			suffix += "/"
+		}
+		fullpath := sanitizedPathJoin(root, suffix)
+		return suffix, fullpath
+	}
+
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
-			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
-			fullpath := sanitizedPathJoin(root, suffix)
+			suffix, fullpath := prepareFilePath(f)
 			if strictFileExists(fullpath) {
 				return suffix, fullpath, true
 			}
@@ -198,8 +208,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var largestFilename string
 		var largestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
-			fullpath := sanitizedPathJoin(root, suffix)
+			suffix, fullpath := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
 				largestSize = info.Size()
@@ -214,8 +223,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var smallestFilename string
 		var smallestSuffix string
 		for _, f := range m.TryFiles {
-			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
-			fullpath := sanitizedPathJoin(root, suffix)
+			suffix, fullpath := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
 				smallestSize = info.Size()
@@ -230,8 +238,7 @@ func (m MatchFile) selectFile(r *http.Request) (rel, abs string, matched bool) {
 		var recentFilename string
 		var recentSuffix string
 		for _, f := range m.TryFiles {
-			suffix := m.firstSplit(path.Clean(repl.ReplaceAll(f, "")))
-			fullpath := sanitizedPathJoin(root, suffix)
+			suffix, fullpath := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil &&
 				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
@@ -265,13 +272,13 @@ func strictFileExists(file string) bool {
 		// https://stackoverflow.com/a/12518877/1048862
 		return false
 	}
-	if strings.HasSuffix(file, "/") {
+	if strings.HasSuffix(file, string(filepath.Separator)) {
 		// by convention, file paths ending
-		// in a slash must be a directory
+		// in a path separator must be a directory
 		return stat.IsDir()
 	}
 	// by convention, file paths NOT ending
-	// in a slash must NOT be a directory
+	// in a path separator must NOT be a directory
 	return !stat.IsDir()
 }
 
