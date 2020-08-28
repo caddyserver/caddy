@@ -40,8 +40,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     encode [<matcher>] <formats...> {
-//         gzip [<level>]
+//         gzip           [<level>]
 //         zstd
+//         prefer         <formats...>
 //     }
 //
 // Specifying the formats on the first line will use those formats' defaults.
@@ -64,19 +65,31 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		for d.NextBlock(0) {
 			name := d.Val()
-			modID := "http.encoders." + name
-			unm, err := caddyfile.UnmarshalModule(d, modID)
-			if err != nil {
-				return err
+			switch name {
+			case "prefer":
+				var encs []string
+				for d.NextArg() {
+					encs = append(encs, d.Val())
+				}
+				if len(encs) == 0 {
+					return d.ArgErr()
+				}
+				enc.Prefer = encs
+			default:
+				modID := "http.encoders." + name
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return err
+				}
+				encoding, ok := unm.(Encoding)
+				if !ok {
+					return fmt.Errorf("module %s is not an HTTP encoding; is %T", modID, unm)
+				}
+				if enc.EncodingsRaw == nil {
+					enc.EncodingsRaw = make(caddy.ModuleMap)
+				}
+				enc.EncodingsRaw[name] = caddyconfig.JSON(encoding, nil)
 			}
-			encoding, ok := unm.(Encoding)
-			if !ok {
-				return fmt.Errorf("module %s is not an HTTP encoding; is %T", modID, unm)
-			}
-			if enc.EncodingsRaw == nil {
-				enc.EncodingsRaw = make(caddy.ModuleMap)
-			}
-			enc.EncodingsRaw[name] = caddyconfig.JSON(encoding, nil)
 		}
 	}
 

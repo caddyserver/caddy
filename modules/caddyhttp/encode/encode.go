@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -43,8 +44,8 @@ type Encode struct {
 	// will be chosen based on the client's Accept-Encoding header.
 	EncodingsRaw caddy.ModuleMap `json:"encodings,omitempty" caddy:"namespace=http.encoders"`
 
-	// If the client has no strong preference, choose this encoding. TODO: Not yet implemented
-	// Prefer    []string `json:"prefer,omitempty"`
+	// If the client has no strong preference, choose these encodings in order.
+	Prefer []string `json:"prefer,omitempty"`
 
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
@@ -78,8 +79,25 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate ensures that enc's configuration is valid.
+func (enc *Encode) Validate() error {
+	check := make(map[string]bool)
+	for _, encName := range enc.Prefer {
+		if _, ok := enc.writerPools[encName]; !ok {
+			return fmt.Errorf("encoding %s not enabled", encName)
+		}
+
+		if _, ok := check[encName]; ok {
+			return fmt.Errorf("encoding %s is duplicated in prefer", encName)
+		}
+		check[encName] = true
+	}
+
+	return nil
+}
+
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	for _, encName := range acceptedEncodings(r) {
+	for _, encName := range acceptedEncodings(r, enc.Prefer) {
 		if _, ok := enc.writerPools[encName]; !ok {
 			continue // encoding not offered
 		}
@@ -251,11 +269,13 @@ func (rw *responseWriter) init() {
 }
 
 // acceptedEncodings returns the list of encodings that the
-// client supports, in descending order of preference. If
+// client supports, in descending order of preference.
+// The client preference via q-factor and the server
+// preference via Prefer setting are taken into account. If
 // the Sec-WebSocket-Key header is present then non-identity
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
-func acceptedEncodings(r *http.Request) []string {
+func acceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
 	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
@@ -292,18 +312,29 @@ func acceptedEncodings(r *http.Request) []string {
 			continue
 		}
 
+		// set server preference
+		prefOrder := -1
+		for i, p := range preferredOrder {
+			if encName == p {
+				prefOrder = len(preferredOrder) - i
+				break
+			}
+		}
+
 		prefs = append(prefs, encodingPreference{
-			encoding: encName,
-			q:        qFactor,
+			encoding:    encName,
+			q:           qFactor,
+			preferOrder: prefOrder,
 		})
 	}
 
-	// sort preferences by descending q-factor
-	sort.Slice(prefs, func(i, j int) bool { return prefs[i].q > prefs[j].q })
-
-	// TODO: If no preference, or same pref for all encodings,
-	// and not websocket, use default encoding ordering (enc.Prefer)
-	// for those which are accepted by the client
+	// sort preferences by descending q-factor first, then by preferOrder
+	sort.Slice(prefs, func(i, j int) bool {
+		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
+			return prefs[i].preferOrder > prefs[j].preferOrder
+		}
+		return prefs[i].q > prefs[j].q
+	})
 
 	prefEncNames := make([]string, len(prefs))
 	for i := range prefs {
@@ -315,8 +346,9 @@ func acceptedEncodings(r *http.Request) []string {
 
 // encodingPreference pairs an encoding with its q-factor.
 type encodingPreference struct {
-	encoding string
-	q        float64
+	encoding    string
+	q           float64
+	preferOrder int
 }
 
 // Encoder is a type which can encode a stream of data.
@@ -344,6 +376,7 @@ const defaultMinLength = 512
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*Encode)(nil)
+	_ caddy.Validator             = (*Encode)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Encode)(nil)
 	_ caddyhttp.HTTPInterfaces    = (*responseWriter)(nil)
 )
