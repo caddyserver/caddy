@@ -16,6 +16,7 @@ package encode
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -42,6 +43,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //     encode [<matcher>] <formats...> {
 //         gzip           [<level>]
 //         zstd
+//         minimum_length <length>
 //         prefer         <formats...>
 //     }
 //
@@ -66,6 +68,15 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		for d.NextBlock(0) {
 			name := d.Val()
 			switch name {
+			case "minimum_length":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				minLength, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return err
+				}
+				enc.MinLength = minLength
 			case "prefer":
 				var encs []string
 				for d.NextArg() {
