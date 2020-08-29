@@ -256,8 +256,15 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			}
 
 			h.HealthChecks.Active.httpClient = &http.Client{
-				Timeout:   timeout,
-				Transport: h.Transport,
+				Timeout: timeout,
+			}
+
+			if h.TransportRaw != nil {
+				mod, err := ctx.LoadModule(h, "TransportRaw")
+				if err != nil {
+					return fmt.Errorf("loading transport: %v", err)
+				}
+				h.HealthChecks.Active.httpClient.Transport = mod.(http.RoundTripper)
 			}
 
 			if h.HealthChecks.Active.Interval == 0 {
