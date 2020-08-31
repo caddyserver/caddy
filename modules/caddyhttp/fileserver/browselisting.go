@@ -76,34 +76,34 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlP
 
 type browseListing struct {
 	// The name of the directory (the last element of the path).
-	Name string
+	Name string `json:"name"`
 
 	// The full path of the request.
-	Path string
+	Path string `json:"path"`
 
 	// Whether the parent directory is browseable.
-	CanGoUp bool
+	CanGoUp bool `json:"can_go_up"`
 
 	// The items (files and folders) in the path.
-	Items []fileInfo
-
-	// The number of directories in the listing.
-	NumDirs int
-
-	// The number of files (items that aren't directories) in the listing.
-	NumFiles int
-
-	// Sort column used
-	Sort string
-
-	// Sorting order
-	Order string
-
-	// If ≠0 then Items have been limited to that many elements.
-	ItemsLimitedTo int
+	Items []fileInfo `json:"items,omitempty"`
 
 	// If ≠0 then Items starting from that many elements.
-	ItemOffset int
+	Offset int `json:"offset,omitempty"`
+
+	// If ≠0 then Items have been limited to that many elements.
+	Limit int `json:"limit,omitempty"`
+
+	// The number of directories in the listing.
+	NumDirs int `json:"num_dirs"`
+
+	// The number of files (items that aren't directories) in the listing.
+	NumFiles int `json:"num_files"`
+
+	// Sort column used
+	Sort string `json:"sort,omitempty"`
+
+	// Sorting order
+	Order string `json:"order,omitempty"`
 }
 
 // Breadcrumbs returns l.Path where every element maps
@@ -166,7 +166,7 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 		offset, _ := strconv.Atoi(offsetParam)
 		if offset > 0 && offset <= len(l.Items) {
 			l.Items = l.Items[offset:]
-			l.ItemOffset = offset
+			l.Offset = offset
 		}
 	}
 
@@ -175,7 +175,7 @@ func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam stri
 
 		if limit > 0 && limit <= len(l.Items) {
 			l.Items = l.Items[:limit]
-			l.ItemsLimitedTo = limit
+			l.Limit = limit
 		}
 	}
 }
