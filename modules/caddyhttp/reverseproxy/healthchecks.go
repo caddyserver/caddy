@@ -216,9 +216,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 		u.Host = net.JoinHostPort(host, portStr)
 	}
 
-	// attach dialing information to this request - TODO: use caddy.Context's context
-	// so it can be canceled on config reload
-	ctx := context.Background()
+	// attach dialing information to this request
+	ctx := h.ctx.Context
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]interface{}{
 		dialInfoVarKey: dialInfo,
