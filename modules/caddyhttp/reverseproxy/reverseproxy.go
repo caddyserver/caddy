@@ -209,9 +209,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return err
 		}
 		if addr.PortRangeSize() != 1 {
-			h.logger.Error("multiple addresses (upstream must map to only one address)",
-				zap.String("address", upstream.Dial),
-			)
 			return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
 		}
 		// create or get the host representation for this upstream
