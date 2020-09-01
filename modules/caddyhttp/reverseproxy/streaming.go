@@ -32,7 +32,7 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 	if reqUpType != resUpType {
-		h.logger.Sugar().Errorf("backend tried to switch protocol %q when %q was requested", resUpType, reqUpType)
+		h.logger.Sugar().Debugf("backend tried to switch protocol %q when %q was requested", resUpType, reqUpType)
 		return
 	}
 
@@ -45,7 +45,7 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	}
 	backConn, ok := res.Body.(io.ReadWriteCloser)
 	if !ok {
-		h.logger.Sugar().Errorf("internal error: 101 switching protocols response with non-writable body")
+		h.logger.Error("internal error: 101 switching protocols response with non-writable body")
 		return
 	}
 
@@ -64,17 +64,17 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		h.logger.Sugar().Errorf("Hijack failed on protocol switch: %v", err)
+		h.logger.Error("Hijack failed on protocol switch", zap.Error(err))
 		return
 	}
 	defer conn.Close()
 	res.Body = nil // so res.Write only writes the headers; we have res.Body in backConn above
 	if err := res.Write(brw); err != nil {
-		h.logger.Sugar().Errorf("response write: %v", err)
+		h.logger.Debug("response write", zap.Error(err))
 		return
 	}
 	if err := brw.Flush(); err != nil {
-		h.logger.Sugar().Errorf("response flush: %v", err)
+		h.logger.Debug("response flush", zap.Error(err))
 		return
 	}
 	errc := make(chan error, 1)
