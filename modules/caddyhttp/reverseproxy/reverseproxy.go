@@ -204,6 +204,11 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
+		addr, err := caddy.ParseNetworkAddress(upstream.Dial)
+		if err != nil {
+			return err
+		}
+		upstream.networkAddress = addr
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
@@ -259,12 +264,14 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 				Timeout: timeout,
 			}
 
-			if h.TransportRaw != nil {
-				mod, err := ctx.LoadModule(h, "TransportRaw")
-				if err != nil {
-					return fmt.Errorf("loading transport: %v", err)
+			for _, upstream := range h.Upstreams {
+				// if there's an alternative port for health-check provided in the config,
+				// then use it, otherwise use the port of upstream.
+				if h.HealthChecks.Active.Port != 0 {
+					upstream.activeHealthCheckPort = h.HealthChecks.Active.Port
+				} else {
+					upstream.activeHealthCheckPort = int(upstream.networkAddress.StartPort)
 				}
-				h.HealthChecks.Active.httpClient.Transport = mod.(http.RoundTripper)
 			}
 
 			if h.HealthChecks.Active.Interval == 0 {
