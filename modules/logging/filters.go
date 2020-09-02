@@ -82,7 +82,35 @@ func (IPMaskFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "ipv4":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if _, err := strconv.Atoi(d.Val()); err == nil {
+					m.IPv4MaskRaw = json.RawMessage(d.Val())
+				} else {
+					m.IPv4MaskRaw = json.RawMessage(`"` + d.Val() + `"`)
+				}
+
+			case "ipv6":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if _, err := strconv.Atoi(d.Val()); err == nil {
+					m.IPv6MaskRaw = json.RawMessage(d.Val())
+				} else {
+					m.IPv6MaskRaw = json.RawMessage(`"` + d.Val() + `"`)
+				}
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
 	return nil
 }
 
