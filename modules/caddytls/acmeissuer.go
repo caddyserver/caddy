@@ -220,6 +220,7 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //         alt_tlsalpn_port <port>
 //         eab <key_id> <mac_key>
 //         trusted_roots <pem_files...>
+//         resolvers <dns_servers...>
 //     }
 //
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -316,6 +317,18 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "trusted_roots":
 				iss.TrustedRootsPEMFiles = d.RemainingArgs()
+
+			case "resolvers":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
 
 			default:
 				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
