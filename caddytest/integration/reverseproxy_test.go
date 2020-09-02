@@ -1,9 +1,7 @@
 package integration
 
 import (
-	"net/http"
 	"testing"
-	"time"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
@@ -11,15 +9,19 @@ import (
 func TestReverseProxyHealthCheck(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
-	localhost:2020 {
-		file_server browse
+	{
+		http_port     9080
+		https_port    9443
 	}
-	localhost:2021 {
+	http://localhost:2020 {
+		respond "Hello, World!"
+	}
+	http://localhost:2021 {
 		respond "ok"
 	}
-	http://localhost:2022 {
+	http://localhost:9080 {
 		reverse_proxy {
-			to https://localhost:2020
+			to localhost:2020
 	
 			health_path /health
 			health_port 2021
@@ -29,11 +31,5 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	}
   `, "caddyfile")
 
-	req, err := http.NewRequest(http.MethodGet, "http://localhost:2022/", nil)
-	if err != nil {
-		t.Fail()
-		return
-	}
-	time.Sleep(time.Second * 10)
-	tester.AssertResponseCode(req, 200)
+	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
