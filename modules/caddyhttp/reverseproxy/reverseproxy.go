@@ -261,7 +261,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			}
 
 			h.HealthChecks.Active.httpClient = &http.Client{
-				Timeout: timeout,
+				Timeout:   timeout,
+				Transport: h.Transport,
 			}
 
 			for _, upstream := range h.Upstreams {
