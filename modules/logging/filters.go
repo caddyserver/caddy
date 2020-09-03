@@ -15,11 +15,8 @@
 package logging
 
 import (
-	"encoding/json"
-	"fmt"
 	"net"
 	"strconv"
-	"unicode/utf8"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -63,11 +60,11 @@ func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 // IPMaskFilter is a Caddy log field filter that
 // masks IP addresses.
 type IPMaskFilter struct {
-	// The IPv4 mask, as an subnet size CIDR, or a IP + CIDR string.
-	IPv4MaskRaw json.RawMessage `json:"ipv4_cidr,omitempty"`
+	// The IPv4 mask, as an subnet size CIDR.
+	IPv4MaskRaw int `json:"ipv4_cidr,omitempty"`
 
-	// The IPv6 mask, as an subnet size CIDR, or a IP + CIDR string.
-	IPv6MaskRaw json.RawMessage `json:"ipv6_cidr,omitempty"`
+	// The IPv6 mask, as an subnet size CIDR.
+	IPv6MaskRaw int `json:"ipv6_cidr,omitempty"`
 
 	v4Mask net.IPMask
 	v6Mask net.IPMask
@@ -90,21 +87,21 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				if _, err := strconv.Atoi(d.Val()); err == nil {
-					m.IPv4MaskRaw = json.RawMessage(d.Val())
-				} else {
-					m.IPv4MaskRaw = json.RawMessage(`"` + d.Val() + `"`)
+				val, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("error parsing %s: %v", d.Val(), err)
 				}
+				m.IPv4MaskRaw = val
 
 			case "ipv6":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				if _, err := strconv.Atoi(d.Val()); err == nil {
-					m.IPv6MaskRaw = json.RawMessage(d.Val())
-				} else {
-					m.IPv6MaskRaw = json.RawMessage(`"` + d.Val() + `"`)
+				val, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("error parsing %s: %v", d.Val(), err)
 				}
+				m.IPv6MaskRaw = val
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
@@ -114,52 +111,21 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Provision parses m's IP masks, from either integers or strings.
+// Provision parses m's IP masks, from integers.
 func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
-	parseRawToMask := func(rawField json.RawMessage, bitLen int) (net.IPMask, error) {
-		if rawField == nil {
-			return nil, nil
+	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
+		if rawField == 0 {
+			return nil
 		}
 
-		// integers or strings are both expected to be valid utf8
-		if !utf8.Valid(rawField) {
-			return nil, fmt.Errorf("not valid UTF8")
-		}
-
-		// try to convert to an int if possible, else it's a string
-		i, err := strconv.Atoi(string(rawField))
-		if err == nil {
-			// we assume the int is a subnet size CIDR
-			// e.g. "16" being equivalent to masking the last
-			// two bytes of an ipv4 address, like "255.255.0.0"
-			return net.CIDRMask(i, bitLen), nil
-		}
-
-		// we try to parse the string as an IP CIDR,
-		// i.e. something like "192.168.0.0/16", we just
-		// care about the "16" as the mask and drop the rest
-		var s string
-		if err := json.Unmarshal(rawField, &s); err != nil {
-			return nil, err
-		}
-		_, ipNet, err := net.ParseCIDR(s)
-		if err != nil {
-			return nil, err
-		}
-		return ipNet.Mask, nil
+		// we assume the int is a subnet size CIDR
+		// e.g. "16" being equivalent to masking the last
+		// two bytes of an ipv4 address, like "255.255.0.0"
+		return net.CIDRMask(rawField, bitLen)
 	}
 
-	v4Mask, err := parseRawToMask(m.IPv4MaskRaw, 32)
-	if err != nil {
-		return fmt.Errorf("parsing ipv4_cidr failed: %v", err)
-	}
-	m.v4Mask = v4Mask
-
-	v6Mask, err := parseRawToMask(m.IPv6MaskRaw, 128)
-	if err != nil {
-		return fmt.Errorf("parsing ipv6_cidr failed: %v", err)
-	}
-	m.v6Mask = v6Mask
+	m.v4Mask = parseRawToMask(m.IPv4MaskRaw, 32)
+	m.v6Mask = parseRawToMask(m.IPv6MaskRaw, 128)
 
 	return nil
 }
@@ -194,4 +160,6 @@ var (
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+
+	_ caddy.Provisioner = (*IPMaskFilter)(nil)
 )
