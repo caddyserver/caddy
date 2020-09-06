@@ -1,0 +1,90 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	handle_response header X-Accel-Redirect {
+		respond "Header!"
+	}
+	handle_response status 401 {
+		respond "Status!"
+	}
+	handle_response {
+		respond "Any!"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handle_response": [
+										{
+											"match": {
+												"headers": {
+													"X-Accel-Redirect": []
+												}
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Header!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"status_code": [
+													401
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Status!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {},
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Any!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										}
+									],
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
