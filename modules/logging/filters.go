@@ -16,6 +16,7 @@ package logging
 
 import (
 	"net"
+	"reflect"
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
@@ -36,7 +37,12 @@ type LogFieldFilter interface {
 
 // DeleteFilter is a Caddy log field filter that
 // deletes the field.
-type DeleteFilter struct{}
+type DeleteFilter struct {
+	// The list of subfields to keep
+	ExceptRaw []string `json:"except,omitempty"`
+
+	except map[string]bool
+}
 
 // CaddyModule returns the Caddy module information.
 func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
@@ -47,13 +53,48 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (m *DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "except":
+				m.ExceptRaw = d.RemainingArgs()
+				if len(m.ExceptRaw) < 1 {
+					return d.ArgErr()
+				}
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+// Provision converts the except list to a map for fast lookup.
+func (d *DeleteFilter) Provision(ctx caddy.Context) error {
+	d.except = make(map[string]bool)
+	for _, val := range d.ExceptRaw {
+		d.except[val] = true
+	}
 	return nil
 }
 
 // Filter filters the input field.
-func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
-	in.Type = zapcore.SkipType
+func (d DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
+	if len(d.except) == 0 {
+		in.Type = zapcore.SkipType
+		return in
+	}
+
+	v := reflect.ValueOf(in.Interface)
+	if v.Kind() == reflect.Map {
+		for _, key := range v.MapKeys() {
+			if _, ok := d.except[key.String()]; !ok {
+				v.SetMapIndex(key, reflect.Value{})
+			}
+		}
+	}
 	return in
 }
 
@@ -161,5 +202,6 @@ var (
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 
+	_ caddy.Provisioner = (*DeleteFilter)(nil)
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
 )
