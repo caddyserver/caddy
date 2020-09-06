@@ -263,6 +263,13 @@ func (h Helper) NewBindAddresses(addrs []string) []ConfigValue {
 	return []ConfigValue{{Class: "bind", Value: addrs}}
 }
 
+// WithDispenser returns a new instance based on d. All others Helper
+// fields are copied, so typically maps are shared with this new instance.
+func (h Helper) WithDispenser(d *caddyfile.Dispenser) Helper {
+	h.Dispenser = d
+	return h
+}
+
 // ParseSegmentAsSubroute parses the segment such that its subdirectives
 // are themselves treated as directives, from which a subroute is built
 // and returned.

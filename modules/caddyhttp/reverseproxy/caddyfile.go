@@ -38,14 +38,14 @@ func init() {
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	rp := new(Handler)
-	err := rp.UnmarshalCaddyfile(h.Dispenser)
+	err := rp.ParseCaddyfileReverseProxy(h)
 	if err != nil {
 		return nil, err
 	}
 	return rp, nil
 }
 
-// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+// ParseCaddyfileReverseProxy sets up the handler from Caddyfile tokens. Syntax:
 //
 //     reverse_proxy [<matcher>] [<upstreams...>] {
 //         # upstreams
@@ -86,13 +86,20 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         transport <name> {
 //             ...
 //         }
+//
+//         # handle responses
+//         handle_response [header <field>|status <status>] {
+//             ...
+//         }
 //     }
 //
 // Proxy upstream addresses should be network dial addresses such
 // as `host:port`, or a URL such as `scheme://host:port`. Scheme
 // and port may be inferred from other parts of the address/URL; if
 // either are missing, defaults to HTTP.
-func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (h *Handler) ParseCaddyfileReverseProxy(helper httpcaddyfile.Helper) error {
+	d := helper.Dispenser
+
 	// currently, all backends must use the same scheme/protocol (the
 	// underlying JSON does not yet support per-backend transports)
 	var commonScheme string
@@ -578,6 +585,45 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				transport = rt
 
+			case "handle_response":
+				var rm caddyhttp.ResponseMatcher
+				args := d.RemainingArgs()
+				switch len(args) {
+				case 2:
+					switch args[0] {
+					case "header":
+						rm = caddyhttp.ResponseMatcher{
+							Headers: http.Header{args[1]: []string{}},
+						}
+					case "status":
+						statusNum, err := strconv.Atoi(args[1])
+						if err != nil {
+							return d.Errf("bad status value '%s': %v", args[1], err)
+						}
+						rm = caddyhttp.ResponseMatcher{
+							StatusCode: []int{statusNum},
+						}
+					default:
+						return d.Err("handle_response only accepts header|status")
+					}
+				case 0: // Any status or header
+				default:
+					return d.ArgErr()
+				}
+				handler, err := httpcaddyfile.ParseSegmentAsSubroute(helper.WithDispenser(d.NewFromNextSegment()))
+				if err != nil {
+					return err
+				}
+				subroute, ok := handler.(*caddyhttp.Subroute)
+				if !ok {
+					return helper.Errf("segment was not parsed as a subroute")
+				}
+				h.HandleResponse = append(h.HandleResponse,
+					caddyhttp.ResponseHandler{
+						Match:  &rm,
+						Routes: subroute.Routes,
+					})
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
@@ -855,6 +901,5 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Interface guards
 var (
-	_ caddyfile.Unmarshaler = (*Handler)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPTransport)(nil)
 )

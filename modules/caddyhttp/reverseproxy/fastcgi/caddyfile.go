@@ -355,7 +355,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// using the reverse_proxy directive syntax
 	// TODO: this can overwrite our fcgiTransport that we encoded and
 	// set on the rpHandler... even with a non-fastcgi transport!
-	err = rpHandler.UnmarshalCaddyfile(dispenser)
+	err = rpHandler.ParseCaddyfileReverseProxy(h.WithDispenser(dispenser))
 	if err != nil {
 		return nil, err
 	}
