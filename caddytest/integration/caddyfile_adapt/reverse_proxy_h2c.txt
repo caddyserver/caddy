@@ -10,6 +10,7 @@ https://example.com {
 			versions h2c 2
 			compression off
 		}
+		buffer_requests
 	}
 }
 
@@ -38,6 +39,7 @@ https://example.com {
 										{
 											"handle": [
 												{
+													"buffer_requests": true,
 													"handler": "reverse_proxy",
 													"headers": {
 														"request": {
