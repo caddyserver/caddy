@@ -345,9 +345,6 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, nil)
 
 			case "resolvers":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
 				if iss.Challenges == nil {
 					iss.Challenges = new(ChallengesConfig)
 				}
@@ -355,6 +352,9 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					iss.Challenges.DNS = new(DNSChallengeConfig)
 				}
 				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
+				if len(iss.Challenges.DNS.Resolvers) == 0 {
+					return d.ArgErr()
+				}
 
 			default:
 				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
