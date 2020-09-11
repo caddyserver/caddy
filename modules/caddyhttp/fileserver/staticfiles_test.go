@@ -161,7 +161,12 @@ func TestFileHidden(t *testing.T) {
 			expect:    false,
 		},
 	} {
-		tc.inputPath = filepath.FromSlash(tc.inputPath) // for Windows' sake
+		// for Windows' sake
+		tc.inputPath = filepath.FromSlash(tc.inputPath)
+		for i := range tc.inputHide {
+			tc.inputHide[i] = filepath.FromSlash(tc.inputHide[i])
+		}
+
 		actual := fileHidden(tc.inputPath, tc.inputHide)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Is %s hidden in %v? Got %t but expected %t",
