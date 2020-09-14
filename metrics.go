@@ -14,7 +14,7 @@ func init() {
 	// prometheus.MustRegister(prommod.NewCollector(ns))
 }
 
-// adminMetrics - a collection of metrics that can be tracked for the admin API.
+// adminMetrics is a collection of metrics that can be tracked for the admin API.
 // Call initAdminMetrics to initialize.
 var adminMetrics = struct {
 	requestCount *prometheus.CounterVec
