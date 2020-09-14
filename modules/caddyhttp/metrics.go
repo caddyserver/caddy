@@ -12,16 +12,14 @@ import (
 )
 
 var httpMetrics = struct {
-	init                   sync.Once
-	requestInFlight        *prometheus.GaugeVec
-	requestCount           *prometheus.CounterVec
-	requestErrors          *prometheus.CounterVec
-	requestDuration        *prometheus.HistogramVec
-	requestDurationSummary *prometheus.SummaryVec
-	requestSize            *prometheus.HistogramVec
-	responseSize           *prometheus.HistogramVec
-	responseLatency        *prometheus.HistogramVec
-	responseLatencySummary *prometheus.SummaryVec
+	init             sync.Once
+	requestInFlight  *prometheus.GaugeVec
+	requestCount     *prometheus.CounterVec
+	requestErrors    *prometheus.CounterVec
+	requestDuration  *prometheus.HistogramVec
+	requestSize      *prometheus.HistogramVec
+	responseSize     *prometheus.HistogramVec
+	responseDuration *prometheus.HistogramVec
 }{
 	init: sync.Once{},
 }
@@ -51,9 +49,8 @@ func initHTTPMetrics() {
 	}, basicLabels)
 
 	// TODO: allow these to be customized in the config
-	latencyBuckets := []float64{.01, .05, .1, .2, .4, 1, 3, 8, 20, 60, 120}
+	durationBuckets := prometheus.DefBuckets
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
-	quantileBuckets := map[float64]float64{0.1: 0.01, 0.5: 0.01, 0.95: 0.01, 0.99: 0.001, 0.999: 0.0001}
 
 	httpLabels := []string{"server", "handler", "code", "method"}
 	httpMetrics.requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -61,14 +58,7 @@ func initHTTPMetrics() {
 		Subsystem: sub,
 		Name:      "request_duration_seconds",
 		Help:      "Histogram of round-trip request durations.",
-		Buckets:   latencyBuckets,
-	}, httpLabels)
-	httpMetrics.requestDurationSummary = promauto.NewSummaryVec(prometheus.SummaryOpts{
-		Namespace:  ns,
-		Subsystem:  sub,
-		Name:       "request_duration_quantile_seconds",
-		Help:       "Summary of round-trip request durations.",
-		Objectives: quantileBuckets,
+		Buckets:   durationBuckets,
 	}, httpLabels)
 	httpMetrics.requestSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
@@ -84,19 +74,12 @@ func initHTTPMetrics() {
 		Help:      "Size of the returned response.",
 		Buckets:   sizeBuckets,
 	}, httpLabels)
-	httpMetrics.responseLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	httpMetrics.responseDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
-		Name:      "response_latency_seconds",
+		Name:      "response_duration_seconds",
 		Help:      "Histogram of times to first byte in response bodies.",
-		Buckets:   latencyBuckets,
-	}, httpLabels)
-	httpMetrics.responseLatencySummary = promauto.NewSummaryVec(prometheus.SummaryOpts{
-		Namespace:  ns,
-		Subsystem:  sub,
-		Name:       "response_latency_quantile_seconds",
-		Help:       "Summary of times to first byte in response bodies.",
-		Objectives: quantileBuckets,
+		Buckets:   durationBuckets,
 	}, httpLabels)
 }
 
@@ -150,8 +133,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
 		statusLabels["code"] = sanitizeCode(status)
 		ttfb := time.Since(start).Seconds()
-		observeWithExemplar(statusLabels, httpMetrics.responseLatency, ttfb)
-		httpMetrics.responseLatencySummary.With(statusLabels).Observe(ttfb)
+		observeWithExemplar(statusLabels, httpMetrics.responseDuration, ttfb)
 		return false
 	})
 	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
@@ -164,7 +146,6 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 
 	observeWithExemplar(statusLabels, httpMetrics.requestDuration, dur)
-	httpMetrics.requestDurationSummary.With(statusLabels).Observe(dur)
 	observeWithExemplar(statusLabels, httpMetrics.requestSize, float64(computeApproximateRequestSize(r)))
 	httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
 

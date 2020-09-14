@@ -62,8 +62,8 @@ var directiveOrder = []string{
 	"push",
 
 	// handlers that typically respond to requests
-	"metrics",
 	"respond",
+	"metrics",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",

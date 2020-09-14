@@ -22,7 +22,6 @@ require (
 	github.com/smallstep/cli v0.15.0
 	github.com/smallstep/nosql v0.3.0
 	github.com/smallstep/truststore v0.9.6
-	github.com/stretchr/testify v1.5.1
 	github.com/yuin/goldmark v1.2.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.15.0

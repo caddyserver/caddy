@@ -7,25 +7,30 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestServerNameFromContext(t *testing.T) {
 	ctx := context.Background()
-	assert.Equal(t, "UNKNOWN", serverNameFromContext(ctx))
+	expected := "UNKNOWN"
+	if actual := serverNameFromContext(ctx); actual != expected {
+		t.Errorf("Not equal: expected %q, but got %q", expected, actual)
+	}
 
 	in := "foo"
 	ctx = contextWithServerName(ctx, in)
-	assert.Equal(t, in, serverNameFromContext(ctx))
+	if actual := serverNameFromContext(ctx); actual != in {
+		t.Errorf("Not equal: expected %q, but got %q", in, actual)
+	}
 }
 
 func TestMetricsInstrumentedHandler(t *testing.T) {
 	handlerErr := errors.New("oh noes")
 	response := []byte("hello world!")
 	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		assert.Equal(t, 1.0, testutil.ToFloat64(httpMetrics.requestInFlight))
+		if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 1.0 {
+			t.Errorf("Not same: expected %#v, but got %#v", 1.0, actual)
+		}
 		if handlerErr == nil {
 			w.Write(response)
 		}
@@ -41,11 +46,17 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	assert.Same(t, handlerErr, ih.ServeHTTP(w, r, h))
-	assert.Equal(t, 0.0, testutil.ToFloat64(httpMetrics.requestInFlight))
+	if actual := ih.ServeHTTP(w, r, h); actual != handlerErr {
+		t.Errorf("Not same: expected %#v, but got %#v", handlerErr, actual)
+	}
+	if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 0.0 {
+		t.Errorf("Not same: expected %#v, but got %#v", 0.0, actual)
+	}
 
 	handlerErr = nil
-	assert.NoError(t, handlerErr, ih.ServeHTTP(w, r, h))
+	if err := ih.ServeHTTP(w, r, h); err != nil {
+		t.Errorf("Received unexpected error: %w", err)
+	}
 }
 
 type middlewareHandlerFunc func(http.ResponseWriter, *http.Request, Handler) error

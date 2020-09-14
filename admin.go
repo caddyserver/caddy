@@ -37,7 +37,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"go.uber.org/zap"
 )
 
@@ -110,14 +109,13 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 		mux:            http.NewServeMux(),
 	}
 
-	addMuxRoute := func(pattern string, moduleName string, h http.Handler) {
+	addRouteWithMetrics := func(pattern string, moduleName string, h http.Handler) {
 		labels := prometheus.Labels{"path": pattern, "handler": moduleName}
-		muxWrap.mux.Handle(pattern,
-			promhttp.InstrumentHandlerCounter(
-				adminMetrics.requestCount.MustCurryWith(labels),
-				h,
-			),
+		h = promhttp.InstrumentHandlerCounter(
+			adminMetrics.requestCount.MustCurryWith(labels),
+			h,
 		)
+		muxWrap.mux.Handle(pattern, h)
 	}
 	// addRoute just calls muxWrap.mux.Handle after
 	// wrapping the handler with error handling
@@ -126,21 +124,23 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 			err := h.ServeHTTP(w, r)
 			muxWrap.handleError(w, r, err)
 		})
-		addMuxRoute(pattern, moduleName, wrapper)
+		addRouteWithMetrics(pattern, moduleName, wrapper)
 	}
 
+	moduleName := "admin"
+
 	// register standard config control endpoints
-	addRoute("/"+rawConfigKey+"/", "admin", AdminHandlerFunc(handleConfig))
-	addRoute("/id/", "admin", AdminHandlerFunc(handleConfigID))
-	addRoute("/stop", "admin", AdminHandlerFunc(handleStop))
+	addRoute("/"+rawConfigKey+"/", moduleName, AdminHandlerFunc(handleConfig))
+	addRoute("/id/", moduleName, AdminHandlerFunc(handleConfigID))
+	addRoute("/stop", moduleName, AdminHandlerFunc(handleStop))
 
 	// register debugging endpoints
-	addMuxRoute("/debug/pprof/", "debug", http.HandlerFunc(pprof.Index))
-	addMuxRoute("/debug/pprof/cmdline", "debug", http.HandlerFunc(pprof.Cmdline))
-	addMuxRoute("/debug/pprof/profile", "debug", http.HandlerFunc(pprof.Profile))
-	addMuxRoute("/debug/pprof/symbol", "debug", http.HandlerFunc(pprof.Symbol))
-	addMuxRoute("/debug/pprof/trace", "debug", http.HandlerFunc(pprof.Trace))
-	addMuxRoute("/debug/vars", "debug", expvar.Handler())
+	addRouteWithMetrics("/debug/pprof/", moduleName, http.HandlerFunc(pprof.Index))
+	addRouteWithMetrics("/debug/pprof/cmdline", moduleName, http.HandlerFunc(pprof.Cmdline))
+	addRouteWithMetrics("/debug/pprof/profile", moduleName, http.HandlerFunc(pprof.Profile))
+	addRouteWithMetrics("/debug/pprof/symbol", moduleName, http.HandlerFunc(pprof.Symbol))
+	addRouteWithMetrics("/debug/pprof/trace", moduleName, http.HandlerFunc(pprof.Trace))
+	addRouteWithMetrics("/debug/vars", moduleName, expvar.Handler())
 
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
