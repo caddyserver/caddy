@@ -534,14 +534,13 @@ func cmdFmt(fl Flags) (int, error) {
 		formatCmdConfigFile = "Caddyfile"
 	}
 
-	// Read from stdin if the file name is "-"
+	// as a special case, read from stdin if the file name is "-"
 	if formatCmdConfigFile == "-" {
 		input, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading stdin: %v", err)
 		}
-
 		fmt.Print(string(caddyfile.Format(input)))
 		return caddy.ExitCodeSuccess, nil
 	}
