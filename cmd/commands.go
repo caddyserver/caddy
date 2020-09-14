@@ -263,8 +263,12 @@ provisioning stages.`,
 Formats the Caddyfile by adding proper indentation and spaces to improve
 human readability. It prints the result to stdout.
 
-If --write is specified, the output will be written to the config file
-directly instead of printing it.`,
+If --overwrite is specified, the output will be written to the config file
+directly instead of printing it.
+
+If you wish you use stdin instead of a regular file, use - as the path.
+When reading from stdin, the --overwrite flag has no effect: the result
+is always printed to stdout.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("format", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
