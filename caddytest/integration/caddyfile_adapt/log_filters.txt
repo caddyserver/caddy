@@ -1,0 +1,69 @@
+:80
+
+log {
+	output stdout
+	format filter {
+		wrap console
+		fields {
+			request>headers>Authorization delete
+			request>headers>Server delete
+			request>remote_addr ip_mask {
+				ipv4 24
+				ipv6 32
+			}
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"output": "stdout"
+				},
+				"encoder": {
+					"fields": {
+						"request\u003eheaders\u003eAuthorization": {
+							"filter": "delete"
+						},
+						"request\u003eheaders\u003eServer": {
+							"filter": "delete"
+						},
+						"request\u003eremote_addr": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 24,
+							"ipv6_cidr": 32
+						}
+					},
+					"format": "filter",
+					"wrap": {
+						"format": "console"
+					}
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}
