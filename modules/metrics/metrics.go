@@ -33,7 +33,7 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("metrics", parseCaddyfile)
 }
 
-// Metrics - this module serves a /metrics endpoint so that any gathered
+// Metrics is a module that serves a /metrics endpoint so that any gathered
 // metrics can be exposed for scraping. This module is configurable by end-users
 // unlike AdminMetrics.
 type Metrics struct {
@@ -56,7 +56,7 @@ func (l *zapLogger) Println(v ...interface{}) {
 	l.zl.Sugar().Error(v...)
 }
 
-// Provision -
+// Provision sets up m.
 func (m *Metrics) Provision(ctx caddy.Context) error {
 	log := ctx.Logger(m)
 	m.metricsHandler = createMetricsHandler(&zapLogger{log})

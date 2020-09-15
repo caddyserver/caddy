@@ -24,7 +24,7 @@ func init() {
 	caddy.RegisterModule(AdminMetrics{})
 }
 
-// AdminMetrics - this module serves a metrics endpoint so that any gathered
+// AdminMetrics is a module that serves a metrics endpoint so that any gathered
 // metrics can be exposed for scraping. This module is not configurable, and
 // is permanently mounted to the admin API endpoint at "/metrics".
 // See the Metrics module for a configurable endpoint that is usable if the

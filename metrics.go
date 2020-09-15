@@ -19,8 +19,8 @@ var adminMetrics = struct {
 }{}
 
 func initAdminMetrics() {
-	ns := "admin"
-	sub := "http"
+	const ns = "caddy"
+	const sub = "admin_http"
 	adminMetrics.requestCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
