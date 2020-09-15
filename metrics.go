@@ -10,8 +10,6 @@ func init() {
 	initAdminMetrics()
 	prometheus.MustRegister(prometheus.NewBuildInfoCollector())
 
-	// TODO: could be useful (import "github.com/povilasv/prommod")
-	// prometheus.MustRegister(prommod.NewCollector(ns))
 }
 
 // adminMetrics is a collection of metrics that can be tracked for the admin API.
