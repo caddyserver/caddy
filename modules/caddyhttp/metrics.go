@@ -25,8 +25,8 @@ var httpMetrics = struct {
 }
 
 func initHTTPMetrics() {
-	ns := "caddy"
-	sub := "http"
+	const ns = "caddy"
+	const sub = "http"
 
 	basicLabels := []string{"server", "handler"}
 	httpMetrics.requestInFlight = promauto.NewGaugeVec(prometheus.GaugeOpts{
