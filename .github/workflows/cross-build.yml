@@ -14,14 +14,15 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go-version: [ 1.14.x ]
+        go: [ '1.14', '1.15' ]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Install Go
         uses: actions/setup-go@v2
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ matrix.go }}
+
       - name: Print Go version and environment
         id: vars
         run: |
@@ -32,15 +33,18 @@ jobs:
           printf "\n\nSystem environment:\n\n"
           env
           echo "::set-output name=go_cache::$(go env GOCACHE)"
+
       - name: Cache the build cache
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ${{ steps.vars.outputs.go_cache }}
-          key: cross-build-go-${{ matrix.goos }}-${{ hashFiles('**/go.sum') }}
+          key: cross-build-go${{ matrix.go }}-${{ matrix.goos }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            cross-build-go-${{ matrix.goos }}
+            cross-build-go${{ matrix.go }}-${{ matrix.goos }}
+
       - name: Checkout code into the Go module directory
         uses: actions/checkout@v2
+
       - name: Run Build
         env:
           CGO_ENABLED: 0
