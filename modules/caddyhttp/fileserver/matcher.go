@@ -205,7 +205,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
 			suffix, fullpath := prepareFilePath(f)
-			if exists, info := strictFileExists(fullpath); exists {
+			if info, exists := strictFileExists(fullpath); exists {
 				setPlaceholders(info, suffix, fullpath)
 				return true
 			}
@@ -273,7 +273,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 // the file must also be a directory; if it does
 // NOT end in a forward slash, the file must NOT
 // be a directory.
-func strictFileExists(file string) (bool, os.FileInfo) {
+func strictFileExists(file string) (os.FileInfo, bool) {
 	stat, err := os.Stat(file)
 	if err != nil {
 		// in reality, this can be any error
@@ -284,16 +284,16 @@ func strictFileExists(file string) (bool, os.FileInfo) {
 		// the file exists, so we just treat any
 		// error as if it does not exist; see
 		// https://stackoverflow.com/a/12518877/1048862
-		return false, stat
+		return nil, false
 	}
 	if strings.HasSuffix(file, string(filepath.Separator)) {
 		// by convention, file paths ending
 		// in a path separator must be a directory
-		return stat.IsDir(), stat
+		return stat, stat.IsDir()
 	}
 	// by convention, file paths NOT ending
 	// in a path separator must NOT be a directory
-	return !stat.IsDir(), stat
+	return stat, !stat.IsDir()
 }
 
 // firstSplit returns the first result where the path
