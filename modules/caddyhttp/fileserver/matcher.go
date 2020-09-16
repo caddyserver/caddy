@@ -156,18 +156,17 @@ func (m MatchFile) Validate() error {
 }
 
 // Match returns true if r matches m. Returns true
-// if a file was matched.
+// if a file was matched. If so, three placeholders
+// will be available:
+//    - http.matchers.file.relative
+//    - http.matchers.file.absolute
+//    - http.matchers.file.type
 func (m MatchFile) Match(r *http.Request) bool {
 	return m.selectFile(r)
 }
 
 // selectFile chooses a file according to m.TryPolicy by appending
 // the paths in m.TryFiles to m.Root, with placeholder replacements.
-// If a file was matched, three placeholders
-// will be available:
-//    - http.matchers.file.relative
-//    - http.matchers.file.absolute
-//    - http.matchers.file.type
 func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -206,19 +205,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
 			suffix, fullpath := prepareFilePath(f)
-			info, err := os.Stat(fullpath)
-			if err != nil {
-				// in reality, this can be any error
-				// such as permission or even obscure
-				// ones like "is not a directory" (when
-				// trying to stat a file within a file);
-				// in those cases we can't be sure if
-				// the file exists, so we just treat any
-				// error as if it does not exist; see
-				// https://stackoverflow.com/a/12518877/1048862
-				continue
-			}
-			if strictFileExists(fullpath, info) {
+			if exists, info := strictFileExists(fullpath); exists {
 				setPlaceholders(info, suffix, fullpath)
 				return true
 			}
@@ -286,15 +273,27 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 // the file must also be a directory; if it does
 // NOT end in a forward slash, the file must NOT
 // be a directory.
-func strictFileExists(file string, stat os.FileInfo) bool {
+func strictFileExists(file string) (bool, os.FileInfo) {
+	stat, err := os.Stat(file)
+	if err != nil {
+		// in reality, this can be any error
+		// such as permission or even obscure
+		// ones like "is not a directory" (when
+		// trying to stat a file within a file);
+		// in those cases we can't be sure if
+		// the file exists, so we just treat any
+		// error as if it does not exist; see
+		// https://stackoverflow.com/a/12518877/1048862
+		return false, stat
+	}
 	if strings.HasSuffix(file, string(filepath.Separator)) {
 		// by convention, file paths ending
 		// in a path separator must be a directory
-		return stat.IsDir()
+		return stat.IsDir(), stat
 	}
 	// by convention, file paths NOT ending
 	// in a path separator must NOT be a directory
-	return !stat.IsDir()
+	return !stat.IsDir(), stat
 }
 
 // firstSplit returns the first result where the path
