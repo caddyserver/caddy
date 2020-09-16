@@ -16,17 +16,21 @@ package caddyauth
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	weakrand "math/rand"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.uber.org/zap"
 )
 
 func init() {
 	caddy.RegisterModule(HTTPBasicAuth{})
+
+	weakrand.Seed(time.Now().UnixNano())
 }
 
 // HTTPBasicAuth facilitates HTTP basic authentication.
@@ -40,10 +44,19 @@ type HTTPBasicAuth struct {
 	// The name of the realm. Default: restricted
 	Realm string `json:"realm,omitempty"`
 
+	// If non-nil, a mapping of plaintext passwords to their
+	// hashes will be cached in memory (with random eviction).
+	// This can greatly improve the performance of traffic-heavy
+	// servers that use secure password hashing algorithms, with
+	// the downside that plaintext passwords will be stored in
+	// memory for a longer time (this should not be a problem
+	// as long as your machine is not compromised, at which point
+	// all bets are off, since basicauth necessitates plaintext
+	// passwords being received over the wire anyway).
+	HashCache *Cache `json:"hash_cache,omitempty"`
+
 	Accounts map[string]Account `json:"-"`
 	Hash     Comparer           `json:"-"`
-
-	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -56,8 +69,6 @@ func (HTTPBasicAuth) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions the HTTP basic auth provider.
 func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
-	hba.logger = ctx.Logger(hba)
-
 	if hba.HashRaw == nil {
 		hba.HashRaw = json.RawMessage(`{"algorithm": "bcrypt"}`)
 	}
@@ -105,12 +116,17 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	}
 	hba.AccountList = nil // allow GC to deallocate
 
+	if hba.HashCache != nil {
+		hba.HashCache.cache = make(map[string]bool)
+		hba.HashCache.mu = new(sync.Mutex)
+	}
+
 	return nil
 }
 
 // Authenticate validates the user credentials in req and returns the user, if valid.
 func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) (User, bool, error) {
-	username, plaintextPassword, ok := req.BasicAuth()
+	username, plaintextPasswordStr, ok := req.BasicAuth()
 	if !ok {
 		return hba.promptForCredentials(w, nil)
 	}
@@ -119,27 +135,52 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 	// don't return early if account does not exist; we want
 	// to try to avoid side-channels that leak existence
 
-	passwordMatches, err := hba.Hash.Compare(account.password, []byte(plaintextPassword), account.salt)
+	same, err := hba.correctPassword(account, []byte(plaintextPasswordStr))
 	if err != nil {
 		return hba.promptForCredentials(w, err)
 	}
-
-	// emit appropriate log message if any credentials were provided
-	if username != "" || plaintextPassword != "" {
-		logger := hba.logger.With(zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}))
-		if !accountExists {
-			logger.Warn("wrong username", zap.String("username", username))
-		} else if !passwordMatches {
-			logger.Warn("wrong password", zap.String("username", username))
-		}
-	}
-
-	// reject if account not found or password mismatch
-	if !accountExists || !passwordMatches {
+	if !same || !accountExists {
 		return hba.promptForCredentials(w, nil)
 	}
 
 	return User{ID: username}, true, nil
+}
+
+func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []byte) (bool, error) {
+	compare := func() (bool, error) {
+		return hba.Hash.Compare(account.password, plaintextPassword, account.salt)
+	}
+
+	// if no caching is enabled, simply return the result of hashing + comparing
+	if hba.HashCache == nil {
+		return compare()
+	}
+
+	// compute a cache key that is unique for these input parameters
+	cacheKey := hex.EncodeToString(append(append(account.password, account.salt...), plaintextPassword...))
+
+	// fast track: if the result of the input is already cached, use it
+	hba.HashCache.mu.Lock()
+	same, ok := hba.HashCache.cache[cacheKey]
+	if ok {
+		hba.HashCache.mu.Unlock()
+		return same, nil
+	}
+	hba.HashCache.mu.Unlock()
+
+	// slow track: do the expensive op, then add it to the cache
+	same, err := compare()
+	if err != nil {
+		return false, err
+	}
+	hba.HashCache.mu.Lock()
+	if len(hba.HashCache.cache) >= 1000 {
+		hba.HashCache.makeRoom() // keep cache size under control
+	}
+	hba.HashCache.cache[cacheKey] = same
+	hba.HashCache.mu.Unlock()
+
+	return same, nil
 }
 
 func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) (User, bool, error) {
@@ -152,6 +193,47 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 	}
 	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
 	return User{}, false, err
+}
+
+// Cache enables caching of basic auth results. This is especially
+// helpful for secure password hashes which can be expensive to
+// compute on every HTTP request.
+type Cache struct {
+	mu *sync.Mutex
+
+	// map of concatenated hashed password + plaintext password + salt, to result
+	cache map[string]bool
+}
+
+// makeRoom deletes about 1/10 of the items in the cache
+// in order to keep its size under control. It must not be
+// called without a lock on c.mu.
+func (c *Cache) makeRoom() {
+	// we delete more than just 1 entry so that we don't have
+	// to do this on every request; assuming the capacity of
+	// the cache is on a long tail, we can save a lot of CPU
+	// time by doing a whole bunch of deletions now and then
+	// we won't have to do them again for a while
+	numToDelete := len(c.cache) / 10
+	if numToDelete < 1 {
+		numToDelete = 1
+	}
+	for deleted := 0; deleted <= numToDelete; deleted++ {
+		// Go maps are "nondeterministic" not actually random,
+		// so although we could just chop off the "front" of the
+		// map with less code, this is a heavily skewed eviction
+		// strategy; generating random numbers is cheap and
+		// ensures a much better distribution.
+		rnd := weakrand.Intn(len(c.cache))
+		i := 0
+		for key := range c.cache {
+			if i == rnd {
+				delete(c.cache, key)
+				break
+			}
+			i++
+		}
+	}
 }
 
 // Comparer is a type that can securely compare
