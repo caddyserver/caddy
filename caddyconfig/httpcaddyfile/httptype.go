@@ -173,9 +173,10 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
 
-			// as a special case, we want "handle_path" to be sorted
-			// at the same level as "handle" so we force them to use
-			// the same directive name after their parsing is complete
+			// As a special case, we want "handle_path" to be sorted
+			// at the same level as "handle", so we force them to use
+			// the same directive name after their parsing is complete.
+			// See https://github.com/caddyserver/caddy/issues/3675#issuecomment-678042377
 			if dir == "handle_path" {
 				dir = "handle"
 			}
