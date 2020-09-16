@@ -171,6 +171,10 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			input:  "{http.request.tls.client.san.ips.0}",
 			expect: "127.0.0.1",
 		},
+		{
+			input:  "{http.request.tls.client.certificate_pem}",
+			expect: string(clientCert) + "\n",  // returned value comes with a newline appended to it
+		},
 	} {
 		actual := repl.ReplaceAll(tc.input, "<empty>")
 		if actual != tc.expect {
