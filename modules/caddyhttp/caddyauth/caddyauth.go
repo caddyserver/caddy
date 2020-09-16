@@ -16,11 +16,11 @@ package caddyauth
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -37,6 +37,8 @@ type Authentication struct {
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
 
 	Providers map[string]Authenticator `json:"-"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -49,6 +51,7 @@ func (Authentication) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up a.
 func (a *Authentication) Provision(ctx caddy.Context) error {
+	a.logger = ctx.Logger(a)
 	a.Providers = make(map[string]Authenticator)
 	mods, err := ctx.LoadModule(a, "ProvidersRaw")
 	if err != nil {
@@ -64,15 +67,19 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var user User
 	var authed bool
 	var err error
+	logger := a.logger.With(zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}))
 	for provName, prov := range a.Providers {
 		user, authed, err = prov.Authenticate(w, r)
 		if err != nil {
-			log.Printf("[ERROR] Authenticating with %s: %v", provName, err)
+			logger.Error("could not check authentication",
+				zap.String("provider", provName),
+				zap.Error(err))
 			continue
 		}
 		if authed {
 			break
 		}
+		logger.Warn("failed authentication", zap.String("provider", provName))
 	}
 	if !authed {
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
