@@ -329,28 +329,37 @@ func sanitizedPathJoin(root, reqPath string) string {
 // fileHidden returns true if filename is hidden
 // according to the hide list.
 func fileHidden(filename string, hide []string) bool {
-	nameOnly := filepath.Base(filename)
 	sep := string(filepath.Separator)
+	var components []string
 
 	for _, h := range hide {
-		// assuming h is a glob/shell-like pattern,
-		// use it to compare the whole file path;
-		// but if there is no separator in h, then
-		// just compare against the file's name
-		compare := filename
 		if !strings.Contains(h, sep) {
-			compare = nameOnly
-		}
-
-		hidden, err := filepath.Match(h, compare)
-		if err != nil {
-			// malformed pattern; fallback by checking prefix
-			if strings.HasPrefix(filename, h) {
+			// if there is no separator in h, then we assume the user
+			// wants to hide any files or folders that match that
+			// name; thus we have to compare against each component
+			// of the filename, e.g. hiding "bar" would hide "/bar"
+			// as well as "/foo/bar/baz" but not "/barstool".
+			if len(components) == 0 {
+				components = strings.Split(filename, sep)
+			}
+			for _, c := range components {
+				if c == h {
+					return true
+				}
+			}
+		} else if strings.HasPrefix(filename, h) {
+			// otherwise, if there is a separator in h, and
+			// filename is exactly prefixed with h, then we
+			// can do a prefix match so that "/foo" matches
+			// "/foo/bar" but not "/foobar".
+			withoutPrefix := strings.TrimPrefix(filename, h)
+			if strings.HasPrefix(withoutPrefix, sep) {
 				return true
 			}
 		}
-		if hidden {
-			// file name or path matches hide pattern
+
+		// in the general case, a glob match will suffice
+		if hidden, _ := filepath.Match(h, filename); hidden {
 			return true
 		}
 	}
