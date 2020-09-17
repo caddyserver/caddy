@@ -16,8 +16,10 @@ package logging
 
 import (
 	"net"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -44,6 +46,11 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
 // Filter filters the input field.
 func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 	in.Type = zapcore.SkipType
@@ -53,11 +60,14 @@ func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 // IPMaskFilter is a Caddy log field filter that
 // masks IP addresses.
 type IPMaskFilter struct {
-	// The IPv4 range in CIDR notation.
-	IPv4CIDR int `json:"ipv4_cidr,omitempty"`
+	// The IPv4 mask, as an subnet size CIDR.
+	IPv4MaskRaw int `json:"ipv4_cidr,omitempty"`
 
-	// The IPv6 range in CIDR notation.
-	IPv6CIDR int `json:"ipv6_cidr,omitempty"`
+	// The IPv6 mask, as an subnet size CIDR.
+	IPv6MaskRaw int `json:"ipv6_cidr,omitempty"`
+
+	v4Mask net.IPMask
+	v6Mask net.IPMask
 }
 
 // CaddyModule returns the Caddy module information.
@@ -66,6 +76,58 @@ func (IPMaskFilter) CaddyModule() caddy.ModuleInfo {
 		ID:  "caddy.logging.encoders.filter.ip_mask",
 		New: func() caddy.Module { return new(IPMaskFilter) },
 	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "ipv4":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				val, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("error parsing %s: %v", d.Val(), err)
+				}
+				m.IPv4MaskRaw = val
+
+			case "ipv6":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				val, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("error parsing %s: %v", d.Val(), err)
+				}
+				m.IPv6MaskRaw = val
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+// Provision parses m's IP masks, from integers.
+func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
+	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
+		if rawField == 0 {
+			return nil
+		}
+
+		// we assume the int is a subnet size CIDR
+		// e.g. "16" being equivalent to masking the last
+		// two bytes of an ipv4 address, like "255.255.0.0"
+		return net.CIDRMask(rawField, bitLen)
+	}
+
+	m.v4Mask = parseRawToMask(m.IPv4MaskRaw, 32)
+	m.v6Mask = parseRawToMask(m.IPv6MaskRaw, 128)
+
+	return nil
 }
 
 // Filter filters the input field.
@@ -78,13 +140,10 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	if ipAddr == nil {
 		return in
 	}
-	bitLen := 32
-	cidrPrefix := m.IPv4CIDR
+	mask := m.v4Mask
 	if ipAddr.To16() != nil {
-		bitLen = 128
-		cidrPrefix = m.IPv6CIDR
+		mask = m.v6Mask
 	}
-	mask := net.CIDRMask(cidrPrefix, bitLen)
 	masked := ipAddr.Mask(mask)
 	if port == "" {
 		in.String = masked.String()
@@ -93,3 +152,14 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	}
 	return in
 }
+
+// Interface guards
+var (
+	_ LogFieldFilter = (*DeleteFilter)(nil)
+	_ LogFieldFilter = (*IPMaskFilter)(nil)
+
+	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
+	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+
+	_ caddy.Provisioner = (*IPMaskFilter)(nil)
+)

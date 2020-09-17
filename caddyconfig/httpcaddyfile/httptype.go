@@ -172,6 +172,15 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			if err != nil {
 				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
+
+			// As a special case, we want "handle_path" to be sorted
+			// at the same level as "handle", so we force them to use
+			// the same directive name after their parsing is complete.
+			// See https://github.com/caddyserver/caddy/issues/3675#issuecomment-678042377
+			if dir == "handle_path" {
+				dir = "handle"
+			}
+
 			for _, result := range results {
 				result.directive = dir
 				sb.pile[result.Class] = append(sb.pile[result.Class], result)
@@ -446,12 +455,12 @@ func (st *ServerType) serversFromPairings(
 						}
 					} else {
 						cp.DefaultSNI = defaultSNI
-						hasCatchAllTLSConnPolicy = true
 					}
 
 					// only append this policy if it actually changes something
 					if !cp.SettingsEmpty() {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
+						hasCatchAllTLSConnPolicy = len(hosts) == 0
 					}
 				}
 			}
@@ -653,9 +662,15 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 	return nil
 }
 
-// consolidateConnPolicies removes empty TLS connection policies and combines
-// equivalent ones for a cleaner overall output.
+// consolidateConnPolicies sorts any catch-all policy to the end, removes empty TLS connection
+// policies, and combines equivalent ones for a cleaner overall output.
 func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.ConnectionPolicies, error) {
+	// catch-all policies (those without any matcher) should be at the
+	// end, otherwise it nullifies any more specific policies
+	sort.SliceStable(cps, func(i, j int) bool {
+		return cps[j].MatchersRaw == nil && cps[i].MatchersRaw != nil
+	})
+
 	for i := 0; i < len(cps); i++ {
 		// compare it to the others
 		for j := 0; j < len(cps); j++ {
@@ -848,7 +863,18 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 		// root directives would overwrite previously-matched ones; they should not cascade
 		"root": {},
 	}
-	for meDir, info := range mutuallyExclusiveDirs {
+
+	// we need to deterministically loop over each of these directives
+	// in order to keep the group numbers consistent
+	keys := make([]string, 0, len(mutuallyExclusiveDirs))
+	for k := range mutuallyExclusiveDirs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, meDir := range keys {
+		info := mutuallyExclusiveDirs[meDir]
+
 		// see how many instances of the directive there are
 		for _, r := range routes {
 			if r.directive == meDir {

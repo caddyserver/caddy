@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
@@ -220,6 +221,7 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //         alt_tlsalpn_port <port>
 //         eab <key_id> <mac_key>
 //         trusted_roots <pem_files...>
+//         dns <provider_name> [<options>]
 //         resolvers <dns_servers...>
 //     }
 //
@@ -318,10 +320,31 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "trusted_roots":
 				iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
-			case "resolvers":
+			case "dns":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
+				provName := d.Val()
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
+				if err != nil {
+					return d.Errf("getting DNS provider module named '%s': %v", provName, err)
+				}
+				dnsProvModuleInstance := dnsProvModule.New()
+				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
+					err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+					if err != nil {
+						return err
+					}
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, nil)
+
+			case "resolvers":
 				if iss.Challenges == nil {
 					iss.Challenges = new(ChallengesConfig)
 				}
@@ -329,6 +352,9 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					iss.Challenges.DNS = new(DNSChallengeConfig)
 				}
 				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
+				if len(iss.Challenges.DNS.Resolvers) == 0 {
+					return d.ArgErr()
+				}
 
 			default:
 				return d.Errf("unrecognized ACME issuer property: %s", d.Val())

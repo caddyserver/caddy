@@ -208,7 +208,13 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		upstream.networkAddress = addr
+
+		if addr.PortRangeSize() != 1 {
+			return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
+		}
+    
+    upstream.networkAddress = addr
+
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)

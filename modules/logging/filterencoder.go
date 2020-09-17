@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap"
 	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
@@ -91,6 +93,80 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 		fe.Fields[fieldName] = modIface.(LogFieldFilter)
 	}
 
+	return nil
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     filter {
+//         wrap <another encoder>
+//         fields {
+//             <field> <filter> {
+//                 <filter options>
+//             }
+//         }
+//     }
+func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "wrap":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				moduleName := d.Val()
+				mod, err := caddy.GetModule("caddy.logging.encoders." + moduleName)
+				if err != nil {
+					return d.Errf("getting log encoder module named '%s': %v", moduleName, err)
+				}
+				unm, ok := mod.New().(caddyfile.Unmarshaler)
+				if !ok {
+					return d.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
+				}
+				err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+				if err != nil {
+					return err
+				}
+				enc, ok := unm.(zapcore.Encoder)
+				if !ok {
+					return d.Errf("module %s is not a zapcore.Encoder", mod)
+				}
+				fe.WrappedRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, nil)
+
+			case "fields":
+				for d.NextBlock(1) {
+					field := d.Val()
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					filterName := d.Val()
+					mod, err := caddy.GetModule("caddy.logging.encoders.filter." + filterName)
+					if err != nil {
+						return d.Errf("getting log filter module named '%s': %v", filterName, err)
+					}
+					unm, ok := mod.New().(caddyfile.Unmarshaler)
+					if !ok {
+						return d.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
+					}
+					err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+					if err != nil {
+						return err
+					}
+					f, ok := unm.(LogFieldFilter)
+					if !ok {
+						return d.Errf("module %s is not a LogFieldFilter", mod)
+					}
+					if fe.FieldsRaw == nil {
+						fe.FieldsRaw = make(map[string]json.RawMessage)
+					}
+					fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(f, "filter", filterName, nil)
+				}
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
 	return nil
 }
 
@@ -330,4 +406,5 @@ func (mom logObjectMarshalerWrapper) MarshalLogObject(_ zapcore.ObjectEncoder) e
 var (
 	_ zapcore.Encoder         = (*FilterEncoder)(nil)
 	_ zapcore.ObjectMarshaler = (*logObjectMarshalerWrapper)(nil)
+	_ caddyfile.Unmarshaler   = (*FilterEncoder)(nil)
 )

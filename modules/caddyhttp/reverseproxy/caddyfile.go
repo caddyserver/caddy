@@ -467,6 +467,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.FlushInterval = caddy.Duration(dur)
 				}
 
+			case "buffer_requests":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				h.BufferRequests = true
+
 			case "header_up":
 				if h.Headers == nil {
 					h.Headers = new(headers.Handler)
