@@ -864,7 +864,7 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 		"root": {},
 	}
 
-	// we want to deterministicly loop over the set of dirs
+	// we need to deterministically loop over each of these directives
 	keys := make([]string, 0, len(mutuallyExclusiveDirs))
 	for k := range mutuallyExclusiveDirs {
 		keys = append(keys, k)
