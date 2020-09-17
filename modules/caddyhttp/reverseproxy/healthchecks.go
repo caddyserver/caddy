@@ -164,10 +164,11 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 			}
 
 			dialInfo := DialInfo{
-				Network: upstream.networkAddress.Network,
-				Host:    upstream.networkAddress.Host,
-				Port:    portStr,
-				Address: hostAddr,
+				Upstream: upstream,
+				Network:  upstream.networkAddress.Network,
+				Host:     upstream.networkAddress.Host,
+				Port:     portStr,
+				Address:  hostAddr,
 			}
 			err := h.doActiveHealthCheck(dialInfo, hostAddr, upstream.Host)
 			if err != nil {
