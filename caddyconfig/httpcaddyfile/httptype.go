@@ -865,6 +865,7 @@ func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subro
 	}
 
 	// we need to deterministically loop over each of these directives
+	// in order to keep the group numbers consistent
 	keys := make([]string, 0, len(mutuallyExclusiveDirs))
 	for k := range mutuallyExclusiveDirs {
 		keys = append(keys, k)
