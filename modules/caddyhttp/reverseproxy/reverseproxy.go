@@ -208,9 +208,13 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
+
 		if addr.PortRangeSize() != 1 {
 			return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
 		}
+
+		upstream.networkAddress = addr
+
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
@@ -265,6 +269,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			h.HealthChecks.Active.httpClient = &http.Client{
 				Timeout:   timeout,
 				Transport: h.Transport,
+			}
+
+			for _, upstream := range h.Upstreams {
+				// if there's an alternative port for health-check provided in the config,
+				// then use it, otherwise use the port of upstream.
+				if h.HealthChecks.Active.Port != 0 {
+					upstream.activeHealthCheckPort = h.HealthChecks.Active.Port
+				} else {
+					upstream.activeHealthCheckPort = int(upstream.networkAddress.StartPort)
+				}
 			}
 
 			if h.HealthChecks.Active.Interval == 0 {
