@@ -42,6 +42,9 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 }
 
 func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
 	tester := caddytest.NewTester(t)
 	f, err := ioutil.TempFile("", "*.sock")
 	if err != nil {
