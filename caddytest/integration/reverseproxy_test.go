@@ -91,7 +91,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 			health_timeout 5s
 		}
 	}
-  `, socketName), "caddyfile")
+	`, socketName), "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
