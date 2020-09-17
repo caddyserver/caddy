@@ -17,6 +17,7 @@ require (
 	github.com/mholt/acmez v0.1.1-0.20200811184240-dc9c5f05ed1e
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
+	github.com/prometheus/client_golang v1.7.1
 	github.com/smallstep/certificates v0.15.1
 	github.com/smallstep/cli v0.15.0
 	github.com/smallstep/nosql v0.3.0
