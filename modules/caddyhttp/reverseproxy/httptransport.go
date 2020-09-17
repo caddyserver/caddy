@@ -182,6 +182,9 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			if dialInfo, ok := GetDialInfo(ctx); ok {
 				network = dialInfo.Network
 				address = dialInfo.Address
+				if dialInfo.Upstream.networkAddress.IsUnixNetwork() {
+					address = dialInfo.Host
+				}
 			}
 			conn, err := dialer.DialContext(ctx, network, address)
 			if err != nil {

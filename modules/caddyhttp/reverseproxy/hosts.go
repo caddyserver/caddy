@@ -92,8 +92,10 @@ type Upstream struct {
 	// HeaderAffinity string
 	// IPAffinity     string
 
-	healthCheckPolicy *PassiveHealthChecks
-	cb                CircuitBreaker
+	networkAddress        caddy.NetworkAddress
+	activeHealthCheckPort int
+	healthCheckPolicy     *PassiveHealthChecks
+	cb                    CircuitBreaker
 }
 
 func (u Upstream) String() string {
