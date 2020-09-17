@@ -94,10 +94,6 @@ func serverNameFromContext(ctx context.Context) string {
 	return srvName
 }
 
-func contextWithServerName(ctx context.Context, serverName string) context.Context {
-	return context.WithValue(ctx, ctxKeyServerName{}, serverName)
-}
-
 type metricsInstrumentedHandler struct {
 	labels       prometheus.Labels
 	statusLabels prometheus.Labels
