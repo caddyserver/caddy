@@ -18,7 +18,7 @@ func TestServerNameFromContext(t *testing.T) {
 	}
 
 	in := "foo"
-	ctx = contextWithServerName(ctx, in)
+	ctx = context.WithValue(ctx, ServerCtxKey, &Server{name: in})
 	if actual := serverNameFromContext(ctx); actual != in {
 		t.Errorf("Not equal: expected %q, but got %q", in, actual)
 	}

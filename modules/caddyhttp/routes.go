@@ -243,11 +243,9 @@ func wrapRoute(route Route) Middleware {
 // pointer into its own stack frame to preserve it so it
 // won't be overwritten in future loop iterations.
 func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
-	// first, wrap the middleware with metrics instrumentation
-	metricsHandler := newMetricsInstrumentedHandler(
-		caddy.GetModuleName(mh),
-		mh,
-	)
+	// wrap the middleware with metrics instrumentation
+	metricsHandler := newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh)
+
 	return func(next Handler) Handler {
 		// copy the next handler (it's an interface, so it's
 		// just a very lightweight copy of a pointer); this

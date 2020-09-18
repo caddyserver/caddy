@@ -122,6 +122,8 @@ type Server struct {
 	// ⚠️ Experimental feature; subject to change or removal.
 	AllowH2C bool `json:"allow_h2c,omitempty"`
 
+	name string
+
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
@@ -132,8 +134,6 @@ type Server struct {
 	errorLogger  *zap.Logger
 
 	h3server *http3.Server
-
-	name string
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -501,8 +501,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
-	// inject the server name for observability purposes
-	ctx = contextWithServerName(ctx, s.name)
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change

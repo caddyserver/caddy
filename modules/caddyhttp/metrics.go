@@ -82,20 +82,14 @@ func initHTTPMetrics() {
 	}, httpLabels)
 }
 
-type ctxKeyServerName struct{}
-
 // serverNameFromContext extracts the current server name from the context.
-// Returns "UNKNOWN" if none is available (should probably never happen?)
+// Returns "UNKNOWN" if none is available (should probably never happen).
 func serverNameFromContext(ctx context.Context) string {
-	srvName, ok := ctx.Value(ctxKeyServerName{}).(string)
-	if !ok {
+	srv, ok := ctx.Value(ServerCtxKey).(*Server)
+	if !ok || srv == nil || srv.name == "" {
 		return "UNKNOWN"
 	}
-	return srvName
-}
-
-func contextWithServerName(ctx context.Context, serverName string) context.Context {
-	return context.WithValue(ctx, ctxKeyServerName{}, serverName)
+	return srv.name
 }
 
 type metricsInstrumentedHandler struct {
