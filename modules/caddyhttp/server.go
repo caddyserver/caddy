@@ -122,6 +122,8 @@ type Server struct {
 	// ⚠️ Experimental feature; subject to change or removal.
 	AllowH2C bool `json:"allow_h2c,omitempty"`
 
+	name string
+
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper

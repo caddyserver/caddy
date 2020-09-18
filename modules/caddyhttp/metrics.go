@@ -82,43 +82,37 @@ func initHTTPMetrics() {
 	}, httpLabels)
 }
 
-type ctxKeyServerName struct{}
-
 // serverNameFromContext extracts the current server name from the context.
-// Returns "UNKNOWN" if none is available (should probably never happen?)
+// Returns "UNKNOWN" if none is available (should probably never happen).
 func serverNameFromContext(ctx context.Context) string {
-	srvName, ok := ctx.Value(ctxKeyServerName{}).(string)
-	if !ok {
+	srv, ok := ctx.Value(ServerCtxKey).(*Server)
+	if !ok || srv == nil || srv.name == "" {
 		return "UNKNOWN"
 	}
-	return srvName
+	return srv.name
 }
 
 type metricsInstrumentedHandler struct {
-	labels       prometheus.Labels
-	statusLabels prometheus.Labels
-	mh           MiddlewareHandler
+	handler string
+	mh      MiddlewareHandler
 }
 
-func newMetricsInstrumentedHandler(server, handler string, mh MiddlewareHandler) *metricsInstrumentedHandler {
+func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metricsInstrumentedHandler {
 	httpMetrics.init.Do(func() {
 		initHTTPMetrics()
 	})
 
-	labels := prometheus.Labels{"server": server, "handler": handler}
-	statusLabels := prometheus.Labels{"server": server, "handler": handler, "code": "", "method": ""}
-	return &metricsInstrumentedHandler{labels, statusLabels, mh}
+	return &metricsInstrumentedHandler{handler, mh}
 }
 
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
-	inFlight := httpMetrics.requestInFlight.With(h.labels)
+	server := serverNameFromContext(r.Context())
+	labels := prometheus.Labels{"server": server, "handler": h.handler}
+	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": r.Method}
+
+	inFlight := httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
 	defer inFlight.Dec()
-
-	statusLabels := prometheus.Labels{"method": r.Method}
-	for k, v := range h.labels {
-		statusLabels[k] = v
-	}
 
 	start := time.Now()
 
@@ -128,33 +122,23 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
 		statusLabels["code"] = sanitizeCode(status)
 		ttfb := time.Since(start).Seconds()
-		observeWithExemplar(statusLabels, httpMetrics.responseDuration, ttfb)
+		httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
 		return false
 	})
 	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
 	err := h.mh.ServeHTTP(wrec, r, next)
 	dur := time.Since(start).Seconds()
-	httpMetrics.requestCount.With(h.labels).Inc()
+	httpMetrics.requestCount.With(labels).Inc()
 	if err != nil {
-		httpMetrics.requestErrors.With(h.labels).Inc()
+		httpMetrics.requestErrors.With(labels).Inc()
 		return err
 	}
 
-	observeWithExemplar(statusLabels, httpMetrics.requestDuration, dur)
-	observeWithExemplar(statusLabels, httpMetrics.requestSize, float64(computeApproximateRequestSize(r)))
+	httpMetrics.requestDuration.With(statusLabels).Observe(dur)
+	httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
 	httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
 
 	return nil
-}
-
-func observeWithExemplar(l prometheus.Labels, o *prometheus.HistogramVec, value float64) {
-	obs := o.With(l)
-	if oe, ok := obs.(prometheus.ExemplarObserver); ok {
-		oe.ObserveWithExemplar(value, l)
-		return
-	}
-	// _should_ be a noop, but here just in case...
-	obs.Observe(value)
 }
 
 func sanitizeCode(code int) string {

@@ -1,6 +1,7 @@
 package caddyhttp
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,20 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
+func TestServerNameFromContext(t *testing.T) {
+	ctx := context.Background()
+	expected := "UNKNOWN"
+	if actual := serverNameFromContext(ctx); actual != expected {
+		t.Errorf("Not equal: expected %q, but got %q", expected, actual)
+	}
+
+	in := "foo"
+	ctx = context.WithValue(ctx, ServerCtxKey, &Server{name: in})
+	if actual := serverNameFromContext(ctx); actual != in {
+		t.Errorf("Not equal: expected %q, but got %q", in, actual)
+	}
+}
 
 func TestMetricsInstrumentedHandler(t *testing.T) {
 	handlerErr := errors.New("oh noes")
@@ -26,7 +41,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return h.ServeHTTP(w, r)
 	})
 
-	ih := newMetricsInstrumentedHandler("foo", "bar", mh)
+	ih := newMetricsInstrumentedHandler("bar", mh)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
