@@ -17,7 +17,6 @@ package caddyhttp
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -148,7 +147,6 @@ func (m *MatchVarsRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
-		log.Printf("%+v\n\n", m)
 		if d.NextBlock(0) {
 			return d.Err("malformed vars_regexp matcher: blocks are not supported")
 		}
