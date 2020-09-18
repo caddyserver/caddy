@@ -155,6 +155,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 	// prepare each server
 	for srvName, srv := range app.Servers {
+		srv.name = srvName
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
