@@ -245,7 +245,6 @@ func wrapRoute(route Route) Middleware {
 func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
 	// first, wrap the middleware with metrics instrumentation
 	metricsHandler := newMetricsInstrumentedHandler(
-		serverNameFromContext(ctx.Context),
 		caddy.GetModuleName(mh),
 		mh,
 	)
