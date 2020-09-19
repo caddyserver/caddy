@@ -108,7 +108,7 @@ func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metric
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	server := serverNameFromContext(r.Context())
 	labels := prometheus.Labels{"server": server, "handler": h.handler}
-	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": r.Method}
+	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": r.Method, "code": ""}
 
 	inFlight := httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
@@ -132,6 +132,14 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		httpMetrics.requestErrors.With(labels).Inc()
 		return err
+	}
+
+	// If the code hasn't been set yet, and we didn't encounter an error, we're
+	// probably falling through with an empty handler.
+	if statusLabels["code"] == "" {
+		// we still sanitize it, even though it's likely to be 0. A 200 is
+		// returned on fallthrough so we want to reflect that.
+		statusLabels["code"] = sanitizeCode(wrec.Status())
 	}
 
 	httpMetrics.requestDuration.With(statusLabels).Observe(dur)

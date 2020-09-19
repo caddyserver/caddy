@@ -57,6 +57,24 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	if err := ih.ServeHTTP(w, r, h); err != nil {
 		t.Errorf("Received unexpected error: %w", err)
 	}
+
+	// an empty handler - no errors, no header written
+	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		return nil
+	})
+	ih = newMetricsInstrumentedHandler("empty", mh)
+	r = httptest.NewRequest("GET", "/", nil)
+	w = httptest.NewRecorder()
+
+	if err := ih.ServeHTTP(w, r, h); err != nil {
+		t.Errorf("Received unexpected error: %w", err)
+	}
+	if actual := w.Result().StatusCode; actual != 200 {
+		t.Errorf("Not same: expected status code %#v, but got %#v", 200, actual)
+	}
+	if actual := w.Result().Header; len(actual) != 0 {
+		t.Errorf("Not empty: expected headers to be empty, but got %#v", actual)
+	}
 }
 
 type middlewareHandlerFunc func(http.ResponseWriter, *http.Request, Handler) error
