@@ -2,10 +2,16 @@
 
 reverse_proxy 127.0.0.1:65535 {
 	handle_response header X-Accel-Redirect {
-		respond "Header!"
+		respond "Header X-Accel-Redirect!"
+	}
+	handle_response header X-Another {
+		respond "Header X-Another!"
 	}
 	handle_response status 401 {
-		respond "Status!"
+		respond "Status 401!"
+	}
+	handle_response status 403 {
+		respond "Status 403!"
 	}
 	handle_response {
 		respond "Any!"
@@ -35,7 +41,24 @@ reverse_proxy 127.0.0.1:65535 {
 												{
 													"handle": [
 														{
-															"body": "Header!",
+															"body": "Header X-Accel-Redirect!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"headers": {
+													"X-Another": []
+												}
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Header X-Another!",
 															"handler": "static_response"
 														}
 													]
@@ -52,7 +75,24 @@ reverse_proxy 127.0.0.1:65535 {
 												{
 													"handle": [
 														{
-															"body": "Status!",
+															"body": "Status 401!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"status_code": [
+													403
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Status 403!",
 															"handler": "static_response"
 														}
 													]
