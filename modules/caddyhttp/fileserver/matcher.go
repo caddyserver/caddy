@@ -44,6 +44,8 @@ func init() {
 // of the matched file.
 // - `{http.matchers.file.type}` Set to "directory" if
 // the matched file is a directory, "file" otherwise.
+// - `{http.matchers.file.remainder}` Set to the remainder
+// of the path if the path was split by `split_path`.
 type MatchFile struct {
 	// The root directory, used for creating absolute
 	// file paths, and required when working with
@@ -155,11 +157,12 @@ func (m MatchFile) Validate() error {
 }
 
 // Match returns true if r matches m. Returns true
-// if a file was matched. If so, three placeholders
+// if a file was matched. If so, four placeholders
 // will be available:
 //    - http.matchers.file.relative
 //    - http.matchers.file.absolute
 //    - http.matchers.file.type
+//    - http.matchers.file.remainder
 func (m MatchFile) Match(r *http.Request) bool {
 	return m.selectFile(r)
 }
@@ -179,19 +182,20 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	}
 
 	// common preparation of the file into parts
-	prepareFilePath := func(file string) (string, string) {
-		suffix := m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
+	prepareFilePath := func(file string) (string, string, string) {
+		suffix, remainder := m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
 		if strings.HasSuffix(file, "/") {
 			suffix += "/"
 		}
 		fullpath := sanitizedPathJoin(root, suffix)
-		return suffix, fullpath
+		return suffix, fullpath, remainder
 	}
 
 	// sets up the placeholders for the matched file
-	setPlaceholders := func(info os.FileInfo, rel string, abs string) {
+	setPlaceholders := func(info os.FileInfo, rel string, abs string, remainder string) {
 		repl.Set("http.matchers.file.relative", rel)
 		repl.Set("http.matchers.file.absolute", abs)
+		repl.Set("http.matchers.file.remainder", remainder)
 
 		fileType := "file"
 		if info.IsDir() {
@@ -203,9 +207,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
-			suffix, fullpath := prepareFilePath(f)
+			suffix, fullpath, remainder := prepareFilePath(f)
 			if info, exists := strictFileExists(fullpath); exists {
-				setPlaceholders(info, suffix, fullpath)
+				setPlaceholders(info, suffix, fullpath, remainder)
 				return true
 			}
 		}
@@ -214,52 +218,58 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		var largestSize int64
 		var largestFilename string
 		var largestSuffix string
+		var remainder string
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
-			suffix, fullpath := prepareFilePath(f)
+			suffix, fullpath, splitRemainder := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
 				largestSize = info.Size()
 				largestFilename = fullpath
 				largestSuffix = suffix
+				remainder = splitRemainder
 			}
 		}
-		setPlaceholders(info, largestSuffix, largestFilename)
+		setPlaceholders(info, largestSuffix, largestFilename, remainder)
 		return true
 
 	case tryPolicySmallestSize:
 		var smallestSize int64
 		var smallestFilename string
 		var smallestSuffix string
+		var remainder string
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
-			suffix, fullpath := prepareFilePath(f)
+			suffix, fullpath, splitRemainder := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
 				smallestSize = info.Size()
 				smallestFilename = fullpath
 				smallestSuffix = suffix
+				remainder = splitRemainder
 			}
 		}
-		setPlaceholders(info, smallestSuffix, smallestFilename)
+		setPlaceholders(info, smallestSuffix, smallestFilename, remainder)
 		return true
 
 	case tryPolicyMostRecentlyMod:
 		var recentDate time.Time
 		var recentFilename string
 		var recentSuffix string
+		var remainder string
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
-			suffix, fullpath := prepareFilePath(f)
+			suffix, fullpath, splitRemainder := prepareFilePath(f)
 			info, err := os.Stat(fullpath)
 			if err == nil &&
 				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
 				recentDate = info.ModTime()
 				recentFilename = fullpath
 				recentSuffix = suffix
+				remainder = splitRemainder
 			}
 		}
-		setPlaceholders(info, recentSuffix, recentFilename)
+		setPlaceholders(info, recentSuffix, recentFilename, remainder)
 		return true
 	}
 
@@ -298,9 +308,9 @@ func strictFileExists(file string) (os.FileInfo, bool) {
 // firstSplit returns the first result where the path
 // can be split in two by a value in m.SplitPath. The
 // result is the first piece of the path that ends with
-// in the split value. Returns the path as-is if the
-// path cannot be split.
-func (m MatchFile) firstSplit(path string) string {
+// in the split value, and the remainder. Returns the
+// path as-is if the path cannot be split.
+func (m MatchFile) firstSplit(path string) (string, string) {
 	for _, split := range m.SplitPath {
 		if idx := indexFold(path, split); idx > -1 {
 			pos := idx + len(split)
@@ -308,10 +318,10 @@ func (m MatchFile) firstSplit(path string) string {
 			if pos != len(path) && !strings.HasPrefix(path[pos:], "/") {
 				continue
 			}
-			return path[:pos]
+			return path[:pos], path[pos:]
 		}
 	}
-	return path
+	return path, ""
 }
 
 // There is no strings.IndexFold() function like there is strings.EqualFold(),

@@ -206,6 +206,15 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	}
 	scriptName := fpath
 
+	// Try to grab the path remainder from a file matcher if we didn't
+	// get a split result here.
+	// See https://github.com/caddyserver/caddy/issues/3718
+	if pathInfo == "" {
+		if remainder, ok := repl.Get("http.matchers.file.remainder"); ok {
+			pathInfo = remainder.(string)
+		}
+	}
+
 	// Strip PATH_INFO from SCRIPT_NAME
 	scriptName = strings.TrimSuffix(scriptName, pathInfo)
 
