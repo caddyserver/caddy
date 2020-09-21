@@ -15,14 +15,24 @@
 package caddyhttp
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
+	"encoding/pem"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -130,6 +140,24 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return dir, true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
+			case "http.request.body":
+				if req.Body == nil {
+					return "", true
+				}
+				// normally net/http will close the body for us, but since we
+				// are replacing it with a fake one, we have to ensure we close
+				// the real body ourselves when we're done
+				defer req.Body.Close()
+				// read the request body into a buffer (can't pool because we
+				// don't know its lifetime and would have to make a copy anyway)
+				buf := new(bytes.Buffer)
+				_, err := io.Copy(buf, req.Body)
+				if err != nil {
+					return "", true
+				}
+				// replace real body with buffered data
+				req.Body = ioutil.NopCloser(buf)
+				return buf.String(), true
 
 				// original request, before any internal changes
 			case "http.request.orig_method":
@@ -158,7 +186,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			if strings.HasPrefix(key, reqHostLabelsReplPrefix) {
 				idxStr := key[len(reqHostLabelsReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
-				if err != nil {
+				if err != nil || idx < 0 {
 					return "", false
 				}
 				reqHost, _, err := net.SplitHostPort(req.Host)
@@ -166,10 +194,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 					reqHost = req.Host // OK; assume there was no port
 				}
 				hostLabels := strings.Split(reqHost, ".")
-				if idx < 0 {
-					return "", false
-				}
-				if idx > len(hostLabels) {
+				if idx >= len(hostLabels) {
 					return "", true
 				}
 				return hostLabels[len(hostLabels)-idx-1], true
@@ -240,15 +265,88 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 			return nil, false
 		}
 
+		// subject alternate names (SANs)
+		if strings.HasPrefix(field, "client.san.") {
+			field = field[len("client.san."):]
+			var fieldName string
+			var fieldValue interface{}
+			switch {
+			case strings.HasPrefix(field, "dns_names"):
+				fieldName = "dns_names"
+				fieldValue = cert.DNSNames
+			case strings.HasPrefix(field, "emails"):
+				fieldName = "emails"
+				fieldValue = cert.EmailAddresses
+			case strings.HasPrefix(field, "ips"):
+				fieldName = "ips"
+				fieldValue = cert.IPAddresses
+			case strings.HasPrefix(field, "uris"):
+				fieldName = "uris"
+				fieldValue = cert.URIs
+			default:
+				return nil, false
+			}
+			field = field[len(fieldName):]
+
+			// if no index was specified, return the whole list
+			if field == "" {
+				return fieldValue, true
+			}
+			if len(field) < 2 || field[0] != '.' {
+				return nil, false
+			}
+			field = field[1:] // trim '.' between field name and index
+
+			// get the numeric index
+			idx, err := strconv.Atoi(field)
+			if err != nil || idx < 0 {
+				return nil, false
+			}
+
+			// access the indexed element and return it
+			switch v := fieldValue.(type) {
+			case []string:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			case []net.IP:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			case []*url.URL:
+				if idx >= len(v) {
+					return nil, true
+				}
+				return v[idx], true
+			}
+		}
+
 		switch field {
 		case "client.fingerprint":
 			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
+		case "client.public_key", "client.public_key_sha256":
+			if cert.PublicKey == nil {
+				return nil, true
+			}
+			pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
+			if err != nil {
+				return nil, true
+			}
+			if strings.HasSuffix(field, "_sha256") {
+				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
+			}
+			return fmt.Sprintf("%x", pubKeyBytes), true
 		case "client.issuer":
 			return cert.Issuer, true
 		case "client.serial":
 			return cert.SerialNumber, true
 		case "client.subject":
 			return cert.Subject, true
+		case "client.certificate_pem":
+			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+			return pem.EncodeToMemory(&block), true
 		default:
 			return nil, false
 		}
@@ -269,6 +367,19 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		return req.TLS.ServerName, true
 	}
 	return nil, false
+}
+
+// marshalPublicKey returns the byte encoding of pubKey.
+func marshalPublicKey(pubKey interface{}) ([]byte, error) {
+	switch key := pubKey.(type) {
+	case *rsa.PublicKey:
+		return asn1.Marshal(key)
+	case *ecdsa.PublicKey:
+		return elliptic.Marshal(key.Curve, key.X, key.Y), nil
+	case ed25519.PublicKey:
+		return key, nil
+	}
+	return nil, fmt.Errorf("unrecognized public key type: %T", pubKey)
 }
 
 // getTLSPeerCert retrieves the first peer certificate from a TLS session.

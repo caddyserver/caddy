@@ -17,15 +17,19 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/certmagic"
-	"github.com/go-acme/lego/v3/challenge"
+	"github.com/mholt/acmez"
+	"github.com/mholt/acmez/acme"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -57,7 +61,7 @@ type ACMEIssuer struct {
 
 	// If using an ACME CA that requires an external account
 	// binding, specify the CA-provided credentials here.
-	ExternalAccount *ExternalAccountBinding `json:"external_account,omitempty"`
+	ExternalAccount *acme.EAB `json:"external_account,omitempty"`
 
 	// Time to wait before timing out an ACME operation.
 	ACMETimeout caddy.Duration `json:"acme_timeout,omitempty"`
@@ -73,6 +77,7 @@ type ACMEIssuer struct {
 	rootPool *x509.CertPool
 	template certmagic.ACMEManager
 	magic    *certmagic.Config
+	logger   *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -83,47 +88,52 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision sets up m.
-func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
+// Provision sets up iss.
+func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
+	iss.logger = ctx.Logger(iss)
+
 	// DNS providers
-	if m.Challenges != nil && m.Challenges.DNS != nil && m.Challenges.DNS.ProviderRaw != nil {
-		val, err := ctx.LoadModule(m.Challenges.DNS, "ProviderRaw")
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
+		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		// TODO: For a temporary amount of time, we are allowing the use of
-		// DNS providers from go-acme/lego since there are so many implemented
-		// for it -- they are adapted as Caddy modules in this repository:
-		// https://github.com/caddy-dns/lego-deprecated - that module is
-		// a challenge.Provider value, so we use it directly. The user must set
-		// environment variables to configure it. Remove this shim once a sufficient
-		// number of DNS providers are implemented for the libdns APIs instead.
-		if grandfatheredProvider, ok := val.(challenge.Provider); ok {
-			m.Challenges.DNS.provider = grandfatheredProvider
+
+		if deprecatedProvider, ok := val.(acmez.Solver); ok {
+			// TODO: For a temporary amount of time, we are allowing the use of DNS
+			// providers from go-acme/lego since there are so many providers implemented
+			// using that API -- they are adapted as an all-in-one Caddy module in this
+			// repository: https://github.com/caddy-dns/lego-deprecated - the module is a
+			// acmez.Solver type, so we use it directly. The user must set environment
+			// variables to configure it. Remove this shim once a sufficient number of
+			// DNS providers are implemented for the libdns APIs instead.
+			iss.Challenges.DNS.solver = deprecatedProvider
 		} else {
-			m.Challenges.DNS.provider = &solver{
-				recordManager: val.(recordManager),
-				TTL:           time.Duration(m.Challenges.DNS.TTL),
+			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
+				DNSProvider:        val.(certmagic.ACMEDNSProvider),
+				TTL:                time.Duration(iss.Challenges.DNS.TTL),
+				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
+				Resolvers:          iss.Challenges.DNS.Resolvers,
 			}
 		}
 	}
 
 	// add any custom CAs to trust store
-	if len(m.TrustedRootsPEMFiles) > 0 {
-		m.rootPool = x509.NewCertPool()
-		for _, pemFile := range m.TrustedRootsPEMFiles {
+	if len(iss.TrustedRootsPEMFiles) > 0 {
+		iss.rootPool = x509.NewCertPool()
+		for _, pemFile := range iss.TrustedRootsPEMFiles {
 			pemData, err := ioutil.ReadFile(pemFile)
 			if err != nil {
 				return fmt.Errorf("loading trusted root CA's PEM file: %s: %v", pemFile, err)
 			}
-			if !m.rootPool.AppendCertsFromPEM(pemData) {
+			if !iss.rootPool.AppendCertsFromPEM(pemData) {
 				return fmt.Errorf("unable to add %s to trust pool: %v", pemFile, err)
 			}
 		}
 	}
 
 	var err error
-	m.template, err = m.makeIssuerTemplate()
+	iss.template, err = iss.makeIssuerTemplate()
 	if err != nil {
 		return err
 	}
@@ -131,41 +141,30 @@ func (m *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
+func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 	template := certmagic.ACMEManager{
-		CA:                m.CA,
-		Email:             m.Email,
-		CertObtainTimeout: time.Duration(m.ACMETimeout),
-		TrustedRoots:      m.rootPool,
+		CA:                iss.CA,
+		TestCA:            iss.TestCA,
+		Email:             iss.Email,
+		CertObtainTimeout: time.Duration(iss.ACMETimeout),
+		TrustedRoots:      iss.rootPool,
+		ExternalAccount:   iss.ExternalAccount,
+		Logger:            iss.logger,
 	}
 
-	if m.ExternalAccount != nil {
-		hmac, err := base64.StdEncoding.DecodeString(m.ExternalAccount.EncodedHMAC)
-		if err != nil {
-			return template, err
+	if iss.Challenges != nil {
+		if iss.Challenges.HTTP != nil {
+			template.DisableHTTPChallenge = iss.Challenges.HTTP.Disabled
+			template.AltHTTPPort = iss.Challenges.HTTP.AlternatePort
 		}
-		if m.ExternalAccount.KeyID == "" || len(hmac) == 0 {
-			return template, fmt.Errorf("when an external account binding is specified, both key ID and HMAC are required")
+		if iss.Challenges.TLSALPN != nil {
+			template.DisableTLSALPNChallenge = iss.Challenges.TLSALPN.Disabled
+			template.AltTLSALPNPort = iss.Challenges.TLSALPN.AlternatePort
 		}
-		template.ExternalAccount = &certmagic.ExternalAccountBinding{
-			KeyID: m.ExternalAccount.KeyID,
-			HMAC:  hmac,
+		if iss.Challenges.DNS != nil {
+			template.DNS01Solver = iss.Challenges.DNS.solver
 		}
-	}
-
-	if m.Challenges != nil {
-		if m.Challenges.HTTP != nil {
-			template.DisableHTTPChallenge = m.Challenges.HTTP.Disabled
-			template.AltHTTPPort = m.Challenges.HTTP.AlternatePort
-		}
-		if m.Challenges.TLSALPN != nil {
-			template.DisableTLSALPNChallenge = m.Challenges.TLSALPN.Disabled
-			template.AltTLSALPNPort = m.Challenges.TLSALPN.AlternatePort
-		}
-		if m.Challenges.DNS != nil {
-			template.DNSProvider = m.Challenges.DNS.provider
-		}
-		template.ListenHost = m.Challenges.BindHost
+		template.ListenHost = iss.Challenges.BindHost
 	}
 
 	return template, nil
@@ -175,8 +174,8 @@ func (m *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 // This is required because ACME needs values from the config in
 // order to solve the challenges during issuance. This implements
 // the ConfigSetter interface.
-func (m *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
-	m.magic = cfg
+func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
+	iss.magic = cfg
 }
 
 // TODO: I kind of hate how each call to these methods needs to
@@ -184,23 +183,185 @@ func (m *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 // we find the right place to do that just once and then re-use?
 
 // PreCheck implements the certmagic.PreChecker interface.
-func (m *ACMEIssuer) PreCheck(names []string, interactive bool) error {
-	return certmagic.NewACMEManager(m.magic, m.template).PreCheck(names, interactive)
+func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
+	return certmagic.NewACMEManager(iss.magic, iss.template).PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
-func (m *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEManager(m.magic, m.template).Issue(ctx, csr)
+func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
+	return certmagic.NewACMEManager(iss.magic, iss.template).Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
-func (m *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEManager(m.magic, m.template).IssuerKey()
+func (iss *ACMEIssuer) IssuerKey() string {
+	return certmagic.NewACMEManager(iss.magic, iss.template).IssuerKey()
 }
 
 // Revoke revokes the given certificate.
-func (m *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource) error {
-	return certmagic.NewACMEManager(m.magic, m.template).Revoke(ctx, cert)
+func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
+	return certmagic.NewACMEManager(iss.magic, iss.template).Revoke(ctx, cert, reason)
+}
+
+// GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because
+// type-asserting them to *ACMEIssuer will fail, but type-asserting them to an interface
+// with only this method will succeed, and will still allow the embedded ACMEIssuer
+// to be accessed and manipulated.
+func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
+
+// UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
+//
+//     ... acme {
+//         dir <directory_url>
+//         test_dir <test_directory_url>
+//         email <email>
+//         timeout <duration>
+//         disable_http_challenge
+//         disable_tlsalpn_challenge
+//         alt_http_port    <port>
+//         alt_tlsalpn_port <port>
+//         eab <key_id> <mac_key>
+//         trusted_roots <pem_files...>
+//         dns <provider_name> [<options>]
+//         resolvers <dns_servers...>
+//     }
+//
+func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			switch d.Val() {
+			case "dir":
+				if !d.AllArgs(&iss.CA) {
+					return d.ArgErr()
+				}
+
+			case "test_dir":
+				if !d.AllArgs(&iss.TestCA) {
+					return d.ArgErr()
+				}
+
+			case "email":
+				if !d.AllArgs(&iss.Email) {
+					return d.ArgErr()
+				}
+
+			case "timeout":
+				var timeoutStr string
+				if !d.AllArgs(&timeoutStr) {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(timeoutStr)
+				if err != nil {
+					return d.Errf("invalid timeout duration %s: %v", timeoutStr, err)
+				}
+				iss.ACMETimeout = caddy.Duration(timeout)
+
+			case "disable_http_challenge":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.HTTP == nil {
+					iss.Challenges.HTTP = new(HTTPChallengeConfig)
+				}
+				iss.Challenges.HTTP.Disabled = true
+
+			case "disable_tlsalpn_challenge":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.TLSALPN == nil {
+					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+				}
+				iss.Challenges.TLSALPN.Disabled = true
+
+			case "alt_http_port":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				port, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("invalid port %s: %v", d.Val(), err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.HTTP == nil {
+					iss.Challenges.HTTP = new(HTTPChallengeConfig)
+				}
+				iss.Challenges.HTTP.AlternatePort = port
+
+			case "alt_tlsalpn_port":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				port, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("invalid port %s: %v", d.Val(), err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.TLSALPN == nil {
+					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+				}
+				iss.Challenges.TLSALPN.AlternatePort = port
+
+			case "eab":
+				iss.ExternalAccount = new(acme.EAB)
+				if !d.AllArgs(&iss.ExternalAccount.KeyID, &iss.ExternalAccount.MACKey) {
+					return d.ArgErr()
+				}
+
+			case "trusted_roots":
+				iss.TrustedRootsPEMFiles = d.RemainingArgs()
+
+			case "dns":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				provName := d.Val()
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
+				if err != nil {
+					return d.Errf("getting DNS provider module named '%s': %v", provName, err)
+				}
+				dnsProvModuleInstance := dnsProvModule.New()
+				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
+					err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+					if err != nil {
+						return err
+					}
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, nil)
+
+			case "resolvers":
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
+				if len(iss.Challenges.DNS.Resolvers) == 0 {
+					return d.ArgErr()
+				}
+
+			default:
+				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
+			}
+		}
+	}
+	return nil
 }
 
 // onDemandAskRequest makes a request to the ask URL
@@ -231,21 +392,12 @@ func onDemandAskRequest(ask string, name string) error {
 	return nil
 }
 
-// ExternalAccountBinding contains information for
-// binding an external account to an ACME account.
-type ExternalAccountBinding struct {
-	// The key identifier.
-	KeyID string `json:"key_id,omitempty"`
-
-	// The base64-encoded HMAC.
-	EncodedHMAC string `json:"hmac,omitempty"`
-}
-
 // Interface guards
 var (
-	_ certmagic.PreChecker = (*ACMEIssuer)(nil)
-	_ certmagic.Issuer     = (*ACMEIssuer)(nil)
-	_ certmagic.Revoker    = (*ACMEIssuer)(nil)
-	_ caddy.Provisioner    = (*ACMEIssuer)(nil)
-	_ ConfigSetter         = (*ACMEIssuer)(nil)
+	_ certmagic.PreChecker  = (*ACMEIssuer)(nil)
+	_ certmagic.Issuer      = (*ACMEIssuer)(nil)
+	_ certmagic.Revoker     = (*ACMEIssuer)(nil)
+	_ caddy.Provisioner     = (*ACMEIssuer)(nil)
+	_ ConfigSetter          = (*ACMEIssuer)(nil)
+	_ caddyfile.Unmarshaler = (*ACMEIssuer)(nil)
 )

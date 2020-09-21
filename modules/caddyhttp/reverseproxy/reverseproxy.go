@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -94,9 +95,24 @@ type Handler struct {
 	// be avoided if at all possible for performance reasons.
 	BufferRequests bool `json:"buffer_requests,omitempty"`
 
+	// List of handlers and their associated matchers to evaluate
+	// after successful roundtrips. The first handler that matches
+	// the response from a backend will be invoked. The response
+	// body from the backend will not be written to the client;
+	// it is up to the handler to finish handling the response.
+	// If passive health checks are enabled, any errors from the
+	// handler chain will not affect the health status of the
+	// backend.
+	//
+	// Two new placeholders are available in this handler chain:
+	// - `{http.reverse_proxy.status_code}` The status code
+	// - `{http.reverse_proxy.status_text}` The status text
+	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
+
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
 
+	ctx    caddy.Context
 	logger *zap.Logger
 }
 
@@ -110,6 +126,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	h.ctx = ctx
 	h.logger = ctx.Logger(h)
 
 	// start by loading modules
@@ -187,6 +204,17 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
+		addr, err := caddy.ParseNetworkAddress(upstream.Dial)
+		if err != nil {
+			return err
+		}
+
+		if addr.PortRangeSize() != 1 {
+			return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
+		}
+
+		upstream.networkAddress = addr
+
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
@@ -220,36 +248,61 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	// if active health checks are enabled, configure them and start a worker
-	if h.HealthChecks != nil &&
-		h.HealthChecks.Active != nil &&
-		(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
-		h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
-
-		timeout := time.Duration(h.HealthChecks.Active.Timeout)
-		if timeout == 0 {
-			timeout = 5 * time.Second
-		}
-
-		h.HealthChecks.Active.stopChan = make(chan struct{})
-		h.HealthChecks.Active.httpClient = &http.Client{
-			Timeout:   timeout,
-			Transport: h.Transport,
-		}
-
-		if h.HealthChecks.Active.Interval == 0 {
-			h.HealthChecks.Active.Interval = caddy.Duration(30 * time.Second)
-		}
-
-		if h.HealthChecks.Active.ExpectBody != "" {
-			var err error
-			h.HealthChecks.Active.bodyRegexp, err = regexp.Compile(h.HealthChecks.Active.ExpectBody)
-			if err != nil {
-				return fmt.Errorf("expect_body: compiling regular expression: %v", err)
+	if h.HealthChecks != nil {
+		// set defaults on passive health checks, if necessary
+		if h.HealthChecks.Passive != nil {
+			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
+				h.HealthChecks.Passive.MaxFails = 1
 			}
 		}
 
-		go h.activeHealthChecker()
+		// if active health checks are enabled, configure them and start a worker
+		if h.HealthChecks.Active != nil &&
+			(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
+			h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
+
+			timeout := time.Duration(h.HealthChecks.Active.Timeout)
+			if timeout == 0 {
+				timeout = 5 * time.Second
+			}
+
+			h.HealthChecks.Active.httpClient = &http.Client{
+				Timeout:   timeout,
+				Transport: h.Transport,
+			}
+
+			for _, upstream := range h.Upstreams {
+				// if there's an alternative port for health-check provided in the config,
+				// then use it, otherwise use the port of upstream.
+				if h.HealthChecks.Active.Port != 0 {
+					upstream.activeHealthCheckPort = h.HealthChecks.Active.Port
+				} else {
+					upstream.activeHealthCheckPort = int(upstream.networkAddress.StartPort)
+				}
+			}
+
+			if h.HealthChecks.Active.Interval == 0 {
+				h.HealthChecks.Active.Interval = caddy.Duration(30 * time.Second)
+			}
+
+			if h.HealthChecks.Active.ExpectBody != "" {
+				var err error
+				h.HealthChecks.Active.bodyRegexp, err = regexp.Compile(h.HealthChecks.Active.ExpectBody)
+				if err != nil {
+					return fmt.Errorf("expect_body: compiling regular expression: %v", err)
+				}
+			}
+
+			go h.activeHealthChecker()
+		}
+	}
+
+	// set up any response routes
+	for i, rh := range h.HandleResponse {
+		err := rh.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning response handler %d: %v", i, err)
+		}
 	}
 
 	return nil
@@ -257,14 +310,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Cleanup cleans up the resources made by h during provisioning.
 func (h *Handler) Cleanup() error {
-	// stop the active health checker
-	if h.HealthChecks != nil &&
-		h.HealthChecks.Active != nil &&
-		h.HealthChecks.Active.stopChan != nil {
-		// TODO: consider using context cancellation, could be much simpler
-		close(h.HealthChecks.Active.stopChan)
-	}
-
 	// TODO: Close keepalive connections on reload? https://github.com/caddyserver/caddy/pull/2507/files#diff-70219fd88fe3f36834f474ce6537ed26R762
 
 	// remove hosts from our config from the pool
@@ -306,10 +351,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
 
-	// we will need the original headers and Host
-	// value if header operations are configured
-	reqHeader := r.Header
+	// we will need the original headers and Host value if
+	// header operations are configured; and we should
+	// restore them after we're done if they are changed
+	// (for example, changing the outbound Host header
+	// should not permanently change r.Host; issue #3509)
 	reqHost := r.Host
+	reqHeader := r.Header
+	defer func() {
+		r.Host = reqHost
+		r.Header = reqHeader
+	}()
 
 	start := time.Now()
 
@@ -321,7 +373,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			if proxyErr == nil {
 				proxyErr = fmt.Errorf("no upstreams available")
 			}
-			if !h.LoadBalancing.tryAgain(start, proxyErr, r) {
+			if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
 				break
 			}
 			continue
@@ -361,18 +413,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		// proxy the request to that upstream
-		proxyErr = h.reverseProxy(w, r, dialInfo)
+		proxyErr = h.reverseProxy(w, r, dialInfo, next)
 		if proxyErr == nil || proxyErr == context.Canceled {
 			// context.Canceled happens when the downstream client
 			// cancels the request, which is not our failure
 			return nil
 		}
 
+		// if the roundtrip was successful, don't retry the request or
+		// ding the health status of the upstream (an error can still
+		// occur after the roundtrip if, for example, a response handler
+		// after the roundtrip returns an error)
+		if succ, ok := proxyErr.(roundtripSucceeded); ok {
+			return succ.error
+		}
+
 		// remember this failure (if enabled)
 		h.countFailure(upstream)
 
 		// if we've tried long enough, break
-		if !h.LoadBalancing.tryAgain(start, proxyErr, r) {
+		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
 			break
 		}
 	}
@@ -441,12 +501,14 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		req.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	// set X-Forwarded-Proto; many backend apps expect this too
-	proto := "https"
-	if req.TLS == nil {
-		proto = "http"
+	if req.Header.Get("X-Forwarded-Proto") == "" {
+		// set X-Forwarded-Proto; many backend apps expect this too
+		proto := "https"
+		if req.TLS == nil {
+			proto = "http"
+		}
+		req.Header.Set("X-Forwarded-Proto", proto)
 	}
-	req.Header.Set("X-Forwarded-Proto", proto)
 
 	return nil
 }
@@ -454,28 +516,29 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
-func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo) error {
+func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo, next caddyhttp.Handler) error {
 	di.Upstream.Host.CountRequest(1)
 	defer di.Upstream.Host.CountRequest(-1)
 
 	// point the request to this upstream
 	h.directRequest(req, di)
 
-	// do the round-trip
+	// do the round-trip; emit debug log with values we know are
+	// safe, or if there is no error, emit fuller log entry
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
-	if err != nil {
-		return err
-	}
-
-	h.logger.Debug("upstream roundtrip",
+	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
+		zap.Duration("duration", duration))
+	if err != nil {
+		logger.Debug("upstream roundtrip", zap.Error(err))
+		return err
+	}
+	logger.Debug("upstream roundtrip",
 		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
-		zap.Duration("duration", duration),
-		zap.Int("status", res.StatusCode),
-	)
+		zap.Int("status", res.StatusCode))
 
 	// update circuit breaker on current conditions
 	if di.Upstream.cb != nil {
@@ -498,6 +561,42 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		}
 	}
 
+	// see if any response handler is configured for this response from the backend
+	for i, rh := range h.HandleResponse {
+		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
+			continue
+		}
+
+		repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+		// if configured to only change the status code, do that then continue regular proxy response
+		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
+			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+			if statusCode != 0 {
+				res.StatusCode = statusCode
+			}
+			break
+		}
+
+		// otherwise, if there are any routes configured, execute those as the
+		// actual response instead of what we got from the proxy backend
+		if len(rh.Routes) == 0 {
+			continue
+		}
+		res.Body.Close()
+		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
+		repl.Set("http.reverse_proxy.status_text", res.Status)
+		h.logger.Debug("handling response", zap.Int("handler", i))
+		if routeErr := rh.Routes.Compile(next).ServeHTTP(rw, req); routeErr != nil {
+			// wrap error in roundtripSucceeded so caller knows that
+			// the roundtrip was successful and to not retry
+			return roundtripSucceeded{routeErr}
+		}
+	}
+
 	// Deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		h.handleUpgradeResponse(rw, req, res)
@@ -508,6 +607,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
+	}
+
+	// apply any response header operations
+	if h.Headers != nil && h.Headers.Response != nil {
+		if h.Headers.Response.Require == nil ||
+			h.Headers.Response.Require.Match(res.StatusCode, res.Header) {
+			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			h.Headers.Response.ApplyTo(res.Header, repl)
+		}
 	}
 
 	copyHeader(rw.Header(), res.Header)
@@ -523,41 +631,26 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		rw.Header().Add("Trailer", strings.Join(trailerKeys, ", "))
 	}
 
-	// apply any response header operations
-	if h.Headers != nil && h.Headers.Response != nil {
-		if h.Headers.Response.Require == nil ||
-			h.Headers.Response.Require.Match(res.StatusCode, rw.Header()) {
-			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-			h.Headers.Response.ApplyTo(rw.Header(), repl)
-		}
-	}
-
-	// TODO: there should be an option to return an error if the response
-	// matches some criteria; would solve https://github.com/caddyserver/caddy/issues/1447
-	// by allowing the backend to determine whether this server should treat
-	// a 400+ status code as an error -- but we might need to be careful that
-	// we do not affect the health status of the backend... still looking into
-	// that; if we need to avoid that, we should return a particular error type
-	// that the caller of this function checks for and only applies health
-	// status changes if the error is not this special type
-
 	rw.WriteHeader(res.StatusCode)
 
-	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-	if err != nil {
-		defer res.Body.Close()
-		// Since we're streaming the response, if we run into an error all we can do
-		// is abort the request. Issue golang/go#23643: ReverseProxy should use ErrAbortHandler
-		// on read error while copying body.
-		// TODO: Look into whether we want to panic at all in our case...
-		if !shouldPanicOnCopyError(req) {
-			// p.logf("suppressing panic for copyResponse error in test; copy error: %v", err)
-			return err
+	// some apps need the response headers before starting to stream content with http2,
+	// so it's important to explicitly flush the headers to the client before streaming the data.
+	// (see https://github.com/caddyserver/caddy/issues/3556 for use case and nuances)
+	if h.isBidirectionalStream(req, res) {
+		if wf, ok := rw.(http.Flusher); ok {
+			wf.Flush()
 		}
-
-		panic(http.ErrAbortHandler)
 	}
+	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if err != nil {
+		// we're streaming the response and we've already written headers, so
+		// there's nothing an error handler can do to recover at this point;
+		// the standard lib's proxy panics at this point, but we'll just log
+		// the error and abort the stream here
+		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		return nil
+	}
 
 	if len(res.Trailer) > 0 {
 		// Force chunking if we saw a response trailer.
@@ -590,7 +683,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 // long enough before the next retry (i.e. no more sleeping is
 // needed). If false is returned, the handler should stop trying to
 // proxy the request.
-func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Request) bool {
+func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr error, req *http.Request) bool {
 	// if we've tried long enough, break
 	if time.Since(start) >= time.Duration(lb.TryDuration) {
 		return false
@@ -616,8 +709,12 @@ func (lb LoadBalancing) tryAgain(start time.Time, proxyErr error, req *http.Requ
 	}
 
 	// otherwise, wait and try the next available host
-	time.Sleep(time.Duration(lb.TryInterval))
-	return true
+	select {
+	case <-time.After(time.Duration(lb.TryInterval)):
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // directRequest modifies only req.URL so that it points to the upstream
@@ -634,27 +731,6 @@ func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	}
 
 	req.URL.Host = reqHost
-}
-
-// shouldPanicOnCopyError reports whether the reverse proxy should
-// panic with http.ErrAbortHandler. This is the right thing to do by
-// default, but Go 1.10 and earlier did not, so existing unit tests
-// weren't expecting panics. Only panic in our own tests, or when
-// running under the HTTP server.
-// TODO: I don't know if we want this at all...
-func shouldPanicOnCopyError(req *http.Request) bool {
-	// if inOurTests {
-	// 	// Our tests know to handle this panic.
-	// 	return true
-	// }
-	if req.Context().Value(http.ServerContextKey) != nil {
-		// We seem to be running under an HTTP server, so
-		// it'll recover the panic.
-		return true
-	}
-	// Otherwise act like Go 1.10 and earlier to not break
-	// existing tests.
-	return false
 }
 
 func copyHeader(dst, src http.Header) {
@@ -776,6 +852,10 @@ type TLSTransport interface {
 	// value as a basis for the TLS config.
 	EnableTLS(base *TLSConfig) error
 }
+
+// roundtripSucceeded is an error type that is returned if the
+// roundtrip succeeded, but an error occurred after-the-fact.
+type roundtripSucceeded struct{ error }
 
 var bufPool = sync.Pool{
 	New: func() interface{} {

@@ -362,6 +362,13 @@ func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request) *Upstr
 	if s.Field == "" {
 		return nil
 	}
+
+	// The Host header should be obtained from the req.Host field
+	// since net/http removes it from the header map.
+	if s.Field == "Host" && req.Host != "" {
+		return hostByHashing(pool, req.Host)
+	}
+
 	val := req.Header.Get(s.Field)
 	if val == "" {
 		return RandomSelection{}.Select(pool, req)
@@ -400,6 +407,9 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 			bestReqs = reqs
 			best = append(best, upstream)
 		}
+	}
+	if len(best) == 0 {
+		return nil
 	}
 	return best[weakrand.Intn(len(best))]
 }

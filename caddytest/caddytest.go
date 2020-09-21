@@ -55,8 +55,9 @@ var (
 
 // Tester represents an instance of a test client.
 type Tester struct {
-	Client *http.Client
-	t      *testing.T
+	Client       *http.Client
+	configLoaded bool
+	t            *testing.T
 }
 
 // NewTester will create a new testing client with an attached cookie jar
@@ -73,7 +74,8 @@ func NewTester(t *testing.T) *Tester {
 			Jar:       jar,
 			Timeout:   Default.TestRequestTimeout,
 		},
-		t: t,
+		configLoaded: false,
+		t:            t,
 	}
 }
 
@@ -114,7 +116,8 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	}
 
 	tc.t.Cleanup(func() {
-		if tc.t.Failed() {
+		if tc.t.Failed() && tc.configLoaded {
+
 			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 			if err != nil {
 				tc.t.Log("unable to read the current config")
@@ -164,6 +167,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		return configLoadError{Response: string(body)}
 	}
 
+	tc.configLoaded = true
 	return nil
 }
 
@@ -317,13 +321,13 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 	return resp
 }
 
-// AssertAdapt adapts a config and then tests it against an expected result
-func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+// CompareAdapt adapts a config and then compares it against an expected result
+func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) bool {
 
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
-		t.Errorf("unrecognized config adapter '%s'", adapterName)
-		return
+		t.Logf("unrecognized config adapter '%s'", adapterName)
+		return false
 	}
 
 	options := make(map[string]interface{})
@@ -331,8 +335,8 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 
 	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
 	if err != nil {
-		t.Errorf("adapting config using %s adapter: %v", adapterName, err)
-		return
+		t.Logf("adapting config using %s adapter: %v", adapterName, err)
+		return false
 	}
 
 	if len(warnings) > 0 {
@@ -365,6 +369,15 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 				fmt.Printf(" + %s\n", d.Payload)
 			}
 		}
+		return false
+	}
+	return true
+}
+
+// AssertAdapt adapts a config and then tests it against an expected result
+func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+	ok := CompareAdapt(t, rawConfig, adapterName, expectedResponse)
+	if !ok {
 		t.Fail()
 	}
 }

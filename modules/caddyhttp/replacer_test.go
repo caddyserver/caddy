@@ -108,6 +108,10 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expect: "example",
 		},
 		{
+			input:  "{http.request.host.labels.2}",
+			expect: "<empty>",
+		},
+		{
 			input:  "{http.request.tls.cipher_suite}",
 			expect: "TLS_AES_256_GCM_SHA384",
 		},
@@ -146,6 +150,30 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{
 			input:  "{http.request.tls.client.subject}",
 			expect: "CN=client.localdomain",
+		},
+		{
+			input:  "{http.request.tls.client.san.dns_names}",
+			expect: "[localhost]",
+		},
+		{
+			input:  "{http.request.tls.client.san.dns_names.0}",
+			expect: "localhost",
+		},
+		{
+			input:  "{http.request.tls.client.san.dns_names.1}",
+			expect: "<empty>",
+		},
+		{
+			input:  "{http.request.tls.client.san.ips}",
+			expect: "[127.0.0.1]",
+		},
+		{
+			input:  "{http.request.tls.client.san.ips.0}",
+			expect: "127.0.0.1",
+		},
+		{
+			input:  "{http.request.tls.client.certificate_pem}",
+			expect: string(clientCert) + "\n",  // returned value comes with a newline appended to it
 		},
 	} {
 		actual := repl.ReplaceAll(tc.input, "<empty>")

@@ -27,6 +27,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func init() {
@@ -45,6 +47,7 @@ func init() {
 //
 // Placeholder | Description
 // ------------|---------------
+// `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.header.*}` | Specific request header field
 // `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
@@ -70,9 +73,15 @@ func init() {
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
 // `{http.request.tls.server_name}` | The server name requested by the client, if any
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
+// `{http.request.tls.client.public_key}` | The public key of the client certificate.
+// `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
 // `{http.request.tls.client.subject}` | The subject DN of the client certificate
+// `{http.request.tls.client.san.dns_names.*}` | SAN DNS names(index optional)
+// `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
+// `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
+// `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
@@ -146,6 +155,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 	// prepare each server
 	for srvName, srv := range app.Servers {
+		srv.name = srvName
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
@@ -272,6 +282,12 @@ func (app *App) Validate() error {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
+	// get a logger compatible with http.Server
+	serverLogger, err := zap.NewStdLogAt(app.logger.Named("stdlib"), zap.DebugLevel)
+	if err != nil {
+		return fmt.Errorf("failed to set up server logger: %v", err)
+	}
+
 	for srvName, srv := range app.Servers {
 		s := &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
@@ -280,6 +296,15 @@ func (app *App) Start() error {
 			IdleTimeout:       time.Duration(srv.IdleTimeout),
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
+			ErrorLog:          serverLogger,
+		}
+
+		// enable h2c if configured
+		if srv.AllowH2C {
+			h2server := &http2.Server{
+				IdleTimeout: time.Duration(srv.IdleTimeout),
+			}
+			s.Handler = h2c.NewHandler(srv, h2server)
 		}
 
 		for _, lnAddr := range srv.Listen {
@@ -327,6 +352,7 @@ func (app *App) Start() error {
 								Addr:      hostport,
 								Handler:   srv,
 								TLSConfig: tlsCfg,
+								ErrorLog:  serverLogger,
 							},
 						}
 						go h3srv.Serve(h3ln)
@@ -365,7 +391,7 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err := app.automaticHTTPSPhase2()
+	err = app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}

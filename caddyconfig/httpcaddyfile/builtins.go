@@ -15,8 +15,11 @@
 package httpcaddyfile
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"html"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strings"
@@ -26,6 +29,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/acme"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -59,12 +64,21 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         protocols <min> [<max>]
 //         ciphers   <cipher_suites...>
 //         curves    <curves...>
+//         client_auth {
+//             mode                   [request|require|verify_if_given|require_and_verify]
+//             trusted_ca_cert        <base64_der>
+//             trusted_ca_cert_file   <filename>
+//             trusted_leaf_cert      <base64_der>
+//             trusted_leaf_cert_file <filename>
+//         }
 //         alpn      <values...>
 //         load      <paths...>
 //         ca        <acme_ca_endpoint>
 //         ca_root   <pem_file>
 //         dns       <provider_name>
 //         on_demand
+//         eab    <key_id> <mac_key>
+//         issuer <module_name> ...
 //     }
 //
 func parseTLS(h Helper) ([]ConfigValue, error) {
@@ -74,6 +88,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certSelector caddytls.CustomCertSelectionPolicy
 	var acmeIssuer *caddytls.ACMEIssuer
 	var internalIssuer *caddytls.InternalIssuer
+	var issuer certmagic.Issuer
 	var onDemand bool
 
 	for h.Next() {
@@ -143,7 +158,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 		var hasBlock bool
-		for h.NextBlock(0) {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
 			hasBlock = true
 
 			switch h.Val() {
@@ -181,6 +196,57 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					cp.Curves = append(cp.Curves, h.Val())
 				}
 
+			case "client_auth":
+				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					subdir := h.Val()
+					switch subdir {
+					case "mode":
+						if !h.Args(&cp.ClientAuthentication.Mode) {
+							return nil, h.ArgErr()
+						}
+						if h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+					case "trusted_ca_cert",
+						"trusted_leaf_cert":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						if subdir == "trusted_ca_cert" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, h.Val())
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, h.Val())
+						}
+
+					case "trusted_ca_cert_file",
+						"trusted_leaf_cert_file":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						filename := h.Val()
+						certDataPEM, err := ioutil.ReadFile(filename)
+						if err != nil {
+							return nil, err
+						}
+						block, _ := pem.Decode(certDataPEM)
+						if block == nil || block.Type != "CERTIFICATE" {
+							return nil, h.Errf("no CERTIFICATE pem block found in %s", h.Val())
+						}
+						if subdir == "trusted_ca_cert_file" {
+							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						} else {
+							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts,
+								base64.StdEncoding.EncodeToString(block.Bytes))
+						}
+
+					default:
+						return nil, h.Errf("unknown subdirective for client_auth: %s", subdir)
+					}
+				}
+
 			case "alpn":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
@@ -200,6 +266,41 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer = new(caddytls.ACMEIssuer)
 				}
 				acmeIssuer.CA = arg[0]
+
+			case "eab":
+				arg := h.RemainingArgs()
+				if len(arg) != 2 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				acmeIssuer.ExternalAccount = &acme.EAB{
+					KeyID:  arg[0],
+					MACKey: arg[1],
+				}
+
+			case "issuer":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				modName := h.Val()
+				mod, err := caddy.GetModule("tls.issuance." + modName)
+				if err != nil {
+					return nil, h.Errf("getting issuer module '%s': %v", modName, err)
+				}
+				unm, ok := mod.New().(caddyfile.Unmarshaler)
+				if !ok {
+					return nil, h.Errf("issuer module '%s' is not a Caddyfile unmarshaler", mod.ID)
+				}
+				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				if err != nil {
+					return nil, err
+				}
+				issuer, ok = unm.(certmagic.Issuer)
+				if !ok {
+					return nil, h.Errf("module %s is not a certmagic.Issuer", mod.ID)
+				}
 
 			case "dns":
 				if !h.NextArg() {
@@ -259,13 +360,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	// certificate loaders
 	if len(fileLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: fileLoader,
 		})
 	}
 	if len(folderLoader) > 0 {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.certificate_loader",
+			Class: "tls.cert_loader",
 			Value: folderLoader,
 		})
 	}
@@ -275,7 +376,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		// the logic to support this would be complex
 		return nil, h.Err("cannot use both ACME and internal issuers in same server block")
 	}
-	if acmeIssuer != nil {
+	if issuer != nil && (acmeIssuer != nil || internalIssuer != nil) {
+		// similarly, the logic to support this would be complex
+		return nil, h.Err("when defining an issuer, all its config must be in its block, rather than from separate tls subdirectives")
+	}
+	switch {
+	case issuer != nil:
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.cert_issuer",
+			Value: issuer,
+		})
+
+	case internalIssuer != nil:
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.cert_issuer",
+			Value: internalIssuer,
+		})
+
+	case acmeIssuer != nil:
 		// fill in global defaults, if configured
 		if email := h.Option("email"); email != nil && acmeIssuer.Email == "" {
 			acmeIssuer.Email = email.(string)
@@ -286,15 +404,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		if caPemFile := h.Option("acme_ca_root"); caPemFile != nil {
 			acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, caPemFile.(string))
 		}
-
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
-			Value: acmeIssuer,
-		})
-	} else if internalIssuer != nil {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.cert_issuer",
-			Value: internalIssuer,
+			Value: disambiguateACMEIssuer(acmeIssuer),
 		})
 	}
 
@@ -405,36 +517,23 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.Subroute)
 
-	for h.Next() {
-		for nesting := h.Nesting(); h.NextBlock(nesting); {
-			dir := h.Val()
+	allResults, err := parseSegmentAsConfig(h)
+	if err != nil {
+		return nil, err
+	}
 
-			dirFunc, ok := registeredDirectives[dir]
-			if !ok {
-				return nil, h.Errf("unrecognized directive: %s", dir)
-			}
-
-			subHelper := h
-			subHelper.Dispenser = h.NewFromNextSegment()
-
-			results, err := dirFunc(subHelper)
-			if err != nil {
-				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
-			}
-			for _, result := range results {
-				switch handler := result.Value.(type) {
-				case caddyhttp.Route:
-					sr.Routes = append(sr.Routes, handler)
-				case caddyhttp.Subroute:
-					// directives which return a literal subroute instead of a route
-					// means they intend to keep those handlers together without
-					// them being reordered; we're doing that anyway since we're in
-					// the route directive, so just append its handlers
-					sr.Routes = append(sr.Routes, handler.Routes...)
-				default:
-					return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", dir, result.Value)
-				}
-			}
+	for _, result := range allResults {
+		switch handler := result.Value.(type) {
+		case caddyhttp.Route:
+			sr.Routes = append(sr.Routes, handler)
+		case caddyhttp.Subroute:
+			// directives which return a literal subroute instead of a route
+			// means they intend to keep those handlers together without
+			// them being reordered; we're doing that anyway since we're in
+			// the route directive, so just append its handlers
+			sr.Routes = append(sr.Routes, handler.Routes...)
+		default:
+			return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", result.directive, result.Value)
 		}
 	}
 
@@ -442,11 +541,11 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 }
 
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	return parseSegmentAsSubroute(h)
+	return ParseSegmentAsSubroute(h)
 }
 
 func parseHandleErrors(h Helper) ([]ConfigValue, error) {
-	subroute, err := parseSegmentAsSubroute(h)
+	subroute, err := ParseSegmentAsSubroute(h)
 	if err != nil {
 		return nil, err
 	}
@@ -469,6 +568,11 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 func parseLog(h Helper) ([]ConfigValue, error) {
 	var configValues []ConfigValue
 	for h.Next() {
+		// log does not currently support any arguments
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+
 		cl := new(caddy.CustomLog)
 
 		for h.NextBlock(0) {

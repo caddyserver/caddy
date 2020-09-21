@@ -17,10 +17,10 @@ package logging
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -138,8 +138,15 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 //         roll_keep_for <days>
 //     }
 //
-// The roll_size value will be rounded down to number of megabytes (MiB).
-// The roll_keep_for duration will be rounded down to number of days.
+// The roll_size value has megabyte resolution.
+// Fractional values are rounded up to the next whole megabyte (MiB).
+//
+// The roll_keep_for duration has day resolution.
+// Fractional values are rounded up to the next whole number of days.
+//
+// If any of the roll_size, roll_keep, or roll_keep_for subdirectives are
+// omitted or set to a zero value, then Caddy's default value for that
+// subdirective is used.
 func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if !d.NextArg() {
@@ -168,7 +175,7 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if err != nil {
 					return d.Errf("parsing size: %v", err)
 				}
-				fw.RollSizeMB = int(size)/1024/1024 + 1
+				fw.RollSizeMB = int(math.Ceil(float64(size) / humanize.MiByte))
 
 			case "roll_keep":
 				var keepStr string
@@ -186,11 +193,14 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.AllArgs(&keepForStr) {
 					return d.ArgErr()
 				}
-				keepFor, err := time.ParseDuration(keepForStr)
+				keepFor, err := caddy.ParseDuration(keepForStr)
 				if err != nil {
 					return d.Errf("parsing roll_keep_for duration: %v", err)
 				}
-				fw.RollKeepDays = int(keepFor.Hours()) / 24
+				if keepFor < 0 {
+					return d.Errf("negative roll_keep_for duration: %v", keepFor)
+				}
+				fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
 			}
 		}
 	}

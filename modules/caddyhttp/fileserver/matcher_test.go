@@ -22,69 +22,64 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func TestPhpFileMatcher(t *testing.T) {
-
+func TestFileMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		path string
+		path         string
 		expectedPath string
-		matched bool
+		expectedType string
+		matched      bool
 	}{
 		{
-			path: "/index.php",
-			expectedPath: "/index.php",
-			matched: true,
+			path:         "/foo.txt",
+			expectedPath: "/foo.txt",
+			expectedType: "file",
+			matched:      true,
 		},
 		{
-			path: "/index.php/somewhere",
-			expectedPath: "/index.php",
-			matched: true,
+			path:         "/foo.txt/",
+			expectedPath: "/foo.txt",
+			expectedType: "file",
+			matched:      true,
 		},
 		{
-			path: "/remote.php",
-			expectedPath: "/remote.php",
-			matched: true,
+			path:         "/foodir",
+			expectedPath: "/foodir/",
+			expectedType: "directory",
+			matched:      true,
 		},
 		{
-			path: "/remote.php/somewhere",
-			expectedPath: "/remote.php",
-			matched: true,
+			path:         "/foodir/",
+			expectedPath: "/foodir/",
+			expectedType: "directory",
+			matched:      true,
 		},
 		{
-			path: "/missingfile.php",
+			path:         "/foodir/foo.txt",
+			expectedPath: "/foodir/foo.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/missingfile.php",
 			matched: false,
-		},
-		{
-			path: "/notphp.php.txt",
-			expectedPath: "/notphp.php.txt",
-			matched: true,
-		},
-		{
-			path: "/notphp.php.txt/",
-			expectedPath: "/notphp.php.txt",
-			matched: true,
-		},
-		{
-			path: "/notphp.php.txt.suffixed",
-			matched: false,
-		},
-		{
-			path: "/foo.php.php/index.php",
-			expectedPath: "/foo.php.php/index.php",
-			matched: true,
 		},
 	} {
 		m := &MatchFile{
-			Root:      "./testdata",
-			TryFiles:  []string{"{http.request.uri.path}"},
-			SplitPath: []string{".php"},
+			Root:     "./testdata",
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
 		}
 
-		req := &http.Request{URL: &url.URL{Path: tc.path}}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Test %d: parsing path: %v", i, err)
+		}
+
+		req := &http.Request{URL: u}
 		repl := caddyhttp.NewTestReplacer(req)
 
 		result := m.Match(req)
 		if result != tc.matched {
-			t.Fatalf("Test %d: match bool result: %v, expected: %v", i, result, tc.matched)
+			t.Fatalf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
 
 		rel, ok := repl.Get("http.matchers.file.relative")
@@ -98,5 +93,122 @@ func TestPhpFileMatcher(t *testing.T) {
 		if rel != tc.expectedPath {
 			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 		}
+
+		fileType, ok := repl.Get("http.matchers.file.type")
+		if fileType != tc.expectedType {
+			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+		}
+	}
+}
+
+func TestPHPFileMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		path         string
+		expectedPath string
+		expectedType string
+		matched      bool
+	}{
+		{
+			path:         "/index.php",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/index.php/somewhere",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/remote.php",
+			expectedPath: "/remote.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/remote.php/somewhere",
+			expectedPath: "/remote.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/missingfile.php",
+			matched: false,
+		},
+		{
+			path:         "/notphp.php.txt",
+			expectedPath: "/notphp.php.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/notphp.php.txt/",
+			expectedPath: "/notphp.php.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/notphp.php.txt.suffixed",
+			matched: false,
+		},
+		{
+			path:         "/foo.php.php/index.php",
+			expectedPath: "/foo.php.php/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			// See https://github.com/caddyserver/caddy/issues/3623
+			path:         "/%E2%C3",
+			expectedPath: "/%E2%C3",
+			expectedType: "file",
+			matched:      false,
+		},
+	} {
+		m := &MatchFile{
+			Root:      "./testdata",
+			TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
+			SplitPath: []string{".php"},
+		}
+
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Test %d: parsing path: %v", i, err)
+		}
+
+		req := &http.Request{URL: u}
+		repl := caddyhttp.NewTestReplacer(req)
+
+		result := m.Match(req)
+		if result != tc.matched {
+			t.Fatalf("Test %d: expected match=%t, got %t", i, tc.matched, result)
+		}
+
+		rel, ok := repl.Get("http.matchers.file.relative")
+		if !ok && result {
+			t.Fatalf("Test %d: expected replacer value", i)
+		}
+		if !result {
+			continue
+		}
+
+		if rel != tc.expectedPath {
+			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+		}
+
+		fileType, ok := repl.Get("http.matchers.file.type")
+		if fileType != tc.expectedType {
+			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+		}
+	}
+}
+
+func TestFirstSplit(t *testing.T) {
+	m := MatchFile{SplitPath: []string{".php"}}
+	actual := m.firstSplit("index.PHP/somewhere")
+	expected := "index.PHP"
+	if actual != expected {
+		t.Errorf("Expected %s but got %s", expected, actual)
 	}
 }

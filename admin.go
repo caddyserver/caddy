@@ -18,9 +18,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"expvar"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -33,6 +35,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -105,34 +109,53 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 		mux:            http.NewServeMux(),
 	}
 
+	addRouteWithMetrics := func(pattern string, handlerLabel string, h http.Handler) {
+		labels := prometheus.Labels{"path": pattern, "handler": handlerLabel}
+		h = promhttp.InstrumentHandlerCounter(
+			adminMetrics.requestCount.MustCurryWith(labels),
+			h,
+		)
+		muxWrap.mux.Handle(pattern, h)
+	}
 	// addRoute just calls muxWrap.mux.Handle after
 	// wrapping the handler with error handling
-	addRoute := func(pattern string, h AdminHandler) {
+	addRoute := func(pattern string, handlerLabel string, h AdminHandler) {
 		wrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			err := h.ServeHTTP(w, r)
+			if err != nil {
+				labels := prometheus.Labels{
+					"path":    pattern,
+					"handler": handlerLabel,
+					"method":  r.Method,
+				}
+				adminMetrics.requestErrors.With(labels).Inc()
+			}
 			muxWrap.handleError(w, r, err)
 		})
-		muxWrap.mux.Handle(pattern, wrapper)
+		addRouteWithMetrics(pattern, handlerLabel, wrapper)
 	}
 
+	const handlerLabel = "admin"
+
 	// register standard config control endpoints
-	addRoute("/"+rawConfigKey+"/", AdminHandlerFunc(handleConfig))
-	addRoute("/id/", AdminHandlerFunc(handleConfigID))
-	addRoute("/stop", AdminHandlerFunc(handleStop))
+	addRoute("/"+rawConfigKey+"/", handlerLabel, AdminHandlerFunc(handleConfig))
+	addRoute("/id/", handlerLabel, AdminHandlerFunc(handleConfigID))
+	addRoute("/stop", handlerLabel, AdminHandlerFunc(handleStop))
 
 	// register debugging endpoints
-	muxWrap.mux.HandleFunc("/debug/pprof/", pprof.Index)
-	muxWrap.mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	muxWrap.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	muxWrap.mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	muxWrap.mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	muxWrap.mux.Handle("/debug/vars", expvar.Handler())
+	addRouteWithMetrics("/debug/pprof/", handlerLabel, http.HandlerFunc(pprof.Index))
+	addRouteWithMetrics("/debug/pprof/cmdline", handlerLabel, http.HandlerFunc(pprof.Cmdline))
+	addRouteWithMetrics("/debug/pprof/profile", handlerLabel, http.HandlerFunc(pprof.Profile))
+	addRouteWithMetrics("/debug/pprof/symbol", handlerLabel, http.HandlerFunc(pprof.Symbol))
+	addRouteWithMetrics("/debug/pprof/trace", handlerLabel, http.HandlerFunc(pprof.Trace))
+	addRouteWithMetrics("/debug/vars", handlerLabel, expvar.Handler())
 
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
+		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
-			addRoute(route.Pattern, route.Handler)
+			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
 	}
 
@@ -234,15 +257,20 @@ func replaceAdmin(cfg *Config) error {
 		MaxHeaderBytes:    1024 * 64,
 	}
 
-	go adminServer.Serve(ln)
+	adminLogger := Log().Named("admin")
+	go func() {
+		if err := adminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			adminLogger.Error("admin server shutdown for unknown reason", zap.Error(err))
+		}
+	}()
 
-	Log().Named("admin").Info("admin endpoint started",
+	adminLogger.Info("admin endpoint started",
 		zap.String("address", addr.String()),
 		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
 		zap.Strings("origins", handler.allowedOrigins))
 
 	if !handler.enforceHost {
-		Log().Named("admin").Warn("admin endpoint on open interface; host checking disabled",
+		adminLogger.Warn("admin endpoint on open interface; host checking disabled",
 			zap.String("address", addr.String()))
 	}
 
@@ -298,6 +326,14 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // be called more than once per request, for example if a request
 // is rewritten (i.e. internal redirect).
 func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
+		// I've never been able demonstrate a vulnerability myself, but apparently
+		// WebSocket connections originating from browsers aren't subject to CORS
+		// restrictions, so we'll just be on the safe side
+		h.handleError(w, r, fmt.Errorf("websocket connections aren't allowed"))
+		return
+	}
+
 	if h.enforceHost {
 		// DNS rebinding mitigation
 		err := h.checkHost(r)
@@ -520,16 +556,19 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		Log().Named("admin.api").Error("unload error", zap.Error(err))
 	}
-	go func() {
-		err := stopAdminServer(adminServer)
-		var exitCode int
-		if err != nil {
-			exitCode = ExitCodeFailedQuit
-			Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
-		}
-		Log().Named("admin.api").Info("stopping now, bye!! 👋")
-		os.Exit(exitCode)
-	}()
+	if adminServer != nil {
+		// use goroutine so that we can finish responding to API request
+		go func() {
+			err := stopAdminServer(adminServer)
+			var exitCode int
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
+			}
+			Log().Named("admin.api").Info("stopping now, bye!! 👋")
+			os.Exit(exitCode)
+		}()
+	}
 	return nil
 }
 
@@ -542,13 +581,6 @@ func handleUnload(w http.ResponseWriter, r *http.Request) error {
 			Code: http.StatusMethodNotAllowed,
 			Err:  fmt.Errorf("method not allowed"),
 		}
-	}
-	currentCfgMu.RLock()
-	hasCfg := currentCfg != nil
-	currentCfgMu.RUnlock()
-	if !hasCfg {
-		Log().Named("admin.api").Info("nothing to unload")
-		return nil
 	}
 	Log().Named("admin.api").Info("unloading")
 	if err := stopAndCleanup(); err != nil {
@@ -798,11 +830,26 @@ var (
 	}
 )
 
+// PIDFile writes a pidfile to the file at filename. It
+// will get deleted before the process gracefully exits.
+func PIDFile(filename string) error {
+	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
+	err := ioutil.WriteFile(filename, pid, 0644)
+	if err != nil {
+		return err
+	}
+	pidfile = filename
+	return nil
+}
+
 // idRegexp is used to match ID fields and their associated values
 // in the config. It also matches adjacent commas so that syntax
 // can be preserved no matter where in the object the field appears.
 // It supports string and most numeric values.
 var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `"\s*:\s*(-?[0-9]+(\.[0-9]+)?|(?U)".*")\s*,?`)
+
+// pidfile is the name of the pidfile, if any.
+var pidfile string
 
 const (
 	rawConfigKey = "config"

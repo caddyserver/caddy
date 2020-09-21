@@ -19,10 +19,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -76,7 +78,6 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
-	stopChan   chan struct{}
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
 	logger     *zap.Logger
@@ -124,14 +125,18 @@ type CircuitBreaker interface {
 // regular basis and blocks until
 // h.HealthChecks.Active.stopChan is closed.
 func (h *Handler) activeHealthChecker() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] active health checks: %v\n%s", err, debug.Stack())
+		}
+	}()
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
 	h.doActiveHealthCheckForAllHosts()
 	for {
 		select {
 		case <-ticker.C:
 			h.doActiveHealthCheckForAllHosts()
-		case <-h.HealthChecks.Active.stopChan:
-			// TODO: consider using a Context for cancellation instead
+		case <-h.ctx.Done():
 			ticker.Stop()
 			return
 		}
@@ -143,32 +148,32 @@ func (h *Handler) activeHealthChecker() {
 func (h *Handler) doActiveHealthCheckForAllHosts() {
 	for _, upstream := range h.Upstreams {
 		go func(upstream *Upstream) {
-			networkAddr := upstream.Dial
-			addr, err := caddy.ParseNetworkAddress(networkAddr)
-			if err != nil {
-				h.HealthChecks.Active.logger.Error("bad network address",
-					zap.String("address", networkAddr),
-					zap.Error(err),
-				)
-				return
-			}
-			if addr.PortRangeSize() != 1 {
-				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
-					zap.String("address", networkAddr),
-				)
-				return
-			}
-			hostAddr := addr.JoinHostPort(0)
-			if addr.IsUnixNetwork() {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("[PANIC] active health check: %v\n%s", err, debug.Stack())
+				}
+			}()
+
+			portStr := strconv.Itoa(upstream.activeHealthCheckPort)
+			hostAddr := net.JoinHostPort(upstream.networkAddress.Host, portStr)
+			if upstream.networkAddress.IsUnixNetwork() {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: hostAddr}, hostAddr, upstream.Host)
+
+			dialInfo := DialInfo{
+				Upstream: upstream,
+				Network:  upstream.networkAddress.Network,
+				Host:     upstream.networkAddress.Host,
+				Port:     portStr,
+				Address:  hostAddr,
+			}
+			err := h.doActiveHealthCheck(dialInfo, hostAddr, upstream.Host)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
-					zap.String("address", networkAddr),
+					zap.String("address", hostAddr),
 					zap.Error(err),
 				)
 			}
@@ -186,7 +191,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host Host) error {
 	// create the URL for the request that acts as a health check
 	scheme := "http"
-	if ht, ok := h.Transport.(*http.Transport); ok && ht.TLSClientConfig != nil {
+	if ht, ok := h.Transport.(TLSTransport); ok && ht.TLSEnabled() {
 		// this is kind of a hacky way to know if we should use HTTPS, but whatever
 		scheme = "https"
 	}
@@ -206,9 +211,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 		u.Host = net.JoinHostPort(host, portStr)
 	}
 
-	// attach dialing information to this request - TODO: use caddy.Context's context
-	// so it can be canceled on config reload
-	ctx := context.Background()
+	// attach dialing information to this request
+	ctx := h.ctx.Context
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]interface{}{
 		dialInfoVarKey: dialInfo,
@@ -329,19 +333,23 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	if err != nil {
 		h.HealthChecks.Passive.logger.Error("could not count failure",
 			zap.String("host", upstream.Dial),
-			zap.Error(err),
-		)
+			zap.Error(err))
+		return
 	}
 
 	// forget it later
 	go func(host Host, failDuration time.Duration) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[PANIC] health check failure forgetter: %v\n%s", err, debug.Stack())
+			}
+		}()
 		time.Sleep(failDuration)
 		err := host.CountFail(-1)
 		if err != nil {
 			h.HealthChecks.Passive.logger.Error("could not forget failure",
 				zap.String("host", upstream.Dial),
-				zap.Error(err),
-			)
+				zap.Error(err))
 		}
 	}(upstream.Host, failDuration)
 }

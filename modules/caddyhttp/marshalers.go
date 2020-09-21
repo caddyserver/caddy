@@ -26,11 +26,11 @@ type LoggableHTTPRequest struct{ *http.Request }
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("method", r.Method)
-	enc.AddString("uri", r.RequestURI)
-	enc.AddString("proto", r.Proto)
 	enc.AddString("remote_addr", r.RemoteAddr)
+	enc.AddString("proto", r.Proto)
+	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
+	enc.AddString("uri", r.RequestURI)
 	enc.AddObject("headers", LoggableHTTPHeader(r.Header))
 	if r.TLS != nil {
 		enc.AddObject("tls", LoggableTLSConnState(*r.TLS))
@@ -73,10 +73,14 @@ type LoggableTLSConnState tls.ConnectionState
 func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("resumed", t.DidResume)
 	enc.AddUint16("version", t.Version)
-	enc.AddUint16("ciphersuite", t.CipherSuite)
+	enc.AddUint16("cipher_suite", t.CipherSuite)
 	enc.AddString("proto", t.NegotiatedProtocol)
 	enc.AddBool("proto_mutual", t.NegotiatedProtocolIsMutual)
 	enc.AddString("server_name", t.ServerName)
+	if len(t.PeerCertificates) > 0 {
+		enc.AddString("client_common_name", t.PeerCertificates[0].Subject.CommonName)
+		enc.AddString("client_serial", t.PeerCertificates[0].SerialNumber.String())
+	}
 	return nil
 }
 

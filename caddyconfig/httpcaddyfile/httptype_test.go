@@ -50,6 +50,22 @@ func TestMatcherSyntax(t *testing.T) {
 			expectWarn:  false,
 			expectError: false,
 		},
+		{
+			input: `http://localhost
+			@debug not path /somepath*
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `@matcher {
+				path /matcher-not-allowed/outside-of-site-block/*
+			}
+			http://localhost
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{
@@ -141,6 +157,58 @@ func TestGlobalOptions(t *testing.T) {
 				{
 					admin {
 						disabled false
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
+		{
+			input: `
+				{
+					admin {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 192.168.1.1:2020 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectWarn:  false,
+			expectError: true,
+		},
+		{
+			input: `
+				{
+					admin off {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
 					}
 				}
 				:80

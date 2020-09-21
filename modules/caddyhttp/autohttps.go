@@ -81,8 +81,10 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	uniqueDomainsForCerts := make(map[string]struct{})
 
 	// this maps domain names for automatic HTTP->HTTPS
-	// redirects to their destination server address
-	redirDomains := make(map[string]caddy.NetworkAddress)
+	// redirects to their destination server addresses
+	// (there might be more than 1 if bind is used; see
+	// https://github.com/caddyserver/caddy/issues/3443)
+	redirDomains := make(map[string][]caddy.NetworkAddress)
 
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
@@ -220,7 +222,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			// an empty string to indicate a catch-all, which we have to
 			// treat special later
 			if len(serverDomainSet) == 0 {
-				redirDomains[""] = addr
+				redirDomains[""] = append(redirDomains[""], addr)
 				continue
 			}
 
@@ -230,7 +232,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				// port, we'll have to choose one, so prefer the HTTPS port
 				if _, ok := redirDomains[d]; !ok ||
 					addr.StartPort == uint(app.httpsPort()) {
-					redirDomains[d] = addr
+					redirDomains[d] = append(redirDomains[d], addr)
 				}
 			}
 		}
@@ -278,9 +280,11 @@ uniqueDomainsLoop:
 	// we need to reduce the mapping, i.e. group domains by address
 	// since new routes are appended to servers by their address
 	domainsByAddr := make(map[string][]string)
-	for domain, addr := range redirDomains {
-		addrStr := addr.String()
-		domainsByAddr[addrStr] = append(domainsByAddr[addrStr], domain)
+	for domain, addrs := range redirDomains {
+		for _, addr := range addrs {
+			addrStr := addr.String()
+			domainsByAddr[addrStr] = append(domainsByAddr[addrStr], domain)
+		}
 	}
 
 	// these keep track of the redirect server address(es)
@@ -447,8 +451,8 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		if ap.Issuer == nil {
 			ap.Issuer = new(caddytls.ACMEIssuer)
 		}
-		if acmeIssuer, ok := ap.Issuer.(*caddytls.ACMEIssuer); ok {
-			err := app.fillInACMEIssuer(acmeIssuer)
+		if acmeIssuer, ok := ap.Issuer.(acmeCapable); ok {
+			err := app.fillInACMEIssuer(acmeIssuer.GetACMEIssuer())
 			if err != nil {
 				return err
 			}
@@ -466,9 +470,13 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		basePolicy = new(caddytls.AutomationPolicy)
 	}
 
-	// if the basePolicy has an existing ACMEIssuer, let's
-	// use it, otherwise we'll make one
-	baseACMEIssuer, _ := basePolicy.Issuer.(*caddytls.ACMEIssuer)
+	// if the basePolicy has an existing ACMEIssuer (particularly to
+	// include any type that embeds/wraps an ACMEIssuer), let's use it,
+	// otherwise we'll make one
+	var baseACMEIssuer *caddytls.ACMEIssuer
+	if acmeWrapper, ok := basePolicy.Issuer.(acmeCapable); ok {
+		baseACMEIssuer = acmeWrapper.GetACMEIssuer()
+	}
 	if baseACMEIssuer == nil {
 		// note that this happens if basePolicy.Issuer is nil
 		// OR if it is not nil but is not an ACMEIssuer
@@ -626,3 +634,5 @@ func (app *App) automaticHTTPSPhase2() error {
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
 }
+
+type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }

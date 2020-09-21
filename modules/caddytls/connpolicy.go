@@ -22,12 +22,12 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/go-acme/lego/v3/challenge/tlsalpn01"
+	"github.com/mholt/acmez"
 )
 
-// ConnectionPolicies is an ordered group of connection policies;
-// the first matching policy will be used to configure TLS
-// connections at handshake-time.
+// ConnectionPolicies govern the establishment of TLS connections. It is
+// an ordered group of connection policies; the first matching policy will
+// be used to configure TLS connections at handshake-time.
 type ConnectionPolicies []*ConnectionPolicy
 
 // Provision sets up each connection policy. It should be called
@@ -229,13 +229,13 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// ensure ALPN includes the ACME TLS-ALPN protocol
 	var alpnFound bool
 	for _, a := range p.ALPN {
-		if a == tlsalpn01.ACMETLS1Protocol {
+		if a == acmez.ACMETLS1Protocol {
 			alpnFound = true
 			break
 		}
 	}
 	if !alpnFound {
-		cfg.NextProtos = append(cfg.NextProtos, tlsalpn01.ACMETLS1Protocol)
+		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
 
 	// min and max protocol versions
@@ -262,6 +262,19 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	p.stdTLSConfig = cfg
 
 	return nil
+}
+
+// SettingsEmpty returns true if p's settings (fields
+// except the matchers) are all empty/unset.
+func (p ConnectionPolicy) SettingsEmpty() bool {
+	return p.CertSelection == nil &&
+		p.CipherSuites == nil &&
+		p.Curves == nil &&
+		p.ALPN == nil &&
+		p.ProtocolMin == "" &&
+		p.ProtocolMax == "" &&
+		p.ClientAuthentication == nil &&
+		p.DefaultSNI == ""
 }
 
 // ClientAuthentication configures TLS client auth.
@@ -321,7 +334,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		case "require_and_verify":
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		default:
-			return fmt.Errorf("client auth mode %s not allowed", clientauth.Mode)
+			return fmt.Errorf("client auth mode not recognized: %s", clientauth.Mode)
 		}
 	} else {
 		// otherwise, set a safe default mode
@@ -348,7 +361,6 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	// enforce leaf verification by writing our own verify function
 	if len(clientauth.TrustedLeafCerts) > 0 {
 		clientauth.trustedLeafCerts = []*x509.Certificate{}
-
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
 			clientCert, err := decodeBase64DERCert(clientCertString)
 			if err != nil {
@@ -356,10 +368,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			}
 			clientauth.trustedLeafCerts = append(clientauth.trustedLeafCerts, clientCert)
 		}
-
 		// if a custom verification function already exists, wrap it
 		clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
-
 		cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
 	}
 
@@ -382,7 +392,7 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 		return fmt.Errorf("no client certificate provided")
 	}
 
-	remoteLeafCert, err := x509.ParseCertificate(rawCerts[len(rawCerts)-1])
+	remoteLeafCert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}
@@ -398,13 +408,10 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
 func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
-	// decode base64
 	derBytes, err := base64.StdEncoding.DecodeString(certStr)
 	if err != nil {
 		return nil, err
 	}
-
-	// parse the DER-encoded certificate
 	return x509.ParseCertificate(derBytes)
 }
 

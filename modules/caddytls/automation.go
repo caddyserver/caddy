@@ -22,12 +22,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
-	"github.com/go-acme/lego/v3/challenge"
+	"github.com/mholt/acmez"
 	"go.uber.org/zap"
 )
 
-// AutomationConfig designates configuration for the
-// construction and use of ACME clients.
+// AutomationConfig governs the automated management of TLS certificates.
 type AutomationConfig struct {
 	// The list of automation policies. The first matching
 	// policy will be applied for a given certificate/name.
@@ -49,15 +48,13 @@ type AutomationConfig struct {
 	// Caddy staples OCSP (and caches the response) for all
 	// qualifying certificates by default. This setting
 	// changes how often it scans responses for freshness,
-	// and updates them if they are getting stale.
+	// and updates them if they are getting stale. Default: 1h
 	OCSPCheckInterval caddy.Duration `json:"ocsp_interval,omitempty"`
 
 	// Every so often, Caddy will scan all loaded, managed
 	// certificates for expiration. This setting changes how
 	// frequently the scan for expiring certificates is
-	// performed. If your certificate lifetimes are very
-	// short (less than ~24 hours), you should set this to
-	// a low value.
+	// performed. Default: 10m
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
 	defaultPublicAutomationPolicy   *AutomationPolicy
@@ -210,6 +207,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		OnDemand:           ond,
 		Storage:            storage,
 		Issuer:             ap.Issuer, // if nil, certmagic.New() will create one
+		Logger:             tlsApp.logger,
 	}
 	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
 		template.Revoker = rev
@@ -246,6 +244,7 @@ type ChallengesConfig struct {
 	// not enabled by default. This is the only challenge
 	// type which does not require a direct connection
 	// to Caddy from an external server.
+	//
 	// NOTE: DNS providers are currently being upgraded,
 	// and this API is subject to change, but should be
 	// stabilized soon.
@@ -283,6 +282,7 @@ type TLSALPNChallengeConfig struct {
 }
 
 // DNSChallengeConfig configures the ACME DNS challenge.
+//
 // NOTE: This API is still experimental and is subject to change.
 type DNSChallengeConfig struct {
 	// The DNS provider module to use which will manage
@@ -292,7 +292,14 @@ type DNSChallengeConfig struct {
 	// The TTL of the TXT record used for the DNS challenge.
 	TTL caddy.Duration `json:"ttl,omitempty"`
 
-	provider challenge.Provider
+	// How long to wait for DNS record to propagate.
+	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
+
+	// Custom DNS resolvers to prefer over system/built-in defaults.
+	// Often necessary to configure when using split-horizon DNS.
+	Resolvers []string `json:"resolvers,omitempty"`
+
+	solver acmez.Solver
 }
 
 // OnDemandConfig configures on-demand TLS, for obtaining

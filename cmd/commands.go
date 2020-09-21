@@ -27,7 +27,7 @@ type Command struct {
 	// Required.
 	Name string
 
-	// Run is a function that executes a subcommand using
+	// Func is a function that executes a subcommand using
 	// the parsed flags. It returns an exit code and any
 	// associated error.
 	// Required.
@@ -74,7 +74,7 @@ func init() {
 	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
-		Usage: "[--config <path> [--adapter <name>]] [--watch]",
+		Usage: "[--config <path> [--adapter <name>]] [--watch] [--pidfile <file>]",
 		Short: "Starts the Caddy process in the background and then returns",
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file.
@@ -87,6 +87,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 			fs := flag.NewFlagSet("start", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.String("pidfile", "", "Path of file to which to write process ID")
 			fs.Bool("watch", false, "Reload changed config file automatically")
 			return fs
 		}(),
@@ -95,7 +96,7 @@ using 'caddy run' instead to keep it in the foreground.`,
 	RegisterCommand(Command{
 		Name:  "run",
 		Func:  cmdRun,
-		Usage: "[--config <path> [--adapter <name>]] [--environ] [--watch]",
+		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--environ] [--resume] [--watch] [--pidfile <fil>]",
 		Short: `Starts the Caddy process and blocks indefinitely`,
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file,
@@ -115,6 +116,9 @@ As a special case, if the current working directory has a file called
 that file will be loaded and used to configure Caddy, even without any command
 line flags.
 
+If --envfile is specified, an environment file with environment variables in
+the KEY=VALUE format will be loaded into the Caddy process.
+
 If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
 not quit after printing, and can be useful for troubleshooting.
@@ -129,9 +133,11 @@ development environment.`,
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
 			fs.String("adapter", "", "Name of config adapter to apply")
+			fs.String("envfile", "", "Environment file to load")
 			fs.Bool("environ", false, "Print environment")
 			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
 			fs.Bool("watch", false, "Watch config file for changes and reload it automatically")
+			fs.String("pidfile", "", "Path of file to which to write process ID")
 			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
 			return fs
 		}(),
@@ -257,8 +263,12 @@ provisioning stages.`,
 Formats the Caddyfile by adding proper indentation and spaces to improve
 human readability. It prints the result to stdout.
 
-If --write is specified, the output will be written to the config file
-directly instead of printing it.`,
+If --overwrite is specified, the output will be written to the config file
+directly instead of printing it.
+
+If you wish you use stdin instead of a regular file, use - as the path.
+When reading from stdin, the --overwrite flag has no effect: the result
+is always printed to stdout.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("format", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")

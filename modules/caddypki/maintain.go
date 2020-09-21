@@ -17,12 +17,20 @@ package caddypki
 import (
 	"crypto/x509"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"time"
 
 	"go.uber.org/zap"
 )
 
 func (p *PKI) maintenance() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] PKI maintenance: %v\n%s", err, debug.Stack())
+		}
+	}()
+
 	ticker := time.NewTicker(10 * time.Minute) // TODO: make configurable
 	defer ticker.Stop()
 

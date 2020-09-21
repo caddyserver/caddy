@@ -5,17 +5,16 @@
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
 	<a href="https://github.com/caddyserver/caddy/actions?query=workflow%3ACross-Platform"><img src="https://github.com/caddyserver/caddy/workflows/Cross-Platform/badge.svg"></a>
-	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-blue.svg"></a>
-	<a href="https://app.fuzzit.dev/orgs/caddyserver-gh/dashboard"><img src="https://app.fuzzit.dev/badge?org_id=caddyserver-gh"></a>
+	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
 	<br>
 	<a href="https://twitter.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/badge/twitter-@caddyserver-55acee.svg" alt="@caddyserver on Twitter"></a>
 	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
 	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
 </p>
 <p align="center">
-	<a href="https://github.com/caddyserver/caddy/releases">Download</a> ·
+	<a href="https://github.com/caddyserver/caddy/releases">Releases</a> ·
 	<a href="https://caddyserver.com/docs/">Documentation</a> ·
-	<a href="https://caddy.community">Community</a>
+	<a href="https://caddy.community">Get Help</a>
 </p>
 
 
@@ -26,7 +25,7 @@
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
-- [Getting started](#getting-started)
+- [Quick start](#quick-start)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
 - [Getting help](#getting-help)
@@ -64,7 +63,6 @@
 Requirements:
 
 - [Go 1.14 or newer](https://golang.org/dl/)
-- Do NOT disable [Go modules](https://github.com/golang/go/wiki/Modules) (`export GO111MODULE=on`)
 
 ### For development
  
@@ -78,10 +76,10 @@ _**Note:** These steps [will not embed proper version information](https://githu
 
 ### With version information and/or plugins
 
-Using [our builder tool](https://github.com/caddyserver/xcaddy)...
+Using [our builder tool, `xcaddy`](https://github.com/caddyserver/xcaddy)...
 
 ```
-$ xcaddy build <caddy_version>
+$ xcaddy build
 ```
 
 ...the following steps are automated:
@@ -90,8 +88,9 @@ $ xcaddy build <caddy_version>
 2. Change into it: `cd caddy`
 3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
 4. Initialize a Go module: `go mod init caddy`
-5. Pin Caddy version: `go get github.com/caddyserver/caddy/v2@TAG` replacing `TAG` with a git tag or commit. You can also pin any plugin versions similarly.
-6. Compile: `go build`
+5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag or commit.
+6. (Optional) Add plugins by adding their import: `_ "import/path/here"`
+7. Compile: `go build`
 
 
 
@@ -119,7 +118,7 @@ The primary way to configure Caddy is through [its API](https://caddyserver.com/
 
 Caddy exposes an unprecedented level of control compared to any web server in existence. In Caddy, you are usually setting the actual values of the initialized types in memory that power everything from your HTTP handlers and TLS handshakes to your storage medium. Caddy is also ridiculously extensible, with a powerful plugin system that makes vast improvements over other web servers.
 
-To wield the power of this design, you need to know how the config document is structured. Please see the [our documentation site](https://caddyserver.com/docs/) for details about [Caddy's config structure](https://caddyserver.com/docs/json/).
+To wield the power of this design, you need to know how the config document is structured. Please see [our documentation site](https://caddyserver.com/docs/) for details about [Caddy's config structure](https://caddyserver.com/docs/json/).
 
 Nearly all of Caddy's configuration is contained in a single config document, rather than being scattered across CLI flags and env variables and a configuration file as with other web servers. This makes managing your server config more straightforward and reduces hidden variables/factors.
 

@@ -1,0 +1,98 @@
+
+https://example.com {
+	reverse_proxy /path http://localhost:54321 {
+		header_up Host {host}
+		header_up X-Real-IP {remote}
+		header_up X-Forwarded-For {remote}
+		header_up X-Forwarded-Port {server_port}
+		header_up X-Forwarded-Proto "http"
+		transport http {
+			versions h2c 2
+			compression off
+		}
+		buffer_requests
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"buffer_requests": true,
+													"handler": "reverse_proxy",
+													"headers": {
+														"request": {
+															"set": {
+																"Host": [
+																	"{http.request.host}"
+																],
+																"X-Forwarded-For": [
+																	"{http.request.remote}"
+																],
+																"X-Forwarded-Port": [
+																	"{server_port}"
+																],
+																"X-Forwarded-Proto": [
+																	"http"
+																],
+																"X-Real-Ip": [
+																	"{http.request.remote}"
+																]
+															}
+														}
+													},
+													"transport": {
+														"compression": false,
+														"protocol": "http",
+														"versions": [
+															"h2c",
+															"2"
+														]
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:54321"
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/path"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

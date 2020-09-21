@@ -1,0 +1,34 @@
+name: Release Published
+
+# Event payload: https://developer.github.com/webhooks/event-payloads/#release
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Release Published
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+    # See https://github.com/peter-evans/repository-dispatch
+    - name: Trigger event on caddyserver/dist
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/dist
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
+
+    - name: Trigger event on caddyserver/caddy-docker
+      uses: peter-evans/repository-dispatch@v1
+      with:
+        token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        repository: caddyserver/caddy-docker
+        event-type: release-tagged
+        client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
+

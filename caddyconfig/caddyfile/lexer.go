@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"unicode"
 )
@@ -73,7 +74,7 @@ func (l *lexer) load(input io.Reader) error {
 // a token was loaded; false otherwise.
 func (l *lexer) next() bool {
 	var val []rune
-	var comment, quoted, escaped bool
+	var comment, quoted, btQuoted, escaped bool
 
 	makeToken := func() bool {
 		l.token.Text = string(val)
@@ -92,13 +93,13 @@ func (l *lexer) next() bool {
 			panic(err)
 		}
 
-		if !escaped && ch == '\\' {
+		if !escaped && !btQuoted && ch == '\\' {
 			escaped = true
 			continue
 		}
 
-		if quoted {
-			if escaped {
+		if quoted || btQuoted {
+			if quoted && escaped {
 				// all is literal in quoted area,
 				// so only escape quotes
 				if ch != '"' {
@@ -106,7 +107,10 @@ func (l *lexer) next() bool {
 				}
 				escaped = false
 			} else {
-				if ch == '"' {
+				if quoted && ch == '"' {
+					return makeToken()
+				}
+				if btQuoted && ch == '`' {
 					return makeToken()
 				}
 			}
@@ -138,7 +142,7 @@ func (l *lexer) next() bool {
 			continue
 		}
 
-		if ch == '#' {
+		if ch == '#' && len(val) == 0 {
 			comment = true
 		}
 		if comment {
@@ -151,6 +155,10 @@ func (l *lexer) next() bool {
 				quoted = true
 				continue
 			}
+			if ch == '`' {
+				btQuoted = true
+				continue
+			}
 		}
 
 		if escaped {
@@ -160,4 +168,22 @@ func (l *lexer) next() bool {
 
 		val = append(val, ch)
 	}
+}
+
+// Tokenize takes bytes as input and lexes it into
+// a list of tokens that can be parsed as a Caddyfile.
+// Also takes a filename to fill the token's File as
+// the source of the tokens, which is important to
+// determine relative paths for `import` directives.
+func Tokenize(input []byte, filename string) ([]Token, error) {
+	l := lexer{}
+	if err := l.load(bytes.NewReader(input)); err != nil {
+		return nil, err
+	}
+	var tokens []Token
+	for l.next() {
+		l.token.File = filename
+		tokens = append(tokens, l.token)
+	}
+	return tokens, nil
 }

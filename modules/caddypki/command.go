@@ -88,7 +88,7 @@ func cmdTrust(fs caddycmd.Flags) (int, error) {
 	ca := CA{
 		storage: caddy.DefaultStorage,
 	}
-	err := ca.Provision(ctx, defaultCAID, caddy.Log())
+	err := ca.Provision(ctx, DefaultCAID, caddy.Log())
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -109,7 +109,7 @@ func cmdUntrust(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("conflicting command line arguments")
 	}
 	if ca == "" && cert == "" {
-		ca = defaultCAID
+		ca = DefaultCAID
 	}
 	if ca != "" {
 		cert = filepath.Join(caddy.AppDataDir(), "pki", "authorities", ca, "root.crt")

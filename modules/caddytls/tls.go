@@ -19,9 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +57,9 @@ type TLS struct {
 	// Configures session ticket ephemeral keys (STEKs).
 	SessionTickets *SessionTicketService `json:"session_tickets,omitempty"`
 
+	// Configures the in-memory certificate cache.
+	Cache *CertCacheOptions `json:"cache,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      []string
 	certCache          *certmagic.Cache
@@ -82,10 +87,17 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
 			return t.getConfigForName(cert.Names[0]), nil
 		},
+		Logger: t.logger.Named("cache"),
 	}
 	if t.Automation != nil {
 		cacheOpts.OCSPCheckInterval = time.Duration(t.Automation.OCSPCheckInterval)
 		cacheOpts.RenewCheckInterval = time.Duration(t.Automation.RenewCheckInterval)
+	}
+	if t.Cache != nil {
+		cacheOpts.Capacity = t.Cache.Capacity
+	}
+	if cacheOpts.Capacity <= 0 {
+		cacheOpts.Capacity = 10000
 	}
 	t.certCache = certmagic.NewCache(cacheOpts)
 
@@ -164,6 +176,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// commands like validate can be a better test
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
+		Logger:  t.logger,
 	})
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
@@ -211,6 +224,11 @@ func (t *TLS) Validate() error {
 				}
 				hostSet[h] = i
 			}
+		}
+	}
+	if t.Cache != nil {
+		if t.Cache.Capacity < 0 {
+			return fmt.Errorf("cache capacity must be >= 0")
 		}
 	}
 	return nil
@@ -295,8 +313,10 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	if ap.magic.Issuer == nil {
 		return false
 	}
-	if am, ok := ap.magic.Issuer.(*ACMEIssuer); ok {
-		return certmagic.NewACMEManager(am.magic, am.template).HandleHTTPChallenge(w, r)
+	type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
+	if am, ok := ap.magic.Issuer.(acmeCapable); ok {
+		iss := am.GetACMEIssuer()
+		return certmagic.NewACMEManager(iss.magic, iss.template).HandleHTTPChallenge(w, r)
 	}
 	return false
 }
@@ -360,13 +380,19 @@ func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
 	return t.certCache.AllMatchingCertificates(san)
 }
 
-// keepStorageClean immediately cleans up all known storage units
-// if it was not recently done, and starts a goroutine that runs
-// the operation at every tick from t.storageCleanTicker.
+// keepStorageClean starts a goroutine that immediately cleans up all
+// known storage units if it was not recently done, and then runs the
+// operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
 	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
 	t.storageCleanStop = make(chan struct{})
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
+			}
+		}()
+		t.cleanStorageUnits()
 		for {
 			select {
 			case <-t.storageCleanStop:
@@ -376,7 +402,6 @@ func (t *TLS) keepStorageClean() {
 			}
 		}
 	}()
-	t.cleanStorageUnits()
 }
 
 func (t *TLS) cleanStorageUnits() {
@@ -394,13 +419,13 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// start with the default storage
-	certmagic.CleanStorage(t.ctx.Storage(), options)
+	certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
 		for _, ap := range t.Automation.Policies {
 			if ap.storage != nil {
-				certmagic.CleanStorage(ap.storage, options)
+				certmagic.CleanStorage(t.ctx, ap.storage, options)
 			}
 		}
 	}
@@ -436,6 +461,15 @@ func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
 		ID:  "tls.certificates.automate",
 		New: func() caddy.Module { return new(AutomateLoader) },
 	}
+}
+
+// CertCacheOptions configures the certificate cache.
+type CertCacheOptions struct {
+	// Maximum number of certificates to allow in the
+	// cache. If reached, certificates will be randomly
+	// evicted to make room for new ones. Default: 0
+	// (no limit).
+	Capacity int `json:"capacity,omitempty"`
 }
 
 // Variables related to storage cleaning.
