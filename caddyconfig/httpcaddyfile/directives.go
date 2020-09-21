@@ -285,6 +285,11 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 	var allResults []ConfigValue
 
 	for h.Next() {
+		// don't allow non-matcher args on the first line
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+
 		// slice the linear list of tokens into top-level segments
 		var segments []caddyfile.Segment
 		for nesting := h.Nesting(); h.NextBlock(nesting); {
