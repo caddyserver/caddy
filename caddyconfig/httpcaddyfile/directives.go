@@ -51,6 +51,7 @@ var directiveOrder = []string{
 
 	// middleware handlers; some wrap responses
 	"basicauth",
+	"vulcain",
 	"request_header",
 	"encode",
 	"templates",

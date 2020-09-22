@@ -1,0 +1,30 @@
+{
+    "@id": "/books.jsonld",
+    "hydra:member": [
+        "/books-1.jsonld"
+    ],
+    "foo": [
+        {
+            "bar": [
+                {
+                    "a": "b"
+                },
+                {
+                    "c": "d"
+                }
+            ],
+            "car": "caz"
+        },
+        {
+            "bar": [
+                {
+                    "a": "d"
+                },
+                {
+                    "c": "e"
+                }
+            ],
+            "car": "caz2"
+        }
+    ]
+}
