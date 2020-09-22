@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,7 +109,8 @@ func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metric
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	server := serverNameFromContext(r.Context())
 	labels := prometheus.Labels{"server": server, "handler": h.handler}
-	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": r.Method, "code": ""}
+	method := sanitizeMethod(r.Method)
+	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
 
 	inFlight := httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
@@ -154,7 +156,6 @@ func sanitizeCode(code int) string {
 		return "200"
 	}
 	return strconv.Itoa(code)
-
 }
 
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
@@ -180,4 +181,29 @@ func computeApproximateRequestSize(r *http.Request) int {
 		s += int(r.ContentLength)
 	}
 	return s
+}
+
+// taken from https://github.com/prometheus/client_golang/blob/9ac0bad6062845400019e68d4fa0bf0384b5b6f6/prometheus/promhttp/instrument_server.go#L322
+// and modified to uppercase the method.
+func sanitizeMethod(m string) string {
+	switch m {
+	case "GET", "get":
+		return "GET"
+	case "PUT", "put":
+		return "PUT"
+	case "HEAD", "head":
+		return "HEAD"
+	case "POST", "post":
+		return "POST"
+	case "DELETE", "delete":
+		return "DELETE"
+	case "CONNECT", "connect":
+		return "CONNECT"
+	case "OPTIONS", "options":
+		return "OPTIONS"
+	case "NOTIFY", "notify":
+		return "NOTIFY"
+	default:
+		return strings.ToUpper(m)
+	}
 }

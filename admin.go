@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -111,7 +110,7 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 
 	addRouteWithMetrics := func(pattern string, handlerLabel string, h http.Handler) {
 		labels := prometheus.Labels{"path": pattern, "handler": handlerLabel}
-		h = promhttp.InstrumentHandlerCounter(
+		h = instrumentHandlerCounter(
 			adminMetrics.requestCount.MustCurryWith(labels),
 			h,
 		)
@@ -126,7 +125,7 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 				labels := prometheus.Labels{
 					"path":    pattern,
 					"handler": handlerLabel,
-					"method":  r.Method,
+					"method":  sanitizeMethod(r.Method),
 				}
 				adminMetrics.requestErrors.With(labels).Inc()
 			}
