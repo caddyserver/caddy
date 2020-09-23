@@ -46,7 +46,7 @@ func instrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler)
 		next.ServeHTTP(d, r)
 		counter.With(prometheus.Labels{
 			"code":   sanitizeCode(d.status),
-			"method": sanitizeMethod(r.Method),
+			"method": strings.ToUpper(r.Method),
 		}).Inc()
 	})
 }
@@ -73,22 +73,5 @@ func sanitizeCode(s int) string {
 		return "200"
 	default:
 		return strconv.Itoa(s)
-	}
-}
-
-func sanitizeMethod(m string) string {
-	switch m {
-	case "GET", "get":
-		return "GET"
-	case "PUT", "put":
-		return "PUT"
-	case "HEAD", "head":
-		return "HEAD"
-	case "POST", "post":
-		return "POST"
-	case "DELETE", "delete":
-		return "DELETE"
-	default:
-		return strings.ToUpper(m)
 	}
 }

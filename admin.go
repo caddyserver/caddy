@@ -125,7 +125,7 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
 				labels := prometheus.Labels{
 					"path":    pattern,
 					"handler": handlerLabel,
-					"method":  sanitizeMethod(r.Method),
+					"method":  strings.ToUpper(r.Method),
 				}
 				adminMetrics.requestErrors.With(labels).Inc()
 			}
