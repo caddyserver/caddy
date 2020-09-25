@@ -304,13 +304,17 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 		}
 
 		// find and extract any embedded matcher definitions in this scope
-		for i, seg := range segments {
+		for i := 0; i < len(segments); i++ {
+			seg := segments[i]
 			if strings.HasPrefix(seg.Directive(), matcherPrefix) {
+				// parse, then add the matcher to matcherDefs
 				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs)
 				if err != nil {
 					return nil, err
 				}
+				// remove the matcher segment (consumed), then step back the loop
 				segments = append(segments[:i], segments[i+1:]...)
+				i--
 			}
 		}
 
