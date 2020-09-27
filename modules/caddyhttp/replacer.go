@@ -347,6 +347,8 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		case "client.certificate_pem":
 			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), true
+		case "client.is_verified":
+			return isCertVerified(cert), true
 		default:
 			return nil, false
 		}
@@ -367,6 +369,18 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		return req.TLS.ServerName, true
 	}
 	return nil, false
+}
+
+func isCertVerified(cert *x509.Certificate) bool {
+	roots := x509.NewCertPool()
+	roots.AddCert(cert)
+	for _, name := range cert.DNSNames {
+		opts := x509.VerifyOptions{Roots: roots, DNSName: name, Intermediates: x509.NewCertPool()}
+		if _, err := cert.Verify(opts); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // marshalPublicKey returns the byte encoding of pubKey.
