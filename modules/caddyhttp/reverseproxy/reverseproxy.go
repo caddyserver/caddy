@@ -129,6 +129,20 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
 
+	// get validation out of the way
+	for i, v := range h.Upstreams {
+		// the special cases arise with LookupSRV present, so skip the iteration if it's empty.
+		if v.LookupSRV == "" {
+			continue
+		}
+		if h.HealthChecks != nil && h.HealthChecks.Active != nil {
+			return fmt.Errorf(`upstream: lookup_srv is incompatible with active health checks: %d: {"dial": %q, "lookup_srv": %q}`, i, v.Dial, v.LookupSRV)
+		}
+		if v.Dial != "" {
+			return fmt.Errorf(`upstream: specifying dial address is incompatible with lookup_srv: %d: {"dial": %q, "lookup_srv": %q}`, i, v.Dial, v.LookupSRV)
+		}
+	}
+
 	// start by loading modules
 	if h.TransportRaw != nil {
 		mod, err := ctx.LoadModule(h, "TransportRaw")
