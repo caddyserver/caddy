@@ -9,6 +9,15 @@
 
 	@matcher3 not method PUT
 	respond @matcher3 "not put"
+
+	@matcher4 vars "{http.request.uri}" "/vars-matcher"
+	respond @matcher4 "from vars matcher"
+
+	@matcher5 vars_regexp static "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
+	respond @matcher5 "from vars_regexp matcher with name"
+
+	@matcher6 vars_regexp "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
+	respond @matcher6 "from vars_regexp matcher without name"
 }
 ----------
 {
@@ -65,6 +74,56 @@
 							"handle": [
 								{
 									"body": "not put",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars": {
+										"{http.request.uri}": "/vars-matcher"
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars matcher",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars_regexp": {
+										"{http.request.uri}": {
+											"name": "static",
+											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
+										}
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars_regexp matcher with name",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars_regexp": {
+										"{http.request.uri}": {
+											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
+										}
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars_regexp matcher without name",
 									"handler": "static_response"
 								}
 							]

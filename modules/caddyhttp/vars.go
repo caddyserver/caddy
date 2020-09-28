@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -64,6 +65,24 @@ func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(map[string]string)
+	}
+	for d.Next() {
+		var field, val string
+		if !d.Args(&field, &val) {
+			return d.Errf("malformed vars matcher: expected both field and value")
+		}
+		(*m)[field] = val
+		if d.NextBlock(0) {
+			return d.Err("malformed vars matcher: blocks are not supported")
+		}
+	}
+	return nil
+}
+
 // Match matches a request based on variables in the context.
 func (m VarsMatcher) Match(r *http.Request) bool {
 	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
@@ -104,6 +123,35 @@ func (MatchVarsRE) CaddyModule() caddy.ModuleInfo {
 		ID:  "http.matchers.vars_regexp",
 		New: func() caddy.Module { return new(MatchVarsRE) },
 	}
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (m *MatchVarsRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(map[string]*MatchRegexp)
+	}
+	for d.Next() {
+		var first, second, third string
+		if !d.Args(&first, &second) {
+			return d.ArgErr()
+		}
+
+		var name, field, val string
+		if d.Args(&third) {
+			name = first
+			field = second
+			val = third
+		} else {
+			field = first
+			val = second
+		}
+
+		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
+		if d.NextBlock(0) {
+			return d.Err("malformed vars_regexp matcher: blocks are not supported")
+		}
+	}
+	return nil
 }
 
 // Provision compiles m's regular expressions.
