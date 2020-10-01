@@ -132,7 +132,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// get validation out of the way
 	for i, v := range h.Upstreams {
 		// Having LookupSRV non-empty conflicts with 2 other config parameters: active health checks, and upstream dial address.
-		// Therefore if LookupSRV is empty, then there are no immediately apparent config conflict and the iteration can be skipped.
+		// Therefore if LookupSRV is empty, then there are no immediately apparent config conflicts, and the iteration can be skipped.
 		if v.LookupSRV == "" {
 			continue
 		}
