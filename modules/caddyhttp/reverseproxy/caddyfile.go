@@ -155,6 +155,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				host = upstreamAddr
 			}
+			if port == "" {
+				port = "80"
+			}
 		}
 
 		// the underlying JSON does not yet support different
