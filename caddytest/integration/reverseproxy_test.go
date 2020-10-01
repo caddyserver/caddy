@@ -13,6 +13,23 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
+func TestBareUpstream(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		http_port     9080
+		https_port    9443
+	}
+	whoami.domain.me {
+		reverse_proxy whoami
+	}
+	
+	app.domain.me {
+		reverse_proxy app:80
+	}
+	`, "caddyfile")
+}
+
 func TestReverseProxyHealthCheck(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
