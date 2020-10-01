@@ -13,6 +13,109 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
+func TestSRVReverseProxy(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		"apps": {
+		  "http": {
+			"servers": {
+			  "srv0": {
+				"listen": [
+				  ":8080"
+				],
+				"routes": [
+				  {
+					"handle": [
+					  {
+						"handler": "reverse_proxy",
+						"upstreams": [
+						  {
+							"lookup_srv": "srv.host.service.consul"
+						  }
+						]
+					  }
+					]
+				  }
+				]
+			  }
+			}
+		  }
+		}
+	  }
+  `, "json")
+}
+
+func TestSRVWithDial(t *testing.T) {
+	caddytest.AssertLoadError(t, `
+	{
+		"apps": {
+		  "http": {
+			"servers": {
+			  "srv0": {
+				"listen": [
+				  ":8080"
+				],
+				"routes": [
+				  {
+					"handle": [
+					  {
+						"handler": "reverse_proxy",
+						"upstreams": [
+						  {
+							"dial": "tcp/address.to.upstream:80",
+							"lookup_srv": "srv.host.service.consul"
+						  }
+						]
+					  }
+					]
+				  }
+				]
+			  }
+			}
+		  }
+		}
+	  }
+	`, "json", `upstream: specifying dial address is incompatible with lookup_srv: 0: {\"dial\": \"tcp/address.to.upstream:80\", \"lookup_srv\": \"srv.host.service.consul\"}`)
+}
+
+func TestSRVWithActiveHealthcheck(t *testing.T) {
+	caddytest.AssertLoadError(t, `
+	{
+		"apps": {
+		  "http": {
+			"servers": {
+			  "srv0": {
+				"listen": [
+				  ":8080"
+				],
+				"routes": [
+				  {
+					"handle": [
+					  {
+						"handler": "reverse_proxy",
+						"health_checks": {
+							"active": {
+								"path": "/ok"
+							}
+						},
+						"upstreams": [
+						  {
+							"lookup_srv": "srv.host.service.consul"
+						  }
+						]
+					  }
+					]
+				  }
+				]
+			  }
+			}
+		  }
+		}
+	  }
+	`, "json", `upstream: lookup_srv is incompatible with active health checks: 0: {\"dial\": \"\", \"lookup_srv\": \"srv.host.service.consul\"}`)
+}
+
 func TestReverseProxyHealthCheck(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
