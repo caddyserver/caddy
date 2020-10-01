@@ -384,7 +384,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// DialInfo struct should have valid network address syntax
 		dialInfo, err := upstream.fillDialInfo(r)
 		if err != nil {
-			return fmt.Errorf("making dial info: %v", err)
+			err = fmt.Errorf("making dial info: %v", err)
+			return caddyhttp.Error(http.StatusBadGateway, err)
 		}
 
 		// attach to the request information about how to dial the upstream;
