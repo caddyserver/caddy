@@ -85,7 +85,7 @@ func (m *Metrics) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 func (m Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	m.metricsHandler.ServeHTTP(w, r)
-	return next.ServeHTTP(w, r)
+	return nil
 }
 
 // Interface guards
