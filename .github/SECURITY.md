@@ -11,7 +11,7 @@ Please note that we consider publicly-registered domain names to be public infor
 | Version | Supported          |
 | ------- | ------------------ |
 | 2.x     | :white_check_mark: |
-| 1.x     | :white_check_mark: (EOL 1 Oct 2020) |
+| 1.x     | :x:                |
 | < 1.x   | :x:                |
 
 ## Reporting a Vulnerability
