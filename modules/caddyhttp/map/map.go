@@ -43,7 +43,7 @@ type Handler struct {
 	Destinations []string `json:"destinations,omitempty"`
 
 	// Mappings from source values (inputs) to destination values (outputs).
-	// The first matching mapping will be applied.
+	// The first matching, non-nil mapping will be applied.
 	Mappings []Mapping `json:"mappings,omitempty"`
 
 	// If no mappings match or if the mapped output is null/nil, the associated
@@ -69,9 +69,6 @@ func (h *Handler) Provision(_ caddy.Context) error {
 		if m.InputRegexp == "" {
 			continue
 		}
-		if m.Input != "" {
-			return fmt.Errorf("mapping %d has both input and input_regexp fields specified, which is confusing", i)
-		}
 		var err error
 		h.Mappings[i].re, err = regexp.Compile(m.InputRegexp)
 		if err != nil {
@@ -94,11 +91,20 @@ func (h *Handler) Validate() error {
 
 	seen := make(map[string]int)
 	for i, m := range h.Mappings {
-		// prevent duplicate mappings
-		if prev, ok := seen[m.Input]; ok {
-			return fmt.Errorf("mapping %d has a duplicate input '%s' previously used with mapping %d", i, m.Input, prev)
+		// prevent confusing/ambiguous mappings
+		if m.Input != "" && m.InputRegexp != "" {
+			return fmt.Errorf("mapping %d has both input and input_regexp fields specified, which is confusing", i)
 		}
-		seen[m.Input] = i
+
+		// prevent duplicate mappings
+		input := m.Input
+		if m.InputRegexp != "" {
+			input = m.InputRegexp
+		}
+		if prev, ok := seen[input]; ok {
+			return fmt.Errorf("mapping %d has a duplicate input '%s' previously used with mapping %d", i, input, prev)
+		}
+		seen[input] = i
 
 		// ensure mappings have 1:1 output-to-destination correspondence
 		nOut := len(m.Outputs)
@@ -128,7 +134,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 			if m.re != nil {
 				if m.re.MatchString(input) {
 					if output := m.Outputs[destIdx]; output == nil {
-						break
+						continue
 					} else {
 						return output, true
 					}
@@ -137,7 +143,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 			}
 			if input == m.Input {
 				if output := m.Outputs[destIdx]; output == nil {
-					break
+					continue
 				} else {
 					return output, true
 				}
@@ -176,7 +182,8 @@ type Mapping struct {
 	InputRegexp string `json:"input_regexp,omitempty"`
 
 	// Upon a match with the input, each output is positionally correlated
-	// with each destination of the parent handler.
+	// with each destination of the parent handler. An output that is null
+	// (nil) will be treated as if it was not mapped at all.
 	Outputs []interface{} `json:"outputs,omitempty"`
 
 	re *regexp.Regexp
