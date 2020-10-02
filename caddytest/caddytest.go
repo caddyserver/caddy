@@ -430,7 +430,7 @@ func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expe
 
 	body := string(bytes)
 
-	if !strings.Contains(body, expectedBody) {
+	if body != expectedBody {
 		tc.t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", req.RequestURI, expectedBody, body)
 	}
 
