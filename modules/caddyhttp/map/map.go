@@ -15,8 +15,11 @@
 package maphandler
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -26,27 +29,26 @@ func init() {
 	caddy.RegisterModule(Handler{})
 }
 
-// Handler is a middleware that maps a source placeholder to a destination
-// placeholder.
+// Handler implements a middleware that maps inputs to outputs. Specifically, it
+// compares a source value against the map inputs, and for one that matches, it
+// applies the output values to each destination. Destinations become placeholder
+// names.
 //
-// The mapping process happens early in the request handling lifecycle so that
-// the Destination placeholder is calculated and available for substitution.
-// The Items array contains pairs of regex expressions and values, the
-// Source is matched against the expression, if they match then the destination
-// placeholder is set to the value.
-//
-// The Default is optional, if no Item expression is matched then the value of
-// the Default will be used.
-//
+// Mapped placeholders are not evaluated until they are used, so even for very
+// large mappings, this handler is quite efficient.
 type Handler struct {
-	// Source is a placeholder
+	// Source is the placeholder from which to get the input value.
 	Source string `json:"source,omitempty"`
-	// Destination is a new placeholder
-	Destination string `json:"destination,omitempty"`
-	// Default is an optional value to use if no other was found
-	Default string `json:"default,omitempty"`
-	// Items is an array of regex expressions and values
-	Items []Item `json:"items,omitempty"`
+
+	// Destinations are the placeholders in which to store the outputs.
+	Destinations []string `json:"destinations,omitempty"`
+
+	// Mappings from source values (inputs) to destination values (outputs).
+	// The first matching mapping will be applied.
+	Mappings []Mapping `json:"mappings,omitempty"`
+
+	// If no mappings match, the default value will be applied (optional).
+	Defaults []string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,10 +59,52 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision will compile all regular expressions
+// Provision sets up h.
 func (h *Handler) Provision(_ caddy.Context) error {
-	for i := 0; i < len(h.Items); i++ {
-		h.Items[i].compiled = regexp.MustCompile(h.Items[i].Expression)
+	for j, dest := range h.Destinations {
+		h.Destinations[j] = strings.Trim(dest, "{}")
+	}
+
+	for i, m := range h.Mappings {
+		if m.InputRegexp == "" {
+			continue
+		}
+		if m.Input != "" {
+			return fmt.Errorf("mapping %d has both input and input_regexp fields specified, which is confusing", i)
+		}
+		var err error
+		h.Mappings[i].re, err = regexp.Compile(m.InputRegexp)
+		if err != nil {
+			return fmt.Errorf("compiling regexp for mapping %d: %v", i, err)
+		}
+	}
+
+	// TODO: improve efficiency even further by using an actual map type
+	// for the non-regexp mappings, OR sort them and do a binary search
+
+	return nil
+}
+
+// Validate ensures that h is configured properly.
+func (h *Handler) Validate() error {
+	nDest, nDef := len(h.Destinations), len(h.Defaults)
+	if nDef > 0 && nDef != nDest {
+		return fmt.Errorf("%d destinations != %d defaults", nDest, nDef)
+	}
+
+	seen := make(map[string]int)
+	for i, m := range h.Mappings {
+		// prevent duplicate mappings
+		if prev, ok := seen[m.Input]; ok {
+			return fmt.Errorf("mapping %d has a duplicate input '%s' previously used with mapping %d", i, m.Input, prev)
+		}
+		seen[m.Input] = i
+
+		// ensure mappings have 1:1 output-to-destination correspondence
+		nOut := len(m.Outputs)
+		if nOut != nDest {
+			return fmt.Errorf("mapping %d has %d outputs but there are %d destinations defined", i, nOut, nDest)
+		}
 	}
 	return nil
 }
@@ -68,38 +112,73 @@ func (h *Handler) Provision(_ caddy.Context) error {
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// get the source value, if the source value was not found do no
-	// replacement.
-	val, ok := repl.GetString(h.Source)
-	if ok {
-		found := false
-		for i := 0; i < len(h.Items); i++ {
-			if h.Items[i].compiled.MatchString(val) {
-				found = true
-				repl.Set(h.Destination, h.Items[i].Value)
-				break
+	// defer work until a variable is actually evaluated by using replacer's Map callback
+	repl.Map(func(key string) (interface{}, bool) {
+		// return early if the variable is not even a configured destination
+		destIdx := h.destinationIndex(key)
+		if destIdx < 0 {
+			return nil, false
+		}
+
+		input := repl.ReplaceAll(h.Source, "")
+
+		// find the first mapping matching the input and return
+		// the requested destination/output value
+		for _, m := range h.Mappings {
+			log.Printf("MAPPING: %+v", m)
+			if m.re != nil {
+				if m.re.MatchString(input) {
+					return m.Outputs[destIdx], true
+				}
+				continue
+			}
+			if input == m.Input {
+				log.Printf("RETURNING: %s", m.Outputs[destIdx])
+				return m.Outputs[destIdx], true
 			}
 		}
 
-		if !found && h.Default != "" {
-			repl.Set(h.Destination, h.Default)
+		// fall back to default if no match
+		if len(h.Defaults) > destIdx {
+			return h.Defaults[destIdx], true
 		}
-	}
+
+		return nil, true
+	})
+
 	return next.ServeHTTP(w, r)
 }
 
-// Item defines each entry in the map
-type Item struct {
-	// Expression is the regular expression searched for
-	Expression string `json:"expression,omitempty"`
-	// Value to use once the expression has been found
-	Value string `json:"value,omitempty"`
-	// compiled expression, internal use
-	compiled *regexp.Regexp
+// destinationIndex returns the positional index of the destination
+// is name is a known destination; otherwise it returns -1.
+func (h Handler) destinationIndex(name string) int {
+	for i, dest := range h.Destinations {
+		if dest == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// Mapping describes a mapping from input to outputs.
+type Mapping struct {
+	// The input value to match. Must be distinct from other mappings.
+	// Mutually exclusive to input_regexp.
+	Input string `json:"input,omitempty"`
+
+	// The input regular expression to match. Mutually exclusive to input.
+	InputRegexp string `json:"input_regexp,omitempty"`
+
+	// Upon a match with the input, each output is positionally correlated
+	// with each destination of the parent handler.
+	Outputs []string `json:"outputs,omitempty"`
+
+	re *regexp.Regexp
 }
 
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
+	_ caddy.Validator             = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
 )

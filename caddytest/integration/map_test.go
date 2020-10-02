@@ -8,7 +8,6 @@ import (
 )
 
 func TestMap(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
@@ -18,25 +17,24 @@ func TestMap(t *testing.T) {
 
 	localhost:9080 {
 
-		map http.request.method dest-name {
+		map {http.request.method} {dest-1} {dest-2} {
 			default unknown
-			G.T get-called
-			POST post-called
+			~G.T    get-called
+			POST    post-called foobar
 		}
 
 		respond /version 200 {
-			body "hello from localhost {dest-name}"
+			body "hello from localhost {dest-1} {dest-2}"
 		}	
 	}
 	`, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called")
-	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called")
+	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called ")
+	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called foobar")
 }
 
 func TestMapRespondWithDefault(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
@@ -46,9 +44,9 @@ func TestMapRespondWithDefault(t *testing.T) {
 		
 		localhost:9080 {
 	
-			map http.request.method dest-name {
+			map {http.request.method} {dest-name} {
 				default unknown
-				GET get-called
+				GET     get-called
 			}
 		
 			respond /version 200 {
@@ -63,80 +61,75 @@ func TestMapRespondWithDefault(t *testing.T) {
 }
 
 func TestMapAsJson(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester.InitServer(`
+	{
 		"apps": {
 			"http": {
-			"http_port": 9080,
-			"https_port": 9443,
-			"servers": {
-				"srv0": {
-				"listen": [
-					":9080"
-				],
-				"routes": [
-					{
-					"handle": [
-						{
-						"handler": "subroute",
+				"http_port": 9080,
+				"https_port": 9443,
+				"servers": {
+					"srv0": {
+						"listen": [
+							":9080"
+						],
 						"routes": [
 							{
-							"handle": [
-								{
-								"handler": "map",
-								"source": "http.request.method",
-								"destination": "dest-name",
-								"default": "unknown",
-								"items": [
+								"handle": [
 									{
-									"expression": "GET",
-									"value": "get-called"
-									},
-									{
-									"expression": "POST",
-									"value": "post-called"
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"handler": "map",
+														"source": "{http.request.method}",
+														"destinations": ["dest-name"],
+														"defaults": ["unknown"],
+														"mappings": [
+															{
+																"input": "GET",
+																"outputs": ["get-called"]
+															},
+															{
+																"input": "POST",
+																"outputs": ["post-called"]
+															}
+														]
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"body": "hello from localhost {dest-name}",
+														"handler": "static_response",
+														"status_code": 200
+													}
+												],
+												"match": [
+													{
+														"path": ["/version"]
+													}
+												]
+											}
+										]
 									}
-								]
-								}
-							]
-							},
-							{
-							"handle": [
-								{
-								"body": "hello from localhost {dest-name}",
-								"handler": "static_response",
-								"status_code": 200
-								}
-							],
-							"match": [
-								{
-								"path": [
-									"/version"
-								]
-								}
-							]
+								],
+								"match": [
+									{
+										"host": ["localhost"]
+									}
+								],
+								"terminal": true
 							}
 						]
-						}
-					],
-					"match": [
-						{
-						"host": [
-							"localhost"
-						]
-						}
-					],
-					"terminal": true
 					}
-				]
 				}
 			}
-			}
 		}
-		}
-		`, "json")
+	}`, "json")
 
 	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called")
 	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called")
