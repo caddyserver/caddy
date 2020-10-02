@@ -70,7 +70,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 			// every other line maps one input to one or more outputs
 			in := h.Val()
-			outs := h.RemainingArgs()
+			var outs []interface{}
+			for _, out := range h.RemainingArgs() {
+				outs = append(outs, out)
+			}
 
 			// cannot have more outputs than destinations
 			if len(outs) > len(handler.Destinations) {
@@ -78,9 +81,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 
 			// for convenience, can have fewer outputs than destinations, but the
-			// underlying handler won't accept that, so we fill in empty values
+			// underlying handler won't accept that, so we fill in nil values
 			for len(outs) < len(handler.Destinations) {
-				outs = append(outs, "")
+				outs = append(outs, nil)
 			}
 
 			// create the mapping

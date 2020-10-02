@@ -16,7 +16,6 @@ package maphandler
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -40,14 +39,15 @@ type Handler struct {
 	// Source is the placeholder from which to get the input value.
 	Source string `json:"source,omitempty"`
 
-	// Destinations are the placeholders in which to store the outputs.
+	// Destinations are the names of placeholders in which to store the outputs.
 	Destinations []string `json:"destinations,omitempty"`
 
 	// Mappings from source values (inputs) to destination values (outputs).
 	// The first matching mapping will be applied.
 	Mappings []Mapping `json:"mappings,omitempty"`
 
-	// If no mappings match, the default value will be applied (optional).
+	// If no mappings match or if the mapped output is null/nil, the associated
+	// default output will be applied (optional).
 	Defaults []string
 }
 
@@ -125,20 +125,26 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 		// find the first mapping matching the input and return
 		// the requested destination/output value
 		for _, m := range h.Mappings {
-			log.Printf("MAPPING: %+v", m)
 			if m.re != nil {
 				if m.re.MatchString(input) {
-					return m.Outputs[destIdx], true
+					if output := m.Outputs[destIdx]; output == nil {
+						break
+					} else {
+						return output, true
+					}
 				}
 				continue
 			}
 			if input == m.Input {
-				log.Printf("RETURNING: %s", m.Outputs[destIdx])
-				return m.Outputs[destIdx], true
+				if output := m.Outputs[destIdx]; output == nil {
+					break
+				} else {
+					return output, true
+				}
 			}
 		}
 
-		// fall back to default if no match
+		// fall back to default if no match or if matched nil value
 		if len(h.Defaults) > destIdx {
 			return h.Defaults[destIdx], true
 		}
@@ -171,7 +177,7 @@ type Mapping struct {
 
 	// Upon a match with the input, each output is positionally correlated
 	// with each destination of the parent handler.
-	Outputs []string `json:"outputs,omitempty"`
+	Outputs []interface{} `json:"outputs,omitempty"`
 
 	re *regexp.Regexp
 }
