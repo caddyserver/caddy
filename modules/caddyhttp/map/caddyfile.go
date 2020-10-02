@@ -35,6 +35,9 @@ func init() {
 // If the input value is prefixed with a tilde (~), then the input will be parsed as a
 // regular expression.
 //
+// The Caddyfile adapter treats outputs that are a literal hyphen (-) as a null/nil
+// value. This is useful if you want to fall back to default for that particular output.
+//
 // The number of outputs for each mapping must not be more than the number of destinations.
 // However, for convenience, there may be fewer outputs than destinations and any missing
 // outputs will be filled in implicitly.
@@ -72,7 +75,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			in := h.Val()
 			var outs []interface{}
 			for _, out := range h.RemainingArgs() {
-				outs = append(outs, out)
+				if out == "-" {
+					outs = append(outs, nil)
+				} else {
+					outs = append(outs, out)
+				}
 			}
 
 			// cannot have more outputs than destinations
