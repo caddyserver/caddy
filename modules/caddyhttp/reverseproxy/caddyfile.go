@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -101,6 +102,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// to write tests before making any more changes to it
 	upstreamDialAddress := func(upstreamAddr string) (string, error) {
 		var network, scheme, host, port string
+		placeholder := regexp.MustCompile(`\{[[:graph:]]+\}`)
 
 		if strings.Contains(upstreamAddr, "://") {
 			// we get a parsing error if a placeholder is specified
@@ -155,7 +157,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				host = upstreamAddr
 			}
-			if port == "" {
+
+			if !placeholder.MatchString(host) && port == "" {
 				port = "80"
 			}
 		}
@@ -173,6 +176,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the network portion if the user specified one
 		if network != "" {
 			return caddy.JoinNetworkAddress(network, host, port), nil
+		}
+		// if both network and port are empty, host address contains
+		// placeholdler (e.g. "{http.request.header.X-Caddy-Upstream-Dial}") and doing net.JoinHostPort(host, port) will
+		// add an extreneous colon.
+		if port == "" {
+			return host, nil
 		}
 		return net.JoinHostPort(host, port), nil
 	}

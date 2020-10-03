@@ -129,8 +129,12 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
 
+	re := regexp.MustCompile(`\{[[:graph:]]+\}`)
 	// get validation out of the way
 	for i, v := range h.Upstreams {
+		if v.Dial != "" && re.MatchString(v.Dial) && h.HealthChecks != nil && h.HealthChecks.Active != nil {
+			return fmt.Errorf(`upstream: dial address with placeholders is incompatible with active health checks: %d: {"dial": %q}`, i, v.Dial)
+		}
 		// Having LookupSRV non-empty conflicts with 2 other config parameters: active health checks, and upstream dial address.
 		// Therefore if LookupSRV is empty, then there are no immediately apparent config conflicts, and the iteration can be skipped.
 		if v.LookupSRV == "" {
@@ -219,18 +223,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
-		if upstream.LookupSRV == "" {
-			addr, err := caddy.ParseNetworkAddress(upstream.Dial)
-			if err != nil {
-				return err
-			}
-
-			if addr.PortRangeSize() != 1 {
-				return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
-			}
-
-			upstream.networkAddress = addr
-		}
 		// create or get the host representation for this upstream
 		var host Host = new(upstreamHost)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
@@ -288,6 +280,19 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			}
 
 			for _, upstream := range h.Upstreams {
+				if upstream.LookupSRV == "" {
+					addr, err := caddy.ParseNetworkAddress(upstream.Dial)
+					if err != nil {
+						return err
+					}
+
+					if addr.PortRangeSize() != 1 {
+						return fmt.Errorf("multiple addresses (upstream must map to only one address): %v", addr)
+					}
+
+					upstream.networkAddress = addr
+				}
+
 				// if there's an alternative port for health-check provided in the config,
 				// then use it, otherwise use the port of upstream.
 				if h.HealthChecks.Active.Port != 0 {
