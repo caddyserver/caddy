@@ -78,6 +78,8 @@ func init() {
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
 // `{http.request.tls.client.subject}` | The subject DN of the client certificate
+// `{http.request.tls.client.certificate_pem}` | The PEM encoded value of certificate.
+// `{http.request.tls.client.is_verified}` | Boolean value indicating if certificate is verified.
 // `{http.request.tls.client.san.dns_names.*}` | SAN DNS names(index optional)
 // `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)

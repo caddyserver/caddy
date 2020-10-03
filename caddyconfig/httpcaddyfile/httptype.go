@@ -99,6 +99,8 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
 		"{tls_client_serial}", "{http.request.tls.client.serial}",
 		"{tls_client_subject}", "{http.request.tls.client.subject}",
+		"{tls_client_placeholder}", "{http.request.tls.client.certificate_pem}",
+		"{tls_client_is_verified}", "{http.request.tls.client.is_verified}",
 	)
 
 	// these are placeholders that allow a user-defined final
