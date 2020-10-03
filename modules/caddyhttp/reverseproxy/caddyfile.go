@@ -178,7 +178,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return caddy.JoinNetworkAddress(network, host, port), nil
 		}
 		// if both network and port are empty, host address contains
-		// placeholdler (e.g. "{http.request.header.X-Caddy-Upstream-Dial}") and doing net.JoinHostPort(host, port) will
+		// placeholder (e.g. "{http.request.header.X-Caddy-Upstream-Dial}") and doing net.JoinHostPort(host, port) will
 		// add an extreneous colon.
 		if port == "" {
 			return host, nil
