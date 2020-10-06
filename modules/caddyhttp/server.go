@@ -158,6 +158,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errLog := s.errorLogger.With(loggableReq)
 
 	var duration time.Duration
+	var errStatus int
+	var errMsg string
+	var errFields []zapcore.Field
 
 	if s.shouldLogRequest(r) {
 		wrec := NewResponseRecorder(w, nil, nil)
@@ -181,13 +184,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log = logger.Error
 			}
 
-			log("handled request",
+			fields := []zapcore.Field{
 				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
 				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
-			)
+			}
+
+			// internal error occurs during execution of the primary handler chain
+			if errStatus >= 500 {
+				fields = append(fields, errFields...)
+				fields = append(fields, zap.String("error", errMsg))
+			}
+
+			log("handled request", fields...)
 		}()
 	}
 
@@ -217,7 +228,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger = logger.With(zap.Duration("duration", duration))
 
 	// get the values that will be used to log the error
-	errStatus, errMsg, errFields := errLogValues(err)
+	errStatus, errMsg, errFields = errLogValues(err)
 
 	// add HTTP error information to request context
 	r = s.Errors.WithError(r, err)
