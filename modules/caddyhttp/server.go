@@ -210,6 +210,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// restore original request before invoking error handler chain (issue #3717)
+	// TODO: this does not restore original headers, if modified (for efficiency)
 	origReq := r.Context().Value(OriginalRequestCtxKey).(http.Request)
 	r.Method = origReq.Method
 	r.RemoteAddr = origReq.RemoteAddr
