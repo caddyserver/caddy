@@ -209,6 +209,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// restore original request before invoking error handler chain (issue #3717)
+	origReq := r.Context().Value(OriginalRequestCtxKey).(http.Request)
+	r.Method = origReq.Method
+	r.RemoteAddr = origReq.RemoteAddr
+	r.RequestURI = origReq.RequestURI
+	cloneURL(origReq.URL, r.URL)
+
 	// prepare the error log
 	logger := errLog
 	if s.Logs != nil {
