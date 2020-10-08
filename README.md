@@ -61,19 +61,7 @@
 
 You can install Caddy by downloading from the Github Releases and placing it in your PATH.
 
-You can also use [Webi](https://webinstall.dev/), which will do that for you:
-
-**Mac** & **Linux**
-
-```bash
-curl -sS https://webinstall.dev/caddy | bash
-```
-
-**Windows 10**
-
-```bash
-curl.exe -A MS https://webinstall.dev/caddy | powershell
-```
+For other install options, see https://caddyserver.com/docs/download.
 
 ## Build from source
 
