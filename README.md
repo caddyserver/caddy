@@ -22,6 +22,7 @@
 ### Menu
 
 - [Features](#features)
+- [Install](#install)
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
@@ -56,7 +57,23 @@
 - Actually **fun to use**
 - So, so much more to discover
 
+## Install
 
+You can install Caddy by downloading from the Github Releases and placing it in your PATH.
+
+You can also use [Webi](https://webinstall.dev/), which will do that for you:
+
+**Mac** & **Linux**
+
+```bash
+curl -sS https://webinstall.dev/caddy | bash
+```
+
+**Windows 10**
+
+```bash
+curl.exe -A MS https://webinstall.dev/caddy | powershell
+```
 
 ## Build from source
 
