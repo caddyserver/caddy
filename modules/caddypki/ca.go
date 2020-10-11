@@ -306,6 +306,7 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 	return interCert, interKey, nil
 }
 
+// XXX: SA4009: argument rootKey is overwritten before first use
 func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (interCert *x509.Certificate, interKey interface{}, err error) {
 	repl := ca.newReplacer()
 

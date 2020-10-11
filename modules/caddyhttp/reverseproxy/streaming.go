@@ -139,6 +139,7 @@ func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.D
 	}
 
 	buf := streamingBufPool.Get().([]byte)
+	// XXX: SA6002: argument should be pointer-like to avoid allocations (staticcheck)
 	defer streamingBufPool.Put(buf)
 	_, err := h.copyBuffer(dst, src, buf)
 	return err

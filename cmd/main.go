@@ -235,8 +235,11 @@ func watchConfigFile(filename, adapterName string) {
 		return false
 	}
 
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	// begin poller
-	for range time.Tick(1 * time.Second) {
+	for range ticker.C {
 		// get the file info
 		info, err := os.Stat(filename)
 		if err != nil {

@@ -124,7 +124,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 				return
 			}
 			defer res.Body.Close()
-			body, err := ioutil.ReadAll(res.Body)
+			body, _ := ioutil.ReadAll(res.Body)
 
 			var out bytes.Buffer
 			json.Indent(&out, body, "", "  ")

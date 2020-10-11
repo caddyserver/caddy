@@ -116,6 +116,7 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 	lifetime := time.Duration(iss.Lifetime)
 	if time.Now().Add(lifetime).After(issuerCert.NotAfter) {
 		// TODO: log this
+		// XXX: SA4006: this value of `lifetime` is never used (staticcheck)
 		lifetime = issuerCert.NotAfter.Sub(time.Now())
 	}
 

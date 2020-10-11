@@ -362,7 +362,8 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 	case "proto":
 		return req.TLS.NegotiatedProtocol, true
 	case "proto_mutual":
-		return req.TLS.NegotiatedProtocolIsMutual, true
+		// req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
+		return true, true
 	case "server_name":
 		return req.TLS.ServerName, true
 	}
