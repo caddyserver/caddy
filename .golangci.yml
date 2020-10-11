@@ -6,16 +6,65 @@ linters-settings:
     locale: US
 
 linters:
+  disable-all: true
   enable:
     - bodyclose
-    - prealloc
-    - unconvert
+    - deadcode
     - errcheck
     - gofmt
     - goimports
     - gosec
+    - gosimple
+    - govet
     - ineffassign
     - misspell
+    - prealloc
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unconvert
+    - unused
+    - varcheck
+  # these are implicitly disabled:
+  # - asciicheck
+  # - depguard
+  # - dogsled
+  # - dupl
+  # - exhaustive
+  # - exportloopref
+  # - funlen
+  # - gci
+  # - gochecknoglobals
+  # - gochecknoinits
+  # - gocognit
+  # - goconst
+  # - gocritic
+  # - gocyclo
+  # - godot
+  # - godox
+  # - goerr113
+  # - gofumpt
+  # - goheader
+  # - golint
+  # - gomnd
+  # - gomodguard
+  # - goprintffuncname
+  # - interfacer
+  # - lll
+  # - maligned
+  # - nakedret
+  # - nestif
+  # - nlreturn
+  # - noctx
+  # - nolintlint
+  # - rowserrcheck
+  # - scopelint
+  # - sqlclosecheck
+  # - stylecheck
+  # - testpackage
+  # - unparam
+  # - whitespace
+  # - wsl
 
 run:
   # default concurrency is a available CPU number.

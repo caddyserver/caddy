@@ -148,6 +148,7 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.S390X_SSH_KEY }}
 
+  # TODO: remove if lint.yml works
   # From https://github.com/reviewdog/action-golangci-lint
   golangci-lint:
     name: runner / golangci-lint
