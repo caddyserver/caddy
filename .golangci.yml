@@ -8,7 +8,7 @@ linters-settings:
 linters:
   disable-all: true
   enable:
-    # - bodyclose
+    - bodyclose
     # - deadcode
     - errcheck
     - gofmt
