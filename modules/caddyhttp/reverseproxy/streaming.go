@@ -138,10 +138,9 @@ func (h Handler) copyResponse(dst io.Writer, src io.Reader, flushInterval time.D
 		}
 	}
 
-	buf := streamingBufPool.Get().([]byte)
-	// XXX: SA6002: argument should be pointer-like to avoid allocations (staticcheck)
+	buf := streamingBufPool.Get().(*[]byte)
 	defer streamingBufPool.Put(buf)
-	_, err := h.copyBuffer(dst, src, buf)
+	_, err := h.copyBuffer(dst, src, *buf)
 	return err
 }
 
@@ -256,7 +255,12 @@ func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 
 var streamingBufPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, defaultBufferSize)
+		// The Pool's New function should generally only return pointer
+		// types, since a pointer can be put into the return interface
+		// value without an allocation
+		// - (from the package docs)
+		b := make([]byte, defaultBufferSize)
+		return &b
 	},
 }
 

@@ -19,7 +19,7 @@ linters:
     - ineffassign
     - misspell
     - prealloc
-    # - staticcheck
+    - staticcheck
     - structcheck
     - typecheck
     - unconvert
