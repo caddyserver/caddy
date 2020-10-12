@@ -14,7 +14,7 @@ linters:
     - gofmt
     - goimports
     - gosec
-    # - gosimple
+    - gosimple
     - govet
     # - ineffassign
     - misspell

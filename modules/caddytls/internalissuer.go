@@ -117,7 +117,7 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 	if time.Now().Add(lifetime).After(issuerCert.NotAfter) {
 		// TODO: log this
 		// XXX: SA4006: this value of `lifetime` is never used (staticcheck)
-		lifetime = issuerCert.NotAfter.Sub(time.Now())
+		lifetime = time.Until(issuerCert.NotAfter)
 	}
 
 	certChain, err := auth.Sign(csr, provisioner.SignOptions{}, customCertLifetime(iss.Lifetime))
