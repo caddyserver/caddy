@@ -2,8 +2,6 @@ linters-settings:
   errcheck:
     ignore: fmt:.*,io/ioutil:^Read.*,github.com/caddyserver/caddy/v2/caddyconfig:RegisterAdapter,github.com/caddyserver/caddy/v2:RegisterModule,go.uber.org/zap/zapcore:^Add.*
     ignoretests: true
-  misspell:
-    locale: US
 
 linters:
   disable-all: true

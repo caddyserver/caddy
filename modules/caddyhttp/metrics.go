@@ -122,7 +122,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 
 	// This is a _bit_ of a hack - it depends on the ShouldBufferFunc always
 	// being called when the headers are written.
-	// Effectively the same behavior as promhttp.InstrumentHandlerTimeToWriteHeader.
+	// Effectively the same behaviour as promhttp.InstrumentHandlerTimeToWriteHeader.
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
 		statusLabels["code"] = sanitizeCode(status)
 		ttfb := time.Since(start).Seconds()
