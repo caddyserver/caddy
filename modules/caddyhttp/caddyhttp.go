@@ -18,18 +18,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	weakrand "math/rand"
 	"net"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
-	weakrand.Seed(time.Now().UnixNano())
-
 	caddy.RegisterModule(tlsPlaceholderWrapper{})
 }
 

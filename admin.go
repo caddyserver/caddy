@@ -843,7 +843,7 @@ var (
 // will get deleted before the process gracefully exits.
 func PIDFile(filename string) error {
 	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	err := ioutil.WriteFile(filename, pid, 0644)
+	err := ioutil.WriteFile(filename, pid, 0600)
 	if err != nil {
 		return err
 	}

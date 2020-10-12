@@ -92,6 +92,7 @@ func randString(n int, sameCase bool) string {
 	}
 	b := make([]byte, n)
 	for i := range b {
+		//nolint:gosec
 		b[i] = dict[mathrand.Int63()%int64(len(dict))]
 	}
 	return string(b)

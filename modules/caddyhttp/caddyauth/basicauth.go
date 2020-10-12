@@ -240,6 +240,7 @@ func (c *Cache) makeRoom() {
 		// map with less code, this is a heavily skewed eviction
 		// strategy; generating random numbers is cheap and
 		// ensures a much better distribution.
+		//nolint:gosec
 		rnd := weakrand.Intn(len(c.cache))
 		i := 0
 		for key := range c.cache {
