@@ -145,7 +145,12 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 // current STEK is outdated (NextRotation time is in the past),
 // then it is rotated and persisted. The resulting STEK is returned.
 func (s *Provider) getSTEK() (distributedSTEK, error) {
-	s.storage.Lock(s.ctx, stekLockName)
+	err := s.storage.Lock(s.ctx, stekLockName)
+	if err != nil {
+		return distributedSTEK{}, fmt.Errorf("failed to acquire storage lock: %w", err)
+	}
+
+	//nolint:errcheck
 	defer s.storage.Unlock(stekLockName)
 
 	// load the current STEKs from storage

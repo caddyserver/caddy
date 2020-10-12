@@ -1,6 +1,6 @@
 linters-settings:
   errcheck:
-    ignore: fmt:.*,io/ioutil:^Read.*,github.com/caddyserver/caddy/v2/caddyconfig:RegisterAdapter,github.com/caddyserver/caddy/v2:RegisterModule
+    ignore: fmt:.*,io/ioutil:^Read.*,github.com/caddyserver/caddy/v2/caddyconfig:RegisterAdapter,github.com/caddyserver/caddy/v2:RegisterModule,go.uber.org/zap/zapcore:^Add.*
     ignoretests: true
   misspell:
     locale: US
@@ -8,22 +8,22 @@ linters-settings:
 linters:
   disable-all: true
   enable:
-    - bodyclose
-    - deadcode
+    # - bodyclose
+    # - deadcode
     - errcheck
     - gofmt
     - goimports
-    - gosec
-    - gosimple
+    # - gosec
+    # - gosimple
     - govet
-    - ineffassign
+    # - ineffassign
     - misspell
     - prealloc
-    - staticcheck
+    # - staticcheck
     - structcheck
     - typecheck
     - unconvert
-    - unused
+    # - unused
     - varcheck
   # these are implicitly disabled:
   # - asciicheck

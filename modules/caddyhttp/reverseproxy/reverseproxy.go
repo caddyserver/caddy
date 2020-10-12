@@ -314,7 +314,12 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		hosts.Delete(upstream.String())
+		// XXX: not sure if this will ever error - it's only possible if the
+		// value is a caddy.Destructor
+		_, err := hosts.Delete(upstream.String())
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -339,7 +344,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 		defer bufPool.Put(buf)
-		io.Copy(buf, r.Body)
+		_, err := io.Copy(buf, r.Body)
+		if err != nil {
+			return fmt.Errorf("failed to buffer body: %w", err)
+		}
 		r.Body.Close()
 		r.Body = ioutil.NopCloser(buf)
 	}
@@ -518,7 +526,8 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
 func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo, next caddyhttp.Handler) error {
-	di.Upstream.Host.CountRequest(1)
+	_ = di.Upstream.Host.CountRequest(1)
+	//nolint:errcheck
 	defer di.Upstream.Host.CountRequest(-1)
 
 	// point the request to this upstream

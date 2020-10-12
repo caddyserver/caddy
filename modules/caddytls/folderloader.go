@@ -97,26 +97,38 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 
 		if derBlock.Type == "CERTIFICATE" {
 			// Re-encode certificate as PEM, appending to certificate chain
-			pem.Encode(certBuilder, derBlock)
+			err = pem.Encode(certBuilder, derBlock)
+			if err != nil {
+				return tls.Certificate{}, err
+			}
 		} else if derBlock.Type == "EC PARAMETERS" {
 			// EC keys generated from openssl can be composed of two blocks:
 			// parameters and key (parameter block should come first)
 			if !foundKey {
 				// Encode parameters
-				pem.Encode(keyBuilder, derBlock)
+				err = pem.Encode(keyBuilder, derBlock)
+				if err != nil {
+					return tls.Certificate{}, err
+				}
 
 				// Key must immediately follow
 				derBlock, bundle = pem.Decode(bundle)
 				if derBlock == nil || derBlock.Type != "EC PRIVATE KEY" {
 					return tls.Certificate{}, fmt.Errorf("%s: expected elliptic private key to immediately follow EC parameters", fpath)
 				}
-				pem.Encode(keyBuilder, derBlock)
+				err = pem.Encode(keyBuilder, derBlock)
+				if err != nil {
+					return tls.Certificate{}, err
+				}
 				foundKey = true
 			}
 		} else if derBlock.Type == "PRIVATE KEY" || strings.HasSuffix(derBlock.Type, " PRIVATE KEY") {
 			// RSA key
 			if !foundKey {
-				pem.Encode(keyBuilder, derBlock)
+				err = pem.Encode(keyBuilder, derBlock)
+				if err != nil {
+					return tls.Certificate{}, err
+				}
 				foundKey = true
 			}
 		} else {

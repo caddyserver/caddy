@@ -249,7 +249,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		w.WriteHeader(statusCode)
 		if r.Method != http.MethodHead {
-			io.Copy(w, file)
+			_, err = io.Copy(w, file)
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
 		}
 		return nil
 	}

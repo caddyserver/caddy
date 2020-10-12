@@ -127,7 +127,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 			body, _ := ioutil.ReadAll(res.Body)
 
 			var out bytes.Buffer
-			json.Indent(&out, body, "", "  ")
+			_ = json.Indent(&out, body, "", "  ")
 			tc.t.Logf("----------- failed with config -----------\n%s", out.String())
 		}
 	})

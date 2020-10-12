@@ -129,9 +129,9 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	if *fcl.deadline {
 		switch ln := fcl.Listener.(type) {
 		case *net.TCPListener:
-			ln.SetDeadline(time.Time{})
+			_ = ln.SetDeadline(time.Time{})
 		case *net.UnixListener:
-			ln.SetDeadline(time.Time{})
+			_ = ln.SetDeadline(time.Time{})
 		}
 		*fcl.deadline = false
 	}
@@ -167,9 +167,9 @@ func (fcl *fakeCloseListener) Close() error {
 		if !*fcl.deadline {
 			switch ln := fcl.Listener.(type) {
 			case *net.TCPListener:
-				ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+				_ = ln.SetDeadline(time.Now().Add(-1 * time.Minute))
 			case *net.UnixListener:
-				ln.SetDeadline(time.Now().Add(-1 * time.Minute))
+				_ = ln.SetDeadline(time.Now().Add(-1 * time.Minute))
 			}
 			*fcl.deadline = true
 		}
