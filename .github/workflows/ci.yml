@@ -148,21 +148,6 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.S390X_SSH_KEY }}
 
-  # TODO: remove if lint.yml works
-  # From https://github.com/reviewdog/action-golangci-lint
-  golangci-lint:
-    name: runner / golangci-lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code into the Go module directory
-        uses: actions/checkout@v2
-
-      - name: Run golangci-lint
-        uses: reviewdog/action-golangci-lint@v1
-        # uses: docker://reviewdog/action-golangci-lint:v1 # pre-build docker image
-        with:
-          github_token: ${{ secrets.github_token }}
-
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
