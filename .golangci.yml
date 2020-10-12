@@ -9,7 +9,7 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    # - deadcode
+    - deadcode
     - errcheck
     - gofmt
     - goimports
