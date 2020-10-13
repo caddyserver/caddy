@@ -92,7 +92,6 @@ type Upstream struct {
 	// HeaderAffinity string
 	// IPAffinity     string
 
-	networkAddress        caddy.NetworkAddress
 	activeHealthCheckPort int
 	healthCheckPolicy     *PassiveHealthChecks
 	cb                    CircuitBreaker
