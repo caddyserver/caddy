@@ -82,9 +82,9 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	}
 
-	_, err = buf.WriteTo(w)
+	_, _ = buf.WriteTo(w)
 
-	return err
+	return nil
 }
 
 func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl *caddy.Replacer) (browseListing, error) {

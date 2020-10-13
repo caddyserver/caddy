@@ -339,10 +339,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 		defer bufPool.Put(buf)
-		_, err := io.Copy(buf, r.Body)
-		if err != nil {
-			return fmt.Errorf("failed to buffer body: %w", err)
-		}
+		_, _ = io.Copy(buf, r.Body)
 		r.Body.Close()
 		r.Body = ioutil.NopCloser(buf)
 	}
