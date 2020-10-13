@@ -400,9 +400,7 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 	w.WriteHeader(apiErr.Code)
 	encErr := json.NewEncoder(w).Encode(apiErr)
 	if encErr != nil {
-		Log().Named("admin.api").Error("failed to encode error response",
-			zap.Error(encErr),
-		)
+		Log().Named("admin.api").Error("failed to encode error response", zap.Error(encErr))
 	}
 }
 
