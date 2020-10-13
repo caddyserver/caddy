@@ -52,8 +52,7 @@ type InternalIssuer struct {
 	// validate certificate chains.
 	SignWithRoot bool `json:"sign_with_root,omitempty"`
 
-	ca *caddypki.CA
-
+	ca     *caddypki.CA
 	logger *zap.Logger
 }
 
