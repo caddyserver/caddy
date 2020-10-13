@@ -225,7 +225,7 @@ func isCaddyAdminRunning() error {
 	if err != nil {
 		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
 	}
-	defer resp.Body.Close()
+	resp.Body.Close()
 
 	return nil
 }
