@@ -314,12 +314,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		// XXX: not sure if this will ever error - it's only possible if the
-		// value is a caddy.Destructor
-		_, err := hosts.Delete(upstream.String())
-		if err != nil {
-			return err
-		}
+		_, _ = hosts.Delete(upstream.String())
 	}
 
 	return nil
