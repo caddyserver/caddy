@@ -311,7 +311,7 @@ func TestRandomChoicePolicy(t *testing.T) {
 	randomChoicePolicy := new(RandomChoiceSelection)
 	randomChoicePolicy.Choose = 2
 
-	h := randomChoicePolicy.Select(pool, request)
+	h := randomChoicePolicy.Select(pool, request, nil)
 
 	if h == nil {
 		t.Error("RandomChoicePolicy should not return nil")
@@ -321,4 +321,52 @@ func TestRandomChoicePolicy(t *testing.T) {
 		t.Error("RandomChoicePolicy should not choose pool[0]")
 	}
 
+}
+
+func TestCookieHashPolicy(t *testing.T) {
+	pool := testPool()
+	pool[0].Dial = "localhost:8080"
+	pool[1].Dial = "localhost:8081"
+	pool[2].Dial = "localhost:8082"
+	pool[0].SetHealthy(true)
+	pool[1].SetHealthy(false)
+	pool[2].SetHealthy(false)
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+	cookieHashPolicy := new(CookieHashSelection)
+	h := cookieHashPolicy.Select(pool, request, w)
+	cookie_server1 := w.Result().Cookies()[0]
+	if cookie_server1 == nil {
+		t.Error("cookieHashPolicy should set a cookie")
+	}
+	if cookie_server1.Name != "lb" {
+		t.Error("cookieHashPolicy should set a cookie with name lb")
+	}
+	if h != pool[0] {
+		t.Error("Expected cookieHashPolicy host to be the first only available host.")
+	}
+	pool[1].SetHealthy(true)
+	pool[2].SetHealthy(true)
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(cookie_server1)
+	h = cookieHashPolicy.Select(pool, request, w)
+	if h != pool[0] {
+		t.Error("Expected cookieHashPolicy host to stick to the first host (matching cookie).")
+	}
+	s := w.Result().Cookies()
+	if len(s) != 0 {
+		t.Error("Expected cookieHashPolicy to not set a new cookie.")
+	}
+	pool[0].SetHealthy(false)
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(cookie_server1)
+	h = cookieHashPolicy.Select(pool, request, w)
+	if h == pool[0] {
+		t.Error("Expected cookieHashPolicy to select a new host.")
+	}
+	if w.Result().Cookies() == nil {
+		t.Error("Expected cookieHashPolicy to set a new cookie.")
+	}
 }

@@ -15,6 +15,9 @@
 package reverseproxy
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"hash/fnv"
 	weakrand "math/rand"
@@ -392,7 +395,8 @@ func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // a host based on a given cookie name.
 type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
-	Field string `json:"field,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Secret string `json:"secret,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -405,29 +409,82 @@ func (CookieHashSelection) CaddyModule() caddy.ModuleInfo {
 
 // Select returns an available host, if any.
 func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
-	if s.Field == "" {
-		return nil
+	if s.Secret == "" {
+		s.Secret = "caddysecret"
 	}
-	cookie, err := req.Cookie(s.Field)
+	if s.Name == "" {
+		s.Name = "lb"
+	}
+	cookie, err := req.Cookie(s.Name)
 	var cookieValue string
+	// If there's no cookie, select new random host
 	if err != nil || cookie == nil {
-		cookieValue = caddy.RandomString(16)
-		http.SetCookie(w, &http.Cookie{Name: s.Field, Value: cookieValue, Secure: false})
+		return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
 	} else {
+		// If the cookie is present, loop over the available upstreams until we find a match
 		cookieValue = cookie.Value
+		for _, upstream := range pool {
+			if !upstream.Available() {
+				continue
+			}
+			if hashCookie(s.Secret, upstream.Dial) == cookieValue {
+				return upstream
+			}
+		}
 	}
-	return hostByHashing(pool, cookieValue)
+	// If there is no matching host, select new random host
+	return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
-		s.Field = d.Val()
+	args := d.RemainingArgs()
+	switch len(args) {
+	case 1:
+	case 2:
+		s.Name = args[1]
+	case 3:
+		s.Name = args[1]
+		s.Secret = args[2]
+	default:
+		return d.ArgErr()
 	}
 	return nil
+}
+
+// Select a new Host using RandomChoose () and add a sticky session cookie
+func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWriter, cookieSecret string, cookieName string) *Upstream {
+	var randomHost *Upstream
+	var count int
+	for _, upstream := range pool {
+		if !upstream.Available() {
+			continue
+		}
+		// (n % 1 == 0) holds for all n, therefore a
+		// upstream will always be chosen if there is at
+		// least one available
+		count++
+		if (weakrand.Int() % count) == 0 {
+			randomHost = upstream
+		}
+	}
+
+	if randomHost != nil {
+		// Hash (HMAC with some key for privacy) the upstream.Dial string as the cookie value
+		sha := hashCookie(cookieSecret, randomHost.Dial)
+		// write the cookie.
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Secure: false})
+	}
+	return randomHost
+}
+
+// Hash (Hmac256) some data with the secret
+func hashCookie(secret string, data string) string {
+	// Create a new HMAC by defining the hash type and the key (as byte array)
+	h := hmac.New(sha256.New, []byte(secret))
+	// Write Data to it
+	h.Write([]byte(data))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // leastRequests returns the host with the
