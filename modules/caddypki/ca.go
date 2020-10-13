@@ -309,7 +309,6 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (interCert *x509.Certificate, interKey interface{}, err error) {
 	repl := ca.newReplacer()
 
-
 	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating CA intermediate: %v", err)
