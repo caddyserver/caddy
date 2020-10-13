@@ -118,7 +118,7 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 
 	// ensure issued certificate does not expire later than its issuer
 	lifetime := time.Duration(iss.Lifetime)
-	if time.Now().Add(time.Duration(iss.Lifetime)).After(issuerCert.NotAfter) {
+	if time.Now().Add(lifetime).After(issuerCert.NotAfter) {
 		lifetime = time.Until(issuerCert.NotAfter)
 		iss.logger.Warn("cert lifetime would exceed issuer NotAfter, clamping lifetime",
 			zap.Duration("orig_lifetime", time.Duration(iss.Lifetime)),
