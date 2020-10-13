@@ -309,18 +309,6 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (interCert *x509.Certificate, interKey interface{}, err error) {
 	repl := ca.newReplacer()
 
-	// XXX: SA4009: argument rootKey is overwritten before first use
-	// Maybe the intent was to load the rootKey if it isn't provided?
-	if rootKey == nil {
-		rootKeyPEM, err := ca.storage.Load(ca.storageKeyRootKey())
-		if err != nil {
-			return nil, nil, fmt.Errorf("loading root key to sign new intermediate: %v", err)
-		}
-		rootKey, err = pemDecodePrivateKey(rootKeyPEM)
-		if err != nil {
-			return nil, nil, fmt.Errorf("decoding root key: %v", err)
-		}
-	}
 
 	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey)
 	if err != nil {
