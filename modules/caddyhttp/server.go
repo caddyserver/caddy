@@ -122,6 +122,8 @@ type Server struct {
 	// ⚠️ Experimental feature; subject to change or removal.
 	AllowH2C bool `json:"allow_h2c,omitempty"`
 
+	name string
+
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
@@ -206,6 +208,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		return
 	}
+
+	// restore original request before invoking error handler chain (issue #3717)
+	// TODO: this does not restore original headers, if modified (for efficiency)
+	origReq := r.Context().Value(OriginalRequestCtxKey).(http.Request)
+	r.Method = origReq.Method
+	r.RemoteAddr = origReq.RemoteAddr
+	r.RequestURI = origReq.RequestURI
+	cloneURL(origReq.URL, r.URL)
 
 	// prepare the error log
 	logger := errLog

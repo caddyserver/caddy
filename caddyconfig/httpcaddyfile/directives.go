@@ -63,6 +63,7 @@ var directiveOrder = []string{
 
 	// handlers that typically respond to requests
 	"respond",
+	"metrics",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
@@ -284,6 +285,11 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 	var allResults []ConfigValue
 
 	for h.Next() {
+		// don't allow non-matcher args on the first line
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+
 		// slice the linear list of tokens into top-level segments
 		var segments []caddyfile.Segment
 		for nesting := h.Nesting(); h.NextBlock(nesting); {
@@ -298,13 +304,17 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 		}
 
 		// find and extract any embedded matcher definitions in this scope
-		for i, seg := range segments {
+		for i := 0; i < len(segments); i++ {
+			seg := segments[i]
 			if strings.HasPrefix(seg.Directive(), matcherPrefix) {
+				// parse, then add the matcher to matcherDefs
 				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs)
 				if err != nil {
 					return nil, err
 				}
+				// remove the matcher segment (consumed), then step back the loop
 				segments = append(segments[:i], segments[i+1:]...)
+				i--
 			}
 		}
 

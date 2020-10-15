@@ -153,7 +153,15 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 					log.Printf("[PANIC] active health check: %v\n%s", err, debug.Stack())
 				}
 			}()
-			networkAddr := upstream.Dial
+
+			networkAddr, err := caddy.NewReplacer().ReplaceOrErr(upstream.Dial, true, true)
+			if err != nil {
+				h.HealthChecks.Active.logger.Error("invalid use of placeholders in dial address for active health checks",
+					zap.String("address", networkAddr),
+					zap.Error(err),
+				)
+				return
+			}
 			addr, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("bad network address",
@@ -162,7 +170,13 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				)
 				return
 			}
-			if addr.PortRangeSize() != 1 {
+			if hcp := uint(upstream.activeHealthCheckPort); hcp != 0 {
+				if addr.IsUnixNetwork() {
+					addr.Network = "tcp" // I guess we just assume TCP since we are using a port??
+				}
+				addr.StartPort, addr.EndPort = hcp, hcp
+			}
+			if upstream.LookupSRV == "" && addr.PortRangeSize() != 1 {
 				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
 					zap.String("address", networkAddr),
 				)
@@ -178,7 +192,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: hostAddr}, hostAddr, upstream.Host)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
-					zap.String("address", networkAddr),
+					zap.String("address", hostAddr),
 					zap.Error(err),
 				)
 			}

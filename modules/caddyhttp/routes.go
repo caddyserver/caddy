@@ -157,7 +157,7 @@ func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
 
 		// pre-compile the middleware handler chain
 		for _, midhandler := range routes[i].Handlers {
-			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(midhandler))
+			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(ctx, midhandler))
 		}
 	}
 	return nil
@@ -242,7 +242,10 @@ func wrapRoute(route Route) Middleware {
 // we need to pull this particular MiddlewareHandler
 // pointer into its own stack frame to preserve it so it
 // won't be overwritten in future loop iterations.
-func wrapMiddleware(mh MiddlewareHandler) Middleware {
+func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
+	// wrap the middleware with metrics instrumentation
+	metricsHandler := newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh)
+
 	return func(next Handler) Handler {
 		// copy the next handler (it's an interface, so it's
 		// just a very lightweight copy of a pointer); this
@@ -253,7 +256,7 @@ func wrapMiddleware(mh MiddlewareHandler) Middleware {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// TODO: This is where request tracing could be implemented
 			// TODO: see what the std lib gives us in terms of stack tracing too
-			return mh.ServeHTTP(w, r, nextCopy)
+			return metricsHandler.ServeHTTP(w, r, nextCopy)
 		})
 	}
 }

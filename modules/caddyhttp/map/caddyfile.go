@@ -15,6 +15,8 @@
 package maphandler
 
 import (
+	"strings"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -23,49 +25,85 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("map", parseCaddyfile)
 }
 
-// parseCaddyfile sets up the handler for a map from Caddyfile tokens. Syntax:
+// parseCaddyfile sets up the map handler from Caddyfile tokens. Syntax:
 //
-//     map <source> <dest> {
-//         [default <default>] - used if not match is found
-//         [<regexp> <replacement>] - regular expression to match against the source find and the matching replacement value
-//         ...
+//     map [<matcher>] <source> <destinations...> {
+//         [~]<input> <outputs...>
+//         default    <defaults...>
 //     }
 //
-// The map takes a source variable and maps it into the dest variable. The mapping process
-// will check the source variable for the first successful match against a list of regular expressions.
-// If a successful match is found the dest variable will contain the replacement value.
-// If no successful match is found and the default is specified then the dest will contain the default value.
+// If the input value is prefixed with a tilde (~), then the input will be parsed as a
+// regular expression.
 //
+// The Caddyfile adapter treats outputs that are a literal hyphen (-) as a null/nil
+// value. This is useful if you want to fall back to default for that particular output.
+//
+// The number of outputs for each mapping must not be more than the number of destinations.
+// However, for convenience, there may be fewer outputs than destinations and any missing
+// outputs will be filled in implicitly.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	m := new(Handler)
+	var handler Handler
 
 	for h.Next() {
-		// first see if source and dest are configured
-		if h.NextArg() {
-			m.Source = h.Val()
-			if h.NextArg() {
-				m.Destination = h.Val()
-			}
+		// source
+		if !h.NextArg() {
+			return nil, h.ArgErr()
+		}
+		handler.Source = h.Val()
+
+		// destinations
+		handler.Destinations = h.RemainingArgs()
+		if len(handler.Destinations) == 0 {
+			return nil, h.Err("missing destination argument(s)")
 		}
 
-		// load the rules
+		// mappings
 		for h.NextBlock(0) {
-			expression := h.Val()
-			if expression == "default" {
-				args := h.RemainingArgs()
-				if len(args) != 1 {
-					return m, h.ArgErr()
+			// defaults are a special case
+			if h.Val() == "default" {
+				if len(handler.Defaults) > 0 {
+					return nil, h.Err("defaults already defined")
 				}
-				m.Default = args[0]
-			} else {
-				args := h.RemainingArgs()
-				if len(args) != 1 {
-					return m, h.ArgErr()
+				handler.Defaults = h.RemainingArgs()
+				for len(handler.Defaults) < len(handler.Destinations) {
+					handler.Defaults = append(handler.Defaults, "")
 				}
-				m.Items = append(m.Items, Item{Expression: expression, Value: args[0]})
+				continue
 			}
+
+			// every other line maps one input to one or more outputs
+			in := h.Val()
+			var outs []interface{}
+			for _, out := range h.RemainingArgs() {
+				if out == "-" {
+					outs = append(outs, nil)
+				} else {
+					outs = append(outs, out)
+				}
+			}
+
+			// cannot have more outputs than destinations
+			if len(outs) > len(handler.Destinations) {
+				return nil, h.Err("too many outputs")
+			}
+
+			// for convenience, can have fewer outputs than destinations, but the
+			// underlying handler won't accept that, so we fill in nil values
+			for len(outs) < len(handler.Destinations) {
+				outs = append(outs, nil)
+			}
+
+			// create the mapping
+			mapping := Mapping{Outputs: outs}
+			if strings.HasPrefix(in, "~") {
+				mapping.InputRegexp = in[1:]
+			} else {
+				mapping.Input = in
+			}
+
+			handler.Mappings = append(handler.Mappings, mapping)
 		}
 	}
 
-	return m, nil
+	return handler, nil
 }

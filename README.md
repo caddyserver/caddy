@@ -22,6 +22,7 @@
 ### Menu
 
 - [Features](#features)
+- [Install](#install)
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
 	- [With version information and/or plugins](#with-version-information-andor-plugins)
@@ -56,7 +57,11 @@
 - Actually **fun to use**
 - So, so much more to discover
 
+## Install
 
+You can install Caddy by downloading from the Github Releases and placing it in your PATH.
+
+For other install options, see https://caddyserver.com/docs/download.
 
 ## Build from source
 

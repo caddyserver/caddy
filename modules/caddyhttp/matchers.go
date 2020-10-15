@@ -927,6 +927,8 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchHeaderRE)(nil)
 	_ caddyfile.Unmarshaler = (*MatchProtocol)(nil)
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
+	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
+	_ caddyfile.Unmarshaler = (*MatchVarsRE)(nil)
 
 	_ json.Marshaler   = (*MatchNot)(nil)
 	_ json.Unmarshaler = (*MatchNot)(nil)
