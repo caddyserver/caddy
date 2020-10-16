@@ -21,3 +21,6 @@ vendor
 dist
 caddy-build
 caddy-dist
+
+# ide specific
+.vscode/

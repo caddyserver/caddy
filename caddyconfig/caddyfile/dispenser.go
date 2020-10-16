@@ -378,7 +378,7 @@ func (d *Dispenser) numLineBreaks(tknIdx int) int {
 	if tknIdx < 0 || tknIdx >= len(d.tokens) {
 		return 0
 	}
-	return strings.Count(d.tokens[tknIdx].Text, "\n")
+	return strings.Count(d.tokens[tknIdx].Text, "\n") + d.tokens[tknIdx].Heredoc
 }
 
 // isNewLine determines whether the current token is on a different
