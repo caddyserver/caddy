@@ -250,4 +250,7 @@ poxsVrsicPcWHN+iYnVVoZm97MD6thAKQJ+N
 		t.Errorf("Test TestReplaceForVerifiedCert: Expected placeholder %s to be '%s' but got '%s'",
 			placeholder, expectedValue, actual)
 	}
+	if val, ok := repl.FromStatic(IS_CERT_VERIFIED); !ok || !val.(bool) {
+		t.Errorf("Test TestReplaceForVerifiedCert: Expected %s to be set in replacer", IS_CERT_VERIFIED)
+	}
 }

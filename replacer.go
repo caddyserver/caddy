@@ -31,7 +31,7 @@ func NewReplacer() *Replacer {
 	}
 	rep.providers = []ReplacerFunc{
 		globalDefaultReplacements,
-		rep.fromStatic,
+		rep.FromStatic,
 	}
 	return rep
 }
@@ -79,8 +79,8 @@ func (r *Replacer) Delete(variable string) {
 	delete(r.static, variable)
 }
 
-// fromStatic provides values from r.static.
-func (r *Replacer) fromStatic(key string) (interface{}, bool) {
+// FromStatic provides values from r.static.
+func (r *Replacer) FromStatic(key string) (interface{}, bool) {
 	val, ok := r.static[key]
 	return val, ok
 }

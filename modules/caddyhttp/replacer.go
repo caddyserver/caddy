@@ -41,6 +41,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
+const IS_CERT_VERIFIED = "cert_verified"
+
 // NewTestReplacer creates a replacer for an http.Request
 // for use in tests that are not in this package
 func NewTestReplacer(req *http.Request) *caddy.Replacer {
@@ -85,7 +87,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 
 			// http.request.tls.*
 			if strings.HasPrefix(key, reqTLSReplPrefix) {
-				return getReqTLSReplacement(req, key)
+				return getReqTLSReplacement(repl, req, key)
 			}
 
 			switch key {
@@ -248,7 +250,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 	repl.Map(httpVars)
 }
 
-func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
+func getReqTLSReplacement(repl *caddy.Replacer, req *http.Request, key string) (interface{}, bool) {
 	if req == nil || req.TLS == nil {
 		return nil, false
 	}
@@ -348,7 +350,7 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), true
 		case "client.is_verified":
-			return isCertVerified(cert), true
+			return isCertVerified(repl, cert), true
 		default:
 			return nil, false
 		}
@@ -371,15 +373,20 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 	return nil, false
 }
 
-func isCertVerified(cert *x509.Certificate) bool {
+func isCertVerified(repl *caddy.Replacer, cert *x509.Certificate) bool {
+	if is_verified, ok := repl.FromStatic(IS_CERT_VERIFIED); ok {
+		return is_verified.(bool)
+	}
 	roots := x509.NewCertPool()
 	roots.AddCert(cert)
 	for _, name := range cert.DNSNames {
 		opts := x509.VerifyOptions{Roots: roots, DNSName: name, Intermediates: x509.NewCertPool()}
 		if _, err := cert.Verify(opts); err != nil {
+			repl.Set(IS_CERT_VERIFIED, false)
 			return false
 		}
 	}
+	repl.Set(IS_CERT_VERIFIED, true)
 	return true
 }
 
