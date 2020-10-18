@@ -118,6 +118,9 @@ type HeaderOps struct {
 	// Sets HTTP headers; replaces existing header fields.
 	Set http.Header `json:"set,omitempty"`
 
+	// Sets a default value for HTTP headers.
+	SetDefault http.Header `json:"set_default,omitempty"`
+
 	// Names of HTTP header fields to delete.
 	Delete []string `json:"delete,omitempty"`
 
@@ -204,6 +207,18 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 			newVals = append(newVals, repl.ReplaceAll(vals[i], ""))
 		}
 		hdr.Set(fieldName, strings.Join(newVals, ","))
+	}
+
+	// set default
+	for fieldName, vals := range ops.SetDefault {
+		fieldName = repl.ReplaceAll(fieldName, "")
+		if hdr.Get(fieldName) != "" {
+			continue
+		}
+
+		for _, v := range vals {
+			hdr.Add(fieldName, repl.ReplaceAll(v, ""))
+		}
 	}
 
 	// delete

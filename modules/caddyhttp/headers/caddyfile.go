@@ -30,8 +30,9 @@ func init() {
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
 //
-//     header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]] {
+//     header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]] {
 //         [+]<field> [<value|regexp> [<replacement>]]
+//         ?<field> <default_value>
 //         -<field>
 //         [defer]
 //     }
@@ -102,7 +103,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // parseReqHdrCaddyfile sets up the handler for request headers
 // from Caddyfile tokens. Syntax:
 //
-//     request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
+//     request_header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]]
 //
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	hdr := new(Handler)
@@ -142,12 +143,12 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 
 // CaddyfileHeaderOp applies a new header operation according to
 // field, value, and replacement. The field can be prefixed with
-// "+" or "-" to specify adding or removing; otherwise, the value
-// will be set (overriding any previous value). If replacement is
-// non-empty, value will be treated as a regular expression which
-// will be used to search and then replacement will be used to
-// complete the substring replacement; in that case, any + or -
-// prefix to field will be ignored.
+// "+", "-" or "?" to specify adding, removing or setting a default
+// value; otherwise, the value will be set (overriding any previous
+// value). If replacement is non-empty, value will be treated as a
+// regular expression which will be used to search and then replacement
+// will be used to complete the substring replacement; in that case,
+// any "+", "-" or "?" prefix to field will be ignored.
 func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) {
 	if strings.HasPrefix(field, "+") {
 		if ops.Add == nil {
@@ -156,6 +157,11 @@ func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) {
 		ops.Add.Set(field[1:], value)
 	} else if strings.HasPrefix(field, "-") {
 		ops.Delete = append(ops.Delete, field[1:])
+	} else if strings.HasPrefix(field, "?") {
+		if ops.SetDefault == nil {
+			ops.SetDefault = make(http.Header)
+		}
+		ops.SetDefault.Set(field[1:], value)
 	} else {
 		if replacement == "" {
 			if ops.Set == nil {
@@ -166,7 +172,7 @@ func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) {
 			if ops.Replace == nil {
 				ops.Replace = make(map[string][]Replacement)
 			}
-			field = strings.TrimLeft(field, "+-")
+			field = strings.TrimLeft(field, "+-?")
 			ops.Replace[field] = append(
 				ops.Replace[field],
 				Replacement{
