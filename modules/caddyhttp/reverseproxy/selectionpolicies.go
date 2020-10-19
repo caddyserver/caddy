@@ -397,13 +397,18 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		return nil
 	}
 	var best []*Upstream
-	var bestReqs int
+	var bestReqs int = -1
 	for _, upstream := range upstreams {
+		if upstream == nil {
+			continue
+		}
 		reqs := upstream.NumRequests()
 		if reqs == 0 {
 			return upstream
 		}
-		if reqs <= bestReqs {
+		// If bestReqs was just initialized to -1
+		// we need to append upstream also
+		if reqs <= bestReqs || bestReqs == -1 {
 			bestReqs = reqs
 			best = append(best, upstream)
 		}
