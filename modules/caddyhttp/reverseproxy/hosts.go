@@ -144,7 +144,7 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	if u.LookupSRV != "" {
 		// perform DNS lookup for SRV records and choose one
 		srvName := repl.ReplaceAll(u.LookupSRV, "")
-		_, records, err := net.DefaultResolver.LookupSRV(r.Context(), "", "", srvName)
+		_, records, err := net.LookupSRV("", "", srvName)
 		if err != nil {
 			return DialInfo{}, err
 		}

@@ -421,6 +421,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			return nil
 		}
 
+		// detect connection timeout to the upstream and respond with 504
+		switch e, ok := proxyErr.(net.Error); ok {
+		case e.Timeout():
+			return caddyhttp.Error(http.StatusGatewayTimeout, proxyErr)
+		}
+
 		// if the roundtrip was successful, don't retry the request or
 		// ding the health status of the upstream (an error can still
 		// occur after the roundtrip if, for example, a response handler
