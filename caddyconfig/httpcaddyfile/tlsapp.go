@@ -213,7 +213,17 @@ func (st ServerType) buildTLSApp(
 					if ap.Issuer == nil {
 						var internal, external []string
 						for _, s := range ap.Subjects {
-							if certmagic.SubjectQualifiesForPublicCert(s) {
+							if !certmagic.SubjectQualifiesForCert(s) {
+								return nil, warnings, fmt.Errorf("subject does not qualify for certificate: '%s'", s)
+							}
+							// we don't use certmagic.SubjectQualifiesForPublicCert() because of one nuance:
+							// names like *.*.tld that may not qualify for a public certificate are actually
+							// fine when used with OnDemand, since OnDemand (currently) does not obtain
+							// wildcards (if it ever does, there will be a separate config option to enable
+							// it that we would need to check here) since the hostname is known at handshake;
+							// and it is unexpected to switch to internal issuer when the user wants to get
+							// regular certificates on-demand for a class of certs like *.*.tld.
+							if !certmagic.SubjectIsIP(s) && !certmagic.SubjectIsInternal(s) && (strings.Count(s, "*.") < 2 || ap.OnDemand) {
 								external = append(external, s)
 							} else {
 								internal = append(internal, s)
