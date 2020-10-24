@@ -155,7 +155,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				host = upstreamAddr
 			}
-			if port == "" {
+			if port == "" && !strings.Contains(host, "{") {
 				port = "80"
 			}
 		}
