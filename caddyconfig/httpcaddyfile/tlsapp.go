@@ -523,7 +523,7 @@ func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 // automationPolicyShadows returns the index of a policy that aps[i] shadows;
 // in other words, for all policies after position i, if that policy covers
 // the same subjects but is less specific, that policy's position is returned,
-// or -1 if no shadowing is found. For exmaple, if policy i is for
+// or -1 if no shadowing is found. For example, if policy i is for
 // "foo.example.com" and policy i+2 is for "*.example.com", then i+2 will be
 // returned, since that policy is shadowed by i, which is in front.
 func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
