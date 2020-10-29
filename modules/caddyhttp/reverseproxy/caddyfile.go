@@ -155,6 +155,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				host = upstreamAddr
 			}
+			// we can assume a port if only a hostname is specified, but use of a
+			// placeholder without a port likely means a port will be filled in
 			if port == "" && !strings.Contains(host, "{") {
 				port = "80"
 			}
