@@ -72,6 +72,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //         # streaming
 //         flush_interval <duration>
+//         buffer_requests
 //
 //         # header manipulation
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
@@ -588,13 +589,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //         read_buffer  <size>
 //         write_buffer <size>
 //         dial_timeout <duration>
-//         tls_client_auth <cert_file> <key_file>
+//         tls
+//         tls_client_auth <automate_name> | <cert_file> <key_file>
 //         tls_insecure_skip_verify
 //         tls_timeout <duration>
 //         tls_trusted_ca_certs <cert_files...>
+//         tls_server_name <sni>
 //         keepalive [off|<duration>]
 //         keepalive_idle_conns <max_count>
 //         versions <versions...>
+//         compression off
+//         max_conns_per_host <count>
+//         max_idle_conns_per_host <count>
 //     }
 //
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -737,6 +743,26 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						h.Compression = &disable
 					}
 				}
+
+			case "max_conns_per_host":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				num, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad integer value '%s': %v", d.Val(), err)
+				}
+				h.MaxConnsPerHost = num
+
+			case "max_idle_conns_per_host":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				num, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad integer value '%s': %v", d.Val(), err)
+				}
+				h.MaxIdleConnsPerHost = num
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
