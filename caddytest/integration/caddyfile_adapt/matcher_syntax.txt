@@ -25,6 +25,12 @@
 		header Bar foo
 	}
 	respond @matcher7 "header matcher merging values of the same field"
+
+	@matcher8 {
+		query foo=bar foo=baz bar=foo
+		query bar=baz
+	}
+	respond @matcher8 "query matcher merging pairs with the same keys"
 }
 ----------
 {
@@ -152,6 +158,28 @@
 							"handle": [
 								{
 									"body": "header matcher merging values of the same field",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"query": {
+										"bar": [
+											"foo",
+											"baz"
+										],
+										"foo": [
+											"bar",
+											"baz"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "query matcher merging pairs with the same keys",
 									"handler": "static_response"
 								}
 							]
