@@ -18,13 +18,6 @@
 
 	@matcher6 vars_regexp "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
 	respond @matcher6 "from vars_regexp matcher without name"
-
-	@matcher7 {
-		header Foo bar
-		header Foo foobar
-		header Bar foo
-	}
-	respond @matcher7 "header matcher merging values of the same field"
 }
 ----------
 {
@@ -131,27 +124,6 @@
 							"handle": [
 								{
 									"body": "from vars_regexp matcher without name",
-									"handler": "static_response"
-								}
-							]
-						},
-						{
-							"match": [
-								{
-									"header": {
-										"Bar": [
-											"foo"
-										],
-										"Foo": [
-											"bar",
-											"foobar"
-										]
-									}
-								}
-							],
-							"handle": [
-								{
-									"body": "header matcher merging values of the same field",
 									"handler": "static_response"
 								}
 							]
