@@ -155,8 +155,9 @@ func (l *lexer) next() bool {
 						panic(fmt.Errorf("mismatched whitespace in heredoc on line #%d [%s], expected whitespace [%s]", i, line, paddingToStrip))
 					}
 
-					// strip, then append the line, with the newline, to the output
-					out += line[len(paddingToStrip):] + "\n"
+					// strip, then append the line, with the newline, to the output.
+					// also removes all "\r" because Windows.
+					out += strings.ReplaceAll(line[len(paddingToStrip):]+"\n", "\r", "")
 				}
 
 				// set the final value
