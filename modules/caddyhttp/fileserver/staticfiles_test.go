@@ -198,7 +198,7 @@ func TestFileHidden(t *testing.T) {
 			}
 			tc.inputPath = filepath.FromSlash(tc.inputPath)
 			for i := range tc.inputHide {
-				if strings.HasPrefix(tc.inputPath, "/") {
+				if strings.HasPrefix(tc.inputHide[i], "/") {
 					tc.inputHide[i], _ = filepath.Abs(tc.inputHide[i])
 				}
 				tc.inputHide[i] = filepath.FromSlash(tc.inputHide[i])
