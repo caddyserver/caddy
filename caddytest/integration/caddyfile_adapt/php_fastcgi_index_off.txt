@@ -1,18 +1,18 @@
 :8884
 
 php_fastcgi localhost:9000 {
-    # some php_fastcgi-specific subdirectives
-    split .php .php5
-    env VAR1 value1
-    env VAR2 value2
-    root /var/www
-    index off
+	# some php_fastcgi-specific subdirectives
+	split .php .php5
+	env VAR1 value1
+	env VAR2 value2
+	root /var/www
+	index off
 	dial_timeout 3s
 	read_timeout 10s
 	write_timeout 20s
 
-    # passed through to reverse_proxy (directive order doesn't matter!)
-    lb_policy random
+	# passed through to reverse_proxy (directive order doesn't matter!)
+	lb_policy random
 }
 ----------
 {
