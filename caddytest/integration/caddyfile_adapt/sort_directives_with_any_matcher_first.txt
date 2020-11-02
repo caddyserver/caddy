@@ -32,7 +32,7 @@ file_server @untrusted
 								{
 									"handler": "file_server",
 									"hide": [
-										"Caddyfile"
+										"./Caddyfile"
 									]
 								}
 							]
@@ -42,7 +42,7 @@ file_server @untrusted
 								{
 									"handler": "file_server",
 									"hide": [
-										"Caddyfile"
+										"./Caddyfile"
 									]
 								}
 							]
