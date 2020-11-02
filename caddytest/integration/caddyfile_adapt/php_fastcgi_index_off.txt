@@ -7,6 +7,9 @@ php_fastcgi localhost:9000 {
     env VAR2 value2
     root /var/www
     index off
+	dial_timeout 3s
+	read_timeout 10s
+	write_timeout 20s
 
     # passed through to reverse_proxy (directive order doesn't matter!)
     lb_policy random
@@ -39,16 +42,19 @@ php_fastcgi localhost:9000 {
 										}
 									},
 									"transport": {
+										"dial_timeout": 3000000000,
 										"env": {
 											"VAR1": "value1",
 											"VAR2": "value2"
 										},
 										"protocol": "fastcgi",
+										"read_timeout": 10000000000,
 										"root": "/var/www",
 										"split_path": [
 											".php",
 											".php5"
-										]
+										],
+										"write_timeout": 20000000000
 									},
 									"upstreams": [
 										{
