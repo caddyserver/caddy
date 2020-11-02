@@ -586,9 +586,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
 //
 //     transport http {
-//         read_buffer  <size>
-//         write_buffer <size>
-//         dial_timeout <duration>
+//         read_buffer             <size>
+//         write_buffer            <size>
+//         max_response_header     <size>
+//         dial_timeout            <duration>
+//         dial_fallback_delay     <duration>
+//         response_header_timeout <duration>
+//         expect_continue_timeout <duration>
 //         tls
 //         tls_client_auth <automate_name> | <cert_file> <key_file>
 //         tls_insecure_skip_verify
@@ -627,6 +631,16 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.WriteBufferSize = int(size)
 
+			case "max_response_header":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				size, err := humanize.ParseBytes(d.Val())
+				if err != nil {
+					return d.Errf("invalid max response header size '%s': %v", d.Val(), err)
+				}
+				h.MaxResponseHeaderSize = int64(size)
+
 			case "dial_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -636,6 +650,36 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
 				h.DialTimeout = caddy.Duration(dur)
+
+			case "dial_fallback_delay":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad fallback delay value '%s': %v", d.Val(), err)
+				}
+				h.FallbackDelay = caddy.Duration(dur)
+
+			case "response_header_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				h.ResponseHeaderTimeout = caddy.Duration(dur)
+
+			case "expect_continue_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				h.ExpectContinueTimeout = caddy.Duration(dur)
 
 			case "tls_client_auth":
 				if h.TLS == nil {
