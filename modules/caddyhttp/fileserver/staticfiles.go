@@ -46,7 +46,20 @@ type FileServer struct {
 	Root string `json:"root,omitempty"`
 
 	// A list of files or folders to hide; the file server will pretend as if
-	// they don't exist. Accepts globular patterns like "*.hidden" or "/foo/*/bar".
+	// they don't exist. Accepts globular patterns like "*.ext" or "/foo/*/bar"
+	// as well as placeholders. Because site roots can be dynamic, this list
+	// uses file system paths, not request paths. To clarify, the base of
+	// relative paths is the current working directory, NOT the site root.
+	//
+	// Entries without a path separator (`/` or `\` depending on OS) will match
+	// any file or directory of that name regardless of its path. To hide only a
+	// specific file with a name that may not be unique, always use a path
+	// separator. For example, to hide all files or folder trees named "hidden",
+	// put "hidden" in the list. To hide only ./hidden, put "./hidden" in the list.
+	//
+	// When possible, all paths are resolved to their absolute form before
+	// comparisons are made. For maximum clarity and explictness, use complete,
+	// absolute paths; or, for greater portability, use relative paths instead.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -99,6 +112,16 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			}
 		}
 		fsrv.Browse.template = tpl
+	}
+
+	// for hide paths that are static (i.e. no placeholders), we can transform them into
+	// absolute paths before the server starts for very slight performance improvement
+	for i, h := range fsrv.Hide {
+		if !strings.Contains(h, "{") && strings.Contains(h, separator) {
+			if abs, err := filepath.Abs(h); err == nil {
+				fsrv.Hide[i] = abs
+			}
+		}
 	}
 
 	return nil
@@ -225,7 +248,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			}
 		}
 		w.WriteHeader(statusCode)
-		if r.Method != "HEAD" {
+		if r.Method != http.MethodHead {
 			io.Copy(w, file)
 		}
 		return nil
@@ -273,12 +296,12 @@ func mapDirOpenError(originalErr error, name string) error {
 		return originalErr
 	}
 
-	parts := strings.Split(name, string(filepath.Separator))
+	parts := strings.Split(name, separator)
 	for i := range parts {
 		if parts[i] == "" {
 			continue
 		}
-		fi, err := os.Stat(strings.Join(parts[:i+1], string(filepath.Separator)))
+		fi, err := os.Stat(strings.Join(parts[:i+1], separator))
 		if err != nil {
 			return originalErr
 		}
@@ -290,12 +313,19 @@ func mapDirOpenError(originalErr error, name string) error {
 	return originalErr
 }
 
-// transformHidePaths performs replacements for all the elements of
-// fsrv.Hide and returns a new list of the transformed values.
+// transformHidePaths performs replacements for all the elements of fsrv.Hide and
+// makes them absolute paths (if they contain a path separator), then returns a
+// new list of the transformed values.
 func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 	hide := make([]string, len(fsrv.Hide))
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
+		if strings.Contains(hide[i], separator) {
+			abs, err := filepath.Abs(hide[i])
+			if err == nil {
+				hide[i] = abs
+			}
+		}
 	}
 	return hide
 }
@@ -330,40 +360,50 @@ func sanitizedPathJoin(root, reqPath string) string {
 	// if the length is 1, then it's a path to the root,
 	// and that should return ".", so we don't append the separator.
 	if strings.HasSuffix(reqPath, "/") && len(reqPath) > 1 {
-		path += string(filepath.Separator)
+		path += separator
 	}
 
 	return path
 }
 
-// fileHidden returns true if filename is hidden
-// according to the hide list.
+// fileHidden returns true if filename is hidden according to the hide list.
+// filename must be a relative or absolute file system path, not a request
+// URI path. It is expected that all the paths in the hide list are absolute
+// paths or are singular filenames (without a path separator).
 func fileHidden(filename string, hide []string) bool {
-	sep := string(filepath.Separator)
+	if len(hide) == 0 {
+		return false
+	}
+
+	// all path comparisons use the complete absolute path if possible
+	filenameAbs, err := filepath.Abs(filename)
+	if err == nil {
+		filename = filenameAbs
+	}
+
 	var components []string
 
 	for _, h := range hide {
-		if !strings.Contains(h, sep) {
+		if !strings.Contains(h, separator) {
 			// if there is no separator in h, then we assume the user
 			// wants to hide any files or folders that match that
 			// name; thus we have to compare against each component
 			// of the filename, e.g. hiding "bar" would hide "/bar"
 			// as well as "/foo/bar/baz" but not "/barstool".
 			if len(components) == 0 {
-				components = strings.Split(filename, sep)
+				components = strings.Split(filename, separator)
 			}
 			for _, c := range components {
-				if c == h {
+				if hidden, _ := filepath.Match(h, c); hidden {
 					return true
 				}
 			}
 		} else if strings.HasPrefix(filename, h) {
-			// otherwise, if there is a separator in h, and
-			// filename is exactly prefixed with h, then we
-			// can do a prefix match so that "/foo" matches
-			// "/foo/bar" but not "/foobar".
+			// if there is a separator in h, and filename is exactly
+			// prefixed with h, then we can do a prefix match so that
+			// "/foo" matches "/foo/bar" but not "/foobar".
 			withoutPrefix := strings.TrimPrefix(filename, h)
-			if strings.HasPrefix(withoutPrefix, sep) {
+			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}
 		}
@@ -414,7 +454,10 @@ var bufPool = sync.Pool{
 	},
 }
 
-const minBackoff, maxBackoff = 2, 5
+const (
+	minBackoff, maxBackoff = 2, 5
+	separator              = string(filepath.Separator)
+)
 
 // Interface guards
 var (

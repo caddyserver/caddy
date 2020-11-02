@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -85,7 +86,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	// hide the Caddyfile (and any imported Caddyfiles)
 	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
 		for _, file := range configFiles {
+			file = filepath.Clean(file)
 			if !fileHidden(file, fsrv.Hide) {
+				// if there's no path separator, the file server module will hide all
+				// files by that name, rather than a specific one; but we want to hide
+				// only this specific file, so ensure there's always a path separator
+				if !strings.Contains(file, separator) {
+					file = "." + separator + file
+				}
 				fsrv.Hide = append(fsrv.Hide, file)
 			}
 		}
