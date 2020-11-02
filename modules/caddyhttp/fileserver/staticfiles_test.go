@@ -17,6 +17,8 @@ package fileserver
 import (
 	"net/url"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -190,10 +192,17 @@ func TestFileHidden(t *testing.T) {
 			expect:    true,
 		},
 	} {
-		// for Windows' sake
-		tc.inputPath = filepath.FromSlash(tc.inputPath)
-		for i := range tc.inputHide {
-			tc.inputHide[i] = filepath.FromSlash(tc.inputHide[i])
+		if runtime.GOOS == "windows" {
+			if strings.HasPrefix(tc.inputPath, "/") {
+				tc.inputPath, _ = filepath.Abs(tc.inputPath)
+			}
+			tc.inputPath = filepath.FromSlash(tc.inputPath)
+			for i := range tc.inputHide {
+				if strings.HasPrefix(tc.inputPath, "/") {
+					tc.inputHide[i], _ = filepath.Abs(tc.inputHide[i])
+				}
+				tc.inputHide[i] = filepath.FromSlash(tc.inputHide[i])
+			}
 		}
 
 		actual := fileHidden(tc.inputPath, tc.inputHide)
