@@ -52,11 +52,19 @@ type HTTPBasicAuth struct {
 	// memory for a longer time (this should not be a problem
 	// as long as your machine is not compromised, at which point
 	// all bets are off, since basicauth necessitates plaintext
-	// passwords being received over the wire anyway).
+	// passwords being received over the wire anyway). Note that
+	// a cache hit does not mean it is a valid password.
 	HashCache *Cache `json:"hash_cache,omitempty"`
 
 	Accounts map[string]Account `json:"-"`
 	Hash     Comparer           `json:"-"`
+
+	// fakePassword is used when a given user is not found,
+	// so that timing side-channels can be mitigated: it gives
+	// us something to hash and compare even if the user does
+	// not exist, which should have similar timing as a user
+	// account that does exist.
+	fakePassword []byte
 }
 
 // CaddyModule returns the Caddy module information.
@@ -82,6 +90,14 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 	if hba.Hash == nil {
 		return fmt.Errorf("hash is required")
+	}
+
+	// if supported, generate a fake password we can compare against if needed
+	if hasher, ok := hba.Hash.(Hasher); ok {
+		hba.fakePassword, err = hasher.Hash([]byte("antitiming"), []byte("fakesalt"))
+		if err != nil {
+			return fmt.Errorf("generating anti-timing password hash: %v", err)
+		}
 	}
 
 	repl := caddy.NewReplacer()
@@ -132,8 +148,12 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 	}
 
 	account, accountExists := hba.Accounts[username]
-	// don't return early if account does not exist; we want
-	// to try to avoid side-channels that leak existence
+	if !accountExists {
+		// don't return early if account does not exist; we want
+		// to try to avoid side-channels that leak existence, so
+		// we use a fake password to simulate realistic CPU cycles
+		account.password = hba.fakePassword
+	}
 
 	same, err := hba.correctPassword(account, []byte(plaintextPasswordStr))
 	if err != nil {
@@ -247,6 +267,16 @@ type Comparer interface {
 	// false otherwise. An error is returned only if
 	// there is a technical/configuration error.
 	Compare(hashedPassword, plaintextPassword, salt []byte) (bool, error)
+}
+
+// Hasher is a type that can generate a secure hash
+// given a plaintext and optional salt (for algorithms
+// that require a salt). Hashing modules which implement
+// this interface can be used with the hash-password
+// subcommand as well as benefitting from anti-timing
+// features.
+type Hasher interface {
+	Hash(plaintext, salt []byte) ([]byte, error)
 }
 
 // Account contains a username, password, and salt (if applicable).

@@ -1,9 +1,9 @@
 :80
 
-file_server
+respond 200
 
 @untrusted not remote_ip 10.1.1.0/24
-file_server @untrusted
+respond @untrusted 401
 ----------
 {
 	"apps": {
@@ -30,20 +30,16 @@ file_server @untrusted
 							],
 							"handle": [
 								{
-									"handler": "file_server",
-									"hide": [
-										"Caddyfile"
-									]
+									"handler": "static_response",
+									"status_code": 401
 								}
 							]
 						},
 						{
 							"handle": [
 								{
-									"handler": "file_server",
-									"hide": [
-										"Caddyfile"
-									]
+									"handler": "static_response",
+									"status_code": 200
 								}
 							]
 						}
