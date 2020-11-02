@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -286,7 +285,7 @@ func strictFileExists(file string) (os.FileInfo, bool) {
 		// https://stackoverflow.com/a/12518877/1048862
 		return nil, false
 	}
-	if strings.HasSuffix(file, string(filepath.Separator)) {
+	if strings.HasSuffix(file, separator) {
 		// by convention, file paths ending
 		// in a path separator must be a directory
 		return stat, stat.IsDir()
