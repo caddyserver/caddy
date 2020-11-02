@@ -44,7 +44,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		},
 		{
 			inputPath: "/foo/",
-			expect:    "foo" + string(filepath.Separator),
+			expect:    "foo" + separator,
 		},
 		{
 			inputPath: "/foo/bar",
@@ -77,7 +77,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    filepath.Join("/", "a", "b") + string(filepath.Separator),
+			expect:    filepath.Join("/", "a", "b") + separator,
 		},
 		{
 			inputRoot: "C:\\www",
@@ -155,6 +155,26 @@ func TestFileHidden(t *testing.T) {
 			expect:    true,
 		},
 		{
+			inputHide: []string{"*.txt"},
+			inputPath: "/foo/bar.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar/baz.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar.txt",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar/index.html",
+			expect:    false,
+		},
+		{
 			inputHide: []string{"/foo"},
 			inputPath: "/foo",
 			expect:    true,
@@ -163,6 +183,11 @@ func TestFileHidden(t *testing.T) {
 			inputHide: []string{"/foo"},
 			inputPath: "/foobar",
 			expect:    false,
+		},
+		{
+			inputHide: []string{"first", "second"},
+			inputPath: "/second",
+			expect:    true,
 		},
 	} {
 		// for Windows' sake
@@ -173,8 +198,8 @@ func TestFileHidden(t *testing.T) {
 
 		actual := fileHidden(tc.inputPath, tc.inputHide)
 		if actual != tc.expect {
-			t.Errorf("Test %d: Is %s hidden in %v? Got %t but expected %t",
-				i, tc.inputPath, tc.inputHide, actual, tc.expect)
+			t.Errorf("Test %d: Does %v hide %s? Got %t but expected %t",
+				i, tc.inputHide, tc.inputPath, actual, tc.expect)
 		}
 	}
 }
