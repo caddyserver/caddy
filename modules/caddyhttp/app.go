@@ -75,6 +75,7 @@ func init() {
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
 // `{http.request.tls.client.public_key}` | The public key of the client certificate.
 // `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
+// `{http.request.tls.client.certificate_pem}` | The PEM encdoed value of the certificate.
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
 // `{http.request.tls.client.subject}` | The subject DN of the client certificate
