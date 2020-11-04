@@ -427,7 +427,8 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 			if !upstream.Available() {
 				continue
 			}
-			if hashCookie(s.Secret, upstream.Dial) == cookieValue {
+			sha, err := hashCookie(s.Secret, upstream.Dial)
+			if err == nil && sha == cookieValue {
 				return upstream
 			}
 		}
@@ -471,20 +472,25 @@ func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWrite
 
 	if randomHost != nil {
 		// Hash (HMAC with some key for privacy) the upstream.Dial string as the cookie value
-		sha := hashCookie(cookieSecret, randomHost.Dial)
-		// write the cookie.
-		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Secure: false})
+		sha, err := hashCookie(cookieSecret, randomHost.Dial)
+		if err == nil {
+			// write the cookie.
+			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Secure: false})
+		}
 	}
 	return randomHost
 }
 
 // Hash (Hmac256) some data with the secret
-func hashCookie(secret string, data string) string {
+func hashCookie(secret string, data string) (string, error) {
 	// Create a new HMAC by defining the hash type and the key (as byte array)
 	h := hmac.New(sha256.New, []byte(secret))
 	// Write Data to it
-	h.Write([]byte(data))
-	return hex.EncodeToString(h.Sum(nil))
+	_, err := h.Write([]byte(data))
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // leastRequests returns the host with the
