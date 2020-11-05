@@ -15,6 +15,9 @@
 package acmeserver
 
 import (
+	"fmt"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -24,15 +27,39 @@ func init() {
 }
 
 // parseACMEServer sets up an ACME server handler from Caddyfile tokens.
-//
-//     acme_server [<matcher>]
-//
 func parseACMEServer(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var as Handler
-	for h.Next() {
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
+	as := new(Handler)
+	err := as.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
 	}
 	return as, nil
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens
+//
+//		acme_server [<matcher>] {
+//			[no_memory_map]
+//			[use_badgerv2]
+//		}
+//
+func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			subdirective := d.Val()
+			switch subdirective {
+			case "no_memory_map":
+				h.NoMemoryMap = true
+			case "use_badgerv2":
+				h.UseBadgerV2 = true
+			default:
+				return fmt.Errorf("unsupported subdirective %s", subdirective)
+			}
+		}
+	}
+
+	return nil
 }

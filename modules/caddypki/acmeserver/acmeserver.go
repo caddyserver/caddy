@@ -64,6 +64,14 @@ type Handler struct {
 	// on this property long-term; check release notes.
 	PathPrefix string `json:"path_prefix,omitempty"`
 
+	// Whether to store using FileIO rather than MemoryMap
+	// Deafult: false
+	NoMemoryMap bool `json:"no_memory_map,omitempty`
+
+	// Whether to use BadgerV2 storage
+	// Deafult: false
+	UseBadgerV2 bool `json:"use_badgerv2,omitempty`
+
 	acmeEndpoints http.Handler
 }
 
@@ -107,6 +115,20 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("making folder for ACME server database: %v", err)
 	}
 
+	// Use FileIO rather than MemoryMap if provided
+	// See https://github.com/caddyserver/caddy/issues/3847
+	badgerFileLoadingMode := "MemoryMap"
+	if ash.NoMemoryMap {
+		badgerFileLoadingMode = "FileIO"
+	}
+
+	// Use BadgerV2 rather than badger if provided
+	// See https://github.com/caddyserver/caddy/issues/3847
+	dbType := "badger"
+	if ash.UseBadgerV2 {
+		dbType = "badgerV2"
+	}
+
 	authorityConfig := caddypki.AuthorityConfig{
 		AuthConfig: &authority.AuthConfig{
 			Provisioners: provisioner.List{
@@ -122,8 +144,9 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 			},
 		},
 		DB: &db.Config{
-			Type:       "badger",
-			DataSource: dbFolder,
+			Type:                  dbType,
+			DataSource:            dbFolder,
+			BadgerFileLoadingMode: badgerFileLoadingMode,
 		},
 	}
 
