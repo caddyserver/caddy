@@ -40,7 +40,7 @@ func parseACMEServer(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error
 //
 //		acme_server [<matcher>] {
 //			[no_memory_map]
-//			[use_badgerv2]
+//			[use_badger_v2]
 //		}
 //
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -53,7 +53,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			switch subdirective {
 			case "no_memory_map":
 				h.NoMemoryMap = true
-			case "use_badgerv2":
+			case "use_badger_v2":
 				h.UseBadgerV2 = true
 			default:
 				return fmt.Errorf("unsupported subdirective %s", subdirective)

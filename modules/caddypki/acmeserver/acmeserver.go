@@ -65,12 +65,12 @@ type Handler struct {
 	PathPrefix string `json:"path_prefix,omitempty"`
 
 	// Whether to store using FileIO rather than MemoryMap
-	// Deafult: false
-	NoMemoryMap bool `json:"no_memory_map,omitempty`
+	// Default: false
+	NoMemoryMap bool `json:"no_memory_map,omitempty"`
 
 	// Whether to use BadgerV2 storage
-	// Deafult: false
-	UseBadgerV2 bool `json:"use_badgerv2,omitempty`
+	// Default: false
+	UseBadgerV2 bool `json:"use_badger_v2,omitempty"`
 
 	acmeEndpoints http.Handler
 }
