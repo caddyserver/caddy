@@ -6,11 +6,23 @@ https://example.com {
 		header_up X-Forwarded-For {remote}
 		header_up X-Forwarded-Port {server_port}
 		header_up X-Forwarded-Proto "http"
+
+		buffer_requests
+
 		transport http {
+			read_buffer 10MB
+			write_buffer 20MB
+			max_response_header 30MB
+			dial_timeout 3s
+			dial_fallback_delay 5s
+			response_header_timeout 8s
+			expect_continue_timeout 9s
+
 			versions h2c 2
 			compression off
+			max_conns_per_host 5
+			max_idle_conns_per_host 2
 		}
-		buffer_requests
 	}
 }
 
@@ -64,11 +76,20 @@ https://example.com {
 													},
 													"transport": {
 														"compression": false,
+														"dial_fallback_delay": 5000000000,
+														"dial_timeout": 3000000000,
+														"expect_continue_timeout": 9000000000,
+														"max_conns_per_host": 5,
+														"max_idle_conns_per_host": 2,
+														"max_response_header_size": 30000000,
 														"protocol": "http",
+														"read_buffer_size": 10000000,
+														"response_header_timeout": 8000000000,
 														"versions": [
 															"h2c",
 															"2"
-														]
+														],
+														"write_buffer_size": 20000000
 													},
 													"upstreams": [
 														{

@@ -141,7 +141,7 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 		return in
 	}
 	mask := m.v4Mask
-	if ipAddr.To16() != nil {
+	if ipAddr.To4() == nil {
 		mask = m.v6Mask
 	}
 	masked := ipAddr.Mask(mask)

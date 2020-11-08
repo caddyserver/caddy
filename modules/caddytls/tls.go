@@ -334,10 +334,26 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if err != nil {
 		return err
 	}
-	for i, other := range t.Automation.Policies {
-		// if a catch-all policy (or really, any policy with
-		// fewer names) exists, prioritize this new policy
-		if len(other.Subjects) < len(ap.Subjects) {
+	// sort new automation policies just before any other which is a superset
+	// of this one; if we find an existing policy that covers every subject in
+	// ap but less specifically (e.g. a catch-all policy, or one with wildcards
+	// or with fewer subjects), insert ap just before it, otherwise ap would
+	// never be used because the first matching policy is more general
+	for i, existing := range t.Automation.Policies {
+		// first see if existing is superset of ap for all names
+		var otherIsSuperset bool
+	outer:
+		for _, thisSubj := range ap.Subjects {
+			for _, otherSubj := range existing.Subjects {
+				if certmagic.MatchWildcard(thisSubj, otherSubj) {
+					otherIsSuperset = true
+					break outer
+				}
+			}
+		}
+		// if existing AP is a superset or if it contains fewer names (i.e. is
+		// more general), then new AP is more specific, so insert before it
+		if otherIsSuperset || len(existing.Subjects) < len(ap.Subjects) {
 			t.Automation.Policies = append(t.Automation.Policies[:i],
 				append([]*AutomationPolicy{ap}, t.Automation.Policies[i:]...)...)
 			return nil
