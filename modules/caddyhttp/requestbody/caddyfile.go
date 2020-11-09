@@ -17,7 +17,7 @@ package requestbody
 import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"strconv"
+	"github.com/dustin/go-humanize"
 )
 
 func init() {
@@ -28,18 +28,22 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	rb := new(RequestBody)
 
 	for h.Next() {
-		// if not, they should be in a block
+		// configuration should be in a block
 		for h.NextBlock(0) {
-			field := h.Val()
-			if field == "max_size" {
-				if h.NextArg() {
-					i, err := strconv.Atoi(h.Val())
-					if err == nil {
-						rb.MaxSize = int64(i)
-					}
-
+			switch h.Val() {
+			case "max_size":
+				var sizeStr string
+				if !h.AllArgs(&sizeStr) {
+					return nil, h.ArgErr()
 				}
+				size, err := humanize.ParseBytes(sizeStr)
+				if err != nil {
+					return nil, h.Errf("parsing max_size: %v", err)
+				}
+				rb.MaxSize = int64(size)
 				continue
+			default:
+				return nil, h.Errf("unrecognized servers option '%s'", h.Val())
 			}
 		}
 	}
