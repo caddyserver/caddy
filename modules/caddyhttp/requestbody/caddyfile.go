@@ -41,7 +41,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.Errf("parsing max_size: %v", err)
 				}
 				rb.MaxSize = int64(size)
-				continue
 			default:
 				return nil, h.Errf("unrecognized servers option '%s'", h.Val())
 			}
