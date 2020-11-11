@@ -241,7 +241,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// we now have a list of all the unique names for which we need certs;
 	// turn the set into a slice so that phase 2 can use it
 	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
-	var internal, external []string
+	var internal []string
 uniqueDomainsLoop:
 	for d := range uniqueDomainsForCerts {
 		// whether or not there is already an automation policy for this
@@ -264,15 +264,13 @@ uniqueDomainsLoop:
 
 		// if no automation policy exists for the name yet, we
 		// will associate it with an implicit one
-		if certmagic.SubjectQualifiesForPublicCert(d) {
-			external = append(external, d)
-		} else {
+		if !certmagic.SubjectQualifiesForPublicCert(d) {
 			internal = append(internal, d)
 		}
 	}
 
 	// ensure there is an automation policy to handle these certs
-	err := app.createAutomationPolicies(ctx, external, internal)
+	err := app.createAutomationPolicies(ctx, internal)
 	if err != nil {
 		return err
 	}
@@ -430,7 +428,7 @@ redirServersLoop:
 // automation policy exists, it will be shallow-copied and used as the
 // base for the new ones (this is important for preserving behavior the
 // user intends to be "defaults").
-func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, internalNames []string) error {
+func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []string) error {
 	// before we begin, loop through the existing automation policies
 	// and, for any ACMEIssuers we find, make sure they're filled in
 	// with default values that might be specified in our HTTP app; also
@@ -447,14 +445,21 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		// set up default issuer -- honestly, this is only
 		// really necessary because the HTTP app is opinionated
 		// and has settings which could be inferred as new
-		// defaults for the ACMEIssuer in the TLS app
-		if ap.Issuer == nil {
-			ap.Issuer = new(caddytls.ACMEIssuer)
-		}
-		if acmeIssuer, ok := ap.Issuer.(acmeCapable); ok {
-			err := app.fillInACMEIssuer(acmeIssuer.GetACMEIssuer())
+		// defaults for the ACMEIssuer in the TLS app (such as
+		// what the HTTP and HTTPS ports are)
+		if ap.Issuers == nil {
+			var err error
+			ap.Issuers, err = caddytls.DefaultIssuers(ctx)
 			if err != nil {
 				return err
+			}
+		}
+		for _, iss := range ap.Issuers {
+			if acmeIssuer, ok := iss.(acmeCapable); ok {
+				err := app.fillInACMEIssuer(acmeIssuer.GetACMEIssuer())
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -471,11 +476,14 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 	}
 
 	// if the basePolicy has an existing ACMEIssuer (particularly to
-	// include any type that embeds/wraps an ACMEIssuer), let's use it,
-	// otherwise we'll make one
+	// include any type that embeds/wraps an ACMEIssuer), let's use it
+	// (I guess we just use the first one?), otherwise we'll make one
 	var baseACMEIssuer *caddytls.ACMEIssuer
-	if acmeWrapper, ok := basePolicy.Issuer.(acmeCapable); ok {
-		baseACMEIssuer = acmeWrapper.GetACMEIssuer()
+	for _, iss := range basePolicy.Issuers {
+		if acmeWrapper, ok := iss.(acmeCapable); ok {
+			baseACMEIssuer = acmeWrapper.GetACMEIssuer()
+			break
+		}
 	}
 	if baseACMEIssuer == nil {
 		// note that this happens if basePolicy.Issuer is nil
@@ -485,7 +493,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 
 	// if there was a base policy to begin with, we already
 	// filled in its issuer's defaults; if there wasn't, we
-	// stil need to do that
+	// still need to do that
 	if !foundBasePolicy {
 		err := app.fillInACMEIssuer(baseACMEIssuer)
 		if err != nil {
@@ -494,8 +502,20 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 	}
 
 	// never overwrite any other issuer that might already be configured
-	if basePolicy.Issuer == nil {
-		basePolicy.Issuer = baseACMEIssuer
+	if basePolicy.Issuers == nil {
+		var err error
+		basePolicy.Issuers, err = caddytls.DefaultIssuers(ctx)
+		if err != nil {
+			return err
+		}
+		for _, iss := range basePolicy.Issuers {
+			if acmeIssuer, ok := iss.(acmeCapable); ok {
+				err := app.fillInACMEIssuer(acmeIssuer.GetACMEIssuer())
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	if !foundBasePolicy {
@@ -549,8 +569,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, publicNames, interna
 		// of names that would normally use the production API;
 		// anyway, that gets into the weeds a bit...
 		newPolicy.Subjects = internalNames
-		newPolicy.Issuer = internalIssuer
-
+		newPolicy.Issuers = []certmagic.Issuer{internalIssuer}
 		err := app.tlsApp.AddAutomationPolicy(newPolicy)
 		if err != nil {
 			return err
