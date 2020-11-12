@@ -74,6 +74,11 @@ type ACMEIssuer struct {
 	// is internal or for development/testing purposes.
 	TrustedRootsPEMFiles []string `json:"trusted_roots_pem_files,omitempty"`
 
+	// List of preferred certificate chains, by issuer's CommonName. If empty,
+	// or if no matching chain is found, the first chain offered by the server
+	// will be used.
+	PreferredChains []string `json:"preferred_chains,omitempty"`
+
 	rootPool *x509.CertPool
 	template certmagic.ACMEManager
 	magic    *certmagic.Config
@@ -149,6 +154,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
+		PreferredChains:   iss.PreferredChains,
 		Logger:            iss.logger,
 	}
 
