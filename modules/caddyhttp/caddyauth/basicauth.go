@@ -134,7 +134,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 	if hba.HashCache != nil {
 		hba.HashCache.cache = make(map[string]bool)
-		hba.HashCache.mu = new(sync.Mutex)
+		hba.HashCache.mu = new(sync.RWMutex)
 	}
 
 	return nil
