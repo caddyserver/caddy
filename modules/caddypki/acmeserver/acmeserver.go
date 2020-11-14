@@ -127,7 +127,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 			},
 		},
 		DB: &db.Config{
-			Type:       "bagerV2",
+			Type:       "badgerv2",
 			DataSource: dbPath,
 		},
 	}
