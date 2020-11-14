@@ -99,13 +99,18 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
 	}
 
-	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", "db")
+	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server")
+	dbPath := filepath.Join(dbFolder, "db2")
 
 	// TODO: See https://github.com/smallstep/nosql/issues/7
-	err = os.MkdirAll(dbFolder, 0755)
+	err = os.MkdirAll(dbPath, 0755)
 	if err != nil {
 		return fmt.Errorf("making folder for ACME server database: %v", err)
 	}
+
+	// Clear old db paths out
+	legacyDbPath := filepath.Join(dbFolder, "db")
+	_ = os.RemoveAll(legacyDbPath)
 
 	authorityConfig := caddypki.AuthorityConfig{
 		AuthConfig: &authority.AuthConfig{
@@ -122,8 +127,8 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 			},
 		},
 		DB: &db.Config{
-			Type:       "badger",
-			DataSource: dbFolder,
+			Type:       "bagerV2",
+			DataSource: dbPath,
 		},
 	}
 
