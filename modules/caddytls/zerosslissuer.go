@@ -59,16 +59,13 @@ func (*ZeroSSLIssuer) CaddyModule() caddy.ModuleInfo {
 // Provision sets up iss.
 func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger(iss)
-
 	if iss.ACMEIssuer == nil {
 		iss.ACMEIssuer = new(ACMEIssuer)
 	}
-	err := iss.ACMEIssuer.Provision(ctx)
-	if err != nil {
-		return err
+	if iss.ACMEIssuer.CA == "" {
+		iss.ACMEIssuer.CA = certmagic.ZeroSSLProductionCA
 	}
-
-	return nil
+	return iss.ACMEIssuer.Provision(ctx)
 }
 
 func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.ACMEManager, _ acme.Account) error {
@@ -86,26 +83,22 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 
 	// there are two ways to generate EAB credentials: authenticated with
 	// their API key, or unauthenticated with their email address
-	switch {
-	case iss.APIKey != "":
+	if iss.APIKey != "" {
 		apiKey := caddy.NewReplacer().ReplaceAll(iss.APIKey, "")
 		if apiKey == "" {
 			return nil, fmt.Errorf("missing API key: '%v'", iss.APIKey)
 		}
 		qs := url.Values{"access_key": []string{apiKey}}
 		endpoint = fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
-
-	case iss.Email != "":
-		email := caddy.NewReplacer().ReplaceAll(iss.Email, "")
+	} else {
+		email := iss.Email
 		if email == "" {
-			return nil, fmt.Errorf("missing email: '%v'", iss.Email)
+			iss.logger.Warn("missing email address for ZeroSSL; it is strongly recommended to set one for next time")
+			email = "caddy@zerossl.com" // special email address that preserves backwards-compat, but which black-holes dashboard features, oh well
 		}
 		endpoint = zerosslAPIBase + "/eab-credentials-email"
 		form := url.Values{"email": []string{email}}
 		body = strings.NewReader(form.Encode())
-
-	default:
-		return nil, fmt.Errorf("must configure either an API key or email address to use ZeroSSL without explicit EAB")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
@@ -161,9 +154,6 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 func (iss *ZeroSSLIssuer) initialize() {
 	iss.mu.Lock()
 	defer iss.mu.Unlock()
-	if iss.template.CA == "" {
-		iss.template.CA = zerosslACMEDirectory
-	}
 	if iss.template.NewAccountFunc == nil {
 		iss.template.NewAccountFunc = iss.newAccountCallback
 	}
@@ -195,15 +185,18 @@ func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.Certificate
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//     ... zerossl <api_key> {
+//     ... zerossl [<api_key>] {
 //         ...
 //     }
 //
 // Any of the subdirectives for the ACME issuer can be used in the block.
 func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		if !d.AllArgs(&iss.APIKey) {
-			return d.ArgErr()
+		if d.NextArg() {
+			iss.APIKey = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
 		}
 
 		if iss.ACMEIssuer == nil {
@@ -217,10 +210,7 @@ func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-const (
-	zerosslACMEDirectory = "https://acme.zerossl.com/v2/DV90"
-	zerosslAPIBase       = "https://api.zerossl.com/acme"
-)
+const zerosslAPIBase = "https://api.zerossl.com/acme"
 
 // Interface guards
 var (

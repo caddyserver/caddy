@@ -57,18 +57,20 @@
 			"automation": {
 				"policies": [
 					{
-						"issuer": {
-							"ca": "https://example.com",
-							"email": "test@example.com",
-							"external_account": {
-								"key_id": "4K2scIVbBpNd-78scadB2g",
-								"mac_key": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
-							},
-							"module": "acme",
-							"trusted_roots_pem_files": [
-								"/path/to/ca.crt"
-							]
-						},
+						"issuers": [
+							{
+								"ca": "https://example.com",
+								"email": "test@example.com",
+								"external_account": {
+									"key_id": "4K2scIVbBpNd-78scadB2g",
+									"mac_key": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+								},
+								"module": "acme",
+								"trusted_roots_pem_files": [
+									"/path/to/ca.crt"
+								]
+							}
+						],
 						"key_type": "ed25519"
 					}
 				],
