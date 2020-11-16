@@ -353,18 +353,16 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		*m = make(map[string][]string)
 	}
 	for d.Next() {
-		var query string
-		if !d.Args(&query) {
-			return d.ArgErr()
+		for _, query := range d.RemainingArgs() {
+			if query == "" {
+				continue
+			}
+			parts := strings.SplitN(query, "=", 2)
+			if len(parts) != 2 {
+				return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
+			}
+			url.Values(*m).Add(parts[0], parts[1])
 		}
-		if query == "" {
-			continue
-		}
-		parts := strings.SplitN(query, "=", 2)
-		if len(parts) != 2 {
-			return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
-		}
-		url.Values(*m).Set(parts[0], parts[1])
 		if d.NextBlock(0) {
 			return d.Err("malformed query matcher: blocks are not supported")
 		}
@@ -411,12 +409,7 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		// If multiple header matchers with the same header field are defined,
 		// we want to add the existing to the list of headers (will be OR'ed)
-		existing := http.Header(*m).Values(field)
-		if len(existing) > 0 {
-			http.Header(*m).Add(field, val)
-		} else {
-			http.Header(*m).Set(field, val)
-		}
+		http.Header(*m).Add(field, val)
 
 		if d.NextBlock(0) {
 			return d.Err("malformed header matcher: blocks are not supported")

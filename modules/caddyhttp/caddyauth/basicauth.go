@@ -134,7 +134,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 	if hba.HashCache != nil {
 		hba.HashCache.cache = make(map[string]bool)
-		hba.HashCache.mu = new(sync.Mutex)
+		hba.HashCache.mu = new(sync.RWMutex)
 	}
 
 	return nil
@@ -156,11 +156,8 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 	}
 
 	same, err := hba.correctPassword(account, []byte(plaintextPasswordStr))
-	if err != nil {
+	if err != nil || !same || !accountExists {
 		return hba.promptForCredentials(w, err)
-	}
-	if !same || !accountExists {
-		return hba.promptForCredentials(w, nil)
 	}
 
 	return User{ID: username}, true, nil
@@ -180,13 +177,12 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 	cacheKey := hex.EncodeToString(append(append(account.password, account.salt...), plaintextPassword...))
 
 	// fast track: if the result of the input is already cached, use it
-	hba.HashCache.mu.Lock()
+	hba.HashCache.mu.RLock()
 	same, ok := hba.HashCache.cache[cacheKey]
+	hba.HashCache.mu.RUnlock()
 	if ok {
-		hba.HashCache.mu.Unlock()
 		return same, nil
 	}
-	hba.HashCache.mu.Unlock()
 
 	// slow track: do the expensive op, then add it to the cache
 	same, err := compare()
@@ -219,7 +215,7 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 // helpful for secure password hashes which can be expensive to
 // compute on every HTTP request.
 type Cache struct {
-	mu *sync.Mutex
+	mu *sync.RWMutex
 
 	// map of concatenated hashed password + plaintext password + salt, to result
 	cache map[string]bool

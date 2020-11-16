@@ -16,12 +16,12 @@ Please note that we consider publicly-registered domain names to be public infor
 
 ## Reporting a Vulnerability
 
-Please email Matt Holt (the author) directly: matt [at] ardanlabs [dot com].
+Please email Matt Holt (the author) directly: matt [at] lightcodelabs [dot com].
 
 We'll need enough information to verify the bug and make a patch. It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, resources permitting. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. Thank you for understanding.
 
 Please also understand that due to our nature as an open source project, we do not have a budget to award security bounties. We can only thank you.
 
-If your report is valid and a patch is released, we will not reveal your identity by default. If you wish to be credited, please give us the name to use.
+If your report is valid and a patch is released, we will not reveal your identity by default. If you wish to be credited, please give us the name to use and/or your GitHub username. If you don't provide this we can't credit you.
 
 Thanks for responsibly helping Caddy&mdash;and thousands of websites&mdash;be more secure!
