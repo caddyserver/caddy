@@ -33,7 +33,7 @@ type serverOptions struct {
 	// Only the most specific one will apply.
 	ListenerMatcher string
 
-	// These will all map 1:1 to the Server struct
+	// These will all map 1:1 to the caddyhttp.Server struct
 	ListenerWrappersRaw []json.RawMessage
 	ReadTimeout         caddy.Duration
 	ReadHeaderTimeout   caddy.Duration
