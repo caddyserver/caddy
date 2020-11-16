@@ -54,24 +54,30 @@ foo.tld, www.foo.tld {
 							"foo.tld",
 							"www.foo.tld"
 						],
-						"issuer": {
-							"module": "internal"
-						}
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
 					},
 					{
 						"subjects": [
 							"*.*.tld",
 							"*.tld"
 						],
-						"issuer": {
-							"module": "internal"
-						},
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						],
 						"on_demand": true
 					},
 					{
-						"issuer": {
-							"module": "internal"
-						}
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
 					}
 				]
 			}

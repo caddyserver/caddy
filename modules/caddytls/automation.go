@@ -23,7 +23,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
-	"go.uber.org/zap"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.
@@ -72,8 +71,13 @@ type AutomationPolicy struct {
 	// Which subjects (hostnames or IP addresses) this policy applies to.
 	Subjects []string `json:"subjects,omitempty"`
 
-	// The module that will issue certificates. Default: internal if all
-	// subjects do not qualify for public certificates; othewise acme.
+	// The modules that may issue certificates. Default: internal if all
+	// subjects do not qualify for public certificates; othewise acme and
+	// zerossl.
+	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
+
+	// DEPRECATED: Use `issuers` instead (November 2020). This field will
+	// be removed in the future.
 	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
 	// If true, certificates will be requested with MustStaple. Not all
@@ -103,10 +107,10 @@ type AutomationPolicy struct {
 	// load.
 	OnDemand bool `json:"on_demand,omitempty"`
 
-	// Issuer stores the decoded issuer parameters. This is only
-	// used to populate an underlying certmagic.Config's Issuer
+	// Issuers stores the decoded issuer parameters. This is only
+	// used to populate an underlying certmagic.Config's Issuers
 	// field; it is not referenced thereafter.
-	Issuer certmagic.Issuer `json:"-"`
+	Issuers []certmagic.Issuer `json:"-"`
 
 	magic   *certmagic.Config
 	storage certmagic.Storage
@@ -150,34 +154,30 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		}
 	}
 
-	// if this automation policy has no Issuer defined, and
-	// none of the subjects qualify for a public certificate,
-	// set the issuer to internal so that these names can all
-	// get certificates; critically, we can only do this if an
-	// issuer is not explicitly configured (IssuerRaw, vs. just
-	// Issuer) AND if the list of subjects is non-empty
-	if ap.IssuerRaw == nil && len(ap.Subjects) > 0 {
-		var anyPublic bool
-		for _, s := range ap.Subjects {
-			if certmagic.SubjectQualifiesForPublicCert(s) {
-				anyPublic = true
-				break
-			}
-		}
-		if !anyPublic {
-			tlsApp.logger.Info("setting internal issuer for automation policy that has only internal subjects but no issuer configured",
-				zap.Strings("subjects", ap.Subjects))
-			ap.IssuerRaw = json.RawMessage(`{"module":"internal"}`)
-		}
+	// TODO: IssuerRaw field deprecated as of November 2020 - remove this shim after deprecation is complete
+	if ap.IssuerRaw != nil {
+		tlsApp.logger.Warn("the 'issuer' field is deprecated and will be removed in the future; use 'issuers' instead; your issuer has been appended automatically for now")
+		ap.IssuersRaw = append(ap.IssuersRaw, ap.IssuerRaw)
 	}
 
-	// load and provision any explicitly-configured issuer module
-	if ap.IssuerRaw != nil {
-		val, err := tlsApp.ctx.LoadModule(ap, "IssuerRaw")
+	// load and provision any explicitly-configured issuer modules
+	if ap.IssuersRaw != nil {
+		val, err := tlsApp.ctx.LoadModule(ap, "IssuersRaw")
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		ap.Issuer = val.(certmagic.Issuer)
+		for _, issVal := range val.([]interface{}) {
+			ap.Issuers = append(ap.Issuers, issVal.(certmagic.Issuer))
+		}
+	}
+
+	issuers := ap.Issuers
+	if len(issuers) == 0 {
+		var err error
+		issuers, err = DefaultIssuers(tlsApp.ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	keyType := ap.KeyType
@@ -206,11 +206,8 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		KeySource:          keySource,
 		OnDemand:           ond,
 		Storage:            storage,
-		Issuer:             ap.Issuer, // if nil, certmagic.New() will create one
+		Issuers:            issuers,
 		Logger:             tlsApp.logger,
-	}
-	if rev, ok := ap.Issuer.(certmagic.Revoker); ok {
-		template.Revoker = rev
 	}
 	ap.magic = certmagic.New(tlsApp.certCache, template)
 
@@ -219,11 +216,30 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// access to the correct storage and cache so it can solve
 	// ACME challenges -- it's an annoying, inelegant circular
 	// dependency that I don't know how to resolve nicely!)
-	if annoying, ok := ap.Issuer.(ConfigSetter); ok {
-		annoying.SetConfig(ap.magic)
+	for _, issuer := range ap.magic.Issuers {
+		if annoying, ok := issuer.(ConfigSetter); ok {
+			annoying.SetConfig(ap.magic)
+		}
 	}
 
 	return nil
+}
+
+// DefaultIssuers returns empty but provisioned default Issuers.
+// This function is experimental and has no compatibility promises.
+func DefaultIssuers(ctx caddy.Context) ([]certmagic.Issuer, error) {
+	acme := new(ACMEIssuer)
+	err := acme.Provision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	zerossl := new(ZeroSSLIssuer)
+	err = zerossl.Provision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: eventually, insert ZeroSSL into first position in the slice -- see also httpcaddyfile/tlsapp.go for where similar defaults are configured
+	return []certmagic.Issuer{acme, zerossl}, nil
 }
 
 // ChallengesConfig configures the ACME challenges.

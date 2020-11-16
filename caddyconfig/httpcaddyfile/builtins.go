@@ -88,7 +88,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certSelector caddytls.CustomCertSelectionPolicy
 	var acmeIssuer *caddytls.ACMEIssuer
 	var internalIssuer *caddytls.InternalIssuer
-	var issuer certmagic.Issuer
+	var issuers []certmagic.Issuer
 	var onDemand bool
 
 	for h.Next() {
@@ -297,10 +297,11 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				if err != nil {
 					return nil, err
 				}
-				issuer, ok = unm.(certmagic.Issuer)
+				issuer, ok := unm.(certmagic.Issuer)
 				if !ok {
 					return nil, h.Errf("module %s is not a certmagic.Issuer", mod.ID)
 				}
+				issuers = append(issuers, issuer)
 
 			case "dns":
 				if !h.NextArg() {
@@ -371,42 +372,28 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
-	// issuer
-	if acmeIssuer != nil && internalIssuer != nil {
-		// the logic to support this would be complex
-		return nil, h.Err("cannot use both ACME and internal issuers in same server block")
+	if len(issuers) > 0 && (acmeIssuer != nil || internalIssuer != nil) {
+		// some tls subdirectives are shortcuts that implicitly configure issuers, and the
+		// user can also configure issuers explicitly using the issuer subdirective; the
+		// logic to support both would likely be complex, or at least unintuitive
+		return nil, h.Err("cannot mix issuer subdirective (explicit issuers) with other issuer-specific subdirectives (implicit issuers)")
 	}
-	if issuer != nil && (acmeIssuer != nil || internalIssuer != nil) {
-		// similarly, the logic to support this would be complex
-		return nil, h.Err("when defining an issuer, all its config must be in its block, rather than from separate tls subdirectives")
-	}
-	switch {
-	case issuer != nil:
+	for _, issuer := range issuers {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
 			Value: issuer,
 		})
-
-	case internalIssuer != nil:
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.cert_issuer",
-			Value: internalIssuer,
-		})
-
-	case acmeIssuer != nil:
-		// fill in global defaults, if configured
-		if email := h.Option("email"); email != nil && acmeIssuer.Email == "" {
-			acmeIssuer.Email = email.(string)
-		}
-		if acmeCA := h.Option("acme_ca"); acmeCA != nil && acmeIssuer.CA == "" {
-			acmeIssuer.CA = acmeCA.(string)
-		}
-		if caPemFile := h.Option("acme_ca_root"); caPemFile != nil {
-			acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, caPemFile.(string))
-		}
+	}
+	if acmeIssuer != nil {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
 			Value: disambiguateACMEIssuer(acmeIssuer),
+		})
+	}
+	if internalIssuer != nil {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.cert_issuer",
+			Value: internalIssuer,
 		})
 	}
 

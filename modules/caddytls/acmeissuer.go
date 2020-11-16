@@ -97,6 +97,15 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger(iss)
 
+	// expand email address, if non-empty
+	if iss.Email != "" {
+		email, err := caddy.NewReplacer().ReplaceOrErr(iss.Email, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding email address '%s': %v", iss.Email, err)
+		}
+		iss.Email = email
+	}
+
 	// DNS providers
 	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
 		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
