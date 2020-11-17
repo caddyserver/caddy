@@ -480,6 +480,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.BufferRequests = true
 
 			case "header_up":
+				var err error
+
 				if h.Headers == nil {
 					h.Headers = new(headers.Handler)
 				}
@@ -487,18 +489,25 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.Headers.Request = new(headers.HeaderOps)
 				}
 				args := d.RemainingArgs()
+
 				switch len(args) {
 				case 1:
-					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
+					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
 				case 2:
-					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
+					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:
-					headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
+					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
 				default:
 					return d.ArgErr()
 				}
 
+				if err != nil {
+					return d.Err(err.Error())
+				}
+
 			case "header_down":
+				var err error
+
 				if h.Headers == nil {
 					h.Headers = new(headers.Handler)
 				}
@@ -510,13 +519,17 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				args := d.RemainingArgs()
 				switch len(args) {
 				case 1:
-					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
+					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
 				case 2:
-					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
+					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
 				case 3:
-					headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
+					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
 				default:
 					return d.ArgErr()
+				}
+
+				if err != nil {
+					return d.Err(err.Error())
 				}
 
 			case "transport":

@@ -59,6 +59,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 				for innerNesting := h.Nesting(); h.NextBlock(innerNesting); {
+					var err error
+
 					// include current token, which we treat as an argument here
 					args := []string{h.Val()}
 					args = append(args, h.RemainingArgs()...)
@@ -66,15 +68,20 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					if handler.Headers == nil {
 						handler.Headers = new(HeaderConfig)
 					}
+
 					switch len(args) {
 					case 1:
-						headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], "", "")
+						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], "", "")
 					case 2:
-						headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], "")
+						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], "")
 					case 3:
-						headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], args[2])
+						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], args[2])
 					default:
 						return nil, h.ArgErr()
+					}
+
+					if err != nil {
+						return nil, h.Err(err.Error())
 					}
 				}
 

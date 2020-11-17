@@ -15,6 +15,8 @@
 package headers
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/textproto"
 	"strings"
@@ -27,6 +29,10 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("header", parseCaddyfile)
 	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
 }
+
+// ErrBadOperation is returned when trying to use a header operation in an inappropriate context.
+// For instance, when trying to use "?" operation (set default) with "header_down".
+var ErrBadOperation = errors.New("this header operation cannot be used here")
 
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
@@ -67,7 +73,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				replacement = h.Val()
 			}
 			makeResponseOps()
-			CaddyfileRespHeaderOp(hdr.Response, field, value, replacement)
+			if err := CaddyfileRespHeaderOp(hdr.Response, field, value, replacement); err != nil {
+				return nil, h.Err(err.Error())
+			}
 			if len(hdr.Response.HeaderOps.Delete) > 0 {
 				hdr.Response.Deferred = true
 			}
@@ -91,7 +99,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				replacement = h.Val()
 			}
 			makeResponseOps()
-			CaddyfileHeaderOp(hdr.Response.HeaderOps, field, value, replacement)
+			if err := CaddyfileHeaderOp(hdr.Response.HeaderOps, field, value, replacement); err != nil {
+				return nil, h.Err(err.Error())
+			}
 			if len(hdr.Response.HeaderOps.Delete) > 0 {
 				hdr.Response.Deferred = true
 			}
@@ -133,7 +143,9 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 		if hdr.Request == nil {
 			hdr.Request = new(HeaderOps)
 		}
-		CaddyfileHeaderOp(hdr.Request, field, value, replacement)
+		if err := CaddyfileHeaderOp(hdr.Request, field, value, replacement); err != nil {
+			return nil, h.Err(err.Error())
+		}
 
 		if h.NextArg() {
 			return nil, h.ArgErr()
@@ -150,8 +162,8 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 // regular expression which will be used to search and then replacement
 // will be used to complete the substring replacement; in that case,
 // any "+", "-" or "?" prefix to field will be ignored.
-func CaddyfileRespHeaderOp(ops *RespHeaderOps, field, value, replacement string) {
-	applyCaddyfileHeaderOp(ops.HeaderOps, field, value, replacement, ops)
+func CaddyfileRespHeaderOp(ops *RespHeaderOps, field, value, replacement string) error {
+	return applyCaddyfileHeaderOp(ops.HeaderOps, field, value, replacement, ops)
 }
 
 // CaddyfileHeaderOp applies a new header operation according to
@@ -162,11 +174,11 @@ func CaddyfileRespHeaderOp(ops *RespHeaderOps, field, value, replacement string)
 // will be used to search and then replacement will be used to
 // complete the substring replacement; in that case, any + or -
 // prefix to field will be ignored.
-func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) {
-	applyCaddyfileHeaderOp(ops, field, value, replacement, nil)
+func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) error {
+	return applyCaddyfileHeaderOp(ops, field, value, replacement, nil)
 }
 
-func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, respHeaderOps *RespHeaderOps) {
+func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, respHeaderOps *RespHeaderOps) error {
 	if strings.HasPrefix(field, "+") {
 		if ops.Add == nil {
 			ops.Add = make(http.Header)
@@ -176,8 +188,7 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 		ops.Delete = append(ops.Delete, field[1:])
 	} else if strings.HasPrefix(field, "?") {
 		if respHeaderOps == nil {
-			// "?" prefix only makes sense for response headers.
-			return
+			return fmt.Errorf("%v: %w", field, ErrBadOperation)
 		}
 
 		if respHeaderOps.Require == nil {
@@ -213,4 +224,6 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 			)
 		}
 	}
+
+	return nil
 }
