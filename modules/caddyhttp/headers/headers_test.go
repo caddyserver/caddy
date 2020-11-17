@@ -16,123 +16,195 @@ package headers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func TestReqHeaders(t *testing.T) {
-	// TODO: write tests
-}
-
-func TestHeaderOps(t *testing.T) {
+func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
-		headerOps HeaderOps
-		input     http.Header
-		expected  http.Header
+		handler            Handler
+		reqHeader          http.Header
+		respHeader         http.Header
+		respStatusCode     int
+		expectedReqHeader  http.Header
+		expectedRespHeader http.Header
 	}{
 		{
-			headerOps: HeaderOps{
-				Add: http.Header{
-					"Expose-Secrets": []string{"always"},
+			handler: Handler{
+				Request: &HeaderOps{
+					Add: http.Header{
+						"Expose-Secrets": []string{"always"},
+					},
 				},
 			},
-			input: http.Header{
+			reqHeader: http.Header{
 				"Expose-Secrets": []string{"i'm serious"},
 			},
-			expected: http.Header{
+			expectedReqHeader: http.Header{
 				"Expose-Secrets": []string{"i'm serious", "always"},
 			},
 		},
 		{
-			headerOps: HeaderOps{
-				Set: http.Header{
-					"Who-Wins": []string{"batman"},
+			handler: Handler{
+				Request: &HeaderOps{
+					Set: http.Header{
+						"Who-Wins": []string{"batman"},
+					},
 				},
 			},
-			input: http.Header{
+			reqHeader: http.Header{
 				"Who-Wins": []string{"joker"},
 			},
-			expected: http.Header{
+			expectedReqHeader: http.Header{
 				"Who-Wins": []string{"batman"},
 			},
 		},
 		{
-			headerOps: HeaderOps{
-				SetDefault: http.Header{
-					"Cache-Control": []string{"default"},
+			handler: Handler{
+				Request: &HeaderOps{
+					Delete: []string{"Kick-Me"},
 				},
 			},
-			input: http.Header{
-				"Not-Cache-Control": []string{"cache-cache"},
-			},
-			expected: http.Header{
-				"Cache-Control":     []string{"default"},
-				"Not-Cache-Control": []string{"cache-cache"},
-			},
-		},
-		{
-			headerOps: HeaderOps{
-				SetDefault: http.Header{
-					"Cache-Control": []string{"no-store"},
-				},
-			},
-			input: http.Header{
-				"Cache-Control": []string{"max-age=3600"},
-			},
-			expected: http.Header{
-				"Cache-Control": []string{"max-age=3600"},
-			},
-		},
-		{
-			headerOps: HeaderOps{
-				Delete: []string{"Kick-Me"},
-			},
-			input: http.Header{
+			reqHeader: http.Header{
 				"Kick-Me": []string{"if you can"},
 				"Keep-Me": []string{"i swear i'm innocent"},
 			},
-			expected: http.Header{
+			expectedReqHeader: http.Header{
 				"Keep-Me": []string{"i swear i'm innocent"},
 			},
 		},
 		{
-			headerOps: HeaderOps{
-				Replace: map[string][]Replacement{
-					"Best-Server": []Replacement{
-						Replacement{
-							Search:  "NGINX",
-							Replace: "the Caddy web server",
-						},
-						Replacement{
-							SearchRegexp: `Apache(\d+)`,
-							Replace:      "Caddy",
+			handler: Handler{
+				Request: &HeaderOps{
+					Replace: map[string][]Replacement{
+						"Best-Server": []Replacement{
+							Replacement{
+								Search:  "NGINX",
+								Replace: "the Caddy web server",
+							},
+							Replacement{
+								SearchRegexp: `Apache(\d+)`,
+								Replace:      "Caddy",
+							},
 						},
 					},
 				},
 			},
-			input: http.Header{
+			reqHeader: http.Header{
 				"Best-Server": []string{"it's NGINX, undoubtedly", "I love Apache2"},
 			},
-			expected: http.Header{
+			expectedReqHeader: http.Header{
 				"Best-Server": []string{"it's the Caddy web server, undoubtedly", "I love Caddy"},
 			},
 		},
+		{
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						Headers: http.Header{
+							"Cache-Control": nil,
+						},
+					},
+					HeaderOps: &HeaderOps{
+						Add: http.Header{
+							"Cache-Control": []string{"no-cache"},
+						},
+					},
+				},
+			},
+			respHeader: http.Header{},
+			expectedRespHeader: http.Header{
+				"Cache-Control": []string{"no-cache"},
+			},
+		},
+		{
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						Headers: http.Header{
+							"Cache-Control": []string{"no-cache"},
+						},
+					},
+					HeaderOps: &HeaderOps{
+						Delete: []string{"Cache-Control"},
+					},
+				},
+			},
+			respHeader: http.Header{
+				"Cache-Control": []string{"no-cache"},
+			},
+			expectedRespHeader: http.Header{},
+		},
+		{
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						StatusCode: []int{5},
+					},
+					HeaderOps: &HeaderOps{
+						Add: http.Header{
+							"Fail-5xx": []string{"true"},
+						},
+					},
+				},
+			},
+			respStatusCode: 503,
+			respHeader:     http.Header{},
+			expectedRespHeader: http.Header{
+				"Fail-5xx": []string{"true"},
+			},
+		},
 	} {
-		req := &http.Request{Header: tc.input}
+		rr := httptest.NewRecorder()
+
+		req := &http.Request{Header: tc.reqHeader}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
-		tc.headerOps.Provision(caddy.Context{})
-		tc.headerOps.ApplyToRequest(req)
-		actual := req.Header
+		tc.handler.Provision(caddy.Context{})
 
-		if !reflect.DeepEqual(actual, tc.expected) {
-			t.Errorf("Test %d: Expected %v, got %v", i, tc.expected, actual)
+		next := nextHandler(func(w http.ResponseWriter, r *http.Request) error {
+			for k, hdrs := range tc.respHeader {
+				for _, v := range hdrs {
+					w.Header().Add(k, v)
+				}
+			}
+
+			status := 200
+			if tc.respStatusCode != 0 {
+				status = tc.respStatusCode
+			}
+			w.WriteHeader(status)
+
+			if tc.expectedReqHeader != nil && !reflect.DeepEqual(r.Header, tc.expectedReqHeader) {
+				return fmt.Errorf("expected request header %v, got %v", tc.expectedReqHeader, r.Header)
+			}
+
+			return nil
+		})
+
+		if err := tc.handler.ServeHTTP(rr, req, next); err != nil {
+			t.Errorf("Test %d: %w", i, err)
+			continue
+		}
+
+		actual := rr.Header()
+		if tc.expectedRespHeader != nil && !reflect.DeepEqual(actual, tc.expectedRespHeader) {
+			t.Errorf("Test %d: expected response header %v, got %v", i, tc.expectedRespHeader, actual)
 			continue
 		}
 	}
+}
+
+type nextHandler func(http.ResponseWriter, *http.Request) error
+
+func (f nextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+	return f(w, r)
 }
