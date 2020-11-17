@@ -102,7 +102,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
 	}
 
-	database, err := ash.getDatabase(ash.CA)
+	database, err := ash.openDatabase(ctx)
 	if err != nil {
 		ash.logger.Error("Could not initialize CA database")
 		return err
@@ -122,7 +122,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 				},
 			},
 		},
-		DB: &database,
+		DB: database,
 	}
 
 	auth, err := ca.NewAuthority(authorityConfig)
@@ -158,27 +158,59 @@ func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	return next.ServeHTTP(w, r)
 }
 
-func (ash Handler) getDatabase(caID string) (db.AuthDB, error) {
-	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", ash.CA)
-	dbPath := filepath.Join(dbFolder, "db")
-
-	err := os.MkdirAll(dbFolder, 0755)
+// Cleanup implements caddy.CleanerUpper and closes any idle databases.
+func (ash Handler) Cleanup() error {
+	key := ash.CA
+	deleted, err := databasePool.Delete(key)
+	if deleted {
+		ash.logger.Debug("unloading unused database", zap.String("caID", key))
+	}
 	if err != nil {
-		return nil, fmt.Errorf("making folder for ACME server database: %v", err)
+		ash.logger.Error("closing closing database", zap.String("caID", key), zap.Error(err))
+	}
+	return err
+}
+
+func (ash Handler) openDatabase(ctx caddy.Context) (*db.AuthDB, error) {
+	key := ash.CA
+	database, loaded, err := databasePool.LoadOrNew(key, func() (caddy.Destructor, error) {
+		dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", key)
+		dbPath := filepath.Join(dbFolder, "db")
+
+		err := os.MkdirAll(dbFolder, 0755)
+		if err != nil {
+			return nil, fmt.Errorf("making folder for ACME server database: %v", err)
+		}
+
+		dbConfig := &db.Config{
+			Type:       "bbolt",
+			DataSource: dbPath,
+		}
+		database, err := db.New(dbConfig)
+		return databaseCloser{&database}, err
+	})
+
+	if loaded {
+		ash.logger.Debug("Loaded preexisting CA DB", zap.String("caID", key))
 	}
 
-	dbConfig := &db.Config{
-		Type:       "bbolt",
-		DataSource: dbPath,
-	}
-	database, err := db.New(dbConfig)
-	return database, err
+	return database.(databaseCloser).DB, err
 }
 
 const (
 	defaultHost       = "localhost"
 	defaultPathPrefix = "/acme/"
 )
+
+var databasePool = caddy.NewUsagePool()
+
+type databaseCloser struct {
+	DB *db.AuthDB
+}
+
+func (closer databaseCloser) Destruct() error {
+	return (*closer.DB).Shutdown()
+}
 
 // Interface guards
 var (
