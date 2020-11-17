@@ -198,10 +198,10 @@ func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority
 	auth, err := authority.NewEmbedded(
 		authority.WithConfig(&authority.Config{
 			AuthorityConfig: authorityConfig.AuthConfig,
-			DB:              authorityConfig.DB,
 		}),
 		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
 		authority.WithX509RootCerts(rootCert),
+		authority.WithDatabase(*authorityConfig.DB),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("initializing certificate authority: %v", err)
@@ -382,7 +382,7 @@ type AuthorityConfig struct {
 	SignWithRoot bool
 
 	// TODO: should we just embed the underlying authority.Config struct type?
-	DB         *db.Config
+	DB         *db.AuthDB
 	AuthConfig *authority.AuthConfig
 }
 

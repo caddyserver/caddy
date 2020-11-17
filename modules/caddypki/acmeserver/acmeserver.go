@@ -66,6 +66,7 @@ type Handler struct {
 	PathPrefix string `json:"path_prefix,omitempty"`
 
 	acmeEndpoints http.Handler
+	logger        *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -78,7 +79,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the ACME server handler.
 func (ash *Handler) Provision(ctx caddy.Context) error {
-	logger := ctx.Logger(ash)
+	ash.logger = ctx.Logger(ash)
 	// set some defaults
 	if ash.CA == "" {
 		ash.CA = caddypki.DefaultCAID
@@ -101,25 +102,10 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
 	}
 
-	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server")
-	dbPath := filepath.Join(dbFolder, "db")
-
-	// TODO: See https://github.com/smallstep/nosql/issues/7
-	err = os.MkdirAll(dbFolder, 0755)
+	database, err := ash.getDatabase(ash.CA)
 	if err != nil {
-		return fmt.Errorf("making folder for ACME server database: %v", err)
-	}
-
-	// Check to see if previous db exists
-	var stat os.FileInfo
-	stat, err = os.Stat(dbPath)
-	if stat != nil && err == nil {
-		// A badger db is found and should be removed
-		if stat.IsDir() {
-			logger.Warn("Found an old badger database and removing it",
-				zap.String("path", dbPath))
-			_ = os.RemoveAll(dbPath)
-		}
+		ash.logger.Error("Could not initialize CA database")
+		return err
 	}
 
 	authorityConfig := caddypki.AuthorityConfig{
@@ -136,10 +122,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 				},
 			},
 		},
-		DB: &db.Config{
-			Type:       "bbolt",
-			DataSource: dbPath,
-		},
+		DB: &database,
 	}
 
 	auth, err := ca.NewAuthority(authorityConfig)
@@ -173,6 +156,23 @@ func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 		return nil
 	}
 	return next.ServeHTTP(w, r)
+}
+
+func (ash Handler) getDatabase(caID string) (db.AuthDB, error) {
+	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", ash.CA)
+	dbPath := filepath.Join(dbFolder, "db")
+
+	err := os.MkdirAll(dbFolder, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("making folder for ACME server database: %v", err)
+	}
+
+	dbConfig := &db.Config{
+		Type:       "bbolt",
+		DataSource: dbPath,
+	}
+	database, err := db.New(dbConfig)
+	return database, err
 }
 
 const (
