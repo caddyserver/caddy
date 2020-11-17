@@ -395,7 +395,8 @@ func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // a host based on a given cookie name.
 type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
-	Name   string `json:"name,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Secret to hash (Hmac256) choosen upstream in cookie
 	Secret string `json:"secret,omitempty"`
 }
 
@@ -481,11 +482,9 @@ func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWrite
 	return randomHost
 }
 
-// Hash (Hmac256) some data with the secret
+// hashCookie hashes (HMAC 256) some data with the secret
 func hashCookie(secret string, data string) (string, error) {
-	// Create a new HMAC by defining the hash type and the key (as byte array)
 	h := hmac.New(sha256.New, []byte(secret))
-	// Write Data to it
 	_, err := h.Write([]byte(data))
 	if err != nil {
 		return "", err
