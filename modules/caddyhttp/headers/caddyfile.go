@@ -104,7 +104,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				replacement = h.Val()
 			}
 			makeResponseOps()
-			if err := CaddyfileHeaderOp(hdr.Response.HeaderOps, field, value, replacement); err != nil {
+			if err := applyCaddyfileHeaderOp(
+				hdr.Response.HeaderOps,
+				field,
+				value,
+				replacement,
+				hdr.Response,
+			); err != nil {
 				return nil, h.Err(err.Error())
 			}
 			if len(hdr.Response.HeaderOps.Delete) > 0 {
