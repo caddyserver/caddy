@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/textproto"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -30,9 +29,9 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
 }
 
-// ErrBadOperation is returned when trying to use a header operation in an inappropriate context.
+// errBadOperation is returned when trying to use a header operation in an inappropriate context.
 // For instance, when trying to use "?" operation (set default) with "header_down".
-var ErrBadOperation = errors.New("this header operation cannot be used here")
+var errBadOperation = errors.New("this header operation cannot be used here")
 
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
@@ -73,7 +72,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				replacement = h.Val()
 			}
 			makeResponseOps()
-			if err := CaddyfileRespHeaderOp(hdr.Response, field, value, replacement); err != nil {
+			if err := applyCaddyfileHeaderOp(
+				hdr.Response.HeaderOps,
+				field,
+				value,
+				replacement,
+				hdr.Response,
+			); err != nil {
 				return nil, h.Err(err.Error())
 			}
 			if len(hdr.Response.HeaderOps.Delete) > 0 {
@@ -154,18 +159,6 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 	return hdr, nil
 }
 
-// CaddyfileRespHeaderOp applies a new header response operation
-// according to field, value, and replacement. The field can be prefixed
-// with "+", "-" or "?" to specify adding, removing or setting a default
-// value; otherwise, the value will be set (overriding any previous
-// value). If replacement is non-empty, value will be treated as a
-// regular expression which will be used to search and then replacement
-// will be used to complete the substring replacement; in that case,
-// any "+", "-" or "?" prefix to field will be ignored.
-func CaddyfileRespHeaderOp(ops *RespHeaderOps, field, value, replacement string) error {
-	return applyCaddyfileHeaderOp(ops.HeaderOps, field, value, replacement, ops)
-}
-
 // CaddyfileHeaderOp applies a new header operation according to
 // field, value, and replacement. The field can be prefixed with
 // "+" or "-" to specify adding or removing; otherwise, the value
@@ -188,7 +181,7 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 		ops.Delete = append(ops.Delete, field[1:])
 	} else if strings.HasPrefix(field, "?") {
 		if respHeaderOps == nil {
-			return fmt.Errorf("%v: %w", field, ErrBadOperation)
+			return fmt.Errorf("%v: %w", field, errBadOperation)
 		}
 
 		if respHeaderOps.Require == nil {
@@ -196,9 +189,7 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 				Headers: make(http.Header, 1),
 			}
 		}
-		key := textproto.CanonicalMIMEHeaderKey(field[1:])
-		// Header must not be set.
-		respHeaderOps.Require.Headers[key] = nil
+		respHeaderOps.Require.Headers[field[1:]] = nil
 
 		if ops.Add == nil {
 			ops.Add = make(http.Header)
