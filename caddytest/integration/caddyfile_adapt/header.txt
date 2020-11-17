@@ -1,0 +1,91 @@
+:80 {
+	header Denis "Ritchie"
+	header +Edsger "Dijkstra"
+	header ?John "von Neumann"
+	header -Wolfram
+	header {
+		Grace "Hopper"
+		+Ray "Solomonoff"
+		defer
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"set": {
+											"Denis": [
+												"Ritchie"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Edsger": [
+												"Dijkstra"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"John": [
+												"von Neumann"
+											]
+										},
+										"require": {
+											"headers": {
+												"John": null
+											}
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"delete": [
+											"Wolfram"
+										]
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Ray": [
+												"Solomonoff"
+											]
+										},
+										"deferred": true,
+										"set": {
+											"Grace": [
+												"Hopper"
+											]
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
