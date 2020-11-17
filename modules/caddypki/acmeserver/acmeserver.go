@@ -102,7 +102,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
 	}
 
-	database, err := ash.openDatabase(ctx)
+	database, err := ash.openDatabase()
 	if err != nil {
 		ash.logger.Error("Could not initialize CA database")
 		return err
@@ -158,9 +158,13 @@ func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	return next.ServeHTTP(w, r)
 }
 
+func (ash Handler) getDatabaseKey() string {
+	return ash.CA
+}
+
 // Cleanup implements caddy.CleanerUpper and closes any idle databases.
 func (ash Handler) Cleanup() error {
-	key := ash.CA
+	key := ash.getDatabaseKey()
 	deleted, err := databasePool.Delete(key)
 	if deleted {
 		ash.logger.Debug("unloading unused database", zap.String("caID", key))
@@ -171,8 +175,8 @@ func (ash Handler) Cleanup() error {
 	return err
 }
 
-func (ash Handler) openDatabase(ctx caddy.Context) (*db.AuthDB, error) {
-	key := ash.CA
+func (ash Handler) openDatabase() (*db.AuthDB, error) {
+	key := ash.getDatabaseKey()
 	database, loaded, err := databasePool.LoadOrNew(key, func() (caddy.Destructor, error) {
 		dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", key)
 		dbPath := filepath.Join(dbFolder, "db")
