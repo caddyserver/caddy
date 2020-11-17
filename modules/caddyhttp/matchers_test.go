@@ -480,6 +480,16 @@ func TestHeaderMatcher(t *testing.T) {
 			host:   "caddyserver.com",
 			expect: false,
 		},
+		{
+			match:  MatchHeader{"Must-Not-Exist": nil},
+			input:  http.Header{},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"Must-Not-Exist": nil},
+			input:  http.Header{"Must-Not-Exist": []string{"do not match"}},
+			expect: false,
+		},
 	} {
 		req := &http.Request{Header: tc.input, Host: tc.host}
 		actual := tc.match.Match(req)

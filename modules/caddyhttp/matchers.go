@@ -445,6 +445,10 @@ func matchHeaders(input, against http.Header, host string) bool {
 			// match if the header field exists at all
 			continue
 		}
+		if allowedFieldVals == nil && actualFieldVals == nil {
+			// a nil list means match if the header does not exist at all
+			continue
+		}
 		var match bool
 	fieldVals:
 		for _, actualFieldVal := range actualFieldVals {
