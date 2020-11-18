@@ -93,30 +93,41 @@ func RegisterDirective(dir string, setupFunc UnmarshalFunc) {
 	registeredDirectives[dir] = setupFunc
 }
 
+// ParseMatcher parses an optional matcher token as first argument.
+func ParseMatcher(h Helper) (caddy.ModuleMap, error) {
+	if !h.Next() {
+		return nil, h.ArgErr()
+	}
+
+	matcherSet, ok, err := h.MatcherToken()
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		// strip matcher token; we don't need to
+		// use the return value here because a
+		// new dispenser should have been made
+		// solely for this directive's tokens,
+		// with no other uses of same slice
+		h.Dispenser.Delete()
+	}
+
+	h.Dispenser.Reset() // pretend this lookahead never happened
+
+	return matcherSet, nil
+}
+
 // RegisterHandlerDirective is like RegisterDirective, but for
 // directives which specifically output only an HTTP handler.
 // Directives registered with this function will always have
 // an optional matcher token as the first argument.
 func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 	RegisterDirective(dir, func(h Helper) ([]ConfigValue, error) {
-		if !h.Next() {
-			return nil, h.ArgErr()
-		}
-
-		matcherSet, ok, err := h.MatcherToken()
+		matcherSet, err := ParseMatcher(h)
 		if err != nil {
 			return nil, err
 		}
-		if ok {
-			// strip matcher token; we don't need to
-			// use the return value here because a
-			// new dispenser should have been made
-			// solely for this directive's tokens,
-			// with no other uses of same slice
-			h.Dispenser.Delete()
-		}
 
-		h.Dispenser.Reset() // pretend this lookahead never happened
 		val, err := setupFunc(h)
 		if err != nil {
 			return nil, err

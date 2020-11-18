@@ -6,6 +6,7 @@
 	header {
 		Grace "Hopper"
 		+Ray "Solomonoff"
+		?Tim "Berners-Lee"
 		defer
 	}
 }
@@ -68,16 +69,38 @@
 								{
 									"handler": "headers",
 									"response": {
-										"add": {
-											"Ray": [
-												"Solomonoff"
-											]
-										},
 										"deferred": true,
 										"set": {
 											"Grace": [
 												"Hopper"
 											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Ray": [
+												"Solomonoff"
+											]
+										},
+										"deferred": true
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Tim": [
+												"Berners-Lee"
+											]
+										},
+										"deferred": true,
+										"require": {
+											"headers": {
+												"Tim": null
+											}
 										}
 									}
 								}

@@ -25,8 +25,8 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("header", parseCaddyfile)
-	httpcaddyfile.RegisterHandlerDirective("request_header", parseReqHdrCaddyfile)
+	httpcaddyfile.RegisterDirective("header", parseCaddyfile)
+	httpcaddyfile.RegisterDirective("request_header", parseReqHdrCaddyfile)
 }
 
 // errBadOperation is returned when trying to use a header operation in an inappropriate context.
@@ -47,21 +47,25 @@ var errBadOperation = errors.New("this header operation cannot be used here")
 // in the first line, but not both in the same directive. Header operations
 // are deferred to write-time if any headers are being deleted or if the
 // 'defer' subdirective is used.
-func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	hdr := new(Handler)
-
-	makeResponseOps := func() {
-		if hdr.Response == nil {
-			hdr.Response = &RespHeaderOps{
-				HeaderOps: new(HeaderOps),
-			}
-		}
+func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	matcherSet, err := httpcaddyfile.ParseMatcher(h)
+	if err != nil {
+		return nil, err
 	}
+
+	deferred := false
+	handlers := []Handler{}
 
 	for h.Next() {
 		// first see if headers are in the initial line
 		var hasArgs bool
 		if h.NextArg() {
+			hdr := Handler{
+				Response: &RespHeaderOps{
+					HeaderOps: &HeaderOps{},
+				},
+			}
+
 			hasArgs = true
 			field := h.Val()
 			var value, replacement string
@@ -71,26 +75,30 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			if h.NextArg() {
 				replacement = h.Val()
 			}
-			makeResponseOps()
-			if err := applyCaddyfileHeaderOp(
+			err := applyHeaderOp(
 				hdr.Response.HeaderOps,
+				hdr.Response,
 				field,
 				value,
 				replacement,
-				hdr.Response,
-			); err != nil {
+			)
+			if err != nil {
 				return nil, h.Err(err.Error())
 			}
-			if len(hdr.Response.HeaderOps.Delete) > 0 {
-				hdr.Response.Deferred = true
-			}
+			handlers = append(handlers, hdr)
 		}
 
 		// if not, they should be in a block
 		for h.NextBlock(0) {
+			hdr := Handler{
+				Response: &RespHeaderOps{
+					HeaderOps: &HeaderOps{},
+				},
+			}
+
 			field := h.Val()
 			if field == "defer" {
-				hdr.Response.Deferred = true
+				deferred = true
 				continue
 			}
 			if hasArgs {
@@ -103,23 +111,30 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			if h.NextArg() {
 				replacement = h.Val()
 			}
-			makeResponseOps()
-			if err := applyCaddyfileHeaderOp(
+			err := applyHeaderOp(
 				hdr.Response.HeaderOps,
+				hdr.Response,
 				field,
 				value,
 				replacement,
-				hdr.Response,
-			); err != nil {
+			)
+			if err != nil {
 				return nil, h.Err(err.Error())
 			}
-			if len(hdr.Response.HeaderOps.Delete) > 0 {
-				hdr.Response.Deferred = true
-			}
+			handlers = append(handlers, hdr)
 		}
 	}
 
-	return hdr, nil
+	configValues := make([]httpcaddyfile.ConfigValue, 0, len(handlers))
+	for _, hdr := range handlers {
+		if deferred {
+			hdr.Response.Deferred = true
+		}
+
+		configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
+	}
+
+	return configValues, nil
 }
 
 // parseReqHdrCaddyfile sets up the handler for request headers
@@ -127,13 +142,23 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //     request_header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]]
 //
-func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	hdr := new(Handler)
+func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	matcherSet, err := httpcaddyfile.ParseMatcher(h)
+	if err != nil {
+		return nil, err
+	}
+
+	configValues := []httpcaddyfile.ConfigValue{}
+
 	for h.Next() {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
 		field := h.Val()
+
+		hdr := Handler{
+			Request: &HeaderOps{},
+		}
 
 		// sometimes it is habitual for users to suffix a field name with a colon,
 		// as if they were writing a curl command or something; see
@@ -158,11 +183,13 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 			return nil, h.Err(err.Error())
 		}
 
+		configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
+
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
 	}
-	return hdr, nil
+	return configValues, nil
 }
 
 // CaddyfileHeaderOp applies a new header operation according to
@@ -174,10 +201,10 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 // complete the substring replacement; in that case, any + or -
 // prefix to field will be ignored.
 func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) error {
-	return applyCaddyfileHeaderOp(ops, field, value, replacement, nil)
+	return applyHeaderOp(ops, nil, field, value, replacement)
 }
 
-func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, respHeaderOps *RespHeaderOps) error {
+func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, replacement string) error {
 	if strings.HasPrefix(field, "+") {
 		if ops.Add == nil {
 			ops.Add = make(http.Header)
@@ -185,6 +212,9 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 		ops.Add.Set(field[1:], value)
 	} else if strings.HasPrefix(field, "-") {
 		ops.Delete = append(ops.Delete, field[1:])
+		if respHeaderOps != nil {
+			respHeaderOps.Deferred = true
+		}
 	} else if strings.HasPrefix(field, "?") {
 		if respHeaderOps == nil {
 			return fmt.Errorf("%v: %w", field, errBadOperation)
@@ -192,7 +222,9 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 
 		if respHeaderOps.Require == nil {
 			respHeaderOps.Require = &caddyhttp.ResponseMatcher{
-				Headers: make(http.Header, 1),
+				Headers: map[string][]string{
+					field[1:]: nil,
+				},
 			}
 		}
 		respHeaderOps.Require.Headers[field[1:]] = nil
@@ -201,25 +233,23 @@ func applyCaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string, re
 			ops.Add = make(http.Header)
 		}
 		ops.Add.Set(field[1:], value)
-	} else {
-		if replacement == "" {
-			if ops.Set == nil {
-				ops.Set = make(http.Header)
-			}
-			ops.Set.Set(field, value)
-		} else {
-			if ops.Replace == nil {
-				ops.Replace = make(map[string][]Replacement)
-			}
-			field = strings.TrimLeft(field, "+-?")
-			ops.Replace[field] = append(
-				ops.Replace[field],
-				Replacement{
-					SearchRegexp: value,
-					Replace:      replacement,
-				},
-			)
+	} else if replacement == "" {
+		if ops.Set == nil {
+			ops.Set = make(http.Header)
 		}
+		ops.Set.Set(field, value)
+	} else {
+		if ops.Replace == nil {
+			ops.Replace = make(map[string][]Replacement)
+		}
+		field = strings.TrimLeft(field, "+-?")
+		ops.Replace[field] = append(
+			ops.Replace[field],
+			Replacement{
+				SearchRegexp: value,
+				Replace:      replacement,
+			},
+		)
 	}
 
 	return nil
