@@ -195,14 +195,18 @@ func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority
 		issuerKey = ca.IntermediateKey()
 	}
 
-	auth, err := authority.NewEmbedded(
+	opts := []authority.Option{
 		authority.WithConfig(&authority.Config{
 			AuthorityConfig: authorityConfig.AuthConfig,
 		}),
 		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
 		authority.WithX509RootCerts(rootCert),
-		authority.WithDatabase(*authorityConfig.DB),
-	)
+	}
+	// Add a database if we have one
+	if authorityConfig.DB != nil {
+		opts = append(opts, authority.WithDatabase(*authorityConfig.DB))
+	}
+	auth, err := authority.NewEmbedded(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("initializing certificate authority: %v", err)
 	}
