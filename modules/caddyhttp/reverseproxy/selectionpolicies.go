@@ -418,7 +418,9 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 	return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
 }
 
-// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+// lb_policy cookie [<name> [<secret>]]
+// By default name is `lb`
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	args := d.RemainingArgs()
 	switch len(args) {
