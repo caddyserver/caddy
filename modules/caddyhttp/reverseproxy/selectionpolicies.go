@@ -394,9 +394,6 @@ func (CookieHashSelection) CaddyModule() caddy.ModuleInfo {
 
 // Select returns an available host, if any.
 func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
-	if s.Secret == "" {
-		s.Secret = "caddysecret"
-	}
 	if s.Name == "" {
 		s.Name = "lb"
 	}
