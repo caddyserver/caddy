@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -104,7 +105,6 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 
 	database, err := ash.openDatabase()
 	if err != nil {
-		ash.logger.Error("Could not initialize CA database")
 		return err
 	}
 
@@ -159,7 +159,11 @@ func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 }
 
 func (ash Handler) getDatabaseKey() string {
-	return ash.CA
+	key := ash.CA
+	key = strings.ToLower(key)
+	key = strings.TrimSpace(key)
+	cleaner := regexp.MustCompile(`[^\w.-_]`)
+	return cleaner.ReplaceAllLiteralString(key, "")
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle databases.
@@ -167,10 +171,10 @@ func (ash Handler) Cleanup() error {
 	key := ash.getDatabaseKey()
 	deleted, err := databasePool.Delete(key)
 	if deleted {
-		ash.logger.Debug("unloading unused database", zap.String("caID", key))
+		ash.logger.Debug("unloading unused CA database", zap.String("db_key", key))
 	}
 	if err != nil {
-		ash.logger.Error("closing closing database", zap.String("caID", key), zap.Error(err))
+		ash.logger.Error("closing CA database", zap.String("db_key", key), zap.Error(err))
 	}
 	return err
 }
@@ -183,7 +187,7 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 
 		err := os.MkdirAll(dbFolder, 0755)
 		if err != nil {
-			return nil, fmt.Errorf("making folder for ACME server database: %v", err)
+			return nil, fmt.Errorf("making folder for CA database: %v", err)
 		}
 
 		dbConfig := &db.Config{
@@ -195,7 +199,7 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 	})
 
 	if loaded {
-		ash.logger.Debug("Loaded preexisting CA DB", zap.String("caID", key))
+		ash.logger.Debug("loaded preexisting CA database", zap.String("db_key", key))
 	}
 
 	return database.(databaseCloser).DB, err
