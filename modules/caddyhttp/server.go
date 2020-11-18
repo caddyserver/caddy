@@ -247,6 +247,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				zap.String("msg", errMsg),
 			}, errFields...)
 			logger.Error("error handling handler error", errFields...)
+			if handlerErr, ok := err.(HandlerError); ok {
+				w.WriteHeader(handlerErr.StatusCode)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 		}
 	} else {
 		if errStatus >= 500 {
