@@ -380,7 +380,7 @@ func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
 	Name string `json:"name,omitempty"`
-	// Secret to hash (Hmac256) choosen upstream in cookie
+	// Secret to hash (Hmac256) chosen upstream in cookie
 	Secret string `json:"secret,omitempty"`
 }
 
@@ -419,7 +419,8 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
-// lb_policy cookie [<name> [<secret>]]
+//     lb_policy cookie [<name> [<secret>]]
+//
 // By default name is `lb`
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	args := d.RemainingArgs()
@@ -436,7 +437,7 @@ func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Select a new Host using RandomChoose () and add a sticky session cookie
+// Select a new Host randomly and add a sticky session cookie
 func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWriter, cookieSecret string, cookieName string) *Upstream {
 	randomHost := selectRandomHost(pool)
 
