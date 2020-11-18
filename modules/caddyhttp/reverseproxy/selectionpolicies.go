@@ -59,23 +59,7 @@ func (RandomSelection) CaddyModule() caddy.ModuleInfo {
 
 // Select returns an available host, if any.
 func (r RandomSelection) Select(pool UpstreamPool, request *http.Request, _ http.ResponseWriter) *Upstream {
-	// use reservoir sampling because the number of available
-	// hosts isn't known: https://en.wikipedia.org/wiki/Reservoir_sampling
-	var randomHost *Upstream
-	var count int
-	for _, upstream := range pool {
-		if !upstream.Available() {
-			continue
-		}
-		// (n % 1 == 0) holds for all n, therefore a
-		// upstream will always be chosen if there is at
-		// least one available
-		count++
-		if (weakrand.Int() % count) == 0 {
-			randomHost = upstream
-		}
-	}
-	return randomHost
+	return selectRandomHost(pool)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
@@ -455,20 +439,7 @@ func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Select a new Host using RandomChoose () and add a sticky session cookie
 func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWriter, cookieSecret string, cookieName string) *Upstream {
-	var randomHost *Upstream
-	var count int
-	for _, upstream := range pool {
-		if !upstream.Available() {
-			continue
-		}
-		// (n % 1 == 0) holds for all n, therefore a
-		// upstream will always be chosen if there is at
-		// least one available
-		count++
-		if (weakrand.Int() % count) == 0 {
-			randomHost = upstream
-		}
-	}
+	randomHost := selectRandomHost(pool)
 
 	if randomHost != nil {
 		// Hash (HMAC with some key for privacy) the upstream.Dial string as the cookie value
@@ -489,6 +460,27 @@ func hashCookie(secret string, data string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// selectRandomHost returns a random available host
+func selectRandomHost(pool []*Upstream) *Upstream {
+	// use reservoir sampling because the number of available
+	// hosts isn't known: https://en.wikipedia.org/wiki/Reservoir_sampling
+	var randomHost *Upstream
+	var count int
+	for _, upstream := range pool {
+		if !upstream.Available() {
+			continue
+		}
+		// (n % 1 == 0) holds for all n, therefore a
+		// upstream will always be chosen if there is at
+		// least one available
+		count++
+		if (weakrand.Int() % count) == 0 {
+			randomHost = upstream
+		}
+	}
+	return randomHost
 }
 
 // leastRequests returns the host with the
