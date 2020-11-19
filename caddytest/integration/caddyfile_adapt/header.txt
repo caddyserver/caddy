@@ -4,7 +4,7 @@
 	header ?John "von Neumann"
 	header -Wolfram
 	header {
-		Grace "Hopper"
+		Grace: "Hopper"  # some users habitually suffix field names with a colon
 		+Ray "Solomonoff"
 		?Tim "Berners-Lee"
 		defer
@@ -45,15 +45,15 @@
 								{
 									"handler": "headers",
 									"response": {
-										"add": {
-											"John": [
-												"von Neumann"
-											]
-										},
 										"require": {
 											"headers": {
 												"John": null
 											}
+										},
+										"set": {
+											"John": [
+												"von Neumann"
+											]
 										}
 									}
 								},
@@ -69,6 +69,11 @@
 								{
 									"handler": "headers",
 									"response": {
+										"add": {
+											"Ray": [
+												"Solomonoff"
+											]
+										},
 										"deferred": true,
 										"set": {
 											"Grace": [
@@ -80,27 +85,15 @@
 								{
 									"handler": "headers",
 									"response": {
-										"add": {
-											"Ray": [
-												"Solomonoff"
-											]
-										},
-										"deferred": true
-									}
-								},
-								{
-									"handler": "headers",
-									"response": {
-										"add": {
-											"Tim": [
-												"Berners-Lee"
-											]
-										},
-										"deferred": true,
 										"require": {
 											"headers": {
 												"Tim": null
 											}
+										},
+										"set": {
+											"Tim": [
+												"Berners-Lee"
+											]
 										}
 									}
 								}

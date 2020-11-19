@@ -15,9 +15,9 @@
 package headers
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -28,10 +28,6 @@ func init() {
 	httpcaddyfile.RegisterDirective("header", parseCaddyfile)
 	httpcaddyfile.RegisterDirective("request_header", parseReqHdrCaddyfile)
 }
-
-// errBadOperation is returned when trying to use a header operation in an inappropriate context.
-// For instance, when trying to use "?" operation (set default) with "header_down".
-var errBadOperation = errors.New("this header operation cannot be used here")
 
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
@@ -46,26 +42,28 @@ var errBadOperation = errors.New("this header operation cannot be used here")
 // Either a block can be opened or a single header field can be configured
 // in the first line, but not both in the same directive. Header operations
 // are deferred to write-time if any headers are being deleted or if the
-// 'defer' subdirective is used.
+// 'defer' subdirective is used. + appends a header value, - deletes a field,
+// and ? conditionally sets a value only if the header field is not already
+// set.
 func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	matcherSet, err := httpcaddyfile.ParseMatcher(h)
+	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
 	}
 
-	deferred := false
-	handlers := []Handler{}
+	makeHandler := func() Handler {
+		return Handler{
+			Response: &RespHeaderOps{
+				HeaderOps: &HeaderOps{},
+			},
+		}
+	}
+	handler, handlerWithRequire := makeHandler(), makeHandler()
 
 	for h.Next() {
 		// first see if headers are in the initial line
 		var hasArgs bool
 		if h.NextArg() {
-			hdr := Handler{
-				Response: &RespHeaderOps{
-					HeaderOps: &HeaderOps{},
-				},
-			}
-
 			hasArgs = true
 			field := h.Val()
 			var value, replacement string
@@ -76,8 +74,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				replacement = h.Val()
 			}
 			err := applyHeaderOp(
-				hdr.Response.HeaderOps,
-				hdr.Response,
+				handler.Response.HeaderOps,
+				handler.Response,
 				field,
 				value,
 				replacement,
@@ -85,25 +83,27 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			if err != nil {
 				return nil, h.Err(err.Error())
 			}
-			handlers = append(handlers, hdr)
+			if len(handler.Response.HeaderOps.Delete) > 0 {
+				handler.Response.Deferred = true
+			}
 		}
 
 		// if not, they should be in a block
 		for h.NextBlock(0) {
-			hdr := Handler{
-				Response: &RespHeaderOps{
-					HeaderOps: &HeaderOps{},
-				},
-			}
-
 			field := h.Val()
 			if field == "defer" {
-				deferred = true
+				handler.Response.Deferred = true
 				continue
 			}
 			if hasArgs {
-				return nil, h.Err("cannot specify headers in both arguments and block")
+				return nil, h.Err("cannot specify headers in both arguments and block") // because it would be weird
 			}
+
+			// sometimes it is habitual for users to suffix a field name with a colon,
+			// as if they were writing a curl command or something; see
+			// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349
+			field = strings.TrimSuffix(field, ":")
+
 			var value, replacement string
 			if h.NextArg() {
 				value = h.Val()
@@ -111,9 +111,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			if h.NextArg() {
 				replacement = h.Val()
 			}
+
+			handlerToUse := handler
+			if strings.HasPrefix(field, "?") {
+				handlerToUse = handlerWithRequire
+			}
+
 			err := applyHeaderOp(
-				hdr.Response.HeaderOps,
-				hdr.Response,
+				handlerToUse.Response.HeaderOps,
+				handlerToUse.Response,
 				field,
 				value,
 				replacement,
@@ -121,17 +127,15 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			if err != nil {
 				return nil, h.Err(err.Error())
 			}
-			handlers = append(handlers, hdr)
 		}
 	}
 
-	configValues := make([]httpcaddyfile.ConfigValue, 0, len(handlers))
-	for _, hdr := range handlers {
-		if deferred {
-			hdr.Response.Deferred = true
-		}
-
-		configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
+	var configValues []httpcaddyfile.ConfigValue
+	if !reflect.DeepEqual(handler, makeHandler()) {
+		configValues = append(configValues, h.NewRoute(matcherSet, handler)...)
+	}
+	if !reflect.DeepEqual(handlerWithRequire, makeHandler()) {
+		configValues = append(configValues, h.NewRoute(matcherSet, handlerWithRequire)...)
 	}
 
 	return configValues, nil
@@ -140,10 +144,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 // parseReqHdrCaddyfile sets up the handler for request headers
 // from Caddyfile tokens. Syntax:
 //
-//     request_header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]]
+//     request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
 //
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	matcherSet, err := httpcaddyfile.ParseMatcher(h)
+	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
 	}
@@ -205,40 +209,36 @@ func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) error {
 }
 
 func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, replacement string) error {
-	if strings.HasPrefix(field, "+") {
+	switch {
+	case strings.HasPrefix(field, "+"): // append
 		if ops.Add == nil {
 			ops.Add = make(http.Header)
 		}
 		ops.Add.Set(field[1:], value)
-	} else if strings.HasPrefix(field, "-") {
+
+	case strings.HasPrefix(field, "-"): // delete
 		ops.Delete = append(ops.Delete, field[1:])
 		if respHeaderOps != nil {
 			respHeaderOps.Deferred = true
 		}
-	} else if strings.HasPrefix(field, "?") {
-		if respHeaderOps == nil {
-			return fmt.Errorf("%v: %w", field, errBadOperation)
-		}
 
+	case strings.HasPrefix(field, "?"): // default (conditional on not existing) - response headers only
+		if respHeaderOps == nil {
+			return fmt.Errorf("%v: the default header modifier ('?') can only be used on response headers; for conditional manipulation of request headers, use matchers", field)
+		}
 		if respHeaderOps.Require == nil {
 			respHeaderOps.Require = &caddyhttp.ResponseMatcher{
-				Headers: map[string][]string{
-					field[1:]: nil,
-				},
+				Headers: make(http.Header),
 			}
 		}
-		respHeaderOps.Require.Headers[field[1:]] = nil
+		field = strings.TrimPrefix(field, "?")
+		respHeaderOps.Require.Headers[field] = nil
+		if respHeaderOps.Set == nil {
+			respHeaderOps.Set = make(http.Header)
+		}
+		respHeaderOps.Set.Set(field, value)
 
-		if ops.Add == nil {
-			ops.Add = make(http.Header)
-		}
-		ops.Add.Set(field[1:], value)
-	} else if replacement == "" {
-		if ops.Set == nil {
-			ops.Set = make(http.Header)
-		}
-		ops.Set.Set(field, value)
-	} else {
+	case replacement != "": // replace
 		if ops.Replace == nil {
 			ops.Replace = make(map[string][]Replacement)
 		}
@@ -250,6 +250,12 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 				Replace:      replacement,
 			},
 		)
+
+	default: // set (overwrite)
+		if ops.Set == nil {
+			ops.Set = make(http.Header)
+		}
+		ops.Set.Set(field, value)
 	}
 
 	return nil

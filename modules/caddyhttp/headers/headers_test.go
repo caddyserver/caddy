@@ -83,7 +83,7 @@ func TestHandler(t *testing.T) {
 			handler: Handler{
 				Request: &HeaderOps{
 					Replace: map[string][]Replacement{
-						"Best-Server": []Replacement{
+						"Best-Server": {
 							Replacement{
 								Search:  "NGINX",
 								Replace: "the Caddy web server",
