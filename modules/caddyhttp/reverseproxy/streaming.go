@@ -32,7 +32,9 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 	if reqUpType != resUpType {
-		h.logger.Sugar().Debugf("backend tried to switch protocol %q when %q was requested", resUpType, reqUpType)
+		h.logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
+			zap.String("backend_upgrade", resUpType),
+			zap.String("requested_upgrade", reqUpType))
 		return
 	}
 
