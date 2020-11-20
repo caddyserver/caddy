@@ -1,0 +1,107 @@
+:80 {
+	header Denis "Ritchie"
+	header +Edsger "Dijkstra"
+	header ?John "von Neumann"
+	header -Wolfram
+	header {
+		Grace: "Hopper"  # some users habitually suffix field names with a colon
+		+Ray "Solomonoff"
+		?Tim "Berners-Lee"
+		defer
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"set": {
+											"Denis": [
+												"Ritchie"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Edsger": [
+												"Dijkstra"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"require": {
+											"headers": {
+												"John": null
+											}
+										},
+										"set": {
+											"John": [
+												"von Neumann"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"delete": [
+											"Wolfram"
+										]
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Ray": [
+												"Solomonoff"
+											]
+										},
+										"deferred": true,
+										"set": {
+											"Grace": [
+												"Hopper"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"require": {
+											"headers": {
+												"Tim": null
+											}
+										},
+										"set": {
+											"Tim": [
+												"Berners-Lee"
+											]
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
