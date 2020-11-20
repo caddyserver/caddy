@@ -529,15 +529,15 @@ func TestEnvironmentReplacement(t *testing.T) {
 			expect: "$FOOBAR", // should not chain env expands
 		},
 		{
-			input:  "{$FOO??default}",
+			input:  "{$FOO:default}",
 			expect: "default",
 		},
 		{
-			input:  "foo{$BAR??bar}baz",
+			input:  "foo{$BAR:bar}baz",
 			expect: "foobarbaz",
 		},
 		{
-			input:  "foo{$BAR??$FOOBAR}baz",
+			input:  "foo{$BAR:$FOOBAR}baz",
 			expect: "foo$FOOBARbaz", // should not chain env expands
 		},
 		{

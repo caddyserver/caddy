@@ -560,5 +560,5 @@ func (s Segment) Directive() string {
 // contain the name of an environment variable.
 var (
 	spanOpen, spanClose    = []byte{'{', '$'}, []byte{'}'}
-	envVarDefaultDelimiter = "??"
+	envVarDefaultDelimiter = ":"
 )
