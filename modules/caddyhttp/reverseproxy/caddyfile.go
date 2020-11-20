@@ -570,7 +570,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// if the scheme inferred from the backends' addresses is
 	// HTTPS, we will need a non-nil transport to enable TLS,
 	// or if H2C, to set the transport versions.
-	if commonScheme == "https" || commonScheme == "h2c" && transport == nil {
+	if (commonScheme == "https" || commonScheme == "h2c") && transport == nil {
 		transport = new(HTTPTransport)
 		transportModuleName = "http"
 	}
