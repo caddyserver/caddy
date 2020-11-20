@@ -33,8 +33,9 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 	if reqUpType != resUpType {
-		// TODO: figure out our own error handling
-		// p.getErrorHandler()(rw, req, fmt.Errorf("backend tried to switch protocol %q when %q was requested", resUpType, reqUpType))
+		h.logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
+			zap.String("backend_upgrade", resUpType),
+			zap.String("requested_upgrade", reqUpType))
 		return
 	}
 
@@ -42,12 +43,12 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 
 	hj, ok := rw.(http.Hijacker)
 	if !ok {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw))
+		h.logger.Sugar().Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw)
 		return
 	}
 	backConn, ok := res.Body.(io.ReadWriteCloser)
 	if !ok {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("internal error: 101 switching protocols response with non-writable body"))
+		h.logger.Error("internal error: 101 switching protocols response with non-writable body")
 		return
 	}
 
@@ -66,17 +67,17 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("Hijack failed on protocol switch: %v", err))
+		h.logger.Error("Hijack failed on protocol switch", zap.Error(err))
 		return
 	}
 	defer conn.Close()
 	res.Body = nil // so res.Write only writes the headers; we have res.Body in backConn above
 	if err := res.Write(brw); err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("response write: %v", err))
+		h.logger.Debug("response write", zap.Error(err))
 		return
 	}
 	if err := brw.Flush(); err != nil {
-		// p.getErrorHandler()(rw, req, fmt.Errorf("response flush: %v", err))
+		h.logger.Debug("response flush", zap.Error(err))
 		return
 	}
 	errc := make(chan error, 1)
