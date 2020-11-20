@@ -28,10 +28,10 @@ import (
 
 // serverOptions collects server config overrides parsed from Caddyfile global options
 type serverOptions struct {
-	// If set, will only apply to servers that contain a listener
-	// address that matches. If empty, will apply to all servers.
-	// Only the most specific one will apply.
-	ListenerMatcher string
+	// If set, will only apply these options to servers that contain a
+	// listener address that matches exactly. If empty, will apply to all
+	// servers that were not already matched by another serverOptions.
+	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
 	ListenerWrappersRaw []json.RawMessage
@@ -49,7 +49,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error
 	serverOpts := serverOptions{}
 	for d.Next() {
 		if d.NextArg() {
-			serverOpts.ListenerMatcher = d.Val()
+			serverOpts.ListenerAddress = d.Val()
 			if d.NextArg() {
 				return nil, d.ArgErr()
 			}
@@ -214,11 +214,11 @@ func applyServerOptions(servers map[string]*caddyhttp.Server, options map[string
 		// find the options that apply to this server
 		opts := func() *serverOptions {
 			for _, entry := range serverOpts {
-				if entry.ListenerMatcher == "" {
+				if entry.ListenerAddress == "" {
 					return &entry
 				}
 				for _, listener := range server.Listen {
-					if entry.ListenerMatcher == listener {
+					if entry.ListenerAddress == listener {
 						return &entry
 					}
 				}

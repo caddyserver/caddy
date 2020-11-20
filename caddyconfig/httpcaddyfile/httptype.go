@@ -343,19 +343,19 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		options[opt] = val
 	}
 
-	// If we got "servers" options, we'll sort them by their listener matchers
+	// If we got "servers" options, we'll sort them by their listener address
 	if serverOpts, ok := options["servers"].([]serverOptions); ok {
 		sort.Slice(serverOpts, func(i, j int) bool {
-			return len(serverOpts[i].ListenerMatcher) > len(serverOpts[j].ListenerMatcher)
+			return len(serverOpts[i].ListenerAddress) > len(serverOpts[j].ListenerAddress)
 		})
 
-		// Reject the config if there are duplicate listener matchers
+		// Reject the config if there are duplicate listener address
 		seen := make(map[string]bool)
 		for _, entry := range serverOpts {
-			if _, alreadySeen := seen[entry.ListenerMatcher]; alreadySeen {
-				return nil, fmt.Errorf("cannot have 'servers' global options with duplicate listener matchers: %s", entry.ListenerMatcher)
+			if _, alreadySeen := seen[entry.ListenerAddress]; alreadySeen {
+				return nil, fmt.Errorf("cannot have 'servers' global options with duplicate listener addresses: %s", entry.ListenerAddress)
 			}
-			seen[entry.ListenerMatcher] = true
+			seen[entry.ListenerAddress] = true
 		}
 	}
 
