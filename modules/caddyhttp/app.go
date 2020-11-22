@@ -363,6 +363,7 @@ func (app *App) Start() error {
 								ErrorLog:  serverLogger,
 							},
 						}
+						//nolint:errcheck
 						go h3srv.Serve(h3ln)
 						app.h3servers = append(app.h3servers, h3srv)
 						app.h3listeners = append(app.h3listeners, h3ln)
@@ -391,6 +392,7 @@ func (app *App) Start() error {
 					zap.Bool("tls", useTLS),
 				)
 
+				//nolint:errcheck
 				go s.Serve(ln)
 				app.servers = append(app.servers, s)
 			}

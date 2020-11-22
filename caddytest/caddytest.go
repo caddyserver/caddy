@@ -124,10 +124,10 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 				return
 			}
 			defer res.Body.Close()
-			body, err := ioutil.ReadAll(res.Body)
+			body, _ := ioutil.ReadAll(res.Body)
 
 			var out bytes.Buffer
-			json.Indent(&out, body, "", "  ")
+			_ = json.Indent(&out, body, "", "  ")
 			tc.t.Logf("----------- failed with config -----------\n%s", out.String())
 		}
 	})
@@ -221,10 +221,11 @@ func isCaddyAdminRunning() error {
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
-	_, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 	if err != nil {
 		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
 	}
+	resp.Body.Close()
 
 	return nil
 }
@@ -272,7 +273,7 @@ func CreateTestingTransport() *http.Transport {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 	}
 }
 

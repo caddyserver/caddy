@@ -398,7 +398,10 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(apiErr.Code)
-	json.NewEncoder(w).Encode(apiErr)
+	encErr := json.NewEncoder(w).Encode(apiErr)
+	if encErr != nil {
+		Log().Named("admin.api").Error("failed to encode error response", zap.Error(encErr))
+	}
 }
 
 // checkHost returns a handler that wraps next such that
@@ -838,7 +841,7 @@ var (
 // will get deleted before the process gracefully exits.
 func PIDFile(filename string) error {
 	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	err := ioutil.WriteFile(filename, pid, 0644)
+	err := ioutil.WriteFile(filename, pid, 0600)
 	if err != nil {
 		return err
 	}

@@ -96,7 +96,7 @@ func cmdStart(fl Flags) (int, error) {
 	// started yet, and writing synchronously would result
 	// in a deadlock
 	go func() {
-		stdinpipe.Write(expect)
+		_, _ = stdinpipe.Write(expect)
 		stdinpipe.Close()
 	}()
 

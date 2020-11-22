@@ -263,7 +263,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	}
 	defer func() {
 		// drain any remaining body so connection could be re-used
-		io.Copy(ioutil.Discard, body)
+		_, _ = io.Copy(ioutil.Discard, body)
 		resp.Body.Close()
 	}()
 

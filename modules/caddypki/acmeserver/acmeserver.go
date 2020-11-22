@@ -132,11 +132,11 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return err
 	}
 
-	acmeAuth, err := acme.NewAuthority(
-		auth.GetDatabase().(nosql.DB),     // stores all the server state
-		ash.Host,                          // used for directory links; TODO: not needed
-		strings.Trim(ash.PathPrefix, "/"), // used for directory links
-		auth)                              // configures the signing authority
+	acmeAuth, err := acme.New(auth, acme.AuthorityOptions{
+		DB:     auth.GetDatabase().(nosql.DB),     // stores all the server state
+		DNS:    ash.Host,                          // used for directory links; TODO: not needed
+		Prefix: strings.Trim(ash.PathPrefix, "/"), // used for directory links
+	})
 	if err != nil {
 		return err
 	}

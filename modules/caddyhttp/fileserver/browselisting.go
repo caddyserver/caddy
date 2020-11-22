@@ -30,10 +30,8 @@ import (
 func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl *caddy.Replacer) browseListing {
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	var (
-		fileInfos           []fileInfo
-		dirCount, fileCount int
-	)
+	var dirCount, fileCount int
+	fileInfos := []fileInfo{}
 
 	for _, f := range files {
 		name := f.Name()
@@ -109,10 +107,8 @@ type browseListing struct {
 // Breadcrumbs returns l.Path where every element maps
 // the link to the text to display.
 func (l browseListing) Breadcrumbs() []crumb {
-	var result []crumb
-
 	if len(l.Path) == 0 {
-		return result
+		return []crumb{}
 	}
 
 	// skip trailing slash
@@ -122,13 +118,13 @@ func (l browseListing) Breadcrumbs() []crumb {
 	}
 
 	parts := strings.Split(lpath, "/")
-	for i := range parts {
-		txt := parts[i]
-		if i == 0 && parts[i] == "" {
-			txt = "/"
+	result := make([]crumb, len(parts))
+	for i, p := range parts {
+		if i == 0 && p == "" {
+			p = "/"
 		}
 		lnk := strings.Repeat("../", len(parts)-i-1)
-		result = append(result, crumb{Link: lnk, Text: txt})
+		result[i] = crumb{Link: lnk, Text: p}
 	}
 
 	return result

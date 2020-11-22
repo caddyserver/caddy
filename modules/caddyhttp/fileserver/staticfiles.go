@@ -249,7 +249,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		w.WriteHeader(statusCode)
 		if r.Method != http.MethodHead {
-			io.Copy(w, file)
+			_, _ = io.Copy(w, file)
 		}
 		return nil
 	}
@@ -278,6 +278,7 @@ func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.Fi
 		}
 		// maybe the server is under load and ran out of file descriptors?
 		// have client wait arbitrary seconds to help prevent a stampede
+		//nolint:gosec
 		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		return nil, caddyhttp.Error(http.StatusServiceUnavailable, err)

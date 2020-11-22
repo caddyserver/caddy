@@ -356,7 +356,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	}
 
 	// begin building the final config values
-	var configVals []ConfigValue
+	configVals := []ConfigValue{}
 
 	// certificate loaders
 	if len(fileLoader) > 0 {

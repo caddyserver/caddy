@@ -458,7 +458,7 @@ func (cl *CustomLog) buildCore() {
 		if cl.Sampling.Thereafter == 0 {
 			cl.Sampling.Thereafter = 100
 		}
-		c = zapcore.NewSampler(c, cl.Sampling.Interval,
+		c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
 			cl.Sampling.First, cl.Sampling.Thereafter)
 	}
 	cl.core = c

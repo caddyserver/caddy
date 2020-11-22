@@ -80,6 +80,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	}
 
 	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 			// filter policies by SNI first, if possible, to speed things up
 			// when there may be lots of policies

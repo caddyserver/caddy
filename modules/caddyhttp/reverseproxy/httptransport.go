@@ -173,6 +173,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 		dialer.Resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				//nolint:gosec
 				addr := h.Resolver.netAddrs[weakrand.Intn(len(h.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
