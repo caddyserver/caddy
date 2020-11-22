@@ -147,7 +147,7 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 func (s *Provider) getSTEK() (distributedSTEK, error) {
 	err := s.storage.Lock(s.ctx, stekLockName)
 	if err != nil {
-		return distributedSTEK{}, fmt.Errorf("failed to acquire storage lock: %w", err)
+		return distributedSTEK{}, fmt.Errorf("failed to acquire storage lock: %v", err)
 	}
 
 	//nolint:errcheck
