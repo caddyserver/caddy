@@ -236,6 +236,7 @@ func watchConfigFile(filename, adapterName string) {
 	}
 
 	// begin poller
+	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
 		// get the file info
 		info, err := os.Stat(filename)

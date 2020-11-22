@@ -242,13 +242,6 @@ func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
 	return c.writeRecord(BeginRequest, b[:])
 }
 
-func (c *FCGIClient) writeEndRequest(appStatus int, protocolStatus uint8) error {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint32(b, uint32(appStatus))
-	b[4] = protocolStatus
-	return c.writeRecord(EndRequest, b)
-}
-
 func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
 	w := newWriter(c, recType)
 	b := make([]byte, 8)

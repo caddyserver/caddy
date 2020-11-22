@@ -122,6 +122,7 @@ var SupportedProtocols = map[string]uint16{
 // unsupportedProtocols is a map of unsupported protocols.
 // Used for logging only, not enforcement.
 var unsupportedProtocols = map[string]uint16{
+	//nolint:staticcheck
 	"ssl3.0": tls.VersionSSL30,
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,

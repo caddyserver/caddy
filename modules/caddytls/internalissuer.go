@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/certmagic"
 	"github.com/smallstep/certificates/authority/provisioner"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -51,7 +52,8 @@ type InternalIssuer struct {
 	// validate certificate chains.
 	SignWithRoot bool `json:"sign_with_root,omitempty"`
 
-	ca *caddypki.CA
+	ca     *caddypki.CA
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -64,6 +66,8 @@ func (InternalIssuer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the issuer.
 func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
+	iss.logger = ctx.Logger(iss)
+
 	// get a reference to the configured CA
 	appModule, err := ctx.App("pki")
 	if err != nil {
@@ -115,11 +119,15 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 	// ensure issued certificate does not expire later than its issuer
 	lifetime := time.Duration(iss.Lifetime)
 	if time.Now().Add(lifetime).After(issuerCert.NotAfter) {
-		// TODO: log this
-		lifetime = issuerCert.NotAfter.Sub(time.Now())
+		lifetime = time.Until(issuerCert.NotAfter)
+		iss.logger.Warn("cert lifetime would exceed issuer NotAfter, clamping lifetime",
+			zap.Duration("orig_lifetime", time.Duration(iss.Lifetime)),
+			zap.Duration("lifetime", lifetime),
+			zap.Time("not_after", issuerCert.NotAfter),
+		)
 	}
 
-	certChain, err := auth.Sign(csr, provisioner.SignOptions{}, customCertLifetime(iss.Lifetime))
+	certChain, err := auth.Sign(csr, provisioner.SignOptions{}, customCertLifetime(caddy.Duration(lifetime)))
 	if err != nil {
 		return nil, err
 	}

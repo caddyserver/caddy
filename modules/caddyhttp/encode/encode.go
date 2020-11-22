@@ -262,7 +262,7 @@ func acceptedEncodings(r *http.Request) []string {
 		return []string{}
 	}
 
-	var prefs []encodingPreference
+	prefs := []encodingPreference{}
 
 	for _, accepted := range strings.Split(acceptEncHeader, ",") {
 		parts := strings.Split(accepted, ";")

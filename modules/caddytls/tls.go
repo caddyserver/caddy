@@ -498,8 +498,6 @@ var (
 	storageCleanMu sync.Mutex
 )
 
-const automateKey = "automate"
-
 // Interface guards
 var (
 	_ caddy.App          = (*TLS)(nil)

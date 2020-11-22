@@ -523,7 +523,10 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 		// our base/catch-all policy - this will serve the
 		// public-looking names as well as any other names
 		// that don't match any other policy
-		app.tlsApp.AddAutomationPolicy(basePolicy)
+		err := app.tlsApp.AddAutomationPolicy(basePolicy)
+		if err != nil {
+			return err
+		}
 	} else {
 		// a base policy already existed; we might have
 		// changed it, so re-provision it

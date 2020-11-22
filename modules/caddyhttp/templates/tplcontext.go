@@ -270,7 +270,10 @@ func (templateContext) funcMarkdown(input interface{}) (string, error) {
 	buf.Reset()
 	defer bufPool.Put(buf)
 
-	md.Convert([]byte(inputStr), buf)
+	err := md.Convert([]byte(inputStr), buf)
+	if err != nil {
+		return "", err
+	}
 
 	return buf.String(), nil
 }

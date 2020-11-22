@@ -314,7 +314,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		hosts.Delete(upstream.String())
+		_, _ = hosts.Delete(upstream.String())
 	}
 
 	return nil
@@ -339,7 +339,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 		defer bufPool.Put(buf)
-		io.Copy(buf, r.Body)
+		_, _ = io.Copy(buf, r.Body)
 		r.Body.Close()
 		r.Body = ioutil.NopCloser(buf)
 	}
@@ -518,7 +518,8 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
 func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo, next caddyhttp.Handler) error {
-	di.Upstream.Host.CountRequest(1)
+	_ = di.Upstream.Host.CountRequest(1)
+	//nolint:errcheck
 	defer di.Upstream.Host.CountRequest(-1)
 
 	// point the request to this upstream
@@ -742,33 +743,11 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-func cloneHeader(h http.Header) http.Header {
-	h2 := make(http.Header, len(h))
-	for k, vv := range h {
-		vv2 := make([]string, len(vv))
-		copy(vv2, vv)
-		h2[k] = vv2
-	}
-	return h2
-}
-
 func upgradeType(h http.Header) string {
 	if !httpguts.HeaderValuesContainsToken(h["Connection"], "Upgrade") {
 		return ""
 	}
 	return strings.ToLower(h.Get("Upgrade"))
-}
-
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
 }
 
 // removeConnectionHeaders removes hop-by-hop headers listed in the "Connection" header of h.

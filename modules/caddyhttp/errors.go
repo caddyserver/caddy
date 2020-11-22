@@ -16,13 +16,18 @@ package caddyhttp
 
 import (
 	"fmt"
-	mathrand "math/rand"
+	weakrand "math/rand"
 	"path"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func init() {
+	weakrand.Seed(time.Now().UnixNano())
+}
 
 // Error is a convenient way for a Handler to populate the
 // essential fields of a HandlerError. If err is itself a
@@ -92,7 +97,8 @@ func randString(n int, sameCase bool) string {
 	}
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = dict[mathrand.Int63()%int64(len(dict))]
+		//nolint:gosec
+		b[i] = dict[weakrand.Int63()%int64(len(dict))]
 	}
 	return string(b)
 }
