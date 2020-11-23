@@ -187,7 +187,7 @@ func validateServerOptions(options map[string]interface{}) error {
 	}
 
 	if _, ok := options["experimental_http3"]; ok {
-		return errors.New("cannot set 'experimental_http3' while also using 'servers'; please use the 'servers > protocol > experimental_http3' option instead")
+		return fmt.Errorf("cannot set 'experimental_http3' while also using 'servers'; please use the 'servers > protocol > experimental_http3' option instead")
 	}
 
 	return nil

@@ -1,10 +1,10 @@
 {
-    servers {
+	servers {
 		timeouts {
 			idle 90s
 		}
 	}
-    servers :80 {
+	servers :80 {
 		timeouts {
 			idle 60s
 		}
