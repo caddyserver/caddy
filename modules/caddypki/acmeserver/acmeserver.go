@@ -32,6 +32,7 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/nosql"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -77,6 +78,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the ACME server handler.
 func (ash *Handler) Provision(ctx caddy.Context) error {
+	logger := ctx.Logger(ash)
 	// set some defaults
 	if ash.CA == "" {
 		ash.CA = caddypki.DefaultCAID
@@ -99,12 +101,25 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
 	}
 
-	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", "db")
+	dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server")
+	dbPath := filepath.Join(dbFolder, "db")
 
 	// TODO: See https://github.com/smallstep/nosql/issues/7
 	err = os.MkdirAll(dbFolder, 0755)
 	if err != nil {
 		return fmt.Errorf("making folder for ACME server database: %v", err)
+	}
+
+	// Check to see if previous db exists
+	var stat os.FileInfo
+	stat, err = os.Stat(dbPath)
+	if stat != nil && err == nil {
+		// A badger db is found and should be removed
+		if stat.IsDir() {
+			logger.Warn("Found an old badger database and removing it",
+				zap.String("path", dbPath))
+			_ = os.RemoveAll(dbPath)
+		}
 	}
 
 	authorityConfig := caddypki.AuthorityConfig{
@@ -122,8 +137,8 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 			},
 		},
 		DB: &db.Config{
-			Type:       "badger",
-			DataSource: dbFolder,
+			Type:       "bbolt",
+			DataSource: dbPath,
 		},
 	}
 
