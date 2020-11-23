@@ -75,11 +75,6 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		return nil, warnings, err
 	}
 
-	err = validateServerOptions(options)
-	if err != nil {
-		return nil, warnings, err
-	}
-
 	// replace shorthand placeholders (which are
 	// convenient when writing a Caddyfile) with
 	// their actual placeholder identifiers or

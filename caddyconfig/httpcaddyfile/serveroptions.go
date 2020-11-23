@@ -176,22 +176,6 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error
 	return serverOpts, nil
 }
 
-// validateServerOptions checks whether there's a conflict between
-// the configured global options and serverOptions, for backwards-compatibility
-func validateServerOptions(options map[string]interface{}) error {
-	// if we don't have "servers", then no errors to report
-	_, ok := options["servers"].([]serverOptions)
-	if !ok {
-		return nil
-	}
-
-	if _, ok := options["experimental_http3"]; ok {
-		return fmt.Errorf("cannot set 'experimental_http3' while also using 'servers'; please use the 'servers > protocol > experimental_http3' option instead")
-	}
-
-	return nil
-}
-
 // applyServerOptions sets the server options on the appropriate servers
 func applyServerOptions(
 	servers map[string]*caddyhttp.Server,
