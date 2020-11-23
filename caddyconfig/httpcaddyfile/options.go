@@ -43,6 +43,7 @@ func init() {
 	RegisterGlobalOption("local_certs", parseOptTrue)
 	RegisterGlobalOption("key_type", parseOptSingleString)
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
+	RegisterGlobalOption("servers", parseServerOptions)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser) (interface{}, error) {
@@ -360,4 +361,8 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser) (interface{}, error) {
 		return "", d.Errf("auto_https must be either 'off' or 'disable_redirects'")
 	}
 	return val, nil
+}
+
+func parseServerOptions(d *caddyfile.Dispenser) (interface{}, error) {
+	return unmarshalCaddyfileServerOptions(d)
 }

@@ -1,0 +1,62 @@
+{
+	servers {
+		listener_wrappers {
+			tls
+		}
+		timeouts {
+			read_body 30s
+			read_header 30s
+			write 30s
+			idle 30s
+		}
+		max_header_size 100MB
+		protocol {
+			allow_h2c
+			experimental_http3
+			strict_sni_host
+		}
+	}
+}
+
+foo.com {	
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"listener_wrappers": [
+						{
+							"wrapper": "tls"
+						}
+					],
+					"read_timeout": 30000000000,
+					"read_header_timeout": 30000000000,
+					"write_timeout": 30000000000,
+					"idle_timeout": 30000000000,
+					"max_header_bytes": 100000000,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"strict_sni_host": true,
+					"experimental_http3": true,
+					"allow_h2c": true
+				}
+			}
+		}
+	}
+}
