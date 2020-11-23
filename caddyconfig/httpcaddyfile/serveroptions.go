@@ -16,7 +16,6 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
@@ -194,12 +193,17 @@ func validateServerOptions(options map[string]interface{}) error {
 }
 
 // applyServerOptions sets the server options on the appropriate servers
-func applyServerOptions(servers map[string]*caddyhttp.Server, options map[string]interface{}) error {
+func applyServerOptions(
+	servers map[string]*caddyhttp.Server,
+	options map[string]interface{},
+	warnings *[]caddyconfig.Warning,
+) error {
 	// If experimental HTTP/3 is enabled, enable it on each server.
 	// We already know there won't be a conflict with serverOptions because
 	// we validated earlier that "experimental_http3" cannot be set at the same
 	// time as "servers"
 	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "the 'experimental_http3' global option is deprecated, please use the 'servers > protocol > experimental_http3' option instead"})
 		for _, srv := range servers {
 			srv.ExperimentalHTTP3 = true
 		}

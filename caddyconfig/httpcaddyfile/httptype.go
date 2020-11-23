@@ -631,7 +631,7 @@ func (st *ServerType) serversFromPairings(
 		servers[fmt.Sprintf("srv%d", i)] = srv
 	}
 
-	err := applyServerOptions(servers, options)
+	err := applyServerOptions(servers, options, warnings)
 	if err != nil {
 		return nil, err
 	}
