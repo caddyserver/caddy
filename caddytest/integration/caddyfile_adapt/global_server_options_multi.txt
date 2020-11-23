@@ -1,0 +1,83 @@
+{
+	servers {
+		timeouts {
+			idle 90s
+		}
+	}
+	servers :80 {
+		timeouts {
+			idle 60s
+		}
+	}
+	servers :443 {
+		timeouts {
+			idle 30s
+		}
+	}
+}
+
+foo.com {	
+}
+
+http://bar.com {
+}
+
+:8080 {
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"idle_timeout": 30000000000,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"idle_timeout": 60000000000,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"bar.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"bar.com"
+						]
+					}
+				},
+				"srv2": {
+					"listen": [
+						":8080"
+					],
+					"idle_timeout": 90000000000
+				}
+			}
+		}
+	}
+}

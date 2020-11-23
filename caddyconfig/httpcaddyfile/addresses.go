@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -163,6 +164,13 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 
 		sbaddrs = append(sbaddrs, a)
 	}
+
+	// sort them by their first address (we know there will always be at least one)
+	// to avoid problems with non-deterministic ordering (makes tests flaky)
+	sort.Slice(sbaddrs, func(i, j int) bool {
+		return sbaddrs[i].addresses[0] < sbaddrs[j].addresses[0]
+	})
+
 	return sbaddrs
 }
 

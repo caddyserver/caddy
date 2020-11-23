@@ -218,13 +218,6 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		return nil, warnings, err
 	}
 
-	// if experimental HTTP/3 is enabled, enable it on each server
-	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
-		for _, srv := range httpApp.Servers {
-			srv.ExperimentalHTTP3 = true
-		}
-	}
-
 	// extract any custom logs, and enforce configured levels
 	var customLogs []namedCustomLog
 	var hasDefaultLog bool
@@ -311,23 +304,54 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 	}
 
 	for _, segment := range serverBlocks[0].block.Segments {
-		dir := segment.Directive()
+		opt := segment.Directive()
 		var val interface{}
 		var err error
 		disp := caddyfile.NewDispenser(segment)
 
-		dirFunc, ok := registeredGlobalOptions[dir]
+		optFunc, ok := registeredGlobalOptions[opt]
 		if !ok {
 			tkn := segment[0]
-			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, dir)
+			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, opt)
 		}
 
-		val, err = dirFunc(disp)
+		val, err = optFunc(disp)
 		if err != nil {
-			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
+			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 		}
 
-		options[dir] = val
+		// As a special case, fold multiple "servers" options together
+		// in an array instead of overwriting a possible existing value
+		if opt == "servers" {
+			existingOpts, ok := options[opt].([]serverOptions)
+			if !ok {
+				existingOpts = []serverOptions{}
+			}
+			serverOpts, ok := val.(serverOptions)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type from 'servers' global options")
+			}
+			options[opt] = append(existingOpts, serverOpts)
+			continue
+		}
+
+		options[opt] = val
+	}
+
+	// If we got "servers" options, we'll sort them by their listener address
+	if serverOpts, ok := options["servers"].([]serverOptions); ok {
+		sort.Slice(serverOpts, func(i, j int) bool {
+			return len(serverOpts[i].ListenerAddress) > len(serverOpts[j].ListenerAddress)
+		})
+
+		// Reject the config if there are duplicate listener address
+		seen := make(map[string]bool)
+		for _, entry := range serverOpts {
+			if _, alreadySeen := seen[entry.ListenerAddress]; alreadySeen {
+				return nil, fmt.Errorf("cannot have 'servers' global options with duplicate listener addresses: %s", entry.ListenerAddress)
+			}
+			seen[entry.ListenerAddress] = true
+		}
 	}
 
 	return serverBlocks[1:], nil
@@ -600,6 +624,11 @@ func (st *ServerType) serversFromPairings(
 		srv.Routes = consolidateRoutes(srv.Routes)
 
 		servers[fmt.Sprintf("srv%d", i)] = srv
+	}
+
+	err := applyServerOptions(servers, options, warnings)
+	if err != nil {
+		return nil, err
 	}
 
 	return servers, nil
