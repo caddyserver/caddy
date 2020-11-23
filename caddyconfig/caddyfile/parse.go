@@ -60,21 +60,31 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		end += begin + len(spanOpen) // make end relative to input, not begin
 
 		// get the name; if there is no name, skip it
-		envVarName := input[begin+len(spanOpen) : end]
-		if len(envVarName) == 0 {
+		envString := input[begin+len(spanOpen) : end]
+		if len(envString) == 0 {
 			offset = end + len(spanClose)
 			continue
 		}
 
+		// split the string into a key and an optional default
+		envParts := strings.SplitN(string(envString), envVarDefaultDelimiter, 2)
+
+		// do a lookup for the env var, replace with the default if not found
+		envVarValue, found := os.LookupEnv(envParts[0])
+		if !found && len(envParts) == 2 {
+			envVarValue = envParts[1]
+		}
+
 		// get the value of the environment variable
-		envVarValue := []byte(os.ExpandEnv(os.Getenv(string(envVarName))))
+		// note that this causes one-level deep chaining
+		envVarBytes := []byte(envVarValue)
 
 		// splice in the value
 		input = append(input[:begin],
-			append(envVarValue, input[end+len(spanClose):]...)...)
+			append(envVarBytes, input[end+len(spanClose):]...)...)
 
 		// continue at the end of the replacement
-		offset = begin + len(envVarValue)
+		offset = begin + len(envVarBytes)
 	}
 	return input, nil
 }
@@ -548,4 +558,7 @@ func (s Segment) Directive() string {
 
 // spanOpen and spanClose are used to bound spans that
 // contain the name of an environment variable.
-var spanOpen, spanClose = []byte{'{', '$'}, []byte{'}'}
+var (
+	spanOpen, spanClose    = []byte{'{', '$'}, []byte{'}'}
+	envVarDefaultDelimiter = ":"
+)
