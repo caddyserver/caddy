@@ -162,8 +162,7 @@ func (ash Handler) getDatabaseKey() string {
 	key := ash.CA
 	key = strings.ToLower(key)
 	key = strings.TrimSpace(key)
-	cleaner := regexp.MustCompile(`[^\w.-_]`)
-	return cleaner.ReplaceAllLiteralString(key, "")
+	return keyCleaner.ReplaceAllLiteralString(key, "")
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle databases.
@@ -210,6 +209,7 @@ const (
 	defaultPathPrefix = "/acme/"
 )
 
+var keyCleaner = regexp.MustCompile(`[^\w.-_]`)
 var databasePool = caddy.NewUsagePool()
 
 type databaseCloser struct {
