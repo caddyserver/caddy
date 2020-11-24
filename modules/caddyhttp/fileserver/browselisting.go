@@ -27,7 +27,7 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlPath string, repl *caddy.Replacer) browseListing {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseListing {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
@@ -40,7 +40,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, urlP
 			continue
 		}
 
-		isDir := f.IsDir() || isSymlinkTargetDir(f, fsrv.Root, urlPath)
+		isDir := f.IsDir() || isSymlinkTargetDir(f, root, urlPath)
 
 		if isDir {
 			name += "/"
