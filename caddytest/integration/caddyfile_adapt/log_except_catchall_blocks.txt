@@ -1,0 +1,80 @@
+http://localhost:2020 {
+	log
+	file_server
+}
+
+:2020 {
+	respond 418
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":2020"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "file_server",
+													"hide": [
+														"./Caddyfile"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 418
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"localhost"
+						]
+					},
+					"logs": {
+						"logger_names": {
+							"localhost:2020": ""
+						},
+						"skip_unmapped_hosts": true
+					}
+				}
+			}
+		}
+	}
+}

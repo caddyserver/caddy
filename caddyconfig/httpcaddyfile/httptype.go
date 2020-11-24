@@ -450,6 +450,15 @@ func (st *ServerType) serversFromPairings(
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
 		autoHTTPSWillAddConnPolicy := autoHTTPS != "off"
 
+		// if a catch-all server block (one which accepts all hostnames) exists in this pairing,
+		// we need to know that so that we can configure logs properly (see #3878)
+		var catchAllSblockExists bool
+		for _, sblock := range p.serverBlocks {
+			if len(sblock.hostsFromKeys(false)) == 0 {
+				catchAllSblockExists = true
+			}
+		}
+
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock)
@@ -563,13 +572,13 @@ func (st *ServerType) serversFromPairings(
 				} else {
 					// map each host to the user's desired logger name
 					for _, h := range sblockLogHosts {
-						// if the custom logger name is non-empty, add it to
-						// the map; otherwise, only map to an empty logger
-						// name if the server block has a catch-all host (in
-						// which case only requests with mapped hostnames will
-						// be access-logged, so it'll be necessary to add them
-						// to the map even if they use default logger)
-						if ncl.name != "" || len(hosts) == 0 {
+						// if the custom logger name is non-empty, add it to the map;
+						// otherwise, only map to an empty logger name if this or
+						// another site block on this server has a catch-all host (in
+						// which case only requests with mapped hostnames will be
+						// access-logged, so it'll be necessary to add them to the
+						// map even if they use default logger)
+						if ncl.name != "" || catchAllSblockExists {
 							if srv.Logs.LoggerNames == nil {
 								srv.Logs.LoggerNames = make(map[string]string)
 							}
