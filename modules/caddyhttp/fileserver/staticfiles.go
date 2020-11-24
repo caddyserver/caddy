@@ -184,7 +184,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// to browse or return an error
 	if info.IsDir() {
 		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
-			return fsrv.serveBrowse(filename, w, r, next)
+			return fsrv.serveBrowse(root, filename, w, r, next)
 		}
 		return fsrv.notFound(w, r, next)
 	}

@@ -35,7 +35,7 @@ type Browse struct {
 	template *template.Template
 }
 
-func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs like
 	// "/b/c" on a path like "/a" end up going to "/b/c" instead
@@ -55,7 +55,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// calling path.Clean here prevents weird breadcrumbs when URL paths are sketchy like /%2e%2e%2f
-	listing, err := fsrv.loadDirectoryContents(dir, path.Clean(r.URL.Path), repl)
+	listing, err := fsrv.loadDirectoryContents(dir, root, path.Clean(r.URL.Path), repl)
 	switch {
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -87,7 +87,7 @@ func (fsrv *FileServer) serveBrowse(dirPath string, w http.ResponseWriter, r *ht
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl *caddy.Replacer) (browseListing, error) {
+func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string, repl *caddy.Replacer) (browseListing, error) {
 	files, err := dir.Readdir(-1)
 	if err != nil {
 		return browseListing{}, err
@@ -95,9 +95,9 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, urlPath string, repl
 
 	// determine if user can browse up another folder
 	curPathDir := path.Dir(strings.TrimSuffix(urlPath, "/"))
-	canGoUp := strings.HasPrefix(curPathDir, fsrv.Root)
+	canGoUp := strings.HasPrefix(curPathDir, root)
 
-	return fsrv.directoryListing(files, canGoUp, urlPath, repl), nil
+	return fsrv.directoryListing(files, canGoUp, root, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
