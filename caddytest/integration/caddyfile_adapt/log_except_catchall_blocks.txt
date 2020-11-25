@@ -1,6 +1,6 @@
 http://localhost:2020 {
 	log
-	file_server
+	respond 200
 }
 
 :2020 {
@@ -31,10 +31,8 @@ http://localhost:2020 {
 										{
 											"handle": [
 												{
-													"handler": "file_server",
-													"hide": [
-														"./Caddyfile"
-													]
+													"handler": "static_response",
+													"status_code": 200
 												}
 											]
 										}
