@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -384,8 +385,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// DialInfo struct should have valid network address syntax
 		dialInfo, err := upstream.fillDialInfo(r)
 		if err != nil {
-			err = fmt.Errorf("making dial info: %v", err)
-			return caddyhttp.Error(http.StatusBadGateway, err)
+			return statusError(fmt.Errorf("making dial info: %v", err))
 		}
 
 		// attach to the request information about how to dial the upstream;
@@ -438,7 +438,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 	}
 
-	return caddyhttp.Error(http.StatusBadGateway, proxyErr)
+	return statusError(proxyErr)
 }
 
 // prepareRequest modifies req so that it is ready to be proxied,
@@ -760,6 +760,27 @@ func removeConnectionHeaders(h http.Header) {
 			}
 		}
 	}
+}
+
+// statusError returns an error value that has a status code.
+func statusError(err error) error {
+	// errors proxying usually mean there is a problem with the upstream(s)
+	statusCode := http.StatusBadGateway
+
+	// if the client canceled the request (usually this means they closed
+	// the connection, so they won't see any response), we can report it
+	// as a client error (4xx) and not a server error (5xx); unfortunately
+	// the Go standard library, at least at time of writing in late 2020,
+	// obnoxiously wraps the exported, standard context.Canceled error with
+	// an unexported garbage value that we have to do a substring check for:
+	// https://github.com/golang/go/blob/6965b01ea248cabb70c3749fd218b36089a21efb/src/net/net.go#L416-L430
+	if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "operation was canceled") {
+		// regrettably, there is no standard error code for "client closed connection", but
+		// for historical reasons we can use a code that a lot of people are already using;
+		// using 5xx is problematic for users; see #3748
+		statusCode = 499
+	}
+	return caddyhttp.Error(statusCode, err)
 }
 
 // LoadBalancing has parameters related to load balancing.
