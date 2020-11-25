@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -286,6 +287,12 @@ type ClientAuthentication struct {
 	// these CAs will be rejected.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
+	// TrustedCACertPEMFiles is a list of PEM file names
+	// from which to load certificates of trusted CAs.
+	// Client certificates which are not signed by any of
+	// these CA certificates will be rejected.
+	TrustedCACertPEMFiles []string `json:"trusted_ca_certs_pem_files,omitempty"`
+
 	// A list of base64 DER-encoded client leaf certs
 	// to accept. If this list is not empty, client certs
 	// which are not in this list will be rejected.
@@ -301,8 +308,8 @@ type ClientAuthentication struct {
 	// `require_and_verify` | Require clients to present a valid certificate that is verified
 	//
 	// The default mode is `require_and_verify` if any
-	// TrustedCACerts or TrustedLeafCerts are provided;
-	// otherwise, the default mode is `require`.
+	// TrustedCACerts or TrustedCACertPEMFiles or TrustedLeafCerts
+	// are provided; otherwise, the default mode is `require`.
 	Mode string `json:"mode,omitempty"`
 
 	// state established with the last call to ConfigureTLSConfig
@@ -312,7 +319,10 @@ type ClientAuthentication struct {
 
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
-	return len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 || len(clientauth.Mode) > 0
+	return len(clientauth.TrustedCACerts) > 0 ||
+		len(clientauth.TrustedCACertPEMFiles) > 0 ||
+		len(clientauth.TrustedLeafCerts) > 0 ||
+		len(clientauth.Mode) > 0
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
@@ -339,7 +349,9 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		}
 	} else {
 		// otherwise, set a safe default mode
-		if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedLeafCerts) > 0 {
+		if len(clientauth.TrustedCACerts) > 0 ||
+			len(clientauth.TrustedCACertPEMFiles) > 0 ||
+			len(clientauth.TrustedLeafCerts) > 0 {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -347,7 +359,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
-	if len(clientauth.TrustedCACerts) > 0 {
+	if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0 {
 		caPool := x509.NewCertPool()
 		for _, clientCAString := range clientauth.TrustedCACerts {
 			clientCA, err := decodeBase64DERCert(clientCAString)
@@ -355,6 +367,13 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
 			caPool.AddCert(clientCA)
+		}
+		for _, pemFile := range clientauth.TrustedCACertPEMFiles {
+			pemContents, err := ioutil.ReadFile(pemFile)
+			if err != nil {
+				return fmt.Errorf("reading %s: %v", pemFile, err)
+			}
+			caPool.AppendCertsFromPEM(pemContents)
 		}
 		cfg.ClientCAs = caPool
 	}
