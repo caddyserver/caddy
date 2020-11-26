@@ -30,6 +30,11 @@ func init() {
 // Authentication is a middleware which provides user authentication.
 // Rejects requests with HTTP 401 if the request is not authenticated.
 //
+// After a successful authentication, the placeholder
+// `{http.auth.user.id}` will be set to the username, and also
+// `{http.auth.user.*}` placeholders may be set for any authentication
+// modules that provide user metadata.
+//
 // Its API is still experimental and may be subject to change.
 type Authentication struct {
 	// A set of authentication providers. If none are specified,
