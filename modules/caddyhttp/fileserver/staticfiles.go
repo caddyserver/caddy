@@ -31,6 +31,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -77,6 +78,8 @@ type FileServer struct {
 	// it will invoke the next handler in the chain instead of returning
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -89,6 +92,8 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
+	fsrv.logger = ctx.Logger(fsrv)
+
 	if fsrv.Root == "" {
 		fsrv.Root = "{http.vars.root}"
 	}
@@ -136,6 +141,11 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	suffix := repl.ReplaceAll(r.URL.Path, "")
 	filename := sanitizedPathJoin(root, suffix)
 
+	fsrv.logger.Debug("sanitized path join",
+		zap.String("site_root", root),
+		zap.String("request_path", suffix),
+		zap.String("result", filename))
+
 	// get information about the file
 	info, err := os.Stat(filename)
 	if err != nil {
@@ -157,6 +167,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			indexPath := sanitizedPathJoin(filename, indexPage)
 			if fileHidden(indexPath, filesToHide) {
 				// pretend this file doesn't exist
+				fsrv.logger.Debug("hiding index file",
+					zap.String("filename", indexPath),
+					zap.Strings("files_to_hide", filesToHide))
 				continue
 			}
 
@@ -176,6 +189,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			info = indexInfo
 			filename = indexPath
 			implicitIndexFile = true
+			fsrv.logger.Debug("located index file", zap.String("filename", filename))
 			break
 		}
 	}
@@ -183,6 +197,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// if still referencing a directory, delegate
 	// to browse or return an error
 	if info.IsDir() {
+		fsrv.logger.Debug("no index file in directory",
+			zap.String("path", filename),
+			zap.Strings("index_filenames", fsrv.IndexNames))
 		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
 			return fsrv.serveBrowse(root, filename, w, r, next)
 		}
@@ -194,6 +211,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// one last check to ensure the file isn't hidden (we might
 	// have changed the filename from when we last checked)
 	if fileHidden(filename, filesToHide) {
+		fsrv.logger.Debug("hiding file",
+			zap.String("filename", filename),
+			zap.Strings("files_to_hide", filesToHide))
 		return fsrv.notFound(w, r, next)
 	}
 
@@ -203,11 +223,15 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
 	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
 		if implicitIndexFile && !strings.HasSuffix(r.URL.Path, "/") {
+			fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)", zap.String("path", r.URL.Path))
 			return redirect(w, r, r.URL.Path+"/")
 		} else if !implicitIndexFile && strings.HasSuffix(r.URL.Path, "/") {
+			fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)", zap.String("path", r.URL.Path))
 			return redirect(w, r, r.URL.Path[:len(r.URL.Path)-1])
 		}
 	}
+
+	fsrv.logger.Debug("opening file", zap.String("filename", filename))
 
 	// open the file
 	file, err := fsrv.openFile(filename, w)
