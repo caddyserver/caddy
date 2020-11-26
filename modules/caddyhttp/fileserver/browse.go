@@ -25,6 +25,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 // Browse configures directory browsing.
@@ -36,11 +37,16 @@ type Browse struct {
 }
 
 func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	fsrv.logger.Debug("browse enabled; listing directory contents",
+		zap.String("path", dirPath),
+		zap.String("root", root))
+
 	// navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs like
 	// "/b/c" on a path like "/a" end up going to "/b/c" instead
 	// of "/a/b/c" - so we have to redirect in this case
 	if !strings.HasSuffix(r.URL.Path, "/") {
+		fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
 		r.URL.Path += "/"
 		http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
 		return nil
