@@ -39,6 +39,8 @@ type HTTPBasicAuth struct {
 	HashRaw json.RawMessage `json:"hash,omitempty" caddy:"namespace=http.authentication.hashes inline_key=algorithm"`
 
 	// The list of accounts to authenticate.
+	// After a successful authentication, the placeholder
+	// `{http.auth.user.id}` will be set to the username.
 	AccountList []Account `json:"accounts,omitempty"`
 
 	// The name of the realm. Default: restricted
