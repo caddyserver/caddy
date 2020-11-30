@@ -46,6 +46,10 @@ func init() {
 // and ? conditionally sets a value only if the header field is not already
 // set.
 func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	if !h.Next() {
+		return nil, h.ArgErr()
+	}
+
 	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err

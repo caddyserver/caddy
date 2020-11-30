@@ -9,6 +9,10 @@
 		?Tim "Berners-Lee"
 		defer
 	}
+	@images path /images/*
+	header @images {
+		Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+	}
 }
 ----------
 {
@@ -20,6 +24,27 @@
 						":80"
 					],
 					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/images/*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"set": {
+											"Cache-Control": [
+												"public, max-age=3600, stale-while-revalidate=86400"
+											]
+										}
+									}
+								}
+							]
+						},
 						{
 							"handle": [
 								{
