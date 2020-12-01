@@ -70,7 +70,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		if terminal.IsTerminal(fd) {
 			// ensure the terminal state is restored on SIGINT
 			state, _ := terminal.GetState(fd)
-			c := make(chan os.Signal)
+			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
 			go func() {
 				<-c
