@@ -13,7 +13,7 @@ require (
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/klauspost/compress v1.11.0
 	github.com/klauspost/cpuid v1.2.5 // cannot upgrade until arm is fixed: https://github.com/klauspost/cpuid/issues/52
-	github.com/lucas-clemente/quic-go v0.19.2
+	github.com/lucas-clemente/quic-go v0.19.3
 	github.com/mholt/acmez v0.1.1
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
