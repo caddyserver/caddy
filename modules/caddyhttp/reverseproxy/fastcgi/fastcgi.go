@@ -195,19 +195,27 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	}
 
 	fpath := r.URL.Path
+	scriptName := fpath
 
+	docURI := fpath
 	// split "actual path" from "path info" if configured
-	var docURI, pathInfo string
+	var pathInfo string
 	if splitPos := t.splitPos(fpath); splitPos > -1 {
 		docURI = fpath[:splitPos]
 		pathInfo = fpath[splitPos:]
-	} else {
-		docURI = fpath
-	}
-	scriptName := fpath
 
-	// Strip PATH_INFO from SCRIPT_NAME
-	scriptName = strings.TrimSuffix(scriptName, pathInfo)
+		// Strip PATH_INFO from SCRIPT_NAME
+		scriptName = strings.TrimSuffix(scriptName, pathInfo)
+	}
+
+	// Try to grab the path remainder from a file matcher
+	// if we didn't get a split result here.
+	// See https://github.com/caddyserver/caddy/issues/3718
+	if pathInfo == "" {
+		if remainder, ok := repl.GetString("http.matchers.file.remainder"); ok {
+			pathInfo = remainder
+		}
+	}
 
 	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
 	scriptFilename := filepath.Join(root, scriptName)

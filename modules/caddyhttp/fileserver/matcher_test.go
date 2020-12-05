@@ -206,9 +206,13 @@ func TestPHPFileMatcher(t *testing.T) {
 
 func TestFirstSplit(t *testing.T) {
 	m := MatchFile{SplitPath: []string{".php"}}
-	actual := m.firstSplit("index.PHP/somewhere")
+	actual, remainder := m.firstSplit("index.PHP/somewhere")
 	expected := "index.PHP"
+	expectedRemainder := "/somewhere"
 	if actual != expected {
-		t.Errorf("Expected %s but got %s", expected, actual)
+		t.Errorf("Expected split %s but got %s", expected, actual)
+	}
+	if remainder != expectedRemainder {
+		t.Errorf("Expected remainder %s but got %s", expectedRemainder, remainder)
 	}
 }
