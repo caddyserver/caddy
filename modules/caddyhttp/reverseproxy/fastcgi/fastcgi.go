@@ -212,8 +212,8 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// if we didn't get a split result here.
 	// See https://github.com/caddyserver/caddy/issues/3718
 	if pathInfo == "" {
-		if remainder, ok := repl.Get("http.matchers.file.remainder"); ok {
-			pathInfo = remainder.(string)
+		if remainder, ok := repl.GetString("http.matchers.file.remainder"); ok {
+			pathInfo = remainder
 		}
 	}
 

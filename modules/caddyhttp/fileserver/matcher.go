@@ -182,13 +182,13 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	}
 
 	// common preparation of the file into parts
-	prepareFilePath := func(file string) (string, string, string) {
-		suffix, remainder := m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
+	prepareFilePath := func(file string) (suffix, fullpath, remainder string) {
+		suffix, remainder = m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
 		if strings.HasSuffix(file, "/") {
 			suffix += "/"
 		}
-		fullpath := sanitizedPathJoin(root, suffix)
-		return suffix, fullpath, remainder
+		fullpath = sanitizedPathJoin(root, suffix)
+		return
 	}
 
 	// sets up the placeholders for the matched file
@@ -307,10 +307,11 @@ func strictFileExists(file string) (os.FileInfo, bool) {
 
 // firstSplit returns the first result where the path
 // can be split in two by a value in m.SplitPath. The
-// result is the first piece of the path that ends with
-// in the split value, and the remainder. Returns the
-// path as-is if the path cannot be split.
-func (m MatchFile) firstSplit(path string) (string, string) {
+// return values are the first piece of the path that
+// ends with the split substring and the remainder.
+// If the path cannot be split, the path is returned
+// as-is (with no remainder).
+func (m MatchFile) firstSplit(path string) (splitPart, remainder string) {
 	for _, split := range m.SplitPath {
 		if idx := indexFold(path, split); idx > -1 {
 			pos := idx + len(split)
