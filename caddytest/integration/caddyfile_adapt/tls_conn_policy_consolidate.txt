@@ -1,0 +1,137 @@
+# https://github.com/caddyserver/caddy/issues/3906
+a.a {
+	tls internal
+	respond 403
+}
+
+http://b.b https://b.b:8443 {
+	tls internal
+	respond 404
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.a"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 403
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"b.b"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 404
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"b.b"
+						]
+					}
+				},
+				"srv2": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"b.b"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 404
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.a",
+							"b.b"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
