@@ -487,6 +487,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 
 	// remove or combine duplicate policies
 	for i := 0; i < len(aps); i++ {
+		// compare only with next policies; we sorted by specificity so we must not delete earlier policies
 		for j := i + 1; j < len(aps); j++ {
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(aps[i], aps[j]) {
@@ -526,6 +527,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 						}
 					}
 					aps = append(aps[:j], aps[j+1:]...)
+					j--
 				}
 			}
 		}
