@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/klauspost/cpuid"
+	"github.com/klauspost/cpuid/v2"
 )
 
 // CipherSuiteNameSupported returns true if name is
@@ -75,7 +75,7 @@ var defaultCipherSuitesWithoutAESNI = []uint16{
 //
 // See https://github.com/caddyserver/caddy/issues/1674
 func getOptimalDefaultCipherSuites() []uint16 {
-	if cpuid.CPU.AesNi() {
+	if cpuid.CPU.Supports(cpuid.AESNI) {
 		return defaultCipherSuitesWithAESNI
 	}
 	return defaultCipherSuitesWithoutAESNI
