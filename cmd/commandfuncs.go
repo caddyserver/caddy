@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build linux
+
 package caddycmd
 
 import (
@@ -214,6 +216,10 @@ func cmdRun(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
 	caddy.Log().Info("serving initial configuration")
+
+	if err := sdNotify("READY=1"); err != nil {
+		caddy.Log().Error("unable to notify systemctl", zap.Error(err))
+	}
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
@@ -698,5 +704,27 @@ func apiRequest(adminAddr, method, uri string, body io.Reader) error {
 		return fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
+	return nil
+}
+
+func sdNotify(state string) error {
+	socketAddr := &net.UnixAddr{
+		Name: os.Getenv("NOTIFY_SOCKET"),
+		Net:  "unixgram",
+	}
+
+	if socketAddr.Name == "" {
+		return nil
+	}
+
+	conn, err := net.DialUnix(socketAddr.Net, nil, socketAddr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := io.Copy(conn, strings.NewReader(state)); err != nil {
+		return err
+	}
 	return nil
 }
