@@ -306,7 +306,10 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 		}
-		http2.ConfigureServer(s, nil)
+		err = http2.ConfigureServer(s, nil)
+		if err != nil {
+			return fmt.Errorf("failed to configure http2: %v", err)
+		}
 
 		// enable h2c if configured
 		if srv.AllowH2C {
