@@ -470,13 +470,28 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	for d.Next() {
 		var field, val string
-		if !d.Args(&field, &val) {
-			return d.Errf("malformed header matcher: expected both field and value")
+		if !d.Args(&field) {
+			return d.Errf("malformed header matcher: expected field")
 		}
 
-		// If multiple header matchers with the same header field are defined,
-		// we want to add the existing to the list of headers (will be OR'ed)
-		http.Header(*m).Add(field, val)
+		if strings.HasPrefix(field, "!") {
+			field = strings.TrimPrefix(field, "!")
+			headers := *m
+			headers[field] = nil
+			m = &headers
+			if d.NextArg() {
+				return d.Errf("malformed header matcher: null matching headers cannot have a field value")
+			}
+		} else {
+			if !d.NextArg() {
+				return d.Errf("malformed header matcher: expected both field and value")
+			}
+
+			// If multiple header matchers with the same header field are defined,
+			// we want to add the existing to the list of headers (will be OR'ed)
+			val = d.Val()
+			http.Header(*m).Add(field, val)
+		}
 
 		if d.NextBlock(0) {
 			return d.Err("malformed header matcher: blocks are not supported")
