@@ -306,6 +306,7 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 		}
+		http2.ConfigureServer(s, nil)
 
 		// enable h2c if configured
 		if srv.AllowH2C {

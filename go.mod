@@ -26,7 +26,7 @@ require (
 	github.com/yuin/goldmark-highlighting v0.0.0-20200307114337-60d527fdb691
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de
-	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
+	golang.org/x/net v0.0.0-20201207224615-747e23833adb
 	google.golang.org/genproto v0.0.0-20200806141610-86f49bd18e98
 	google.golang.org/protobuf v1.24.0 // cannot upgrade until warning is fixed
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
