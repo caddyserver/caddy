@@ -31,6 +31,12 @@
 		query bar=baz
 	}
 	respond @matcher8 "query matcher merging pairs with the same keys"
+
+	@matcher9 {
+		header !Foo
+		header Bar foo
+	}
+	respond @matcher9 "header matcher with null field matcher"
 }
 ----------
 {
@@ -180,6 +186,24 @@
 							"handle": [
 								{
 									"body": "query matcher merging pairs with the same keys",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo"
+										],
+										"Foo": null
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "header matcher with null field matcher",
 									"handler": "static_response"
 								}
 							]
