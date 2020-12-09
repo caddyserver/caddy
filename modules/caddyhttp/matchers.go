@@ -105,6 +105,9 @@ type (
 	MatchProtocol string
 
 	// MatchRemoteIP matches requests by client IP (or CIDR range).
+	// If the X-Forwarded-For header is set, the first IP in that list
+	// is used as the reference IP; otherwise, the remote IP of the
+	// connection is the reference.
 	MatchRemoteIP struct {
 		Ranges []string `json:"ranges,omitempty"`
 
