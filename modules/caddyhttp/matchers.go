@@ -475,6 +475,10 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		if strings.HasPrefix(field, "!") {
+			if len(field) == 1 {
+				return d.Errf("malformed header matcher: must have field name following ! character")
+			}
+
 			field = field[1:]
 			headers := *m
 			headers[field] = nil
