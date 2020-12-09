@@ -475,7 +475,7 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		if strings.HasPrefix(field, "!") {
-			field = strings.TrimPrefix(field, "!")
+			field = field[1:]
 			headers := *m
 			headers[field] = nil
 			m = &headers
