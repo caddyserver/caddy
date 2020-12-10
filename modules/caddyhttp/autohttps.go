@@ -303,31 +303,11 @@ uniqueDomainsLoop:
 			matcherSet = append(matcherSet, MatchHost(domains))
 		}
 
-		// build the address to which to redirect
 		addr, err := caddy.ParseNetworkAddress(addrStr)
 		if err != nil {
 			return err
 		}
-		redirTo := "https://{http.request.host}"
-		if addr.StartPort != uint(app.httpsPort()) {
-			redirTo += ":" + strconv.Itoa(int(addr.StartPort))
-		}
-		redirTo += "{http.request.uri}"
-
-		// build the route
-		redirRoute := Route{
-			MatcherSets: []MatcherSet{matcherSet},
-			Handlers: []MiddlewareHandler{
-				StaticResponse{
-					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-					Headers: http.Header{
-						"Location":   []string{redirTo},
-						"Connection": []string{"close"},
-					},
-					Close: true,
-				},
-			},
-		}
+		redirRoute := app.makeRedirRoute(addr.StartPort, matcherSet)
 
 		// use the network/host information from the address,
 		// but change the port to the HTTP port then rebuild
@@ -355,25 +335,7 @@ uniqueDomainsLoop:
 	// it's not something that should be relied on. We can change this
 	// if we want to.
 	appendCatchAll := func(routes []Route) []Route {
-		redirTo := "https://{http.request.host}"
-		if app.httpsPort() != DefaultHTTPSPort {
-			redirTo += ":" + strconv.Itoa(app.httpsPort())
-		}
-		redirTo += "{http.request.uri}"
-		routes = append(routes, Route{
-			MatcherSets: []MatcherSet{{MatchProtocol("http")}},
-			Handlers: []MiddlewareHandler{
-				StaticResponse{
-					StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-					Headers: http.Header{
-						"Location":   []string{redirTo},
-						"Connection": []string{"close"},
-					},
-					Close: true,
-				},
-			},
-		})
-		return routes
+		return append(routes, app.makeRedirRoute(uint(app.httpsPort()), MatcherSet{MatchProtocol("http")}))
 	}
 
 redirServersLoop:
@@ -420,6 +382,40 @@ redirServersLoop:
 	}
 
 	return nil
+}
+
+func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
+	redirTo := "https://{http.request.host}"
+
+	// since this is an external redirect, we should only append an explicit
+	// port if we know it is not the officially standardized HTTPS port, and,
+	// notably, also not the port that Caddy thinks is the HTTPS port (the
+	// configurable HTTPSPort parameter) - we can't change the standard HTTPS
+	// port externally, so that config parameter is for internal use only;
+	// we also do not append the port if it happens to be the HTTP port as
+	// well, obviously (for example, user defines the HTTP port explicitly
+	// in the list of listen addresses for a server)
+	if redirToPort != uint(app.httpPort()) &&
+		redirToPort != uint(app.httpsPort()) &&
+		redirToPort != DefaultHTTPPort &&
+		redirToPort != DefaultHTTPSPort {
+		redirTo += ":" + strconv.Itoa(int(redirToPort))
+	}
+
+	redirTo += "{http.request.uri}"
+	return Route{
+		MatcherSets: []MatcherSet{matcherSet},
+		Handlers: []MiddlewareHandler{
+			StaticResponse{
+				StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
+				Headers: http.Header{
+					"Location":   []string{redirTo},
+					"Connection": []string{"close"},
+				},
+				Close: true,
+			},
+		},
+	}
 }
 
 // createAutomationPolicy ensures that automated certificates for this

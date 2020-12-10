@@ -314,9 +314,13 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 	if err != nil {
 		tc.t.Errorf("requesting \"%s\" expected location: \"%s\" but got error: %s", requestURI, expectedToLocation, err)
 	}
-
-	if expectedToLocation != loc.String() {
-		tc.t.Errorf("requesting \"%s\" expected location: \"%s\" but got \"%s\"", requestURI, expectedToLocation, loc.String())
+	if loc == nil && expectedToLocation != "" {
+		tc.t.Errorf("requesting \"%s\" expected a Location header, but didn't get one", requestURI)
+	}
+	if loc != nil {
+		if expectedToLocation != loc.String() {
+			tc.t.Errorf("requesting \"%s\" expected location: \"%s\" but got \"%s\"", requestURI, expectedToLocation, loc.String())
+		}
 	}
 
 	return resp

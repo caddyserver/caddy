@@ -7,7 +7,21 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-func TestAutoHTTPtoHTTPSRedirects(t *testing.T) {
+func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		http_port     9080
+		https_port    9443
+	}
+	localhost
+	respond "Yahaha! You found me!"
+  `, "caddyfile")
+
+	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+}
+
+func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
@@ -18,5 +32,51 @@ func TestAutoHTTPtoHTTPSRedirects(t *testing.T) {
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
+	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+}
+
+func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		http_port     9080
+		https_port    9443
+	}
+	localhost:1234
+	respond "Yahaha! You found me!"
+  `, "caddyfile")
+
+	tester.AssertRedirect("http://localhost:9080/", "https://localhost:1234/", http.StatusPermanentRedirect)
+}
+
+func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+{
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "servers": {
+        "ingress_server": {
+          "listen": [
+            ":9080",
+            ":9443"
+          ],
+          "routes": [
+            {
+              "match": [
+                {
+				  "host": ["localhost"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+`, "json")
 	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
 }
