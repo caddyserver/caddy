@@ -105,11 +105,15 @@ type (
 	MatchProtocol string
 
 	// MatchRemoteIP matches requests by client IP (or CIDR range).
-	// If the X-Forwarded-For header is set, the first IP in that list
-	// is used as the reference IP; otherwise, the remote IP of the
-	// connection is the reference.
 	MatchRemoteIP struct {
+		// The IPs or CIDR ranges to match.
 		Ranges []string `json:"ranges,omitempty"`
+
+		// If true, prefer the first IP in the request's X-Forwarded-For
+		// header, if present, rather than the immediate peer's IP, as
+		// the reference IP against which to match. Note that it is easy
+		// to spoof request headers. Default: false
+		Forwarded bool `json:"forwarded,omitempty"`
 
 		cidrs  []*net.IPNet
 		logger *zap.Logger
@@ -795,7 +799,16 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		m.Ranges = append(m.Ranges, d.RemainingArgs()...)
+		for d.NextArg() {
+			if d.Val() == "forwarded" {
+				if len(m.Ranges) > 0 {
+					return d.Err("if used, 'forwarded' must be first argument")
+				}
+				m.Forwarded = true
+				continue
+			}
+			m.Ranges = append(m.Ranges, d.Val())
+		}
 		if d.NextBlock(0) {
 			return d.Err("malformed remote_ip matcher: blocks are not supported")
 		}
@@ -829,24 +842,20 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 }
 
 func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, error) {
-	var remote string
-	if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
-		remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
+	remote := r.RemoteAddr
+	if m.Forwarded {
+		if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
+			remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
+		}
 	}
-	if remote == "" {
-		remote = r.RemoteAddr
-	}
-
 	ipStr, _, err := net.SplitHostPort(remote)
 	if err != nil {
 		ipStr = remote // OK; probably didn't have a port
 	}
-
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return nil, fmt.Errorf("invalid client IP address: %s", ipStr)
 	}
-
 	return ip, nil
 }
 
