@@ -513,7 +513,17 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
-	return matchHeaders(r.Header, http.Header(m), r.Host)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	header := http.Header(m)
+	for field, allowedFieldVals := range header {
+		replacedAllowedFieldVals := []string{}
+		for index, allowedFieldVal := range allowedFieldVals {
+			replacedAllowedFieldVals[index] = repl.ReplaceAll(allowedFieldVal, "")
+		}
+		header[field] = replacedAllowedFieldVals
+	}
+
+	return matchHeaders(r.Header, header, r.Host)
 }
 
 // getHeaderFieldVals returns the field values for the given fieldName from input.

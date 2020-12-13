@@ -490,8 +490,17 @@ func TestHeaderMatcher(t *testing.T) {
 			input:  http.Header{"Must-Not-Exist": []string{"do not match"}},
 			expect: false,
 		},
+		{
+			match:  MatchHeader{"Has-Placeholder": []string{"{http.vars.debug}"}},
+			input:  http.Header{"Has-Placeholder": []string{"1"}},
+			expect: false,
+		},
 	} {
 		req := &http.Request{Header: tc.input, Host: tc.host}
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		repl.Set("http.vars.debug", "1")
+		req = req.WithContext(ctx)
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
