@@ -493,7 +493,7 @@ func TestHeaderMatcher(t *testing.T) {
 		{
 			match:  MatchHeader{"Has-Placeholder": []string{"{http.vars.debug}"}},
 			input:  http.Header{"Has-Placeholder": []string{"1"}},
-			expect: false,
+			expect: true,
 		},
 	} {
 		req := &http.Request{Header: tc.input, Host: tc.host}
