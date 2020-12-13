@@ -516,11 +516,10 @@ func (m MatchHeader) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	header := http.Header(m)
 	for field, allowedFieldVals := range header {
-		replacedAllowedFieldVals := []string{}
 		for index, allowedFieldVal := range allowedFieldVals {
-			replacedAllowedFieldVals[index] = repl.ReplaceAll(allowedFieldVal, "")
+			allowedFieldVals[index] = repl.ReplaceAll(allowedFieldVal, "")
 		}
-		header[field] = replacedAllowedFieldVals
+		header[field] = allowedFieldVals
 	}
 
 	return matchHeaders(r.Header, header, r.Host)
