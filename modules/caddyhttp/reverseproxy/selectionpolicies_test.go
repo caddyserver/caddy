@@ -335,11 +335,11 @@ func TestCookieHashPolicy(t *testing.T) {
 	w := httptest.NewRecorder()
 	cookieHashPolicy := new(CookieHashSelection)
 	h := cookieHashPolicy.Select(pool, request, w)
-	cookie_server1 := w.Result().Cookies()[0]
-	if cookie_server1 == nil {
+	cookieServer1 := w.Result().Cookies()[0]
+	if cookieServer1 == nil {
 		t.Error("cookieHashPolicy should set a cookie")
 	}
-	if cookie_server1.Name != "lb" {
+	if cookieServer1.Name != "lb" {
 		t.Error("cookieHashPolicy should set a cookie with name lb")
 	}
 	if h != pool[0] {
@@ -349,7 +349,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	pool[2].SetHealthy(true)
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)
 	w = httptest.NewRecorder()
-	request.AddCookie(cookie_server1)
+	request.AddCookie(cookieServer1)
 	h = cookieHashPolicy.Select(pool, request, w)
 	if h != pool[0] {
 		t.Error("Expected cookieHashPolicy host to stick to the first host (matching cookie).")
@@ -361,7 +361,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	pool[0].SetHealthy(false)
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)
 	w = httptest.NewRecorder()
-	request.AddCookie(cookie_server1)
+	request.AddCookie(cookieServer1)
 	h = cookieHashPolicy.Select(pool, request, w)
 	if h == pool[0] {
 		t.Error("Expected cookieHashPolicy to select a new host.")
