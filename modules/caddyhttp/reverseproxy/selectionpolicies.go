@@ -401,17 +401,16 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 	// If there's no cookie, select new random host
 	if err != nil || cookie == nil {
 		return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
-	} else {
-		// If the cookie is present, loop over the available upstreams until we find a match
-		cookieValue := cookie.Value
-		for _, upstream := range pool {
-			if !upstream.Available() {
-				continue
-			}
-			sha, err := hashCookie(s.Secret, upstream.Dial)
-			if err == nil && sha == cookieValue {
-				return upstream
-			}
+	}
+	// If the cookie is present, loop over the available upstreams until we find a match
+	cookieValue := cookie.Value
+	for _, upstream := range pool {
+		if !upstream.Available() {
+			continue
+		}
+		sha, err := hashCookie(s.Secret, upstream.Dial)
+		if err == nil && sha == cookieValue {
+			return upstream
 		}
 	}
 	// If there is no matching host, select new random host
