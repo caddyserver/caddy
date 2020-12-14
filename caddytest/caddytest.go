@@ -336,13 +336,20 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 	}
 
 	options := make(map[string]interface{})
-	options["pretty"] = "true"
 
 	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
 	if err != nil {
 		t.Logf("adapting config using %s adapter: %v", adapterName, err)
 		return false
 	}
+
+	// prettify results to keep tests human-manageable
+	var prettyBuf bytes.Buffer
+	err = json.Indent(&prettyBuf, result, "", "\t")
+	if err != nil {
+		return false
+	}
+	result = prettyBuf.Bytes()
 
 	if len(warnings) > 0 {
 		for _, w := range warnings {

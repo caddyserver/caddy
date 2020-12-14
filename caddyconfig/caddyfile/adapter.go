@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -51,11 +52,17 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 		return nil, warnings, err
 	}
 
-	marshalFunc := json.Marshal
-	if options["pretty"] == "true" {
-		marshalFunc = caddyconfig.JSONIndent
+	// lint check: see if input was properly formatted; sometimes messy files files parse
+	// successfully but result in logical errors because the Caddyfile is a bad format
+	// TODO: also perform this check on imported files
+	if !bytes.Equal(Format(body), body) {
+		warnings = append(warnings, caddyconfig.Warning{
+			File:    filename,
+			Message: "file is not formatted with 'caddy fmt'",
+		})
 	}
-	result, err := marshalFunc(cfg)
+
+	result, err := json.Marshal(cfg)
 
 	return result, warnings, err
 }
