@@ -517,7 +517,7 @@ func (m MatchHeader) Match(r *http.Request) bool {
 	header := http.Header(m)
 	for field, allowedFieldVals := range header {
 		for index, allowedFieldVal := range allowedFieldVals {
-			allowedFieldVals[index] = repl.ReplaceAll(allowedFieldVal, "")
+			allowedFieldVals[index] = repl.ReplaceKnown(allowedFieldVal, "")
 		}
 		header[field] = allowedFieldVals
 	}
