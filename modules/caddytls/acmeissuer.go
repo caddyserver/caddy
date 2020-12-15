@@ -74,10 +74,11 @@ type ACMEIssuer struct {
 	// is internal or for development/testing purposes.
 	TrustedRootsPEMFiles []string `json:"trusted_roots_pem_files,omitempty"`
 
-	// List of preferred certificate chains, by issuer's CommonName. If empty,
-	// or if no matching chain is found, the first chain offered by the server
-	// will be used.
-	PreferredChains []string `json:"preferred_chains,omitempty"`
+	// Preferences for selecting alternate certificate chains, if offered
+	// by the CA. By default, the first offered chain will be selected.
+	// If configured, the chains may be sorted and the first matching chain
+	// will be selected.
+	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
 	template certmagic.ACMEManager
@@ -163,7 +164,6 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
-		PreferredChains:   iss.PreferredChains,
 		Logger:            iss.logger,
 	}
 
@@ -180,6 +180,14 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 			template.DNS01Solver = iss.Challenges.DNS.solver
 		}
 		template.ListenHost = iss.Challenges.BindHost
+	}
+
+	if iss.PreferredChains != nil {
+		template.PreferredChains = certmagic.ChainPreference{
+			Smallest:       iss.PreferredChains.Smallest,
+			AnyCommonName:  iss.PreferredChains.AnyCommonName,
+			RootCommonName: iss.PreferredChains.RootCommonName,
+		}
 	}
 
 	return template, nil
@@ -405,6 +413,22 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
+}
+
+// ChainPreference describes the client's preferred certificate chain,
+// useful if the CA offers alternate chains. The first matching chain
+// will be selected.
+type ChainPreference struct {
+	// Prefer chains with the fewest number of bytes.
+	Smallest *bool `json:"smallest,omitempty"`
+
+	// Select first chain having a root with one of
+	// these common names.
+	RootCommonName []string `json:"root_common_name,omitempty"`
+
+	// Select first chain that has any issuer with one
+	// of these common names.
+	AnyCommonName []string `json:"any_common_name,omitempty"`
 }
 
 // Interface guards
