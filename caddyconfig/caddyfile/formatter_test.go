@@ -310,6 +310,17 @@ baz`,
 			input:       `redir / /some/#/path`,
 			expect:      `redir / /some/#/path`,
 		},
+		{
+			description: "brace does not fold into comment above",
+			input: `# comment
+{
+	foo
+}`,
+			expect: `# comment
+{
+	foo
+}`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that
