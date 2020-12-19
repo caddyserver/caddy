@@ -59,22 +59,9 @@ jobs:
         # Import Matt Holt's key
         curl 'https://github.com/mholt.gpg' | gpg --import
 
-        # first we verify the tag, which are only accepted if signed by Matt's key
+        echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
+        # tags are only accepted if signed by Matt's key
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
-
-        # Import Github's key, which is used for web merges
-        curl 'https://github.com/web-flow.gpg' | gpg --import
-
-        # now verify all the commits between the new tag and the previous tag
-        current_tag="${{ steps.vars.outputs.version_tag }}"
-        previous_tag=`git describe --tags --no-abbrev "$current_tag"^`
-
-        for commit in $(git rev-list "$previous_tag..$current_tag")
-        do
-          echo "Verifying commit $commit"
-          git verify-commit $commit || exit 1
-          echo "" # add newline for more readable log
-        done
 
     - name: Cache the build cache
       uses: actions/cache@v2
