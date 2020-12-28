@@ -27,6 +27,10 @@ jobs:
     - name: Unshallowify the repo clone
       run: git fetch --prune --unshallow
 
+    # Cloudsmith CLI tooling for pushing releases
+    - name: Install Cloudsmith CLI
+      run: pip install --upgrade cloudsmith-cli
+
     # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Print Go version and environment
       id: vars
@@ -88,6 +92,52 @@ jobs:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
         for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv7"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
 
+    # Publish only special tags (unstable/beta/rc) to the "testing" repo
+    # See https://cloudsmith.io/~caddy/repos/testing/
+    - name: Publish .deb to Cloudsmith (special tags)
+      if: ${{ steps.vars.outputs.tag_special != '' }}
+      env:
+        # TODO:
+        # CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv7"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
+        done
+
+    # Publish stable tags to Cloudsmith to both repos, "stable" and "testing"
+    # See https://cloudsmith.io/~caddy/repos/stable/
+    - name: Publish .deb to Cloudsmith (stable tags)
+      if: ${{ steps.vars.outputs.tag_special == '' }}
+      env:
+        # TODO:
+        # CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv7"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'stable'"
+          cloudsmith push deb caddy/stable/any-distro/any-version $filename
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
+        done
