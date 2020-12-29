@@ -53,6 +53,16 @@ jobs:
         echo "::set-output name=tag_patch::${TAG_PATCH}"
         echo "::set-output name=tag_special::${TAG_SPECIAL}"
 
+    - name: Validate commits and tag signatures
+      run: |
+        
+        # Import Matt Holt's key
+        curl 'https://github.com/mholt.gpg' | gpg --import
+
+        echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
+        # tags are only accepted if signed by Matt's key
+        git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
+
     - name: Cache the build cache
       uses: actions/cache@v2
       with:
