@@ -86,6 +86,9 @@ jobs:
         TAG: ${{ steps.vars.outputs.version_tag }}
 
     # Only publish on non-special tags (e.g. non-beta)
+    # We will continue to push to Gemfury for the forseeable future, although
+    # Cloudsmith is probably better, to not break things for existing users of Gemfury.
+    # See https://gemfury.com/caddy/deb:caddy
     - name: Publish .deb to Gemfury
       if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
@@ -106,8 +109,7 @@ jobs:
     - name: Publish .deb to Cloudsmith (special tags)
       if: ${{ steps.vars.outputs.tag_special != '' }}
       env:
-        # TODO:
-        # CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
       run: |
         for filename in dist/*.deb; do
           # armv6 and armv7 are both "armhf" so we can skip the duplicate
@@ -125,8 +127,7 @@ jobs:
     - name: Publish .deb to Cloudsmith (stable tags)
       if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
-        # TODO:
-        # CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
       run: |
         for filename in dist/*.deb; do
           # armv6 and armv7 are both "armhf" so we can skip the duplicate
