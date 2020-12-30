@@ -38,6 +38,10 @@ func init() {
 // unlike AdminMetrics.
 type Metrics struct {
 	metricsHandler http.Handler
+
+	// Disable OpenMetrics negotiation, enabled by default. May be necessary if
+	// the produced metrics cannot be parsed by the service scraping metrics.
+	DisableOpenMetrics bool `json:"disable_openmetrics,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -59,7 +63,7 @@ func (l *zapLogger) Println(v ...interface{}) {
 // Provision sets up m.
 func (m *Metrics) Provision(ctx caddy.Context) error {
 	log := ctx.Logger(m)
-	m.metricsHandler = createMetricsHandler(&zapLogger{log})
+	m.metricsHandler = createMetricsHandler(&zapLogger{log}, !m.DisableOpenMetrics)
 	return nil
 }
 
@@ -71,13 +75,22 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     metrics <matcher>
+//     metrics <matcher> {
+//         disable_openmetrics
+//     }
 //
 func (m *Metrics) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		args := d.RemainingArgs()
 		if len(args) > 0 {
 			return d.ArgErr()
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "disable_openmetrics":
+				m.DisableOpenMetrics = true
+			}
 		}
 	}
 	return nil
@@ -95,7 +108,7 @@ var (
 	_ caddyfile.Unmarshaler       = (*Metrics)(nil)
 )
 
-func createMetricsHandler(logger promhttp.Logger) http.Handler {
+func createMetricsHandler(logger promhttp.Logger, enableOpenMetrics bool) http.Handler {
 	return promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer,
 		promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 			// will only log errors if logger is non-nil
@@ -103,7 +116,7 @@ func createMetricsHandler(logger promhttp.Logger) http.Handler {
 
 			// Allow OpenMetrics format to be negotiated - largely compatible,
 			// except quantile/le label values always have a decimal.
-			EnableOpenMetrics: true,
+			EnableOpenMetrics: enableOpenMetrics,
 		}),
 	)
 }
