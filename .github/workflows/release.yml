@@ -100,7 +100,7 @@ jobs:
       run: |
         for filename in dist/*.deb; do
           # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv7"* ]]; then
+          if [[ "$filename" == *"armv6"* ]]; then
             echo "Skipping $filename"
             continue
           fi
@@ -117,7 +117,7 @@ jobs:
       run: |
         for filename in dist/*.deb; do
           # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv7"* ]]; then
+          if [[ "$filename" == *"armv6"* ]]; then
             echo "Skipping $filename"
             continue
           fi
@@ -135,7 +135,7 @@ jobs:
       run: |
         for filename in dist/*.deb; do
           # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv7"* ]]; then
+          if [[ "$filename" == *"armv6"* ]]; then
             echo "Skipping $filename"
             continue
           fi
