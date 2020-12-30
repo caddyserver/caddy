@@ -41,6 +41,9 @@ jobs:
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
         echo "::set-output name=go_cache::$(go env GOCACHE)"
 
+        # Add "pip install" CLI tools to PATH
+        echo ~/.local/bin >> $GITHUB_PATH
+
         # Parse semver
         TAG=${GITHUB_REF/refs\/tags\//}
         SEMVER_RE='[^0-9]*\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)\([0-9A-Za-z\.-]*\)'
@@ -52,6 +55,11 @@ jobs:
         echo "::set-output name=tag_minor::${TAG_MINOR}"
         echo "::set-output name=tag_patch::${TAG_PATCH}"
         echo "::set-output name=tag_special::${TAG_SPECIAL}"
+
+    # Cloudsmith CLI tooling for pushing releases
+    # See https://help.cloudsmith.io/docs/cli
+    - name: Install Cloudsmith CLI
+      run: pip install --upgrade cloudsmith-cli
 
     - name: Validate commits and tag signatures
       run: |
@@ -82,12 +90,59 @@ jobs:
         TAG: ${{ steps.vars.outputs.version_tag }}
 
     # Only publish on non-special tags (e.g. non-beta)
+    # We will continue to push to Gemfury for the forseeable future, although
+    # Cloudsmith is probably better, to not break things for existing users of Gemfury.
+    # See https://gemfury.com/caddy/deb:caddy
     - name: Publish .deb to Gemfury
       if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
         for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
         done
 
+    # Publish only special tags (unstable/beta/rc) to the "testing" repo
+    # See https://cloudsmith.io/~caddy/repos/testing/
+    - name: Publish .deb to Cloudsmith (special tags)
+      if: ${{ steps.vars.outputs.tag_special != '' }}
+      env:
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
+        done
+
+    # Publish stable tags to Cloudsmith to both repos, "stable" and "testing"
+    # See https://cloudsmith.io/~caddy/repos/stable/
+    - name: Publish .deb to Cloudsmith (stable tags)
+      if: ${{ steps.vars.outputs.tag_special == '' }}
+      env:
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'stable'"
+          cloudsmith push deb caddy/stable/any-distro/any-version $filename
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
+        done
