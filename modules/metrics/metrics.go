@@ -75,7 +75,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     metrics <matcher> {
+//     metrics [<matcher>] {
 //         disable_openmetrics
 //     }
 //
@@ -90,6 +90,8 @@ func (m *Metrics) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			switch d.Val() {
 			case "disable_openmetrics":
 				m.DisableOpenMetrics = true
+			default:
+				return d.Errf("unrecognized subdirective %q", d.Val())
 			}
 		}
 	}

@@ -35,4 +35,11 @@ func TestMetricsUnmarshalCaddyfile(t *testing.T) {
 	if m.DisableOpenMetrics != true {
 		t.Errorf("DisableOpenMetrics should've been true: %v", m.DisableOpenMetrics)
 	}
+
+	m = &Metrics{}
+	d = caddyfile.NewTestDispenser(`metrics { bogus }`)
+	err = m.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Errorf("expected error: %v", err)
+	}
 }
