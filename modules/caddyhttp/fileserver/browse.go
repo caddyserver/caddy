@@ -99,9 +99,8 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string
 		return browseListing{}, err
 	}
 
-	// determine if user can browse up another folder
-	curPathDir := path.Dir(strings.TrimSuffix(urlPath, "/"))
-	canGoUp := strings.HasPrefix(curPathDir, root)
+	// user can presumably browse "up" to parent folder if path is longer than "/"
+	canGoUp := len(urlPath) > 1
 
 	return fsrv.directoryListing(files, canGoUp, root, urlPath, repl), nil
 }
