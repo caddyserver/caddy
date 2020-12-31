@@ -1,0 +1,49 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+    health_headers {
+        Host example.com
+        X-Header-Keys VbG4NZwWnipo 335Q9/MhqcNU3s2TO
+    }
+}
+----------
+{
+    "apps": {
+        "http": {
+            "servers": {
+                "srv0": {
+                    "listen": [
+                        ":8884"
+                    ],
+                    "routes": [
+                        {
+                            "handle": [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "health_checks": {
+                                        "active": {
+                                            "headers": {
+                                                "Host": [
+                                                    "example.com"
+                                                ],
+                                                "X-Header-Keys": [
+                                                    "VbG4NZwWnipo",
+                                                    "335Q9/MhqcNU3s2TO"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "upstreams": [
+                                        {
+                                            "dial": "127.0.0.1:65535"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}
