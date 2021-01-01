@@ -63,7 +63,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         health_status <status>
 //         health_body <regexp>
 //         health_headers {
-//             <field> <value>
+//             <field> [<values...>]
 //         }
 //
 //         # passive health checking

@@ -3,7 +3,9 @@
 reverse_proxy 127.0.0.1:65535 {
 	health_headers {
 		Host example.com
+		X-Header-Key 95ca39e3cbe7
 		X-Header-Keys VbG4NZwWnipo 335Q9/MhqcNU3s2TO
+		X-Empty-Value
 	}
 }
 ----------
@@ -25,6 +27,12 @@ reverse_proxy 127.0.0.1:65535 {
 											"headers": {
 												"Host": [
 													"example.com"
+												],
+												"X-Empty-Value": [
+													""
+												],
+												"X-Header-Key": [
+													"95ca39e3cbe7"
 												],
 												"X-Header-Keys": [
 													"VbG4NZwWnipo",
