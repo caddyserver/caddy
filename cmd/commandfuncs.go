@@ -463,15 +463,20 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := make(map[string]interface{})
-	if adaptCmdPrettyFlag {
-		opts["pretty"] = "true"
-	}
-	opts["filename"] = adaptCmdInputFlag
+	opts := map[string]interface{}{"filename": adaptCmdInputFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
+	}
+
+	if adaptCmdPrettyFlag {
+		var prettyBuf bytes.Buffer
+		err = json.Indent(&prettyBuf, adaptedConfig, "", "\t")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		adaptedConfig = prettyBuf.Bytes()
 	}
 
 	// print warnings to stderr

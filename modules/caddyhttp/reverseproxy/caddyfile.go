@@ -15,6 +15,7 @@
 package reverseproxy
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -497,6 +498,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				case 1:
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
 				case 2:
+					// some lint checks, I guess
+					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
+						log.Printf("[WARNING] Unnecessary header_up ('Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
+					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
+						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Proto' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
