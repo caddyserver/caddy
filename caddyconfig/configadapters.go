@@ -93,12 +93,6 @@ func JSONModuleObject(val interface{}, fieldName, fieldVal string, warnings *[]W
 	return result
 }
 
-// JSONIndent is used to JSON-marshal the final resulting Caddy
-// configuration in a consistent, human-readable way.
-func JSONIndent(val interface{}) ([]byte, error) {
-	return json.MarshalIndent(val, "", "\t")
-}
-
 // RegisterAdapter registers a config adapter with the given name.
 // This should usually be done at init-time. It panics if the
 // adapter cannot be registered successfully.

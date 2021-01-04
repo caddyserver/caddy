@@ -10,7 +10,6 @@ import (
 func TestLogDirectiveSyntax(t *testing.T) {
 	for i, tc := range []struct {
 		input       string
-		expectWarn  bool
 		expectError bool
 	}{
 		{
@@ -18,7 +17,6 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				log
 			}
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -28,7 +26,6 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				}
 			}
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -38,7 +35,6 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				}
 			}
 			`,
-			expectWarn:  false,
 			expectError: true,
 		},
 	} {
@@ -47,12 +43,7 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			ServerType: ServerType{},
 		}
 
-		_, warnings, err := adapter.Adapt([]byte(tc.input), nil)
-
-		if len(warnings) > 0 != tc.expectWarn {
-			t.Errorf("Test %d warning expectation failed Expected: %v, got %v", i, tc.expectWarn, warnings)
-			continue
-		}
+		_, _, err := adapter.Adapt([]byte(tc.input), nil)
 
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
