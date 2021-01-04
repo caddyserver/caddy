@@ -1,0 +1,96 @@
+# issue #3953
+
+{
+	cert_issuer zerossl api_key
+}
+
+example.com {
+	tls {
+		on_demand
+	}
+}
+
+http://example.net {
+}
+
+:1234 {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":1234"
+					]
+				},
+				"srv1": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.net"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"example.net"
+						]
+					}
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"api_key": "api_key",
+								"module": "zerossl"
+							}
+						],
+						"on_demand": true
+					},
+					{
+						"issuers": [
+							{
+								"api_key": "api_key",
+								"module": "zerossl"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
