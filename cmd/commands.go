@@ -191,10 +191,11 @@ config file; otherwise the default is assumed.`,
 	RegisterCommand(Command{
 		Name:  "list-modules",
 		Func:  cmdListModules,
-		Usage: "[--versions]",
+		Usage: "[--packages] [--versions]",
 		Short: "Lists the installed Caddy modules",
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("list-modules", flag.ExitOnError)
+			fs.Bool("packages", false, "Print package paths")
 			fs.Bool("versions", false, "Print version information")
 			return fs
 		}(),
