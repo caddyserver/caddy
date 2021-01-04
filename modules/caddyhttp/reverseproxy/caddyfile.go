@@ -63,6 +63,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         health_timeout <duration>
 //         health_status <status>
 //         health_body <regexp>
+//         health_headers {
+//             <field> [<values...>]
+//         }
 //
 //         # passive health checking
 //         max_fails <num>
@@ -312,6 +315,26 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad port number '%s': %v", d.Val(), err)
 				}
 				h.HealthChecks.Active.Port = portNum
+
+			case "health_headers":
+				healthHeaders := make(http.Header)
+				for d.Next() {
+					for d.NextBlock(0) {
+						key := d.Val()
+						values := d.RemainingArgs()
+						if len(values) == 0 {
+							values = append(values, "")
+						}
+						healthHeaders[key] = values
+					}
+				}
+				if h.HealthChecks == nil {
+					h.HealthChecks = new(HealthChecks)
+				}
+				if h.HealthChecks.Active == nil {
+					h.HealthChecks.Active = new(ActiveHealthChecks)
+				}
+				h.HealthChecks.Active.Headers = healthHeaders
 
 			case "health_interval":
 				if !d.NextArg() {
