@@ -453,7 +453,7 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 // ZeroSSL), the proper wrapper over acmeIssuer will be returned instead.
 func disambiguateACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) certmagic.Issuer {
 	// as a special case, we integrate with ZeroSSL's ACME endpoint if it looks like an
-	// implicit ZeroSSL configuration (this requires a  wrapper type over ACMEIssuer
+	// implicit ZeroSSL configuration (this requires a wrapper type over ACMEIssuer
 	// because of the EAB generation; if EAB is provided, we can use plain ACMEIssuer)
 	if strings.Contains(acmeIssuer.CA, "acme.zerossl.com") && acmeIssuer.ExternalAccount == nil {
 		return &caddytls.ZeroSSLIssuer{ACMEIssuer: acmeIssuer}
@@ -518,6 +518,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 					// '*.com', which might be different (yes we've seen this happen)
 					if automationPolicyShadows(i, aps) >= j {
 						aps = append(aps[:i], aps[i+1:]...)
+						i--
 					}
 				} else {
 					// avoid repeated subjects
