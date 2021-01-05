@@ -108,6 +108,10 @@ func (st ServerType) buildTLSApp(
 				ap.OnDemand = true
 			}
 
+			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
+				ap.KeyType = keyTypeVals[0].Value.(string)
+			}
+
 			// certificate issuers
 			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				var issuers []certmagic.Issuer

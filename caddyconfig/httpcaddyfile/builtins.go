@@ -87,6 +87,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var folderLoader caddytls.FolderLoader
 	var certSelector caddytls.CustomCertSelectionPolicy
 	var acmeIssuer *caddytls.ACMEIssuer
+	var autoPolicy *caddytls.AutomationPolicy
 	var internalIssuer *caddytls.InternalIssuer
 	var issuers []certmagic.Issuer
 	var onDemand bool
@@ -267,6 +268,16 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.CA = arg[0]
 
+			case "key_type":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				if autoPolicy == nil {
+					autoPolicy = new(caddytls.AutomationPolicy)
+				}
+				autoPolicy.KeyType = arg[0]
+
 			case "eab":
 				arg := h.RemainingArgs()
 				if len(arg) != 2 {
@@ -394,6 +405,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
 			Value: internalIssuer,
+		})
+	}
+
+	if autoPolicy != nil {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.key_type",
+			Value: autoPolicy.KeyType,
 		})
 	}
 
