@@ -34,7 +34,7 @@ func init() {
 	RegisterGlobalOption("storage", parseOptStorage)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
-	RegisterGlobalOption("acme_dns", parseOptSingleString)
+	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
 	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
 	RegisterGlobalOption("cert_issuer", parseOptCertIssuer)
 	RegisterGlobalOption("email", parseOptSingleString)
@@ -165,24 +165,35 @@ func parseOptStorage(d *caddyfile.Dispenser) (interface{}, error) {
 	if !d.Next() { // get storage module name
 		return nil, d.ArgErr()
 	}
-	modName := d.Val()
-	mod, err := caddy.GetModule("caddy.storage." + modName)
-	if err != nil {
-		return nil, d.Errf("getting storage module '%s': %v", modName, err)
-	}
-	unm, ok := mod.New().(caddyfile.Unmarshaler)
-	if !ok {
-		return nil, d.Errf("storage module '%s' is not a Caddyfile unmarshaler", mod.ID)
-	}
-	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+	modID := "caddy.storage." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
 	if err != nil {
 		return nil, err
 	}
 	storage, ok := unm.(caddy.StorageConverter)
 	if !ok {
-		return nil, d.Errf("module %s is not a StorageConverter", mod.ID)
+		return nil, d.Errf("module %s is not a caddy.StorageConverter", modID)
 	}
 	return storage, nil
+}
+
+func parseOptACMEDNS(d *caddyfile.Dispenser) (interface{}, error) {
+	if !d.Next() { // consume option name
+		return nil, d.ArgErr()
+	}
+	if !d.Next() { // get DNS module name
+		return nil, d.ArgErr()
+	}
+	modID := "dns.providers." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return nil, err
+	}
+	prov, ok := unm.(certmagic.ACMEDNSProvider)
+	if !ok {
+		return nil, d.Errf("module %s (%T) is not a certmagic.ACMEDNSProvider", modID, unm)
+	}
+	return prov, nil
 }
 
 func parseOptACMEEAB(d *caddyfile.Dispenser) (interface{}, error) {
@@ -220,22 +231,14 @@ func parseOptCertIssuer(d *caddyfile.Dispenser) (interface{}, error) {
 	if !d.Next() { // get issuer module name
 		return nil, d.ArgErr()
 	}
-	modName := d.Val()
-	mod, err := caddy.GetModule("tls.issuance." + modName)
-	if err != nil {
-		return nil, d.Errf("getting issuer module '%s': %v", modName, err)
-	}
-	unm, ok := mod.New().(caddyfile.Unmarshaler)
-	if !ok {
-		return nil, d.Errf("issuer module '%s' is not a Caddyfile unmarshaler", mod.ID)
-	}
-	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+	modID := "tls.issuance." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
 	if err != nil {
 		return nil, err
 	}
 	iss, ok := unm.(certmagic.Issuer)
 	if !ok {
-		return nil, d.Errf("module %s is not a certmagic.Issuer", mod.ID)
+		return nil, d.Errf("module %s (%T) is not a certmagic.Issuer", modID, unm)
 	}
 	return iss, nil
 }
