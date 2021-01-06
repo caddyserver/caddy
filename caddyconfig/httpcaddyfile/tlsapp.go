@@ -396,14 +396,9 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interf
 		acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string))
 	}
 	if globalACMEDNS != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) {
-		provName := globalACMEDNS.(string)
-		dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
-		if err != nil {
-			return fmt.Errorf("getting DNS provider module named '%s': %v", provName, err)
-		}
 		acmeIssuer.Challenges = &caddytls.ChallengesConfig{
 			DNS: &caddytls.DNSChallengeConfig{
-				ProviderRaw: caddyconfig.JSONModuleObject(dnsProvModule.New(), "name", provName, nil),
+				ProviderRaw: caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil),
 			},
 		}
 	}

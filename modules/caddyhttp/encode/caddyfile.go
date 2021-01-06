@@ -64,21 +64,14 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		for d.NextBlock(0) {
 			name := d.Val()
-			mod, err := caddy.GetModule("http.encoders." + name)
-			if err != nil {
-				return fmt.Errorf("getting encoder module '%s': %v", name, err)
-			}
-			unm, ok := mod.New().(caddyfile.Unmarshaler)
-			if !ok {
-				return fmt.Errorf("encoder module '%s' is not a Caddyfile unmarshaler", mod)
-			}
-			err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+			modID := "http.encoders." + name
+			unm, err := caddyfile.UnmarshalModule(d, modID)
 			if err != nil {
 				return err
 			}
 			encoding, ok := unm.(Encoding)
 			if !ok {
-				return fmt.Errorf("module %s is not an HTTP encoding", mod)
+				return fmt.Errorf("module %s is not an HTTP encoding; is %T", modID, unm)
 			}
 			if enc.EncodingsRaw == nil {
 				enc.EncodingsRaw = make(caddy.ModuleMap)

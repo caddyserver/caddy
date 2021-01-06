@@ -241,21 +241,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err("load balancing selection policy already specified")
 				}
 				name := d.Val()
-				mod, err := caddy.GetModule("http.reverse_proxy.selection_policies." + name)
-				if err != nil {
-					return d.Errf("getting load balancing policy module '%s': %v", mod, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return d.Errf("load balancing policy module '%s' is not a Caddyfile unmarshaler", mod)
-				}
-				err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+				modID := "http.reverse_proxy.selection_policies." + name
+				unm, err := caddyfile.UnmarshalModule(d, modID)
 				if err != nil {
 					return err
 				}
 				sel, ok := unm.(Selector)
 				if !ok {
-					return d.Errf("module %s is not a Selector", mod)
+					return d.Errf("module %s (%T) is not a reverseproxy.Selector", modID, unm)
 				}
 				if h.LoadBalancing == nil {
 					h.LoadBalancing = new(LoadBalancing)
@@ -574,21 +567,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err("transport already specified")
 				}
 				transportModuleName = d.Val()
-				mod, err := caddy.GetModule("http.reverse_proxy.transport." + transportModuleName)
-				if err != nil {
-					return d.Errf("getting transport module '%s': %v", mod, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return d.Errf("transport module '%s' is not a Caddyfile unmarshaler", mod)
-				}
-				err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+				modID := "http.reverse_proxy.transport." + transportModuleName
+				unm, err := caddyfile.UnmarshalModule(d, modID)
 				if err != nil {
 					return err
 				}
 				rt, ok := unm.(http.RoundTripper)
 				if !ok {
-					return d.Errf("module %s is not a RoundTripper", mod)
+					return d.Errf("module %s (%T) is not a RoundTripper", modID, unm)
 				}
 				transport = rt
 

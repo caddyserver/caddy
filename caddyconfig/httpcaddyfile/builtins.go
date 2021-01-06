@@ -296,21 +296,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				modName := h.Val()
-				mod, err := caddy.GetModule("tls.issuance." + modName)
-				if err != nil {
-					return nil, h.Errf("getting issuer module '%s': %v", modName, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return nil, h.Errf("issuer module '%s' is not a Caddyfile unmarshaler", mod.ID)
-				}
-				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				modID := "tls.issuance." + modName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 				if err != nil {
 					return nil, err
 				}
 				issuer, ok := unm.(certmagic.Issuer)
 				if !ok {
-					return nil, h.Errf("module %s is not a certmagic.Issuer", mod.ID)
+					return nil, h.Errf("module %s (%T) is not a certmagic.Issuer", modID, unm)
 				}
 				issuers = append(issuers, issuer)
 
@@ -326,18 +319,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
-				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 				if err != nil {
-					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
+					return nil, err
 				}
-				dnsProvModuleInstance := dnsProvModule.New()
-				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
-					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
-					if err != nil {
-						return nil, err
-					}
-				}
-				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, h.warnings)
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 			case "ca_root":
 				arg := h.RemainingArgs()
@@ -601,21 +588,15 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 				case "discard":
 					wo = caddy.DiscardWriter{}
 				default:
-					mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
-					if err != nil {
-						return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
-					}
-					unm, ok := mod.New().(caddyfile.Unmarshaler)
-					if !ok {
-						return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
-					}
-					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					modID := "caddy.logging.writers." + moduleName
+					unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 					if err != nil {
 						return nil, err
 					}
+					var ok bool
 					wo, ok = unm.(caddy.WriterOpener)
 					if !ok {
-						return nil, h.Errf("module %s is not a WriterOpener", mod)
+						return nil, h.Errf("module %s (%T) is not a WriterOpener", modID, unm)
 					}
 				}
 				cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
@@ -625,21 +606,14 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				moduleName := h.Val()
-				mod, err := caddy.GetModule("caddy.logging.encoders." + moduleName)
-				if err != nil {
-					return nil, h.Errf("getting log encoder module named '%s': %v", moduleName, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return nil, h.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
-				}
-				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				moduleID := "caddy.logging.encoders." + moduleName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, moduleID)
 				if err != nil {
 					return nil, err
 				}
 				enc, ok := unm.(zapcore.Encoder)
 				if !ok {
-					return nil, h.Errf("module %s is not a zapcore.Encoder", mod)
+					return nil, h.Errf("module %s (%T) is not a zapcore.Encoder", moduleID, unm)
 				}
 				cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
 
