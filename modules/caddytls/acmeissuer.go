@@ -233,7 +233,7 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//     ... acme {
+//     ... acme [<directory_url>] {
 //         dir <directory_url>
 //         test_dir <test_directory_url>
 //         email <email>
@@ -250,9 +250,18 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
+		if d.NextArg() {
+			iss.CA = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+		}
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			switch d.Val() {
 			case "dir":
+				if iss.CA != "" {
+					return d.Errf("directory is already specified: %s", iss.CA)
+				}
 				if !d.AllArgs(&iss.CA) {
 					return d.ArgErr()
 				}
