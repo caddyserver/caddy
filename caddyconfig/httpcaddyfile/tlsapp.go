@@ -417,8 +417,9 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
+	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
 
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -442,6 +443,12 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		ap.Issuers = issuers.([]certmagic.Issuer)
 	} else if hasLocalCerts {
 		ap.Issuers = []certmagic.Issuer{new(caddytls.InternalIssuer)}
+	}
+
+	if hasOCSPStapling {
+		ocspConfig := ocspStapling.(certmagic.OCSPConfig)
+		ap.DisableOCSPStapling = ocspConfig.DisableStapling
+		ap.OCSPOverrides = ocspConfig.ResponderOverrides
 	}
 
 	return ap, nil
