@@ -315,7 +315,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, opt)
 		}
 
-		val, err = optFunc(disp)
+		val, err = optFunc(disp, options[opt])
 		if err != nil {
 			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 		}

@@ -414,11 +414,11 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interf
 // returned if there are no default/global options. However, if always is
 // true, a non-nil value will always be returned (unless there is an error).
 func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
-	issuer, hasIssuer := options["cert_issuer"]
+	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 
-	hasGlobalAutomationOpts := hasIssuer || hasLocalCerts || hasKeyType
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
@@ -434,12 +434,12 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 		ap.KeyType = keyType.(string)
 	}
 
-	if hasIssuer && hasLocalCerts {
+	if hasIssuers && hasLocalCerts {
 		return nil, fmt.Errorf("global options are ambiguous: local_certs is confusing when combined with cert_issuer, because local_certs is also a specific kind of issuer")
 	}
 
-	if hasIssuer {
-		ap.Issuers = []certmagic.Issuer{issuer.(certmagic.Issuer)}
+	if hasIssuers {
+		ap.Issuers = issuers.([]certmagic.Issuer)
 	} else if hasLocalCerts {
 		ap.Issuers = []certmagic.Issuer{new(caddytls.InternalIssuer)}
 	}
