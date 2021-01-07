@@ -43,6 +43,7 @@ func init() {
 	RegisterGlobalOption("key_type", parseOptSingleString)
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
 	RegisterGlobalOption("servers", parseServerOptions)
+	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) { return true, nil }
@@ -369,4 +370,18 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ interface{}) (interface{}, erro
 
 func parseServerOptions(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
 	return unmarshalCaddyfileServerOptions(d)
+}
+
+func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+	d.Next() // consume option name
+	var val string
+	if !d.AllArgs(&val) {
+		return nil, d.ArgErr()
+	}
+	if val != "off" {
+		return nil, d.Errf("invalid argument '%s'", val)
+	}
+	return certmagic.OCSPConfig{
+		DisableStapling: val == "off",
+	}, nil
 }
