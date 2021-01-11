@@ -29,11 +29,6 @@ func init() {
 type RequestBody struct {
 	// The maximum number of bytes to allow reading from the body by a later handler.
 	MaxSize int64 `json:"max_size,omitempty"`
-
-	// Overwrites the remote address from which the request came. This is destructive;
-	// handlers later in the chain will not be able to recover the true originating
-	// address of the request. EXPERIMENTAL: May get changed or removed later.
-	RemoteAddress string `json:"remote_address,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -45,10 +40,6 @@ func (RequestBody) CaddyModule() caddy.ModuleInfo {
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if rb.RemoteAddress != "" {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-		r.RemoteAddr = repl.ReplaceAll(rb.RemoteAddress, "")
-	}
 	if r.Body == nil {
 		return next.ServeHTTP(w, r)
 	}
