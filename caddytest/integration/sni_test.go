@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -316,4 +317,310 @@ func TestHttpOnlyOnDomainWithSNI(t *testing.T) {
 		}
 	}
 }`)
+}
+
+func init() {
+	RegisterIntegrationTest(TestCase{
+		TestName: "Default SNI",
+		PortRangesSizes: map[string]int{
+			"http_port":  1,
+			"https_port": 1,
+		},
+		TestFunc: testDefaultSNI,
+	})
+	RegisterIntegrationTest(TestCase{
+		TestName: "Default SNI With Port Mapping Only",
+		PortRangesSizes: map[string]int{
+			"http_port":  1,
+			"https_port": 1,
+		},
+		TestFunc: testDefaultSNIWithPortMappingOnly,
+	})
+	RegisterIntegrationTest(TestCase{
+		TestName: "Default SNI With Named Host And Explicit IP",
+		PortRangesSizes: map[string]int{
+			"http_port":  1,
+			"https_port": 1,
+		},
+		TestFunc: testDefaultSNIWithNamedHostAndExplicitIP,
+	})
+}
+
+func testDefaultSNI(t *testing.T, tcp TestCaseParameter) {
+	netAddrMap := tcp.NetworkAddresses()
+	httpPort := netAddrMap["http_port"].StartPort
+	httpsPort := netAddrMap["https_port"].StartPort
+
+	// arrange
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`{
+    "apps": {
+      "http": {
+        "http_port": %d,
+        "https_port": %d,
+        "servers": {
+          "srv0": {
+            "listen": [
+              ":%d"
+            ],
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "handler": "subroute",
+                    "routes": [
+                      {
+                        "handle": [
+                          {
+                            "body": "hello from a.caddy.localhost",
+                            "handler": "static_response",
+                            "status_code": 200
+                          }
+                        ],
+                        "match": [
+                          {
+                            "path": [
+                              "/version"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "match": [
+                  {
+                    "host": [
+                      "127.0.0.1"
+                    ]
+                  }
+                ],
+                "terminal": true
+              }
+            ],
+            "tls_connection_policies": [
+              {
+                "certificate_selection": {
+                  "any_tag": ["cert0"]
+                },
+                "match": {
+                  "sni": [
+                    "127.0.0.1"
+                  ]
+                }
+              },
+              {
+                "default_sni": "*.caddy.localhost"
+              }
+            ]
+          }
+        }
+      },
+      "tls": {
+        "certificates": {
+          "load_files": [
+            {
+              "certificate": "/caddy.localhost.crt",
+              "key": "/caddy.localhost.key",
+              "tags": [
+                "cert0"
+              ]
+            }
+          ]
+        }
+      },
+      "pki": {
+        "certificate_authorities" : {
+          "local" : {
+            "install_trust": false
+          }
+        }
+      }
+    }
+  }
+  `, httpPort, httpsPort, httpsPort), "json")
+
+	// act and assert
+	// makes a request with no sni
+	tester.AssertGetResponse(fmt.Sprintf("https://127.0.0.1:%d/version", httpsPort), 200, "hello from a.caddy.localhost")
+}
+
+func testDefaultSNIWithNamedHostAndExplicitIP(t *testing.T, tcp TestCaseParameter) {
+	netAddrMap := tcp.NetworkAddresses()
+	httpPort := netAddrMap["http_port"].StartPort
+	httpsPort := netAddrMap["https_port"].StartPort
+
+	// arrange
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(` 
+  {
+    "apps": {
+      "http": {
+        "http_port": %d,
+        "https_port": %d,
+        "servers": {
+          "srv0": {
+            "listen": [
+              ":%d"
+            ],
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "handler": "subroute",
+                    "routes": [
+                      {
+                        "handle": [
+                          {
+                            "body": "hello from a",
+                            "handler": "static_response",
+                            "status_code": 200
+                          }
+                        ],
+                        "match": [
+                          {
+                            "path": [
+                              "/version"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "match": [
+                  {
+                    "host": [
+                      "a.caddy.localhost",
+                      "127.0.0.1"
+                    ]
+                  }
+                ],
+                "terminal": true
+              }
+            ],
+            "tls_connection_policies": [
+              {
+                "certificate_selection": {
+                  "any_tag": ["cert0"]
+                },
+                "default_sni": "a.caddy.localhost",
+                "match": {
+                  "sni": [
+                    "a.caddy.localhost",
+                    "127.0.0.1",
+                    ""
+                  ]
+                }
+              },
+              {
+                "default_sni": "a.caddy.localhost"
+              }
+            ]
+          }
+        }
+      },
+      "tls": {
+        "certificates": {
+          "load_files": [
+            {
+              "certificate": "/a.caddy.localhost.crt",
+              "key": "/a.caddy.localhost.key",
+              "tags": [
+                "cert0"
+              ]
+            }
+          ]
+        }
+      },
+      "pki": {
+        "certificate_authorities" : {
+          "local" : {
+            "install_trust": false
+          }
+        }
+      }
+    }
+  }
+  `, httpPort, httpsPort, httpsPort), "json")
+
+	// act and assert
+	// makes a request with no sni
+	tester.AssertGetResponse(fmt.Sprintf("https://127.0.0.1:%d/version", httpsPort), 200, "hello from a")
+}
+
+func testDefaultSNIWithPortMappingOnly(t *testing.T, tcp TestCaseParameter) {
+	netAddrMap := tcp.NetworkAddresses()
+	httpPort := netAddrMap["http_port"].StartPort
+	httpsPort := netAddrMap["https_port"].StartPort
+
+	// arrange
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(` 
+  {
+    "apps": {
+      "http": {
+        "http_port": %d,
+        "https_port": %d,
+        "servers": {
+          "srv0": {
+            "listen": [
+              ":%d"
+            ],
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "body": "hello from a.caddy.localhost",
+                    "handler": "static_response",
+                    "status_code": 200
+                  }
+                ],
+                "match": [
+                  {
+                    "path": [
+                      "/version"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "tls_connection_policies": [
+              {
+                "certificate_selection": {
+                  "any_tag": ["cert0"]
+                },
+                "default_sni": "a.caddy.localhost"
+              }
+            ]
+          }
+        }
+      },
+      "tls": {
+        "certificates": {
+          "load_files": [
+            {
+              "certificate": "/a.caddy.localhost.crt",
+              "key": "/a.caddy.localhost.key",
+              "tags": [
+                "cert0"
+              ]
+            }
+          ]
+        }
+      },
+      "pki": {
+        "certificate_authorities" : {
+          "local" : {
+            "install_trust": false
+          }
+        }
+      }
+    }
+  }
+  `, httpPort, httpsPort, httpsPort), "json")
+
+	// act and assert
+	// makes a request with no sni
+	tester.AssertGetResponse(fmt.Sprintf("https://127.0.0.1:%d/version", httpsPort), 200, "hello from a.caddy.localhost")
 }
