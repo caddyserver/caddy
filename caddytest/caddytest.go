@@ -14,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"path"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -98,6 +99,10 @@ func (tc *Tester) InitServer(rawConfig string, configType string) {
 		tc.t.Logf("failed to load config: %s", err)
 		tc.t.Fail()
 	}
+	if err := tc.ensureConfigRunning(rawConfig, configType); err != nil {
+		tc.t.Logf("failed ensurng config is running: %s", err)
+		tc.t.Fail()
+	}
 }
 
 // InitServer this will configure the server with a configurion of a specific
@@ -171,17 +176,65 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	return nil
 }
 
+func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error {
+	expectedBytes := []byte(prependCaddyFilePath(rawConfig))
+	if configType != "json" {
+		adapter := caddyconfig.GetAdapter(configType)
+		if adapter == nil {
+			return fmt.Errorf("adapter of config type is missing: %s", configType)
+		}
+		expectedBytes, _, _ = adapter.Adapt([]byte(rawConfig), nil)
+	}
+
+	var expected interface{}
+	err := json.Unmarshal(expectedBytes, &expected)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{
+		Timeout: Default.LoadRequestTimeout,
+	}
+
+	fetchConfig := func(client *http.Client) interface{} {
+		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+		if err != nil {
+			return nil
+		}
+		defer resp.Body.Close()
+		actualBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil
+		}
+		var actual interface{}
+		err = json.Unmarshal(actualBytes, &actual)
+		if err != nil {
+			return nil
+		}
+		return actual
+	}
+
+	for retries := 4; retries > 0; retries-- {
+		if reflect.DeepEqual(expected, fetchConfig(client)) {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tc.t.Errorf("POSTed configuration isn't active")
+	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
+}
+
 var hasValidated bool
 var arePrerequisitesValid bool
 
 func validateTestPrerequisites() error {
 
-	if hasValidated {
-		if !arePrerequisitesValid {
-			return errors.New("caddy integration prerequisites failed. see first error")
-		}
-		return nil
-	}
+	// if hasValidated {
+	// 	if !arePrerequisitesValid {
+	// 		return errors.New("caddy integration prerequisites failed. see first error")
+	// 	}
+	// 	return nil
+	// }
 
 	hasValidated = true
 	arePrerequisitesValid = false
@@ -201,8 +254,7 @@ func validateTestPrerequisites() error {
 		}()
 
 		// wait for caddy to start
-		retries := 4
-		for ; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+		for retries := 4; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
