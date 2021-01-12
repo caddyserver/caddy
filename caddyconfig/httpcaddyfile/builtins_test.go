@@ -30,7 +30,37 @@ func TestLogDirectiveSyntax(t *testing.T) {
 		},
 		{
 			input: `:8080 {
-				log /foo {
+				log {
+					format filter {
+						wrap console
+						fields {
+							common_log delete
+							request>remote_addr ip_mask {
+								ipv4 24
+								ipv6 32
+							}
+						}
+					}
+				}
+			}
+			`,
+			expectError: false,
+		},
+		{
+			input: `:8080 {
+				log {
+					output file foo.log
+				}
+				log default {
+					format json
+				}
+			}
+			`,
+			expectError: false,
+		},
+		{
+			input: `:8080 {
+				log example /foo {
 					output file foo.log
 				}
 			}
