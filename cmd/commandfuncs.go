@@ -271,6 +271,10 @@ func cmdRun(fl Flags) (int, error) {
 		}
 	}
 
+	if err := NotifyReadiness(); err != nil {
+		caddy.Log().Error("unable to notify readiness to service manager", zap.Error(err))
+	}
+
 	select {}
 }
 
@@ -290,6 +294,15 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdConfigFlag := fl.String("config")
 	reloadCmdConfigAdapterFlag := fl.String("adapter")
 	reloadCmdAddrFlag := fl.String("address")
+
+	if err := NotifyReloading(); err != nil {
+		caddy.Log().Error("unable to notify reloading to service manager", zap.Error(err))
+	}
+	defer func() {
+		if err := NotifyReadiness(); err != nil {
+			caddy.Log().Error("unable to notify readiness to service manager", zap.Error(err))
+		}
+	}()
 
 	// get the config in caddy's native format
 	config, configFile, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
