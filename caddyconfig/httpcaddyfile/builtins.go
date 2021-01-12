@@ -546,18 +546,32 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 
 // parseLog parses the log directive. Syntax:
 //
-//     log {
-//         output <writer_module> ...
-//         format <encoder_module> ...
-//         level  <level>
+//     log [name] {
+//         output  <writer_module> ...
+//         format  <encoder_module> ...
+//         level   <level>
+//         include <namespaces...>
+//         exclude <namespaces...>
 //     }
+//
+// When the name argument is unspecified, this directive modifies the HTTP
+// access logs and adds an include for that namespace.
+//
+// Specifying the name "default" will modify the default logger used globally
+// within Caddy.
 //
 func parseLog(h Helper) ([]ConfigValue, error) {
 	var configValues []ConfigValue
 	for h.Next() {
-		// log does not currently support any arguments
+		var logName string
 		if h.NextArg() {
-			return nil, h.ArgErr()
+			// Allow for a log name to be specified,
+			logName = h.Val()
+
+			// Only a single argument is supported.
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
 		}
 
 		cl := new(caddy.CustomLog)
@@ -634,19 +648,39 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 
+			case "include":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				for h.NextArg() {
+					cl.Include = append(cl.Include, h.Val())
+				}
+
+			case "exclude":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				for h.NextArg() {
+					cl.Exclude = append(cl.Exclude, h.Val())
+				}
+
 			default:
 				return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 			}
 		}
 
 		var val namedCustomLog
-		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
+		if logName != "" {
+			// If a target name is specified, use it.
+			val.name = logName
+			val.log = cl
+		} else if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
 			logCounter, ok := h.State["logCounter"].(int)
 			if !ok {
 				logCounter = 0
 			}
 			val.name = fmt.Sprintf("log%d", logCounter)
-			cl.Include = []string{"http.log.access." + val.name}
+			cl.Include = append(cl.Include, "http.log.access."+val.name)
 			val.log = cl
 			logCounter++
 			h.State["logCounter"] = logCounter
