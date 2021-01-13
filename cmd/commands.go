@@ -277,6 +277,15 @@ is always printed to stdout.`,
 		}(),
 	})
 
+	RegisterCommand(Command{
+		Name:  "upgrade",
+		Func:  cmdUpgrade,
+		Short: "Upgrade Caddy (EXPERIMENTAL)",
+		Long: `
+Downloads an updated Caddy binary with the same modules/plugins at the
+latest versions. EXPERIMENTAL: May be changed or removed.`,
+	})
+
 }
 
 // RegisterCommand registers the command cmd.

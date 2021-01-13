@@ -25,6 +25,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"reflect"
@@ -376,11 +377,6 @@ func cmdListModules(fl Flags) (int, error) {
 	packages := fl.Bool("packages")
 	versions := fl.Bool("versions")
 
-	type moduleInfo struct {
-		caddyModuleID string
-		goModule      *debug.Module
-		err           error
-	}
 	printModuleInfo := func(mi moduleInfo) {
 		fmt.Print(mi.caddyModuleID)
 		if versions && mi.goModule != nil {
@@ -399,56 +395,13 @@ func cmdListModules(fl Flags) (int, error) {
 	}
 
 	// organize modules by whether they come with the standard distribution
-	var standard, nonstandard, unknown []moduleInfo
-
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
+	standard, nonstandard, unknown, err := getModules()
+	if err != nil {
 		// oh well, just print the module IDs and exit
 		for _, m := range caddy.Modules() {
 			fmt.Println(m)
 		}
 		return caddy.ExitCodeSuccess, nil
-	}
-
-	for _, modID := range caddy.Modules() {
-		modInfo, err := caddy.GetModule(modID)
-		if err != nil {
-			// that's weird, shouldn't happen
-			unknown = append(unknown, moduleInfo{caddyModuleID: modID, err: err})
-			continue
-		}
-
-		// to get the Caddy plugin's version info, we need to know
-		// the package that the Caddy module's value comes from; we
-		// can use reflection but we need a non-pointer value (I'm
-		// not sure why), and since New() should return a pointer
-		// value, we need to dereference it first
-		iface := interface{}(modInfo.New())
-		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
-			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
-		}
-		modPkgPath := reflect.TypeOf(iface).PkgPath()
-
-		// now we find the Go module that the Caddy module's package
-		// belongs to; we assume the Caddy module package path will
-		// be prefixed by its Go module path, and we will choose the
-		// longest matching prefix in case there are nested modules
-		var matched *debug.Module
-		for _, dep := range bi.Deps {
-			if strings.HasPrefix(modPkgPath, dep.Path) {
-				if matched == nil || len(dep.Path) > len(matched.Path) {
-					matched = dep
-				}
-			}
-		}
-
-		caddyModGoMod := moduleInfo{caddyModuleID: modID, goModule: matched}
-
-		if strings.HasPrefix(modPkgPath, caddy.ImportPath) {
-			standard = append(standard, caddyModGoMod)
-		} else {
-			nonstandard = append(nonstandard, caddyModGoMod)
-		}
 	}
 
 	if len(standard) > 0 {
@@ -631,6 +584,144 @@ func cmdFmt(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+func cmdUpgrade(_ Flags) (int, error) {
+	l := caddy.Log()
+
+	thisExecPath, err := os.Executable()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("determining current executable path: %v", err)
+	}
+	l.Info("this executable will be replaced", zap.String("path", thisExecPath))
+
+	// get the list of nonstandard plugins
+	_, nonstandard, _, err := getModules()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
+	}
+	pluginPkgs := make(map[string]struct{})
+	for _, mod := range nonstandard {
+		if mod.goModule.Replace != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("cannot auto-upgrade when Go module has been replaced: %s => %s",
+				mod.goModule.Path, mod.goModule.Replace.Path)
+		}
+		l.Info("found non-standard module",
+			zap.String("id", mod.caddyModuleID),
+			zap.String("package", mod.goModule.Path))
+		pluginPkgs[mod.goModule.Path] = struct{}{}
+	}
+
+	// build the request URL to download this custom build
+	qs := url.Values{
+		"os":   {runtime.GOOS},
+		"arch": {runtime.GOARCH},
+	}
+	for pkg := range pluginPkgs {
+		qs.Add("p", pkg)
+	}
+	urlStr := fmt.Sprintf("https://caddyserver.com/api/download?%s", qs.Encode())
+
+	// initiate the build
+	l.Info("requesting build",
+		zap.String("os", qs.Get("os")),
+		zap.String("arch", qs.Get("arch")),
+		zap.Strings("packages", qs["p"]))
+	resp, err := http.Get(urlStr)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("secure request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var details struct {
+			StatusCode int `json:"status_code"`
+			Error      struct {
+				Message string `json:"message"`
+				ID      string `json:"id"`
+			} `json:"error"`
+		}
+		err2 := json.NewDecoder(resp.Body).Decode(&details)
+		if err2 != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("download and error decoding failed: HTTP %d: %v", resp.StatusCode, err2)
+		}
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: HTTP %d: %s (id=%s)", resp.StatusCode, details.Error.Message, details.Error.ID)
+	}
+
+	// back up the current binary, in case something goes wrong we can replace it
+	backupExecPath := thisExecPath + ".tmp"
+	l.Info("build acquired; backing up current executable",
+		zap.String("current_path", thisExecPath),
+		zap.String("backup_path", backupExecPath))
+	err = os.Rename(thisExecPath, backupExecPath)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("backing up current binary: %v", err)
+	}
+	defer func() {
+		if err != nil {
+			err2 := os.Rename(backupExecPath, thisExecPath)
+			if err2 != nil {
+				l.Error("restoring original executable failed; will need to be restored manually",
+					zap.String("backup_path", backupExecPath),
+					zap.String("original_path", thisExecPath),
+					zap.Error(err2))
+			}
+		}
+	}()
+
+	// download the file; do this in a closure to close reliably before we execute it
+	writeFile := func() error {
+		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0770)
+		if err != nil {
+			return fmt.Errorf("unable to open destination file: %v", err)
+		}
+		defer destFile.Close()
+
+		l.Info("downloading binary", zap.String("source", urlStr), zap.String("destination", thisExecPath))
+		_, err = io.Copy(destFile, resp.Body)
+		if err != nil {
+			return fmt.Errorf("unable to download file: %v", err)
+		}
+
+		err = destFile.Sync()
+		if err != nil {
+			return fmt.Errorf("syncing downloaded file to device: %v", err)
+		}
+
+		return nil
+	}
+	err = writeFile()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// use the new binary to print out version and module info
+	fmt.Print("\nModule versions:\n\n")
+	cmd := exec.Command(thisExecPath, "list-modules", "--versions")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+	}
+	fmt.Println("\nVersion:")
+	cmd = exec.Command(thisExecPath, "version")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+	}
+	fmt.Println()
+
+	// clean up the backup file
+	err = os.Remove(backupExecPath)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
+	}
+
+	l.Info("upgrade successful; please restart any running Caddy instances", zap.String("executable", thisExecPath))
+
+	return caddy.ExitCodeSuccess, nil
+}
+
 func cmdHelp(fl Flags) (int, error) {
 	const fullDocs = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
@@ -693,6 +784,56 @@ commands:
 	fmt.Print(result)
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		err = fmt.Errorf("no build info")
+		return
+	}
+
+	for _, modID := range caddy.Modules() {
+		modInfo, err := caddy.GetModule(modID)
+		if err != nil {
+			// that's weird, shouldn't happen
+			unknown = append(unknown, moduleInfo{caddyModuleID: modID, err: err})
+			continue
+		}
+
+		// to get the Caddy plugin's version info, we need to know
+		// the package that the Caddy module's value comes from; we
+		// can use reflection but we need a non-pointer value (I'm
+		// not sure why), and since New() should return a pointer
+		// value, we need to dereference it first
+		iface := interface{}(modInfo.New())
+		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
+			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
+		}
+		modPkgPath := reflect.TypeOf(iface).PkgPath()
+
+		// now we find the Go module that the Caddy module's package
+		// belongs to; we assume the Caddy module package path will
+		// be prefixed by its Go module path, and we will choose the
+		// longest matching prefix in case there are nested modules
+		var matched *debug.Module
+		for _, dep := range bi.Deps {
+			if strings.HasPrefix(modPkgPath, dep.Path) {
+				if matched == nil || len(dep.Path) > len(matched.Path) {
+					matched = dep
+				}
+			}
+		}
+
+		caddyModGoMod := moduleInfo{caddyModuleID: modID, goModule: matched}
+
+		if strings.HasPrefix(modPkgPath, caddy.ImportPath) {
+			standard = append(standard, caddyModGoMod)
+		} else {
+			nonstandard = append(nonstandard, caddyModGoMod)
+		}
+	}
+	return
 }
 
 // apiRequest makes an API request to the endpoint adminAddr with the
@@ -766,4 +907,10 @@ func apiRequest(adminAddr, method, uri string, body io.Reader) error {
 	}
 
 	return nil
+}
+
+type moduleInfo struct {
+	caddyModuleID string
+	goModule      *debug.Module
+	err           error
 }
