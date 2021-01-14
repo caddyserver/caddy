@@ -223,7 +223,7 @@ func isCaddyAdminRunning() error {
 	}
 	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 	if err != nil {
-		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
+		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", Default.AdminPort)
 	}
 	resp.Body.Close()
 
