@@ -415,7 +415,7 @@ func printEnvironment() {
 	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
 	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
 	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
-	fmt.Printf("caddy.Version=%s\n", caddy.GoModule().Version)
+	fmt.Printf("caddy.Version=%s\n", caddyVersion())
 	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
 	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
 	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
@@ -430,6 +430,25 @@ func printEnvironment() {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+}
+
+// caddyVersion returns a detailed version string, if available.
+func caddyVersion() string {
+	goModule := caddy.GoModule()
+	ver := goModule.Version
+	if goModule.Sum != "" {
+		ver += " " + goModule.Sum
+	}
+	if goModule.Replace != nil {
+		ver += " => " + goModule.Replace.Path
+		if goModule.Replace.Version != "" {
+			ver += "@" + goModule.Replace.Version
+		}
+		if goModule.Replace.Sum != "" {
+			ver += " " + goModule.Replace.Sum
+		}
+	}
+	return ver
 }
 
 // moveStorage moves the old default dataDir to the new default dataDir.
