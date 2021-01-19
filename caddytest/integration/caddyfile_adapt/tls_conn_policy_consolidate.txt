@@ -75,12 +75,7 @@ http://b.b https://b.b:8443 {
 							],
 							"terminal": true
 						}
-					],
-					"automatic_https": {
-						"skip": [
-							"b.b"
-						]
-					}
+					]
 				},
 				"srv2": {
 					"listen": [

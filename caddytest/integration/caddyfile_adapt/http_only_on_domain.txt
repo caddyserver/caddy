@@ -46,12 +46,7 @@ http://a.caddy.localhost {
 							],
 							"terminal": true
 						}
-					],
-					"automatic_https": {
-						"skip": [
-							"a.caddy.localhost"
-						]
-					}
+					]
 				}
 			}
 		}

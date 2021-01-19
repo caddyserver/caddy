@@ -1,5 +1,4 @@
 # issue #3953
-
 {
 	cert_issuer zerossl api_key
 }
@@ -58,12 +57,7 @@ http://example.net {
 							],
 							"terminal": true
 						}
-					],
-					"automatic_https": {
-						"skip": [
-							"example.net"
-						]
-					}
+					]
 				}
 			}
 		},

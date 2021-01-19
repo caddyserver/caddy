@@ -3,7 +3,7 @@ localhost
 respond "hello from localhost"
 tls {
 	client_auth {
-		mode request 
+		mode request
 		trusted_ca_cert_file ../caddy.ca.cer
 	}
 }

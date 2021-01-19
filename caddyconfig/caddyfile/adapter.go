@@ -53,18 +53,40 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 	}
 
 	// lint check: see if input was properly formatted; sometimes messy files files parse
-	// successfully but result in logical errors because the Caddyfile is a bad format
-	// TODO: also perform this check on imported files
-	if !bytes.Equal(Format(body), body) {
-		warnings = append(warnings, caddyconfig.Warning{
-			File:    filename,
-			Message: "file is not formatted with 'caddy fmt'",
-		})
+	// successfully but result in logical errors (the Caddyfile is a bad format, I'm sorry)
+	if warning, different := formattingDifference(filename, body); different {
+		warnings = append(warnings, warning)
 	}
 
 	result, err := json.Marshal(cfg)
 
 	return result, warnings, err
+}
+
+// formattingDifference returns a warning and true if the formatted version
+// is any different from the input; empty warning and false otherwise.
+// TODO: also perform this check on imported files
+func formattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
+	formatted := Format(body)
+	if bytes.Equal(formatted, body) {
+		return caddyconfig.Warning{}, false
+	}
+
+	// find where the difference is
+	line := 1
+	for i, ch := range body {
+		if i >= len(formatted) || ch != formatted[i] {
+			break
+		}
+		if ch == '\n' {
+			line++
+		}
+	}
+	return caddyconfig.Warning{
+		File:    filename,
+		Line:    line,
+		Message: "input is not formatted with 'caddy fmt'",
+	}, true
 }
 
 // Unmarshaler is a type that can unmarshal
