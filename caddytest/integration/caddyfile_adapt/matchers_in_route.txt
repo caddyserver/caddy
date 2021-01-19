@@ -1,10 +1,10 @@
 :80 {
-    route {
-        # unused matchers should not panic
-        # see https://github.com/caddyserver/caddy/issues/3745
-        @matcher1 path /path1
-        @matcher2 path /path2
-    }
+	route {
+		# unused matchers should not panic
+		# see https://github.com/caddyserver/caddy/issues/3745
+		@matcher1 path /path1
+		@matcher2 path /path2
+	}
 }
 ----------
 {

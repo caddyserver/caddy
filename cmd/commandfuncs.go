@@ -529,6 +529,9 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		adaptedConfig = prettyBuf.Bytes()
 	}
 
+	// print result to stdout
+	fmt.Println(string(adaptedConfig))
+
 	// print warnings to stderr
 	for _, warn := range warnings {
 		msg := warn.Message
@@ -537,9 +540,6 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		}
 		fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
 	}
-
-	// print result to stdout
-	fmt.Println(string(adaptedConfig))
 
 	// validate output if requested
 	if adaptCmdValidateFlag {

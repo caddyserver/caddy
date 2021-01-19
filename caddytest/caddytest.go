@@ -327,7 +327,7 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 }
 
 // CompareAdapt adapts a config and then compares it against an expected result
-func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) bool {
+func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, expectedResponse string) bool {
 
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
@@ -353,7 +353,7 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 
 	if len(warnings) > 0 {
 		for _, w := range warnings {
-			t.Logf("warning: directive: %s : %s", w.Directive, w.Message)
+			t.Logf("warning: %s:%d: %s: %s", filename, w.Line, w.Directive, w.Message)
 		}
 	}
 
@@ -388,7 +388,7 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 
 // AssertAdapt adapts a config and then tests it against an expected result
 func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
-	ok := CompareAdapt(t, rawConfig, adapterName, expectedResponse)
+	ok := CompareAdapt(t, "Caddyfile", rawConfig, adapterName, expectedResponse)
 	if !ok {
 		t.Fail()
 	}

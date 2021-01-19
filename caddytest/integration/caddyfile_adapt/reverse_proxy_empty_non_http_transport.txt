@@ -1,7 +1,7 @@
 :8884
 
 reverse_proxy 127.0.0.1:65535 {
-    transport fastcgi
+	transport fastcgi
 }
 ----------
 {
