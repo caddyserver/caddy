@@ -40,6 +40,10 @@ func (st ServerType) buildTLSApp(
 	tlsApp := &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
 	var certLoaders []caddytls.CertificateLoader
 
+	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
+	if hp, ok := options["http_port"].(int); ok {
+		httpPort = strconv.Itoa(hp)
+	}
 	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
@@ -91,6 +95,11 @@ func (st ServerType) buildTLSApp(
 	}
 
 	for _, p := range pairings {
+		// avoid setting up TLS automation policies for a server that is HTTP-only
+		if !listenersUseAnyPortOtherThan(p.addresses, httpPort) {
+			continue
+		}
+
 		for _, sblock := range p.serverBlocks {
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
