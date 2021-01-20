@@ -14,10 +14,12 @@
 
 package caddycmd
 
+// NotifyReadiness notifies process manager of readiness.
 func NotifyReadiness() error {
 	return notifyReadiness()
 }
 
+// NotifyReloading notifies process manager of reloading.
 func NotifyReloading() error {
 	return notifyReloading()
 }
