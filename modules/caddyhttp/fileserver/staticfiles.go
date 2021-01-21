@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
@@ -106,7 +107,9 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		var tpl *template.Template
 		var err error
 		if fsrv.Browse.TemplateFile != "" {
-			tpl, err = template.ParseFiles(fsrv.Browse.TemplateFile)
+			tpl = template.New("custom_listing")
+			tpl.Funcs(sprig.HtmlFuncMap())
+			tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
 			if err != nil {
 				return fmt.Errorf("parsing browse template file: %v", err)
 			}
