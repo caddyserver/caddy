@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -461,14 +462,14 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if h.NextArg() {
 		code = h.Val()
 	}
-	if code == "permanent" {
-		code = "301"
-	}
-	if code == "temporary" || code == "" {
-		code = "302"
-	}
+
 	var body string
-	if code == "html" {
+	switch code {
+	case "permanent":
+		code = "301"
+	case "temporary", "":
+		code = "302"
+	case "html":
 		// Script tag comes first since that will better imitate a redirect in the browser's
 		// history, but the meta tag is a fallback for most non-JS clients.
 		const metaRedir = `<!DOCTYPE html>
@@ -483,6 +484,15 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		code = "302"
+	default:
+		codeInt, err := strconv.Atoi(code)
+		if err != nil {
+			return nil, h.Errf("Not a supported redir code type or not valid integer: '%s'", code)
+		}
+		if codeInt < 300 && codeInt > 399 {
+			return nil, h.Errf("Redir code not in the 3xx range: '%v'", codeInt)
+		}
 	}
 
 	return caddyhttp.StaticResponse{
