@@ -490,7 +490,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		if err != nil {
 			return nil, h.Errf("Not a supported redir code type or not valid integer: '%s'", code)
 		}
-		if codeInt < 300 && codeInt > 399 {
+		if codeInt < 300 || codeInt > 399 {
 			return nil, h.Errf("Redir code not in the 3xx range: '%v'", codeInt)
 		}
 	}
