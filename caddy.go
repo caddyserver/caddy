@@ -130,8 +130,8 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	newCfg, err := json.Marshal(rawCfg[rawConfigKey])
 	if err != nil {
 		return APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("encoding new config: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("encoding new config: %v", err),
 		}
 	}
 
@@ -146,8 +146,8 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
 	if err != nil {
 		return APIError{
-			Code: http.StatusInternalServerError,
-			Err:  fmt.Errorf("indexing config: %v", err),
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        fmt.Errorf("indexing config: %v", err),
 		}
 	}
 
@@ -311,14 +311,14 @@ func run(newCfg *Config, start bool) error {
 
 	// start the admin endpoint (and stop any prior one)
 	if start {
-		err = replaceAdmin(newCfg)
+		err = replaceLocalAdminServer(newCfg)
 		if err != nil {
 			return fmt.Errorf("starting caddy administration endpoint: %v", err)
 		}
 	}
 
 	if newCfg == nil {
-		return nil
+		newCfg = new(Config)
 	}
 
 	// prepare the new config for use
@@ -400,7 +400,7 @@ func run(newCfg *Config, start bool) error {
 	}
 
 	// Start
-	return func() error {
+	err = func() error {
 		var started []string
 		for name, a := range newCfg.apps {
 			err := a.Start()
@@ -420,6 +420,19 @@ func run(newCfg *Config, start bool) error {
 		}
 		return nil
 	}()
+	if err != nil {
+		return err
+	}
+
+	// replace any remote admin endpoint (only after apps are loaded,
+	// so that cert management of this endpoint doesn't prevent user's
+	// servers from starting which likely also use HTTP/HTTPS ports)
+	err = replaceRemoteAdminServer(ctx, newCfg)
+	if err != nil {
+		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
+	}
+
+	return nil
 }
 
 // Stop stops running the current configuration.
@@ -462,20 +475,6 @@ func unsyncedStop(cfg *Config) {
 	cfg.cancelFunc()
 }
 
-// stopAndCleanup calls stop and cleans up anything
-// else that is expedient. This should only be used
-// when stopping and not replacing with a new config.
-func stopAndCleanup() error {
-	if err := Stop(); err != nil {
-		return err
-	}
-	certmagic.CleanUpOwnLocks()
-	if pidfile != "" {
-		return os.Remove(pidfile)
-	}
-	return nil
-}
-
 // Validate loads, provisions, and validates
 // cfg, but does not start running it.
 func Validate(cfg *Config) error {
@@ -484,6 +483,72 @@ func Validate(cfg *Config) error {
 		cfg.cancelFunc() // call Cleanup on all modules
 	}
 	return err
+}
+
+// exitProcess exits the process as gracefully as possible,
+// but it always exits, even if there are errors doing so.
+// It stops all apps, cleans up external locks, removes any
+// PID file, and shuts down admin endpoint(s) in a goroutine.
+// Errors are logged along the way, and an appropriate exit
+// code is emitted.
+func exitProcess(logger *zap.Logger) {
+	if logger == nil {
+		logger = Log()
+	}
+	logger.Warn("exiting; byeee!! 👋")
+
+	exitCode := ExitCodeSuccess
+
+	// stop all apps
+	if err := Stop(); err != nil {
+		logger.Error("failed to stop apps", zap.Error(err))
+		exitCode = ExitCodeFailedQuit
+	}
+
+	// clean up certmagic locks
+	certmagic.CleanUpOwnLocks(logger)
+
+	// remove pidfile
+	if pidfile != "" {
+		err := os.Remove(pidfile)
+		if err != nil {
+			logger.Error("cleaning up PID file:",
+				zap.String("pidfile", pidfile),
+				zap.Error(err))
+			exitCode = ExitCodeFailedQuit
+		}
+	}
+
+	// shut down admin endpoint(s) in goroutines so that
+	// if this function was called from an admin handler,
+	// it has a chance to return gracefully
+	// use goroutine so that we can finish responding to API request
+	go func() {
+		defer func() {
+			logger = logger.With(zap.Int("exit_code", exitCode))
+			if exitCode == ExitCodeSuccess {
+				logger.Info("shutdown complete")
+			} else {
+				logger.Error("unclean shutdown")
+			}
+			os.Exit(exitCode)
+		}()
+
+		if remoteAdminServer != nil {
+			err := stopAdminServer(remoteAdminServer)
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				logger.Error("failed to stop remote admin server gracefully", zap.Error(err))
+			}
+		}
+		if localAdminServer != nil {
+			err := stopAdminServer(localAdminServer)
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				logger.Error("failed to stop local admin server gracefully", zap.Error(err))
+			}
+		}
+	}()
 }
 
 // Duration can be an integer or a string. An integer is

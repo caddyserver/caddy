@@ -99,8 +99,8 @@ github.com/bombsimon/wsl/v2 v2.0.0/go.mod h1:mf25kr/SqFEPhhcxW1+7pxzGlW+hIl/hYTK
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/caddyserver/certmagic v0.12.1-0.20210107224522-725b69d53d57 h1:eslWGgoQlVAzOGMUfK3ncoHnONjCUVOPTGRD9JG3gAY=
-github.com/caddyserver/certmagic v0.12.1-0.20210107224522-725b69d53d57/go.mod h1:yHMCSjG2eOFdI/Jx0+CCzr2DLw+UQu42KbaOVBx7LwA=
+github.com/caddyserver/certmagic v0.12.1-0.20210125214647-2d9d97e41af8 h1:Rp4ugJTCtYxySawSpPrirYWdCM28YV41XbMfEjdn90M=
+github.com/caddyserver/certmagic v0.12.1-0.20210125214647-2d9d97e41af8/go.mod h1:CUPfwomVXGCyV77EQbR3v7H4tGJ4pX16HATeR55rqws=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.0/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
@@ -175,6 +175,7 @@ github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7
 github.com/fatih/color v1.6.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/fatih/color v1.8.0/go.mod h1:3l45GVGkyrnYNl9HoIjnp2NnNWvh6hLAqD8yTfGjnw8=
+github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 h1:BHsljHzVlRcyQhjrss6TZTdY2VfCqZPbv5k3iBFa2ZQ=
 github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568/go.mod h1:xEzjJPgXI435gkrCt3MPfRiAkVrwSbHsst4LCFVfpJc=
 github.com/francoispqt/gojay v1.2.13/go.mod h1:ehT5mTG4ua4581f1++1WLG0vPdaA9HaiDsoyrBGkyDY=
 github.com/franela/goblin v0.0.0-20200105215937-c9ffbefa60db/go.mod h1:7dvUGVsVBjqR7JHJk0brhHOZYGmfBYOrK0ZhYMEtBr4=
@@ -459,8 +460,8 @@ github.com/mattn/go-sqlite3 v1.10.0/go.mod h1:FPy6KqzDD04eiIsT53CuJW3U88zkxoIYsO
 github.com/mattn/goveralls v0.0.2/go.mod h1:8d1ZMHsd7fW6IRPKQh46F2WRpyib5/X4FOpevwGNQEw=
 github.com/matttproud/golang_protobuf_extensions v1.0.1 h1:4hp9jkHxhMHkqkrB3Ix0jegS5sx/RkqARlsWZ6pIwiU=
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
-github.com/mholt/acmez v0.1.2 h1:26ncYNBt59D+59cMUHuGa/Fzjmu6FFrBm6kk/8hdXt0=
-github.com/mholt/acmez v0.1.2/go.mod h1:8qnn8QA/Ewx8E3ZSsmscqsIjhhpxuy9vqdgbX2ceceM=
+github.com/mholt/acmez v0.1.3 h1:J7MmNIk4Qf9b8mAGqAh4XkNeowv3f1zW816yf4zt7Qk=
+github.com/mholt/acmez v0.1.3/go.mod h1:8qnn8QA/Ewx8E3ZSsmscqsIjhhpxuy9vqdgbX2ceceM=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/miekg/dns v1.1.30 h1:Qww6FseFn8PRfw07jueqIXqodm0JKiiKuK0DeXSqfyo=

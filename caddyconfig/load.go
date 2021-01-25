@@ -69,8 +69,8 @@ func (al adminLoad) Routes() []caddy.AdminRoute {
 func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return caddy.APIError{
-			Code: http.StatusMethodNotAllowed,
-			Err:  fmt.Errorf("method not allowed"),
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
 		}
 	}
 
@@ -81,8 +81,8 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	_, err := io.Copy(buf, r.Body)
 	if err != nil {
 		return caddy.APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("reading request body: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("reading request body: %v", err),
 		}
 	}
 	body := buf.Bytes()
@@ -93,31 +93,31 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 		ct, _, err := mime.ParseMediaType(ctHeader)
 		if err != nil {
 			return caddy.APIError{
-				Code: http.StatusBadRequest,
-				Err:  fmt.Errorf("invalid Content-Type: %v", err),
+				HTTPStatus: http.StatusBadRequest,
+				Err:        fmt.Errorf("invalid Content-Type: %v", err),
 			}
 		}
 		if !strings.HasSuffix(ct, "/json") {
 			slashIdx := strings.Index(ct, "/")
 			if slashIdx < 0 {
 				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("malformed Content-Type"),
+					HTTPStatus: http.StatusBadRequest,
+					Err:        fmt.Errorf("malformed Content-Type"),
 				}
 			}
 			adapterName := ct[slashIdx+1:]
 			cfgAdapter := GetAdapter(adapterName)
 			if cfgAdapter == nil {
 				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("unrecognized config adapter '%s'", adapterName),
+					HTTPStatus: http.StatusBadRequest,
+					Err:        fmt.Errorf("unrecognized config adapter '%s'", adapterName),
 				}
 			}
 			result, warnings, err := cfgAdapter.Adapt(body, nil)
 			if err != nil {
 				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("adapting config using %s adapter: %v", adapterName, err),
+					HTTPStatus: http.StatusBadRequest,
+					Err:        fmt.Errorf("adapting config using %s adapter: %v", adapterName, err),
 				}
 			}
 			if len(warnings) > 0 {
@@ -136,8 +136,8 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	err = caddy.Load(body, forceReload)
 	if err != nil {
 		return caddy.APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("loading config: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("loading config: %v", err),
 		}
 	}
 
