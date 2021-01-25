@@ -208,7 +208,15 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 
 	// delete
 	for _, fieldName := range ops.Delete {
-		hdr.Del(repl.ReplaceAll(fieldName, ""))
+		if strings.ContainsAny(repl.ReplaceAll(fieldName, ""), "+|*|[") {
+			for key := range hdr {
+				if matched, _ := regexp.MatchString("^"+fieldName+"$", key); matched {
+					hdr.Del(repl.ReplaceAll(key, ""))
+				}
+			}
+		} else {
+			hdr.Del(repl.ReplaceAll(fieldName, ""))
+		}
 	}
 
 	// replace
