@@ -475,7 +475,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 			for _, adminAccess := range remote.AccessControl {
 				for _, allowedKey := range adminAccess.publicKeys {
 					// see if we found a matching public key; the TLS server already verified the chain
-					// so we know the client posesses the associated private key; this handy interface
+					// so we know the client possesses the associated private key; this handy interface
 					// doesn't appear to be defined anywhere in the std lib, but was implemented here:
 					// https://github.com/golang/go/commit/b5f2c0f50297fa5cd14af668ddd7fd923626cf8c
 					comparer, ok := peerCert.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
