@@ -119,7 +119,7 @@ type HeaderOps struct {
 	Set http.Header `json:"set,omitempty"`
 
 	// Names of HTTP header fields to delete.
-	Delete []string `json:"delete,omitempty"`
+	Delete []DeleteHeader `json:"delete,omitempty"`
 
 	// Performs substring replacements of HTTP headers in-situ.
 	Replace map[string][]Replacement `json:"replace,omitempty"`
@@ -136,6 +136,15 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 				}
 				replacements[i].re = re
 			}
+		}
+	}
+	for _, delHeader := range ops.Delete {
+		if strings.ContainsAny(delHeader.HeaderName, "+|*|[") {
+			re, err := regexp.Compile("^" + delHeader.HeaderName + "$")
+			if err != nil {
+				return fmt.Errorf("Deletion for header field '%s': %v", delHeader.HeaderName, err)
+			}
+			delHeader.re = re
 		}
 	}
 	return nil
@@ -164,6 +173,14 @@ type Replacement struct {
 
 	// The string with which to replace matches.
 	Replace string `json:"replace,omitempty"`
+
+	re *regexp.Regexp
+}
+
+// DeleteHeader describes a string delete,
+type DeleteHeader struct {
+	// The substring to delete.
+	HeaderName string `json:"delete,omitempty"`
 
 	re *regexp.Regexp
 }
@@ -207,15 +224,15 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	}
 
 	// delete
-	for _, fieldName := range ops.Delete {
-		if strings.ContainsAny(repl.ReplaceAll(fieldName, ""), "+|*|[") {
+	for _, delHeader := range ops.Delete {
+		if delHeader.re != nil {
 			for key := range hdr {
-				if matched, _ := regexp.MatchString("^"+fieldName+"$", key); matched {
+				if matched := delHeader.re.MatchString(key); matched {
 					hdr.Del(repl.ReplaceAll(key, ""))
 				}
 			}
 		} else {
-			hdr.Del(repl.ReplaceAll(fieldName, ""))
+			hdr.Del(repl.ReplaceAll(delHeader.HeaderName, ""))
 		}
 	}
 
