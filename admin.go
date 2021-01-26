@@ -20,8 +20,8 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"expvar"
 	"fmt"
@@ -87,6 +87,12 @@ type AdminConfig struct {
 type ConfigSettings struct {
 	// Whether to keep a copy of the active config on disk. Default is true.
 	Persist *bool `json:"persist,omitempty"`
+
+	// Loads a configuration to use. This is helpful if your configs are
+	// managed elsewhere, and you want Caddy to pull its config dynamically
+	// when it starts. EXPERIMENTAL: subject to change.
+	// TODO: Prevent recursive/infinite config loads
+	Load json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 }
 
 // RemoteAdmin enables and configures remote management. If enabled,
@@ -122,8 +128,9 @@ type RemoteAdmin struct {
 // AdminAccess specifies what permissions an identity or group
 // of identities are granted.
 type AdminAccess struct {
-	// PEM-encoded certificates containing public keys to accept. Any of
-	// these public keys can appear in any part of a verified chain.
+	// Base64-encoded DER certificates containing public keys to accept.
+	// (The contents of PEM blocks are base64-encoded.)
+	// Any of these public keys can appear in any part of a verified chain.
 	PublicKeys []string `json:"public_keys,omitempty"`
 
 	// Limits what the associated identities are allowed to do.
@@ -330,6 +337,10 @@ func replaceLocalAdminServer(cfg *Config) error {
 // according to the relevant configuration in cfg. It stops any previous
 // remote admin server and only starts a new one if configured.
 func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
+
 	remoteLogger := Log().Named("admin.remote")
 
 	oldAdminServer := remoteAdminServer
@@ -365,17 +376,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 		}
 	}
 
-	cmCfg := &certmagic.Config{
-		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
-		Logger:  remoteLogger,
-		Issuers: cfg.Admin.Remote.identityIssuers,
-	}
-	remoteAdminCertCache = certmagic.NewCache(certmagic.CacheOptions{
-		GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
-			return cmCfg, nil
-		},
-	})
-	cmCfg = certmagic.New(remoteAdminCertCache, *cmCfg)
+	cmCfg := cfg.Admin.Remote.certmagicConfig(remoteLogger)
 
 	// issuers have circular dependencies with the configs because,
 	// as explained in the caddytls package, they need access to the
@@ -400,19 +401,13 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	// so that we can enforce access controls at the application layer
 	clientCertPool := x509.NewCertPool()
 	for i, accessControl := range cfg.Admin.Remote.AccessControl {
-		for j, certPEM := range accessControl.PublicKeys {
-			certs, err := parseCertsFromPEMBundle([]byte(certPEM))
+		for j, certBase64 := range accessControl.PublicKeys {
+			cert, err := decodeBase64DERCert(certBase64)
 			if err != nil {
-				return fmt.Errorf("access control %d public key %d: parsing certificate in bundle: %v", i, j, err)
+				return fmt.Errorf("access control %d public key %d: parsing base64 certificate DER: %v", i, j, err)
 			}
-			for k, cert := range certs {
-				if pk, ok := cert.PublicKey.(crypto.PublicKey); ok {
-					accessControl.publicKeys = append(accessControl.publicKeys, pk)
-				} else {
-					return fmt.Errorf("access control %d public key %d: certificate %d does not have valid public key, got: %T", i, j, k, cert.PublicKey)
-				}
-				clientCertPool.AddCert(cert)
-			}
+			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
+			clientCertPool.AddCert(cert)
 		}
 	}
 
@@ -463,6 +458,39 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 		zap.String("address", addr.String()))
 
 	return nil
+}
+
+func (remote RemoteAdmin) certmagicConfig(logger *zap.Logger) *certmagic.Config {
+	cmCfg := &certmagic.Config{
+		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
+		Logger:  logger,
+		Issuers: remote.identityIssuers,
+	}
+	if remoteAdminCertCache == nil {
+		remoteAdminCertCache = certmagic.NewCache(certmagic.CacheOptions{
+			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
+				return cmCfg, nil
+			},
+		})
+	}
+	return certmagic.New(remoteAdminCertCache, *cmCfg)
+}
+
+// IdentityCredentials returns this instance's configured, managed identity credentials
+// that can be used in TLS client authentication.
+func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, error) {
+	if ctx.cfg == nil || ctx.cfg.Admin == nil || ctx.cfg.Admin.Remote == nil {
+		return nil, fmt.Errorf("remote administration not configured")
+	}
+	remote := ctx.cfg.Admin.Remote
+	if len(remote.Identities) == 0 {
+		return nil, fmt.Errorf("no identities configured")
+	}
+	if logger == nil {
+		logger = Log()
+	}
+	magic := remote.certmagicConfig(logger)
+	return magic.ClientCredentials(ctx, remote.Identities)
 }
 
 // enforceAccessControls enforces application-layer access controls for r based on remote.
@@ -1075,29 +1103,13 @@ func parseAdminListenAddr(addr string, defaultAddr string) (NetworkAddress, erro
 	return listenAddr, nil
 }
 
-// parseCertsFromPEMBundle parses a certificate bundle from top to bottom and returns
-// a slice of x509 certificates. This function will error if no certificates are found.
-// TODO: This is borrowed from CertMagic, where it is unexported.
-func parseCertsFromPEMBundle(bundle []byte) ([]*x509.Certificate, error) {
-	var certificates []*x509.Certificate
-	var certDERBlock *pem.Block
-	for {
-		certDERBlock, bundle = pem.Decode(bundle)
-		if certDERBlock == nil {
-			break
-		}
-		if certDERBlock.Type == "CERTIFICATE" {
-			cert, err := x509.ParseCertificate(certDERBlock.Bytes)
-			if err != nil {
-				return nil, err
-			}
-			certificates = append(certificates, cert)
-		}
+// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
+	derBytes, err := base64.StdEncoding.DecodeString(certStr)
+	if err != nil {
+		return nil, err
 	}
-	if len(certificates) == 0 {
-		return nil, fmt.Errorf("no certificates found in bundle")
-	}
-	return certificates, nil
+	return x509.ParseCertificate(derBytes)
 }
 
 var (

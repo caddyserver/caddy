@@ -153,7 +153,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	// load this new config; if it fails, we need to revert to
 	// our old representation of caddy's actual config
-	err = unsyncedDecodeAndRun(newCfg)
+	err = unsyncedDecodeAndRun(newCfg, true)
 	if err != nil {
 		if len(rawCfgJSON) > 0 {
 			// restore old config state to keep it consistent
@@ -233,8 +233,10 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 // it as the new config, replacing any other current config.
 // It does NOT update the raw config state, as this is a
 // lower-level function; most callers will want to use Load
-// instead. A write lock on currentCfgMu is required!
-func unsyncedDecodeAndRun(cfgJSON []byte) error {
+// instead. A write lock on currentCfgMu is required! If
+// allowPersist is false, it will not be persisted to disk,
+// even if it is configured to.
+func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 	// remove any @id fields from the JSON, which would cause
 	// loading to break since the field wouldn't be recognized
 	strippedCfgJSON := RemoveMetaFields(cfgJSON)
@@ -259,7 +261,8 @@ func unsyncedDecodeAndRun(cfgJSON []byte) error {
 	unsyncedStop(oldCfg)
 
 	// autosave a non-nil config, if not disabled
-	if newCfg != nil &&
+	if allowPersist &&
+		newCfg != nil &&
 		(newCfg.Admin == nil ||
 			newCfg.Admin.Config == nil ||
 			newCfg.Admin.Config.Persist == nil ||
@@ -424,15 +427,53 @@ func run(newCfg *Config, start bool) error {
 		return err
 	}
 
+	// now that the user's config is running, finish setting up anything else,
+	// such as remote admin endpoint, config loader, etc.
+	return finishSettingUp(ctx, newCfg)
+}
+
+// finishSettingUp should be run after all apps have successfully started.
+func finishSettingUp(ctx Context, cfg *Config) error {
 	// replace any remote admin endpoint (only after apps are loaded,
 	// so that cert management of this endpoint doesn't prevent user's
 	// servers from starting which likely also use HTTP/HTTPS ports)
-	err = replaceRemoteAdminServer(ctx, newCfg)
+	err := replaceRemoteAdminServer(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
 	}
 
+	// if dynamic config is requested, set that up and run it
+	if cfg != nil && cfg.Admin != nil && cfg.Admin.Config != nil && cfg.Admin.Config.Load != nil {
+		val, err := ctx.LoadModule(cfg.Admin.Config, "Load")
+		if err != nil {
+			return fmt.Errorf("loading config loader module: %s", err)
+		}
+		loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("loading dynamic config from %T: %v", val, err)
+		}
+
+		// do this in a goroutine so current config can finish being loaded; otherwise deadlock
+		go func() {
+			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()))
+			currentCfgMu.Lock()
+			err := unsyncedDecodeAndRun(loadedConfig, false)
+			currentCfgMu.Unlock()
+			if err == nil {
+				Log().Info("dynamically-loaded config applied successfully")
+			} else {
+				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+			}
+		}()
+	}
+
 	return nil
+}
+
+// ConfigLoader is a type that can load a Caddy config. The
+// returned config must be valid Caddy JSON.
+type ConfigLoader interface {
+	LoadConfig(Context) ([]byte, error)
 }
 
 // Stop stops running the current configuration.
