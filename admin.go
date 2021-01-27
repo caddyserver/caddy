@@ -117,7 +117,7 @@ type IdentityConfig struct {
 	// List of names or IP addresses which refer to this server.
 	// Certificates will be obtained for these identifiers so
 	// secure TLS connections can be made using them.
-	Identities []string `json:"identities,omitempty"`
+	Identifiers []string `json:"identifiers,omitempty"`
 
 	// Issuers that can provide this admin endpoint its identity
 	// certificate(s). Default: ACME issuers configured for
@@ -402,7 +402,7 @@ func manageIdentity(ctx Context, cfg *Config) error {
 	}
 
 	// obtain and renew server identity certificate(s)
-	return cmCfg.ManageAsync(ctx, cfg.Admin.Identity.Identities)
+	return cmCfg.ManageAsync(ctx, cfg.Admin.Identity.Identifiers)
 }
 
 // replaceRemoteAdminServer replaces the running remote admin server
@@ -526,14 +526,14 @@ func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, e
 		return nil, fmt.Errorf("no server identity configured")
 	}
 	ident := ctx.cfg.Admin.Identity
-	if len(ident.Identities) == 0 {
-		return nil, fmt.Errorf("no identities configured")
+	if len(ident.Identifiers) == 0 {
+		return nil, fmt.Errorf("no identifiers configured")
 	}
 	if logger == nil {
 		logger = Log()
 	}
 	magic := ident.certmagicConfig(logger)
-	return magic.ClientCredentials(ctx, ident.Identities)
+	return magic.ClientCredentials(ctx, ident.Identifiers)
 }
 
 // enforceAccessControls enforces application-layer access controls for r based on remote.
