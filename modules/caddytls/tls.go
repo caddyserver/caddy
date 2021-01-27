@@ -306,9 +306,11 @@ func (t *TLS) Manage(names []string) error {
 // requires that the automation policy for r.Host has an issuer of type
 // *certmagic.ACMEManager, or one that is ACME-enabled (GetACMEIssuer()).
 func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
+	// no-op if it's not an ACME challenge request
 	if !certmagic.LooksLikeHTTPChallenge(r) {
 		return false
 	}
+
 	// try all the issuers until we find the one that initiated the challenge
 	ap := t.getAutomationPolicyForName(r.Host)
 	type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
@@ -320,6 +322,16 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 			}
 		}
 	}
+
+	// it's possible another server in this process initiated the challenge;
+	// users have requested that Caddy only handle HTTP challenges it initiated,
+	// so that users can proxy the others through to their backends; but we
+	// might not have an automation policy for all identifiers that are trying
+	// to get certificates (e.g. the admin endpoint), so we do this manual check
+	if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
+		return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+	}
+
 	return false
 }
 
