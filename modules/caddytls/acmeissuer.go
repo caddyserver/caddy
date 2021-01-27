@@ -59,6 +59,13 @@ type ACMEIssuer struct {
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
 
+	// If you have an existing account with the ACME server, put
+	// the private key here in PEM format. The ACME client will
+	// look up your account information with this key first before
+	// trying to create a new one. You can use placeholders here,
+	// for example if you have it in an environment variable.
+	AccountKey string `json:"account_key,omitempty"`
+
 	// If using an ACME CA that requires an external account
 	// binding, specify the CA-provided credentials here.
 	ExternalAccount *acme.EAB `json:"external_account,omitempty"`
@@ -98,13 +105,24 @@ func (ACMEIssuer) CaddyModule() caddy.ModuleInfo {
 func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger(iss)
 
+	repl := caddy.NewReplacer()
+
 	// expand email address, if non-empty
 	if iss.Email != "" {
-		email, err := caddy.NewReplacer().ReplaceOrErr(iss.Email, true, true)
+		email, err := repl.ReplaceOrErr(iss.Email, true, true)
 		if err != nil {
 			return fmt.Errorf("expanding email address '%s': %v", iss.Email, err)
 		}
 		iss.Email = email
+	}
+
+	// expand account key, if non-empty
+	if iss.AccountKey != "" {
+		accountKey, err := repl.ReplaceOrErr(iss.AccountKey, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding account key PEM '%s': %v", iss.AccountKey, err)
+		}
+		iss.AccountKey = accountKey
 	}
 
 	// DNS providers
@@ -161,6 +179,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
+		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,

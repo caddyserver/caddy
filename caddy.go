@@ -130,8 +130,8 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	newCfg, err := json.Marshal(rawCfg[rawConfigKey])
 	if err != nil {
 		return APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("encoding new config: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("encoding new config: %v", err),
 		}
 	}
 
@@ -146,14 +146,14 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
 	if err != nil {
 		return APIError{
-			Code: http.StatusInternalServerError,
-			Err:  fmt.Errorf("indexing config: %v", err),
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        fmt.Errorf("indexing config: %v", err),
 		}
 	}
 
 	// load this new config; if it fails, we need to revert to
 	// our old representation of caddy's actual config
-	err = unsyncedDecodeAndRun(newCfg)
+	err = unsyncedDecodeAndRun(newCfg, true)
 	if err != nil {
 		if len(rawCfgJSON) > 0 {
 			// restore old config state to keep it consistent
@@ -233,8 +233,10 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 // it as the new config, replacing any other current config.
 // It does NOT update the raw config state, as this is a
 // lower-level function; most callers will want to use Load
-// instead. A write lock on currentCfgMu is required!
-func unsyncedDecodeAndRun(cfgJSON []byte) error {
+// instead. A write lock on currentCfgMu is required! If
+// allowPersist is false, it will not be persisted to disk,
+// even if it is configured to.
+func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 	// remove any @id fields from the JSON, which would cause
 	// loading to break since the field wouldn't be recognized
 	strippedCfgJSON := RemoveMetaFields(cfgJSON)
@@ -243,6 +245,19 @@ func unsyncedDecodeAndRun(cfgJSON []byte) error {
 	err := strictUnmarshalJSON(strippedCfgJSON, &newCfg)
 	if err != nil {
 		return err
+	}
+
+	// prevent recursive config loads; that is a user error, and
+	// although frequent config loads should be safe, we cannot
+	// guarantee that in the presence of third party plugins, nor
+	// do we want this error to go unnoticed (we assume it was a
+	// pulled config if we're not allowed to persist it)
+	if !allowPersist &&
+		newCfg != nil &&
+		newCfg.Admin != nil &&
+		newCfg.Admin.Config != nil &&
+		newCfg.Admin.Config.LoadRaw != nil {
+		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs")
 	}
 
 	// run the new config and start all its apps
@@ -259,7 +274,8 @@ func unsyncedDecodeAndRun(cfgJSON []byte) error {
 	unsyncedStop(oldCfg)
 
 	// autosave a non-nil config, if not disabled
-	if newCfg != nil &&
+	if allowPersist &&
+		newCfg != nil &&
 		(newCfg.Admin == nil ||
 			newCfg.Admin.Config == nil ||
 			newCfg.Admin.Config.Persist == nil ||
@@ -311,14 +327,14 @@ func run(newCfg *Config, start bool) error {
 
 	// start the admin endpoint (and stop any prior one)
 	if start {
-		err = replaceAdmin(newCfg)
+		err = replaceLocalAdminServer(newCfg)
 		if err != nil {
 			return fmt.Errorf("starting caddy administration endpoint: %v", err)
 		}
 	}
 
 	if newCfg == nil {
-		return nil
+		newCfg = new(Config)
 	}
 
 	// prepare the new config for use
@@ -400,7 +416,7 @@ func run(newCfg *Config, start bool) error {
 	}
 
 	// Start
-	return func() error {
+	err = func() error {
 		var started []string
 		for name, a := range newCfg.apps {
 			err := a.Start()
@@ -420,6 +436,64 @@ func run(newCfg *Config, start bool) error {
 		}
 		return nil
 	}()
+	if err != nil {
+		return err
+	}
+
+	// now that the user's config is running, finish setting up anything else,
+	// such as remote admin endpoint, config loader, etc.
+	return finishSettingUp(ctx, newCfg)
+}
+
+// finishSettingUp should be run after all apps have successfully started.
+func finishSettingUp(ctx Context, cfg *Config) error {
+	// establish this server's identity (only after apps are loaded
+	// so that cert management of this endpoint doesn't prevent user's
+	// servers from starting which likely also use HTTP/HTTPS ports;
+	// but before remote management which may depend on these creds)
+	err := manageIdentity(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
+	}
+
+	// replace any remote admin endpoint
+	err = replaceRemoteAdminServer(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
+	}
+
+	// if dynamic config is requested, set that up and run it
+	if cfg != nil && cfg.Admin != nil && cfg.Admin.Config != nil && cfg.Admin.Config.LoadRaw != nil {
+		val, err := ctx.LoadModule(cfg.Admin.Config, "LoadRaw")
+		if err != nil {
+			return fmt.Errorf("loading config loader module: %s", err)
+		}
+		loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("loading dynamic config from %T: %v", val, err)
+		}
+
+		// do this in a goroutine so current config can finish being loaded; otherwise deadlock
+		go func() {
+			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()))
+			currentCfgMu.Lock()
+			err := unsyncedDecodeAndRun(loadedConfig, false)
+			currentCfgMu.Unlock()
+			if err == nil {
+				Log().Info("dynamically-loaded config applied successfully")
+			} else {
+				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+			}
+		}()
+	}
+
+	return nil
+}
+
+// ConfigLoader is a type that can load a Caddy config. The
+// returned config must be valid Caddy JSON.
+type ConfigLoader interface {
+	LoadConfig(Context) ([]byte, error)
 }
 
 // Stop stops running the current configuration.
@@ -462,20 +536,6 @@ func unsyncedStop(cfg *Config) {
 	cfg.cancelFunc()
 }
 
-// stopAndCleanup calls stop and cleans up anything
-// else that is expedient. This should only be used
-// when stopping and not replacing with a new config.
-func stopAndCleanup() error {
-	if err := Stop(); err != nil {
-		return err
-	}
-	certmagic.CleanUpOwnLocks()
-	if pidfile != "" {
-		return os.Remove(pidfile)
-	}
-	return nil
-}
-
 // Validate loads, provisions, and validates
 // cfg, but does not start running it.
 func Validate(cfg *Config) error {
@@ -484,6 +544,72 @@ func Validate(cfg *Config) error {
 		cfg.cancelFunc() // call Cleanup on all modules
 	}
 	return err
+}
+
+// exitProcess exits the process as gracefully as possible,
+// but it always exits, even if there are errors doing so.
+// It stops all apps, cleans up external locks, removes any
+// PID file, and shuts down admin endpoint(s) in a goroutine.
+// Errors are logged along the way, and an appropriate exit
+// code is emitted.
+func exitProcess(logger *zap.Logger) {
+	if logger == nil {
+		logger = Log()
+	}
+	logger.Warn("exiting; byeee!! 👋")
+
+	exitCode := ExitCodeSuccess
+
+	// stop all apps
+	if err := Stop(); err != nil {
+		logger.Error("failed to stop apps", zap.Error(err))
+		exitCode = ExitCodeFailedQuit
+	}
+
+	// clean up certmagic locks
+	certmagic.CleanUpOwnLocks(logger)
+
+	// remove pidfile
+	if pidfile != "" {
+		err := os.Remove(pidfile)
+		if err != nil {
+			logger.Error("cleaning up PID file:",
+				zap.String("pidfile", pidfile),
+				zap.Error(err))
+			exitCode = ExitCodeFailedQuit
+		}
+	}
+
+	// shut down admin endpoint(s) in goroutines so that
+	// if this function was called from an admin handler,
+	// it has a chance to return gracefully
+	// use goroutine so that we can finish responding to API request
+	go func() {
+		defer func() {
+			logger = logger.With(zap.Int("exit_code", exitCode))
+			if exitCode == ExitCodeSuccess {
+				logger.Info("shutdown complete")
+			} else {
+				logger.Error("unclean shutdown")
+			}
+			os.Exit(exitCode)
+		}()
+
+		if remoteAdminServer != nil {
+			err := stopAdminServer(remoteAdminServer)
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				logger.Error("failed to stop remote admin server gracefully", zap.Error(err))
+			}
+		}
+		if localAdminServer != nil {
+			err := stopAdminServer(localAdminServer)
+			if err != nil {
+				exitCode = ExitCodeFailedQuit
+				logger.Error("failed to stop local admin server gracefully", zap.Error(err))
+			}
+		}
+	}()
 }
 
 // Duration can be an integer or a string. An integer is
