@@ -109,7 +109,7 @@ func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 		if hl.TLS.UseServerIdentity {
 			certs, err := ctx.IdentityCredentials(ctx.Logger(hl))
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("getting server identity credentials: %v", err)
 			}
 			if tlsConfig == nil {
 				tlsConfig = new(tls.Config)

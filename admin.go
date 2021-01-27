@@ -77,27 +77,64 @@ type AdminConfig struct {
 	// Options pertaining to configuration management.
 	Config *ConfigSettings `json:"config,omitempty"`
 
-	// Options pertaining to remote management. By default, remote
-	// administration is disabled. EXPERIMENTAL: This feature is
-	// subject to change.
+	// Options that establish this server's identity. Identity refers to
+	// credentials which can be used to uniquely identify and authenticate
+	// this server instance. This is required if remote administration is
+	// enabled (but does not require remote administration to be enabled).
+	// Default: no identity management.
+	Identity *IdentityConfig `json:"identity,omitempty"`
+
+	// Options pertaining to remote administration. By default, remote
+	// administration is disabled. If enabled, identity management must
+	// also be configured, as that is how the endpoint is secured.
+	// See the neighboring "identity" object.
+	//
+	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
 }
 
 // ConfigSettings configures the management of configuration.
 type ConfigSettings struct {
 	// Whether to keep a copy of the active config on disk. Default is true.
+	// Note that "pulled" dynamic configs (using the neighboring "load" module)
+	// are not persisted; only configs that are pushed to Caddy get persisted.
 	Persist *bool `json:"persist,omitempty"`
 
 	// Loads a configuration to use. This is helpful if your configs are
 	// managed elsewhere, and you want Caddy to pull its config dynamically
-	// when it starts. EXPERIMENTAL: subject to change.
-	// TODO: Prevent recursive/infinite config loads
-	Load json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
+	// when it starts. The pulled config completely replaces the current
+	// one, just like any other config load. It is an error if a pulled
+	// config is configured to pull another config.
+	//
+	// EXPERIMENTAL: Subject to change.
+	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 }
 
-// RemoteAdmin enables and configures remote management. If enabled,
+// IdentityConfig configures management of this server's identity. An identity
+// consists of credentials that uniquely verify this instance; for example,
+// TLS certificates (public + private key pairs).
+type IdentityConfig struct {
+	// List of names or IP addresses which refer to this server.
+	// Certificates will be obtained for these identifiers so
+	// secure TLS connections can be made using them.
+	Identities []string `json:"identities,omitempty"`
+
+	// Issuers that can provide this admin endpoint its identity
+	// certificate(s). Default: ACME issuers configured for
+	// ZeroSSL and Let's Encrypt. Be sure to change this if you
+	// require credentials for private identifiers.
+	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
+
+	issuers []certmagic.Issuer
+}
+
+// RemoteAdmin enables and configures remote administration. If enabled,
 // a secure listener enforcing mutual TLS authentication will be started
 // on a different port from the standard plaintext admin server.
+//
+// This endpoint is secured using identity management, which must be
+// configured separately (because identity management does not depend
+// on remote adminstration). See the admin/identity config struct.
 //
 // EXPERIMENTAL: Subject to change.
 type RemoteAdmin struct {
@@ -105,31 +142,18 @@ type RemoteAdmin struct {
 	// Default: :2021
 	Listen string `json:"listen,omitempty"`
 
-	// List of identities by which this server can be accessed,
-	// for example IP addresses and DNS names. Certificates will
-	// be obtained for these identifiers so secure TLS connections
-	// can be made using them.
-	Identities []string `json:"identities,omitempty"`
-
-	// Issuers that can provide this admin endpoint its identity
-	// certificate(s). Default: an ACME issuer configured to use
-	// the Caddy Account portal.
-	IssuersRaw []json.RawMessage `json:"identity_issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
-
 	// List of access controls for this secure admin endpoint.
 	// This configures TLS mutual authentication (i.e. authorized
 	// client certificates), but also application-layer permissions
 	// like which paths and methods each identity is authorized for.
 	AccessControl []*AdminAccess `json:"access_control,omitempty"`
-
-	identityIssuers []certmagic.Issuer
 }
 
 // AdminAccess specifies what permissions an identity or group
 // of identities are granted.
 type AdminAccess struct {
 	// Base64-encoded DER certificates containing public keys to accept.
-	// (The contents of PEM blocks are base64-encoded.)
+	// (The contents of PEM certificate blocks are base64-encoded DER.)
 	// Any of these public keys can appear in any part of a verified chain.
 	PublicKeys []string `json:"public_keys,omitempty"`
 
@@ -333,6 +357,54 @@ func replaceLocalAdminServer(cfg *Config) error {
 	return nil
 }
 
+// manageIdentity sets up automated identity management for this server.
+func manageIdentity(ctx Context, cfg *Config) error {
+	if cfg == nil || cfg.Admin == nil || cfg.Admin.Identity == nil {
+		return nil
+	}
+
+	oldIdentityCertCache := identityCertCache
+	if oldIdentityCertCache != nil {
+		defer oldIdentityCertCache.Stop()
+	}
+
+	// set default issuers; this is pretty hacky because we can't
+	// import the caddytls package -- but it works
+	if cfg.Admin.Identity.IssuersRaw == nil {
+		cfg.Admin.Identity.IssuersRaw = []json.RawMessage{
+			json.RawMessage(`{"module": "zerossl"}`),
+			json.RawMessage(`{"module": "acme"}`),
+		}
+	}
+
+	// load and provision issuer modules
+	if cfg.Admin.Identity.IssuersRaw != nil {
+		val, err := ctx.LoadModule(cfg.Admin.Identity, "IssuersRaw")
+		if err != nil {
+			return fmt.Errorf("loading identity issuer modules: %s", err)
+		}
+		for _, issVal := range val.([]interface{}) {
+			cfg.Admin.Identity.issuers = append(cfg.Admin.Identity.issuers, issVal.(certmagic.Issuer))
+		}
+	}
+
+	logger := Log().Named("admin.identity")
+	cmCfg := cfg.Admin.Identity.certmagicConfig(logger)
+
+	// issuers have circular dependencies with the configs because,
+	// as explained in the caddytls package, they need access to the
+	// correct storage and cache to solve ACME challenges
+	for _, issuer := range cfg.Admin.Identity.issuers {
+		// avoid import cycle with caddytls package, so manually duplicate the interface here, yuck
+		if annoying, ok := issuer.(interface{ SetConfig(cfg *certmagic.Config) }); ok {
+			annoying.SetConfig(cmCfg)
+		}
+	}
+
+	// obtain and renew server identity certificate(s)
+	return cmCfg.ManageAsync(ctx, cfg.Admin.Identity.Identities)
+}
+
 // replaceRemoteAdminServer replaces the running remote admin server
 // according to the relevant configuration in cfg. It stops any previous
 // remote admin server and only starts a new one if configured.
@@ -344,14 +416,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	remoteLogger := Log().Named("admin.remote")
 
 	oldAdminServer := remoteAdminServer
-	oldAdminCertCache := remoteAdminCertCache
 	defer func() {
-		// do the shutdown asynchronously so that any
-		// current API request gets a response; this
-		// goroutine may last a few seconds
-		if oldAdminCertCache != nil {
-			oldAdminCertCache.Stop()
-		}
 		if oldAdminServer != nil {
 			go func(oldAdminServer *http.Server) {
 				err := stopAdminServer(oldAdminServer)
@@ -364,28 +429,6 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	if cfg.Admin == nil || cfg.Admin.Remote == nil {
 		return nil
-	}
-
-	if cfg.Admin.Remote.IssuersRaw != nil {
-		val, err := ctx.LoadModule(cfg.Admin.Remote, "IssuersRaw")
-		if err != nil {
-			return fmt.Errorf("loading identity issuer modules: %s", err)
-		}
-		for _, issVal := range val.([]interface{}) {
-			cfg.Admin.Remote.identityIssuers = append(cfg.Admin.Remote.identityIssuers, issVal.(certmagic.Issuer))
-		}
-	}
-
-	cmCfg := cfg.Admin.Remote.certmagicConfig(remoteLogger)
-
-	// issuers have circular dependencies with the configs because,
-	// as explained in the caddytls package, they need access to the
-	// correct storage and cache to solve ACME challenges
-	for _, issuer := range cfg.Admin.Remote.identityIssuers {
-		// avoid import cycle with caddytls package, so manually duplicate the interface here, yuck
-		if annoying, ok := issuer.(interface{ SetConfig(cfg *certmagic.Config) }); ok {
-			annoying.SetConfig(cmCfg)
-		}
 	}
 
 	addr, err := parseAdminListenAddr(cfg.Admin.Remote.Listen, DefaultRemoteAdminListen)
@@ -412,6 +455,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	}
 
 	// create TLS config that will enforce mutual authentication
+	cmCfg := cfg.Admin.Identity.certmagicConfig(remoteLogger)
 	tlsConfig := cmCfg.TLSConfig()
 	tlsConfig.NextProtos = nil // this server does not solve ACME challenges
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
@@ -435,12 +479,6 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 		ErrorLog:          serverLogger,
 	}
 
-	// obtain and renew server identity certificate(s)
-	err = cmCfg.ManageAsync(ctx, cfg.Admin.Remote.Identities)
-	if err != nil {
-		return err
-	}
-
 	// start listener
 	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
 	if err != nil {
@@ -460,37 +498,42 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	return nil
 }
 
-func (remote RemoteAdmin) certmagicConfig(logger *zap.Logger) *certmagic.Config {
+func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger) *certmagic.Config {
+	if ident == nil {
+		// user might not have configured identity; that's OK, we can still make a
+		// certmagic config, although it'll be mostly useless for remote management
+		ident = new(IdentityConfig)
+	}
 	cmCfg := &certmagic.Config{
 		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
 		Logger:  logger,
-		Issuers: remote.identityIssuers,
+		Issuers: ident.issuers,
 	}
-	if remoteAdminCertCache == nil {
-		remoteAdminCertCache = certmagic.NewCache(certmagic.CacheOptions{
+	if identityCertCache == nil {
+		identityCertCache = certmagic.NewCache(certmagic.CacheOptions{
 			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
 				return cmCfg, nil
 			},
 		})
 	}
-	return certmagic.New(remoteAdminCertCache, *cmCfg)
+	return certmagic.New(identityCertCache, *cmCfg)
 }
 
 // IdentityCredentials returns this instance's configured, managed identity credentials
 // that can be used in TLS client authentication.
 func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, error) {
-	if ctx.cfg == nil || ctx.cfg.Admin == nil || ctx.cfg.Admin.Remote == nil {
-		return nil, fmt.Errorf("remote administration not configured")
+	if ctx.cfg == nil || ctx.cfg.Admin == nil || ctx.cfg.Admin.Identity == nil {
+		return nil, fmt.Errorf("no server identity configured")
 	}
-	remote := ctx.cfg.Admin.Remote
-	if len(remote.Identities) == 0 {
+	ident := ctx.cfg.Admin.Identity
+	if len(ident.Identities) == 0 {
 		return nil, fmt.Errorf("no identities configured")
 	}
 	if logger == nil {
 		logger = Log()
 	}
-	magic := remote.certmagicConfig(logger)
-	return magic.ClientCredentials(ctx, remote.Identities)
+	magic := ident.certmagicConfig(logger)
+	return magic.ClientCredentials(ctx, ident.Identities)
 }
 
 // enforceAccessControls enforces application-layer access controls for r based on remote.
@@ -1164,5 +1207,5 @@ var bufPool = sync.Pool{
 // keep a reference to admin endpoint singletons while they're active
 var (
 	localAdminServer, remoteAdminServer *http.Server
-	remoteAdminCertCache                *certmagic.Cache
+	identityCertCache                   *certmagic.Cache
 )

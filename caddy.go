@@ -247,6 +247,18 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		return err
 	}
 
+	// prevent recursive config loads; this is a user error, and
+	// although frequent config loads should be safe, we cannot
+	// guarantee that in the presence of third party plugins, nor
+	// do we want this error to go unnoticed
+	if allowPersist == false &&
+		newCfg != nil &&
+		newCfg.Admin != nil &&
+		newCfg.Admin.Config != nil &&
+		newCfg.Admin.Config.LoadRaw != nil {
+		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs")
+	}
+
 	// run the new config and start all its apps
 	err = run(newCfg, true)
 	if err != nil {
@@ -434,17 +446,24 @@ func run(newCfg *Config, start bool) error {
 
 // finishSettingUp should be run after all apps have successfully started.
 func finishSettingUp(ctx Context, cfg *Config) error {
-	// replace any remote admin endpoint (only after apps are loaded,
+	// establish this server's identity (only after apps are loaded
 	// so that cert management of this endpoint doesn't prevent user's
-	// servers from starting which likely also use HTTP/HTTPS ports)
-	err := replaceRemoteAdminServer(ctx, cfg)
+	// servers from starting which likely also use HTTP/HTTPS ports;
+	// but before remote management which may depend on these creds)
+	err := manageIdentity(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
+	}
+
+	// replace any remote admin endpoint
+	err = replaceRemoteAdminServer(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("provisioning remote admin endpoint: %v", err)
 	}
 
 	// if dynamic config is requested, set that up and run it
-	if cfg != nil && cfg.Admin != nil && cfg.Admin.Config != nil && cfg.Admin.Config.Load != nil {
-		val, err := ctx.LoadModule(cfg.Admin.Config, "Load")
+	if cfg != nil && cfg.Admin != nil && cfg.Admin.Config != nil && cfg.Admin.Config.LoadRaw != nil {
+		val, err := ctx.LoadModule(cfg.Admin.Config, "LoadRaw")
 		if err != nil {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
