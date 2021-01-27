@@ -134,7 +134,7 @@ type IdentityConfig struct {
 //
 // This endpoint is secured using identity management, which must be
 // configured separately (because identity management does not depend
-// on remote adminstration). See the admin/identity config struct.
+// on remote administration). See the admin/identity config struct.
 //
 // EXPERIMENTAL: Subject to change.
 type RemoteAdmin struct {

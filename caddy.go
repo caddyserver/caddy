@@ -247,11 +247,12 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		return err
 	}
 
-	// prevent recursive config loads; this is a user error, and
+	// prevent recursive config loads; that is a user error, and
 	// although frequent config loads should be safe, we cannot
 	// guarantee that in the presence of third party plugins, nor
-	// do we want this error to go unnoticed
-	if allowPersist == false &&
+	// do we want this error to go unnoticed (we assume it was a
+	// pulled config if we're not allowed to persist it)
+	if !allowPersist &&
 		newCfg != nil &&
 		newCfg.Admin != nil &&
 		newCfg.Admin.Config != nil &&
