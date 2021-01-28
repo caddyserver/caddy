@@ -63,13 +63,13 @@ var directiveOrder = []string{
 	"push",
 
 	// handlers that typically respond to requests
-	"abort",
 	"respond",
 	"metrics",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
 	"acme_server",
+	"abort",
 }
 
 // directiveIsOrdered returns true if dir is
