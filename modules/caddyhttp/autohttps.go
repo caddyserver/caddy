@@ -409,8 +409,7 @@ func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
 			StaticResponse{
 				StatusCode: WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
 				Headers: http.Header{
-					"Location":   []string{redirTo},
-					"Connection": []string{"close"},
+					"Location": []string{redirTo},
 				},
 				Close: true,
 			},

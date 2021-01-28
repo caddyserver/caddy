@@ -42,6 +42,11 @@ type StaticResponse struct {
 	// If true, the server will close the client's connection
 	// after writing the response.
 	Close bool `json:"close,omitempty"`
+
+	// Immediately and forcefully closes the connection without
+	// writing a response. Interrupts any other HTTP streams on
+	// the same connection.
+	Abort bool `json:"abort,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -101,10 +106,18 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	// close the connection immediately
+	if s.Abort {
+		panic(http.ErrAbortHandler)
+	}
 
 	// close the connection after responding
-	r.Close = s.Close
+	if s.Close {
+		r.Close = true
+		w.Header().Set("Connection", "close")
+	}
+
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// set all headers
 	for field, vals := range s.Headers {
