@@ -133,15 +133,17 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 		for _, m := range h.Mappings {
 			if m.re != nil {
 				matchRegexp := caddyhttp.MatchRegexp{Pattern: m.InputRegexp}
-				matchRegexp.Provision(caddy.Context{})
-				err := matchRegexp.Validate()
+				err := matchRegexp.Provision(caddy.Context{})
 				if err == nil {
-					if matchRegexp.Match(input, repl) {
-						if output := m.Outputs[destIdx]; output == nil {
-							continue
-						} else {
-							output = repl.ReplaceAll(m.Outputs[destIdx].(string), "")
-							return output, true
+					err = matchRegexp.Validate()
+					if err == nil {
+						if matchRegexp.Match(input, repl) {
+							if output := m.Outputs[destIdx]; output == nil {
+								continue
+							} else {
+								output = repl.ReplaceAll(m.Outputs[destIdx].(string), "")
+								return output, true
+							}
 						}
 					}
 				}
