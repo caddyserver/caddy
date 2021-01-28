@@ -69,6 +69,7 @@ var directiveOrder = []string{
 	"php_fastcgi",
 	"file_server",
 	"acme_server",
+	"abort",
 }
 
 // directiveIsOrdered returns true if dir is
