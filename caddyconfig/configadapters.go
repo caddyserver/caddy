@@ -35,6 +35,14 @@ type Warning struct {
 	Message   string `json:"message,omitempty"`
 }
 
+func (w Warning) String() string {
+	var directive string
+	if w.Directive != "" {
+		directive = fmt.Sprintf(" (%s)", w.Directive)
+	}
+	return fmt.Sprintf("%s:%d%s: %s", w.File, w.Line, directive, w.Message)
+}
+
 // JSON encodes val as JSON, returning it as a json.RawMessage. Any
 // marshaling errors (which are highly unlikely with correct code)
 // are converted to warnings. This is convenient when filling config
