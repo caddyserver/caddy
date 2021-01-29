@@ -76,20 +76,25 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	if lnGlobal, ok := listeners[lnKey]; ok {
 		atomic.AddInt32(&lnGlobal.usage, 1)
 		log.Printf("[DEBUG] %s: Usage counter should not go above 2 or maybe 3, is now: %d", lnKey, atomic.LoadInt32(&lnGlobal.usage)) // TODO: remove
-		return &fakeClosePacketConn{usage: &lnGlobal.usage, key: lnKey, PacketConn: lnGlobal.pc}, nil
+		return &fakeCloseUDPConn{usage: &lnGlobal.usage, key: lnKey, UDPConn: &lnGlobal.udpc}, nil
+	}
+
+	udpaddr, err := net.ResolveUDPAddr(network, addr)
+	if err != nil {
+		return nil, err
 	}
 
 	// or, create new one and save it
-	pc, err := net.ListenPacket(network, addr)
+	udpc, err := net.ListenUDP(network, udpaddr)
 	if err != nil {
 		return nil, err
 	}
 
 	// make sure to start its usage counter at 1
-	lnGlobal := &globalListener{usage: 1, pc: pc}
+	lnGlobal := &globalListener{usage: 1, udpc: *udpc}
 	listeners[lnKey] = lnGlobal
 
-	return &fakeClosePacketConn{usage: &lnGlobal.usage, key: lnKey, PacketConn: pc}, nil
+	return &fakeCloseUDPConn{usage: &lnGlobal.usage, key: lnKey, UDPConn: udpc}, nil
 }
 
 // fakeCloseListener's Close() method is a no-op. This allows
@@ -202,14 +207,14 @@ func (fcl *fakeCloseListener) fakeClosedErr() error {
 	}
 }
 
-type fakeClosePacketConn struct {
+type fakeCloseUDPConn struct {
 	closed int32  // accessed atomically
 	usage  *int32 // accessed atomically
 	key    string
-	net.PacketConn
+	*net.UDPConn
 }
 
-func (fcpc *fakeClosePacketConn) Close() error {
+func (fcpc *fakeCloseUDPConn) Close() error {
 	log.Println("[DEBUG] Fake-closing underlying packet conn") // TODO: remove this
 
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
@@ -220,7 +225,7 @@ func (fcpc *fakeClosePacketConn) Close() error {
 			listenersMu.Lock()
 			delete(listeners, fcpc.key)
 			listenersMu.Unlock()
-			err := fcpc.PacketConn.Close()
+			err := fcpc.UDPConn.Close()
 			if err != nil {
 				return err
 			}
@@ -251,7 +256,7 @@ type globalListener struct {
 	deadline   bool
 	deadlineMu sync.Mutex
 	ln         net.Listener
-	pc         net.PacketConn
+	udpc       net.UDPConn
 }
 
 // NetworkAddress contains the individual components
