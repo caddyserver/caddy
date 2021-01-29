@@ -9,7 +9,7 @@
 	}
 	acme_ca https://example.com
 	acme_eab {
-		key_id  4K2scIVbBpNd-78scadB2g
+		key_id 4K2scIVbBpNd-78scadB2g
 		mac_key abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 	}
 	acme_ca_root /path/to/ca.crt

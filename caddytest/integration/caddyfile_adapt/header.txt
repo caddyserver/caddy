@@ -4,7 +4,7 @@
 	header ?John "von Neumann"
 	header -Wolfram
 	header {
-		Grace: "Hopper"  # some users habitually suffix field names with a colon
+		Grace: "Hopper" # some users habitually suffix field names with a colon
 		+Ray "Solomonoff"
 		?Tim "Berners-Lee"
 		defer

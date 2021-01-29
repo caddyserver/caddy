@@ -48,7 +48,7 @@ type Handler struct {
 
 	// If no mappings match or if the mapped output is null/nil, the associated
 	// default output will be applied (optional).
-	Defaults []string
+	Defaults []string `json:"defaults,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.

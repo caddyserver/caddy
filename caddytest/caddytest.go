@@ -259,7 +259,7 @@ func isCaddyAdminRunning() error {
 	}
 	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 	if err != nil {
-		return errors.New("caddy integration test caddy server not running. Expected to be listening on localhost:2019")
+		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", Default.AdminPort)
 	}
 	resp.Body.Close()
 
@@ -363,7 +363,7 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 }
 
 // CompareAdapt adapts a config and then compares it against an expected result
-func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) bool {
+func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, expectedResponse string) bool {
 
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
@@ -372,7 +372,6 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 	}
 
 	options := make(map[string]interface{})
-	options["pretty"] = "true"
 
 	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
 	if err != nil {
@@ -380,9 +379,17 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 		return false
 	}
 
+	// prettify results to keep tests human-manageable
+	var prettyBuf bytes.Buffer
+	err = json.Indent(&prettyBuf, result, "", "\t")
+	if err != nil {
+		return false
+	}
+	result = prettyBuf.Bytes()
+
 	if len(warnings) > 0 {
 		for _, w := range warnings {
-			t.Logf("warning: directive: %s : %s", w.Directive, w.Message)
+			t.Logf("warning: %s:%d: %s: %s", filename, w.Line, w.Directive, w.Message)
 		}
 	}
 
@@ -417,7 +424,7 @@ func CompareAdapt(t *testing.T, rawConfig string, adapterName string, expectedRe
 
 // AssertAdapt adapts a config and then tests it against an expected result
 func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
-	ok := CompareAdapt(t, rawConfig, adapterName, expectedResponse)
+	ok := CompareAdapt(t, "Caddyfile", rawConfig, adapterName, expectedResponse)
 	if !ok {
 		t.Fail()
 	}

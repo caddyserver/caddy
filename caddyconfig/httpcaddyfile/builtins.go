@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -40,6 +41,7 @@ func init() {
 	RegisterHandlerDirective("root", parseRoot)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
+	RegisterHandlerDirective("abort", parseAbort)
 	RegisterHandlerDirective("route", parseRoute)
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
@@ -87,6 +89,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var folderLoader caddytls.FolderLoader
 	var certSelector caddytls.CustomCertSelectionPolicy
 	var acmeIssuer *caddytls.ACMEIssuer
+	var keyType string
 	var internalIssuer *caddytls.InternalIssuer
 	var issuers []certmagic.Issuer
 	var onDemand bool
@@ -267,6 +270,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.CA = arg[0]
 
+			case "key_type":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				keyType = arg[0]
+
 			case "eab":
 				arg := h.RemainingArgs()
 				if len(arg) != 2 {
@@ -285,21 +295,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				modName := h.Val()
-				mod, err := caddy.GetModule("tls.issuance." + modName)
-				if err != nil {
-					return nil, h.Errf("getting issuer module '%s': %v", modName, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return nil, h.Errf("issuer module '%s' is not a Caddyfile unmarshaler", mod.ID)
-				}
-				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				modID := "tls.issuance." + modName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 				if err != nil {
 					return nil, err
 				}
 				issuer, ok := unm.(certmagic.Issuer)
 				if !ok {
-					return nil, h.Errf("module %s is not a certmagic.Issuer", mod.ID)
+					return nil, h.Errf("module %s (%T) is not a certmagic.Issuer", modID, unm)
 				}
 				issuers = append(issuers, issuer)
 
@@ -315,18 +318,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
-				dnsProvModule, err := caddy.GetModule("dns.providers." + provName)
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 				if err != nil {
-					return nil, h.Errf("getting DNS provider module named '%s': %v", provName, err)
+					return nil, err
 				}
-				dnsProvModuleInstance := dnsProvModule.New()
-				if unm, ok := dnsProvModuleInstance.(caddyfile.Unmarshaler); ok {
-					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
-					if err != nil {
-						return nil, err
-					}
-				}
-				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(dnsProvModuleInstance, "name", provName, h.warnings)
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 			case "ca_root":
 				arg := h.RemainingArgs()
@@ -397,6 +394,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	if keyType != "" {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.key_type",
+			Value: keyType,
+		})
+	}
+
 	// on-demand TLS
 	if onDemand {
 		configVals = append(configVals, ConfigValue{
@@ -459,14 +463,14 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if h.NextArg() {
 		code = h.Val()
 	}
-	if code == "permanent" {
-		code = "301"
-	}
-	if code == "temporary" || code == "" {
-		code = "302"
-	}
+
 	var body string
-	if code == "html" {
+	switch code {
+	case "permanent":
+		code = "301"
+	case "temporary", "":
+		code = "302"
+	case "html":
 		// Script tag comes first since that will better imitate a redirect in the browser's
 		// history, but the meta tag is a fallback for most non-JS clients.
 		const metaRedir = `<!DOCTYPE html>
@@ -481,6 +485,15 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		code = "302"
+	default:
+		codeInt, err := strconv.Atoi(code)
+		if err != nil {
+			return nil, h.Errf("Not a supported redir code type or not valid integer: '%s'", code)
+		}
+		if codeInt < 300 || codeInt > 399 {
+			return nil, h.Errf("Redir code not in the 3xx range: '%v'", codeInt)
+		}
 	}
 
 	return caddyhttp.StaticResponse{
@@ -498,6 +511,15 @@ func parseRespond(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, err
 	}
 	return sr, nil
+}
+
+// parseAbort parses the abort directive.
+func parseAbort(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive
+	for h.Next() || h.NextBlock(0) {
+		return nil, h.ArgErr()
+	}
+	return &caddyhttp.StaticResponse{Abort: true}, nil
 }
 
 // parseRoute parses the route directive.
@@ -583,21 +605,15 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 				case "discard":
 					wo = caddy.DiscardWriter{}
 				default:
-					mod, err := caddy.GetModule("caddy.logging.writers." + moduleName)
-					if err != nil {
-						return nil, h.Errf("getting log writer module named '%s': %v", moduleName, err)
-					}
-					unm, ok := mod.New().(caddyfile.Unmarshaler)
-					if !ok {
-						return nil, h.Errf("log writer module '%s' is not a Caddyfile unmarshaler", mod)
-					}
-					err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+					modID := "caddy.logging.writers." + moduleName
+					unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
 					if err != nil {
 						return nil, err
 					}
+					var ok bool
 					wo, ok = unm.(caddy.WriterOpener)
 					if !ok {
-						return nil, h.Errf("module %s is not a WriterOpener", mod)
+						return nil, h.Errf("module %s (%T) is not a WriterOpener", modID, unm)
 					}
 				}
 				cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
@@ -607,21 +623,14 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 				moduleName := h.Val()
-				mod, err := caddy.GetModule("caddy.logging.encoders." + moduleName)
-				if err != nil {
-					return nil, h.Errf("getting log encoder module named '%s': %v", moduleName, err)
-				}
-				unm, ok := mod.New().(caddyfile.Unmarshaler)
-				if !ok {
-					return nil, h.Errf("log encoder module '%s' is not a Caddyfile unmarshaler", mod)
-				}
-				err = unm.UnmarshalCaddyfile(h.NewFromNextSegment())
+				moduleID := "caddy.logging.encoders." + moduleName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, moduleID)
 				if err != nil {
 					return nil, err
 				}
 				enc, ok := unm.(zapcore.Encoder)
 				if !ok {
-					return nil, h.Errf("module %s is not a zapcore.Encoder", mod)
+					return nil, h.Errf("module %s (%T) is not a zapcore.Encoder", moduleID, unm)
 				}
 				cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
 

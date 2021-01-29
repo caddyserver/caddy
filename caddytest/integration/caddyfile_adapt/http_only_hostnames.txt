@@ -1,7 +1,6 @@
-localhost
-
-request_body {
-	max_size 1MB
+# https://github.com/caddyserver/caddy/issues/3977
+http://* {
+	respond "Hello, world!"
 }
 ----------
 {
@@ -10,14 +9,14 @@ request_body {
 			"servers": {
 				"srv0": {
 					"listen": [
-						":443"
+						":80"
 					],
 					"routes": [
 						{
 							"match": [
 								{
 									"host": [
-										"localhost"
+										"*"
 									]
 								}
 							],
@@ -28,8 +27,8 @@ request_body {
 										{
 											"handle": [
 												{
-													"handler": "request_body",
-													"max_size": 1000000
+													"body": "Hello, world!",
+													"handler": "static_response"
 												}
 											]
 										}

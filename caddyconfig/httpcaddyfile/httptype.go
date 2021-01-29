@@ -315,7 +315,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, opt)
 		}
 
-		val, err = optFunc(disp)
+		val, err = optFunc(disp, options[opt])
 		if err != nil {
 			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 		}
@@ -409,7 +409,7 @@ func (st *ServerType) serversFromPairings(
 			var iLongestHost, jLongestHost string
 			var iWildcardHost, jWildcardHost bool
 			for _, addr := range p.serverBlocks[i].keys {
-				if strings.Contains(addr.Host, "*.") {
+				if strings.Contains(addr.Host, "*") {
 					iWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(iLongestHost) {
@@ -420,7 +420,7 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 			for _, addr := range p.serverBlocks[j].keys {
-				if strings.Contains(addr.Host, "*.") {
+				if strings.Contains(addr.Host, "*") {
 					jWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(jLongestHost) {
@@ -500,16 +500,20 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			for _, addr := range sblock.keys {
-				// exclude any hosts that were defined explicitly with "http://"
-				// in the key from automated cert management (issue #2998)
-				if addr.Scheme == "http" && addr.Host != "" {
-					if srv.AutoHTTPS == nil {
-						srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-					}
-					if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
-						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+				// if server only uses HTTPS port, auto-HTTPS will not apply
+				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
+					// exclude any hosts that were defined explicitly with "http://"
+					// in the key from automated cert management (issue #2998)
+					if addr.Scheme == "http" && addr.Host != "" {
+						if srv.AutoHTTPS == nil {
+							srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+						}
+						if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
+							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
+						}
 					}
 				}
+
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
 				if addr.Scheme == "https" ||
@@ -1177,6 +1181,26 @@ func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
 func sliceContains(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// listenersUseAnyPortOtherThan returns true if there are any
+// listeners in addresses that use a port which is not otherPort.
+// Mostly borrowed from unexported method in caddyhttp package.
+func listenersUseAnyPortOtherThan(addresses []string, otherPort string) bool {
+	otherPortInt, err := strconv.Atoi(otherPort)
+	if err != nil {
+		return false
+	}
+	for _, lnAddr := range addresses {
+		laddrs, err := caddy.ParseNetworkAddress(lnAddr)
+		if err != nil {
+			continue
+		}
+		if uint(otherPortInt) > laddrs.EndPort || uint(otherPortInt) < laddrs.StartPort {
 			return true
 		}
 	}

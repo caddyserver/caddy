@@ -16,7 +16,7 @@
 	}
 }
 
-foo.com {	
+foo.com {
 }
 
 http://bar.com {
@@ -64,12 +64,7 @@ http://bar.com {
 							],
 							"terminal": true
 						}
-					],
-					"automatic_https": {
-						"skip": [
-							"bar.com"
-						]
-					}
+					]
 				},
 				"srv2": {
 					"listen": [

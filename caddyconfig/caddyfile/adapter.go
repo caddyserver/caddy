@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -51,13 +52,41 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 		return nil, warnings, err
 	}
 
-	marshalFunc := json.Marshal
-	if options["pretty"] == "true" {
-		marshalFunc = caddyconfig.JSONIndent
+	// lint check: see if input was properly formatted; sometimes messy files files parse
+	// successfully but result in logical errors (the Caddyfile is a bad format, I'm sorry)
+	if warning, different := formattingDifference(filename, body); different {
+		warnings = append(warnings, warning)
 	}
-	result, err := marshalFunc(cfg)
+
+	result, err := json.Marshal(cfg)
 
 	return result, warnings, err
+}
+
+// formattingDifference returns a warning and true if the formatted version
+// is any different from the input; empty warning and false otherwise.
+// TODO: also perform this check on imported files
+func formattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
+	formatted := Format(body)
+	if bytes.Equal(formatted, body) {
+		return caddyconfig.Warning{}, false
+	}
+
+	// find where the difference is
+	line := 1
+	for i, ch := range body {
+		if i >= len(formatted) || ch != formatted[i] {
+			break
+		}
+		if ch == '\n' {
+			line++
+		}
+	}
+	return caddyconfig.Warning{
+		File:    filename,
+		Line:    line,
+		Message: "input is not formatted with 'caddy fmt'",
+	}, true
 }
 
 // Unmarshaler is a type that can unmarshal
@@ -85,6 +114,32 @@ type ServerType interface {
 	// config, along with any warnings or
 	// an error.
 	Setup([]ServerBlock, map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error)
+}
+
+// UnmarshalModule instantiates a module with the given ID and invokes
+// UnmarshalCaddyfile on the new value using the immediate next segment
+// of d as input. In other words, d's next token should be the first
+// token of the module's Caddyfile input.
+//
+// This function is used when the next segment of Caddyfile tokens
+// belongs to another Caddy module. The returned value is often
+// type-asserted to the module's associated type for practical use
+// when setting up a config.
+func UnmarshalModule(d *Dispenser, moduleID string) (Unmarshaler, error) {
+	mod, err := caddy.GetModule(moduleID)
+	if err != nil {
+		return nil, d.Errf("getting module named '%s': %v", moduleID, err)
+	}
+	inst := mod.New()
+	unm, ok := inst.(Unmarshaler)
+	if !ok {
+		return nil, d.Errf("module %s is not a Caddyfile unmarshaler; is %T", mod.ID, inst)
+	}
+	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+	if err != nil {
+		return nil, err
+	}
+	return unm, nil
 }
 
 // Interface guard

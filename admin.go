@@ -17,6 +17,10 @@ package caddy
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"expvar"
@@ -35,11 +39,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 )
-
-// TODO: is there a way to make the admin endpoint so that it can be plugged into the HTTP app? see issue #2833
 
 // AdminConfig configures Caddy's API endpoint, which is used
 // to manage Caddy while it is running.
@@ -58,54 +61,131 @@ type AdminConfig struct {
 	// If true, CORS headers will be emitted, and requests to the
 	// API will be rejected if their `Host` and `Origin` headers
 	// do not match the expected value(s). Use `origins` to
-	// customize which origins/hosts are allowed.If `origins` is
+	// customize which origins/hosts are allowed. If `origins` is
 	// not set, the listen address is the only value allowed by
-	// default.
+	// default. Enforced only on local (plaintext) endpoint.
 	EnforceOrigin bool `json:"enforce_origin,omitempty"`
 
 	// The list of allowed origins/hosts for API requests. Only needed
 	// if accessing the admin endpoint from a host different from the
 	// socket's network interface or if `enforce_origin` is true. If not
 	// set, the listener address will be the default value. If set but
-	// empty, no origins will be allowed.
+	// empty, no origins will be allowed. Enforced only on local
+	// (plaintext) endpoint.
 	Origins []string `json:"origins,omitempty"`
 
-	// Options related to configuration management.
+	// Options pertaining to configuration management.
 	Config *ConfigSettings `json:"config,omitempty"`
+
+	// Options that establish this server's identity. Identity refers to
+	// credentials which can be used to uniquely identify and authenticate
+	// this server instance. This is required if remote administration is
+	// enabled (but does not require remote administration to be enabled).
+	// Default: no identity management.
+	Identity *IdentityConfig `json:"identity,omitempty"`
+
+	// Options pertaining to remote administration. By default, remote
+	// administration is disabled. If enabled, identity management must
+	// also be configured, as that is how the endpoint is secured.
+	// See the neighboring "identity" object.
+	//
+	// EXPERIMENTAL: This feature is subject to change.
+	Remote *RemoteAdmin `json:"remote,omitempty"`
 }
 
-// ConfigSettings configures the, uh, configuration... and
-// management thereof.
+// ConfigSettings configures the management of configuration.
 type ConfigSettings struct {
 	// Whether to keep a copy of the active config on disk. Default is true.
+	// Note that "pulled" dynamic configs (using the neighboring "load" module)
+	// are not persisted; only configs that are pushed to Caddy get persisted.
 	Persist *bool `json:"persist,omitempty"`
+
+	// Loads a configuration to use. This is helpful if your configs are
+	// managed elsewhere, and you want Caddy to pull its config dynamically
+	// when it starts. The pulled config completely replaces the current
+	// one, just like any other config load. It is an error if a pulled
+	// config is configured to pull another config.
+	//
+	// EXPERIMENTAL: Subject to change.
+	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 }
 
-// listenAddr extracts a singular listen address from ac.Listen,
-// returning the network and the address of the listener.
-func (admin AdminConfig) listenAddr() (NetworkAddress, error) {
-	input := admin.Listen
-	if input == "" {
-		input = DefaultAdminListen
-	}
-	listenAddr, err := ParseNetworkAddress(input)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("parsing admin listener address: %v", err)
-	}
-	if listenAddr.PortRangeSize() != 1 {
-		return NetworkAddress{}, fmt.Errorf("admin endpoint must have exactly one address; cannot listen on %v", listenAddr)
-	}
-	return listenAddr, nil
+// IdentityConfig configures management of this server's identity. An identity
+// consists of credentials that uniquely verify this instance; for example,
+// TLS certificates (public + private key pairs).
+type IdentityConfig struct {
+	// List of names or IP addresses which refer to this server.
+	// Certificates will be obtained for these identifiers so
+	// secure TLS connections can be made using them.
+	Identifiers []string `json:"identifiers,omitempty"`
+
+	// Issuers that can provide this admin endpoint its identity
+	// certificate(s). Default: ACME issuers configured for
+	// ZeroSSL and Let's Encrypt. Be sure to change this if you
+	// require credentials for private identifiers.
+	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
+
+	issuers []certmagic.Issuer
+}
+
+// RemoteAdmin enables and configures remote administration. If enabled,
+// a secure listener enforcing mutual TLS authentication will be started
+// on a different port from the standard plaintext admin server.
+//
+// This endpoint is secured using identity management, which must be
+// configured separately (because identity management does not depend
+// on remote administration). See the admin/identity config struct.
+//
+// EXPERIMENTAL: Subject to change.
+type RemoteAdmin struct {
+	// The address on which to start the secure listener.
+	// Default: :2021
+	Listen string `json:"listen,omitempty"`
+
+	// List of access controls for this secure admin endpoint.
+	// This configures TLS mutual authentication (i.e. authorized
+	// client certificates), but also application-layer permissions
+	// like which paths and methods each identity is authorized for.
+	AccessControl []*AdminAccess `json:"access_control,omitempty"`
+}
+
+// AdminAccess specifies what permissions an identity or group
+// of identities are granted.
+type AdminAccess struct {
+	// Base64-encoded DER certificates containing public keys to accept.
+	// (The contents of PEM certificate blocks are base64-encoded DER.)
+	// Any of these public keys can appear in any part of a verified chain.
+	PublicKeys []string `json:"public_keys,omitempty"`
+
+	// Limits what the associated identities are allowed to do.
+	// If unspecified, all permissions are granted.
+	Permissions []AdminPermissions `json:"permissions,omitempty"`
+
+	publicKeys []crypto.PublicKey
+}
+
+// AdminPermissions specifies what kinds of requests are allowed
+// to be made to the admin endpoint.
+type AdminPermissions struct {
+	// The API paths allowed. Paths are simple prefix matches.
+	// Any subpath of the specified paths will be allowed.
+	Paths []string `json:"paths,omitempty"`
+
+	// The HTTP methods allowed for the given paths.
+	Methods []string `json:"methods,omitempty"`
 }
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin AdminConfig) newAdminHandler(addr NetworkAddress) adminHandler {
-	muxWrap := adminHandler{
-		enforceOrigin:  admin.EnforceOrigin,
-		enforceHost:    !addr.isWildcardInterface(),
-		allowedOrigins: admin.allowedOrigins(addr),
-		mux:            http.NewServeMux(),
+func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+	muxWrap := adminHandler{mux: http.NewServeMux()}
+
+	// secure the local or remote endpoint respectively
+	if remote {
+		muxWrap.remoteControl = admin.Remote
+	} else {
+		muxWrap.enforceHost = !addr.isWildcardInterface()
+		muxWrap.allowedOrigins = admin.allowedOrigins(addr)
 	}
 
 	addRouteWithMetrics := func(pattern string, handlerLabel string, h http.Handler) {
@@ -197,18 +277,18 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []string {
 	return allowed
 }
 
-// replaceAdmin replaces the running admin server according
-// to the relevant configuration in cfg. If no configuration
-// for the admin endpoint exists in cfg, a default one is
-// used, so that there is always an admin server (unless it
-// is explicitly configured to be disabled).
-func replaceAdmin(cfg *Config) error {
+// replaceLocalAdminServer replaces the running local admin server
+// according to the relevant configuration in cfg. If no configuration
+// for the admin endpoint exists in cfg, a default one is used, so
+// that there is always an admin server (unless it is explicitly
+// configured to be disabled).
+func replaceLocalAdminServer(cfg *Config) error {
 	// always be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
 	// (old) admin endpoint since it will be different
 	// when the function returns
-	oldAdminServer := adminServer
+	oldAdminServer := localAdminServer
 	defer func() {
 		// do the shutdown asynchronously so that any
 		// current API request gets a response; this
@@ -236,19 +316,20 @@ func replaceAdmin(cfg *Config) error {
 	}
 
 	// extract a singular listener address
-	addr, err := adminConfig.listenAddr()
+	addr, err := parseAdminListenAddr(adminConfig.Listen, DefaultAdminListen)
 	if err != nil {
 		return err
 	}
 
-	handler := adminConfig.newAdminHandler(addr)
+	handler := adminConfig.newAdminHandler(addr, false)
 
 	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
 	if err != nil {
 		return err
 	}
 
-	adminServer = &http.Server{
+	localAdminServer = &http.Server{
+		Addr:              addr.String(), // for logging purposes only
 		Handler:           handler,
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -258,7 +339,7 @@ func replaceAdmin(cfg *Config) error {
 
 	adminLogger := Log().Named("admin")
 	go func() {
-		if err := adminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		if err := localAdminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 			adminLogger.Error("admin server shutdown for unknown reason", zap.Error(err))
 		}
 	}()
@@ -276,6 +357,252 @@ func replaceAdmin(cfg *Config) error {
 	return nil
 }
 
+// manageIdentity sets up automated identity management for this server.
+func manageIdentity(ctx Context, cfg *Config) error {
+	if cfg == nil || cfg.Admin == nil || cfg.Admin.Identity == nil {
+		return nil
+	}
+
+	oldIdentityCertCache := identityCertCache
+	if oldIdentityCertCache != nil {
+		defer oldIdentityCertCache.Stop()
+	}
+
+	// set default issuers; this is pretty hacky because we can't
+	// import the caddytls package -- but it works
+	if cfg.Admin.Identity.IssuersRaw == nil {
+		cfg.Admin.Identity.IssuersRaw = []json.RawMessage{
+			json.RawMessage(`{"module": "zerossl"}`),
+			json.RawMessage(`{"module": "acme"}`),
+		}
+	}
+
+	// load and provision issuer modules
+	if cfg.Admin.Identity.IssuersRaw != nil {
+		val, err := ctx.LoadModule(cfg.Admin.Identity, "IssuersRaw")
+		if err != nil {
+			return fmt.Errorf("loading identity issuer modules: %s", err)
+		}
+		for _, issVal := range val.([]interface{}) {
+			cfg.Admin.Identity.issuers = append(cfg.Admin.Identity.issuers, issVal.(certmagic.Issuer))
+		}
+	}
+
+	logger := Log().Named("admin.identity")
+	cmCfg := cfg.Admin.Identity.certmagicConfig(logger)
+
+	// issuers have circular dependencies with the configs because,
+	// as explained in the caddytls package, they need access to the
+	// correct storage and cache to solve ACME challenges
+	for _, issuer := range cfg.Admin.Identity.issuers {
+		// avoid import cycle with caddytls package, so manually duplicate the interface here, yuck
+		if annoying, ok := issuer.(interface{ SetConfig(cfg *certmagic.Config) }); ok {
+			annoying.SetConfig(cmCfg)
+		}
+	}
+
+	// obtain and renew server identity certificate(s)
+	return cmCfg.ManageAsync(ctx, cfg.Admin.Identity.Identifiers)
+}
+
+// replaceRemoteAdminServer replaces the running remote admin server
+// according to the relevant configuration in cfg. It stops any previous
+// remote admin server and only starts a new one if configured.
+func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
+
+	remoteLogger := Log().Named("admin.remote")
+
+	oldAdminServer := remoteAdminServer
+	defer func() {
+		if oldAdminServer != nil {
+			go func(oldAdminServer *http.Server) {
+				err := stopAdminServer(oldAdminServer)
+				if err != nil {
+					Log().Named("admin").Error("stopping current secure admin endpoint", zap.Error(err))
+				}
+			}(oldAdminServer)
+		}
+	}()
+
+	if cfg.Admin == nil || cfg.Admin.Remote == nil {
+		return nil
+	}
+
+	addr, err := parseAdminListenAddr(cfg.Admin.Remote.Listen, DefaultRemoteAdminListen)
+	if err != nil {
+		return err
+	}
+
+	// make the HTTP handler but disable Host/Origin enforcement
+	// because we are using TLS authentication instead
+	handler := cfg.Admin.newAdminHandler(addr, true)
+
+	// create client certificate pool for TLS mutual auth, and extract public keys
+	// so that we can enforce access controls at the application layer
+	clientCertPool := x509.NewCertPool()
+	for i, accessControl := range cfg.Admin.Remote.AccessControl {
+		for j, certBase64 := range accessControl.PublicKeys {
+			cert, err := decodeBase64DERCert(certBase64)
+			if err != nil {
+				return fmt.Errorf("access control %d public key %d: parsing base64 certificate DER: %v", i, j, err)
+			}
+			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
+			clientCertPool.AddCert(cert)
+		}
+	}
+
+	// create TLS config that will enforce mutual authentication
+	cmCfg := cfg.Admin.Identity.certmagicConfig(remoteLogger)
+	tlsConfig := cmCfg.TLSConfig()
+	tlsConfig.NextProtos = nil // this server does not solve ACME challenges
+	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	tlsConfig.ClientCAs = clientCertPool
+
+	// convert logger to stdlib so it can be used by HTTP server
+	serverLogger, err := zap.NewStdLogAt(remoteLogger, zap.DebugLevel)
+	if err != nil {
+		return err
+	}
+
+	// create secure HTTP server
+	remoteAdminServer = &http.Server{
+		Addr:              addr.String(), // for logging purposes only
+		Handler:           handler,
+		TLSConfig:         tlsConfig,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1024 * 64,
+		ErrorLog:          serverLogger,
+	}
+
+	// start listener
+	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
+	if err != nil {
+		return err
+	}
+	ln = tls.NewListener(ln, tlsConfig)
+
+	go func() {
+		if err := remoteAdminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			remoteLogger.Error("admin remote server shutdown for unknown reason", zap.Error(err))
+		}
+	}()
+
+	remoteLogger.Info("secure admin remote control endpoint started",
+		zap.String("address", addr.String()))
+
+	return nil
+}
+
+func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger) *certmagic.Config {
+	if ident == nil {
+		// user might not have configured identity; that's OK, we can still make a
+		// certmagic config, although it'll be mostly useless for remote management
+		ident = new(IdentityConfig)
+	}
+	cmCfg := &certmagic.Config{
+		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
+		Logger:  logger,
+		Issuers: ident.issuers,
+	}
+	if identityCertCache == nil {
+		identityCertCache = certmagic.NewCache(certmagic.CacheOptions{
+			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
+				return cmCfg, nil
+			},
+		})
+	}
+	return certmagic.New(identityCertCache, *cmCfg)
+}
+
+// IdentityCredentials returns this instance's configured, managed identity credentials
+// that can be used in TLS client authentication.
+func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, error) {
+	if ctx.cfg == nil || ctx.cfg.Admin == nil || ctx.cfg.Admin.Identity == nil {
+		return nil, fmt.Errorf("no server identity configured")
+	}
+	ident := ctx.cfg.Admin.Identity
+	if len(ident.Identifiers) == 0 {
+		return nil, fmt.Errorf("no identifiers configured")
+	}
+	if logger == nil {
+		logger = Log()
+	}
+	magic := ident.certmagicConfig(logger)
+	return magic.ClientCredentials(ctx, ident.Identifiers)
+}
+
+// enforceAccessControls enforces application-layer access controls for r based on remote.
+// It expects that the TLS server has already established at least one verified chain of
+// trust, and then looks for a matching, authorized public key that is allowed to access
+// the defined path(s) using the defined method(s).
+func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
+	for _, chain := range r.TLS.VerifiedChains {
+		for _, peerCert := range chain {
+			for _, adminAccess := range remote.AccessControl {
+				for _, allowedKey := range adminAccess.publicKeys {
+					// see if we found a matching public key; the TLS server already verified the chain
+					// so we know the client possesses the associated private key; this handy interface
+					// doesn't appear to be defined anywhere in the std lib, but was implemented here:
+					// https://github.com/golang/go/commit/b5f2c0f50297fa5cd14af668ddd7fd923626cf8c
+					comparer, ok := peerCert.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
+					if !ok || !comparer.Equal(allowedKey) {
+						continue
+					}
+
+					// key recognized; make sure its HTTP request is permitted
+					for _, accessPerm := range adminAccess.Permissions {
+						// verify method
+						methodFound := accessPerm.Methods == nil
+						for _, method := range accessPerm.Methods {
+							if method == r.Method {
+								methodFound = true
+								break
+							}
+						}
+						if !methodFound {
+							return APIError{
+								HTTPStatus: http.StatusForbidden,
+								Message:    "not authorized to use this method",
+							}
+						}
+
+						// verify path
+						pathFound := accessPerm.Paths == nil
+						for _, allowedPath := range accessPerm.Paths {
+							if strings.HasPrefix(r.URL.Path, allowedPath) {
+								pathFound = true
+								break
+							}
+						}
+						if !pathFound {
+							return APIError{
+								HTTPStatus: http.StatusForbidden,
+								Message:    "not authorized to access this path",
+							}
+						}
+					}
+
+					// public key authorized, method and path allowed
+					return nil
+				}
+			}
+		}
+	}
+
+	// in theory, this should never happen; with an unverified chain, the TLS server
+	// should not accept the connection in the first place, and the acceptable cert
+	// pool is configured using the same list of public keys we verify against
+	return APIError{
+		HTTPStatus: http.StatusUnauthorized,
+		Message:    "client identity not authorized",
+	}
+}
+
 func stopAdminServer(srv *http.Server) error {
 	if srv == nil {
 		return fmt.Errorf("no admin server")
@@ -286,7 +613,7 @@ func stopAdminServer(srv *http.Server) error {
 	if err != nil {
 		return fmt.Errorf("shutting down admin server: %v", err)
 	}
-	Log().Named("admin").Info("stopped previous server")
+	Log().Named("admin").Info("stopped previous server", zap.String("address", srv.Addr))
 	return nil
 }
 
@@ -302,10 +629,15 @@ type AdminRoute struct {
 }
 
 type adminHandler struct {
+	mux *http.ServeMux
+
+	// security for local/plaintext) endpoint, on by default
 	enforceOrigin  bool
 	enforceHost    bool
 	allowedOrigins []string
-	mux            *http.ServeMux
+
+	// security for remote/encrypted endpoint
+	remoteControl *RemoteAdmin
 }
 
 // ServeHTTP is the external entry point for API requests.
@@ -318,6 +650,12 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("remote_addr", r.RemoteAddr),
 		zap.Reflect("headers", r.Header),
 	)
+	if r.TLS != nil {
+		log = log.With(
+			zap.Bool("secure", true),
+			zap.Int("verified_chains", len(r.TLS.VerifiedChains)),
+		)
+	}
 	if r.RequestURI == "/metrics" {
 		log.Debug("received request")
 	} else {
@@ -330,6 +668,14 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // be called more than once per request, for example if a request
 // is rewritten (i.e. internal redirect).
 func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.remoteControl != nil {
+		// enforce access controls on secure endpoint
+		if err := h.remoteControl.enforceAccessControls(r); err != nil {
+			h.handleError(w, r, err)
+			return
+		}
+	}
+
 	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
 		// I've never been able demonstrate a vulnerability myself, but apparently
 		// WebSocket connections originating from browsers aren't subject to CORS
@@ -363,8 +709,6 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
 
-	// TODO: authentication & authorization, if configured
-
 	h.mux.ServeHTTP(w, r)
 }
 
@@ -372,20 +716,16 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 	if err == nil {
 		return
 	}
-	if err == ErrInternalRedir {
-		h.serveHTTP(w, r)
-		return
-	}
 
 	apiErr, ok := err.(APIError)
 	if !ok {
 		apiErr = APIError{
-			Code: http.StatusInternalServerError,
-			Err:  err,
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        err,
 		}
 	}
-	if apiErr.Code == 0 {
-		apiErr.Code = http.StatusInternalServerError
+	if apiErr.HTTPStatus == 0 {
+		apiErr.HTTPStatus = http.StatusInternalServerError
 	}
 	if apiErr.Message == "" && apiErr.Err != nil {
 		apiErr.Message = apiErr.Err.Error()
@@ -393,11 +733,11 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 
 	Log().Named("admin.api").Error("request error",
 		zap.Error(err),
-		zap.Int("status_code", apiErr.Code),
+		zap.Int("status_code", apiErr.HTTPStatus),
 	)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(apiErr.Code)
+	w.WriteHeader(apiErr.HTTPStatus)
 	encErr := json.NewEncoder(w).Encode(apiErr)
 	if encErr != nil {
 		Log().Named("admin.api").Error("failed to encode error response", zap.Error(encErr))
@@ -418,8 +758,8 @@ func (h adminHandler) checkHost(r *http.Request) error {
 	}
 	if !allowed {
 		return APIError{
-			Code: http.StatusForbidden,
-			Err:  fmt.Errorf("host not allowed: %s", r.Host),
+			HTTPStatus: http.StatusForbidden,
+			Err:        fmt.Errorf("host not allowed: %s", r.Host),
 		}
 	}
 	return nil
@@ -433,14 +773,14 @@ func (h adminHandler) checkOrigin(r *http.Request) (string, error) {
 	origin := h.getOriginHost(r)
 	if origin == "" {
 		return origin, APIError{
-			Code: http.StatusForbidden,
-			Err:  fmt.Errorf("missing required Origin header"),
+			HTTPStatus: http.StatusForbidden,
+			Err:        fmt.Errorf("missing required Origin header"),
 		}
 	}
 	if !h.originAllowed(origin) {
 		return origin, APIError{
-			Code: http.StatusForbidden,
-			Err:  fmt.Errorf("client is not allowed to access from origin %s", origin),
+			HTTPStatus: http.StatusForbidden,
+			Err:        fmt.Errorf("client is not allowed to access from origin %s", origin),
 		}
 	}
 	return origin, nil
@@ -480,7 +820,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		err := readConfig(r.URL.Path, w)
 		if err != nil {
-			return APIError{Code: http.StatusBadRequest, Err: err}
+			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
 		}
 
 		return nil
@@ -495,8 +835,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		if r.Method != http.MethodDelete {
 			if ct := r.Header.Get("Content-Type"); !strings.Contains(ct, "/json") {
 				return APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("unacceptable content-type: %v; 'application/json' required", ct),
+					HTTPStatus: http.StatusBadRequest,
+					Err:        fmt.Errorf("unacceptable content-type: %v; 'application/json' required", ct),
 				}
 			}
 
@@ -507,8 +847,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {
 				return APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("reading request body: %v", err),
+					HTTPStatus: http.StatusBadRequest,
+					Err:        fmt.Errorf("reading request body: %v", err),
 				}
 			}
 			body = buf.Bytes()
@@ -523,8 +863,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 	default:
 		return APIError{
-			Code: http.StatusMethodNotAllowed,
-			Err:  fmt.Errorf("method %s not allowed", r.Method),
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method %s not allowed", r.Method),
 		}
 	}
 
@@ -555,46 +895,17 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	parts = append([]string{expanded}, parts[3:]...)
 	r.URL.Path = path.Join(parts...)
 
-	return ErrInternalRedir
-}
-
-func handleStop(w http.ResponseWriter, r *http.Request) error {
-	err := handleUnload(w, r)
-	if err != nil {
-		Log().Named("admin.api").Error("unload error", zap.Error(err))
-	}
-	if adminServer != nil {
-		// use goroutine so that we can finish responding to API request
-		go func() {
-			err := stopAdminServer(adminServer)
-			var exitCode int
-			if err != nil {
-				exitCode = ExitCodeFailedQuit
-				Log().Named("admin.api").Error("failed to stop admin server gracefully", zap.Error(err))
-			}
-			Log().Named("admin.api").Info("stopping now, bye!! 👋")
-			os.Exit(exitCode)
-		}()
-	}
 	return nil
 }
 
-// handleUnload stops the current configuration that is running.
-// Note that doing this can also be accomplished with DELETE /config/
-// but we leave this function because handleStop uses it.
-func handleUnload(w http.ResponseWriter, r *http.Request) error {
+func handleStop(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return APIError{
-			Code: http.StatusMethodNotAllowed,
-			Err:  fmt.Errorf("method not allowed"),
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
 		}
 	}
-	Log().Named("admin.api").Info("unloading")
-	if err := stopAndCleanup(); err != nil {
-		Log().Named("admin.api").Error("error unloading", zap.Error(err))
-	} else {
-		Log().Named("admin.api").Info("unloading completed")
-	}
+	exitProcess(Log().Named("admin.api"))
 	return nil
 }
 
@@ -806,9 +1117,9 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	Code    int    `json:"-"`
-	Err     error  `json:"-"`
-	Message string `json:"error"`
+	HTTPStatus int    `json:"-"`
+	Err        error  `json:"-"`
+	Message    string `json:"error"`
 }
 
 func (e APIError) Error() string {
@@ -818,20 +1129,44 @@ func (e APIError) Error() string {
 	return e.Message
 }
 
+// parseAdminListenAddr extracts a singular listen address from either addr
+// or defaultAddr, returning the network and the address of the listener.
+func parseAdminListenAddr(addr string, defaultAddr string) (NetworkAddress, error) {
+	input := addr
+	if input == "" {
+		input = defaultAddr
+	}
+	listenAddr, err := ParseNetworkAddress(input)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("parsing listener address: %v", err)
+	}
+	if listenAddr.PortRangeSize() != 1 {
+		return NetworkAddress{}, fmt.Errorf("must be exactly one listener address; cannot listen on: %s", listenAddr)
+	}
+	return listenAddr, nil
+}
+
+// decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
+func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
+	derBytes, err := base64.StdEncoding.DecodeString(certStr)
+	if err != nil {
+		return nil, err
+	}
+	return x509.ParseCertificate(derBytes)
+}
+
 var (
-	// DefaultAdminListen is the address for the admin
+	// DefaultAdminListen is the address for the local admin
 	// listener, if none is specified at startup.
 	DefaultAdminListen = "localhost:2019"
 
-	// ErrInternalRedir indicates an internal redirect
-	// and is useful when admin API handlers rewrite
-	// the request; in that case, authentication and
-	// authorization needs to happen again for the
-	// rewritten request.
-	ErrInternalRedir = fmt.Errorf("internal redirect; re-authorization required")
+	// DefaultRemoteAdminListen is the address for the remote
+	// (TLS-authenticated) admin listener, if enabled and not
+	// specified otherwise.
+	DefaultRemoteAdminListen = ":2021"
 
 	// DefaultAdminConfig is the default configuration
-	// for the administration endpoint.
+	// for the local administration endpoint.
 	DefaultAdminConfig = &AdminConfig{
 		Listen: DefaultAdminListen,
 	}
@@ -869,4 +1204,8 @@ var bufPool = sync.Pool{
 	},
 }
 
-var adminServer *http.Server
+// keep a reference to admin endpoint singletons while they're active
+var (
+	localAdminServer, remoteAdminServer *http.Server
+	identityCertCache                   *certmagic.Cache
+)

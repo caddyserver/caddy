@@ -32,14 +32,15 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 		}
 
 		// split the Caddyfile (first) and JSON (second) parts
+		// (append newline to Caddyfile to match formatter expectations)
 		parts := strings.Split(string(data), "----------")
-		caddyfile, json := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		caddyfile, json := strings.TrimSpace(parts[0])+"\n", strings.TrimSpace(parts[1])
 
 		// replace windows newlines in the json with unix newlines
 		json = winNewlines.ReplaceAllString(json, "\n")
 
 		// run the test
-		ok := caddytest.CompareAdapt(t, caddyfile, "caddyfile", json)
+		ok := caddytest.CompareAdapt(t, filename, caddyfile, "caddyfile", json)
 		if !ok {
 			t.Errorf("failed to adapt %s", filename)
 		}

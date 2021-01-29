@@ -84,13 +84,22 @@ nfpms:
       # - rpm
 
     bindir: /usr/bin
-    files:
-      ./caddy-dist/init/caddy.service: /lib/systemd/system/caddy.service
-      ./caddy-dist/init/caddy-api.service: /lib/systemd/system/caddy-api.service
-      ./caddy-dist/welcome/index.html: /usr/share/caddy/index.html
-      ./caddy-dist/scripts/completions/bash-completion: /etc/bash_completion.d/caddy
-    config_files:
-      ./caddy-dist/config/Caddyfile: /etc/caddy/Caddyfile
+    contents:
+      - src: ./caddy-dist/init/caddy.service
+        dst: /lib/systemd/system/caddy.service
+        
+      - src: ./caddy-dist/init/caddy-api.service
+        dst: /lib/systemd/system/caddy-api.service
+      
+      - src: ./caddy-dist/welcome/index.html
+        dst: /usr/share/caddy/index.html
+      
+      - src: ./caddy-dist/scripts/completions/bash-completion
+        dst: /etc/bash_completion.d/caddy
+    
+      - src: ./caddy-dist/config/Caddyfile
+        dst: /etc/caddy/Caddyfile
+        type: config
 
     scripts:
       postinstall: ./caddy-dist/scripts/postinstall.sh

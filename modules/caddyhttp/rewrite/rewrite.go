@@ -191,11 +191,21 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
+		if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
+			r.URL.Path = p
+		} else {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		}
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
-		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
+		r.URL.RawPath = strings.TrimSuffix(r.URL.RawPath, suffix)
+		if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
+			r.URL.Path = p
+		} else {
+			r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
+		}
 	}
 
 	// substring replacements in URI
@@ -289,10 +299,10 @@ type replacer struct {
 	Limit int `json:"limit,omitempty"`
 }
 
-// do performs the replacement on r and returns true if any changes were made.
-func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
+// do performs the replacement on r.
+func (rep replacer) do(r *http.Request, repl *caddy.Replacer) {
 	if rep.Find == "" || rep.Replace == "" {
-		return false
+		return
 	}
 
 	lim := rep.Limit
@@ -303,13 +313,14 @@ func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
 	find := repl.ReplaceAll(rep.Find, "")
 	replace := repl.ReplaceAll(rep.Replace, "")
 
-	oldPath := r.URL.Path
-	oldQuery := r.URL.RawQuery
+	r.URL.RawPath = strings.Replace(r.URL.RawPath, find, replace, lim)
+	if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
+		r.URL.Path = p
+	} else {
+		r.URL.Path = strings.Replace(r.URL.Path, find, replace, lim)
+	}
 
-	r.URL.Path = strings.Replace(oldPath, find, replace, lim)
-	r.URL.RawQuery = strings.Replace(oldQuery, find, replace, lim)
-
-	return r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
+	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
 }
 
 // Interface guard

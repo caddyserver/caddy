@@ -69,6 +69,7 @@ var directiveOrder = []string{
 	"php_fastcgi",
 	"file_server",
 	"acme_server",
+	"abort",
 }
 
 // directiveIsOrdered returns true if dir is
@@ -498,9 +499,10 @@ type (
 	UnmarshalHandlerFunc func(h Helper) (caddyhttp.MiddlewareHandler, error)
 
 	// UnmarshalGlobalFunc is a function which can unmarshal Caddyfile
-	// tokens into a global option config value using a Helper type.
-	// These are passed in a call to RegisterGlobalOption.
-	UnmarshalGlobalFunc func(d *caddyfile.Dispenser) (interface{}, error)
+	// tokens from a global option. It is passed the tokens to parse and
+	// existing value from the previous instance of this global option
+	// (if any). It returns the value to associate with this global option.
+	UnmarshalGlobalFunc func(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error)
 )
 
 var registeredDirectives = make(map[string]UnmarshalFunc)

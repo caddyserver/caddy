@@ -201,6 +201,11 @@ func TestRewrite(t *testing.T) {
 		},
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			input:  newRequest(t, "GET", "/prefix/foo%2Fbar"),
+			expect: newRequest(t, "GET", "/foo%2Fbar"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/prefix/bar"),
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
@@ -214,6 +219,11 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathSuffix: "suffix"},
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "suffix"},
+			input:  newRequest(t, "GET", "/foo%2Fbar/suffix"),
+			expect: newRequest(t, "GET", "/foo%2Fbar/"),
 		},
 		{
 			rule:   Rewrite{StripPathSuffix: "/suffix"},
@@ -230,6 +240,11 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{URISubstring: []replacer{{Find: "findme", Replace: "replaced"}}},
 			input:  newRequest(t, "GET", "/foo/findme/bar"),
 			expect: newRequest(t, "GET", "/foo/replaced/bar"),
+		},
+		{
+			rule:   Rewrite{URISubstring: []replacer{{Find: "findme", Replace: "replaced"}}},
+			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
+			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
 		},
 	} {
 		// copy the original input just enough so that we can

@@ -12,7 +12,9 @@
 	<br>
 	<a href="https://twitter.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/badge/twitter-@caddyserver-55acee.svg" alt="@caddyserver on Twitter"></a>
 	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
+	<br>
 	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
+	<a href="https://cloudsmith.io/~caddy/repos/"><img src="https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith" alt="Cloudsmith"></a>
 </p>
 <p align="center">
 	<a href="https://github.com/caddyserver/caddy/releases">Releases</a> ·
@@ -85,7 +87,7 @@ $ cd caddy/cmd/caddy/
 $ go build
 ```
 
-When you run Caddy, it may try to bind to low ports unless otherwise specified in your config. If your OS requires elevated privileges, you will need to give your new binary permission to do so. On Linux, this can be done easily with: `sudo setcap cap_net_bind_service=+ep ./caddy`
+When you run Caddy, it may try to bind to low ports unless otherwise specified in your config. If your OS requires elevated privileges for this, you will need to give your new binary permission to do so. On Linux, this can be done easily with: `sudo setcap cap_net_bind_service=+ep ./caddy`
 
 If you prefer to use `go run` which creates temporary binaries, you can still do this. Make an executable file called `setcap.sh` (or whatever you want) with these contents:
 
@@ -123,7 +125,7 @@ $ xcaddy build
 2. Change into it: `cd caddy`
 3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
 4. Initialize a Go module: `go mod init caddy`
-5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag or commit.
+5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag, commit, or branch name.
 6. (Optional) Add plugins by adding their import: `_ "import/path/here"`
 7. Compile: `go build`
 
@@ -172,7 +174,7 @@ The docs are also open source. You can contribute to them here: https://github.c
 
 - We **strongly recommend** that all professionals or companies using Caddy get a support contract through [Ardan Labs](https://www.ardanlabs.com/my/contact-us?dd=caddy) before help is needed.
 
-- A [sponsorship](https://github.com/sponsors/mholt) goes a long way!
+- A [sponsorship](https://github.com/sponsors/mholt) goes a long way! If Caddy is benefitting your company, please consider a sponsorship! This not only helps fund full-time work to ensure the longevity of the project, it's also a great look for your company to your customers and potential customers!
 
 - Individuals can exchange help for free on our community forum at https://caddy.community. Remember that people give help out of their spare time and good will. The best way to get help is to give it first!
 
@@ -182,9 +184,11 @@ Please use our [issue tracker](https://github.com/caddyserver/caddy/issues) only
 
 ## About
 
-**The name "Caddy" is trademarked.** The name of the software is "Caddy", not "Caddy Server" or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the Caddy web server". Caddy is a registered trademark of apilayer GmbH.
+**The name "Caddy" is trademarked.** The name of the software is "Caddy", not "Caddy Server" or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the Caddy web server". Caddy is a registered trademark of Stack Holdings GmbH.
 
 - _Project on Twitter: [@caddyserver](https://twitter.com/caddyserver)_
 - _Author on Twitter: [@mholt6](https://twitter.com/mholt6)_
 
-Caddy is a project of [ZeroSSL](https://zerossl.com), an [apilayer](https://apilayer.com) company.
+Caddy is a project of [ZeroSSL](https://zerossl.com), a Stack Holdings company.
+
+Debian package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com). Cloudsmith is the only fully hosted, cloud-native, universal package management solution, that enables your organization to create, store and share packages in any format, to any place, with total confidence.
