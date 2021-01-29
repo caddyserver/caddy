@@ -79,6 +79,7 @@ jobs:
           ${{ runner.os }}-${{ matrix.go }}-go-ci
 
     - name: Cache Go modules cache
+      if: matrix.go != '1.14.x' && matrix.os != 'windows-latest'
       uses: actions/cache@v2
       with:
         path: ${{ steps.vars.outputs.gomod_cache }}
