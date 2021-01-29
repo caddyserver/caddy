@@ -229,12 +229,12 @@ var arePrerequisitesValid bool
 
 func validateTestPrerequisites() error {
 
-	if hasValidated {
-		if !arePrerequisitesValid {
-			return errors.New("caddy integration prerequisites failed. see first error")
-		}
-		return nil
-	}
+	// if hasValidated {
+	// 	if !arePrerequisitesValid {
+	// 		return errors.New("caddy integration prerequisites failed. see first error")
+	// 	}
+	// 	return nil
+	// }
 
 	hasValidated = true
 	arePrerequisitesValid = false
