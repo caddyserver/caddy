@@ -138,13 +138,13 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 			}
 		}
 	}
-	for _, delHeader := range ops.Delete {
+	for idx, delHeader := range ops.Delete {
 		if strings.ContainsAny(delHeader.HeaderName, "+|*|[") {
 			re, err := regexp.Compile("^" + delHeader.HeaderName + "$")
 			if err != nil {
 				return fmt.Errorf("Deletion for header field '%s': %v", delHeader.HeaderName, err)
 			}
-			delHeader.re = re
+			ops.Delete[idx].re = re
 		}
 	}
 	return nil
