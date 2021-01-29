@@ -224,20 +224,9 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
 }
 
-var hasValidated bool
-var arePrerequisitesValid bool
-
+// validateTestPrerequisites ensures the certificates are available in the
+// designated path and Caddy sub-process is running.
 func validateTestPrerequisites() error {
-
-	// if hasValidated {
-	// 	if !arePrerequisitesValid {
-	// 		return errors.New("caddy integration prerequisites failed. see first error")
-	// 	}
-	// 	return nil
-	// }
-
-	hasValidated = true
-	arePrerequisitesValid = false
 
 	// check certificates are found
 	for _, certName := range Default.Certifcates {
@@ -253,19 +242,14 @@ func validateTestPrerequisites() error {
 			caddycmd.Main()
 		}()
 
-		// wait for caddy to start
+		// wait for caddy to start serving the initial config
 		for retries := 4; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
-	// assert that caddy is running
-	if err := isCaddyAdminRunning(); err != nil {
-		return err
-	}
-
-	arePrerequisitesValid = true
-	return nil
+	// one more time to return the error
+	return isCaddyAdminRunning()
 }
 
 func isCaddyAdminRunning() error {
