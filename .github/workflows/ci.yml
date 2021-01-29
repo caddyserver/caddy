@@ -70,6 +70,12 @@ jobs:
         echo "::set-output name=go_cache::$(go env GOCACHE)"
         echo "::set-output name=gomod_cache::$(go env GOMODCACHE)"
 
+    # GOMODCACHE doesn't exist on Windows and it wasn't available in go1.14
+    - name: Set the correct GO module cache for Windows || go1.14.x
+      if: matrix.go == '1.14.x' || matrix.os == 'windows-latest'
+      id: cache-path
+      run: echo "::set-output name=gomod_cache::$(go env GOPATH)/pkg/mod"
+
     - name: Cache the build cache
       uses: actions/cache@v2
       with:
@@ -83,6 +89,15 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ steps.vars.outputs.gomod_cache }}
+        key: ${{ runner.os }}-${{ matrix.go }}-gomod-ci-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.go }}-gomod-ci
+
+    - name: Cache Go modules cache
+      if: matrix.go == '1.14.x' || matrix.os == 'windows-latest'
+      uses: actions/cache@v2
+      with:
+        path: ${{ steps.cache-path.outputs.gomod_cache }}
         key: ${{ runner.os }}-${{ matrix.go }}-gomod-ci-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.go }}-gomod-ci
