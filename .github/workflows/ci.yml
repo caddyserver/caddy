@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go: [ '1.14.x', '1.15.x', 'tip' ]
+        go: [ '1.14.x', '1.15.x' ]
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
@@ -68,13 +68,6 @@ jobs:
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
         echo "::set-output name=go_cache::$(go env GOCACHE)"
-        echo "::set-output name=gomod_cache::$(go env GOMODCACHE)"
-
-    # GOMODCACHE doesn't exist on Windows and it wasn't available in go1.14
-    - name: Set the correct GO module cache for Windows || go1.14.x
-      if: matrix.go == '1.14.x' || matrix.os == 'windows-latest'
-      id: cache-path
-      run: echo "::set-output name=gomod_cache::$(go env GOPATH)/pkg/mod"
 
     - name: Cache the build cache
       uses: actions/cache@v2
@@ -83,24 +76,6 @@ jobs:
         key: ${{ runner.os }}-${{ matrix.go }}-go-ci-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.go }}-go-ci
-
-    - name: Cache Go modules cache
-      if: matrix.go != '1.14.x' && matrix.os != 'windows-latest'
-      uses: actions/cache@v2
-      with:
-        path: ${{ steps.vars.outputs.gomod_cache }}
-        key: ${{ runner.os }}-${{ matrix.go }}-gomod-ci-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.go }}-gomod-ci
-
-    - name: Cache Go modules cache
-      if: matrix.go == '1.14.x' || matrix.os == 'windows-latest'
-      uses: actions/cache@v2
-      with:
-        path: ${{ steps.cache-path.outputs.gomod_cache }}
-        key: ${{ runner.os }}-${{ matrix.go }}-gomod-ci-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.go }}-gomod-ci
 
     - name: Get dependencies
       run: |
