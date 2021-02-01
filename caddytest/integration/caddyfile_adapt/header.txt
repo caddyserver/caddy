@@ -87,7 +87,9 @@
 									"response": {
 										"deferred": true,
 										"delete": [
-											"Wolfram"
+											{
+												"regex": "Wolfram*"
+											}
 										]
 									}
 								},

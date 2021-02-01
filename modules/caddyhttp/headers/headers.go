@@ -180,7 +180,7 @@ type Replacement struct {
 // DeleteHeader describes a string delete,
 type DeleteHeader struct {
 	// The substring to delete.
-	HeaderName string `json:"delete,omitempty"`
+	HeaderName string `json:"regex,omitempty"`
 
 	re *regexp.Regexp
 }
