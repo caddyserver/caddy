@@ -430,9 +430,12 @@ func (st *ServerType) serversFromPairings(
 					jLongestPath = addr.Path
 				}
 			}
+			// catch-all blocks (blocks with no hostname) should always go
+			// last, even after blocks with wildcard hosts
+			if specificity(iLongestHost) == 0 {
+				return false
+			}
 			if specificity(jLongestHost) == 0 {
-				// catch-all blocks (blocks with no hostname) should always go
-				// last, even after blocks with wildcard hosts
 				return true
 			}
 			if iWildcardHost != jWildcardHost {
