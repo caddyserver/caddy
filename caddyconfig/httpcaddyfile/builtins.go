@@ -369,31 +369,57 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	// some tls subdirectives are shortcuts that implicitly configure issuers, and the
+	// user can also configure issuers explicitly using the issuer subdirective; the
+	// logic to support both would likely be complex, or at least unintuitive
 	if len(issuers) > 0 && (acmeIssuer != nil || internalIssuer != nil) {
-		// some tls subdirectives are shortcuts that implicitly configure issuers, and the
-		// user can also configure issuers explicitly using the issuer subdirective; the
-		// logic to support both would likely be complex, or at least unintuitive
 		return nil, h.Err("cannot mix issuer subdirective (explicit issuers) with other issuer-specific subdirectives (implicit issuers)")
 	}
-	for _, issuer := range issuers {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.cert_issuer",
-			Value: issuer,
-		})
+	if acmeIssuer != nil && internalIssuer != nil {
+		return nil, h.Err("cannot create both ACME and internal certificate issuers")
 	}
-	if acmeIssuer != nil {
-		configVals = append(configVals, ConfigValue{
-			Class: "tls.cert_issuer",
-			Value: disambiguateACMEIssuer(acmeIssuer),
-		})
-	}
-	if internalIssuer != nil {
+
+	// now we should either have: explicitly-created issuers, or an implicitly-created
+	// ACME or internal issuer, or no issuers at all
+	switch {
+	case len(issuers) > 0:
+		for _, issuer := range issuers {
+			configVals = append(configVals, ConfigValue{
+				Class: "tls.cert_issuer",
+				Value: issuer,
+			})
+		}
+
+	case acmeIssuer != nil:
+		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
+		defaultIssuers := caddytls.DefaultIssuers()
+
+		// if a CA endpoint was set, override multiple implicit issuers since it's a specific one
+		if acmeIssuer.CA != "" {
+			defaultIssuers = []certmagic.Issuer{acmeIssuer}
+		}
+
+		for _, issuer := range defaultIssuers {
+			switch iss := issuer.(type) {
+			case *caddytls.ACMEIssuer:
+				issuer = acmeIssuer
+			case *caddytls.ZeroSSLIssuer:
+				iss.ACMEIssuer = acmeIssuer
+			}
+			configVals = append(configVals, ConfigValue{
+				Class: "tls.cert_issuer",
+				Value: issuer,
+			})
+		}
+
+	case internalIssuer != nil:
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_issuer",
 			Value: internalIssuer,
 		})
 	}
 
+	// certificate key type
 	if keyType != "" {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.key_type",

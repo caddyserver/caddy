@@ -316,13 +316,15 @@ func (st ServerType) buildTLSApp(
 		if hasGlobalACMEDefaults {
 			for _, ap := range tlsApp.Automation.Policies {
 				if len(ap.Issuers) == 0 {
-					acme, zerosslACME := new(caddytls.ACMEIssuer), new(caddytls.ACMEIssuer)
-					zerossl := &caddytls.ZeroSSLIssuer{ACMEIssuer: zerosslACME}
-					ap.Issuers = []certmagic.Issuer{acme, zerossl} // TODO: keep this in sync with Caddy's other issuer defaults elsewhere, like in caddytls/automation.go (DefaultIssuers).
+					ap.Issuers = caddytls.DefaultIssuers()
 
-					// if a non-ZeroSSL endpoint is specified, we assume we can't use the ZeroSSL issuer successfully
-					if globalACMECA != nil && !strings.Contains(globalACMECA.(string), "zerossl") {
-						ap.Issuers = []certmagic.Issuer{acme}
+					// if a specific endpoint is configured, can't use multiple default issuers
+					if globalACMECA != nil {
+						if strings.Contains(globalACMECA.(string), "zerossl") {
+							ap.Issuers = []certmagic.Issuer{&caddytls.ZeroSSLIssuer{ACMEIssuer: new(caddytls.ACMEIssuer)}}
+						} else {
+							ap.Issuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
+						}
 					}
 				}
 			}
@@ -461,19 +463,6 @@ func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddycon
 	}
 
 	return ap, nil
-}
-
-// disambiguateACMEIssuer returns an issuer based on the properties of acmeIssuer.
-// If acmeIssuer implicitly configures a certain kind of ACMEIssuer (for example,
-// ZeroSSL), the proper wrapper over acmeIssuer will be returned instead.
-func disambiguateACMEIssuer(acmeIssuer *caddytls.ACMEIssuer) certmagic.Issuer {
-	// as a special case, we integrate with ZeroSSL's ACME endpoint if it looks like an
-	// implicit ZeroSSL configuration (this requires a wrapper type over ACMEIssuer
-	// because of the EAB generation; if EAB is provided, we can use plain ACMEIssuer)
-	if strings.Contains(acmeIssuer.CA, "acme.zerossl.com") && acmeIssuer.ExternalAccount == nil {
-		return &caddytls.ZeroSSLIssuer{ACMEIssuer: acmeIssuer}
-	}
-	return acmeIssuer
 }
 
 // consolidateAutomationPolicies combines automation policies that are the same,
