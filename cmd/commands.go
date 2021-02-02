@@ -178,6 +178,7 @@ config file; otherwise the default is assumed.`,
 			fs.String("config", "", "Configuration file (required)")
 			fs.String("adapter", "", "Name of config adapter to apply")
 			fs.String("address", "", "Address of the administration listener, if different from config")
+			fs.Bool("force", false, "Force config reload, even if it is the same")
 			return fs
 		}(),
 	})
