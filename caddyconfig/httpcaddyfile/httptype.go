@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"regexp"
 	"sort"
@@ -470,6 +471,13 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			hosts := sblock.hostsFromKeys(false)
+
+			// emit warnings if user put unspecified IP addresses; they probably want the bind directive
+			for _, h := range hosts {
+				if h == "0.0.0.0" || h == "::" {
+					log.Printf("[WARNING] Site block has unspecified IP address %s which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", h)
+				}
+			}
 
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
