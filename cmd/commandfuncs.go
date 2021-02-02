@@ -282,7 +282,7 @@ func cmdRun(fl Flags) (int, error) {
 func cmdStop(fl Flags) (int, error) {
 	stopCmdAddrFlag := fl.String("address")
 
-	err := apiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil)
+	err := apiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil, nil)
 	if err != nil {
 		caddy.Log().Warn("failed using API to stop instance", zap.Error(err))
 		return caddy.ExitCodeFailedStartup, err
@@ -295,6 +295,7 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdConfigFlag := fl.String("config")
 	reloadCmdConfigAdapterFlag := fl.String("adapter")
 	reloadCmdAddrFlag := fl.String("address")
+	reloadCmdForceFlag := fl.Bool("force")
 
 	if err := NotifyReloading(); err != nil {
 		caddy.Log().Error("unable to notify reloading to service manager", zap.Error(err))
@@ -328,7 +329,13 @@ func cmdReload(fl Flags) (int, error) {
 		adminAddr = tmpStruct.Admin.Listen
 	}
 
-	err = apiRequest(adminAddr, http.MethodPost, "/load", bytes.NewReader(config))
+	// optionally force a config reload
+	headers := make(http.Header)
+	if reloadCmdForceFlag {
+		headers.Set("Cache-Control", "must-revalidate")
+	}
+
+	err = apiRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("sending configuration to instance: %v", err)
 	}
@@ -827,7 +834,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 // apiRequest makes an API request to the endpoint adminAddr with the
 // given HTTP method and request URI. If body is non-nil, it will be
 // assumed to be Content-Type application/json.
-func apiRequest(adminAddr, method, uri string, body io.Reader) error {
+func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) error {
 	// parse the admin address
 	if adminAddr == "" {
 		adminAddr = caddy.DefaultAdminListen
@@ -866,6 +873,9 @@ func apiRequest(adminAddr, method, uri string, body io.Reader) error {
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header[k] = v
 	}
 
 	// make an HTTP client that dials our network type, since admin
