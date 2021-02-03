@@ -221,9 +221,7 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 		ops.Add.Set(field[1:], value)
 
 	case strings.HasPrefix(field, "-"): // delete
-		ops.Delete = append(ops.Delete, DeleteHeader{
-			HeaderName: field[1:],
-		})
+		ops.Delete = append(ops.Delete, field[1:])
 		if respHeaderOps != nil {
 			respHeaderOps.Deferred = true
 		}

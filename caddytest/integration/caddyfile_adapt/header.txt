@@ -2,7 +2,7 @@
 	header Denis "Ritchie"
 	header +Edsger "Dijkstra"
 	header ?John "von Neumann"
-	header -Wolfram*
+	header -Wolfram.*
 	header {
 		Grace: "Hopper" # some users habitually suffix field names with a colon
 		+Ray "Solomonoff"
@@ -87,9 +87,7 @@
 									"response": {
 										"deferred": true,
 										"delete": [
-											{
-												"regex": "Wolfram*"
-											}
+											"Wolfram.*"
 										]
 									}
 								},

@@ -119,10 +119,13 @@ type HeaderOps struct {
 	Set http.Header `json:"set,omitempty"`
 
 	// Names of HTTP header fields to delete.
-	Delete []DeleteHeader `json:"delete,omitempty"`
+	Delete []string `json:"delete,omitempty"`
 
 	// Performs substring replacements of HTTP headers in-situ.
 	Replace map[string][]Replacement `json:"replace,omitempty"`
+
+	// compiled regex-exp for Delete
+	deleteRegexps map[string]*regexp.Regexp
 }
 
 // Provision sets up the header operations.
@@ -138,13 +141,13 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 			}
 		}
 	}
-	for idx, delHeader := range ops.Delete {
-		if strings.ContainsAny(delHeader.HeaderName, "+|*|[") {
-			re, err := regexp.Compile("^" + delHeader.HeaderName + "$")
+	for _, delHeader := range ops.Delete {
+		if strings.ContainsAny(delHeader, "+|*|[") {
+			re, err := regexp.Compile("^" + delHeader + "$")
 			if err != nil {
-				return fmt.Errorf("Deletion for header field '%s': %v", delHeader.HeaderName, err)
+				return fmt.Errorf("Deletion for header field '%s': %v", delHeader, err)
 			}
-			ops.Delete[idx].re = re
+			ops.deleteRegexps[delHeader] = re
 		}
 	}
 	return nil
@@ -173,14 +176,6 @@ type Replacement struct {
 
 	// The string with which to replace matches.
 	Replace string `json:"replace,omitempty"`
-
-	re *regexp.Regexp
-}
-
-// DeleteHeader describes a string delete,
-type DeleteHeader struct {
-	// The substring to delete.
-	HeaderName string `json:"regex,omitempty"`
 
 	re *regexp.Regexp
 }
@@ -225,14 +220,14 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 
 	// delete
 	for _, delHeader := range ops.Delete {
-		if delHeader.re != nil {
+		if ops.deleteRegexps[delHeader] != nil {
 			for key := range hdr {
-				if matched := delHeader.re.MatchString(key); matched {
+				if matched := ops.deleteRegexps[delHeader].MatchString(key); matched {
 					hdr.Del(repl.ReplaceAll(key, ""))
 				}
 			}
 		} else {
-			hdr.Del(repl.ReplaceAll(delHeader.HeaderName, ""))
+			hdr.Del(repl.ReplaceAll(delHeader, ""))
 		}
 	}
 

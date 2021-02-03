@@ -68,7 +68,7 @@ func TestHandler(t *testing.T) {
 		{
 			handler: Handler{
 				Request: &HeaderOps{
-					Delete: []DeleteHeader{{HeaderName: "Kick-Me"}},
+					Delete: []string{"Kick-Me"},
 				},
 			},
 			reqHeader: http.Header{
@@ -132,7 +132,7 @@ func TestHandler(t *testing.T) {
 						},
 					},
 					HeaderOps: &HeaderOps{
-						Delete: []DeleteHeader{{HeaderName: "Cache-Cont.*"}},
+						Delete: []string{"Cache-Control"},
 					},
 				},
 			},
