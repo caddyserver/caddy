@@ -63,7 +63,12 @@ type CA struct {
 	// separate location from your leaf certificates.
 	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
-	id          string
+	// The unique config-facing ID of the certificate authority.
+	// Since the ID is set in JSON config via object key, this
+	// field is exported only for purposes of config generation
+	// and module provisioning.
+	ID string `json:"-"`
+
 	storage     certmagic.Storage
 	root, inter *x509.Certificate
 	interKey    interface{} // TODO: should we just store these as crypto.Signer?
@@ -82,7 +87,7 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 		return fmt.Errorf("CA ID is required (use 'local' for the default CA)")
 	}
 	ca.mu.Lock()
-	ca.id = id
+	ca.ID = id
 	ca.mu.Unlock()
 
 	if ca.StorageRaw != nil {
@@ -140,11 +145,6 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	ca.mu.Unlock()
 
 	return nil
-}
-
-// ID returns the CA's ID, as given by the user in the config.
-func (ca CA) ID() string {
-	return ca.id
 }
 
 // RootCertificate returns the CA's root certificate (public key).
@@ -338,7 +338,7 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (i
 }
 
 func (ca CA) storageKeyCAPrefix() string {
-	return path.Join("pki", "authorities", certmagic.StorageKeys.Safe(ca.id))
+	return path.Join("pki", "authorities", certmagic.StorageKeys.Safe(ca.ID))
 }
 func (ca CA) storageKeyRootCert() string {
 	return path.Join(ca.storageKeyCAPrefix(), "root.crt")
