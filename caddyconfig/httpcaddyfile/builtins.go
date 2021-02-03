@@ -316,6 +316,8 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				if acmeIssuer.Challenges == nil {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
 				modID := "dns.providers." + provName
@@ -324,6 +326,22 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					return nil, err
 				}
 				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
+
+			case "resolvers":
+				args := h.RemainingArgs()
+				if len(args) == 0 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.Resolvers = args
 
 			case "ca_root":
 				arg := h.RemainingArgs()
