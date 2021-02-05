@@ -99,6 +99,8 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err("close already specified")
 				}
 				s.Close = true
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
 			}
 		}
 	}

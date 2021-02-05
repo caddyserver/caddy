@@ -49,10 +49,14 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 	p.ctx = ctx
 	p.log = ctx.Logger(p)
 
-	// if this app is initialized at all, ensure there's
-	// at least a default CA that can be used
-	if len(p.CAs) == 0 {
-		p.CAs = map[string]*CA{DefaultCAID: new(CA)}
+	// if this app is initialized at all, ensure there's at
+	// least a default CA that can be used: the standard CA
+	// which is used implicitly for signing local-use certs
+	if p.CAs == nil {
+		p.CAs = make(map[string]*CA)
+	}
+	if _, ok := p.CAs[DefaultCAID]; !ok {
+		p.CAs[DefaultCAID] = new(CA)
 	}
 
 	for caID, ca := range p.CAs {

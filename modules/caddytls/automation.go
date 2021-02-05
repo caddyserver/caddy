@@ -187,7 +187,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	issuers := ap.Issuers
 	if len(issuers) == 0 {
 		var err error
-		issuers, err = DefaultIssuers(tlsApp.ctx)
+		issuers, err = DefaultIssuersProvisioned(tlsApp.ctx)
 		if err != nil {
 			return err
 		}
@@ -242,21 +242,28 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	return nil
 }
 
-// DefaultIssuers returns empty but provisioned default Issuers.
+// DefaultIssuers returns empty Issuers (not provisioned) to be used as defaults.
 // This function is experimental and has no compatibility promises.
-func DefaultIssuers(ctx caddy.Context) ([]certmagic.Issuer, error) {
-	acme := new(ACMEIssuer)
-	err := acme.Provision(ctx)
-	if err != nil {
-		return nil, err
+func DefaultIssuers() []certmagic.Issuer {
+	return []certmagic.Issuer{
+		new(ACMEIssuer),
+		&ZeroSSLIssuer{ACMEIssuer: new(ACMEIssuer)},
 	}
-	zerossl := new(ZeroSSLIssuer)
-	err = zerossl.Provision(ctx)
-	if err != nil {
-		return nil, err
+}
+
+// DefaultIssuersProvisioned returns empty but provisioned default Issuers from
+// DefaultIssuers(). This function is experimental and has no compatibility promises.
+func DefaultIssuersProvisioned(ctx caddy.Context) ([]certmagic.Issuer, error) {
+	issuers := DefaultIssuers()
+	for i, iss := range issuers {
+		if prov, ok := iss.(caddy.Provisioner); ok {
+			err := prov.Provision(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("provisioning default issuer %d: %T: %v", i, iss, err)
+			}
+		}
 	}
-	// TODO: eventually, insert ZeroSSL into first position in the slice -- see also httpcaddyfile/tlsapp.go for where similar defaults are configured
-	return []certmagic.Issuer{acme, zerossl}, nil
+	return issuers, nil
 }
 
 // ChallengesConfig configures the ACME challenges.

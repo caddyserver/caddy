@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"regexp"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -218,6 +220,12 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		return nil, warnings, err
 	}
 
+	// then make the PKI app
+	pkiApp, warnings, err := st.buildPKIApp(pairings, options, warnings)
+	if err != nil {
+		return nil, warnings, err
+	}
+
 	// extract any custom logs, and enforce configured levels
 	var customLogs []namedCustomLog
 	var hasDefaultLog bool
@@ -257,6 +265,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	}
 	if !reflect.DeepEqual(tlsApp, &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}) {
 		cfg.AppsRaw["tls"] = caddyconfig.JSON(tlsApp, &warnings)
+	}
+	if !reflect.DeepEqual(pkiApp, &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}) {
+		cfg.AppsRaw["pki"] = caddyconfig.JSON(pkiApp, &warnings)
 	}
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
 		cfg.StorageRaw = caddyconfig.JSONModuleObject(storageCvtr,
@@ -430,9 +441,12 @@ func (st *ServerType) serversFromPairings(
 					jLongestPath = addr.Path
 				}
 			}
+			// catch-all blocks (blocks with no hostname) should always go
+			// last, even after blocks with wildcard hosts
+			if specificity(iLongestHost) == 0 {
+				return false
+			}
 			if specificity(jLongestHost) == 0 {
-				// catch-all blocks (blocks with no hostname) should always go
-				// last, even after blocks with wildcard hosts
 				return true
 			}
 			if iWildcardHost != jWildcardHost {
@@ -467,6 +481,13 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			hosts := sblock.hostsFromKeys(false)
+
+			// emit warnings if user put unspecified IP addresses; they probably want the bind directive
+			for _, h := range hosts {
+				if h == "0.0.0.0" || h == "::" {
+					log.Printf("[WARNING] Site block has unspecified IP address %s which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", h)
+				}
+			}
 
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
