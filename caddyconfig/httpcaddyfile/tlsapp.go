@@ -125,11 +125,12 @@ func (st ServerType) buildTLSApp(
 			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				var issuers []certmagic.Issuer
 				for _, issuerVal := range issuerVals {
-					ap.Issuers = append(ap.Issuers, issuerVal.Value.(certmagic.Issuer))
+					issuers = append(issuers, issuerVal.Value.(certmagic.Issuer))
 				}
 				if ap == catchAllAP && !reflect.DeepEqual(ap.Issuers, issuers) {
 					return nil, warnings, fmt.Errorf("automation policy from site block is also default/catch-all policy because of key without hostname, and the two are in conflict: %#v != %#v", ap.Issuers, issuers)
 				}
+				ap.Issuers = issuers
 			}
 
 			// custom bind host
