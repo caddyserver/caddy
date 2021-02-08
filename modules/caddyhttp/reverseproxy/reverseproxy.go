@@ -365,6 +365,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}()
 
 	start := time.Now()
+	defer func() {
+		// total proxying duration, including time spent on LB and retries
+		repl.Set("http.reverse_proxy.duration", time.Since(start))
+	}()
 
 	var proxyErr error
 	for {
@@ -414,7 +418,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		// proxy the request to that upstream
-		proxyErr = h.reverseProxy(w, r, dialInfo, next)
+		proxyErr = h.reverseProxy(w, r, repl, dialInfo, next)
 		if proxyErr == nil || proxyErr == context.Canceled {
 			// context.Canceled happens when the downstream client
 			// cancels the request, which is not our failure
@@ -517,7 +521,7 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
-func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di DialInfo, next caddyhttp.Handler) error {
+func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
 	_ = di.Upstream.Host.CountRequest(1)
 	//nolint:errcheck
 	defer di.Upstream.Host.CountRequest(-1)
@@ -541,6 +545,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	logger.Debug("upstream roundtrip",
 		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
 		zap.Int("status", res.StatusCode))
+
+	// duration until upstream wrote response headers (roundtrip duration)
+	repl.Set("http.reverse_proxy.upstream.latency", duration)
 
 	// update circuit breaker on current conditions
 	if di.Upstream.cb != nil {
@@ -568,8 +575,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
 			continue
 		}
-
-		repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 		// if configured to only change the status code, do that then continue regular proxy response
 		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
@@ -615,7 +620,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 	if h.Headers != nil && h.Headers.Response != nil {
 		if h.Headers.Response.Require == nil ||
 			h.Headers.Response.Require.Match(res.StatusCode, res.Header) {
-			repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			h.Headers.Response.ApplyTo(res.Header, repl)
 		}
 	}
@@ -662,6 +666,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, di Dia
 			fl.Flush()
 		}
 	}
+
+	// total duration spent proxying, including writing response body
+	repl.Set("http.reverse_proxy.upstream.duration", duration)
 
 	if len(res.Trailer) == announcedTrailers {
 		copyHeader(rw.Header(), res.Trailer)
