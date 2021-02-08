@@ -44,7 +44,7 @@ func init() {
 // Handler implements a highly configurable and production-ready reverse proxy.
 //
 // Upon proxying, this module sets the following placeholders (which can be used
-// both within and after this handler):
+// both within and after this handler; for example, in response headers):
 //
 // Placeholder | Description
 // ------------|-------------
@@ -55,6 +55,9 @@ func init() {
 // `{http.reverse_proxy.upstream.requests}` | The approximate current number of requests to the upstream
 // `{http.reverse_proxy.upstream.max_requests}` | The maximum approximate number of requests allowed to the upstream
 // `{http.reverse_proxy.upstream.fails}` | The number of recent failed requests to the upstream
+// `{http.reverse_proxy.upstream.latency}` | How long it took the proxy upstream to write the response header.
+// `{http.reverse_proxy.upstream.duration}` | Time spent proxying to the upstream, including writing response body to client.
+// `{http.reverse_proxy.duration}` | Total time spent proxying, including selecting an upstream, retries, and writing response.
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.
