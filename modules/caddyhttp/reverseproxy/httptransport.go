@@ -334,6 +334,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 		cfg.Certificates = []tls.Certificate{cert}
 	}
 	if t.ClientCertificateAutomate != "" {
+		// TODO: use or enable ctx.IdentityCredentials() ...
 		tlsAppIface, err := ctx.App("tls")
 		if err != nil {
 			return nil, fmt.Errorf("getting tls app: %v", err)
