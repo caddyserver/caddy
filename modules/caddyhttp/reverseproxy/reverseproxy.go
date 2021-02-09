@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"regexp"
@@ -96,8 +95,19 @@ type Handler struct {
 
 	// If true, the entire request body will be read and buffered
 	// in memory before being proxied to the backend. This should
-	// be avoided if at all possible for performance reasons.
+	// be avoided if at all possible for performance reasons, but
+	// could be useful if the backend is intolerant of read latency.
 	BufferRequests bool `json:"buffer_requests,omitempty"`
+
+	// If true, the entire response body will be read and buffered
+	// in memory before being proxied to the client. This should
+	// be avoided if at all possible for performance reasons, but
+	// could be useful if the backend has tighter memory constraints.
+	BufferResponses bool `json:"buffer_responses,omitempty"`
+
+	// If body buffering is enabled, the maximum size of the buffers
+	// used for the requests and responses (in bytes).
+	MaxBufferSize int64 `json:"max_buffer_size,omitempty"`
 
 	// List of handlers and their associated matchers to evaluate
 	// after successful roundtrips. The first handler that matches
@@ -340,12 +350,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// required, if read timeouts are set,
 	// and if body size is limited
 	if h.BufferRequests {
-		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		defer bufPool.Put(buf)
-		_, _ = io.Copy(buf, r.Body)
-		r.Body.Close()
-		r.Body = ioutil.NopCloser(buf)
+		r.Body = h.bufferedBody(r.Body)
 	}
 
 	// prepare the request for proxying; this is needed only once
@@ -573,6 +578,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 		}
 	}
 
+	// if enabled, buffer the response body
+	if h.BufferResponses {
+		res.Body = h.bufferedBody(res.Body)
+	}
+
 	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
@@ -607,7 +617,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 		}
 	}
 
-	// Deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
+	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		h.handleUpgradeResponse(rw, req, res)
 		return nil
@@ -745,6 +755,30 @@ func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	req.URL.Host = reqHost
 }
 
+// bufferedBody reads originalBody into a buffer, then returns a reader for the buffer.
+// Always close the return value when done with it, just like if it was the original body!
+func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if h.MaxBufferSize > 0 {
+		n, err := io.CopyN(buf, originalBody, h.MaxBufferSize)
+		if err != nil || n == h.MaxBufferSize {
+			return bodyReadCloser{
+				Reader: io.MultiReader(buf, originalBody),
+				buf:    buf,
+				body:   originalBody,
+			}
+		}
+	} else {
+		_, _ = io.Copy(buf, originalBody)
+	}
+	originalBody.Close() // no point in keeping it open
+	return bodyReadCloser{
+		Reader: buf,
+		buf:    buf,
+	}
+}
+
 func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
@@ -868,6 +902,23 @@ type TLSTransport interface {
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceeded struct{ error }
 
+// bodyReadCloser is a reader that, upon closing, will return
+// its buffer to the pool and close the underlying body reader.
+type bodyReadCloser struct {
+	io.Reader
+	buf  *bytes.Buffer
+	body io.ReadCloser
+}
+
+func (brc bodyReadCloser) Close() error {
+	bufPool.Put(brc.buf)
+	if brc.body != nil {
+		return brc.body.Close()
+	}
+	return nil
+}
+
+// bufPool is used for buffering requests and responses.
 var bufPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)

@@ -499,6 +499,25 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.BufferRequests = true
 
+			case "buffer_responses":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				h.BufferResponses = true
+
+			case "max_buffer_size":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				size, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("invalid size (bytes): %s", d.Val())
+				}
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				h.MaxBufferSize = int64(size)
+
 			case "header_up":
 				var err error
 
