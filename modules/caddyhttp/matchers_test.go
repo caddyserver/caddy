@@ -397,6 +397,9 @@ func TestPathREMatcher(t *testing.T) {
 }
 
 func TestHeaderMatcher(t *testing.T) {
+	repl := caddy.NewReplacer()
+	repl.Set("a", "foobar")
+
 	for i, tc := range []struct {
 		match  MatchHeader
 		input  http.Header // make sure these are canonical cased (std lib will do that in a real request)
@@ -490,8 +493,26 @@ func TestHeaderMatcher(t *testing.T) {
 			input:  http.Header{"Must-Not-Exist": []string{"do not match"}},
 			expect: false,
 		},
+		{
+			match:  MatchHeader{"Foo": []string{"{a}"}},
+			input:  http.Header{"Foo": []string{"foobar"}},
+			expect: true,
+		},
+		{
+			match:  MatchHeader{"Foo": []string{"{a}"}},
+			input:  http.Header{"Foo": []string{"asdf"}},
+			expect: false,
+		},
+		{
+			match:  MatchHeader{"Foo": []string{"{a}*"}},
+			input:  http.Header{"Foo": []string{"foobar-baz"}},
+			expect: true,
+		},
 	} {
 		req := &http.Request{Header: tc.input, Host: tc.host}
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req = req.WithContext(ctx)
+
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
