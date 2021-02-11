@@ -52,7 +52,7 @@ func initHTTPMetrics() {
 	durationBuckets := prometheus.DefBuckets
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
 
-	httpLabels := []string{"server", "handler", "code", "method"}
+	httpLabels := []string{"server", "handler", "code", "method", "content_type"}
 	httpMetrics.requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -112,7 +112,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	method := strings.ToUpper(r.Method)
 	// the "code" value is set later, but initialized here to eliminate the possibility
 	// of a panic
-	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
+	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": "", "content_type": ""}
 
 	inFlight := httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
@@ -125,6 +125,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// Effectively the same behaviour as promhttp.InstrumentHandlerTimeToWriteHeader.
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
 		statusLabels["code"] = sanitizeCode(status)
+		statusLabels["content_type"] = header.Get("Content-Type")
 		ttfb := time.Since(start).Seconds()
 		httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
 		return false
@@ -144,6 +145,9 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 		// we still sanitize it, even though it's likely to be 0. A 200 is
 		// returned on fallthrough so we want to reflect that.
 		statusLabels["code"] = sanitizeCode(wrec.Status())
+	}
+	if statusLabels["content_type"] == "" {
+		statusLabels["content_type"] = wrec.Header().Get("Content-Type")
 	}
 
 	httpMetrics.requestDuration.With(statusLabels).Observe(dur)
