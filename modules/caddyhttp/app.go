@@ -176,8 +176,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// domain fronting is desired and access is not restricted
 		// based on hostname
 		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
-			app.logger.Info("enabling strict SNI-Host matching because TLS client auth is configured",
-				zap.String("server_name", srvName),
+			app.logger.Warn("enabling strict SNI-Host enforcement because TLS client auth is configured",
+				zap.String("server_id", srvName),
 			)
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
@@ -283,7 +283,6 @@ func (app *App) Validate() error {
 			}
 		}
 	}
-
 	return nil
 }
 
