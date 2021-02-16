@@ -1,21 +1,46 @@
 :8884
 
 reverse_proxy 127.0.0.1:65535 {
-	handle_response header X-Accel-Redirect {
+	@accel header X-Accel-Redirect *
+	handle_response @accel {
 		respond "Header X-Accel-Redirect!"
 	}
-	handle_response header X-Another {
+
+	@another {
+		header X-Another *
+	}
+	handle_response @another {
 		respond "Header X-Another!"
 	}
-	handle_response status 401 {
+
+	@401 status 401
+	handle_response @401 {
 		respond "Status 401!"
 	}
-	handle_response status 403 {
+
+	handle_response {
+		respond "Any! This should be last in the JSON!"
+	}
+
+	@403 {
+		status 403
+	}
+	handle_response @403 {
 		respond "Status 403!"
 	}
-	handle_response {
-		respond "Any!"
+
+	@multi {
+		status 401 403
+		status 404
+		header Foo *
+		header Bar *
 	}
+	handle_response @multi {
+		respond "Headers Foo, Bar AND statuses 401, 403 and 404!"
+	}
+
+	@changeStatus status 500
+	handle_response @changeStatus 400
 }
 ----------
 {
@@ -34,7 +59,9 @@ reverse_proxy 127.0.0.1:65535 {
 										{
 											"match": {
 												"headers": {
-													"X-Accel-Redirect": []
+													"X-Accel-Redirect": [
+														"*"
+													]
 												}
 											},
 											"routes": [
@@ -51,7 +78,9 @@ reverse_proxy 127.0.0.1:65535 {
 										{
 											"match": {
 												"headers": {
-													"X-Another": []
+													"X-Another": [
+														"*"
+													]
 												}
 											},
 											"routes": [
@@ -100,12 +129,46 @@ reverse_proxy 127.0.0.1:65535 {
 											]
 										},
 										{
-											"match": {},
+											"match": {
+												"headers": {
+													"Bar": [
+														"*"
+													],
+													"Foo": [
+														"*"
+													]
+												},
+												"status_code": [
+													401,
+													403,
+													404
+												]
+											},
 											"routes": [
 												{
 													"handle": [
 														{
-															"body": "Any!",
+															"body": "Headers Foo, Bar AND statuses 401, 403 and 404!",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"status_code": [
+													500
+												]
+											},
+											"status_code": 400
+										},
+										{
+											"routes": [
+												{
+													"handle": [
+														{
+															"body": "Any! This should be last in the JSON!",
 															"handler": "static_response"
 														}
 													]
