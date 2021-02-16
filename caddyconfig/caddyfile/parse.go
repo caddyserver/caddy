@@ -355,6 +355,9 @@ func (p *parser) doImport() error {
 		// collect all the imported tokens
 
 		for _, importFile := range matches {
+			if absFile == importFile {
+				return p.Errf("Recursive self-import found: %s", absFile)
+			}
 			newTokens, err := p.doSingleImport(importFile)
 			if err != nil {
 				return err

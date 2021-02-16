@@ -193,6 +193,9 @@ func TestParseOneAndImport(t *testing.T) {
 		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
 		{`import testdata/import_args*.txt a b`, false, []string{"a"}, []int{2}},
 
+		// recursive self-import
+		{`import testdata/import_recursive0.txt`, true, []string{}, []int{}},
+
 		// test cases found by fuzzing!
 		{`import }{$"`, true, []string{}, []int{}},
 		{`import /*/*.txt`, true, []string{}, []int{}},
