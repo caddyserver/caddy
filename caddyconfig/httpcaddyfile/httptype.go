@@ -36,6 +36,17 @@ func init() {
 	caddyconfig.RegisterAdapter("caddyfile", caddyfile.Adapter{ServerType: ServerType{}})
 }
 
+// App represents the configuration for a non-standard
+// Caddy app module (e.g. third-party plugin) which was
+// parsed from a global options block.
+type App struct {
+	// The JSON key for the app being configured
+	Name string
+
+	// The raw app config as JSON
+	Value json.RawMessage
+}
+
 // ServerType can set up a config from an HTTP Caddyfile.
 type ServerType struct {
 }
@@ -260,6 +271,17 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 
 	// annnd the top-level config, then we're done!
 	cfg := &caddy.Config{AppsRaw: make(caddy.ModuleMap)}
+
+	// loop through the configured options, and if any of
+	// them are an httpcaddyfile App, then we insert them
+	// into the config as raw Caddy apps
+	for _, opt := range options {
+		if app, ok := opt.(App); ok {
+			cfg.AppsRaw[app.Name] = app.Value
+		}
+	}
+
+	// insert the standard Caddy apps into the config
 	if len(httpApp.Servers) > 0 {
 		cfg.AppsRaw["http"] = caddyconfig.JSON(httpApp, &warnings)
 	}
