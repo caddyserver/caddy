@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go: [ '1.14', '1.15' ]
+        go: [ '1.14', '1.15', '1.16' ]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
