@@ -1032,6 +1032,7 @@ func (h *Handler) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map
 				}
 
 				matcher.Headers = http.Header(headerMatcher)
+
 			case "status":
 				if matcher.StatusCode == nil {
 					matcher.StatusCode = []int{}
@@ -1043,12 +1044,16 @@ func (h *Handler) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map
 				}
 
 				for _, arg := range args {
+					if len(arg) == 3 && strings.HasSuffix(arg, "xx") {
+						arg = arg[:1]
+					}
 					statusNum, err := strconv.Atoi(arg)
 					if err != nil {
 						return d.Errf("bad status value '%s': %v", arg, err)
 					}
 					matcher.StatusCode = append(matcher.StatusCode, statusNum)
 				}
+
 			default:
 				return d.Errf("unrecognized response matcher %s", d.Val())
 			}
