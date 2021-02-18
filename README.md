@@ -75,7 +75,7 @@ For other install options, see https://caddyserver.com/docs/download.
 
 Requirements:
 
-- [Go 1.14 or newer](https://golang.org/dl/)
+- [Go 1.15 or newer](https://golang.org/dl/)
 
 ### For development
  
