@@ -18,6 +18,7 @@ import (
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
@@ -44,6 +45,7 @@ func init() {
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
 	RegisterGlobalOption("servers", parseServerOptions)
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
+	RegisterGlobalOption("log", parseLogOptions)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) { return true, nil }
@@ -384,4 +386,52 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ interface{}) (interface{
 	return certmagic.OCSPConfig{
 		DisableStapling: val == "off",
 	}, nil
+}
+
+// parseLogOptions parses the global log option. Syntax:
+//
+//     log [name] {
+//         output  <writer_module> ...
+//         format  <encoder_module> ...
+//         level   <level>
+//         include <namespaces...>
+//         exclude <namespaces...>
+//     }
+//
+// When the name argument is unspecified, this directive modifies the default
+// logger.
+//
+func parseLogOptions(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error) {
+	currentNames := make(map[string]struct{})
+	if existingVal != nil {
+		innerVals, ok := existingVal.([]ConfigValue)
+		if !ok {
+			return nil, d.Errf("existing log values of unexpected type: %T", existingVal)
+		}
+		for _, rawVal := range innerVals {
+			val, ok := rawVal.Value.(namedCustomLog)
+			if !ok {
+				return nil, d.Errf("existing log value of unexpected type: %T", existingVal)
+			}
+			currentNames[val.name] = struct{}{}
+		}
+	}
+
+	var warnings []caddyconfig.Warning
+	// Call out the same parser that handles server-specific log configuration.
+	configValues, err := parseLogHelper(
+		Helper{
+			Dispenser: d,
+			warnings:  &warnings,
+		},
+		currentNames,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		return nil, d.Errf("warnings found in parsing global log options: %+v", warnings)
+	}
+
+	return configValues, nil
 }
