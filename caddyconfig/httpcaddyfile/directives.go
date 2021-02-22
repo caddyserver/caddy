@@ -63,6 +63,7 @@ var directiveOrder = []string{
 	"push",
 
 	// handlers that typically respond to requests
+	"error",
 	"respond",
 	"metrics",
 	"reverse_proxy",

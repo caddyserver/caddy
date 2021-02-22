@@ -42,6 +42,7 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("abort", parseAbort)
+	RegisterHandlerDirective("error", parseError)
 	RegisterHandlerDirective("route", parseRoute)
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
@@ -564,6 +565,16 @@ func parseAbort(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, h.ArgErr()
 	}
 	return &caddyhttp.StaticResponse{Abort: true}, nil
+}
+
+// parseError parses the error directive.
+func parseError(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	se := new(caddyhttp.StaticError)
+	err := se.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return se, nil
 }
 
 // parseRoute parses the route directive.
