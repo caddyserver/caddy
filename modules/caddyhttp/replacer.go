@@ -36,6 +36,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
@@ -52,6 +53,8 @@ func NewTestReplacer(req *http.Request) *caddy.Replacer {
 }
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
+	SetVar(req.Context(), "start_time", time.Now())
+
 	httpVars := func(key string) (interface{}, bool) {
 		if req != nil {
 			// query string parameters
@@ -140,6 +143,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return dir, true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
+			case "http.request.duration":
+				start := GetVar(req.Context(), "start_time").(time.Time)
+				return time.Since(start), true
 			case "http.request.body":
 				if req.Body == nil {
 					return "", true
