@@ -45,6 +45,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         zstd
 //         minimum_length <length>
 //         prefer         <formats...>
+//         types          <glob-patterns...>
 //     }
 //
 // Specifying the formats on the first line will use those formats' defaults.
@@ -86,6 +87,15 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				enc.Prefer = encs
+			case "types":
+				var types []string
+				for d.NextArg() {
+					types = append(types, d.Val())
+				}
+				if len(types) == 0 {
+					return d.ArgErr()
+				}
+				enc.Types = types
 			default:
 				modID := "http.encoders." + name
 				unm, err := caddyfile.UnmarshalModule(d, modID)

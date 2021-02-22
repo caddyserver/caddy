@@ -25,6 +25,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +50,9 @@ type Encode struct {
 
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
+
+	// Only encode responses that match at least one of the content-types.
+	Types []string `json:"types,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
@@ -76,6 +80,20 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	if enc.MinLength == 0 {
 		enc.MinLength = defaultMinLength
 	}
+
+	if len(enc.Types) == 0 {
+		enc.Types = []string{"*"} // backwards compatibility
+
+		// sane default for text-based content ?
+		// enc.Types = []string{
+		// 	"text/*",
+		// 	"application/json",
+		// 	"application/javascript",
+		// 	"application/*+xml",
+		// 	"image/svg+xml",
+		// }
+	}
+
 	return nil
 }
 
@@ -91,6 +109,13 @@ func (enc *Encode) Validate() error {
 			return fmt.Errorf("encoding %s is duplicated in prefer", encName)
 		}
 		check[encName] = true
+	}
+
+	for _, t := range enc.Types {
+		_, err := filepath.Match(t, "")
+		if err != nil {
+			return fmt.Errorf("invalid type pattern %s: %v", t, err)
+		}
 	}
 
 	return nil
@@ -166,6 +191,19 @@ type responseWriter struct {
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+}
+
+// MatchType determines if encoding should be done based on the Content-Type header
+func (enc *Encode) MatchType(ctHeader string) bool {
+	ctParts := strings.Split(ctHeader, ";")
+	ct := strings.ToLower(strings.TrimSpace(ctParts[0]))
+	for _, t := range enc.Types {
+		matches, _ := filepath.Match(t, ct)
+		if matches {
+			return true
+		}
+	}
+	return false
 }
 
 // Write writes to the response. If the response qualifies,
@@ -258,7 +296,10 @@ func (rw *responseWriter) Close() error {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
+	if rw.Header().Get("Content-Encoding") == "" &&
+		rw.buf.Len() >= rw.config.MinLength &&
+		rw.config.MatchType(rw.Header().Get("Content-Type")) {
+
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
 		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
