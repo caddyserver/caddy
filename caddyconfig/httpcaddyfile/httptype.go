@@ -442,7 +442,7 @@ func (st *ServerType) serversFromPairings(
 			var iLongestHost, jLongestHost string
 			var iWildcardHost, jWildcardHost bool
 			for _, addr := range p.serverBlocks[i].keys {
-				if strings.Contains(addr.Host, "*") {
+				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					iWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(iLongestHost) {
@@ -453,7 +453,7 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 			for _, addr := range p.serverBlocks[j].keys {
-				if strings.Contains(addr.Host, "*") {
+				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					jWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(jLongestHost) {
