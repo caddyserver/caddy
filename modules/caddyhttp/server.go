@@ -373,6 +373,37 @@ func (s *Server) hasTLSClientAuth() bool {
 	return false
 }
 
+// findLastRouteWithHostMatcher returns the index of the last route
+// in the server which has a host matcher. Used during Automatic HTTPS
+// to determine where to insert the HTTP->HTTPS redirect route, such
+// that it is after any other host matcher but before any "catch-all"
+// route without a host matcher.
+func (s *Server) findLastRouteWithHostMatcher() int {
+	lastIndex := len(s.Routes)
+	for i, route := range s.Routes {
+		// since we want to break out of an inner loop, use a closure
+		// to allow us to use 'return' when we found a host matcher
+		found := (func() bool {
+			for _, sets := range route.MatcherSets {
+				for _, matcher := range sets {
+					switch matcher.(type) {
+					case *MatchHost:
+						return true
+					}
+				}
+			}
+			return false
+		})()
+
+		// if we found the host matcher, change the lastIndex to
+		// just after the current route
+		if found {
+			lastIndex = i + 1
+		}
+	}
+	return lastIndex
+}
+
 // HTTPErrorConfig determines how to handle errors
 // from the HTTP handlers.
 type HTTPErrorConfig struct {
