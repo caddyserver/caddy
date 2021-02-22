@@ -68,16 +68,20 @@ func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
 	return iss.ACMEIssuer.Provision(ctx)
 }
 
-func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.ACMEManager, _ acme.Account) error {
+// newAccountCallback generates EAB if not already provided. It also sets a valid default contact on the account if not set.
+func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.ACMEManager, acct acme.Account) (acme.Account, error) {
 	if am.ExternalAccount != nil {
-		return nil
+		return acct, nil
 	}
 	var err error
-	am.ExternalAccount, err = iss.generateEABCredentials(ctx)
-	return err
+	am.ExternalAccount, acct, err = iss.generateEABCredentials(ctx, acct)
+	return acct, err
 }
 
-func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB, error) {
+// generateEABCredentials generates EAB credentials using the API key if provided,
+// otherwise using the primary contact email on the issuer. If an email is not set
+// on the issuer, a default generic email is used.
+func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.Account) (*acme.EAB, acme.Account, error) {
 	var endpoint string
 	var body io.Reader
 
@@ -86,7 +90,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 	if iss.APIKey != "" {
 		apiKey := caddy.NewReplacer().ReplaceAll(iss.APIKey, "")
 		if apiKey == "" {
-			return nil, fmt.Errorf("missing API key: '%v'", iss.APIKey)
+			return nil, acct, fmt.Errorf("missing API key: '%v'", iss.APIKey)
 		}
 		qs := url.Values{"access_key": []string{apiKey}}
 		endpoint = fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
@@ -96,6 +100,10 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 			iss.logger.Warn("missing email address for ZeroSSL; it is strongly recommended to set one for next time")
 			email = "caddy@zerossl.com" // special email address that preserves backwards-compat, but which black-holes dashboard features, oh well
 		}
+		if len(acct.Contact) == 0 {
+			// we borrow the email from config or the default email, so ensure it's saved with the account
+			acct.Contact = []string{"mailto:" + email}
+		}
 		endpoint = zerosslAPIBase + "/eab-credentials-email"
 		form := url.Values{"email": []string{email}}
 		body = strings.NewReader(form.Encode())
@@ -103,7 +111,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
-		return nil, fmt.Errorf("forming request: %v", err)
+		return nil, acct, fmt.Errorf("forming request: %v", err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -112,7 +120,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("performing EAB credentials request: %v", err)
+		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -127,14 +135,14 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 	}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
-		return nil, fmt.Errorf("decoding API response: %v", err)
+		return nil, acct, fmt.Errorf("decoding API response: %v", err)
 	}
 	if result.Error.Code != 0 {
-		return nil, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
 			resp.StatusCode, result.Error.Type, result.Error.Code)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
 	}
 
 	iss.logger.Info("generated EAB credentials", zap.String("key_id", result.EABKID))
@@ -142,7 +150,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context) (*acme.EAB
 	return &acme.EAB{
 		KeyID:  result.EABKID,
 		MACKey: result.EABHMACKey,
-	}, nil
+	}, acct, nil
 }
 
 // initialize modifies the template for the underlying ACMEManager

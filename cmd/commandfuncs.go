@@ -354,8 +354,11 @@ func cmdBuildInfo(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no build information")
 	}
 
-	fmt.Printf("path: %s\n", bi.Path)
-	fmt.Printf("main: %s %s %s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
+	fmt.Printf("go_version: %s\n", runtime.Version())
+	fmt.Printf("go_os:      %s\n", runtime.GOOS)
+	fmt.Printf("go_arch:    %s\n", runtime.GOARCH)
+	fmt.Printf("path:       %s\n", bi.Path)
+	fmt.Printf("main:       %s %s %s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
 	fmt.Println("dependencies:")
 
 	for _, goMod := range bi.Deps {
@@ -670,6 +673,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 		defer destFile.Close()
 
 		l.Info("downloading binary", zap.String("source", urlStr), zap.String("destination", thisExecPath))
+
 		_, err = io.Copy(destFile, resp.Body)
 		if err != nil {
 			return fmt.Errorf("unable to download file: %v", err)
@@ -686,6 +690,8 @@ func cmdUpgrade(_ Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
+
+	l.Info("download successful; displaying new binary details", zap.String("location", thisExecPath))
 
 	// use the new binary to print out version and module info
 	fmt.Print("\nModule versions:\n\n")

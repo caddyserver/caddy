@@ -236,6 +236,18 @@ func (t *TLS) Validate() error {
 
 // Start activates the TLS module.
 func (t *TLS) Start() error {
+	// warn if on-demand TLS is enabled but no restrictions are in place
+	if t.Automation.OnDemand == nil ||
+		(t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.RateLimit == nil) {
+		for _, ap := range t.Automation.Policies {
+			if ap.OnDemand {
+				t.logger.Warn("YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place",
+					zap.String("docs", "https://caddyserver.com/docs/automatic-https#on-demand-tls"))
+				break
+			}
+		}
+	}
+
 	// now that we are running, and all manual certificates have
 	// been loaded, time to load the automated/managed certificates
 	err := t.Manage(t.automateNames)
