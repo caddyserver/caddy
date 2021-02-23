@@ -325,20 +325,9 @@ func run(newCfg *Config, start bool) error {
 	// been set by a short assignment
 	var err error
 
-	// start the admin endpoint (and stop any prior one)
-	if start {
-		err = replaceLocalAdminServer(newCfg)
-		if err != nil {
-			return fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	if newCfg == nil {
 		newCfg = new(Config)
 	}
-
-	// prepare the new config for use
-	newCfg.apps = make(map[string]App)
 
 	// create a context within which to load
 	// modules - essentially our new config's
@@ -372,6 +361,17 @@ func run(newCfg *Config, start bool) error {
 	if err != nil {
 		return err
 	}
+
+	// start the admin endpoint (and stop any prior one)
+	if start {
+		err = replaceLocalAdminServer(newCfg)
+		if err != nil {
+			return fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
+	}
+
+	// prepare the new config for use
+	newCfg.apps = make(map[string]App)
 
 	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
