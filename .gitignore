@@ -10,7 +10,6 @@ Caddyfile
 # build artifacts and helpers
 cmd/caddy/caddy
 cmd/caddy/caddy.exe
-cmd/caddy/setcap*
 
 # mac specific
 .DS_Store

@@ -69,7 +69,7 @@
 
 The simplest, cross-platform way is to download from [GitHub Releases](https://github.com/caddyserver/caddy/releases) and place the executable file in your PATH.
 
-For other install options, see https://caddyserver.com/docs/download.
+For other install options, see https://caddyserver.com/docs/install.
 
 ## Build from source
 
@@ -89,15 +89,7 @@ $ go build
 
 When you run Caddy, it may try to bind to low ports unless otherwise specified in your config. If your OS requires elevated privileges for this, you will need to give your new binary permission to do so. On Linux, this can be done easily with: `sudo setcap cap_net_bind_service=+ep ./caddy`
 
-If you prefer to use `go run` which creates temporary binaries, you can still do this. Make an executable file called `setcap.sh` (or whatever you want) with these contents:
-
-```bash
-#!/bin/sh
-sudo setcap cap_net_bind_service=+ep "$1"
-"$@"
-```
-
-then you can use `go run` like so:
+If you prefer to use `go run` which only creates temporary binaries, you can still do this with the included `setcap.sh` like so:
 
 ```bash
 $ go run -exec ./setcap.sh main.go
