@@ -289,7 +289,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		} else {
 			err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
 			if err == nil {
-				Log().Info("autosaved config", zap.String("file", ConfigAutosavePath))
+				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
 				Log().Error("unable to autosave config",
 					zap.String("file", ConfigAutosavePath),
