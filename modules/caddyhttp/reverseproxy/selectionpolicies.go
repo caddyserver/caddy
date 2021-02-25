@@ -221,8 +221,8 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 		return nil
 	}
 	for i := uint32(0); i < n; i++ {
-		atomic.AddUint32(&r.robin, 1)
-		host := pool[r.robin%n]
+		robin := atomic.AddUint32(&r.robin, 1)
+		host := pool[robin%n]
 		if host.Available() {
 			return host
 		}

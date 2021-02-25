@@ -368,8 +368,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := r.Host
 	reqHeader := r.Header
 	defer func() {
-		r.Host = reqHost
-		r.Header = reqHeader
+		r.Host = reqHost     // TODO: data race, see #4038
+		r.Header = reqHeader // TODO: data race, see #4038
 	}()
 
 	start := time.Now()
