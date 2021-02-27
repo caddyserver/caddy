@@ -478,11 +478,14 @@ type Certificate struct {
 	Tags []string
 }
 
-// AutomateLoader is a no-op certificate loader module
-// that is treated as a special case: it uses this app's
-// automation features to load certificates for the
-// list of hostnames, rather than loading certificates
-// manually.
+// AutomateLoader will automatically manage certificates for the names
+// in the list, including obtaining and renewing certificates. Automated
+// certificates are managed according to their matching automation policy,
+// configured elsewhere in this app.
+//
+// This is a no-op certificate loader module that is treated as a special
+// case: it uses this app's automation features to load certificates for the
+// list of hostnames, rather than loading certificates manually.
 type AutomateLoader []string
 
 // CaddyModule returns the Caddy module information.
