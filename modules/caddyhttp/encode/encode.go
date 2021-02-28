@@ -122,7 +122,7 @@ func (enc *Encode) Validate() error {
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	for _, encName := range acceptedEncodings(r, enc.Prefer) {
+	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
 		if _, ok := enc.writerPools[encName]; !ok {
 			continue // encoding not offered
 		}
@@ -309,14 +309,14 @@ func (rw *responseWriter) init() {
 	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 }
 
-// acceptedEncodings returns the list of encodings that the
+// AcceptedEncodings returns the list of encodings that the
 // client supports, in descending order of preference.
 // The client preference via q-factor and the server
 // preference via Prefer setting are taken into account. If
 // the Sec-WebSocket-Key header is present then non-identity
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
-func acceptedEncodings(r *http.Request, preferredOrder []string) []string {
+func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
 	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
@@ -403,6 +403,13 @@ type Encoder interface {
 type Encoding interface {
 	AcceptEncoding() string
 	NewEncoder() Encoder
+}
+
+// Precompressed is a type which returns filename suffix of precomressed
+// file and the name used in the Accept-Encoding header.
+type Precompressed interface {
+	AcceptEncoding() string
+	Suffix() string
 }
 
 var bufPool = sync.Pool{

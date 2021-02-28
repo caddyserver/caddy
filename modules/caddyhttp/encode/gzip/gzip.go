@@ -81,6 +81,9 @@ func (g Gzip) Validate() error {
 // used in the Accept-Encoding request headers.
 func (Gzip) AcceptEncoding() string { return "gzip" }
 
+// Suffix returns the filename suffix of precomressed files
+func (Gzip) Suffix() string { return ".gz" }
+
 // NewEncoder returns a new gzip writer.
 func (g Gzip) NewEncoder() encode.Encoder {
 	writer, _ := gzip.NewWriterLevel(nil, g.Level)
@@ -93,6 +96,7 @@ var defaultGzipLevel = 5
 // Interface guards
 var (
 	_ encode.Encoding       = (*Gzip)(nil)
+	_ encode.Precompressed  = (*Gzip)(nil)
 	_ caddy.Provisioner     = (*Gzip)(nil)
 	_ caddy.Validator       = (*Gzip)(nil)
 	_ caddyfile.Unmarshaler = (*Gzip)(nil)

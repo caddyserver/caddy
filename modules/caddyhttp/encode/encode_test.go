@@ -112,9 +112,9 @@ func TestPreferOrder(t *testing.T) {
 				r.Header.Set("Accept-Encoding", test.accept)
 			}
 			enc.Prefer = test.prefer
-			result := acceptedEncodings(r, enc.Prefer)
+			result := AcceptedEncodings(r, enc.Prefer)
 			if !sliceEqual(result, test.expected) {
-				t.Errorf("acceptedEncodings() actual: %s expected: %s",
+				t.Errorf("AcceptedEncodings() actual: %s expected: %s",
 					result,
 					test.expected)
 			}

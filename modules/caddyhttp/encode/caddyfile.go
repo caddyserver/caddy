@@ -97,7 +97,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				enc.Types = types
 			default:
-				modID := "http.encoders." + name
+				modID := "http.precompressed." + name
 				unm, err := caddyfile.UnmarshalModule(d, modID)
 				if err != nil {
 					return err
