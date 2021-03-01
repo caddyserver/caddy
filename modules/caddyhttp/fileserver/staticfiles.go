@@ -138,12 +138,11 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	suffix := repl.ReplaceAll(r.URL.Path, "")
-	filename := sanitizedPathJoin(root, suffix)
+	filename := sanitizedPathJoin(root, r.URL.Path)
 
 	fsrv.logger.Debug("sanitized path join",
 		zap.String("site_root", root),
-		zap.String("request_path", suffix),
+		zap.String("request_path", r.URL.Path),
 		zap.String("result", filename))
 
 	// get information about the file
