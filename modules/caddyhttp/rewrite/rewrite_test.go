@@ -16,6 +16,7 @@ package rewrite
 
 import (
 	"net/http"
+	"regexp"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -232,19 +233,25 @@ func TestRewrite(t *testing.T) {
 		},
 
 		{
-			rule:   Rewrite{URISubstring: []replacer{{Find: "findme", Replace: "replaced"}}},
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
-			rule:   Rewrite{URISubstring: []replacer{{Find: "findme", Replace: "replaced"}}},
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
 			input:  newRequest(t, "GET", "/foo/findme/bar"),
 			expect: newRequest(t, "GET", "/foo/replaced/bar"),
 		},
 		{
-			rule:   Rewrite{URISubstring: []replacer{{Find: "findme", Replace: "replaced"}}},
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
 			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
 			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
+		},
+
+		{
+			rule:   Rewrite{PathRegexp: []*regexReplacer{{Find: "/{2,}", Replace: "/"}}},
+			input:  newRequest(t, "GET", "/foo//bar///baz?a=b//c"),
+			expect: newRequest(t, "GET", "/foo/bar/baz?a=b//c"),
 		},
 	} {
 		// copy the original input just enough so that we can
@@ -259,6 +266,16 @@ func TestRewrite(t *testing.T) {
 		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		// we can't directly call Provision() without a valid caddy.Context
+		// (TODO: fix that) so here we ad-hoc compile the regex
+		for _, rep := range tc.rule.PathRegexp {
+			re, err := regexp.Compile(rep.Find)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rep.re = re
+		}
 
 		changed := tc.rule.rewrite(tc.input, repl, nil)
 

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -64,7 +65,10 @@ type Rewrite struct {
 	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
 	// Performs substring replacements on the URI.
-	URISubstring []replacer `json:"uri_substring,omitempty"`
+	URISubstring []substrReplacer `json:"uri_substring,omitempty"`
+
+	// Performs regular expression replacements on the URI path.
+	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
 	logger *zap.Logger
 }
@@ -80,6 +84,18 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 // Provision sets up rewr.
 func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 	rewr.logger = ctx.Logger(rewr)
+
+	for i, rep := range rewr.PathRegexp {
+		if rep.Find == "" {
+			return fmt.Errorf("path_regexp find cannot be empty")
+		}
+		re, err := regexp.Compile(rep.Find)
+		if err != nil {
+			return fmt.Errorf("compiling regular expression %d: %v", i, err)
+		}
+		rep.re = re
+	}
+
 	return nil
 }
 
@@ -200,16 +216,18 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
-		r.URL.RawPath = strings.TrimSuffix(r.URL.RawPath, suffix)
-		if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
-			r.URL.Path = p
-		} else {
-			r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
-		}
+		changePath(r, func(pathOrRawPath string) string {
+			return strings.TrimSuffix(pathOrRawPath, suffix)
+		})
 	}
 
 	// substring replacements in URI
 	for _, rep := range rewr.URISubstring {
+		rep.do(r, repl)
+	}
+
+	// regular expression replacements on the path
+	for _, rep := range rewr.PathRegexp {
 		rep.do(r, repl)
 	}
 
@@ -286,12 +304,12 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 	return sb.String()
 }
 
-// replacer describes a simple and fast substring replacement.
-type replacer struct {
-	// The substring to find. Supports placeholders.
+// substrReplacer describes either a simple and fast substring replacement.
+type substrReplacer struct {
+	// A substring to find. Supports placeholders.
 	Find string `json:"find,omitempty"`
 
-	// The substring to replace. Supports placeholders.
+	// The substring to replace with. Supports placeholders.
 	Replace string `json:"replace,omitempty"`
 
 	// Maximum number of replacements per string.
@@ -299,9 +317,9 @@ type replacer struct {
 	Limit int `json:"limit,omitempty"`
 }
 
-// do performs the replacement on r.
-func (rep replacer) do(r *http.Request, repl *caddy.Replacer) {
-	if rep.Find == "" || rep.Replace == "" {
+// do performs the substring replacement on r.
+func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
+	if rep.Find == "" {
 		return
 	}
 
@@ -313,14 +331,45 @@ func (rep replacer) do(r *http.Request, repl *caddy.Replacer) {
 	find := repl.ReplaceAll(rep.Find, "")
 	replace := repl.ReplaceAll(rep.Replace, "")
 
-	r.URL.RawPath = strings.Replace(r.URL.RawPath, find, replace, lim)
-	if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
-		r.URL.Path = p
-	} else {
-		r.URL.Path = strings.Replace(r.URL.Path, find, replace, lim)
-	}
+	changePath(r, func(pathOrRawPath string) string {
+		return strings.Replace(pathOrRawPath, find, replace, lim)
+	})
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
+}
+
+// regexReplacer describes a replacement using a regular expression.
+type regexReplacer struct {
+	// The regular expression to find.
+	Find string `json:"find,omitempty"`
+
+	// The substring to replace with. Supports placeholders and
+	// regular expression capture groups.
+	Replace string `json:"replace,omitempty"`
+
+	re *regexp.Regexp
+}
+
+func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
+	if rep.Find == "" || rep.re == nil {
+		return
+	}
+	replace := repl.ReplaceAll(rep.Replace, "")
+	changePath(r, func(pathOrRawPath string) string {
+		return rep.re.ReplaceAllString(pathOrRawPath, replace)
+	})
+}
+
+// changePath updates the path on the request URL. It first executes newVal on
+// req.URL.RawPath, and if the result is a valid escaping, it will be copied
+// into req.URL.Path; otherwise newVal is evaluated only on req.URL.Path.
+func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
+	req.URL.RawPath = newVal(req.URL.RawPath)
+	if p, err := url.PathUnescape(req.URL.RawPath); err == nil && p != "" {
+		req.URL.Path = p
+	} else {
+		req.URL.Path = newVal(req.URL.Path)
+	}
 }
 
 // Interface guard
