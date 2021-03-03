@@ -52,10 +52,6 @@ type Encode struct {
 
 	Matcher *caddyhttp.ResponseMatcher
 
-	// collect the response matchers defined as subdirectives prefixed with "@"
-	// for use with "handle_response" blocks
-	responseMatchers map[string]caddyhttp.ResponseMatcher
-
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
 
