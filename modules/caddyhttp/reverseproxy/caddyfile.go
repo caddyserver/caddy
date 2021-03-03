@@ -184,6 +184,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if network != "" {
 			return caddy.JoinNetworkAddress(network, host, port), nil
 		}
+
+		// if the host is a placeholder, then we don't want to join with an empty port,
+		// because that would just append an extra ':' at the end of the address.
+		if port == "" && strings.Contains(host, "{") {
+			return host, nil
+		}
+
 		return net.JoinHostPort(host, port), nil
 	}
 
