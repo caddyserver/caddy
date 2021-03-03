@@ -1,0 +1,102 @@
+:8884 {
+	map {host} {upstream} {
+		foo.example.com 1.2.3.4
+		default 2.3.4.5
+	}
+
+	# Upstream placeholder with a port should retain the port
+	reverse_proxy {upstream}:80
+}
+
+:8885 {
+	map {host} {upstream} {
+		foo.example.com 1.2.3.4:8080
+		default 2.3.4.5:8080
+	}
+
+	# Upstream placeholder with no port should not have a port joined
+	reverse_proxy {upstream}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"defaults": [
+										"2.3.4.5"
+									],
+									"destinations": [
+										"{upstream}"
+									],
+									"handler": "map",
+									"mappings": [
+										{
+											"input": "foo.example.com",
+											"outputs": [
+												"1.2.3.4"
+											]
+										}
+									],
+									"source": "{http.request.host}"
+								},
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "{upstream}:80"
+										}
+									]
+								}
+							]
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8885"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"defaults": [
+										"2.3.4.5:8080"
+									],
+									"destinations": [
+										"{upstream}"
+									],
+									"handler": "map",
+									"mappings": [
+										{
+											"input": "foo.example.com",
+											"outputs": [
+												"1.2.3.4:8080"
+											]
+										}
+									],
+									"source": "{http.request.host}"
+								},
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "{upstream}"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
