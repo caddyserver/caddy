@@ -63,7 +63,6 @@ var directiveOrder = []string{
 	"push",
 
 	// handlers that typically respond to requests
-	"error",
 	"respond",
 	"metrics",
 	"reverse_proxy",
@@ -71,6 +70,7 @@ var directiveOrder = []string{
 	"file_server",
 	"acme_server",
 	"abort",
+	"error",
 }
 
 // directiveIsOrdered returns true if dir is
