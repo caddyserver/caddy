@@ -51,8 +51,12 @@ type HealthChecks struct {
 // health checks (that is, health checks which occur in a
 // background goroutine independently).
 type ActiveHealthChecks struct {
-	// The URI path to use for health checks.
+	// The path to use for health checks.
+	// DEPRECATED: Use 'uri' instead.
 	Path string `json:"path,omitempty"`
+
+	// The URI (path and query) to use for health checks
+	Uri string `json:"uri,omitempty"`
 
 	// The port to use (if different from the upstream's dial
 	// address) for health checks.
@@ -79,6 +83,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
+	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
 	logger     *zap.Logger
@@ -218,7 +223,15 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	u := &url.URL{
 		Scheme: scheme,
 		Host:   hostAddr,
-		Path:   h.HealthChecks.Active.Path,
+	}
+
+	// if we have a provisioned uri, use that, otherwise use
+	// the deprecated Path option
+	if h.HealthChecks.Active.uri != nil {
+		u.Path = h.HealthChecks.Active.uri.Path
+		u.RawQuery = h.HealthChecks.Active.uri.RawQuery
+	} else {
+		u.Path = h.HealthChecks.Active.Path
 	}
 
 	// adjust the port, if configured to be different
