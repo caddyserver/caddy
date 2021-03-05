@@ -132,19 +132,15 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 		// the requested destination/output value
 		for _, m := range h.Mappings {
 			if m.re != nil {
-				matchRegexp := caddyhttp.MatchRegexp{Pattern: m.InputRegexp}
-				matchRegexp.Provision(caddy.Context{})
-				err := matchRegexp.Validate()
-				if err == nil {
-					if matchRegexp.Match(input, repl) {
-						if output := m.Outputs[destIdx]; output == nil {
-							continue
-						} else {
-							output = repl.ReplaceAll(m.Outputs[destIdx].(string), "")
-							return output, true
-						}
+				if m.re.MatchString(input) {
+					if output := m.Outputs[destIdx]; output == nil {
+						continue
+					} else {
+						output = m.re.ReplaceAllString(input, m.Outputs[destIdx].(string))
+						return output, true
 					}
 				}
+				continue
 			}
 			if input == m.Input {
 				if output := m.Outputs[destIdx]; output == nil {
