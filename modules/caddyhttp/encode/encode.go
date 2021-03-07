@@ -85,12 +85,12 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 			Headers: http.Header{
 				"Content-Type": []string{
 					"text/*",
-					"application/json",
-					"application/javascript",
-					"application/xhtml+xml",
-					"application/atom+xml",
-					"application/rss+xml",
-					"image/svg+xml",
+					"application/json*",
+					"application/javascript*",
+					"application/xhtml+xml*",
+					"application/atom+xml*",
+					"application/rss+xml*",
+					"image/svg+xml*",
 				},
 			},
 		}

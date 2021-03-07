@@ -46,16 +46,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         zstd
 //         minimum_length <length>
 //         prefer         <formats...>
-//         match          <matcher>
-//         @name {
+//         # response matcher block
+//         match {
 //             status <code...>
 //             header <field> [<value>]
 //         }
+//         # or response matcher single line syntax
+//         match [header <field> [<value>]] | [status <code...>]
 //     }
 //
 // Specifying the formats on the first line will use those formats' defaults.
 func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	responseMatchers := map[string]caddyhttp.ResponseMatcher{}
+	responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
 	for d.Next() {
 		for _, arg := range d.RemainingArgs() {
 			mod, err := caddy.GetModule("http.encoders." + arg)
@@ -73,19 +75,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		for d.NextBlock(0) {
-			name := d.Val()
-
-			// if the subdirective has an "@" prefix then we
-			// parse it as a response matcher for use with "match"
-			if strings.HasPrefix(name, matcherPrefix) {
-				err := enc.parseNamedResponseMatcher(d.NewFromNextSegment(), responseMatchers)
-				if err != nil {
-					return err
-				}
-				continue
-			}
-
-			switch name {
+			switch d.Val() {
 			case "minimum_length":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -105,31 +95,15 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				enc.Prefer = encs
 			case "match":
-				var matcher *caddyhttp.ResponseMatcher
-				args := d.RemainingArgs()
-				// the first arg should be a matcher (optional)
-				// the second arg should be a status code (optional)
-				// any more than that isn't currently supported
-				if len(args) > 1 {
-					return d.Errf("too many arguments for 'if_matches': %s", args)
+				err := enc.parseNamedResponseMatcher(d.NewFromNextSegment(), responseMatchers)
+				if err != nil {
+					return err
 				}
-
-				// the first arg should always be a matcher.
-				// it doesn't really make sense to support status code without a matcher.
-				if len(args) > 0 {
-					if !strings.HasPrefix(args[0], matcherPrefix) {
-						return d.Errf("must use a named response matcher, starting with '@'")
-					}
-
-					foundMatcher, ok := responseMatchers[args[0]]
-					if !ok {
-						return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
-					}
-					matcher = &foundMatcher
-				}
-				enc.Matcher = matcher
+				matcher := responseMatchers["match"]
+				enc.Matcher = &matcher
 			default:
-				modID := "http.precompressed." + name
+				name := d.Val()
+				modID := "http.encoders." + name
 				unm, err := caddyfile.UnmarshalModule(d, modID)
 				if err != nil {
 					return err
@@ -151,14 +125,14 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Parse the tokens of a named response matcher.
 //
-//     @name {
+//     match {
 //         header <field> [<value>]
 //         status <code...>
 //     }
 //
 // Or, single line syntax:
 //
-//     @name [header <field> [<value>]] | [status <code...>]
+//     match [header <field> [<value>]] | [status <code...>]
 //
 func (enc *Encode) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map[string]caddyhttp.ResponseMatcher) error {
 	for d.Next() {
@@ -213,8 +187,6 @@ func (enc *Encode) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers ma
 	}
 	return nil
 }
-
-const matcherPrefix = "@"
 
 // Interface guard
 var _ caddyfile.Unmarshaler = (*Encode)(nil)
