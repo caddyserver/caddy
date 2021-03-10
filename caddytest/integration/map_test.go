@@ -19,7 +19,7 @@ func TestMap(t *testing.T) {
 
 		map {http.request.method} {dest-1} {dest-2} {
 			default unknown1    unknown2
-			~G.T    get-called
+			~G(.)(.)    G${1}${2}-called
 			POST    post-called foobar
 		}
 
@@ -30,7 +30,7 @@ func TestMap(t *testing.T) {
 	`, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called unknown2")
+	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost GET-called unknown2")
 	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called foobar")
 }
 
