@@ -1,0 +1,18 @@
+{
+	log {
+		output file foo.log
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"writer": {
+					"filename": "foo.log",
+					"output": "file"
+				}
+			}
+		}
+	}
+}
