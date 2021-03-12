@@ -10,6 +10,7 @@ import (
 func TestLogDirectiveSyntax(t *testing.T) {
 	for i, tc := range []struct {
 		input       string
+		output      string
 		expectError bool
 	}{
 		{
@@ -17,6 +18,7 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				log
 			}
 			`,
+			output:      `{"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{}}}}}}`,
 			expectError: false,
 		},
 		{
@@ -26,11 +28,31 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				}
 			}
 			`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"writer":{"filename":"foo.log","output":"file"},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
 			expectError: false,
 		},
 		{
 			input: `:8080 {
-				log /foo {
+				log {
+					format filter {
+						wrap console
+						fields {
+							common_log delete
+							request>remote_addr ip_mask {
+								ipv4 24
+								ipv6 32
+							}
+						}
+					}
+				}
+			}
+			`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"encoder":{"fields":{"common_log":{"filter":"delete"},"request\u003eremote_addr":{"filter":"ip_mask","ipv4_cidr":24,"ipv6_cidr":32}},"format":"filter","wrap":{"format":"console"}},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			expectError: false,
+		},
+		{
+			input: `:8080 {
+				log invalid {
 					output file foo.log
 				}
 			}
@@ -43,11 +65,15 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			ServerType: ServerType{},
 		}
 
-		_, _, err := adapter.Adapt([]byte(tc.input), nil)
+		out, _, err := adapter.Adapt([]byte(tc.input), nil)
 
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
 			continue
+		}
+
+		if string(out) != tc.output {
+			t.Errorf("Test %d error output mismatch Expected: %s, got %s", i, tc.output, out)
 		}
 	}
 }

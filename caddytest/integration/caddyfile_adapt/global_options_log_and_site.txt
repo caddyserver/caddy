@@ -1,0 +1,77 @@
+{
+	log {
+		output file caddy.log
+		include some-log-source
+		exclude admin.api admin2.api
+	}
+	log custom-logger {
+		output file caddy.log
+		level WARN
+		include custom-log-source
+	}
+}
+
+:8884 {
+	log {
+		format json
+		output file access.log
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"custom-logger": {
+				"writer": {
+					"filename": "caddy.log",
+					"output": "file"
+				},
+				"level": "WARN",
+				"include": [
+					"custom-log-source"
+				]
+			},
+			"default": {
+				"writer": {
+					"filename": "caddy.log",
+					"output": "file"
+				},
+				"include": [
+					"some-log-source"
+				],
+				"exclude": [
+					"admin.api",
+					"admin2.api",
+					"custom-log-source",
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"filename": "access.log",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "json"
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}
