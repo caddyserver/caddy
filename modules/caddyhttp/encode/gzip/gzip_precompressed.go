@@ -9,7 +9,7 @@ func init() {
 	caddy.RegisterModule(GzipPrecompressed{})
 }
 
-// GzipPrecompressed provides the file extension for files precompressed with gzip encoding
+// GzipPrecompressed provides the file extension for files precompressed with gzip encoding.
 type GzipPrecompressed struct {
 	Gzip
 }

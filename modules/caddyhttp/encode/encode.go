@@ -50,7 +50,9 @@ type Encode struct {
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
 
-	Matcher *caddyhttp.ResponseMatcher
+	// Only encode responses that match against this ResponseMmatcher.
+	// The default is a collection of text-based Content-Type headers.
+	Matcher *caddyhttp.ResponseMatcher `json:"match,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
@@ -188,7 +190,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
 }
 
-// Match determines if encoding should be done based on the ResponseMatcher
+// Match determines, if encoding should be done based on the ResponseMatcher.
 func (enc *Encode) Match(rw *responseWriter) bool {
 	return enc.Matcher.Match(rw.statusCode, rw.Header())
 }
@@ -392,8 +394,8 @@ type Encoding interface {
 	NewEncoder() Encoder
 }
 
-// Precompressed is a type which returns filename suffix of precomressed
-// file and the name used in the Accept-Encoding header.
+// Precompressed is a type which returns filename suffix of precompressed
+// file and Accept-Encoding header to use when serving this file.
 type Precompressed interface {
 	AcceptEncoding() string
 	Suffix() string

@@ -9,7 +9,7 @@ func init() {
 	caddy.RegisterModule(BrotliPrecompressed{})
 }
 
-// BrotliPrecompressed provides the file extension for files precompressed with brotli encoding
+// BrotliPrecompressed provides the file extension for files precompressed with brotli encoding.
 type BrotliPrecompressed struct{}
 
 // CaddyModule returns the Caddy module information.
@@ -24,7 +24,7 @@ func (BrotliPrecompressed) CaddyModule() caddy.ModuleInfo {
 // used in the Accept-Encoding request headers.
 func (BrotliPrecompressed) AcceptEncoding() string { return "br" }
 
-// Suffix returns the filename suffix of precomressed files
+// Suffix returns the filename suffix of precompressed files.
 func (BrotliPrecompressed) Suffix() string { return ".br" }
 
 // Interface guards

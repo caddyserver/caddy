@@ -86,7 +86,7 @@ type FileServer struct {
 	// If the client has no strong preference (q-factor), choose these encodings in order.
 	// If no order specified here, the first encoding from the Accept-Encoding header
 	// that both client and server support is used
-	PrecompressedOrder []string
+	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
 
 	precompressors map[string]encode.Precompressed
 

@@ -9,7 +9,7 @@ func init() {
 	caddy.RegisterModule(ZstdPrecompressed{})
 }
 
-// ZstdPrecompressed provides the file extension for files precompressed with zstandard encoding
+// ZstdPrecompressed provides the file extension for files precompressed with zstandard encoding.
 type ZstdPrecompressed struct {
 	Zstd
 }

@@ -81,7 +81,7 @@ func (g Gzip) Validate() error {
 // used in the Accept-Encoding request headers.
 func (Gzip) AcceptEncoding() string { return "gzip" }
 
-// Suffix returns the filename suffix of precomressed files
+// Suffix returns the filename suffix of precompressed files.
 func (Gzip) Suffix() string { return ".gz" }
 
 // NewEncoder returns a new gzip writer.

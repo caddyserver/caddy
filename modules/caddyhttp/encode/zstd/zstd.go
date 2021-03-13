@@ -45,7 +45,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // used in the Accept-Encoding request headers.
 func (Zstd) AcceptEncoding() string { return "zstd" }
 
-// Suffix returns the filename suffix of precomressed files
+// Suffix returns the filename suffix of precompressed files.
 func (Zstd) Suffix() string { return ".zst" }
 
 // NewEncoder returns a new gzip writer.
