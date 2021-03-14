@@ -290,6 +290,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		w.Header().Set("Content-Encoding", ae)
+		w.Header().Del("Accept-Ranges")
+		w.Header().Add("Vary", "Accept-Encoding")
 		break
 	}
 
