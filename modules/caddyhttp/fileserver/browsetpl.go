@@ -226,6 +226,45 @@ footer {
 		max-width: 100px;
 	}
 }
+
+@media (prefers-color-scheme: dark) {
+	body {
+		background-color: #1c1c1c;
+		color: #ffffff;
+	}
+
+	header {
+		background-color: #232323;
+	}
+
+	tbody tr:hover {
+		background-color: #303030;
+	}
+
+	header a,
+	th a {
+		color: #ffffff;
+	}
+
+	a {
+		color: #5796d1;
+		text-decoration: none;
+	}
+
+	a:hover,
+	h1 a:hover {
+		color: #62b2fd;
+	}
+
+	tr {
+		border-bottom: 1px dashed #9C9C9C;
+	}
+
+	#up-arrow,
+	#down-arrow {
+		fill: #ffffff;
+	}
+}
 </style>
 	</head>
 	<body onload='initFilter()'>
