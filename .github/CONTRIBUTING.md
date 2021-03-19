@@ -29,7 +29,7 @@ We hold contributions to a high standard for quality :bowtie:, so don't be surpr
 
 Here are some of the expectations we have of contributors:
 
-- **Open an issue to propose your change first.** This way we can avoid confusion, coordinate what everyone is working on, and ensure that any changes are in-line with the project's goals and the best interests of its users. We can also discuss the best possible implementation. If there's already an issue about it, comment on the existing issue to claim it. A lot of valuable time can be saved by discussing a propsal first.
+- **Open an issue to propose your change first.** This way we can avoid confusion, coordinate what everyone is working on, and ensure that any changes are in-line with the project's goals and the best interests of its users. We can also discuss the best possible implementation. If there's already an issue about it, comment on the existing issue to claim it. A lot of valuable time can be saved by discussing a proposal first.
 
 - **Keep pull requests small.** Smaller PRs are more likely to be merged because they are easier to review! We might ask you to break up large PRs into smaller ones. [An example of what we want to avoid.](https://twitter.com/iamdevloper/status/397664295875805184)
 
@@ -139,7 +139,7 @@ Our documentation is scoped to the Caddy project only: it is not for describing 
 
 ## Collaborator Instructions
 
-Collaborators have push rights to the repository. We grant this permission after one or more successful, high-quality PRs are merged! We thank them for their help.The expectations we have of collaborators are:
+Collaborators have push rights to the repository. We grant this permission after one or more successful, high-quality PRs are merged! We thank them for their help. The expectations we have of collaborators are:
 
 - **Help review pull requests.** Be meticulous, but also kind. We love our contributors, but we critique the contribution to make it better. Multiple, thorough reviews make for the best contributions! Here are some questions to consider:
 	- Can the change be made more elegant?
