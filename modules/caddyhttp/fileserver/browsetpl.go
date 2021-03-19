@@ -257,7 +257,7 @@ footer {
 	}
 
 	tr {
-		border-bottom: 1px dashed #696969;
+		border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
 	}
 
 	#up-arrow,
@@ -268,7 +268,11 @@ footer {
 	#filter {
 		background-color: #151515;
 		color: #ffffff;
-		border: 1px solid #696969;
+		border: 1px solid #212121;
+	}
+
+	.meta {
+		border-bottom: 1px solid #212121
 	}
 }
 </style>
