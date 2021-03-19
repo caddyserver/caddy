@@ -295,8 +295,10 @@ func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.Fi
 	if err != nil {
 		err = mapDirOpenError(err, filename)
 		if os.IsNotExist(err) {
+			fsrv.logger.Debug("file not found", zap.String("filename", filename), zap.Error(err))
 			return nil, caddyhttp.Error(http.StatusNotFound, err)
 		} else if os.IsPermission(err) {
+			fsrv.logger.Debug("permission denied", zap.String("filename", filename), zap.Error(err))
 			return nil, caddyhttp.Error(http.StatusForbidden, err)
 		}
 		// maybe the server is under load and ran out of file descriptors?
@@ -304,6 +306,7 @@ func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.Fi
 		//nolint:gosec
 		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
+		fsrv.logger.Debug("retry after backoff", zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))
 		return nil, caddyhttp.Error(http.StatusServiceUnavailable, err)
 	}
 	return file, nil
