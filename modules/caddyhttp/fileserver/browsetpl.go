@@ -229,21 +229,21 @@ footer {
 
 @media (prefers-color-scheme: dark) {
 	body {
-		background-color: #1c1c1c;
-		color: #ffffff;
+		background-color: #101010;
+		color: #dddddd;
 	}
 
 	header {
-		background-color: #232323;
+		background-color: #151515;
 	}
 
 	tbody tr:hover {
-		background-color: #303030;
+		background-color: #252525;
 	}
 
 	header a,
 	th a {
-		color: #ffffff;
+		color: #dddddd;
 	}
 
 	a {
@@ -257,12 +257,18 @@ footer {
 	}
 
 	tr {
-		border-bottom: 1px dashed #9C9C9C;
+		border-bottom: 1px dashed #696969;
 	}
 
 	#up-arrow,
 	#down-arrow {
-		fill: #ffffff;
+		fill: #dddddd;
+	}
+
+	#filter {
+		background-color: #151515;
+		color: #ffffff;
+		border: 1px solid #696969;
 	}
 }
 </style>
