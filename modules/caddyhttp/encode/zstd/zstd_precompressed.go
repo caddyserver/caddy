@@ -22,4 +22,7 @@ func (ZstdPrecompressed) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Suffix returns the filename suffix of precompressed files.
+func (ZstdPrecompressed) Suffix() string { return ".zst" }
+
 var _ encode.Precompressed = (*ZstdPrecompressed)(nil)

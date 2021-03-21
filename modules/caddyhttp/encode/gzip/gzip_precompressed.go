@@ -22,4 +22,7 @@ func (GzipPrecompressed) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Suffix returns the filename suffix of precompressed files.
+func (GzipPrecompressed) Suffix() string { return ".gz" }
+
 var _ encode.Precompressed = (*GzipPrecompressed)(nil)
