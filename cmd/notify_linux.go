@@ -42,7 +42,7 @@ func sdNotify(path, payload string) error {
 	return nil
 }
 
-// notifyReadiness notifies systemd caddy that has finished its
+// notifyReadiness notifies systemd that caddy has finished its
 // initialization routines.
 func notifyReadiness() error {
 	val, ok := os.LookupEnv("NOTIFY_SOCKET")
