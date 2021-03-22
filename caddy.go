@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/notify"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -99,6 +100,16 @@ func Run(cfg *Config) error {
 // if it is different from the current config or
 // forceReload is true.
 func Load(cfgJSON []byte, forceReload bool) error {
+	if err := notify.NotifyReloading(); err != nil {
+		Log().Error("unable to notify reloading to service manager", zap.Error(err))
+	}
+
+	defer func() {
+		if err := notify.NotifyReadiness(); err != nil {
+			Log().Error("unable to notify readiness to service manager", zap.Error(err))
+		}
+	}()
+
 	return changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, forceReload)
 }
 
