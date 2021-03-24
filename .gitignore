@@ -21,3 +21,7 @@ vendor
 dist
 caddy-build
 caddy-dist
+
+# IDE files
+.idea/
+.vscode/
