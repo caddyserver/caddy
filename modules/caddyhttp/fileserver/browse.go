@@ -89,7 +89,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 		TemplateContext: templates.TemplateContext{
 			Root:       fs,
 			Req:        r,
-			RespHeader: templates.TplWrappedHeader{w.Header()},
+			RespHeader: templates.TplWrappedHeader{Header: w.Header()},
 		},
 		browseListing: listing,
 	}
