@@ -357,7 +357,7 @@ title = "Welcome"
 
 }
 
-func getContextOrFail(t *testing.T) templateContext {
+func getContextOrFail(t *testing.T) TemplateContext {
 	context, err := initTestContext()
 	if err != nil {
 		t.Fatalf("failed to prepare test context: %v", err)
@@ -365,15 +365,15 @@ func getContextOrFail(t *testing.T) templateContext {
 	return context
 }
 
-func initTestContext() (templateContext, error) {
+func initTestContext() (TemplateContext, error) {
 	body := bytes.NewBufferString("request body")
 	request, err := http.NewRequest("GET", "https://example.com/foo/bar", body)
 	if err != nil {
-		return templateContext{}, err
+		return TemplateContext{}, err
 	}
-	return templateContext{
+	return TemplateContext{
 		Root:       http.Dir(os.TempDir()),
 		Req:        request,
-		RespHeader: tplWrappedHeader{make(http.Header)},
+		RespHeader: TplWrappedHeader{make(http.Header)},
 	}, nil
 }

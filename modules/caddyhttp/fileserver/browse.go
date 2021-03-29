@@ -17,16 +17,23 @@ package fileserver
 import (
 	"bytes"
 	"encoding/json"
-	"html/template"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
 	"strings"
+	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"go.uber.org/zap"
 )
+
+type templateContext struct {
+	templates.TemplateContext
+	browseListing
+}
 
 // Browse configures directory browsing.
 type Browse struct {
@@ -73,16 +80,35 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 
 	fsrv.browseApplyQueryParams(w, r, &listing)
 
+	var fs http.FileSystem
+	if fsrv.Root != "" {
+		fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
+	}
+
+	var tplCtx = templateContext{
+		TemplateContext: templates.TemplateContext{
+			Root:       fs,
+			Req:        r,
+			RespHeader: templates.TplWrappedHeader{w.Header()},
+		},
+		browseListing: listing,
+	}
+
+	err = fsrv.browseParseTemplate(&tplCtx)
+	if err != nil {
+		return fmt.Errorf("parsing browse template: %v", err)
+	}
+
 	// write response as either JSON or HTML
 	var buf *bytes.Buffer
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 	if strings.Contains(acceptHeader, "application/json") {
-		if buf, err = fsrv.browseWriteJSON(listing); err != nil {
+		if buf, err = fsrv.browseWriteJSON(&tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	} else {
-		if buf, err = fsrv.browseWriteHTML(listing); err != nil {
+		if buf, err = fsrv.browseWriteHTML(&tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -139,17 +165,56 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
 }
 
-func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
+// browseParseTemplate adds template function from template context and parse the template
+func (fsrv *FileServer) browseParseTemplate(tplCtx *templateContext) error {
+	var tpl *template.Template
+	var err error
+
+	if fsrv.Browse.TemplateFile != "" {
+		tpl = template.New(path.Base(fsrv.Browse.TemplateFile))
+		tpl = tplCtx.AddFuns(tpl)
+
+		tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
+		if err != nil {
+			return fmt.Errorf("parsing browse template file: %v", err)
+		}
+	} else {
+		tpl = template.New("default_listing")
+		tpl = tplCtx.AddFuns(tpl)
+
+		tpl, err = tpl.Parse(defaultBrowseTemplate)
+		if err != nil {
+			return fmt.Errorf("parsing default browse template: %v", err)
+		}
+	}
+
+	fsrv.Browse.template = tpl
+
+	return nil
+}
+
+func (fsrv *FileServer) browseWriteJSON(tplCtx *templateContext) (*bytes.Buffer, error) {
+	var err error
+
 	buf := bufPool.Get().(*bytes.Buffer)
-	err := json.NewEncoder(buf).Encode(listing.Items)
-	bufPool.Put(buf)
+	defer bufPool.Put(buf)
+
+	err = fsrv.Browse.template.Execute(buf, &tplCtx.TemplateContext)
+	if err != nil {
+		return buf, err
+	}
+
+	err = json.NewEncoder(buf).Encode(tplCtx.browseListing.Items)
 	return buf, err
 }
 
-func (fsrv *FileServer) browseWriteHTML(listing browseListing) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteHTML(tplCtx *templateContext) (*bytes.Buffer, error) {
+	var err error
+
 	buf := bufPool.Get().(*bytes.Buffer)
-	err := fsrv.Browse.template.Execute(buf, listing)
-	bufPool.Put(buf)
+	defer bufPool.Put(buf)
+
+	err = fsrv.Browse.template.Execute(buf, tplCtx)
 	return buf, err
 }
 

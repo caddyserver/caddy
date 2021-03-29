@@ -303,10 +303,10 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 		fs = http.Dir(repl.ReplaceAll(t.FileRoot, "."))
 	}
 
-	ctx := &templateContext{
+	ctx := &TemplateContext{
 		Root:       fs,
 		Req:        r,
-		RespHeader: tplWrappedHeader{rr.Header()},
+		RespHeader: TplWrappedHeader{rr.Header()},
 		config:     t,
 	}
 
