@@ -1,0 +1,90 @@
+:80
+
+@matcher path /something*
+request_header @matcher Denis "Ritchie"
+
+request_header +Edsger "Dijkstra"
+request_header -Wolfram
+
+@images path /images/*
+request_header @images Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/something*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "headers",
+									"request": {
+										"set": {
+											"Denis": [
+												"Ritchie"
+											]
+										}
+									}
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/images/*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "headers",
+									"request": {
+										"set": {
+											"Cache-Control": [
+												"public, max-age=3600, stale-while-revalidate=86400"
+											]
+										}
+									}
+								}
+							]
+						},
+						{
+							"handle": [
+								{
+									"handler": "headers",
+									"request": {
+										"add": {
+											"Edsger": [
+												"Dijkstra"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"request": {
+										"delete": [
+											"Wolfram"
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
