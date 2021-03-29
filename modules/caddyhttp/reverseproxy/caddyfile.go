@@ -298,7 +298,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if h.HealthChecks.Active == nil {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
-				h.HealthChecks.Active.Uri = d.Val()
+				h.HealthChecks.Active.URI = d.Val()
 
 			case "health_path":
 				if !d.NextArg() {
@@ -311,7 +311,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
 				h.HealthChecks.Active.Path = d.Val()
-				caddy.Log().Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
+				caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
 
 			case "health_port":
 				if !d.NextArg() {

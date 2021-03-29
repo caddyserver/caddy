@@ -56,7 +56,7 @@ type ActiveHealthChecks struct {
 	Path string `json:"path,omitempty"`
 
 	// The URI (path and query) to use for health checks
-	Uri string `json:"uri,omitempty"`
+	URI string `json:"uri,omitempty"`
 
 	// The port to use (if different from the upstream's dial
 	// address) for health checks.
