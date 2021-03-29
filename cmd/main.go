@@ -185,7 +185,7 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			fmt.Printf("[WARNING][%s] %s:%d: %s\n", adapterName, warn.File, warn.Line, msg)
+			caddy.Log().Warn(msg, zap.String("adapter", adapterName), zap.String("file", warn.File), zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
 	}
