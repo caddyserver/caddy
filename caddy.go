@@ -669,7 +669,7 @@ func ParseDuration(s string) (time.Duration, error) {
 // have its own unique ID.
 func InstanceID() (uuid.UUID, error) {
 	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
-	uuidFileBytes, err := os.ReadFile(uuidFilePath)
+	uuidFileBytes, err := ioutil.ReadFile(uuidFilePath)
 	if os.IsNotExist(err) {
 		uuid, err := uuid.NewRandom()
 		if err != nil {
