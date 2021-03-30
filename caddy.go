@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -660,6 +661,26 @@ func ParseDuration(s string) (time.Duration, error) {
 		inNumber = (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+'
 	}
 	return time.ParseDuration(s)
+}
+
+// InstanceID returns the UUID for this instance, and generates one if it
+// does not already exist. The UUID is stored in the local data directory,
+// regardless of storage configuration, since each instance is intended to
+// have its own unique ID.
+func InstanceID() (uuid.UUID, error) {
+	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
+	uuidFileBytes, err := os.ReadFile(uuidFilePath)
+	if os.IsNotExist(err) {
+		uuid, err := uuid.NewRandom()
+		if err != nil {
+			return uuid, err
+		}
+		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0644)
+		return uuid, err
+	} else if err != nil {
+		return [16]byte{}, err
+	}
+	return uuid.ParseBytes(uuidFileBytes)
 }
 
 // GoModule returns the build info of this Caddy

@@ -10,6 +10,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.6.0
+	github.com/google/uuid v1.2.0
 	github.com/klauspost/compress v1.11.3
 	github.com/klauspost/cpuid/v2 v2.0.1
 	github.com/lucas-clemente/quic-go v0.19.3
