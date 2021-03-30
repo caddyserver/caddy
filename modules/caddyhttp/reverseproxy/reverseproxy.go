@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -273,13 +274,28 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 
 		// if active health checks are enabled, configure them and start a worker
-		if h.HealthChecks.Active != nil &&
-			(h.HealthChecks.Active.Path != "" || h.HealthChecks.Active.Port != 0) {
+		if h.HealthChecks.Active != nil && (h.HealthChecks.Active.Path != "" ||
+			h.HealthChecks.Active.URI != "" ||
+			h.HealthChecks.Active.Port != 0) {
+
 			h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
 
 			timeout := time.Duration(h.HealthChecks.Active.Timeout)
 			if timeout == 0 {
 				timeout = 5 * time.Second
+			}
+
+			if h.HealthChecks.Active.Path != "" {
+				h.HealthChecks.Active.logger.Warn("the 'path' option is deprecated, please use 'uri' instead!")
+			}
+
+			// parse the URI string (supports path and query)
+			if h.HealthChecks.Active.URI != "" {
+				parsedURI, err := url.Parse(h.HealthChecks.Active.URI)
+				if err != nil {
+					return err
+				}
+				h.HealthChecks.Active.uri = parsedURI
 			}
 
 			h.HealthChecks.Active.httpClient = &http.Client{
