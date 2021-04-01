@@ -99,8 +99,8 @@ github.com/bombsimon/wsl/v2 v2.0.0/go.mod h1:mf25kr/SqFEPhhcxW1+7pxzGlW+hIl/hYTK
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/caddyserver/certmagic v0.12.1-0.20210224184602-7550222c4a6a h1:gcqCMCPuHlQPY+XZzOilNouNeRpH40UhMfSp0tmulxI=
-github.com/caddyserver/certmagic v0.12.1-0.20210224184602-7550222c4a6a/go.mod h1:dNOzF4iOB7H9E51xTooMB90vs+2XNVtpnx0liQNsQY4=
+github.com/caddyserver/certmagic v0.13.0 h1:ky0rntZvIFiUKFdIikYxj31WN+Ts0Od6Wjz83iTzxfc=
+github.com/caddyserver/certmagic v0.13.0/go.mod h1:dNOzF4iOB7H9E51xTooMB90vs+2XNVtpnx0liQNsQY4=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.0/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
