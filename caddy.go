@@ -675,7 +675,7 @@ func InstanceID() (uuid.UUID, error) {
 		if err != nil {
 			return uuid, err
 		}
-		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0644)
+		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
 		return uuid, err
 	} else if err != nil {
 		return [16]byte{}, err
