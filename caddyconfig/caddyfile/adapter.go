@@ -67,14 +67,17 @@ func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []c
 // is any different from the input; empty warning and false otherwise.
 // TODO: also perform this check on imported files
 func formattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
-	formatted := Format(body)
-	if bytes.Equal(formatted, body) {
+	// replace windows-style newlines to normalize comparison
+	normalizedBody := bytes.Replace(body, []byte("\r\n"), []byte("\n"), -1)
+
+	formatted := Format(normalizedBody)
+	if bytes.Equal(formatted, normalizedBody) {
 		return caddyconfig.Warning{}, false
 	}
 
 	// find where the difference is
 	line := 1
-	for i, ch := range body {
+	for i, ch := range normalizedBody {
 		if i >= len(formatted) || ch != formatted[i] {
 			break
 		}
