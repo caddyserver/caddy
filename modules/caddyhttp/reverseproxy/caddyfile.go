@@ -288,6 +288,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.LoadBalancing.TryInterval = caddy.Duration(dur)
 
+			case "health_uri":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.HealthChecks == nil {
+					h.HealthChecks = new(HealthChecks)
+				}
+				if h.HealthChecks.Active == nil {
+					h.HealthChecks.Active = new(ActiveHealthChecks)
+				}
+				h.HealthChecks.Active.URI = d.Val()
+
 			case "health_path":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -299,6 +311,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.HealthChecks.Active = new(ActiveHealthChecks)
 				}
 				h.HealthChecks.Active.Path = d.Val()
+				caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
 
 			case "health_port":
 				if !d.NextArg() {
@@ -382,7 +395,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(val) == 3 && strings.HasSuffix(val, "xx") {
 					val = val[:1]
 				}
-				statusNum, err := strconv.Atoi(val[:1])
+				statusNum, err := strconv.Atoi(val)
 				if err != nil {
 					return d.Errf("bad status value '%s': %v", d.Val(), err)
 				}
@@ -463,7 +476,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					if len(arg) == 3 && strings.HasSuffix(arg, "xx") {
 						arg = arg[:1]
 					}
-					statusNum, err := strconv.Atoi(arg[:1])
+					statusNum, err := strconv.Atoi(arg)
 					if err != nil {
 						return d.Errf("bad status value '%s': %v", d.Val(), err)
 					}

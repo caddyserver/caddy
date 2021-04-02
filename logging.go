@@ -27,7 +27,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 func init() {
@@ -670,7 +670,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 
 func newDefaultProductionLogEncoder(colorize bool) zapcore.Encoder {
 	encCfg := zap.NewProductionEncoderConfig()
-	if terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
 		// if interactive terminal, make output more human-readable by default
 		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 			encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))

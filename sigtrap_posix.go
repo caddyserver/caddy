@@ -39,7 +39,7 @@ func trapSignalsPosix() {
 				os.Exit(ExitCodeForceQuit)
 
 			case syscall.SIGTERM:
-				Log().Info("shutting down apps then terminating", zap.String("signal", "SIGTERM"))
+				Log().Info("shutting down apps, then terminating", zap.String("signal", "SIGTERM"))
 				exitProcessFromSignal("SIGTERM")
 
 			case syscall.SIGUSR1:

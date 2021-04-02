@@ -116,7 +116,7 @@ type Server struct {
 
 	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
 	// which will serve HTTP/2 over plaintext TCP connections if
-	// a client support it. Because this is not implemented by the
+	// the client supports it. Because this is not implemented by the
 	// Go standard library, using H2C is incompatible with most
 	// of the other options for this server. Do not enable this
 	// only to achieve maximum client compatibility. In practice,

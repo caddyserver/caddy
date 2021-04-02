@@ -445,7 +445,7 @@ func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWrite
 		sha, err := hashCookie(cookieSecret, randomHost.Dial)
 		if err == nil {
 			// write the cookie.
-			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Secure: false})
+			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Path: "/", Secure: false})
 		}
 	}
 	return randomHost

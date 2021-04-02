@@ -49,7 +49,7 @@ func init() {
 }
 
 // Main implements the main function of the caddy command.
-// Call this if Caddy is to be the main() if your program.
+// Call this if Caddy is to be the main() of your program.
 func Main() {
 	switch len(os.Args) {
 	case 0:
@@ -185,7 +185,7 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			fmt.Printf("[WARNING][%s] %s:%d: %s\n", adapterName, warn.File, warn.Line, msg)
+			caddy.Log().Warn(msg, zap.String("adapter", adapterName), zap.String("file", warn.File), zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
 	}
@@ -311,7 +311,7 @@ func (f Flags) Int(name string) int {
 
 // Float64 returns the float64 representation of the
 // flag given by name. It returns false if the flag
-// is not a float63 type. It panics if the flag is
+// is not a float64 type. It panics if the flag is
 // not in the flag set.
 func (f Flags) Float64(name string) float64 {
 	val, _ := strconv.ParseFloat(f.String(name), 64)

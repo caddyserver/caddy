@@ -34,7 +34,7 @@ type PEMLoader []CertKeyPEMPair
 func (PEMLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "tls.certificates.load_pem",
-		New: func() caddy.Module { return PEMLoader{} },
+		New: func() caddy.Module { return new(PEMLoader) },
 	}
 }
 
