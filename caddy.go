@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -289,7 +290,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		} else {
 			err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
 			if err == nil {
-				Log().Info("autosaved config", zap.String("file", ConfigAutosavePath))
+				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
 				Log().Error("unable to autosave config",
 					zap.String("file", ConfigAutosavePath),
@@ -325,20 +326,9 @@ func run(newCfg *Config, start bool) error {
 	// been set by a short assignment
 	var err error
 
-	// start the admin endpoint (and stop any prior one)
-	if start {
-		err = replaceLocalAdminServer(newCfg)
-		if err != nil {
-			return fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	if newCfg == nil {
 		newCfg = new(Config)
 	}
-
-	// prepare the new config for use
-	newCfg.apps = make(map[string]App)
 
 	// create a context within which to load
 	// modules - essentially our new config's
@@ -372,6 +362,17 @@ func run(newCfg *Config, start bool) error {
 	if err != nil {
 		return err
 	}
+
+	// start the admin endpoint (and stop any prior one)
+	if start {
+		err = replaceLocalAdminServer(newCfg)
+		if err != nil {
+			return fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
+	}
+
+	// prepare the new config for use
+	newCfg.apps = make(map[string]App)
 
 	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
@@ -660,6 +661,26 @@ func ParseDuration(s string) (time.Duration, error) {
 		inNumber = (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+'
 	}
 	return time.ParseDuration(s)
+}
+
+// InstanceID returns the UUID for this instance, and generates one if it
+// does not already exist. The UUID is stored in the local data directory,
+// regardless of storage configuration, since each instance is intended to
+// have its own unique ID.
+func InstanceID() (uuid.UUID, error) {
+	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
+	uuidFileBytes, err := ioutil.ReadFile(uuidFilePath)
+	if os.IsNotExist(err) {
+		uuid, err := uuid.NewRandom()
+		if err != nil {
+			return uuid, err
+		}
+		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
+		return uuid, err
+	} else if err != nil {
+		return [16]byte{}, err
+	}
+	return uuid.ParseBytes(uuidFileBytes)
 }
 
 // GoModule returns the build info of this Caddy

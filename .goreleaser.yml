@@ -11,6 +11,9 @@ before:
     # GoReleaser doesn't seem to offer {{.Tag}} at this stage, so we have to embed it into the env
     # so we run: TAG=$(git describe --abbrev=0) goreleaser release --rm-dist --skip-publish --skip-validate
     - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./caddy-build/go.mod
+    # as of Go 1.16, `go` commands no longer automatically change go.{mod,sum}. We now have to explicitly
+    # run `go mod tidy`. The `/bin/sh -c '...'` is because goreleaser can't find cd in PATH without shell invocation.
+    - /bin/sh -c 'cd ./caddy-build && go mod tidy'
     - git clone --depth 1 https://github.com/caddyserver/dist caddy-dist
     - go mod download
 

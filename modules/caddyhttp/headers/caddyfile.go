@@ -151,6 +151,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 //     request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
 //
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	if !h.Next() {
+		return nil, h.ArgErr()
+	}
+
 	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err

@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -50,6 +51,50 @@ func (StaticError) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//     error [<matcher>] <status>|<message> [<status>] {
+//         message <text>
+//     }
+//
+// If there is just one argument (other than the matcher), it is considered
+// to be a status code if it's a valid positive integer of 3 digits.
+func (e *StaticError) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		switch len(args) {
+		case 1:
+			if len(args[0]) == 3 {
+				if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+					e.StatusCode = WeakString(args[0])
+					break
+				}
+			}
+			e.Error = args[0]
+		case 2:
+			e.Error = args[0]
+			e.StatusCode = WeakString(args[1])
+		default:
+			return d.ArgErr()
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "message":
+				if e.Error != "" {
+					return d.Err("message already specified")
+				}
+				if !d.AllArgs(&e.Error) {
+					return d.ArgErr()
+				}
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
 func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -66,4 +111,7 @@ func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler
 }
 
 // Interface guard
-var _ MiddlewareHandler = (*StaticError)(nil)
+var (
+	_ MiddlewareHandler     = (*StaticError)(nil)
+	_ caddyfile.Unmarshaler = (*StaticError)(nil)
+)

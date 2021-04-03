@@ -70,6 +70,7 @@ var directiveOrder = []string{
 	"file_server",
 	"acme_server",
 	"abort",
+	"error",
 }
 
 // directiveIsOrdered returns true if dir is

@@ -54,12 +54,14 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 // parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
 // URI from Caddyfile tokens. Syntax:
 //
-//     uri [<matcher>] strip_prefix|strip_suffix|replace <target> [<replacement> [<limit>]]
+//     uri [<matcher>] strip_prefix|strip_suffix|replace|path_regexp <target> [<replacement> [<limit>]]
 //
 // If strip_prefix or strip_suffix are used, then <target> will be stripped
 // only if it is the beginning or the end, respectively, of the URI path. If
 // replace is used, then <target> will be replaced with <replacement> across
-// the whole URI, up to <limit> times (or unlimited if unspecified).
+// the whole URI, up to <limit> times (or unlimited if unspecified). If
+// path_regexp is used, then regular expression replacements will be performed
+// on the path portion of the URI (and a limit cannot be set).
 func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {
@@ -103,10 +105,19 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 				}
 			}
 
-			rewr.URISubstring = append(rewr.URISubstring, replacer{
+			rewr.URISubstring = append(rewr.URISubstring, substrReplacer{
 				Find:    find,
 				Replace: replace,
 				Limit:   limInt,
+			})
+		case "path_regexp":
+			if len(args) != 3 {
+				return nil, h.ArgErr()
+			}
+			find, replace := args[1], args[2]
+			rewr.PathRegexp = append(rewr.PathRegexp, &regexReplacer{
+				Find:    find,
+				Replace: replace,
 			})
 		default:
 			return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])

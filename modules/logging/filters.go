@@ -25,6 +25,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(DeleteFilter{})
+	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
 }
 
@@ -54,6 +55,37 @@ func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Filter filters the input field.
 func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 	in.Type = zapcore.SkipType
+	return in
+}
+
+// ReplaceFilter is a Caddy log field filter that
+// replaces the field with the indicated string.
+type ReplaceFilter struct {
+	Value string `json:"value,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (ReplaceFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.replace",
+		New: func() caddy.Module { return new(ReplaceFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (f *ReplaceFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			f.Value = d.Val()
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field with the replacement value.
+func (f *ReplaceFilter) Filter(in zapcore.Field) zapcore.Field {
+	in.Type = zapcore.StringType
+	in.String = f.Value
 	return in
 }
 

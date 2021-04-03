@@ -240,20 +240,29 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	// extract any custom logs, and enforce configured levels
 	var customLogs []namedCustomLog
 	var hasDefaultLog bool
+	addCustomLog := func(ncl namedCustomLog) {
+		if ncl.name == "" {
+			return
+		}
+		if ncl.name == "default" {
+			hasDefaultLog = true
+		}
+		if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+			ncl.log.Level = "DEBUG"
+		}
+		customLogs = append(customLogs, ncl)
+	}
+	// Apply global log options, when set
+	if options["log"] != nil {
+		for _, logValue := range options["log"].([]ConfigValue) {
+			addCustomLog(logValue.Value.(namedCustomLog))
+		}
+	}
+	// Apply server-specific log options
 	for _, p := range pairings {
 		for _, sb := range p.serverBlocks {
 			for _, clVal := range sb.pile["custom_log"] {
-				ncl := clVal.Value.(namedCustomLog)
-				if ncl.name == "" {
-					continue
-				}
-				if ncl.name == "default" {
-					hasDefaultLog = true
-				}
-				if _, ok := options["debug"]; ok && ncl.log.Level == "" {
-					ncl.log.Level = "DEBUG"
-				}
-				customLogs = append(customLogs, ncl)
+				addCustomLog(clVal.Value.(namedCustomLog))
 			}
 		}
 	}
@@ -313,7 +322,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			// most users seem to prefer not writing access logs
 			// to the default log when they are directed to a
 			// file or have any other special customization
-			if len(ncl.log.Include) > 0 {
+			if ncl.name != "default" && len(ncl.log.Include) > 0 {
 				defaultLog, ok := cfg.Logging.Logs["default"]
 				if !ok {
 					defaultLog = new(caddy.CustomLog)
@@ -362,9 +371,23 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			}
 			serverOpts, ok := val.(serverOptions)
 			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'servers' global options")
+				return nil, fmt.Errorf("unexpected type from 'servers' global options: %T", val)
 			}
 			options[opt] = append(existingOpts, serverOpts)
+			continue
+		}
+		// Additionally, fold multiple "log" options together into an
+		// array so that multiple loggers can be configured.
+		if opt == "log" {
+			existingOpts, ok := options[opt].([]ConfigValue)
+			if !ok {
+				existingOpts = []ConfigValue{}
+			}
+			logOpts, ok := val.([]ConfigValue)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type from 'log' global options: %T", val)
+			}
+			options[opt] = append(existingOpts, logOpts...)
 			continue
 		}
 
@@ -442,7 +465,7 @@ func (st *ServerType) serversFromPairings(
 			var iLongestHost, jLongestHost string
 			var iWildcardHost, jWildcardHost bool
 			for _, addr := range p.serverBlocks[i].keys {
-				if strings.Contains(addr.Host, "*") {
+				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					iWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(iLongestHost) {
@@ -453,7 +476,7 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 			for _, addr := range p.serverBlocks[j].keys {
-				if strings.Contains(addr.Host, "*") {
+				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					jWildcardHost = true
 				}
 				if specificity(addr.Host) > specificity(jLongestHost) {

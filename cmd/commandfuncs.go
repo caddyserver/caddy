@@ -174,9 +174,6 @@ func cmdRun(fl Flags) (int, error) {
 		printEnvironment()
 	}
 
-	// TODO: This is TEMPORARY, until the RCs
-	moveStorage()
-
 	// load the config, depending on flags
 	var config []byte
 	var err error

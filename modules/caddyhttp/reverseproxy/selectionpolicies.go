@@ -221,8 +221,8 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 		return nil
 	}
 	for i := uint32(0); i < n; i++ {
-		atomic.AddUint32(&r.robin, 1)
-		host := pool[r.robin%n]
+		robin := atomic.AddUint32(&r.robin, 1)
+		host := pool[robin%n]
 		if host.Available() {
 			return host
 		}
@@ -445,7 +445,7 @@ func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWrite
 		sha, err := hashCookie(cookieSecret, randomHost.Dial)
 		if err == nil {
 			// write the cookie.
-			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Secure: false})
+			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Path: "/", Secure: false})
 		}
 	}
 	return randomHost

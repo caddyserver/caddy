@@ -66,6 +66,13 @@ type Handler struct {
 	// on this property long-term; check release notes.
 	PathPrefix string `json:"path_prefix,omitempty"`
 
+	// If true, the CA's root will be the issuer instead of
+	// the intermediate. This is NOT recommended and should
+	// only be used when devices/clients do not properly
+	// validate certificate chains. EXPERIMENTAL: Might be
+	// changed or removed in the future.
+	SignWithRoot bool `json:"sign_with_root,omitempty"`
+
 	acmeEndpoints http.Handler
 	logger        *zap.Logger
 }
@@ -109,6 +116,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	}
 
 	authorityConfig := caddypki.AuthorityConfig{
+		SignWithRoot: ash.SignWithRoot,
 		AuthConfig: &authority.AuthConfig{
 			Provisioners: provisioner.List{
 				&provisioner.ACME{

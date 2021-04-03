@@ -42,6 +42,7 @@ func init() {
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("abort", parseAbort)
+	RegisterHandlerDirective("error", parseError)
 	RegisterHandlerDirective("route", parseRoute)
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
@@ -566,6 +567,16 @@ func parseAbort(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return &caddyhttp.StaticResponse{Abort: true}, nil
 }
 
+// parseError parses the error directive.
+func parseError(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	se := new(caddyhttp.StaticError)
+	err := se.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return se, nil
+}
+
 // parseRoute parses the route directive.
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	sr := new(caddyhttp.Subroute)
@@ -619,11 +630,50 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 //     }
 //
 func parseLog(h Helper) ([]ConfigValue, error) {
+	return parseLogHelper(h, nil)
+}
+
+// parseLogHelper is used both for the parseLog directive within Server Blocks,
+// as well as the global "log" option for configuring loggers at the global
+// level. The parseAsGlobalOption parameter is used to distinguish any differing logic
+// between the two.
+func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue, error) {
+	// When the globalLogNames parameter is passed in, we make
+	// modifications to the parsing behavior.
+	parseAsGlobalOption := globalLogNames != nil
+
 	var configValues []ConfigValue
 	for h.Next() {
-		// log does not currently support any arguments
-		if h.NextArg() {
-			return nil, h.ArgErr()
+		// Logic below expects that a name is always present when a
+		// global option is being parsed.
+		var globalLogName string
+		if parseAsGlobalOption {
+			if h.NextArg() {
+				globalLogName = h.Val()
+
+				// Only a single argument is supported.
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+			} else {
+				// If there is no log name specified, we
+				// reference the default logger. See the
+				// setupNewDefault function in the logging
+				// package for where this is configured.
+				globalLogName = "default"
+			}
+
+			// Verify this name is unused.
+			_, used := globalLogNames[globalLogName]
+			if used {
+				return nil, h.Err("duplicate global log option for: " + globalLogName)
+			}
+			globalLogNames[globalLogName] = struct{}{}
+		} else {
+			// No arguments are supported for the server block log directive
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
 		}
 
 		cl := new(caddy.CustomLog)
@@ -687,22 +737,48 @@ func parseLog(h Helper) ([]ConfigValue, error) {
 					return nil, h.ArgErr()
 				}
 
+			case "include":
+				// This configuration is only allowed in the global options
+				if !parseAsGlobalOption {
+					return nil, h.ArgErr()
+				}
+				for h.NextArg() {
+					cl.Include = append(cl.Include, h.Val())
+				}
+
+			case "exclude":
+				// This configuration is only allowed in the global options
+				if !parseAsGlobalOption {
+					return nil, h.ArgErr()
+				}
+				for h.NextArg() {
+					cl.Exclude = append(cl.Exclude, h.Val())
+				}
+
 			default:
 				return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 			}
 		}
 
 		var val namedCustomLog
+		// Skip handling of empty logging configs
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
-			logCounter, ok := h.State["logCounter"].(int)
-			if !ok {
-				logCounter = 0
+			if parseAsGlobalOption {
+				// Use indicated name for global log options
+				val.name = globalLogName
+				val.log = cl
+			} else {
+				// Construct a log name for server log streams
+				logCounter, ok := h.State["logCounter"].(int)
+				if !ok {
+					logCounter = 0
+				}
+				val.name = fmt.Sprintf("log%d", logCounter)
+				cl.Include = []string{"http.log.access." + val.name}
+				val.log = cl
+				logCounter++
+				h.State["logCounter"] = logCounter
 			}
-			val.name = fmt.Sprintf("log%d", logCounter)
-			cl.Include = []string{"http.log.access." + val.name}
-			val.log = cl
-			logCounter++
-			h.State["logCounter"] = logCounter
 		}
 		configValues = append(configValues, ConfigValue{
 			Class: "custom_log",
