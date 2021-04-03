@@ -193,9 +193,6 @@ func TestParseOneAndImport(t *testing.T) {
 		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
 		{`import testdata/import_args*.txt a b`, false, []string{"a"}, []int{2}},
 
-		// recursive self-import
-		{`import testdata/import_recursive0.txt`, true, []string{}, []int{}},
-
 		// test cases found by fuzzing!
 		{`import }{$"`, true, []string{}, []int{}},
 		{`import /*/*.txt`, true, []string{}, []int{}},
@@ -447,6 +444,28 @@ func TestParseAll(t *testing.T) {
 
 		{`import notfound/*`, false, [][]string{}},        // glob needn't error with no matches
 		{`import notfound/file.conf`, true, [][]string{}}, // but a specific file should
+
+		// recursive self-import
+		{`import testdata/import_recursive0.txt`, true, [][]string{}},
+		{`import testdata/import_recursive3.txt
+		import testdata/import_recursive1.txt`, true, [][]string{}},
+
+		// TODO: enable the tests once we figure out how to detect cyclic snippets
+		{`(A) {
+			import A
+		}
+		:80
+		import A
+		`, true, [][]string{}},
+		{`(A) {
+			import B
+		}
+		(B) {
+			import A
+		}
+		:80
+		import A
+		`, true, [][]string{}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
