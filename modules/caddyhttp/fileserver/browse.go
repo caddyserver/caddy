@@ -80,34 +80,34 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 
 	fsrv.browseApplyQueryParams(w, r, &listing)
 
-	var fs http.FileSystem
-	if fsrv.Root != "" {
-		fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
-	}
-
-	var tplCtx = templateContext{
-		TemplateContext: templates.TemplateContext{
-			Root:       fs,
-			Req:        r,
-			RespHeader: templates.TplWrappedHeader{Header: w.Header()},
-		},
-		browseListing: listing,
-	}
-
-	err = fsrv.browseParseTemplate(&tplCtx)
-	if err != nil {
-		return fmt.Errorf("parsing browse template: %v", err)
-	}
-
 	// write response as either JSON or HTML
 	var buf *bytes.Buffer
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 	if strings.Contains(acceptHeader, "application/json") {
-		if buf, err = fsrv.browseWriteJSON(&tplCtx); err != nil {
+		if buf, err = fsrv.browseWriteJSON(listing); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	} else {
+		var fs http.FileSystem
+		if fsrv.Root != "" {
+			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
+		}
+
+		var tplCtx = templateContext{
+			TemplateContext: templates.TemplateContext{
+				Root:       fs,
+				Req:        r,
+				RespHeader: templates.TplWrappedHeader{Header: w.Header()},
+			},
+			browseListing: listing,
+		}
+
+		err = fsrv.browseParseTemplate(&tplCtx)
+		if err != nil {
+			return fmt.Errorf("parsing browse template: %v", err)
+		}
+
 		if buf, err = fsrv.browseWriteHTML(&tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
@@ -193,18 +193,13 @@ func (fsrv *FileServer) browseParseTemplate(tplCtx *templateContext) error {
 	return nil
 }
 
-func (fsrv *FileServer) browseWriteJSON(tplCtx *templateContext) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
 	var err error
 
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
 
-	err = fsrv.Browse.template.Execute(buf, &tplCtx.TemplateContext)
-	if err != nil {
-		return buf, err
-	}
-
-	err = json.NewEncoder(buf).Encode(tplCtx.browseListing.Items)
+	err = json.NewEncoder(buf).Encode(listing.Items)
 	return buf, err
 }
 

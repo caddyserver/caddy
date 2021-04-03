@@ -22,14 +22,10 @@ func BenchmarkBrowseWriteJSON(b *testing.B) {
 		Order:    "",
 		Limit:    42,
 	}
-	tplCtx := templateContext{
-		browseListing: listing,
-	}
-	fsrv.browseParseTemplate(&tplCtx)
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		fsrv.browseWriteJSON(&tplCtx)
+		fsrv.browseWriteJSON(listing)
 	}
 }
 
