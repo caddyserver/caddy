@@ -16,7 +16,6 @@ package caddyfile
 
 import (
 	"fmt"
-	"log"
 )
 
 type adjacency map[string][]string
@@ -60,8 +59,8 @@ func (i *importGraph) addEdge(from, to string) error {
 	}
 
 	if i.areConnected(from, to) {
-		log.Printf("adjacency: %+v", i.edges)
-		return fmt.Errorf("the nodes (%s -> %s) are already connected", from, to)
+		// if connected, there's nothing to do
+		return nil
 	}
 
 	if i.nodes == nil {

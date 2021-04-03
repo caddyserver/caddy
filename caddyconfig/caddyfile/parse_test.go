@@ -450,7 +450,7 @@ func TestParseAll(t *testing.T) {
 		{`import testdata/import_recursive3.txt
 		import testdata/import_recursive1.txt`, true, [][]string{}},
 
-		// TODO: enable the tests once we figure out how to detect cyclic snippets
+		// cyclic imports
 		{`(A) {
 			import A
 		}
