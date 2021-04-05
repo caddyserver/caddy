@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddycmd
+package notify
 
 import (
 	"io"
@@ -42,7 +42,7 @@ func sdNotify(path, payload string) error {
 	return nil
 }
 
-// notifyReadiness notifies systemd caddy that has finished its
+// notifyReadiness notifies systemd that caddy has finished its
 // initialization routines.
 func notifyReadiness() error {
 	val, ok := os.LookupEnv("NOTIFY_SOCKET")
@@ -55,13 +55,25 @@ func notifyReadiness() error {
 	return nil
 }
 
-// notifyReadiness notifies systemd that caddy is reloading its config.
+// notifyReloading notifies systemd that caddy is reloading its config.
 func notifyReloading() error {
 	val, ok := os.LookupEnv("NOTIFY_SOCKET")
 	if !ok || val == "" {
 		return nil
 	}
 	if err := sdNotify(val, "RELOADING=1"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// notifyStopping notifies systemd that caddy is stopping.
+func notifyStopping() error {
+	val, ok := os.LookupEnv("NOTIFY_SOCKET")
+	if !ok || val == "" {
+		return nil
+	}
+	if err := sdNotify(val, "STOPPING=1"); err != nil {
 		return err
 	}
 	return nil
