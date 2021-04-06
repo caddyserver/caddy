@@ -7,10 +7,6 @@ import (
 
 func BenchmarkBrowseWriteJSON(b *testing.B) {
 	fsrv := new(FileServer)
-	fsrv.Browse = &Browse{
-		TemplateFile: "",
-		template:     template.New("test"),
-	}
 	listing := browseListing{
 		Name:     "test",
 		Path:     "test",
