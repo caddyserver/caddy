@@ -12,14 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !linux
+package notify
 
-package caddycmd
-
-func notifyReadiness() error {
-	return nil
+// NotifyReadiness notifies process manager of readiness.
+func NotifyReadiness() error {
+	return notifyReadiness()
 }
 
-func notifyReloading() error {
-	return nil
+// NotifyReloading notifies process manager of reloading.
+func NotifyReloading() error {
+	return notifyReloading()
+}
+
+// NotifyStopping notifies process manager of stopping.
+func NotifyStopping() error {
+	return notifyStopping()
 }
