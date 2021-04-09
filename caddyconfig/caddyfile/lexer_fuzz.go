@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !linux
+// +build gofuzz
 
-package caddycmd
+package caddyfile
 
-func notifyReadiness() error {
-	return nil
-}
-
-func notifyReloading() error {
-	return nil
+func FuzzTokenize(input []byte) int {
+	tokens, err := Tokenize(input, "Caddyfile")
+	if err != nil {
+		return 0
+	}
+	if len(tokens) == 0 {
+		return -1
+	}
+	return 1
 }

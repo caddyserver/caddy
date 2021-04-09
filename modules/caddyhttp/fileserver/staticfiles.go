@@ -75,6 +75,12 @@ type FileServer struct {
 	// remove trailing slash from URIs for files. Default is true.
 	CanonicalURIs *bool `json:"canonical_uris,omitempty"`
 
+	// Override the status code written when successfully serving a file.
+	// Particularly useful when explicitly serving a file as display for
+	// an error, like a 404 page. A placeholder may be used. By default,
+	// the status code will typically be 200, or 206 for partial content.
+	StatusCode caddyhttp.WeakString `json:"status_code,omitempty"`
+
 	// If pass-thru mode is enabled and a requested file is not found,
 	// it will invoke the next handler in the chain instead of returning
 	// a 404 error. By default, this is false (disabled).
@@ -343,6 +349,16 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			_, _ = io.Copy(w, file)
 		}
 		return nil
+	}
+
+	// if a status code override is configured, write the status code
+	// before serving the file
+	if codeStr := fsrv.StatusCode.String(); codeStr != "" {
+		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
+		if err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+		w.WriteHeader(intVal)
 	}
 
 	// let the standard library do what it does best; note, however,

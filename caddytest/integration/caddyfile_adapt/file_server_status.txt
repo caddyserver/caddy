@@ -1,0 +1,112 @@
+localhost
+
+root * /srv
+
+handle /nope* {
+	file_server {
+		status 403
+	}
+}
+
+handle /custom-status* {
+	file_server {
+		status {env.CUSTOM_STATUS}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/srv"
+												}
+											]
+										},
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"handler": "file_server",
+																	"hide": [
+																		"./Caddyfile"
+																	],
+																	"status_code": "{env.CUSTOM_STATUS}"
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/custom-status*"
+													]
+												}
+											]
+										},
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"handler": "file_server",
+																	"hide": [
+																		"./Caddyfile"
+																	],
+																	"status_code": 403
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/nope*"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
