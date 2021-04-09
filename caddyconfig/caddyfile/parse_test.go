@@ -444,6 +444,28 @@ func TestParseAll(t *testing.T) {
 
 		{`import notfound/*`, false, [][]string{}},        // glob needn't error with no matches
 		{`import notfound/file.conf`, true, [][]string{}}, // but a specific file should
+
+		// recursive self-import
+		{`import testdata/import_recursive0.txt`, true, [][]string{}},
+		{`import testdata/import_recursive3.txt
+		import testdata/import_recursive1.txt`, true, [][]string{}},
+
+		// cyclic imports
+		{`(A) {
+			import A
+		}
+		:80
+		import A
+		`, true, [][]string{}},
+		{`(A) {
+			import B
+		}
+		(B) {
+			import A
+		}
+		:80
+		import A
+		`, true, [][]string{}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()

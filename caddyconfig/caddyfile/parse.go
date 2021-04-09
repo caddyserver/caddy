@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -40,7 +41,13 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := parser{Dispenser: NewDispenser(tokens)}
+	p := parser{
+		Dispenser: NewDispenser(tokens),
+		importGraph: importGraph{
+			nodes: make(map[string]bool),
+			edges: make(adjacency),
+		},
+	}
 	return p.parseAll()
 }
 
@@ -110,6 +117,7 @@ type parser struct {
 	eof             bool        // if we encounter a valid EOF in a hard place
 	definedSnippets map[string][]Token
 	nesting         int
+	importGraph     importGraph
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -164,6 +172,15 @@ func (p *parser) begin() error {
 		tokens, err := p.snippetTokens()
 		if err != nil {
 			return err
+		}
+		// Just as we need to track which file the token comes from, we need to
+		// keep track of which snippets do the tokens come from. This is helpful
+		// in tracking import cycles across files/snippets by namespacing them. Without
+		// this we end up with false-positives in cycle-detection.
+		for k, v := range tokens {
+			v.inSnippet = true
+			v.snippetName = name
+			tokens[k] = v
 		}
 		p.definedSnippets[name] = tokens
 		// empty block keys so we don't save this block as a real server.
@@ -314,10 +331,15 @@ func (p *parser) doImport() error {
 	tokensBefore := p.tokens[:p.cursor-1-len(args)]
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
+	var nodes []string
 
 	// first check snippets. That is a simple, non-recursive replacement
 	if p.definedSnippets != nil && p.definedSnippets[importPattern] != nil {
 		importedTokens = p.definedSnippets[importPattern]
+		if len(importedTokens) > 0 {
+			// just grab the first one
+			nodes = append(nodes, fmt.Sprintf("%s:%s", importedTokens[0].File, importedTokens[0].snippetName))
+		}
 	} else {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
@@ -353,7 +375,6 @@ func (p *parser) doImport() error {
 		}
 
 		// collect all the imported tokens
-
 		for _, importFile := range matches {
 			newTokens, err := p.doSingleImport(importFile)
 			if err != nil {
@@ -361,6 +382,18 @@ func (p *parser) doImport() error {
 			}
 			importedTokens = append(importedTokens, newTokens...)
 		}
+		nodes = matches
+	}
+
+	nodeName := p.File()
+	if p.Token().inSnippet {
+		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
+	}
+	p.importGraph.addNode(nodeName)
+	p.importGraph.addNodes(nodes)
+	if err := p.importGraph.addEdges(nodeName, nodes); err != nil {
+		p.importGraph.removeNodes(nodes)
+		return err
 	}
 
 	// copy the tokens so we don't overwrite p.definedSnippets
