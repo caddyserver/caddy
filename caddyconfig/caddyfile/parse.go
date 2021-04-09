@@ -173,10 +173,13 @@ func (p *parser) begin() error {
 		if err != nil {
 			return err
 		}
-		// Keep track of which tokens come from snippets and what the snippet name is
+		// Just as we need to track which file the token comes from, we need to
+		// keep track of which snippets do the tokens come from. This is helpful
+		// in tracking import cycles across files/snippets by namespacing them. Without
+		// this we end up with false-positives in cycle-detection.
 		for k, v := range tokens {
-			v.InSnippet = true
-			v.SnippetName = name
+			v.inSnippet = true
+			v.snippetName = name
 			tokens[k] = v
 		}
 		p.definedSnippets[name] = tokens
@@ -335,7 +338,7 @@ func (p *parser) doImport() error {
 		importedTokens = p.definedSnippets[importPattern]
 		if len(importedTokens) > 0 {
 			// just grab the first one
-			nodes = append(nodes, fmt.Sprintf("%s:%s", importedTokens[0].File, importedTokens[0].SnippetName))
+			nodes = append(nodes, fmt.Sprintf("%s:%s", importedTokens[0].File, importedTokens[0].snippetName))
 		}
 	} else {
 		// make path relative to the file of the _token_ being processed rather
@@ -383,8 +386,8 @@ func (p *parser) doImport() error {
 	}
 
 	nodeName := p.File()
-	if p.Token().InSnippet {
-		nodeName += fmt.Sprintf(":%s", p.Token().SnippetName)
+	if p.Token().inSnippet {
+		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
 	}
 	p.importGraph.addNode(nodeName)
 	p.importGraph.addNodes(nodes)

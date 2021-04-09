@@ -38,8 +38,8 @@ type (
 		File        string
 		Line        int
 		Text        string
-		InSnippet   bool
-		SnippetName string
+		inSnippet   bool
+		snippetName string
 	}
 )
 
