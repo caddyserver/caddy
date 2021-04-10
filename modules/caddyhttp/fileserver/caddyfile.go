@@ -40,6 +40,7 @@ func init() {
 //        index         <files...>
 //        browse        [<template_file>]
 //        precompressed <formats...>
+//        status        <status>
 //    }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -65,21 +66,25 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if len(fsrv.Hide) == 0 {
 					return nil, h.ArgErr()
 				}
+
 			case "index":
 				fsrv.IndexNames = h.RemainingArgs()
 				if len(fsrv.IndexNames) == 0 {
 					return nil, h.ArgErr()
 				}
+
 			case "root":
 				if !h.Args(&fsrv.Root) {
 					return nil, h.ArgErr()
 				}
+
 			case "browse":
 				if fsrv.Browse != nil {
 					return nil, h.Err("browsing is already configured")
 				}
 				fsrv.Browse = new(Browse)
 				h.Args(&fsrv.Browse.TemplateFile)
+
 			case "precompressed":
 				var order []string
 				for h.NextArg() {
@@ -100,6 +105,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					order = append(order, h.Val())
 				}
 				fsrv.PrecompressedOrder = order
+
+			case "status":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				fsrv.StatusCode = caddyhttp.WeakString(h.Val())
+
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
