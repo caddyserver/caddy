@@ -56,6 +56,16 @@ type TLS struct {
 	// Configures the in-memory certificate cache.
 	Cache *CertCacheOptions `json:"cache,omitempty"`
 
+	// Disables OCSP stapling for manually-managed certificates only.
+	// To configure OCSP stapling for automated certificates, use an
+	// automation policy instead.
+	//
+	// Disabling OCSP stapling puts clients at greater risk, reduces their
+	// privacy, and usually lowers client performance. It is NOT recommended
+	// to disable this unless you are able to justify the costs.
+	// EXPERIMENTAL. Subject to change.
+	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      []string
 	certCache          *certmagic.Cache
@@ -173,6 +183,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
+		OCSP: certmagic.OCSPConfig{
+			DisableStapling: t.DisableOCSPStapling,
+		},
 	})
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
