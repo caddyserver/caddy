@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -30,7 +32,11 @@ func init() {
 
 // NetWriter implements a log writer that outputs to a network socket.
 type NetWriter struct {
+	// The address of the network socket to which to connect.
 	Address string `json:"address,omitempty"`
+
+	// The timeout to wait while connecting to the socket.
+	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
 	addr caddy.NetworkAddress
 }
@@ -60,6 +66,10 @@ func (nw *NetWriter) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("multiple ports not supported")
 	}
 
+	if nw.DialTimeout < 0 {
+		return fmt.Errorf("timeout cannot be less than 0")
+	}
+
 	return nil
 }
 
@@ -74,7 +84,10 @@ func (nw NetWriter) WriterKey() string {
 
 // OpenWriter opens a new network connection.
 func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
-	reconn := &redialerConn{nw: nw}
+	reconn := &redialerConn{
+		nw:      nw,
+		timeout: time.Duration(nw.DialTimeout),
+	}
 	conn, err := reconn.dial()
 	if err != nil {
 		return nil, err
@@ -87,7 +100,9 @@ func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     net <address>
+//     net <address> {
+//         dial_timeout <duration>
+//     }
 //
 func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
@@ -98,6 +113,22 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if d.NextArg() {
 			return d.ArgErr()
 		}
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			switch d.Val() {
+			case "dial_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid duration: %s", d.Val())
+				}
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				nw.DialTimeout = caddy.Duration(timeout)
+			}
+		}
 	}
 	return nil
 }
@@ -107,8 +138,9 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // is retried.
 type redialerConn struct {
 	net.Conn
-	connMu sync.RWMutex
-	nw     NetWriter
+	connMu  sync.RWMutex
+	nw      NetWriter
+	timeout time.Duration
 }
 
 // Write wraps the underlying Conn.Write method, but if that fails,
@@ -134,6 +166,8 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 	// we're the lucky first goroutine to re-dial the connection
 	conn2, err2 := reconn.dial()
 	if err2 != nil {
+		// logger socket seems to be offline; instead of discarding the log, dump it to stderr
+		os.Stderr.Write(b)
 		return
 	}
 	if n, err = conn2.Write(b); err == nil {
@@ -144,7 +178,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 }
 
 func (reconn *redialerConn) dial() (net.Conn, error) {
-	return net.Dial(reconn.nw.addr.Network, reconn.nw.addr.JoinHostPort(0))
+	return net.DialTimeout(reconn.nw.addr.Network, reconn.nw.addr.JoinHostPort(0), reconn.timeout)
 }
 
 // Interface guards
