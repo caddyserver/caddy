@@ -16,9 +16,11 @@
 
 package caddyfile
 
+import "bytes"
+
 func FuzzFormat(input []byte) int {
 	formatted := Format(input)
-	if formatted != Format(formatted) {
+	if bytes.Equal(formatted, Format(formatted)) {
 		return 1
 	}
 	return 0
