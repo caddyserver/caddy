@@ -54,7 +54,7 @@ func (st ServerType) buildTLSApp(
 	// a hostless key, so that they don't get forgotten/omitted
 	// by auto-HTTPS (since they won't appear in route matchers)
 	var serverBlocksWithTLSHostlessKey int
-	hostsSharedWithHostlessKey := make(map[string]struct{})
+	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
 	for _, pair := range pairings {
 		for _, sb := range pair.serverBlocks {
 			for _, addr := range sb.keys {
@@ -70,8 +70,8 @@ func (st ServerType) buildTLSApp(
 						if otherAddr.Original == addr.Original {
 							continue
 						}
-						if otherAddr.Host != "" {
-							hostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
 						}
 					}
 					break
@@ -289,7 +289,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	for h := range hostsSharedWithHostlessKey {
+	for h := range httpsHostsSharedWithHostlessKey {
 		al = append(al, h)
 		if !certmagic.SubjectQualifiesForPublicCert(h) {
 			internalAP.Subjects = append(internalAP.Subjects, h)
