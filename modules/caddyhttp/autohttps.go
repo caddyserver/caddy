@@ -342,21 +342,22 @@ redirServersLoop:
 	for redirServerAddr, routes := range redirServers {
 		// for each redirect listener, see if there's already a
 		// server configured to listen on that exact address; if so,
-		// simply add the redirect route to the end of its route
-		// list; otherwise, we'll create a new server for all the
-		// listener addresses that are unused and serve the
-		// remaining redirects from it
-		for srvName, srv := range app.Servers {
+		// insert the redirect route to the end of its route list
+		// after any other routes with host matchers; otherwise,
+		// we'll create a new server for all the listener addresses
+		// that are unused and serve the remaining redirects from it
+		for _, srv := range app.Servers {
 			if srv.hasListenerAddress(redirServerAddr) {
-				// user has configured a server for the same address
-				// that the redirect runs from; simply append our
-				// redirect route to the existing routes, with a
-				// caveat that their config might override ours
-				app.logger.Warn("user server is listening on same interface as automatic HTTP->HTTPS redirects; user-configured routes might override these redirects",
-					zap.String("server_name", srvName),
-					zap.String("interface", redirServerAddr),
-				)
-				srv.Routes = append(srv.Routes, appendCatchAll(routes)...)
+				// find the index of the route after the last route with a host
+				// matcher, then insert the redirects there, but before any
+				// user-defined catch-all routes
+				// see https://github.com/caddyserver/caddy/issues/3212
+				insertIndex := srv.findLastRouteWithHostMatcher()
+				srv.Routes = append(srv.Routes[:insertIndex], append(routes, srv.Routes[insertIndex:]...)...)
+
+				// append our catch-all route in case the user didn't define their own
+				srv.Routes = appendCatchAll(srv.Routes)
+
 				continue redirServersLoop
 			}
 		}
