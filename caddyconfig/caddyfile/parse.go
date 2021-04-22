@@ -321,7 +321,7 @@ func (p *parser) doImport() error {
 	args := p.RemainingArgs()
 
 	// add args to the replacer
-	repl := caddy.NewReplacer()
+	repl := caddy.NewEmptyReplacer()
 	for index, arg := range args {
 		repl.Set("args."+strconv.Itoa(index), arg)
 	}
