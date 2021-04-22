@@ -480,14 +480,18 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 		return len(aps[i].Subjects) > len(aps[j].Subjects)
 	})
 
-	// remove any empty policies (except subjects, of course)
+	emptyAPCount := 0
+	// compute the number of empty policies (except subjects, of course)
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.Subjects = aps[i].Subjects
 		if reflect.DeepEqual(aps[i], emptyAP) {
-			aps = append(aps[:i], aps[i+1:]...)
-			i--
+			emptyAPCount++
 		}
+	}
+	// If all policies are empty, we can return nil, as there is no need to set any policy
+	if emptyAPCount == len(aps) {
+		return nil
 	}
 
 	// remove or combine duplicate policies
