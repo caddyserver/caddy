@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"io"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -333,24 +332,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
-	// if this handler exists in an error context (i.e. is
-	// part of a handler chain that is supposed to handle
-	// a previous error), we have to serve the content
-	// manually in order to write the correct status code
-	if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
-		statusCode := http.StatusInternalServerError
-		if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
-			if handlerErr.StatusCode > 0 {
-				statusCode = handlerErr.StatusCode
-			}
-		}
-		w.WriteHeader(statusCode)
-		if r.Method != http.MethodHead {
-			_, _ = io.Copy(w, file)
-		}
-		return nil
-	}
-
 	// if a status code override is configured, write the status code
 	// before serving the file
 	if codeStr := fsrv.StatusCode.String(); codeStr != "" {
@@ -359,6 +340,21 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.WriteHeader(intVal)
+	}
+
+	// if this handler exists in an error context (i.e. is
+	// part of a handler chain that is supposed to handle
+	// a previous error), we should set status code to the
+	// one from the error instead of letting http.ServeContent
+	// set the default (usually 200)
+	if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
+		statusCode := http.StatusInternalServerError
+		if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
+			if handlerErr.StatusCode > 0 {
+				statusCode = handlerErr.StatusCode
+			}
+		}
+		w.WriteHeader(statusCode)
 	}
 
 	// let the standard library do what it does best; note, however,
