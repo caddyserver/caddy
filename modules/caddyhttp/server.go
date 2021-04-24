@@ -233,34 +233,51 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// add HTTP error information to request context
 	r = s.Errors.WithError(r, err)
 
-	if s.Errors != nil && len(s.Errors.Routes) > 0 {
-		// execute user-defined error handling route
-		err2 := s.errorHandlerChain.ServeHTTP(w, r)
-		if err2 == nil {
-			// user's error route handled the error response
-			// successfully, so now just log the error
-			if errStatus >= 500 {
-				logger.Error(errMsg, errFields...)
-			}
-		} else {
-			// well... this is awkward
-			errFields = append([]zapcore.Field{
-				zap.String("error", err2.Error()),
-				zap.Namespace("first_error"),
-				zap.String("msg", errMsg),
-			}, errFields...)
-			logger.Error("error handling handler error", errFields...)
-			if handlerErr, ok := err.(HandlerError); ok {
-				w.WriteHeader(handlerErr.StatusCode)
-			} else {
-				w.WriteHeader(http.StatusInternalServerError)
-			}
-		}
-	} else {
+	// if there's no error routes, then just write out the error status
+	if s.Errors == nil || len(s.Errors.Routes) == 0 {
 		if errStatus >= 500 {
 			logger.Error(errMsg, errFields...)
 		}
 		w.WriteHeader(errStatus)
+		return
+	}
+
+	// execute user-defined error handling route
+	err2 := s.errorHandlerChain.ServeHTTP(w, r)
+
+	// if the error handlers emit an error, it's usually
+	// a problem, but in some cases it's intended
+	if err2 != nil {
+		// if the error was WriteOriginalErrorCode, then it was meant as a signal
+		// from the error routes to just write the original error
+		// see https://caddy.community/t/problem-with-basicauth-handle-errors/12243/9
+		if handlerErr, ok := err2.(HandlerError); ok && handlerErr.StatusCode == WriteOriginalErrorCode {
+			if errStatus >= 500 {
+				logger.Error(errMsg, errFields...)
+			}
+			w.WriteHeader(errStatus)
+			return
+		}
+
+		// well... this is awkward, the error handler
+		// returned an unexpected error
+		logger.Error("error handling handler error", append([]zapcore.Field{
+			zap.String("error", err2.Error()),
+			zap.Namespace("first_error"),
+			zap.String("msg", errMsg),
+		}, errFields...)...)
+		if handlerErr, ok := err.(HandlerError); ok {
+			w.WriteHeader(handlerErr.StatusCode)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// user's error route handled the error response
+	// successfully, so now just log the error if necessary
+	if errStatus >= 500 {
+		logger.Error(errMsg, errFields...)
 	}
 }
 
@@ -615,6 +632,11 @@ const (
 
 	// commonLogEmptyValue is the common empty log value.
 	commonLogEmptyValue = "-"
+
+	// WriteOriginalErrorCode is the special error code to use to signal
+	// the server error handling logic to write the original error code
+	// it received as a fallback if the error routes don't handle the error.
+	WriteOriginalErrorCode = -1
 )
 
 // Context keys for HTTP request context values.
