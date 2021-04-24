@@ -617,7 +617,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// add the site block's route(s) to the server
-			srv.Routes = appendSubrouteToRouteList(srv.Routes, siteSubroute, matcherSetsEnc, p, false, warnings)
+			srv.Routes = appendSubrouteToRouteList(srv.Routes, siteSubroute, matcherSetsEnc, p, warnings)
 
 			// if error routes are defined, add those too
 			if errorSubrouteVals, ok := sblock.pile["error_route"]; ok {
@@ -626,7 +626,7 @@ func (st *ServerType) serversFromPairings(
 				}
 				for _, val := range errorSubrouteVals {
 					sr := val.Value.(*caddyhttp.Subroute)
-					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, true, warnings)
+					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
 				}
 			}
 
@@ -904,7 +904,6 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 	subroute *caddyhttp.Subroute,
 	matcherSetsEnc []caddy.ModuleMap,
 	p sbAddrAssociation,
-	isError bool,
 	warnings *[]caddyconfig.Warning) caddyhttp.RouteList {
 
 	// nothing to do if... there's nothing to do
@@ -931,20 +930,6 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 				caddyconfig.JSONModuleObject(subroute, "handler", "subroute", warnings),
 			}
 		}
-
-		// for error subroutes, we need to append a fallback static error
-		// because the default fallback won't be reached due to the route
-		// being marked as terminal. Using -1 as a special value to tell
-		// the handling in server.go to write the original error status instead.
-		if isError {
-			route.HandlersRaw = append(
-				route.HandlersRaw,
-				caddyconfig.JSONModuleObject(caddyhttp.StaticError{
-					StatusCode: caddyhttp.WeakString(strconv.Itoa(caddyhttp.WriteOriginalErrorCode)),
-				}, "handler", "error", warnings),
-			)
-		}
-
 		if len(route.MatcherSetsRaw) > 0 || len(route.HandlersRaw) > 0 {
 			routeList = append(routeList, route)
 		}
