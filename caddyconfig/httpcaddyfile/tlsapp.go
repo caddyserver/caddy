@@ -278,6 +278,14 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.OnDemand = onDemand
 	}
 
+	// set the storage clean interval if configured
+	if storageCleanInterval, ok := options["storage_clean_interval"].(caddy.Duration); ok {
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.StorageCleanInterval = storageCleanInterval
+	}
+
 	// if any hostnames appear on the same server block as a key with
 	// no host, they will not be used with route matchers because the
 	// hostless key matches all hosts, therefore, it wouldn't be
