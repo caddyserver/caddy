@@ -481,7 +481,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	})
 
 	emptyAPCount := 0
-	// compute the number of empty policies (except subjects, of course)
+	// compute the number of empty policies (disregarding subjects) - see #4128
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.Subjects = aps[i].Subjects
