@@ -115,7 +115,7 @@ func (h *Handler) ParseCaddyfileReverseProxy(helper httpcaddyfile.Helper) error 
 
 	// collect the response matchers defined as subdirectives prefixed with "@"
 	// for use with "handle_response" blocks
-	responseMatchers := map[string]caddyhttp.ResponseMatcher{}
+	responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
 
 	// TODO: the logic in this function is kind of sensitive, we need
 	// to write tests before making any more changes to it
@@ -1008,7 +1008,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 //     @name [header <field> [<value>]] | [status <code...>]
 //
-func (h *Handler) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map[string]caddyhttp.ResponseMatcher) error {
+func (Handler) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map[string]caddyhttp.ResponseMatcher) error {
 	for d.Next() {
 		definitionName := d.Val()
 
