@@ -94,9 +94,10 @@ func TestRemoteIPMatcher(t *testing.T) {
 	defer cancel()
 
 	for i, tc := range []struct {
-		ranges []string
-		input  string
-		expect bool
+		ranges    []string
+		notRanges []string
+		input     string
+		expect    bool
 	}{
 		{
 			ranges: []string{"127.0.0.1"},
@@ -118,8 +119,36 @@ func TestRemoteIPMatcher(t *testing.T) {
 			input:  "192.168.1.105:12345",
 			expect: true,
 		},
+		{
+			notRanges: []string{"127.0.0.1"},
+			input:     "127.0.0.1:12345",
+			expect:    false,
+		},
+		{
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.1"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.2:12345",
+			expect:    false,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.3:12345",
+			expect:    false,
+		},
 	} {
-		matcher := MatchRemoteIP{Ranges: tc.ranges}
+		matcher := MatchRemoteIP{Ranges: tc.ranges, NotRanges: tc.notRanges}
 		err := matcher.Provision(ctx)
 		if err != nil {
 			t.Fatalf("Test %d: Provision failed: %v", i, err)
@@ -130,8 +159,8 @@ func TestRemoteIPMatcher(t *testing.T) {
 
 		actual := matcher.Match(chi)
 		if actual != tc.expect {
-			t.Errorf("Test %d: Expected %t but got %t (input=%s match=%v)",
-				i, tc.expect, actual, tc.input, tc.ranges)
+			t.Errorf("Test %d: Expected %t but got %t (input=%s ranges=%v notRanges=%v)",
+				i, tc.expect, actual, tc.input, tc.ranges, tc.notRanges)
 		}
 	}
 }

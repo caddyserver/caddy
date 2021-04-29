@@ -62,8 +62,12 @@ type MatchRemoteIP struct {
 	// The IPs or CIDR ranges to match.
 	Ranges []string `json:"ranges,omitempty"`
 
-	cidrs  []*net.IPNet
-	logger *zap.Logger
+	// The IPs or CIDR ranges to *NOT* match.
+	NotRanges []string `json:"not_ranges,omitempty"`
+
+	cidrs    []*net.IPNet
+	notCidrs []*net.IPNet
+	logger   *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -78,23 +82,18 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
 	for _, str := range m.Ranges {
-		if strings.Contains(str, "/") {
-			_, ipNet, err := net.ParseCIDR(str)
-			if err != nil {
-				return fmt.Errorf("parsing CIDR expression: %v", err)
-			}
-			m.cidrs = append(m.cidrs, ipNet)
-		} else {
-			ip := net.ParseIP(str)
-			if ip == nil {
-				return fmt.Errorf("invalid IP address: %s", str)
-			}
-			mask := len(ip) * 8
-			m.cidrs = append(m.cidrs, &net.IPNet{
-				IP:   ip,
-				Mask: net.CIDRMask(mask, mask),
-			})
+		cidrs, err := m.parseIPRange(str)
+		if err != nil {
+			return err
 		}
+		m.cidrs = cidrs
+	}
+	for _, str := range m.NotRanges {
+		cidrs, err := m.parseIPRange(str)
+		if err != nil {
+			return err
+		}
+		m.notCidrs = cidrs
 	}
 	return nil
 }
@@ -111,7 +110,34 @@ func (m MatchRemoteIP) Match(hello *tls.ClientHelloInfo) bool {
 		m.logger.Error("invalid client IP addresss", zap.String("ip", ipStr))
 		return false
 	}
-	for _, ipRange := range m.cidrs {
+	return (len(m.cidrs) == 0 || m.matches(ip, m.cidrs)) &&
+		(len(m.notCidrs) == 0 || !m.matches(ip, m.notCidrs))
+}
+
+func (MatchRemoteIP) parseIPRange(str string) ([]*net.IPNet, error) {
+	var cidrs []*net.IPNet
+	if strings.Contains(str, "/") {
+		_, ipNet, err := net.ParseCIDR(str)
+		if err != nil {
+			return nil, fmt.Errorf("parsing CIDR expression: %v", err)
+		}
+		cidrs = append(cidrs, ipNet)
+	} else {
+		ip := net.ParseIP(str)
+		if ip == nil {
+			return nil, fmt.Errorf("invalid IP address: %s", str)
+		}
+		mask := len(ip) * 8
+		cidrs = append(cidrs, &net.IPNet{
+			IP:   ip,
+			Mask: net.CIDRMask(mask, mask),
+		})
+	}
+	return cidrs, nil
+}
+
+func (MatchRemoteIP) matches(ip net.IP, ranges []*net.IPNet) bool {
+	for _, ipRange := range ranges {
 		if ipRange.Contains(ip) {
 			return true
 		}
