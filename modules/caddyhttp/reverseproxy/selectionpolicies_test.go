@@ -198,6 +198,35 @@ func TestIPHashPolicy(t *testing.T) {
 	if h != nil {
 		t.Error("Expected ip hash policy host to be nil.")
 	}
+
+	// Reproduce #4135
+	pool = UpstreamPool{
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+		{Host: new(upstreamHost)},
+	}
+	pool[0].SetHealthy(false)
+	pool[1].SetHealthy(false)
+	pool[2].SetHealthy(false)
+	pool[3].SetHealthy(false)
+	pool[4].SetHealthy(false)
+	pool[5].SetHealthy(false)
+	pool[6].SetHealthy(false)
+	pool[7].SetHealthy(false)
+	pool[8].SetHealthy(true)
+
+	// We should get a result back when there is one healthy host left.
+	h = ipHash.Select(pool, req, nil)
+	if h == nil {
+		// If it is nil, it means we missed a host even though one is available
+		t.Error("Expected ip hash policy host to not be nil, but it is nil.")
+	}
 }
 
 func TestFirstPolicy(t *testing.T) {
