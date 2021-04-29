@@ -245,7 +245,7 @@ func (h *Handler) ParseCaddyfileReverseProxy(helper httpcaddyfile.Helper) error 
 			// if the subdirective has an "@" prefix then we
 			// parse it as a response matcher for use with "handle_response"
 			if strings.HasPrefix(d.Val(), matcherPrefix) {
-				err := h.parseNamedResponseMatcher(d.NewFromNextSegment(), responseMatchers)
+				err := caddyhttp.ParseNamedResponseMatcher(d.NewFromNextSegment(), responseMatchers)
 				if err != nil {
 					return err
 				}
@@ -993,73 +993,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
 		}
-	}
-	return nil
-}
-
-// Parse the tokens of a named response matcher.
-//
-//     @name {
-//         header <field> [<value>]
-//         status <code...>
-//     }
-//
-// Or, single line syntax:
-//
-//     @name [header <field> [<value>]] | [status <code...>]
-//
-func (Handler) parseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map[string]caddyhttp.ResponseMatcher) error {
-	for d.Next() {
-		definitionName := d.Val()
-
-		if _, ok := matchers[definitionName]; ok {
-			return d.Errf("matcher is defined more than once: %s", definitionName)
-		}
-
-		matcher := caddyhttp.ResponseMatcher{}
-		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
-			switch d.Val() {
-			case "header":
-				if matcher.Headers == nil {
-					matcher.Headers = http.Header{}
-				}
-
-				// reuse the header request matcher's unmarshaler
-				headerMatcher := caddyhttp.MatchHeader(matcher.Headers)
-				err := headerMatcher.UnmarshalCaddyfile(d.NewFromNextSegment())
-				if err != nil {
-					return err
-				}
-
-				matcher.Headers = http.Header(headerMatcher)
-
-			case "status":
-				if matcher.StatusCode == nil {
-					matcher.StatusCode = []int{}
-				}
-
-				args := d.RemainingArgs()
-				if len(args) == 0 {
-					return d.ArgErr()
-				}
-
-				for _, arg := range args {
-					if len(arg) == 3 && strings.HasSuffix(arg, "xx") {
-						arg = arg[:1]
-					}
-					statusNum, err := strconv.Atoi(arg)
-					if err != nil {
-						return d.Errf("bad status value '%s': %v", arg, err)
-					}
-					matcher.StatusCode = append(matcher.StatusCode, statusNum)
-				}
-
-			default:
-				return d.Errf("unrecognized response matcher %s", d.Val())
-			}
-		}
-
-		matchers[definitionName] = matcher
 	}
 	return nil
 }
