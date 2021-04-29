@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"io"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -333,32 +332,33 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
-	// if this handler exists in an error context (i.e. is
-	// part of a handler chain that is supposed to handle
-	// a previous error), we have to serve the content
-	// manually in order to write the correct status code
+	var statusCodeOverride int
+
+	// if this handler exists in an error context (i.e. is part of a
+	// handler chain that is supposed to handle a previous error),
+	// we should set status code to the one from the error instead
+	// of letting http.ServeContent set the default (usually 200)
 	if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
-		statusCode := http.StatusInternalServerError
+		statusCodeOverride = http.StatusInternalServerError
 		if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
 			if handlerErr.StatusCode > 0 {
-				statusCode = handlerErr.StatusCode
+				statusCodeOverride = handlerErr.StatusCode
 			}
 		}
-		w.WriteHeader(statusCode)
-		if r.Method != http.MethodHead {
-			_, _ = io.Copy(w, file)
-		}
-		return nil
 	}
 
-	// if a status code override is configured, write the status code
-	// before serving the file
+	// if a status code override is configured, run the replacer on it
 	if codeStr := fsrv.StatusCode.String(); codeStr != "" {
-		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
+		statusCodeOverride, err = strconv.Atoi(repl.ReplaceAll(codeStr, ""))
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
-		w.WriteHeader(intVal)
+	}
+
+	// if we do have an override from the previous two parts, then
+	// we wrap the response writer to intercept the WriteHeader call
+	if statusCodeOverride > 0 {
+		w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
 	}
 
 	// let the standard library do what it does best; note, however,
@@ -555,6 +555,20 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) error {
 	}
 	http.Redirect(w, r, to, http.StatusPermanentRedirect)
 	return nil
+}
+
+// statusOverrideResponseWriter intercepts WriteHeader calls
+// to instead write the HTTP status code we want instead
+// of the one http.ServeContent will use by default (usually 200)
+type statusOverrideResponseWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+// WriteHeader intercepts calls by the stdlib to WriteHeader
+// to instead write the HTTP status code we want.
+func (wr statusOverrideResponseWriter) WriteHeader(int) {
+	wr.ResponseWriter.WriteHeader(wr.code)
 }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
