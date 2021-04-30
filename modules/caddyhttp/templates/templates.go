@@ -37,7 +37,7 @@ func init() {
 //
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
 //
-// In addition to the standard functions and Sprig functions, Caddy adds
+// In addition to the standard functions and the Sprig library, Caddy adds
 // extra functions and data that are available to a template:
 //
 // ##### `.Args`
@@ -306,7 +306,7 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 	ctx := &TemplateContext{
 		Root:       fs,
 		Req:        r,
-		RespHeader: TplWrappedHeader{rr.Header()},
+		RespHeader: WrappedHeader{rr.Header()},
 		config:     t,
 	}
 

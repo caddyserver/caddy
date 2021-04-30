@@ -17,7 +17,6 @@ package fileserver
 import (
 	"bytes"
 	"fmt"
-	"io"
 	weakrand "math/rand"
 	"mime"
 	"net/http"

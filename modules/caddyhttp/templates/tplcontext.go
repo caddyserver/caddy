@@ -43,7 +43,7 @@ type TemplateContext struct {
 	Root       http.FileSystem
 	Req        *http.Request
 	Args       []interface{} // defined by arguments to funcInclude
-	RespHeader TplWrappedHeader
+	RespHeader WrappedHeader
 
 	config *Templates
 }
@@ -344,21 +344,21 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 }
 
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL.
-// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed.
+// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed (Go 1.17).
 // Example usage might be: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
-// tplWrappedHeader wraps niladic functions so that they
+// WrappedHeader wraps niladic functions so that they
 // can be used in templates. (Template functions must
 // return a value.)
-type TplWrappedHeader struct{ http.Header }
+type WrappedHeader struct{ http.Header }
 
 // Add adds a header field value, appending val to
 // existing values for that field. It returns an
 // empty string.
-func (h TplWrappedHeader) Add(field, val string) string {
+func (h WrappedHeader) Add(field, val string) string {
 	h.Header.Add(field, val)
 	return ""
 }
@@ -366,13 +366,13 @@ func (h TplWrappedHeader) Add(field, val string) string {
 // Set sets a header field value, overwriting any
 // other values for that field. It returns an
 // empty string.
-func (h TplWrappedHeader) Set(field, val string) string {
+func (h WrappedHeader) Set(field, val string) string {
 	h.Header.Set(field, val)
 	return ""
 }
 
 // Del deletes a header field. It returns an empty string.
-func (h TplWrappedHeader) Del(field string) string {
+func (h WrappedHeader) Del(field string) string {
 	h.Header.Del(field)
 	return ""
 }

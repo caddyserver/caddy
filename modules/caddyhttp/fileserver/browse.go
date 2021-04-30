@@ -30,11 +30,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type templateContext struct {
-	templates.TemplateContext
-	browseListing
-}
-
 // Browse configures directory browsing.
 type Browse struct {
 	// Use this template file instead of the default browse template.
@@ -98,9 +93,9 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			TemplateContext: templates.TemplateContext{
 				Root:       fs,
 				Req:        r,
-				RespHeader: templates.TplWrappedHeader{Header: w.Header()},
+				RespHeader: templates.WrappedHeader{Header: w.Header()},
 			},
-			browseListing: listing,
+			browseTemplateContext: listing,
 		}
 
 		err = fsrv.browseParseTemplate(&tplCtx)
@@ -119,10 +114,10 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string, repl *caddy.Replacer) (browseListing, error) {
+func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	files, err := dir.Readdir(-1)
 	if err != nil {
-		return browseListing{}, err
+		return browseTemplateContext{}, err
 	}
 
 	// user can presumably browse "up" to parent folder if path is longer than "/"
@@ -133,7 +128,7 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string
 
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
-func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseListing) {
+func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
@@ -193,7 +188,7 @@ func (fsrv *FileServer) browseParseTemplate(tplCtx *templateContext) error {
 	return nil
 }
 
-func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteJSON(listing browseTemplateContext) (*bytes.Buffer, error) {
 	var err error
 
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -230,4 +225,12 @@ func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
 		return false
 	}
 	return targetInfo.IsDir()
+}
+
+// templateContext powers the context used when evaluating the browse template.
+// It combines browse-specific features with the standard templates handler
+// features.
+type templateContext struct {
+	templates.TemplateContext
+	browseTemplateContext
 }
