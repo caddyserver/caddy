@@ -66,16 +66,12 @@ func cmdStart(fl Flags) (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 
-	// load all additional envs as soon as possible
-	if startCmdEnvfileFlag != "" {
-		if err := loadEnvFromFile(startCmdEnvfileFlag); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
-	}
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
 	if startCmdConfigFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
+	}
+	if startCmdEnvfileFlag != "" {
+		cmd.Args = append(cmd.Args, "--envfile", startCmdEnvfileFlag)
 	}
 	if startCmdConfigAdapterFlag != "" {
 		cmd.Args = append(cmd.Args, "--adapter", startCmdConfigAdapterFlag)
