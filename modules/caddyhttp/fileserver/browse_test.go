@@ -56,13 +56,13 @@ func BenchmarkBrowseWriteHTML(b *testing.B) {
 		Order:    "",
 		Limit:    42,
 	}
-	tplCtx := templateContext{
+	tplCtx := &templateContext{
 		browseTemplateContext: listing,
 	}
-	fsrv.browseParseTemplate(&tplCtx)
+	fsrv.makeBrowseTemplate(tplCtx)
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		fsrv.browseWriteHTML(&tplCtx)
+		fsrv.browseWriteHTML(tplCtx)
 	}
 }

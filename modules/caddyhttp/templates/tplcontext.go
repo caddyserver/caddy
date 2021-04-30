@@ -48,6 +48,36 @@ type TemplateContext struct {
 	config *Templates
 }
 
+// NewTemplate returns a new template intended to be evaluated with this
+// context, as it is initialized with configuration from this context.
+func (c TemplateContext) NewTemplate(tplName string) *template.Template {
+	tpl := template.New(tplName)
+
+	// customize delimiters, if applicable
+	if c.config != nil && len(c.config.Delimiters) == 2 {
+		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
+	}
+
+	// add sprig library
+	tpl.Funcs(sprigFuncMap)
+
+	// add our own library
+	tpl.Funcs(template.FuncMap{
+		"include":          c.funcInclude,
+		"httpInclude":      c.funcHTTPInclude,
+		"stripHTML":        c.funcStripHTML,
+		"markdown":         c.funcMarkdown,
+		"splitFrontMatter": c.funcSplitFrontMatter,
+		"listFiles":        c.funcListFiles,
+		"env":              c.funcEnv,
+		"placeholder":      c.funcPlaceholder,
+		"fileExists":       c.funcFileExists,
+		"httpError":        c.funcHTTPError,
+	})
+
+	return tpl
+}
+
 // OriginalReq returns the original, unmodified, un-rewritten request as
 // it originally came in over the wire.
 func (c TemplateContext) OriginalReq() http.Request {
@@ -137,31 +167,8 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	return buf.String(), nil
 }
 
-func (c TemplateContext) AddFuns(tpl *template.Template) *template.Template {
-	tpl = tpl.Funcs(sprigFuncMap)
-	tpl = tpl.Funcs(template.FuncMap{
-		"include":          c.funcInclude,
-		"httpInclude":      c.funcHTTPInclude,
-		"stripHTML":        c.funcStripHTML,
-		"markdown":         c.funcMarkdown,
-		"splitFrontMatter": c.funcSplitFrontMatter,
-		"listFiles":        c.funcListFiles,
-		"env":              c.funcEnv,
-		"placeholder":      c.funcPlaceholder,
-		"fileExists":       c.funcFileExists,
-		"httpError":        c.funcHTTPError,
-	})
-
-	return tpl
-}
-
 func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := template.New(tplName)
-	if c.config != nil && len(c.config.Delimiters) == 2 {
-		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
-	}
-
-	tpl = c.AddFuns(tpl)
+	tpl := c.NewTemplate(tplName)
 
 	parsedTpl, err := tpl.Parse(buf.String())
 	if err != nil {

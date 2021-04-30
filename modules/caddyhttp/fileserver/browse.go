@@ -89,7 +89,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
 		}
 
-		var tplCtx = templateContext{
+		var tplCtx = &templateContext{
 			TemplateContext: templates.TemplateContext{
 				Root:       fs,
 				Req:        r,
@@ -98,12 +98,12 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			browseTemplateContext: listing,
 		}
 
-		err = fsrv.browseParseTemplate(&tplCtx)
+		err = fsrv.makeBrowseTemplate(tplCtx)
 		if err != nil {
 			return fmt.Errorf("parsing browse template: %v", err)
 		}
 
-		if buf, err = fsrv.browseWriteHTML(&tplCtx); err != nil {
+		if buf, err = fsrv.browseWriteHTML(tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -160,23 +160,19 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
 }
 
-// browseParseTemplate adds template function from template context and parse the template
-func (fsrv *FileServer) browseParseTemplate(tplCtx *templateContext) error {
+// makeBrowseTemplate creates the template to be used for directory listings.
+func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) error {
 	var tpl *template.Template
 	var err error
 
 	if fsrv.Browse.TemplateFile != "" {
-		tpl = template.New(path.Base(fsrv.Browse.TemplateFile))
-		tpl = tplCtx.AddFuns(tpl)
-
+		tpl = tplCtx.NewTemplate(path.Base(fsrv.Browse.TemplateFile))
 		tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
 		if err != nil {
 			return fmt.Errorf("parsing browse template file: %v", err)
 		}
 	} else {
-		tpl = template.New("default_listing")
-		tpl = tplCtx.AddFuns(tpl)
-
+		tpl = tplCtx.NewTemplate("default_listing")
 		tpl, err = tpl.Parse(defaultBrowseTemplate)
 		if err != nil {
 			return fmt.Errorf("parsing default browse template: %v", err)
@@ -189,22 +185,16 @@ func (fsrv *FileServer) browseParseTemplate(tplCtx *templateContext) error {
 }
 
 func (fsrv *FileServer) browseWriteJSON(listing browseTemplateContext) (*bytes.Buffer, error) {
-	var err error
-
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
-
-	err = json.NewEncoder(buf).Encode(listing.Items)
+	err := json.NewEncoder(buf).Encode(listing.Items)
 	return buf, err
 }
 
 func (fsrv *FileServer) browseWriteHTML(tplCtx *templateContext) (*bytes.Buffer, error) {
-	var err error
-
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
-
-	err = fsrv.Browse.template.Execute(buf, tplCtx)
+	err := fsrv.Browse.template.Execute(buf, tplCtx)
 	return buf, err
 }
 
