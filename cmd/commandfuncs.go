@@ -45,6 +45,7 @@ func cmdStart(fl Flags) (int, error) {
 	startCmdConfigAdapterFlag := fl.String("adapter")
 	startCmdPidfileFlag := fl.String("pidfile")
 	startCmdWatchFlag := fl.Bool("watch")
+	startCmdEnvfileFlag := fl.Bool("envfile")
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
@@ -64,6 +65,14 @@ func cmdStart(fl Flags) (int, error) {
 	// ensure it's the process we're expecting - we can be
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
+
+	// load all additional envs as soon as possible
+	if startCmdEnvfileFlag != "" {
+		if err := loadEnvFromFile(startCmdEnvfileFlag); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
 	if startCmdConfigFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
