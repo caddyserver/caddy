@@ -36,6 +36,18 @@ func NewReplacer() *Replacer {
 	return rep
 }
 
+// NewEmptyReplacer returns a new Replacer,
+// without the global default replacements.
+func NewEmptyReplacer() *Replacer {
+	rep := &Replacer{
+		static: make(map[string]interface{}),
+	}
+	rep.providers = []ReplacerFunc{
+		rep.fromStatic,
+	}
+	return rep
+}
+
 // Replacer can replace values in strings.
 // A default/empty Replacer is not valid;
 // use NewReplacer to make one.

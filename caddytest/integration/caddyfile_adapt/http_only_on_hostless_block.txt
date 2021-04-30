@@ -1,0 +1,28 @@
+# Issue #4113
+:80, http://example.com {
+	respond "foo"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "foo",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

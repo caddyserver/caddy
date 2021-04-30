@@ -56,6 +56,19 @@ type AutomationConfig struct {
 	// performed. Default: 10m
 	RenewCheckInterval caddy.Duration `json:"renew_interval,omitempty"`
 
+	// How often to scan storage units for old or expired
+	// assets and remove them. These scans exert lots of
+	// reads (and list operations) on the storage module, so
+	// choose a longer interval for large deployments.
+	// Default: 24h
+	//
+	// Storage will always be cleaned when the process first
+	// starts. Then, a new cleaning will be started this
+	// duration after the previous cleaning started if the
+	// previous cleaning finished in less than half the time
+	// of this interval (otherwise next start will be skipped).
+	StorageCleanInterval caddy.Duration `json:"storage_clean_interval,omitempty"`
+
 	defaultPublicAutomationPolicy   *AutomationPolicy
 	defaultInternalAutomationPolicy *AutomationPolicy // only initialized if necessary
 }

@@ -56,6 +56,16 @@ type TLS struct {
 	// Configures the in-memory certificate cache.
 	Cache *CertCacheOptions `json:"cache,omitempty"`
 
+	// Disables OCSP stapling for manually-managed certificates only.
+	// To configure OCSP stapling for automated certificates, use an
+	// automation policy instead.
+	//
+	// Disabling OCSP stapling puts clients at greater risk, reduces their
+	// privacy, and usually lowers client performance. It is NOT recommended
+	// to disable this unless you are able to justify the costs.
+	// EXPERIMENTAL. Subject to change.
+	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      []string
 	certCache          *certmagic.Cache
@@ -173,6 +183,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
+		OCSP: certmagic.OCSPConfig{
+			DisableStapling: t.DisableOCSPStapling,
+		},
 	})
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
@@ -414,7 +427,7 @@ func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
-	t.storageCleanTicker = time.NewTicker(storageCleanInterval)
+	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
 	t.storageCleanStop = make(chan struct{})
 	go func() {
 		defer func() {
@@ -438,9 +451,20 @@ func (t *TLS) cleanStorageUnits() {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
 
-	if !storageClean.IsZero() && time.Since(storageClean) < storageCleanInterval {
+	// If storage was cleaned recently, don't do it again for now. Although the ticker
+	// drops missed ticks for us, config reloads discard the old ticker and replace it
+	// with a new one, possibly invoking a cleaning to happen again too soon.
+	// (We divide the interval by 2 because the actual cleaning takes non-zero time,
+	// and we don't want to skip cleanings if we don't have to; whereas if a cleaning
+	// took the entire interval, we'd probably want to skip the next one so we aren't
+	// constantly cleaning. This allows cleanings to take up to half the interval's
+	// duration before we decide to skip the next one.)
+	if !storageClean.IsZero() && time.Since(storageClean) < t.storageCleanInterval()/2 {
 		return
 	}
+
+	// mark when storage cleaning was last initiated
+	storageClean = time.Now()
 
 	options := certmagic.CleanStorageOptions{
 		OCSPStaples:            true,
@@ -448,21 +472,40 @@ func (t *TLS) cleanStorageUnits() {
 		ExpiredCertGracePeriod: 24 * time.Hour * 14,
 	}
 
-	// start with the default storage
-	certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
+	// avoid cleaning same storage more than once per cleaning cycle
+	storagesCleaned := make(map[string]struct{})
+
+	// start with the default/global storage
+	storage := t.ctx.Storage()
+	storageStr := fmt.Sprintf("%v", storage)
+	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
+	certmagic.CleanStorage(t.ctx, storage, options)
+	storagesCleaned[storageStr] = struct{}{}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
 		for _, ap := range t.Automation.Policies {
-			if ap.storage != nil {
-				certmagic.CleanStorage(t.ctx, ap.storage, options)
+			if ap.storage == nil {
+				continue
 			}
+			storageStr := fmt.Sprintf("%v", ap.storage)
+			if _, ok := storagesCleaned[storageStr]; ok {
+				continue
+			}
+			t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
+			certmagic.CleanStorage(t.ctx, ap.storage, options)
+			storagesCleaned[storageStr] = struct{}{}
 		}
 	}
 
-	storageClean = time.Now()
+	t.logger.Info("finished cleaning storage units")
+}
 
-	t.logger.Info("cleaned up storage units")
+func (t *TLS) storageCleanInterval() time.Duration {
+	if t.Automation != nil && t.Automation.StorageCleanInterval > 0 {
+		return time.Duration(t.Automation.StorageCleanInterval)
+	}
+	return defaultStorageCleanInterval
 }
 
 // CertificateLoader is a type that can load certificates.
@@ -507,7 +550,7 @@ type CertCacheOptions struct {
 
 // Variables related to storage cleaning.
 var (
-	storageCleanInterval = 12 * time.Hour
+	defaultStorageCleanInterval = 24 * time.Hour
 
 	storageClean   time.Time
 	storageCleanMu sync.Mutex

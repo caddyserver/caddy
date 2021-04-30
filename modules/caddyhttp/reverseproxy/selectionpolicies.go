@@ -523,8 +523,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 	}
 	index := hash(s) % poolLen
 	for i := uint32(0); i < poolLen; i++ {
-		index += i
-		upstream := pool[index%poolLen]
+		upstream := pool[(index+i)%poolLen]
 		if upstream.Available() {
 			return upstream
 		}

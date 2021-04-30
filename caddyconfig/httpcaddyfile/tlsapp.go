@@ -54,7 +54,7 @@ func (st ServerType) buildTLSApp(
 	// a hostless key, so that they don't get forgotten/omitted
 	// by auto-HTTPS (since they won't appear in route matchers)
 	var serverBlocksWithTLSHostlessKey int
-	hostsSharedWithHostlessKey := make(map[string]struct{})
+	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
 	for _, pair := range pairings {
 		for _, sb := range pair.serverBlocks {
 			for _, addr := range sb.keys {
@@ -70,8 +70,8 @@ func (st ServerType) buildTLSApp(
 						if otherAddr.Original == addr.Original {
 							continue
 						}
-						if otherAddr.Host != "" {
-							hostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
 						}
 					}
 					break
@@ -289,7 +289,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	for h := range hostsSharedWithHostlessKey {
+	for h := range httpsHostsSharedWithHostlessKey {
 		al = append(al, h)
 		if !certmagic.SubjectQualifiesForPublicCert(h) {
 			internalAP.Subjects = append(internalAP.Subjects, h)
@@ -480,14 +480,18 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 		return len(aps[i].Subjects) > len(aps[j].Subjects)
 	})
 
-	// remove any empty policies (except subjects, of course)
+	emptyAPCount := 0
+	// compute the number of empty policies (disregarding subjects) - see #4128
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.Subjects = aps[i].Subjects
 		if reflect.DeepEqual(aps[i], emptyAP) {
-			aps = append(aps[:i], aps[i+1:]...)
-			i--
+			emptyAPCount++
 		}
+	}
+	// If all policies are empty, we can return nil, as there is no need to set any policy
+	if emptyAPCount == len(aps) {
+		return nil
 	}
 
 	// remove or combine duplicate policies
