@@ -15,8 +15,12 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestServerNameMatcher(t *testing.T) {
@@ -84,3 +88,91 @@ func TestServerNameMatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteIPMatcher(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	for i, tc := range []struct {
+		ranges    []string
+		notRanges []string
+		input     string
+		expect    bool
+	}{
+		{
+			ranges: []string{"127.0.0.1"},
+			input:  "127.0.0.1:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.1"},
+			input:  "127.0.0.2:12345",
+			expect: false,
+		},
+		{
+			ranges: []string{"127.0.0.1/16"},
+			input:  "127.0.1.23:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.1", "192.168.1.105"},
+			input:  "192.168.1.105:12345",
+			expect: true,
+		},
+		{
+			notRanges: []string{"127.0.0.1"},
+			input:     "127.0.0.1:12345",
+			expect:    false,
+		},
+		{
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.1"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.2:12345",
+			expect:    false,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.3:12345",
+			expect:    false,
+		},
+	} {
+		matcher := MatchRemoteIP{Ranges: tc.ranges, NotRanges: tc.notRanges}
+		err := matcher.Provision(ctx)
+		if err != nil {
+			t.Fatalf("Test %d: Provision failed: %v", i, err)
+		}
+
+		addr := testAddr(tc.input)
+		chi := &tls.ClientHelloInfo{Conn: testConn{addr: addr}}
+
+		actual := matcher.Match(chi)
+		if actual != tc.expect {
+			t.Errorf("Test %d: Expected %t but got %t (input=%s ranges=%v notRanges=%v)",
+				i, tc.expect, actual, tc.input, tc.ranges, tc.notRanges)
+		}
+	}
+}
+
+type testConn struct {
+	*net.TCPConn
+	addr testAddr
+}
+
+func (tc testConn) RemoteAddr() net.Addr { return tc.addr }
+
+type testAddr string
+
+func (testAddr) Network() string   { return "tcp" }
+func (ta testAddr) String() string { return string(ta) }
