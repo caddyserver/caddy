@@ -353,7 +353,11 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// the rest of the config is specified by the user
 	// using the reverse_proxy directive syntax
-	err = rpHandler.ParseCaddyfileReverseProxy(h.WithDispenser(dispenser))
+	err = rpHandler.UnmarshalCaddyfile(dispenser)
+	if err != nil {
+		return nil, err
+	}
+	err = rpHandler.FinalizeUnmarshalCaddyfile(h)
 	if err != nil {
 		return nil, err
 	}

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"go.uber.org/zap"
@@ -126,6 +127,12 @@ type Handler struct {
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
+
+	// Holds the named response matchers from the Caddyfile while adapting
+	responseMatchers map[string]caddyhttp.ResponseMatcher
+
+	// Holds the handle_response Caddyfile tokens while adapting
+	handleResponseSegments []*caddyfile.Dispenser
 
 	ctx    caddy.Context
 	logger *zap.Logger
