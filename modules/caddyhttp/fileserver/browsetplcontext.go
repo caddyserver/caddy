@@ -27,7 +27,7 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseListing {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
@@ -62,7 +62,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 		})
 	}
 
-	return browseListing{
+	return browseTemplateContext{
 		Name:     path.Base(urlPath),
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
@@ -72,7 +72,8 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 	}
 }
 
-type browseListing struct {
+// browseTemplateContext provides the template context for directory listings.
+type browseTemplateContext struct {
 	// The name of the directory (the last element of the path).
 	Name string `json:"name"`
 
@@ -106,7 +107,7 @@ type browseListing struct {
 
 // Breadcrumbs returns l.Path where every element maps
 // the link to the text to display.
-func (l browseListing) Breadcrumbs() []crumb {
+func (l browseTemplateContext) Breadcrumbs() []crumb {
 	if len(l.Path) == 0 {
 		return []crumb{}
 	}
@@ -130,7 +131,7 @@ func (l browseListing) Breadcrumbs() []crumb {
 	return result
 }
 
-func (l *browseListing) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {
+func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {
 	l.Sort = sortParam
 	l.Order = orderParam
 
@@ -207,10 +208,12 @@ func (fi fileInfo) HumanModTime(format string) string {
 	return fi.ModTime.Format(format)
 }
 
-type byName browseListing
-type byNameDirFirst browseListing
-type bySize browseListing
-type byTime browseListing
+type (
+	byName         browseTemplateContext
+	byNameDirFirst browseTemplateContext
+	bySize         browseTemplateContext
+	byTime         browseTemplateContext
+)
 
 func (l byName) Len() int      { return len(l.Items) }
 func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }

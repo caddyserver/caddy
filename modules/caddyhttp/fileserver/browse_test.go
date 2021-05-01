@@ -1,16 +1,27 @@
+// Copyright 2015 Matthew Holt and The Caddy Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package fileserver
 
 import (
-	"html/template"
 	"testing"
-
-	"github.com/caddyserver/caddy/v2"
+	"text/template"
 )
 
 func BenchmarkBrowseWriteJSON(b *testing.B) {
 	fsrv := new(FileServer)
-	fsrv.Provision(caddy.Context{})
-	listing := browseListing{
+	listing := browseTemplateContext{
 		Name:     "test",
 		Path:     "test",
 		CanGoUp:  false,
@@ -30,12 +41,11 @@ func BenchmarkBrowseWriteJSON(b *testing.B) {
 
 func BenchmarkBrowseWriteHTML(b *testing.B) {
 	fsrv := new(FileServer)
-	fsrv.Provision(caddy.Context{})
 	fsrv.Browse = &Browse{
 		TemplateFile: "",
 		template:     template.New("test"),
 	}
-	listing := browseListing{
+	listing := browseTemplateContext{
 		Name:     "test",
 		Path:     "test",
 		CanGoUp:  false,
@@ -46,9 +56,13 @@ func BenchmarkBrowseWriteHTML(b *testing.B) {
 		Order:    "",
 		Limit:    42,
 	}
+	tplCtx := &templateContext{
+		browseTemplateContext: listing,
+	}
+	fsrv.makeBrowseTemplate(tplCtx)
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		fsrv.browseWriteHTML(listing)
+		fsrv.browseWriteHTML(tplCtx)
 	}
 }

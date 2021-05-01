@@ -17,14 +17,16 @@ package fileserver
 import (
 	"bytes"
 	"encoding/json"
-	"html/template"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
 	"strings"
+	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"go.uber.org/zap"
 )
 
@@ -82,7 +84,26 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	} else {
-		if buf, err = fsrv.browseWriteHTML(listing); err != nil {
+		var fs http.FileSystem
+		if fsrv.Root != "" {
+			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
+		}
+
+		var tplCtx = &templateContext{
+			TemplateContext: templates.TemplateContext{
+				Root:       fs,
+				Req:        r,
+				RespHeader: templates.WrappedHeader{Header: w.Header()},
+			},
+			browseTemplateContext: listing,
+		}
+
+		err = fsrv.makeBrowseTemplate(tplCtx)
+		if err != nil {
+			return fmt.Errorf("parsing browse template: %v", err)
+		}
+
+		if buf, err = fsrv.browseWriteHTML(tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -93,10 +114,10 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string, repl *caddy.Replacer) (browseListing, error) {
+func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	files, err := dir.Readdir(-1)
 	if err != nil {
-		return browseListing{}, err
+		return browseTemplateContext{}, err
 	}
 
 	// user can presumably browse "up" to parent folder if path is longer than "/"
@@ -107,7 +128,7 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string
 
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
-func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseListing) {
+func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
@@ -139,17 +160,41 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
 }
 
-func (fsrv *FileServer) browseWriteJSON(listing browseListing) (*bytes.Buffer, error) {
+// makeBrowseTemplate creates the template to be used for directory listings.
+func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) error {
+	var tpl *template.Template
+	var err error
+
+	if fsrv.Browse.TemplateFile != "" {
+		tpl = tplCtx.NewTemplate(path.Base(fsrv.Browse.TemplateFile))
+		tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
+		if err != nil {
+			return fmt.Errorf("parsing browse template file: %v", err)
+		}
+	} else {
+		tpl = tplCtx.NewTemplate("default_listing")
+		tpl, err = tpl.Parse(defaultBrowseTemplate)
+		if err != nil {
+			return fmt.Errorf("parsing default browse template: %v", err)
+		}
+	}
+
+	fsrv.Browse.template = tpl
+
+	return nil
+}
+
+func (fsrv *FileServer) browseWriteJSON(listing browseTemplateContext) (*bytes.Buffer, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
 	err := json.NewEncoder(buf).Encode(listing.Items)
-	bufPool.Put(buf)
 	return buf, err
 }
 
-func (fsrv *FileServer) browseWriteHTML(listing browseListing) (*bytes.Buffer, error) {
+func (fsrv *FileServer) browseWriteHTML(tplCtx *templateContext) (*bytes.Buffer, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
-	err := fsrv.Browse.template.Execute(buf, listing)
-	bufPool.Put(buf)
+	defer bufPool.Put(buf)
+	err := fsrv.Browse.template.Execute(buf, tplCtx)
 	return buf, err
 }
 
@@ -170,4 +215,12 @@ func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
 		return false
 	}
 	return targetInfo.IsDir()
+}
+
+// templateContext powers the context used when evaluating the browse template.
+// It combines browse-specific features with the standard templates handler
+// features.
+type templateContext struct {
+	templates.TemplateContext
+	browseTemplateContext
 }
