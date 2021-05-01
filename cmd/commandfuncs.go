@@ -45,7 +45,7 @@ func cmdStart(fl Flags) (int, error) {
 	startCmdConfigAdapterFlag := fl.String("adapter")
 	startCmdPidfileFlag := fl.String("pidfile")
 	startCmdWatchFlag := fl.Bool("watch")
-	startCmdEnvfileFlag := fl.Bool("envfile")
+	startCmdEnvfileFlag := fl.String("envfile")
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
