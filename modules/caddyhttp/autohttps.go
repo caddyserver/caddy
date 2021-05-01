@@ -31,13 +31,6 @@ import (
 // HTTPS is enabled automatically and by default when
 // qualifying hostnames are available from the config.
 type AutoHTTPSConfig struct {
-	// If true, automatic HTTPS will be entirely disabled.
-	Disabled bool `json:"disable,omitempty"`
-
-	// If true, only automatic HTTP->HTTPS redirects will
-	// be disabled.
-	DisableRedir bool `json:"disable_redirects,omitempty"`
-
 	// Hosts/domain names listed here will not be included
 	// in automatic HTTPS (they will not have certificates
 	// loaded nor redirects applied).
@@ -48,6 +41,13 @@ type AutoHTTPSConfig struct {
 	// that certificates will not be provisioned and managed
 	// for these names.
 	SkipCerts []string `json:"skip_certificates,omitempty"`
+
+	// If true, automatic HTTPS will be entirely disabled.
+	Disabled bool `json:"disable,omitempty"`
+
+	// If true, only automatic HTTP->HTTPS redirects will
+	// be disabled.
+	DisableRedir bool `json:"disable_redirects,omitempty"`
 
 	// By default, automatic HTTPS will obtain and renew
 	// certificates for qualifying hostnames. However, if

@@ -48,24 +48,10 @@ import (
 // AdminConfig configures Caddy's API endpoint, which is used
 // to manage Caddy while it is running.
 type AdminConfig struct {
-	// If true, the admin endpoint will be completely disabled.
-	// Note that this makes any runtime changes to the config
-	// impossible, since the interface to do so is through the
-	// admin endpoint.
-	Disabled bool `json:"disabled,omitempty"`
-
 	// The address to which the admin endpoint's listener should
 	// bind itself. Can be any single network address that can be
 	// parsed by Caddy. Default: localhost:2019
 	Listen string `json:"listen,omitempty"`
-
-	// If true, CORS headers will be emitted, and requests to the
-	// API will be rejected if their `Host` and `Origin` headers
-	// do not match the expected value(s). Use `origins` to
-	// customize which origins/hosts are allowed. If `origins` is
-	// not set, the listen address is the only value allowed by
-	// default. Enforced only on local (plaintext) endpoint.
-	EnforceOrigin bool `json:"enforce_origin,omitempty"`
 
 	// The list of allowed origins/hosts for API requests. Only needed
 	// if accessing the admin endpoint from a host different from the
@@ -92,6 +78,20 @@ type AdminConfig struct {
 	//
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
+
+	// If true, the admin endpoint will be completely disabled.
+	// Note that this makes any runtime changes to the config
+	// impossible, since the interface to do so is through the
+	// admin endpoint.
+	Disabled bool `json:"disabled,omitempty"`
+
+	// If true, CORS headers will be emitted, and requests to the
+	// API will be rejected if their `Host` and `Origin` headers
+	// do not match the expected value(s). Use `origins` to
+	// customize which origins/hosts are allowed. If `origins` is
+	// not set, the listen address is the only value allowed by
+	// default. Enforced only on local (plaintext) endpoint.
+	EnforceOrigin bool `json:"enforce_origin,omitempty"`
 }
 
 // ConfigSettings configures the management of configuration.

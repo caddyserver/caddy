@@ -93,11 +93,6 @@ type AutomationPolicy struct {
 	// be removed in the future.
 	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
-	// If true, certificates will be requested with MustStaple. Not all
-	// CAs support this, and there are potentially serious consequences
-	// of enabling this feature without proper threat modeling.
-	MustStaple bool `json:"must_staple,omitempty"`
-
 	// How long before a certificate's expiration to try renewing it,
 	// as a function of its total lifetime. As a general and conservative
 	// rule, it is a good idea to renew a certificate when it has about
@@ -115,18 +110,6 @@ type AutomationPolicy struct {
 	// manager, instead of using Caddy's global/default-configured storage.
 	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
-	// If true, certificates will be managed "on demand"; that is, during
-	// TLS handshakes or when needed, as opposed to at startup or config
-	// load.
-	OnDemand bool `json:"on_demand,omitempty"`
-
-	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
-	// greater risk, reduces their privacy, and usually lowers client
-	// performance. It is NOT recommended to disable this unless you
-	// are able to justify the costs.
-	// EXPERIMENTAL. Subject to change.
-	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
-
 	// Overrides the URLs of OCSP responders embedded in certificates.
 	// Each key is a OCSP server URL to override, and its value is the
 	// replacement. An empty value will disable querying of that server.
@@ -140,6 +123,23 @@ type AutomationPolicy struct {
 
 	magic   *certmagic.Config
 	storage certmagic.Storage
+
+	// If true, certificates will be requested with MustStaple. Not all
+	// CAs support this, and there are potentially serious consequences
+	// of enabling this feature without proper threat modeling.
+	MustStaple bool `json:"must_staple,omitempty"`
+
+	// If true, certificates will be managed "on demand"; that is, during
+	// TLS handshakes or when needed, as opposed to at startup or config
+	// load.
+	OnDemand bool `json:"on_demand,omitempty"`
+
+	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
+	// greater risk, reduces their privacy, and usually lowers client
+	// performance. It is NOT recommended to disable this unless you
+	// are able to justify the costs.
+	// EXPERIMENTAL. Subject to change.
+	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
 }
 
 // Provision sets up ap and builds its underlying CertMagic config.
