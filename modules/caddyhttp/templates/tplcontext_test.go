@@ -12,20 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Copyright 2015 Light Code Labs, LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package templates
 
 import (
@@ -357,7 +343,7 @@ title = "Welcome"
 
 }
 
-func getContextOrFail(t *testing.T) templateContext {
+func getContextOrFail(t *testing.T) TemplateContext {
 	context, err := initTestContext()
 	if err != nil {
 		t.Fatalf("failed to prepare test context: %v", err)
@@ -365,15 +351,15 @@ func getContextOrFail(t *testing.T) templateContext {
 	return context
 }
 
-func initTestContext() (templateContext, error) {
+func initTestContext() (TemplateContext, error) {
 	body := bytes.NewBufferString("request body")
 	request, err := http.NewRequest("GET", "https://example.com/foo/bar", body)
 	if err != nil {
-		return templateContext{}, err
+		return TemplateContext{}, err
 	}
-	return templateContext{
+	return TemplateContext{
 		Root:       http.Dir(os.TempDir()),
 		Req:        request,
-		RespHeader: tplWrappedHeader{make(http.Header)},
+		RespHeader: WrappedHeader{make(http.Header)},
 	}, nil
 }

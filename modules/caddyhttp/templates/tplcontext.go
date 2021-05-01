@@ -38,19 +38,49 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
-// templateContext is the templateContext with which HTTP templates are executed.
-type templateContext struct {
+// TemplateContext is the TemplateContext with which HTTP templates are executed.
+type TemplateContext struct {
 	Root       http.FileSystem
 	Req        *http.Request
 	Args       []interface{} // defined by arguments to funcInclude
-	RespHeader tplWrappedHeader
+	RespHeader WrappedHeader
 
 	config *Templates
 }
 
+// NewTemplate returns a new template intended to be evaluated with this
+// context, as it is initialized with configuration from this context.
+func (c TemplateContext) NewTemplate(tplName string) *template.Template {
+	tpl := template.New(tplName)
+
+	// customize delimiters, if applicable
+	if c.config != nil && len(c.config.Delimiters) == 2 {
+		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
+	}
+
+	// add sprig library
+	tpl.Funcs(sprigFuncMap)
+
+	// add our own library
+	tpl.Funcs(template.FuncMap{
+		"include":          c.funcInclude,
+		"httpInclude":      c.funcHTTPInclude,
+		"stripHTML":        c.funcStripHTML,
+		"markdown":         c.funcMarkdown,
+		"splitFrontMatter": c.funcSplitFrontMatter,
+		"listFiles":        c.funcListFiles,
+		"env":              c.funcEnv,
+		"placeholder":      c.funcPlaceholder,
+		"fileExists":       c.funcFileExists,
+		"httpError":        c.funcHTTPError,
+	})
+
+	return tpl
+}
+
 // OriginalReq returns the original, unmodified, un-rewritten request as
 // it originally came in over the wire.
-func (c templateContext) OriginalReq() http.Request {
+func (c TemplateContext) OriginalReq() http.Request {
 	or, _ := c.Req.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	return or
 }
@@ -59,7 +89,7 @@ func (c templateContext) OriginalReq() http.Request {
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
-func (c templateContext) funcInclude(filename string, args ...interface{}) (string, error) {
+func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
 	if c.Root == nil {
 		return "", fmt.Errorf("root file system not specified")
 	}
@@ -93,7 +123,7 @@ func (c templateContext) funcInclude(filename string, args ...interface{}) (stri
 // to the given URI on the same server. Note that included bodies
 // are NOT escaped, so you should only include trusted resources.
 // If it is not trusted, be sure to use escaping functions yourself.
-func (c templateContext) funcHTTPInclude(uri string) (string, error) {
+func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	// prevent virtual request loops by counting how many levels
 	// deep we are; and if we get too deep, return an error
 	recursionCount := 1
@@ -137,26 +167,8 @@ func (c templateContext) funcHTTPInclude(uri string) (string, error) {
 	return buf.String(), nil
 }
 
-func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := template.New(tplName)
-	if len(c.config.Delimiters) == 2 {
-		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
-	}
-
-	tpl.Funcs(sprigFuncMap)
-
-	tpl.Funcs(template.FuncMap{
-		"include":          c.funcInclude,
-		"httpInclude":      c.funcHTTPInclude,
-		"stripHTML":        c.funcStripHTML,
-		"markdown":         c.funcMarkdown,
-		"splitFrontMatter": c.funcSplitFrontMatter,
-		"listFiles":        c.funcListFiles,
-		"env":              c.funcEnv,
-		"placeholder":      c.funcPlaceholder,
-		"fileExists":       c.funcFileExists,
-		"httpError":        c.funcHTTPError,
-	})
+func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
+	tpl := c.NewTemplate(tplName)
 
 	parsedTpl, err := tpl.Parse(buf.String())
 	if err != nil {
@@ -168,18 +180,18 @@ func (c templateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 	return parsedTpl.Execute(buf, c)
 }
 
-func (c templateContext) funcPlaceholder(name string) string {
+func (c TemplateContext) funcPlaceholder(name string) string {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	value, _ := repl.GetString(name)
 	return value
 }
 
-func (templateContext) funcEnv(varName string) string {
+func (TemplateContext) funcEnv(varName string) string {
 	return os.Getenv(varName)
 }
 
 // Cookie gets the value of a cookie with name name.
-func (c templateContext) Cookie(name string) string {
+func (c TemplateContext) Cookie(name string) string {
 	cookies := c.Req.Cookies()
 	for _, cookie := range cookies {
 		if cookie.Name == name {
@@ -190,7 +202,7 @@ func (c templateContext) Cookie(name string) string {
 }
 
 // RemoteIP gets the IP address of the client making the request.
-func (c templateContext) RemoteIP() string {
+func (c TemplateContext) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
 	if err != nil {
 		return c.Req.RemoteAddr
@@ -200,7 +212,7 @@ func (c templateContext) RemoteIP() string {
 
 // Host returns the hostname portion of the Host header
 // from the HTTP request.
-func (c templateContext) Host() (string, error) {
+func (c TemplateContext) Host() (string, error) {
 	host, _, err := net.SplitHostPort(c.Req.Host)
 	if err != nil {
 		if !strings.Contains(c.Req.Host, ":") {
@@ -214,7 +226,7 @@ func (c templateContext) Host() (string, error) {
 
 // funcStripHTML returns s without HTML tags. It is fairly naive
 // but works with most valid HTML inputs.
-func (templateContext) funcStripHTML(s string) string {
+func (TemplateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
 	var inTag, inQuotes bool
 	var tagStart int
@@ -247,7 +259,7 @@ func (templateContext) funcStripHTML(s string) string {
 
 // funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
-func (templateContext) funcMarkdown(input interface{}) (string, error) {
+func (TemplateContext) funcMarkdown(input interface{}) (string, error) {
 	inputStr := toString(input)
 
 	md := goldmark.New(
@@ -283,7 +295,7 @@ func (templateContext) funcMarkdown(input interface{}) (string, error) {
 // splitFrontMatter parses front matter out from the beginning of input,
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
-func (templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
+func (TemplateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
 	meta, body, err := extractFrontMatter(toString(input))
 	if err != nil {
 		return parsedMarkdownDoc{}, err
@@ -293,7 +305,7 @@ func (templateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDo
 
 // funcListFiles reads and returns a slice of names from the given
 // directory relative to the root of c.
-func (c templateContext) funcListFiles(name string) ([]string, error) {
+func (c TemplateContext) funcListFiles(name string) ([]string, error) {
 	if c.Root == nil {
 		return nil, fmt.Errorf("root file system not specified")
 	}
@@ -326,7 +338,7 @@ func (c templateContext) funcListFiles(name string) ([]string, error) {
 }
 
 // funcFileExists returns true if filename can be opened successfully.
-func (c templateContext) funcFileExists(filename string) (bool, error) {
+func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 	if c.Root == nil {
 		return false, fmt.Errorf("root file system not specified")
 	}
@@ -339,21 +351,21 @@ func (c templateContext) funcFileExists(filename string) (bool, error) {
 }
 
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL.
-// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed.
+// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed (Go 1.17).
 // Example usage might be: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
-func (c templateContext) funcHTTPError(statusCode int) (bool, error) {
+func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
-// tplWrappedHeader wraps niladic functions so that they
+// WrappedHeader wraps niladic functions so that they
 // can be used in templates. (Template functions must
 // return a value.)
-type tplWrappedHeader struct{ http.Header }
+type WrappedHeader struct{ http.Header }
 
 // Add adds a header field value, appending val to
 // existing values for that field. It returns an
 // empty string.
-func (h tplWrappedHeader) Add(field, val string) string {
+func (h WrappedHeader) Add(field, val string) string {
 	h.Header.Add(field, val)
 	return ""
 }
@@ -361,13 +373,13 @@ func (h tplWrappedHeader) Add(field, val string) string {
 // Set sets a header field value, overwriting any
 // other values for that field. It returns an
 // empty string.
-func (h tplWrappedHeader) Set(field, val string) string {
+func (h WrappedHeader) Set(field, val string) string {
 	h.Header.Set(field, val)
 	return ""
 }
 
 // Del deletes a header field. It returns an empty string.
-func (h tplWrappedHeader) Del(field string) string {
+func (h WrappedHeader) Del(field string) string {
 	h.Header.Del(field)
 	return ""
 }
