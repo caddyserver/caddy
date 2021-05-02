@@ -379,8 +379,8 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ interface{}) (interface{}, erro
 	if d.Next() {
 		return "", d.ArgErr()
 	}
-	if val != "off" && val != "disable_redirects" {
-		return "", d.Errf("auto_https must be either 'off' or 'disable_redirects'")
+	if val != "off" && val != "disable_redirects" && val != "ignore_loaded_certs" {
+		return "", d.Errf("auto_https must be one of 'off', 'disable_redirects' or 'ignore_loaded_certs'")
 	}
 	return val, nil
 }
