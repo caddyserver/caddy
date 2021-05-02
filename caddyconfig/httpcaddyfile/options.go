@@ -32,6 +32,7 @@ func init() {
 	RegisterGlobalOption("default_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
+	RegisterGlobalOption("storage_clean_interval", parseOptStorageCleanInterval)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
@@ -175,6 +176,20 @@ func parseOptStorage(d *caddyfile.Dispenser, _ interface{}) (interface{}, error)
 		return nil, d.Errf("module %s is not a caddy.StorageConverter", modID)
 	}
 	return storage, nil
+}
+
+func parseOptStorageCleanInterval(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+	if !d.Next() { // consume option name
+		return nil, d.ArgErr()
+	}
+	if !d.Next() { // get duration value
+		return nil, d.ArgErr()
+	}
+	dur, err := caddy.ParseDuration(d.Val())
+	if err != nil {
+		return nil, err
+	}
+	return caddy.Duration(dur), nil
 }
 
 func parseOptACMEDNS(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
