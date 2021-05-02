@@ -45,6 +45,7 @@ func cmdStart(fl Flags) (int, error) {
 	startCmdConfigAdapterFlag := fl.String("adapter")
 	startCmdPidfileFlag := fl.String("pidfile")
 	startCmdWatchFlag := fl.Bool("watch")
+	startCmdEnvfileFlag := fl.String("envfile")
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
@@ -67,6 +68,9 @@ func cmdStart(fl Flags) (int, error) {
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
 	if startCmdConfigFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
+	}
+	if startCmdEnvfileFlag != "" {
+		cmd.Args = append(cmd.Args, "--envfile", startCmdEnvfileFlag)
 	}
 	if startCmdConfigAdapterFlag != "" {
 		cmd.Args = append(cmd.Args, "--adapter", startCmdConfigAdapterFlag)
