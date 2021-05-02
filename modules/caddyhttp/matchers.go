@@ -971,40 +971,6 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// ResponseMatcher is a type which can determine if an
-// HTTP response matches some criteria.
-type ResponseMatcher struct {
-	// If set, one of these status codes would be required.
-	// A one-digit status can be used to represent all codes
-	// in that class (e.g. 3 for all 3xx codes).
-	StatusCode []int `json:"status_code,omitempty"`
-
-	// If set, each header specified must be one of the
-	// specified values, with the same logic used by the
-	// request header matcher.
-	Headers http.Header `json:"headers,omitempty"`
-}
-
-// Match returns true if the given statusCode and hdr match rm.
-func (rm ResponseMatcher) Match(statusCode int, hdr http.Header) bool {
-	if !rm.matchStatusCode(statusCode) {
-		return false
-	}
-	return matchHeaders(hdr, rm.Headers, "", nil)
-}
-
-func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
-	if rm.StatusCode == nil {
-		return true
-	}
-	for _, code := range rm.StatusCode {
-		if StatusCodeMatches(statusCode, code) {
-			return true
-		}
-	}
-	return false
-}
-
 var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
