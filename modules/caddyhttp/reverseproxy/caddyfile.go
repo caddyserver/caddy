@@ -105,6 +105,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // as `host:port`, or a URL such as `scheme://host:port`. Scheme
 // and port may be inferred from other parts of the address/URL; if
 // either are missing, defaults to HTTP.
+//
+// The FinalizeUnmarshalCaddyfile method should be called after this
+// to finalize parsing of "handle_response" blocks, if possible.
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// currently, all backends must use the same scheme/protocol (the
 	// underlying JSON does not yet support per-backend transports)
