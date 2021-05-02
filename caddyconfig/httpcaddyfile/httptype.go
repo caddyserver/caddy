@@ -451,6 +451,9 @@ func (st *ServerType) serversFromPairings(
 			if autoHTTPS == "disable_redirects" {
 				srv.AutoHTTPS.DisableRedir = true
 			}
+			if autoHTTPS == "ignore_loaded_certs" {
+				srv.AutoHTTPS.IgnoreLoadedCerts = true
+			}
 		}
 
 		// sort server blocks by their keys; this is important because
