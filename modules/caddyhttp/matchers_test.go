@@ -692,6 +692,32 @@ func TestHeaderREMatcher(t *testing.T) {
 	}
 }
 
+func BenchmarkHeaderREMatcher(b *testing.B) {
+
+	i := 0
+	match := MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}}
+	input := http.Header{"Field": []string{"foobar"}}
+	var host string
+	err := match.Provision(caddy.Context{})
+	if err != nil {
+		b.Errorf("Test %d %v: Provisioning: %v", i, match, err)
+	}
+	err = match.Validate()
+	if err != nil {
+		b.Errorf("Test %d %v: Validating: %v", i, match, err)
+	}
+
+	// set up the fake request and its Replacer
+	req := &http.Request{Header: input, URL: new(url.URL), Host: host}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+	addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+	for run := 0; run < b.N; run++ {
+		match.Match(req)
+	}
+}
+
 func TestVarREMatcher(t *testing.T) {
 	for i, tc := range []struct {
 		desc       string

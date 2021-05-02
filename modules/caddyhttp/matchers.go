@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -935,14 +936,14 @@ func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := fmt.Sprintf("%s.%d", mre.phPrefix, i)
+		key := mre.phPrefix + "." + strconv.Itoa(i)
 		repl.Set(key, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
 		if i != 0 && name != "" {
-			key := fmt.Sprintf("%s.%s", mre.phPrefix, name)
+			key := mre.phPrefix + "." + name
 			repl.Set(key, matches[i])
 		}
 	}
