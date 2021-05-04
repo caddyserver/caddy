@@ -140,6 +140,7 @@ func (m *MatchFile) Provision(_ caddy.Context) error {
 		m.Root = "{http.vars.root}"
 	}
 	// if list of files to try was omitted entirely, assume URL path
+	// (use placeholder instead of r.URL.Path; see issue #4146)
 	if m.TryFiles == nil {
 		m.TryFiles = []string{"{http.request.uri.path}"}
 	}
