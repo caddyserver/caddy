@@ -29,7 +29,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request, res *http.Response) {
+func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 	if reqUpType != resUpType {
@@ -65,12 +65,19 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 	}()
 	defer close(backConnCloseCh)
 
+	logger.Debug("upgrading connection")
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		h.logger.Error("Hijack failed on protocol switch", zap.Error(err))
+		h.logger.Error("hijack failed on protocol switch", zap.Error(err))
 		return
 	}
 	defer conn.Close()
+
+	start := time.Now()
+	defer func() {
+		logger.Debug("connection closed", zap.Duration("duration", time.Since(start)))
+	}()
+
 	res.Body = nil // so res.Write only writes the headers; we have res.Body in backConn above
 	if err := res.Write(brw); err != nil {
 		h.logger.Debug("response write", zap.Error(err))
@@ -80,6 +87,7 @@ func (h Handler) handleUpgradeResponse(rw http.ResponseWriter, req *http.Request
 		h.logger.Debug("response flush", zap.Error(err))
 		return
 	}
+
 	errc := make(chan error, 1)
 	spc := switchProtocolCopier{user: conn, backend: backConn}
 	go spc.copyToBackend(errc)
