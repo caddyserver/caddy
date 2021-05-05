@@ -568,9 +568,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
-		zap.Duration("duration", duration))
+	)
 	if err != nil {
-		logger.Debug("upstream roundtrip", zap.Error(err))
+		logger.Debug("upstream roundtrip",
+			zap.Duration("duration", duration),
+			zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
@@ -642,7 +644,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		h.handleUpgradeResponse(rw, req, res)
+		h.handleUpgradeResponse(logger, rw, req, res)
 		return nil
 	}
 
