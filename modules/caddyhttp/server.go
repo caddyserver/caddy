@@ -184,8 +184,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log = logger.Error
 			}
 
+			userID, _ := repl.GetString("http.auth.user.id")
+
 			log("handled request",
 				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
+				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
