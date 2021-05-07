@@ -29,10 +29,11 @@ func init() {
 	RegisterGlobalOption("debug", parseOptTrue)
 	RegisterGlobalOption("http_port", parseOptHTTPPort)
 	RegisterGlobalOption("https_port", parseOptHTTPSPort)
+	RegisterGlobalOption("grace_period", parseOptDuration)
 	RegisterGlobalOption("default_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
-	RegisterGlobalOption("storage_clean_interval", parseOptStorageCleanInterval)
+	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
@@ -178,7 +179,7 @@ func parseOptStorage(d *caddyfile.Dispenser, _ interface{}) (interface{}, error)
 	return storage, nil
 }
 
-func parseOptStorageCleanInterval(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptDuration(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
