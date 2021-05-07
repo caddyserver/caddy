@@ -43,7 +43,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         gzip           [<level>]
 //         zstd
 //         minimum_length <length>
-//         prefer         <formats...>
+//         prefer         off|<formats...>
 //         # response matcher block
 //         match {
 //             status <code...>
@@ -55,7 +55,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 // Specifying the formats on the first line will use those formats' defaults.
 func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	var preferDefaults []string
+	var preferOff bool
+
 	responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
+
 	for d.Next() {
 		for _, arg := range d.RemainingArgs() {
 			mod, err := caddy.GetModule("http.encoders." + arg)
@@ -70,6 +74,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				enc.EncodingsRaw = make(caddy.ModuleMap)
 			}
 			enc.EncodingsRaw[arg] = caddyconfig.JSON(encoding, nil)
+			preferDefaults = append(preferDefaults, arg)
 		}
 
 		for d.NextBlock(0) {
@@ -86,6 +91,11 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "prefer":
 				var encs []string
 				for d.NextArg() {
+					// if one of the values is "off", then
+					// we'll skip setting the prefer list.
+					if d.Val() == "off" {
+						preferOff = true
+					}
 					encs = append(encs, d.Val())
 				}
 				if len(encs) == 0 {
@@ -114,8 +124,21 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					enc.EncodingsRaw = make(caddy.ModuleMap)
 				}
 				enc.EncodingsRaw[name] = caddyconfig.JSON(encoding, nil)
+				preferDefaults = append(preferDefaults, name)
 			}
 		}
+	}
+
+	// if the "prefer" subdirective wasn't specified, use
+	// the order in which the encoders were defined.
+	if len(enc.Prefer) == 0 {
+		enc.Prefer = preferDefaults
+	}
+
+	// if "prefer off" was set, then we'll not use the default
+	// behaviour of the order in which they were defined.
+	if preferOff {
+		enc.Prefer = nil
 	}
 
 	return nil
