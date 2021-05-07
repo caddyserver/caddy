@@ -2,6 +2,7 @@
 	debug
 	http_port 8080
 	https_port 8443
+	grace_period 5s
 	default_sni localhost
 	order root first
 	storage file_system {
@@ -42,6 +43,7 @@
 		"http": {
 			"http_port": 8080,
 			"https_port": 8443,
+			"grace_period": 5000000000,
 			"servers": {
 				"srv0": {
 					"listen": [
