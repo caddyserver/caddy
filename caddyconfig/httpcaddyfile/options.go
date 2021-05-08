@@ -39,6 +39,7 @@ func init() {
 	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
 	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
 	RegisterGlobalOption("cert_issuer", parseOptCertIssuer)
+	RegisterGlobalOption("skip_install_trust", parseOptTrue)
 	RegisterGlobalOption("email", parseOptSingleString)
 	RegisterGlobalOption("admin", parseOptAdmin)
 	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
