@@ -87,6 +87,7 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 	t.logger = ctx.Logger(t)
+	repl := caddy.NewReplacer()
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -174,6 +175,11 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		// remove any existing rate limiter
 		onDemandRateLimiter.SetMaxEvents(0)
 		onDemandRateLimiter.SetWindow(0)
+	}
+
+	// run replacer on ask URL (for environment variables)
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
+		t.Automation.OnDemand.Ask = repl.ReplaceAll(t.Automation.OnDemand.Ask, "")
 	}
 
 	// load manual/static (unmanaged) certificates - we do this in
