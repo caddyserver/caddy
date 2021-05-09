@@ -23,6 +23,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+	"github.com/caddyserver/certmagic"
 	"github.com/smallstep/truststore"
 )
 
@@ -44,6 +45,11 @@ password prompt is not required later.
 
 This command installs the root certificate only for Caddy's
 default CA.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("trust", flag.ExitOnError)
+			fs.String("storage", "", "The path to Caddy's storage if not in a default location")
+			return fs
+		}(),
 	})
 
 	caddycmd.RegisterCommand(caddycmd.Command{
@@ -78,15 +84,25 @@ If no flags are specified, --ca=local is assumed.`,
 }
 
 func cmdTrust(fs caddycmd.Flags) (int, error) {
+	storagePath := fs.String("storage")
+
 	// we have to create a sort of dummy context so that
 	// the CA can provision itself...
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
+	// if no storage path is specified, use the default location
+	var storage *certmagic.FileStorage
+	if storagePath != "" {
+		storage = &certmagic.FileStorage{Path: storagePath}
+	} else {
+		storage = caddy.DefaultStorage
+	}
+
 	// provision the CA, which generates and stores a root
 	// certificate if one doesn't already exist in storage
 	ca := CA{
-		storage: caddy.DefaultStorage,
+		storage: storage,
 	}
 	err := ca.Provision(ctx, DefaultCAID, caddy.Log())
 	if err != nil {
