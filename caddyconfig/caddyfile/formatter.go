@@ -44,9 +44,9 @@ func Format(input []byte) []byte {
 		newLines int // count of newlines consumed
 
 		wasComment bool // whether the last line was a comment
-		comment bool // whether we're in a comment
-		quoted  bool // whether we're in a quoted segment
-		escaped bool // whether current char is escaped
+		comment    bool // whether we're in a comment
+		quoted     bool // whether we're in a quoted segment
+		escaped    bool // whether current char is escaped
 
 		nesting int // indentation level
 	)
