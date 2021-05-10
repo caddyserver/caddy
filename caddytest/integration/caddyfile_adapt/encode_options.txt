@@ -1,5 +1,6 @@
 :80
 
+# All the options
 encode gzip zstd {
 	minimum_length 256
 	prefer zstd gzip
@@ -13,6 +14,20 @@ encode gzip zstd {
 		header Content-Type application/rss+xml*
 		header Content-Type image/svg+xml*
 	}
+}
+
+# Prefer list is implied (short way)
+encode gzip zstd
+
+# Prefer list is implied (long way)
+encode {
+	gzip 5
+	zstd
+}
+
+# Prefer list is turned off
+encode gzip zstd {
+	prefer off
 }
 ----------
 {
@@ -55,6 +70,37 @@ encode gzip zstd {
 										"zstd",
 										"gzip"
 									]
+								},
+								{
+									"encodings": {
+										"gzip": {},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"prefer": [
+										"gzip",
+										"zstd"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {
+											"level": 5
+										},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"prefer": [
+										"gzip",
+										"zstd"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {},
+										"zstd": {}
+									},
+									"handler": "encode"
 								}
 							]
 						}
