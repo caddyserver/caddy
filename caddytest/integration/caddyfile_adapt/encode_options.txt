@@ -3,7 +3,6 @@
 # All the options
 encode gzip zstd {
 	minimum_length 256
-	prefer zstd gzip
 	match {
 		status 2xx 4xx 500
 		header Content-Type text/*
@@ -16,18 +15,10 @@ encode gzip zstd {
 	}
 }
 
-# Prefer list is implied (short way)
-encode gzip zstd
-
-# Prefer list is implied (long way)
+# Long way with a block for each encoding
 encode {
-	gzip 5
 	zstd
-}
-
-# Prefer list is turned off
-encode gzip zstd {
-	prefer off
+	gzip 5
 }
 ----------
 {
@@ -67,17 +58,6 @@ encode gzip zstd {
 									},
 									"minimum_length": 256,
 									"prefer": [
-										"zstd",
-										"gzip"
-									]
-								},
-								{
-									"encodings": {
-										"gzip": {},
-										"zstd": {}
-									},
-									"handler": "encode",
-									"prefer": [
 										"gzip",
 										"zstd"
 									]
@@ -91,16 +71,9 @@ encode gzip zstd {
 									},
 									"handler": "encode",
 									"prefer": [
-										"gzip",
-										"zstd"
+										"zstd",
+										"gzip"
 									]
-								},
-								{
-									"encodings": {
-										"gzip": {},
-										"zstd": {}
-									},
-									"handler": "encode"
 								}
 							]
 						}
