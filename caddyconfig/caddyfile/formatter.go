@@ -43,6 +43,7 @@ func Format(input []byte) []byte {
 
 		newLines int // count of newlines consumed
 
+		wasComment bool // whether the last line was a comment
 		comment bool // whether we're in a comment
 		quoted  bool // whether we're in a quoted segment
 		escaped bool // whether current char is escaped
@@ -64,6 +65,7 @@ func Format(input []byte) []byte {
 	nextLine := func() {
 		write('\n')
 		beginningOfLine = true
+		wasComment = false
 	}
 
 	for {
@@ -79,6 +81,7 @@ func Format(input []byte) []byte {
 			if ch == '\n' {
 				comment = false
 				nextLine()
+				wasComment = true
 				continue
 			} else {
 				write(ch)
@@ -164,6 +167,9 @@ func Format(input []byte) []byte {
 				write(' ')
 			}
 			continue
+
+		case nesting == 1 && wasComment && ch == '}':
+			nesting--
 
 		case ch == '}' && (spacePrior || !openBrace):
 			if last != '\n' {
