@@ -78,6 +78,7 @@ func Format(input []byte) []byte {
 		if comment {
 			if ch == '\n' {
 				comment = false
+				space = true
 				nextLine()
 				continue
 			} else {
