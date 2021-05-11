@@ -1,0 +1,120 @@
+# (this Caddyfile is contrived, but based on issue #4161)
+
+example.com {
+	tls {
+		ca https://foobar
+	}
+}
+
+example.com:8443 {
+	tls {
+		ca https://foobar
+	}
+}
+
+example.com:8444 {
+	tls {
+		ca https://foobar
+	}
+}
+
+example.com:8445 {
+	tls {
+		ca https://foobar
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":8444"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv3": {
+					"listen": [
+						":8445"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"ca": "https://foobar",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

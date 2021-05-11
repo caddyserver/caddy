@@ -510,7 +510,10 @@ outer:
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(aps[i], aps[j]) {
 				aps = append(aps[:j], aps[j+1:]...)
-				break
+				// must re-evaluate current i against next j; can't skip it!
+				// even if i decrements to -1, will be incremented to 0 immediately
+				i--
+				continue outer
 			}
 
 			// if the policy is the same, we can keep just one, but we have

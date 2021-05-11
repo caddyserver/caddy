@@ -135,18 +135,6 @@ abc.de {
 								"module": "zerossl"
 							}
 						]
-					},
-					{
-						"issuers": [
-							{
-								"email": "my.email@example.com",
-								"module": "acme"
-							},
-							{
-								"email": "my.email@example.com",
-								"module": "zerossl"
-							}
-						]
 					}
 				]
 			}
