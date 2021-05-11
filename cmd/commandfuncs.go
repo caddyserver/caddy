@@ -577,6 +577,10 @@ func cmdUpgrade(_ Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("determining current executable path: %v", err)
 	}
+	thisExecStat, err := os.Stat(thisExecPath)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("retrieving current executable permission bits: %v", err)
+	}
 	l.Info("this executable will be replaced", zap.String("path", thisExecPath))
 
 	// get the list of nonstandard plugins
@@ -654,7 +658,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 
 	// download the file; do this in a closure to close reliably before we execute it
 	writeFile := func() error {
-		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0770)
+		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, thisExecStat.Mode())
 		if err != nil {
 			return fmt.Errorf("unable to open destination file: %v", err)
 		}
