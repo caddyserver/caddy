@@ -216,7 +216,7 @@ func (p *parser) addresses() error {
 
 		// Users commonly forget to place a space between the address and the '{'
 		if strings.HasSuffix(tkn, "{") {
-			return p.Errf("Addresses cannot end in '{', got '%s' - did you mean to put a space between the address and '{'?", tkn)
+			return p.Errf("Site addresses cannot end with a curly brace: '%s' - put a space between the token and the brace", tkn)
 		}
 
 		if tkn != "" { // empty token possible if user typed ""
