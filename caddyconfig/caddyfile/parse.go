@@ -214,6 +214,11 @@ func (p *parser) addresses() error {
 			break
 		}
 
+		// Users commonly forget to place a space between the address and the '{'
+		if strings.HasSuffix(tkn, "{") {
+			return p.Errf("Addresses cannot end in '{', got '%s' - did you mean to put a space between the address and '{'?", tkn)
+		}
+
 		if tkn != "" { // empty token possible if user typed ""
 			// Trailing comma indicates another address will follow, which
 			// may possibly be on the next line
