@@ -17,7 +17,6 @@ package fileserver
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -116,23 +115,6 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 
 	if fsrv.IndexNames == nil {
 		fsrv.IndexNames = defaultIndexNames
-	}
-
-	if fsrv.Browse != nil {
-		var tpl *template.Template
-		var err error
-		if fsrv.Browse.TemplateFile != "" {
-			tpl, err = template.ParseFiles(fsrv.Browse.TemplateFile)
-			if err != nil {
-				return fmt.Errorf("parsing browse template file: %v", err)
-			}
-		} else {
-			tpl, err = template.New("default_listing").Parse(defaultBrowseTemplate)
-			if err != nil {
-				return fmt.Errorf("parsing default browse template: %v", err)
-			}
-		}
-		fsrv.Browse.template = tpl
 	}
 
 	// for hide paths that are static (i.e. no placeholders), we can transform them into

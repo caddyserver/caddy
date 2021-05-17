@@ -42,6 +42,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	if err != nil {
 		return nil, err
 	}
+	err = rp.FinalizeUnmarshalCaddyfile(h)
+	if err != nil {
+		return nil, err
+	}
 	return rp, nil
 }
 
@@ -86,12 +90,24 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         transport <name> {
 //             ...
 //         }
+//
+//         # handle responses
+//         @name {
+//             status <code...>
+//             header <field> [<value>]
+//         }
+//         handle_response [<matcher>] [status_code] {
+//             <directives...>
+//         }
 //     }
 //
 // Proxy upstream addresses should be network dial addresses such
 // as `host:port`, or a URL such as `scheme://host:port`. Scheme
 // and port may be inferred from other parts of the address/URL; if
 // either are missing, defaults to HTTP.
+//
+// The FinalizeUnmarshalCaddyfile method should be called after this
+// to finalize parsing of "handle_response" blocks, if possible.
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// currently, all backends must use the same scheme/protocol (the
 	// underlying JSON does not yet support per-backend transports)
@@ -101,6 +117,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// validating and encoding the transport
 	var transport http.RoundTripper
 	var transportModuleName string
+
+	// collect the response matchers defined as subdirectives
+	// prefixed with "@" for use with "handle_response" blocks
+	h.responseMatchers = make(map[string]caddyhttp.ResponseMatcher)
 
 	// TODO: the logic in this function is kind of sensitive, we need
 	// to write tests before making any more changes to it
@@ -227,6 +247,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		for d.NextBlock(0) {
+			// if the subdirective has an "@" prefix then we
+			// parse it as a response matcher for use with "handle_response"
+			if strings.HasPrefix(d.Val(), matcherPrefix) {
+				err := caddyhttp.ParseNamedResponseMatcher(d.NewFromNextSegment(), h.responseMatchers)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+
 			switch d.Val() {
 			case "to":
 				args := d.RemainingArgs()
@@ -617,6 +647,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				transport = rt
 
+			case "handle_response":
+				// delegate the parsing of handle_response to the caller,
+				// since we need the httpcaddyfile.Helper to parse subroutes.
+				// See h.FinalizeUnmarshalCaddyfile
+				h.handleResponseSegments = append(h.handleResponseSegments, d.NewFromNextSegment())
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
@@ -655,6 +691,100 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			h.TransportRaw = caddyconfig.JSONModuleObject(transport, "protocol", transportModuleName, nil)
 		}
 	}
+
+	return nil
+}
+
+// FinalizeUnmarshalCaddyfile finalizes the Caddyfile parsing which
+// requires having an httpcaddyfile.Helper to function, to parse subroutes.
+func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error {
+	for _, d := range h.handleResponseSegments {
+		// consume the "handle_response" token
+		d.Next()
+
+		var matcher *caddyhttp.ResponseMatcher
+		args := d.RemainingArgs()
+
+		// the first arg should be a matcher (optional)
+		// the second arg should be a status code (optional)
+		// any more than that isn't currently supported
+		if len(args) > 2 {
+			return d.Errf("too many arguments for 'handle_response': %s", args)
+		}
+
+		// the first arg should always be a matcher.
+		// it doesn't really make sense to support status code without a matcher.
+		if len(args) > 0 {
+			if !strings.HasPrefix(args[0], matcherPrefix) {
+				return d.Errf("must use a named response matcher, starting with '@'")
+			}
+
+			foundMatcher, ok := h.responseMatchers[args[0]]
+			if !ok {
+				return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+			}
+			matcher = &foundMatcher
+		}
+
+		// a second arg should be a status code, in which case
+		// we skip parsing the block for routes
+		if len(args) == 2 {
+			_, err := strconv.Atoi(args[1])
+			if err != nil {
+				return d.Errf("bad integer value '%s': %v", args[1], err)
+			}
+
+			// make sure there's no block, cause it doesn't make sense
+			if d.NextBlock(1) {
+				return d.Errf("cannot define routes for 'handle_response' when changing the status code")
+			}
+
+			h.HandleResponse = append(
+				h.HandleResponse,
+				caddyhttp.ResponseHandler{
+					Match:      matcher,
+					StatusCode: caddyhttp.WeakString(args[1]),
+				},
+			)
+			continue
+		}
+
+		// parse the block as routes
+		handler, err := httpcaddyfile.ParseSegmentAsSubroute(helper.WithDispenser(d.NewFromNextSegment()))
+		if err != nil {
+			return err
+		}
+		subroute, ok := handler.(*caddyhttp.Subroute)
+		if !ok {
+			return helper.Errf("segment was not parsed as a subroute")
+		}
+		h.HandleResponse = append(
+			h.HandleResponse,
+			caddyhttp.ResponseHandler{
+				Match:  matcher,
+				Routes: subroute.Routes,
+			},
+		)
+	}
+
+	// move the handle_response entries without a matcher to the end.
+	// we can't use sort.SliceStable because it will reorder the rest of the
+	// entries which may be undesirable because we don't have a good
+	// heuristic to use for sorting.
+	withoutMatchers := []caddyhttp.ResponseHandler{}
+	withMatchers := []caddyhttp.ResponseHandler{}
+	for _, hr := range h.HandleResponse {
+		if hr.Match == nil {
+			withoutMatchers = append(withoutMatchers, hr)
+		} else {
+			withMatchers = append(withMatchers, hr)
+		}
+	}
+	h.HandleResponse = append(withMatchers, withoutMatchers...)
+
+	// clean up the bits we only needed for adapting
+	h.handleResponseSegments = nil
+	h.responseMatchers = nil
 
 	return nil
 }
@@ -891,6 +1021,8 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	return nil
 }
+
+const matcherPrefix = "@"
 
 // Interface guards
 var (

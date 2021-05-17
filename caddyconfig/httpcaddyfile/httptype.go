@@ -220,9 +220,10 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:  tryInt(options["http_port"], &warnings),
-		HTTPSPort: tryInt(options["https_port"], &warnings),
-		Servers:   servers,
+		HTTPPort:    tryInt(options["http_port"], &warnings),
+		HTTPSPort:   tryInt(options["https_port"], &warnings),
+		GracePeriod: tryDuration(options["grace_period"], &warnings),
+		Servers:     servers,
 	}
 
 	// then make the TLS app
@@ -450,6 +451,9 @@ func (st *ServerType) serversFromPairings(
 			}
 			if autoHTTPS == "disable_redirects" {
 				srv.AutoHTTPS.DisableRedir = true
+			}
+			if autoHTTPS == "ignore_loaded_certs" {
+				srv.AutoHTTPS.IgnoreLoadedCerts = true
 			}
 		}
 
@@ -1241,6 +1245,14 @@ func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a string type"})
 	}
 	return stringVal
+}
+
+func tryDuration(val interface{}, warnings *[]caddyconfig.Warning) caddy.Duration {
+	durationVal, ok := val.(caddy.Duration)
+	if val != nil && !ok && warnings != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a duration type"})
+	}
+	return durationVal
 }
 
 // sliceContains returns true if needle is in haystack.

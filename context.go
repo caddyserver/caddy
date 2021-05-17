@@ -430,5 +430,13 @@ func (ctx Context) Storage() certmagic.Storage {
 
 // Logger returns a logger that can be used by mod.
 func (ctx Context) Logger(mod Module) *zap.Logger {
+	if ctx.cfg == nil {
+		// often the case in tests; just use a dev logger
+		l, err := zap.NewDevelopment()
+		if err != nil {
+			panic("config missing, unable to create dev logger: " + err.Error())
+		}
+		return l
+	}
 	return ctx.cfg.Logging.Logger(mod)
 }

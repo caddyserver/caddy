@@ -366,7 +366,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	h := cookieHashPolicy.Select(pool, request, w)
 	cookieServer1 := w.Result().Cookies()[0]
 	if cookieServer1 == nil {
-		t.Error("cookieHashPolicy should set a cookie")
+		t.Fatal("cookieHashPolicy should set a cookie")
 	}
 	if cookieServer1.Name != "lb" {
 		t.Error("cookieHashPolicy should set a cookie with name lb")

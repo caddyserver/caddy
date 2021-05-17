@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"go.uber.org/zap"
@@ -126,6 +127,12 @@ type Handler struct {
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
+
+	// Holds the named response matchers from the Caddyfile while adapting
+	responseMatchers map[string]caddyhttp.ResponseMatcher
+
+	// Holds the handle_response Caddyfile tokens while adapting
+	handleResponseSegments []*caddyfile.Dispenser
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -561,9 +568,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
-		zap.Duration("duration", duration))
+	)
 	if err != nil {
-		logger.Debug("upstream roundtrip", zap.Error(err))
+		logger.Debug("upstream roundtrip",
+			zap.Duration("duration", duration),
+			zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
@@ -635,7 +644,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		h.handleUpgradeResponse(rw, req, res)
+		h.handleUpgradeResponse(logger, rw, req, res)
 		return nil
 	}
 

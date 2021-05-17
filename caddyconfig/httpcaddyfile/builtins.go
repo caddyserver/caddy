@@ -126,10 +126,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			// must load each cert only once; otherwise, they each get a
 			// different tag... since a cert loaded twice has the same
 			// bytes, it will overwrite the first one in the cache, and
-			// only the last cert (and its tag) will survive, so a any conn
-			// policy that is looking for any tag but the last one to be
-			// loaded won't find it, and TLS handshakes will fail (see end)
-			// of issue #3004)
+			// only the last cert (and its tag) will survive, so any conn
+			// policy that is looking for any tag other than the last one
+			// to be loaded won't find it, and TLS handshakes will fail
+			// (see end of issue #3004)
 			//
 			// tlsCertTags maps certificate filenames to their tag.
 			// This is used to remember which tag is used for each

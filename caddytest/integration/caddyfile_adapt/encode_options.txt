@@ -1,8 +1,8 @@
 :80
 
+# All the options
 encode gzip zstd {
 	minimum_length 256
-	prefer zstd gzip
 	match {
 		status 2xx 4xx 500
 		header Content-Type text/*
@@ -13,6 +13,12 @@ encode gzip zstd {
 		header Content-Type application/rss+xml*
 		header Content-Type image/svg+xml*
 	}
+}
+
+# Long way with a block for each encoding
+encode {
+	zstd
+	gzip 5
 }
 ----------
 {
@@ -51,6 +57,19 @@ encode gzip zstd {
 										]
 									},
 									"minimum_length": 256,
+									"prefer": [
+										"gzip",
+										"zstd"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {
+											"level": 5
+										},
+										"zstd": {}
+									},
+									"handler": "encode",
 									"prefer": [
 										"zstd",
 										"gzip"
