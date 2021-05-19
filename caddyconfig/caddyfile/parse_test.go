@@ -160,6 +160,10 @@ func TestParseOneAndImport(t *testing.T) {
 			"localhost",
 		}, []int{}},
 
+		{`localhost{
+		    dir1
+		  }`, true, []string{}, []int{}},
+
 		{`localhost
 		  dir1 {
 		    nested {
