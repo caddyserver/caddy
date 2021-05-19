@@ -717,6 +717,10 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 	if err == nil {
 		return
 	}
+	if err == errInternalRedir {
+		h.serveHTTP(w, r)
+		return
+	}
 
 	apiErr, ok := err.(APIError)
 	if !ok {
@@ -896,7 +900,7 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	parts = append([]string{expanded}, parts[3:]...)
 	r.URL.Path = path.Join(parts...)
 
-	return nil
+	return errInternalRedir
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) error {
@@ -1198,6 +1202,13 @@ var idRegexp = regexp.MustCompile(`(?m),?\s*"` + idKey + `"\s*:\s*(-?[0-9]+(\.[0
 
 // pidfile is the name of the pidfile, if any.
 var pidfile string
+
+// errInternalRedir indicates an internal redirect
+// and is useful when admin API handlers rewrite
+// the request; in that case, authentication and
+// authorization needs to happen again for the
+// rewritten request.
+var errInternalRedir = fmt.Errorf("internal redirect; re-authorization required")
 
 const (
 	rawConfigKey = "config"
