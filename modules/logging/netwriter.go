@@ -30,7 +30,9 @@ func init() {
 	caddy.RegisterModule(NetWriter{})
 }
 
-// NetWriter implements a log writer that outputs to a network socket.
+// NetWriter implements a log writer that outputs to a network socket. If
+// the socket goes down, it will dump logs to stderr while it attempts to
+// reconnect.
 type NetWriter struct {
 	// The address of the network socket to which to connect.
 	Address string `json:"address,omitempty"`
