@@ -120,9 +120,10 @@ type Handler struct {
 	// handler chain will not affect the health status of the
 	// backend.
 	//
-	// Two new placeholders are available in this handler chain:
-	// - `{http.reverse_proxy.status_code}` The status code
-	// - `{http.reverse_proxy.status_text}` The status text
+	// Three new placeholders are available in this handler chain:
+	// - `{http.reverse_proxy.status_code}` The status code from the response
+	// - `{http.reverse_proxy.status_text}` The status text from the response
+	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
 	Transport http.RoundTripper `json:"-"`
@@ -631,9 +632,17 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 		if len(rh.Routes) == 0 {
 			continue
 		}
+
 		res.Body.Close()
+
+		// set up the replacer so that parts of the original response can be
+		// used for routing decisions
+		for field, value := range res.Header {
+			repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
+		}
 		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 		repl.Set("http.reverse_proxy.status_text", res.Status)
+
 		h.logger.Debug("handling response", zap.Int("handler", i))
 		if routeErr := rh.Routes.Compile(next).ServeHTTP(rw, req); routeErr != nil {
 			// wrap error in roundtripSucceeded so caller knows that
