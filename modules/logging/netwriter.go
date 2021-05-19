@@ -138,9 +138,10 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // is retried.
 type redialerConn struct {
 	net.Conn
-	connMu  sync.RWMutex
-	nw      NetWriter
-	timeout time.Duration
+	connMu     sync.RWMutex
+	nw         NetWriter
+	timeout    time.Duration
+	lastRedial time.Time
 }
 
 // Write wraps the underlying Conn.Write method, but if that fails,
@@ -163,17 +164,27 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 		return
 	}
 
-	// we're the lucky first goroutine to re-dial the connection
-	conn2, err2 := reconn.dial()
-	if err2 != nil {
-		// logger socket seems to be offline; instead of discarding the log, dump it to stderr
+	// there's still a problem, so try to re-attempt dialing the socket
+	// if some time has passed in which the issue could have potentially
+	// been resolved - we don't want to block at every single log
+	// emission (!) - see discussion in #4111
+	if time.Since(reconn.lastRedial) > 10*time.Second {
+		reconn.lastRedial = time.Now()
+		conn2, err2 := reconn.dial()
+		if err2 != nil {
+			// logger socket still offline; instead of discarding the log, dump it to stderr
+			os.Stderr.Write(b)
+			return
+		}
+		if n, err = conn2.Write(b); err == nil {
+			reconn.Conn.Close()
+			reconn.Conn = conn2
+		}
+	} else {
+		// last redial attempt was too recent; just dump to stderr for now
 		os.Stderr.Write(b)
-		return
 	}
-	if n, err = conn2.Write(b); err == nil {
-		reconn.Conn.Close()
-		reconn.Conn = conn2
-	}
+
 	return
 }
 
