@@ -79,7 +79,7 @@ nfpms:
     homepage: https://caddyserver.com
     maintainer: Matthew Holt <mholt@users.noreply.github.com>
     description: |
-      Powerful, enterprise-ready, open source web server with automatic HTTPS written in Go
+      Caddy - Powerful, enterprise-ready, open source web server with automatic HTTPS written in Go
     license: Apache 2.0
 
     formats:
