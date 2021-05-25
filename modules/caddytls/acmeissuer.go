@@ -387,6 +387,22 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return err
 				}
 				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+			case "propagation_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeoutStr := d.Val()
+				timeout, err := caddy.ParseDuration(timeoutStr)
+				if err != nil {
+					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
 
 			case "resolvers":
 				if iss.Challenges == nil {
