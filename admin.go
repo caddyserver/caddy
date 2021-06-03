@@ -364,11 +364,6 @@ func manageIdentity(ctx Context, cfg *Config) error {
 		return nil
 	}
 
-	oldIdentityCertCache := identityCertCache
-	if oldIdentityCertCache != nil {
-		defer oldIdentityCertCache.Stop()
-	}
-
 	// set default issuers; this is pretty hacky because we can't
 	// import the caddytls package -- but it works
 	if cfg.Admin.Identity.IssuersRaw == nil {
@@ -389,8 +384,13 @@ func manageIdentity(ctx Context, cfg *Config) error {
 		}
 	}
 
+	// we'll make a new cache when we make the CertMagic config, so stop any previous cache
+	if identityCertCache != nil {
+		identityCertCache.Stop()
+	}
+
 	logger := Log().Named("admin.identity")
-	cmCfg := cfg.Admin.Identity.certmagicConfig(logger)
+	cmCfg := cfg.Admin.Identity.certmagicConfig(logger, true)
 
 	// issuers have circular dependencies with the configs because,
 	// as explained in the caddytls package, they need access to the
@@ -456,7 +456,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	}
 
 	// create TLS config that will enforce mutual authentication
-	cmCfg := cfg.Admin.Identity.certmagicConfig(remoteLogger)
+	cmCfg := cfg.Admin.Identity.certmagicConfig(remoteLogger, false)
 	tlsConfig := cmCfg.TLSConfig()
 	tlsConfig.NextProtos = nil // this server does not solve ACME challenges
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
@@ -499,7 +499,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	return nil
 }
 
-func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger) *certmagic.Config {
+func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool) *certmagic.Config {
 	if ident == nil {
 		// user might not have configured identity; that's OK, we can still make a
 		// certmagic config, although it'll be mostly useless for remote management
@@ -510,7 +510,7 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger) *certmagic.Conf
 		Logger:  logger,
 		Issuers: ident.issuers,
 	}
-	if identityCertCache == nil {
+	if makeCache {
 		identityCertCache = certmagic.NewCache(certmagic.CacheOptions{
 			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
 				return cmCfg, nil
@@ -533,7 +533,7 @@ func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, e
 	if logger == nil {
 		logger = Log()
 	}
-	magic := ident.certmagicConfig(logger)
+	magic := ident.certmagicConfig(logger, false)
 	return magic.ClientCredentials(ctx, ident.Identifiers)
 }
 
