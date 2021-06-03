@@ -35,7 +35,6 @@ import (
 	"github.com/google/cel-go/interpreter/functions"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"google.golang.org/protobuf/proto"
-	timestamp "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func init() {
@@ -231,8 +230,7 @@ func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
 	case pkix.Name:
 		return celPkixName{&v}
 	case time.Time:
-		// TODO: eliminate direct protobuf dependency, sigh -- just wrap stdlib time.Time instead...
-		return types.Timestamp{Timestamp: &timestamp.Timestamp{Seconds: v.Unix(), Nanos: int32(v.Nanosecond())}}
+		return types.Timestamp{Time: v}
 	case error:
 		types.NewErr(v.Error())
 	}
