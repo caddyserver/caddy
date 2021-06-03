@@ -175,9 +175,7 @@ func (d customCertLifetime) Modify(cert *x509.Certificate, _ provisioner.SignOpt
 	return nil
 }
 
-const (
-	defaultInternalCertLifetime = 12 * time.Hour
-)
+const defaultInternalCertLifetime = 12 * time.Hour
 
 // Interface guards
 var (
