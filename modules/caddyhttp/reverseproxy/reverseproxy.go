@@ -504,18 +504,14 @@ func (h Handler) prepareRequest(req *http.Request) error {
 	// Remove hop-by-hop headers to the backend. Especially
 	// important is "Connection" because we want a persistent
 	// connection, regardless of what the client sent to us.
+	// Issue golang/go#46313: don't skip if field is empty.
 	for _, h := range hopHeaders {
-		hv := req.Header.Get(h)
-		if hv == "" {
-			continue
-		}
-		if h == "Te" && hv == "trailers" {
-			// Issue golang/go#21096: tell backend applications that
-			// care about trailer support that we support
-			// trailers. (We do, but we don't go out of
-			// our way to advertise that unless the
-			// incoming client request thought it was
-			// worth mentioning)
+		// Issue golang/go#21096: tell backend applications that care about trailer support
+		// that we support trailers. (We do, but we don't go out of our way to
+		// advertise that unless the incoming client request thought it was worth
+		// mentioning.)
+		if h == "Te" && httpguts.HeaderValuesContainsToken(req.Header["Te"], "trailers") {
+			req.Header.Set("Te", "trailers")
 			continue
 		}
 		req.Header.Del(h)
