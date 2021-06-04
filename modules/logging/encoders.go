@@ -264,6 +264,9 @@ func (lec *LogEncoderConfig) ZapcoreEncoderConfig() zapcore.EncoderConfig {
 	if lec.MessageKey != nil {
 		cfg.MessageKey = *lec.MessageKey
 	}
+	if lec.LevelKey != nil {
+		cfg.LevelKey = *lec.LevelKey
+	}
 	if lec.TimeKey != nil {
 		cfg.TimeKey = *lec.TimeKey
 	}
