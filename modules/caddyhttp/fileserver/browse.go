@@ -50,7 +50,8 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	oldReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	if !strings.HasSuffix(oldReq.URL.Path, "/") {
 		fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", oldReq.URL.Path))
-		http.Redirect(w, r, oldReq.URL.Path+"/", http.StatusMovedPermanently)
+		oldReq.URL.Path += "/"
+		http.Redirect(w, r, oldReq.URL.String(), http.StatusMovedPermanently)
 		return nil
 	}
 
