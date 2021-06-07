@@ -27,14 +27,34 @@ func (st ServerType) buildPKIApp(
 
 	pkiApp := &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}
 
+	skipInstallTrust := false
+	if _, ok := options["skip_install_trust"]; ok {
+		skipInstallTrust = true
+	}
+	falseBool := false
+
 	for _, p := range pairings {
 		for _, sblock := range p.serverBlocks {
 			// find all the CAs that were defined and add them to the app config
+			// i.e. from any "acme_server" directives
 			for _, caCfgValue := range sblock.pile["pki.ca"] {
 				ca := caCfgValue.Value.(*caddypki.CA)
+				if skipInstallTrust {
+					ca.InstallTrust = &falseBool
+				}
 				pkiApp.CAs[ca.ID] = ca
 			}
 		}
+	}
+
+	// if there was no CAs defined in any of the servers,
+	// and we were requested to not install trust, then
+	// add one for the default/local CA to do so
+	if len(pkiApp.CAs) == 0 && skipInstallTrust {
+		ca := new(caddypki.CA)
+		ca.ID = caddypki.DefaultCAID
+		ca.InstallTrust = &falseBool
+		pkiApp.CAs[ca.ID] = ca
 	}
 
 	return pkiApp, warnings, nil
