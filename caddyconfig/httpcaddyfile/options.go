@@ -49,6 +49,7 @@ func init() {
 	RegisterGlobalOption("servers", parseServerOptions)
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 	RegisterGlobalOption("log", parseLogOptions)
+	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) { return true, nil }
@@ -451,4 +452,9 @@ func parseLogOptions(d *caddyfile.Dispenser, existingVal interface{}) (interface
 	}
 
 	return configValues, nil
+}
+
+func parseOptPreferredChains(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+	d.Next()
+	return caddytls.ParseCaddyfilePreferredChainsOptions(d)
 }
