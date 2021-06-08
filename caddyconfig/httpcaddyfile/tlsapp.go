@@ -321,7 +321,8 @@ func (st ServerType) buildTLSApp(
 		globalACMECARoot := options["acme_ca_root"]
 		globalACMEDNS := options["acme_dns"]
 		globalACMEEAB := options["acme_eab"]
-		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil
+		globalPreferredChains := options["preferred_chains"]
+		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil || globalPreferredChains != nil
 		if hasGlobalACMEDefaults {
 			for _, ap := range tlsApp.Automation.Policies {
 				if len(ap.Issuers) == 0 {
@@ -405,6 +406,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interf
 	globalACMECARoot := options["acme_ca_root"]
 	globalACMEDNS := options["acme_dns"]
 	globalACMEEAB := options["acme_eab"]
+	globalPreferredChains := options["preferred_chains"]
 
 	if globalEmail != nil && acmeIssuer.Email == "" {
 		acmeIssuer.Email = globalEmail.(string)
@@ -424,6 +426,9 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interf
 	}
 	if globalACMEEAB != nil && acmeIssuer.ExternalAccount == nil {
 		acmeIssuer.ExternalAccount = globalACMEEAB.(*acme.EAB)
+	}
+	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
+		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
 	}
 	return nil
 }

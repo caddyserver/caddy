@@ -1,0 +1,56 @@
+{
+	preferred_chains smallest
+}
+
+localhost
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"localhost"
+						],
+						"issuers": [
+							{
+								"module": "acme",
+								"preferred_chains": {
+									"smallest": true
+								}
+							},
+							{
+								"module": "zerossl",
+								"preferred_chains": {
+									"smallest": true
+								}
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

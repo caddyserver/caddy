@@ -265,6 +265,10 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //         trusted_roots <pem_files...>
 //         dns <provider_name> [<options>]
 //         resolvers <dns_servers...>
+//         preferred_chains [smallest] {
+//           root_common_name <common_names...>
+//           any_common_name  <common_names...>
+//         }
 //     }
 //
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -416,6 +420,13 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
+			case "preferred_chains":
+				chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
+				if err != nil {
+					return err
+				}
+				iss.PreferredChains = chainPref
+
 			default:
 				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
 			}
@@ -450,6 +461,57 @@ func onDemandAskRequest(ask string, name string) error {
 	}
 
 	return nil
+}
+
+func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPreference, error) {
+	chainPref := new(ChainPreference)
+	if d.NextArg() {
+		smallestOpt := d.Val()
+		if smallestOpt == "smallest" {
+			trueBool := true
+			chainPref.Smallest = &trueBool
+			if d.NextArg() { // Only one argument allowed
+				return nil, d.ArgErr()
+			}
+			if d.NextBlock(d.Nesting()) { // Don't allow other options when smallest == true
+				return nil, d.Err("No more options are accepted when using the 'smallest' option")
+			}
+		} else { // Smallest option should always be 'smallest' or unset
+			return nil, d.Errf("Invalid argument '%s'", smallestOpt)
+		}
+	}
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "root_common_name":
+			rootCommonNameOpt := d.RemainingArgs()
+			chainPref.RootCommonName = rootCommonNameOpt
+			if rootCommonNameOpt == nil {
+				return nil, d.ArgErr()
+			}
+			if chainPref.AnyCommonName != nil {
+				return nil, d.Err("Can't set root_common_name when any_common_name is already set")
+			}
+
+		case "any_common_name":
+			anyCommonNameOpt := d.RemainingArgs()
+			chainPref.AnyCommonName = anyCommonNameOpt
+			if anyCommonNameOpt == nil {
+				return nil, d.ArgErr()
+			}
+			if chainPref.RootCommonName != nil {
+				return nil, d.Err("Can't set any_common_name when root_common_name is already set")
+			}
+
+		default:
+			return nil, d.Errf("Received unrecognized parameter '%s'", d.Val())
+		}
+	}
+
+	if chainPref.Smallest == nil && chainPref.RootCommonName == nil && chainPref.AnyCommonName == nil {
+		return nil, d.Err("No options for preferred_chains received")
+	}
+
+	return chainPref, nil
 }
 
 // ChainPreference describes the client's preferred certificate chain,
