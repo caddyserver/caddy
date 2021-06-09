@@ -189,7 +189,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// associate our new automation policy with this server block's hosts
-			ap.Subjects = sblockHosts
+			ap.Subjects = sblock.hostsFromKeysNotHTTP(httpPort)
 			sort.Strings(ap.Subjects) // solely for deterministic test results
 
 			// if a combination of public and internal names were given

@@ -478,6 +478,27 @@ func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
 	return sblockHosts
 }
 
+func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
+	// ensure each entry in our list is unique
+	hostMap := make(map[string]struct{})
+	for _, addr := range sb.keys {
+		if addr.Host == "" {
+			continue
+		}
+		if addr.Scheme != "http" && addr.Port != httpPort {
+			hostMap[addr.Host] = struct{}{}
+		}
+	}
+
+	// convert map to slice
+	sblockHosts := make([]string, 0, len(hostMap))
+	for host := range hostMap {
+		sblockHosts = append(sblockHosts, host)
+	}
+
+	return sblockHosts
+}
+
 // hasHostCatchAllKey returns true if sb has a key that
 // omits a host portion, i.e. it "catches all" hosts.
 func (sb serverBlock) hasHostCatchAllKey() bool {
