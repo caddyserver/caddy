@@ -47,11 +47,10 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	// URL doesn't end in a trailing slash because hrefs like
 	// "/b/c" on a path like "/a" end up going to "/b/c" instead
 	// of "/a/b/c" - so we have to redirect in this case
-	oldReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
-	if !strings.HasSuffix(oldReq.URL.Path, "/") {
-		fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", oldReq.URL.Path))
-		oldReq.URL.Path += "/"
-		http.Redirect(w, r, oldReq.URL.String(), http.StatusMovedPermanently)
+	if !strings.HasSuffix(r.URL.Path, "/") {
+		fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
+		r.URL.Path += "/"
+		http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
 		return nil
 	}
 

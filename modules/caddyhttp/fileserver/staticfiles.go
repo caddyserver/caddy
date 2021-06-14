@@ -243,14 +243,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// trailing slash - not enforcing this can break relative hrefs
 	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
 	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
-		oldReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
-
-		if implicitIndexFile && !strings.HasSuffix(oldReq.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)", zap.String("path", oldReq.URL.Path))
-			return redirect(w, r, oldReq.URL.Path+"/")
-		} else if !implicitIndexFile && strings.HasSuffix(oldReq.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)", zap.String("path", oldReq.URL.Path))
-			return redirect(w, r, oldReq.URL.Path[:len(oldReq.URL.Path)-1])
+		if implicitIndexFile && !strings.HasSuffix(r.URL.Path, "/") {
+			fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)", zap.String("path", r.URL.Path))
+			return redirect(w, r, r.URL.Path+"/")
+		} else if !implicitIndexFile && strings.HasSuffix(r.URL.Path, "/") {
+			fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)", zap.String("path", r.URL.Path))
+			return redirect(w, r, r.URL.Path[:len(r.URL.Path)-1])
 		}
 	}
 
