@@ -209,7 +209,7 @@ func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
 	if !isSymlink(f) {
 		return false
 	}
-	target := sanitizedPathJoin(root, path.Join(urlPath, f.Name()))
+	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
 	targetInfo, err := os.Stat(target)
 	if err != nil {
 		return false

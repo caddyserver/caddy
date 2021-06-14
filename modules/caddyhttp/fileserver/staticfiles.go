@@ -162,7 +162,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	filename := sanitizedPathJoin(root, r.URL.Path)
+	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
 
 	fsrv.logger.Debug("sanitized path join",
 		zap.String("site_root", root),
@@ -187,7 +187,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var implicitIndexFile bool
 	if info.IsDir() && len(fsrv.IndexNames) > 0 {
 		for _, indexPage := range fsrv.IndexNames {
-			indexPath := sanitizedPathJoin(filename, indexPage)
+			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
 			if fileHidden(indexPath, filesToHide) {
 				// pretend this file doesn't exist
 				fsrv.logger.Debug("hiding index file",
@@ -421,42 +421,6 @@ func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 		}
 	}
 	return hide
-}
-
-// sanitizedPathJoin performs filepath.Join(root, reqPath) that
-// is safe against directory traversal attacks. It uses logic
-// similar to that in the Go standard library, specifically
-// in the implementation of http.Dir. The root is assumed to
-// be a trusted path, but reqPath is not.
-func sanitizedPathJoin(root, reqPath string) string {
-	// TODO: Caddy 1 uses this:
-	// prevent absolute path access on Windows, e.g. http://localhost:5000/C:\Windows\notepad.exe
-	// if runtime.GOOS == "windows" && len(reqPath) > 0 && filepath.IsAbs(reqPath[1:]) {
-	// TODO.
-	// }
-
-	// TODO: whereas std lib's http.Dir.Open() uses this:
-	// if filepath.Separator != '/' && strings.ContainsRune(name, filepath.Separator) {
-	// 	return nil, errors.New("http: invalid character in file path")
-	// }
-
-	// TODO: see https://play.golang.org/p/oh77BiVQFti for another thing to consider
-
-	if root == "" {
-		root = "."
-	}
-
-	path := filepath.Join(root, filepath.Clean("/"+reqPath))
-
-	// filepath.Join also cleans the path, and cleaning strips
-	// the trailing slash, so we need to re-add it afterwards.
-	// if the length is 1, then it's a path to the root,
-	// and that should return ".", so we don't append the separator.
-	if strings.HasSuffix(reqPath, "/") && len(reqPath) > 1 {
-		path += separator
-	}
-
-	return path
 }
 
 // fileHidden returns true if filename is hidden according to the hide list.

@@ -94,7 +94,7 @@ func TestFileMatcher(t *testing.T) {
 			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 		}
 
-		fileType, ok := repl.Get("http.matchers.file.type")
+		fileType, _ := repl.Get("http.matchers.file.type")
 		if fileType != tc.expectedType {
 			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
 		}
@@ -197,7 +197,7 @@ func TestPHPFileMatcher(t *testing.T) {
 			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 		}
 
-		fileType, ok := repl.Get("http.matchers.file.type")
+		fileType, _ := repl.Get("http.matchers.file.type")
 		if fileType != tc.expectedType {
 			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
 		}
