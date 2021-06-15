@@ -62,9 +62,6 @@ type HTTPTransport struct {
 	// Maximum number of connections per host. Default: 0 (no limit)
 	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
 
-	// Maximum number of idle connections per host. Default: 0 (uses Go's default of 2)
-	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
-
 	// How long to wait before timing out trying to connect to
 	// an upstream.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
@@ -197,7 +194,6 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			return conn, nil
 		},
 		MaxConnsPerHost:        h.MaxConnsPerHost,
-		MaxIdleConnsPerHost:    h.MaxIdleConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
 		ExpectContinueTimeout:  time.Duration(h.ExpectContinueTimeout),
 		MaxResponseHeaderBytes: h.MaxResponseHeaderSize,
@@ -412,13 +408,13 @@ type KeepAlive struct {
 	// How often to probe for liveness.
 	ProbeInterval caddy.Duration `json:"probe_interval,omitempty"`
 
-	// Maximum number of idle connections.
+	// Maximum number of idle connections. Default: 0, which means no limit.
 	MaxIdleConns int `json:"max_idle_conns,omitempty"`
 
-	// Maximum number of idle connections per upstream host.
+	// Maximum number of idle connections per host. Default: 0, which uses Go's default of 2.
 	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
 
-	// How long connections should be kept alive when idle.
+	// How long connections should be kept alive when idle. Default: 0, which means no timeout.
 	IdleConnTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 }
 
