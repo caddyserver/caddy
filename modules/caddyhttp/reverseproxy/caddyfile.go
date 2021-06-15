@@ -978,6 +978,18 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.KeepAlive = new(KeepAlive)
 				}
 				h.KeepAlive.MaxIdleConns = num
+
+			case "keepalive_idle_conns_per_host":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				num, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad integer value '%s': %v", d.Val(), err)
+				}
+				if h.KeepAlive == nil {
+					h.KeepAlive = new(KeepAlive)
+				}
 				h.KeepAlive.MaxIdleConnsPerHost = num
 
 			case "versions":
@@ -1003,16 +1015,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad integer value '%s': %v", d.Val(), err)
 				}
 				h.MaxConnsPerHost = num
-
-			case "max_idle_conns_per_host":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				num, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("bad integer value '%s': %v", d.Val(), err)
-				}
-				h.MaxIdleConnsPerHost = num
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
