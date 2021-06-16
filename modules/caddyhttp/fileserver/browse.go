@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
@@ -34,8 +35,6 @@ import (
 type Browse struct {
 	// Use this template file instead of the default browse template.
 	TemplateFile string `json:"template_file,omitempty"`
-
-	template *template.Template
 }
 
 func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -75,11 +74,14 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 
 	fsrv.browseApplyQueryParams(w, r, &listing)
 
-	// write response as either JSON or HTML
-	var buf *bytes.Buffer
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
+
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
+
+	// write response as either JSON or HTML
 	if strings.Contains(acceptHeader, "application/json") {
-		if buf, err = fsrv.browseWriteJSON(listing); err != nil {
+		if err := json.NewEncoder(buf).Encode(listing.Items); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -98,12 +100,11 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			browseTemplateContext: listing,
 		}
 
-		err = fsrv.makeBrowseTemplate(tplCtx)
+		tpl, err := fsrv.makeBrowseTemplate(tplCtx)
 		if err != nil {
 			return fmt.Errorf("parsing browse template: %v", err)
 		}
-
-		if buf, err = fsrv.browseWriteHTML(tplCtx); err != nil {
+		if err := tpl.Execute(buf, tplCtx); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -161,7 +162,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 }
 
 // makeBrowseTemplate creates the template to be used for directory listings.
-func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) error {
+func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.Template, error) {
 	var tpl *template.Template
 	var err error
 
@@ -169,33 +170,17 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) error {
 		tpl = tplCtx.NewTemplate(path.Base(fsrv.Browse.TemplateFile))
 		tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
 		if err != nil {
-			return fmt.Errorf("parsing browse template file: %v", err)
+			return nil, fmt.Errorf("parsing browse template file: %v", err)
 		}
 	} else {
 		tpl = tplCtx.NewTemplate("default_listing")
 		tpl, err = tpl.Parse(defaultBrowseTemplate)
 		if err != nil {
-			return fmt.Errorf("parsing default browse template: %v", err)
+			return nil, fmt.Errorf("parsing default browse template: %v", err)
 		}
 	}
 
-	fsrv.Browse.template = tpl
-
-	return nil
-}
-
-func (fsrv *FileServer) browseWriteJSON(listing browseTemplateContext) (*bytes.Buffer, error) {
-	buf := bufPool.Get().(*bytes.Buffer)
-	defer bufPool.Put(buf)
-	err := json.NewEncoder(buf).Encode(listing.Items)
-	return buf, err
-}
-
-func (fsrv *FileServer) browseWriteHTML(tplCtx *templateContext) (*bytes.Buffer, error) {
-	buf := bufPool.Get().(*bytes.Buffer)
-	defer bufPool.Put(buf)
-	err := fsrv.Browse.template.Execute(buf, tplCtx)
-	return buf, err
+	return tpl, nil
 }
 
 // isSymlink return true if f is a symbolic link
@@ -223,4 +208,11 @@ func isSymlinkTargetDir(f os.FileInfo, root, urlPath string) bool {
 type templateContext struct {
 	templates.TemplateContext
 	browseTemplateContext
+}
+
+// bufPool is used to increase the efficiency of file listings.
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }
