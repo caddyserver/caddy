@@ -411,7 +411,7 @@ type KeepAlive struct {
 	// Maximum number of idle connections. Default: 0, which means no limit.
 	MaxIdleConns int `json:"max_idle_conns,omitempty"`
 
-	// Maximum number of idle connections per host. Default: 0, which uses Go's default of 2.
+	// Maximum number of idle connections per host. Default: 32.
 	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
 
 	// How long connections should be kept alive when idle. Default: 0, which means no timeout.
