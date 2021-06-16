@@ -15,7 +15,6 @@
 package fileserver
 
 import (
-	"bytes"
 	"fmt"
 	weakrand "math/rand"
 	"mime"
@@ -24,7 +23,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -178,7 +176,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		} else if os.IsPermission(err) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
-		// TODO: treat this as resource exhaustion like with os.Open? Or unnecessary here?
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
@@ -554,12 +551,6 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
-
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
-}
 
 const (
 	minBackoff, maxBackoff = 2, 5
