@@ -42,15 +42,28 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 		zap.String("path", dirPath),
 		zap.String("root", root))
 
-	// navigation on the client-side gets messed up if the
-	// URL doesn't end in a trailing slash because hrefs like
-	// "/b/c" on a path like "/a" end up going to "/b/c" instead
+	// Navigation on the client-side gets messed up if the
+	// URL doesn't end in a trailing slash because hrefs to
+	// "b/c" at path "/a" end up going to "/b/c" instead
 	// of "/a/b/c" - so we have to redirect in this case
-	if !strings.HasSuffix(r.URL.Path, "/") {
-		fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
-		r.URL.Path += "/"
-		http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
-		return nil
+	// so that the path is "/a/" and the client constructs
+	// relative hrefs "b/c" to be "/a/b/c".
+	//
+	// Only redirect if the last element of the path (the filename) was not
+	// rewritten; if the admin wanted to rewrite to the canonical path, they
+	// would have, and we have to be very careful not to introduce unwanted
+	// redirects and especially redirect loops! (Redirecting using the
+	// original URI is necessary because that's the URI the browser knows,
+	// we don't want to redirect from internally-rewritten URIs.)
+	// See https://github.com/caddyserver/caddy/issues/4205.
+	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+	if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
+		if !strings.HasSuffix(origReq.URL.Path, "/") {
+			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
+			origReq.URL.Path += "/"
+			http.Redirect(w, r, origReq.URL.String(), http.StatusMovedPermanently)
+			return nil
+		}
 	}
 
 	dir, err := fsrv.openFile(dirPath, w)
