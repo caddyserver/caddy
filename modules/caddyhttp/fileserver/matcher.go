@@ -185,7 +185,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		if strings.HasSuffix(file, "/") {
 			suffix += "/"
 		}
-		fullpath = sanitizedPathJoin(root, suffix)
+		fullpath = caddyhttp.SanitizedPathJoin(root, suffix)
 		return
 	}
 

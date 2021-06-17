@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -218,12 +217,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	}
 
 	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
-	scriptFilename := filepath.Join(root, scriptName)
-
-	// Add vhost path prefix to scriptName. Otherwise, some PHP software will
-	// have difficulty discovering its URL.
-	pathPrefix, _ := r.Context().Value(caddy.CtxKey("path_prefix")).(string)
-	scriptName = path.Join(pathPrefix, scriptName)
+	scriptFilename := caddyhttp.SanitizedPathJoin(root, scriptName)
 
 	// Ensure the SCRIPT_NAME has a leading slash for compliance with RFC3875
 	// Info: https://tools.ietf.org/html/rfc3875#section-4.1.13
@@ -288,7 +282,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 	// PATH_TRANSLATED should only exist if PATH_INFO is defined.
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
 	if env["PATH_INFO"] != "" {
-		env["PATH_TRANSLATED"] = filepath.Join(root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
+		env["PATH_TRANSLATED"] = caddyhttp.SanitizedPathJoin(root, pathInfo) // Info: http://www.oreilly.com/openbook/cgi/ch02_04.html
 	}
 
 	// compliance with the CGI specification requires that
