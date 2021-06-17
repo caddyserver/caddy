@@ -20,6 +20,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -240,12 +241,26 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// trailing slash - not enforcing this can break relative hrefs
 	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
 	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
-		if implicitIndexFile && !strings.HasSuffix(r.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)", zap.String("path", r.URL.Path))
-			return redirect(w, r, r.URL.Path+"/")
-		} else if !implicitIndexFile && strings.HasSuffix(r.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)", zap.String("path", r.URL.Path))
-			return redirect(w, r, r.URL.Path[:len(r.URL.Path)-1])
+		// Only redirect if the last element of the path (the filename) was not
+		// rewritten; if the admin wanted to rewrite to the canonical path, they
+		// would have, and we have to be very careful not to introduce unwanted
+		// redirects and especially redirect loops!
+		// See https://github.com/caddyserver/caddy/issues/4205.
+		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
+			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
+				to := origReq.URL.Path + "/"
+				fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
+					zap.String("from_path", origReq.URL.Path),
+					zap.String("to_path", to))
+				return redirect(w, r, to)
+			} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
+				to := origReq.URL.Path[:len(origReq.URL.Path)-1]
+				fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
+					zap.String("from_path", origReq.URL.Path),
+					zap.String("to_path", to))
+				return redirect(w, r, to)
+			}
 		}
 	}
 
