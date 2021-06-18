@@ -47,7 +47,10 @@ func (Zstd) AcceptEncoding() string { return "zstd" }
 
 // NewEncoder returns a new gzip writer.
 func (z Zstd) NewEncoder() encode.Encoder {
-	writer, _ := zstd.NewWriter(nil)
+	// The default of 8MB for the window is
+	// too large for many clients, so we limit
+	// it to 128K to lighten their load.
+	writer, _ := zstd.NewWriter(nil, zstd.WithWindowSize(128<<10), zstd.WithEncoderConcurrency(1), zstd.WithZeroFrames(true))
 	return writer
 }
 
