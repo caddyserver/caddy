@@ -47,7 +47,8 @@ func (Zstd) AcceptEncoding() string { return "zstd" }
 
 // NewEncoder returns a new gzip writer.
 func (z Zstd) NewEncoder() encode.Encoder {
-	writer, _ := zstd.NewWriter(nil)
+	// Limit the window to 128K.
+	writer, _ := zstd.NewWriter(nil, zstd.WithWindowSize(128<<10), zstd.WithEncoderConcurrency(1), zstd.WithZeroFrames(true))
 	return writer
 }
 
