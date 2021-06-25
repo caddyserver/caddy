@@ -1,8 +1,12 @@
 {
-	preferred_chains smallest
+	email foo@bar
 }
 
-example.com
+localhost {
+}
+
+example.com {
+}
 ----------
 {
 	"apps": {
@@ -22,6 +26,16 @@ example.com
 								}
 							],
 							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
 						}
 					]
 				}
@@ -36,16 +50,12 @@ example.com
 						],
 						"issuers": [
 							{
-								"module": "acme",
-								"preferred_chains": {
-									"smallest": true
-								}
+								"email": "foo@bar",
+								"module": "acme"
 							},
 							{
-								"module": "zerossl",
-								"preferred_chains": {
-									"smallest": true
-								}
+								"email": "foo@bar",
+								"module": "zerossl"
 							}
 						]
 					}
