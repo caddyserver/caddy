@@ -150,9 +150,9 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	// create the router for the ACME endpoints
 	acmeRouterHandler := acmeAPI.NewHandler(acmeAPI.HandlerOptions{
 		CA:     auth,
-		DB:     acmeDB,         // stores all the server state
-		DNS:    ash.Host,       // used for directory links; TODO: not needed (follow-up upstream with step-ca)
-		Prefix: ash.PathPrefix, // used for directory links
+		DB:     acmeDB,                            // stores all the server state
+		DNS:    ash.Host,                          // used for directory links; TODO: not needed (follow-up upstream with step-ca)
+		Prefix: strings.Trim(ash.PathPrefix, "/"), // used for directory links
 	})
 
 	// extract its http.Handler so we can use it directly
