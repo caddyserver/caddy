@@ -70,6 +70,10 @@ type FileServer struct {
 
 	// Use redirects to enforce trailing slashes for directories, or to
 	// remove trailing slash from URIs for files. Default is true.
+	//
+	// Canonicalization will not happen if the last element of the request's
+	// path (the filename) is changed in an internal rewrite, to avoid
+	// clobbering the explicit rewrite with implicit behavior.
 	CanonicalURIs *bool `json:"canonical_uris,omitempty"`
 
 	// Override the status code written when successfully serving a file.

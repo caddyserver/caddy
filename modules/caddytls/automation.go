@@ -89,10 +89,6 @@ type AutomationPolicy struct {
 	// zerossl.
 	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
-	// DEPRECATED: Use `issuers` instead (November 2020). This field will
-	// be removed in the future.
-	IssuerRaw json.RawMessage `json:"issuer,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
-
 	// If true, certificates will be requested with MustStaple. Not all
 	// CAs support this, and there are potentially serious consequences
 	// of enabling this feature without proper threat modeling.
@@ -178,12 +174,6 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				return nil
 			},
 		}
-	}
-
-	// TODO: IssuerRaw field deprecated as of November 2020 - remove this shim after deprecation is complete
-	if ap.IssuerRaw != nil {
-		tlsApp.logger.Warn("the 'issuer' field is deprecated and will be removed in the future; use 'issuers' instead; your issuer has been appended automatically for now")
-		ap.IssuersRaw = append(ap.IssuersRaw, ap.IssuerRaw)
 	}
 
 	// load and provision any explicitly-configured issuer modules
