@@ -291,6 +291,15 @@ Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.`,
 	})
 
+	RegisterCommand(Command{
+		Name:  "add",
+		Func:  cmdAddPackage,
+		Usage: "<packageName>",
+		Short: "Adds Caddy package (EXPERIMENTAL)",
+		Long: `
+	  Adds caddy package`,
+	})
+
 }
 
 // RegisterCommand registers the command cmd.
