@@ -292,7 +292,7 @@ latest versions. EXPERIMENTAL: May be changed or removed.`,
 	})
 
 	RegisterCommand(Command{
-		Name:  "add",
+		Name:  "add-package",
 		Func:  cmdAddPackage,
 		Usage: "<packageName>",
 		Short: "Adds Caddy package (EXPERIMENTAL)",
