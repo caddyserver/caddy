@@ -41,7 +41,7 @@ func init() {
 //        browse        [<template_file>]
 //        precompressed <formats...>
 //        status        <status>
-//        canonical_uris <false>
+//        disable_canonical_uris
 //    }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -112,8 +112,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 				fsrv.StatusCode = caddyhttp.WeakString(h.Val())
-			case "canonical_uris":
-				if !h.NextArg() || h.Val() != "false" {
+
+			case "disable_canonical_uris":
+				if h.NextArg() {
 					return nil, h.ArgErr()
 				}
 				falseBool := false
