@@ -50,17 +50,16 @@ type Handler struct {
 
 	// The hostname or IP address by which ACME clients
 	// will access the server. This is used to populate
-	// the ACME directory endpoint. Default: localhost.
+	// the ACME directory endpoint. If not set, the Host
+	// header of the request will be used.
 	// COMPATIBILITY NOTE / TODO: This property may go away in the
-	// future, as it is currently only required due to
-	// limitations in the underlying library. Do not rely
-	// on this property long-term; check release notes.
+	// future. Do not rely on this property long-term; check release notes.
 	Host string `json:"host,omitempty"`
 
 	// The path prefix under which to serve all ACME
 	// endpoints. All other requests will not be served
 	// by this handler and will be passed through to
-	// the next one. Default: "/acme/"
+	// the next one. Default: "/acme/".
 	// COMPATIBILITY NOTE / TODO: This property may go away in the
 	// future, as it is currently only required due to
 	// limitations in the underlying library. Do not rely
@@ -92,9 +91,6 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	// set some defaults
 	if ash.CA == "" {
 		ash.CA = caddypki.DefaultCAID
-	}
-	if ash.Host == "" {
-		ash.Host = defaultHost
 	}
 	if ash.PathPrefix == "" {
 		ash.PathPrefix = defaultPathPrefix
@@ -151,7 +147,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	acmeRouterHandler := acmeAPI.NewHandler(acmeAPI.HandlerOptions{
 		CA:     auth,
 		DB:     acmeDB,                            // stores all the server state
-		DNS:    ash.Host,                          // used for directory links; TODO: not needed (follow-up upstream with step-ca)
+		DNS:    ash.Host,                          // used for directory links
 		Prefix: strings.Trim(ash.PathPrefix, "/"), // used for directory links
 	})
 
@@ -219,10 +215,7 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 	return database.(databaseCloser).DB, err
 }
 
-const (
-	defaultHost       = "localhost"
-	defaultPathPrefix = "/acme/"
-)
+const defaultPathPrefix = "/acme/"
 
 var keyCleaner = regexp.MustCompile(`[^\w.-_]`)
 var databasePool = caddy.NewUsagePool()
