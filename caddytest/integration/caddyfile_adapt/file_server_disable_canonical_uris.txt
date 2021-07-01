@@ -1,0 +1,32 @@
+:80
+
+file_server {
+	disable_canonical_uris
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"canonical_uris": false,
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
