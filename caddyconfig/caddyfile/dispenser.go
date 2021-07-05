@@ -343,15 +343,28 @@ func (d *Dispenser) EOFErr() error {
 	return d.Errf("Unexpected EOF")
 }
 
+type parseError struct {
+	file       string
+	line       int
+	innerError error
+}
+
+func (e parseError) Error() string {
+	return fmt.Sprintf("%s:%d - Error during parsing: %s", e.file, e.line, e.innerError.Error())
+}
+
+func (e parseError) Unwrap() error {
+	return e.innerError
+}
+
 // Err generates a custom parse-time error with a message of msg.
 func (d *Dispenser) Err(msg string) error {
-	msg = fmt.Sprintf("%s:%d - Error during parsing: %s", d.File(), d.Line(), msg)
-	return errors.New(msg)
+	return parseError{d.File(), d.Line(), errors.New(msg)}
 }
 
 // Errf is like Err, but for formatted error messages
 func (d *Dispenser) Errf(format string, args ...interface{}) error {
-	return d.Err(fmt.Sprintf(format, args...))
+	return parseError{d.File(), d.Line(), fmt.Errorf(format, args...)}
 }
 
 // Delete deletes the current token and returns the updated slice
