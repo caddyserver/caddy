@@ -41,6 +41,7 @@ func init() {
 //        browse        [<template_file>]
 //        precompressed <formats...>
 //        status        <status>
+//        disable_canonical_uris
 //    }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -111,6 +112,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 					return nil, h.ArgErr()
 				}
 				fsrv.StatusCode = caddyhttp.WeakString(h.Val())
+
+			case "disable_canonical_uris":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				falseBool := false
+				fsrv.CanonicalURIs = &falseBool
 
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
