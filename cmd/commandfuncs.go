@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"io/ioutil"
 	"log"
 	"net"
@@ -40,8 +39,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap"
 )
-
-const DownloadPath = "https://caddyserver.com/api/download"
 
 func cmdStart(fl Flags) (int, error) {
 	startCmdConfigFlag := fl.String("config")
@@ -591,7 +588,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
 	}
-	pluginPkgs, err := buildPlugins(nonstandard)
+	pluginPkgs, err := getPluginPackages(nonstandard)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -634,7 +631,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 	}()
 
 	// download the file; do this in a closure to close reliably before we execute it
-	err = writeFile(thisExecPath, &resp.Body, thisExecStat)
+	err = writeCaddyBinary(thisExecPath, &resp.Body, thisExecStat)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -683,7 +680,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
 	}
-	pluginPkgs, err := buildPlugins(nonstandard)
+	pluginPkgs, err := getPluginPackages(nonstandard)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -728,7 +725,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 	}()
 
 	// download the file; do this in a closure to close reliably before we execute it
-	err = writeFile(thisExecPath, &resp.Body, thisExecStat)
+	err = writeCaddyBinary(thisExecPath, &resp.Body, thisExecStat)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -912,7 +909,7 @@ func downloadModule(qs url.Values) (*http.Response, error) {
 	return resp, nil
 }
 
-func buildPlugins(modules []moduleInfo) (map[string]struct{}, error) {
+func getPluginPackages(modules []moduleInfo) (map[string]struct{}, error) {
 	pluginPkgs := make(map[string]struct{})
 	for _, mod := range modules {
 		if mod.goModule.Replace != nil {
@@ -924,7 +921,7 @@ func buildPlugins(modules []moduleInfo) (map[string]struct{}, error) {
 	return pluginPkgs, nil
 }
 
-func writeFile(path string, body *io.ReadCloser, fileInfo fs.FileInfo) error {
+func writeCaddyBinary(path string, body *io.ReadCloser, fileInfo os.FileInfo) error {
 	l := caddy.Log()
 	destFile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, fileInfo.Mode())
 	if err != nil {
@@ -1028,3 +1025,5 @@ type moduleInfo struct {
 	goModule      *debug.Module
 	err           error
 }
+
+const DownloadPath = "https://caddyserver.com/api/download"
