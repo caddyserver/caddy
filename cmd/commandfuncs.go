@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net"
@@ -39,6 +40,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap"
 )
+
+const DownloadPath = "https://caddyserver.com/api/download"
 
 func cmdStart(fl Flags) (int, error) {
 	startCmdConfigFlag := fl.String("config")
@@ -588,16 +591,9 @@ func cmdUpgrade(_ Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
 	}
-	pluginPkgs := make(map[string]struct{})
-	for _, mod := range nonstandard {
-		if mod.goModule.Replace != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("cannot auto-upgrade when Go module has been replaced: %s => %s",
-				mod.goModule.Path, mod.goModule.Replace.Path)
-		}
-		l.Info("found non-standard module",
-			zap.String("id", mod.caddyModuleID),
-			zap.String("package", mod.goModule.Path))
-		pluginPkgs[mod.goModule.Path] = struct{}{}
+	pluginPkgs, err := buildPlugins(nonstandard)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// build the request URL to download this custom build
@@ -608,32 +604,13 @@ func cmdUpgrade(_ Flags) (int, error) {
 	for pkg := range pluginPkgs {
 		qs.Add("p", pkg)
 	}
-	urlStr := fmt.Sprintf("https://caddyserver.com/api/download?%s", qs.Encode())
 
 	// initiate the build
-	l.Info("requesting build",
-		zap.String("os", qs.Get("os")),
-		zap.String("arch", qs.Get("arch")),
-		zap.Strings("packages", qs["p"]))
-	resp, err := http.Get(urlStr)
+	resp, err := downloadModule(qs)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("secure request failed: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		var details struct {
-			StatusCode int `json:"status_code"`
-			Error      struct {
-				Message string `json:"message"`
-				ID      string `json:"id"`
-			} `json:"error"`
-		}
-		err2 := json.NewDecoder(resp.Body).Decode(&details)
-		if err2 != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("download and error decoding failed: HTTP %d: %v", resp.StatusCode, err2)
-		}
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: HTTP %d: %s (id=%s)", resp.StatusCode, details.Error.Message, details.Error.ID)
-	}
 
 	// back up the current binary, in case something goes wrong we can replace it
 	backupExecPath := thisExecPath + ".tmp"
@@ -657,28 +634,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 	}()
 
 	// download the file; do this in a closure to close reliably before we execute it
-	writeFile := func() error {
-		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, thisExecStat.Mode())
-		if err != nil {
-			return fmt.Errorf("unable to open destination file: %v", err)
-		}
-		defer destFile.Close()
-
-		l.Info("downloading binary", zap.String("source", urlStr), zap.String("destination", thisExecPath))
-
-		_, err = io.Copy(destFile, resp.Body)
-		if err != nil {
-			return fmt.Errorf("unable to download file: %v", err)
-		}
-
-		err = destFile.Sync()
-		if err != nil {
-			return fmt.Errorf("syncing downloaded file to device: %v", err)
-		}
-
-		return nil
-	}
-	err = writeFile()
+	err = writeFile(thisExecPath, &resp.Body, thisExecStat)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -687,26 +643,17 @@ func cmdUpgrade(_ Flags) (int, error) {
 
 	// use the new binary to print out version and module info
 	fmt.Print("\nModule versions:\n\n")
-	cmd := exec.Command(thisExecPath, "list-modules", "--versions")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
+	if err = listModules(thisExecPath); err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
 	}
 	fmt.Println("\nVersion:")
-	cmd = exec.Command(thisExecPath, "version")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
+	if err = showVersion(thisExecPath); err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
 	}
 	fmt.Println()
 
 	// clean up the backup file
-	err = os.Remove(backupExecPath)
-	if err != nil {
+	if err = os.Remove(backupExecPath); err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
 	}
 
@@ -716,13 +663,11 @@ func cmdUpgrade(_ Flags) (int, error) {
 }
 
 func cmdAddPackage(fl Flags) (int, error) {
+	l := caddy.Log()
 	packageName := fl.Args()[0]
 	if packageName == "" {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("package name must be specified")
 	}
-	fmt.Println(packageName)
-	l := caddy.Log()
-
 	thisExecPath, err := os.Executable()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("determining current executable path: %v", err)
@@ -738,16 +683,9 @@ func cmdAddPackage(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
 	}
-	pluginPkgs := make(map[string]struct{})
-	for _, mod := range nonstandard {
-		if mod.goModule.Replace != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("cannot auto-upgrade when Go module has been replaced: %s => %s",
-				mod.goModule.Path, mod.goModule.Replace.Path)
-		}
-		l.Info("found non-standard module",
-			zap.String("id", mod.caddyModuleID),
-			zap.String("package", mod.goModule.Path))
-		pluginPkgs[mod.goModule.Path] = struct{}{}
+	pluginPkgs, err := buildPlugins(nonstandard)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	if _, ok := pluginPkgs[packageName]; ok {
@@ -762,32 +700,11 @@ func cmdAddPackage(fl Flags) (int, error) {
 	}
 	qs.Add("p", packageName)
 
-	urlStr := fmt.Sprintf("https://caddyserver.com/api/download?%s", qs.Encode())
-
-	// initiate the build
-	l.Info("requesting build",
-		zap.String("os", qs.Get("os")),
-		zap.String("arch", qs.Get("arch")),
-		zap.Strings("packages", qs["p"]))
-	resp, err := http.Get(urlStr)
+	resp, err := downloadModule(qs)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("secure request failed: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		var details struct {
-			StatusCode int `json:"status_code"`
-			Error      struct {
-				Message string `json:"message"`
-				ID      string `json:"id"`
-			} `json:"error"`
-		}
-		err2 := json.NewDecoder(resp.Body).Decode(&details)
-		if err2 != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("download and error decoding failed: HTTP %d: %v", resp.StatusCode, err2)
-		}
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: HTTP %d: %s (id=%s)", resp.StatusCode, details.Error.Message, details.Error.ID)
-	}
 
 	// back up the current binary, in case something goes wrong we can replace it
 	backupExecPath := thisExecPath + ".tmp"
@@ -811,28 +728,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 	}()
 
 	// download the file; do this in a closure to close reliably before we execute it
-	writeFile := func() error {
-		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, thisExecStat.Mode())
-		if err != nil {
-			return fmt.Errorf("unable to open destination file: %v", err)
-		}
-		defer destFile.Close()
-
-		l.Info("downloading binary", zap.String("source", urlStr), zap.String("destination", thisExecPath))
-
-		_, err = io.Copy(destFile, resp.Body)
-		if err != nil {
-			return fmt.Errorf("unable to download file: %v", err)
-		}
-
-		err = destFile.Sync()
-		if err != nil {
-			return fmt.Errorf("syncing downloaded file to device: %v", err)
-		}
-
-		return nil
-	}
-	err = writeFile()
+	err = writeFile(thisExecPath, &resp.Body, thisExecStat)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -840,11 +736,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 
 	// use the new binary to print out version and module info
 	fmt.Print("\nModule versions:\n\n")
-	cmd := exec.Command(thisExecPath, "list-modules", "--versions")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
+	if err = listModules(thisExecPath); err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
 	}
 
@@ -969,6 +861,90 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		}
 	}
 	return
+}
+
+func listModules(path string) error {
+	cmd := exec.Command(path, "list-modules", "--versions")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
+	}
+	return nil
+}
+
+func showVersion(path string) error {
+	cmd := exec.Command(path, "version")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
+	}
+	return nil
+}
+
+func downloadModule(qs url.Values) (*http.Response, error) {
+	l := caddy.Log()
+	l.Info("requesting build",
+		zap.String("os", qs.Get("os")),
+		zap.String("arch", qs.Get("arch")),
+		zap.Strings("packages", qs["p"]))
+	resp, err := http.Get(fmt.Sprintf("%s?%s", DownloadPath, qs.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("secure request failed: %v", err)
+	}
+	if resp.StatusCode >= 400 {
+		var details struct {
+			StatusCode int `json:"status_code"`
+			Error      struct {
+				Message string `json:"message"`
+				ID      string `json:"id"`
+			} `json:"error"`
+		}
+		err2 := json.NewDecoder(resp.Body).Decode(&details)
+		if err2 != nil {
+			return nil, fmt.Errorf("download and error decoding failed: HTTP %d: %v", resp.StatusCode, err2)
+		}
+		return nil, fmt.Errorf("download failed: HTTP %d: %s (id=%s)", resp.StatusCode, details.Error.Message, details.Error.ID)
+	}
+	return resp, nil
+}
+
+func buildPlugins(modules []moduleInfo) (map[string]struct{}, error) {
+	pluginPkgs := make(map[string]struct{})
+	for _, mod := range modules {
+		if mod.goModule.Replace != nil {
+			return nil, fmt.Errorf("cannot auto-upgrade when Go module has been replaced: %s => %s",
+				mod.goModule.Path, mod.goModule.Replace.Path)
+		}
+		pluginPkgs[mod.goModule.Path] = struct{}{}
+	}
+	return pluginPkgs, nil
+}
+
+func writeFile(path string, body *io.ReadCloser, fileInfo fs.FileInfo) error {
+	l := caddy.Log()
+	destFile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, fileInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("unable to open destination file: %v", err)
+	}
+	defer destFile.Close()
+
+	l.Info("downloading binary", zap.String("destination", path))
+
+	_, err = io.Copy(destFile, *body)
+	if err != nil {
+		return fmt.Errorf("unable to download file: %v", err)
+	}
+
+	err = destFile.Sync()
+	if err != nil {
+		return fmt.Errorf("syncing downloaded file to device: %v", err)
+	}
+
+	return nil
 }
 
 // apiRequest makes an API request to the endpoint adminAddr with the
