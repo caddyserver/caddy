@@ -667,7 +667,7 @@ func (MatchProtocol) CaddyModule() caddy.ModuleInfo {
 func (m MatchProtocol) Match(r *http.Request) bool {
 	switch string(m) {
 	case "grpc":
-		return r.Header.Get("content-type") == "application/grpc"
+		return strings.HasPrefix(r.Header.Get("content-type"), "application/grpc")
 	case "https":
 		return r.TLS != nil
 	case "http":
