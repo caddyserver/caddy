@@ -264,7 +264,7 @@ func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Before(l.Items[j
 
 const (
 	sortByName         = "name"
-	sortByNameDirFirst = "name_dir_first"
+	sortByNameDirFirst = "namedirfirst"
 	sortBySize         = "size"
 	sortByTime         = "time"
 )
