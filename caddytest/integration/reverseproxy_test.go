@@ -436,3 +436,57 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
+
+func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
+	tester := caddytest.NewTester(t)
+	f, err := ioutil.TempFile("", "*.sock")
+	if err != nil {
+		t.Errorf("failed to create TempFile: %s", err)
+		return
+	}
+	// a hack to get a file name within a valid path to use as socket
+	socketName := f.Name()
+	os.Remove(f.Name())
+
+	server := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/health") {
+				w.Write([]byte("ok"))
+				return
+			}
+			w.Write([]byte("Hello, World!"))
+		}),
+	}
+
+	unixListener, err := net.Listen("unix", socketName)
+	if err != nil {
+		t.Errorf("failed to listen on the socket: %s", err)
+		return
+	}
+	go server.Serve(unixListener)
+	t.Cleanup(func() {
+		server.Close()
+	})
+	runtime.Gosched() // Allow other goroutines to run
+
+	tester.InitServer(fmt.Sprintf(`
+	{
+		http_port     9080
+		https_port    9443
+	}
+	http://localhost:9080 {
+		reverse_proxy {
+			to unix/%s
+	
+			health_path /health
+			health_interval 2s
+			health_timeout 5s
+		}
+	}
+	`, socketName), "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+}
