@@ -297,8 +297,9 @@ latest versions. EXPERIMENTAL: May be changed or removed.`,
 		Usage: "<packageName>",
 		Short: "Adds Caddy package (EXPERIMENTAL)",
 		Long: `
-Downloads an updated Caddy binary with new module/plugin.
-If plugin is already added - then return error.
+Downloads an updated Caddy binary with the specified package (module/plugin)
+added. Retains existing packages. Returns an error if the package is already
+included. EXPERIMENTAL: May be changed or removed.
 `,
 	})
 

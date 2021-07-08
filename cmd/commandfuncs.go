@@ -603,7 +603,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 	}
 
 	// initiate the build
-	resp, err := downloadModule(qs)
+	resp, err := downloadBuild(qs)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: %v", err)
 	}
@@ -697,7 +697,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 	}
 	qs.Add("p", packageName)
 
-	resp, err := downloadModule(qs)
+	resp, err := downloadBuild(qs)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: %v", err)
 	}
@@ -882,7 +882,7 @@ func showVersion(path string) error {
 	return nil
 }
 
-func downloadModule(qs url.Values) (*http.Response, error) {
+func downloadBuild(qs url.Values) (*http.Response, error) {
 	l := caddy.Log()
 	l.Info("requesting build",
 		zap.String("os", qs.Get("os")),
