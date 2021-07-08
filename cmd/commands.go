@@ -303,6 +303,18 @@ included. EXPERIMENTAL: May be changed or removed.
 `,
 	})
 
+	RegisterCommand(Command{
+		Name:  "remove-package",
+		Func:  cmdRemovePackage,
+		Usage: "<packageName>",
+		Short: "Removes Caddy package (EXPERIMENTAL)",
+		Long: `
+Downloads an updated Caddy binaries without the specified package (module/plugin). 
+Returns an error if the package is not included. 
+EXPERIMENTAL: May be changed or removed.
+`,
+	})
+
 }
 
 // RegisterCommand registers the command cmd.
