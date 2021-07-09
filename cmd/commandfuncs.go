@@ -713,5 +713,3 @@ type moduleInfo struct {
 	goModule      *debug.Module
 	err           error
 }
-
-const DownloadPath = "https://caddyserver.com/api/download"
