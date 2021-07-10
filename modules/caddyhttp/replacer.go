@@ -25,6 +25,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -352,6 +353,9 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		case "client.certificate_pem":
 			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), true
+		case "client.certificate_pem_encoded":
+			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+			return base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&block)), true
 		default:
 			return nil, false
 		}
