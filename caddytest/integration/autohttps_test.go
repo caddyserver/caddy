@@ -103,3 +103,23 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
 	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
 	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Baz")
 }
+
+func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSite(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		http_port     9080
+		https_port    9443
+		local_certs
+	}
+	http://:9080 {
+		respond "Foo"
+	}
+	bar.localhost {
+		respond "Bar"
+	}
+  `, "caddyfile")
+	tester.AssertRedirect("http://bar.localhost:9080/", "https://bar.localhost/", http.StatusPermanentRedirect)
+	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
+	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Foo")
+}
