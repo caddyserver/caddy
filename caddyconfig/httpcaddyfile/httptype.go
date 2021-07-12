@@ -113,7 +113,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		"{tls_client_serial}", "{http.request.tls.client.serial}",
 		"{tls_client_subject}", "{http.request.tls.client.subject}",
 		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
-		"{tls_client_certificate_pem_encoded}", "{http.request.tls.client.certificate_pem_encoded}",
+		"{tls_client_certificate_pem_base64}", "{http.request.tls.client.certificate_pem_base64}",
 		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
 	)
 
