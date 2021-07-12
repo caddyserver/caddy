@@ -188,9 +188,11 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
+	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
+	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
