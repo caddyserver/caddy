@@ -248,7 +248,7 @@ func downloadBuild(qs url.Values) (*http.Response, error) {
 		zap.String("os", qs.Get("os")),
 		zap.String("arch", qs.Get("arch")),
 		zap.Strings("packages", qs["p"]))
-	resp, err := http.Get(fmt.Sprintf("%s?%s", DownloadPath, qs.Encode()))
+	resp, err := http.Get(fmt.Sprintf("%s?%s", downloadPath, qs.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("secure request failed: %v", err)
 	}
@@ -304,4 +304,4 @@ func writeCaddyBinary(path string, body *io.ReadCloser, fileInfo os.FileInfo) er
 	return nil
 }
 
-const DownloadPath = "https://caddyserver.com/api/download"
+const downloadPath = "https://caddyserver.com/api/download"
