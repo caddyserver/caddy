@@ -44,7 +44,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 	return upgradeBuild(pluginPkgs)
 }
 
-func cmdAddPackage(fl Flags) (int, error) {
+func cmdAddPackages(fl Flags) (int, error) {
 	packageName := fl.Args()[0]
 	if packageName == "" {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("at least one package name must be specified")
@@ -68,10 +68,10 @@ func cmdAddPackage(fl Flags) (int, error) {
 	return upgradeBuild(pluginPkgs)
 }
 
-func cmdRemovePackage(fl Flags) (int, error) {
+func cmdRemovePackages(fl Flags) (int, error) {
 	packageName := fl.Args()[0]
 	if packageName == "" {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("package name must be specified")
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("at least one package name must be specified")
 	}
 	_, nonstandard, _, err := getModules()
 	if err != nil {

@@ -292,25 +292,25 @@ latest versions. EXPERIMENTAL: May be changed or removed.`,
 	})
 
 	RegisterCommand(Command{
-		Name:  "add-package",
-		Func:  cmdAddPackage,
-		Usage: "<packageName>",
-		Short: "Adds Caddy package (EXPERIMENTAL)",
+		Name:  "add-packages",
+		Func:  cmdAddPackages,
+		Usage: "[<packageName>]",
+		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
-Downloads an updated Caddy binary with the specified package (module/plugin)
-added. Retains existing packages. Returns an error if the package is already
-included. EXPERIMENTAL: May be changed or removed.
+Downloads an updated Caddy binary with the specified packages (module/plugin)
+added. Retains existing packages. Returns an error if the any of packages are 
+already included. EXPERIMENTAL: May be changed or removed.
 `,
 	})
 
 	RegisterCommand(Command{
-		Name:  "remove-package",
-		Func:  cmdRemovePackage,
-		Usage: "<packageName>",
-		Short: "Removes Caddy package (EXPERIMENTAL)",
+		Name:  "remove-packages",
+		Func:  cmdRemovePackages,
+		Usage: "[<packageName>]",
+		Short: "Removes Caddy packages (EXPERIMENTAL)",
 		Long: `
-Downloads an updated Caddy binaries without the specified package (module/plugin). 
-Returns an error if the package is not included. 
+Downloads an updated Caddy binaries without the specified packages (module/plugin). 
+Returns an error if any of the packages are not included. 
 EXPERIMENTAL: May be changed or removed.
 `,
 	})
