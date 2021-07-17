@@ -47,7 +47,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 func cmdAddPackage(fl Flags) (int, error) {
 	packageName := fl.Args()[0]
 	if packageName == "" {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("package name must be specified")
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("at least one package name must be specified")
 	}
 	_, nonstandard, _, err := getModules()
 	if err != nil {
@@ -58,12 +58,12 @@ func cmdAddPackage(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if _, ok := pluginPkgs[packageName]; ok {
-		// package already exists
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("package is already added")
+	for _, arg := range fl.Args() {
+		if _, ok := pluginPkgs[arg]; ok {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("package is already added")
+		}
+		pluginPkgs[arg] = struct{}{}
 	}
-
-	pluginPkgs[packageName] = struct{}{}
 
 	return upgradeBuild(pluginPkgs)
 }
@@ -82,11 +82,13 @@ func cmdRemovePackage(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if _, ok := pluginPkgs[packageName]; !ok {
-		// package does not exists
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("package is not added")
+	for _, arg := range fl.Args() {
+		if _, ok := pluginPkgs[arg]; !ok {
+			// package does not exist
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("package is not added")
+		}
+		delete(pluginPkgs, arg)
 	}
-	delete(pluginPkgs, packageName)
 
 	return upgradeBuild(pluginPkgs)
 }
@@ -164,7 +166,6 @@ func upgradeBuild(pluginPkgs map[string]struct{}) (int, error) {
 	if err = os.Remove(backupExecPath); err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
 	}
-
 	l.Info("upgrade successful; please restart any running Caddy instances", zap.String("executable", thisExecPath))
 
 	return caddy.ExitCodeSuccess, nil
