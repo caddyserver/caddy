@@ -345,13 +345,13 @@ func (d *Dispenser) EOFErr() error {
 
 // Err generates a custom parse-time error with a message of msg.
 func (d *Dispenser) Err(msg string) error {
-	msg = fmt.Sprintf("%s:%d - Error during parsing: %s", d.File(), d.Line(), msg)
-	return errors.New(msg)
+	return d.Errf(msg)
 }
 
 // Errf is like Err, but for formatted error messages
 func (d *Dispenser) Errf(format string, args ...interface{}) error {
-	return d.Err(fmt.Sprintf(format, args...))
+	err := fmt.Errorf(format, args...)
+	return fmt.Errorf("%s:%d - Error during parsing: %w", d.File(), d.Line(), err)
 }
 
 // Delete deletes the current token and returns the updated slice
