@@ -109,6 +109,12 @@ type ConfigSettings struct {
 	//
 	// EXPERIMENTAL: Subject to change.
 	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
+
+	// The interval to pull config. With a non-zero value, will pull config
+	// from config loader (eg. a http loader) with given interval.
+	//
+	// EXPERIMENTAL: Subject to change.
+	PullInterval time.Duration `json:"pull_interval,omitempty"`
 }
 
 // IdentityConfig configures management of this server's identity. An identity

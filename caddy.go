@@ -268,7 +268,8 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		newCfg != nil &&
 		newCfg.Admin != nil &&
 		newCfg.Admin.Config != nil &&
-		newCfg.Admin.Config.LoadRaw != nil {
+		newCfg.Admin.Config.LoadRaw != nil &&
+		!(newCfg.Admin.Config.PullInterval > 0) {
 		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs")
 	}
 
@@ -480,21 +481,29 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
-		loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-		if err != nil {
-			return fmt.Errorf("loading dynamic config from %T: %v", val, err)
-		}
-
 		// do this in a goroutine so current config can finish being loaded; otherwise deadlock
 		go func() {
-			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()))
-			currentCfgMu.Lock()
-			err := unsyncedDecodeAndRun(loadedConfig, false)
-			currentCfgMu.Unlock()
-			if err == nil {
-				Log().Info("dynamically-loaded config applied successfully")
-			} else {
-				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+			select {
+			// if PullInterval is positive, will wait for the interval and then run with new config
+			// otherwise, time.After(0) will return immediately, and run with new config
+			case <-time.After(cfg.Admin.Config.PullInterval):
+				loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+				if err != nil {
+					Log().Error("loading dynamic config failed", zap.Error(err))
+					return
+				}
+				Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.PullInterval)))
+				currentCfgMu.Lock()
+				err = unsyncedDecodeAndRun(loadedConfig, false)
+				currentCfgMu.Unlock()
+				if err == nil {
+					Log().Info("dynamically-loaded config applied successfully")
+				} else {
+					Log().Error("running dynamically-loaded config failed", zap.Error(err))
+				}
+				return
+			case <-ctx.Done():
+				return
 			}
 		}()
 	}
