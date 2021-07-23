@@ -114,7 +114,7 @@ type ConfigSettings struct {
 	// from config loader (eg. a http loader) with given interval.
 	//
 	// EXPERIMENTAL: Subject to change.
-	PullInterval caddy.Duration `json:"pull_interval,omitempty"`
+	PullInterval Duration `json:"pull_interval,omitempty"`
 }
 
 // IdentityConfig configures management of this server's identity. An identity
