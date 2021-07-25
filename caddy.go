@@ -481,31 +481,42 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
-		// do this in a goroutine so current config can finish being loaded; otherwise deadlock
-		go func() {
-			select {
-			// if PullInterval is positive, will wait for the interval and then run with new config
-			// otherwise, time.After(0) will return immediately, and run with new config
-			case <-time.After(cfg.Admin.Config.PullInterval):
-				loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-				if err != nil {
-					Log().Error("loading dynamic config failed", zap.Error(err))
+		runLoadedConfig := func(config []byte) {
+			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.PullInterval)))
+			currentCfgMu.Lock()
+			err := unsyncedDecodeAndRun(config, false)
+			currentCfgMu.Unlock()
+			if err == nil {
+				Log().Info("dynamically-loaded config applied successfully")
+			} else {
+				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+			}
+		}
+		if cfg.Admin.Config.PullInterval > 0 {
+			go func() {
+				select {
+				// if PullInterval is positive, will wait for the interval and then run with new config
+				case <-time.After(time.Duration(cfg.Admin.Config.PullInterval)):
+					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+					if err != nil {
+						Log().Error("loading dynamic config failed", zap.Error(err))
+						return
+					}
+					runLoadedConfig(loadedConfig)
+				case <-ctx.Done():
 					return
 				}
-				Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.PullInterval)))
-				currentCfgMu.Lock()
-				err = unsyncedDecodeAndRun(loadedConfig, false)
-				currentCfgMu.Unlock()
-				if err == nil {
-					Log().Info("dynamically-loaded config applied successfully")
-				} else {
-					Log().Error("running dynamically-loaded config failed", zap.Error(err))
-				}
-				return
-			case <-ctx.Done():
-				return
+			}()
+		} else {
+			// if no PullInterval is provided, will load config synchronously
+			loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+			if err != nil {
+				return fmt.Errorf("loading dynamic config from %T: %v", val, err)
 			}
-		}()
+			// do this in a goroutine so current config can finish being loaded; otherwise deadlock
+			go runLoadedConfig(loadedConfig)
+		}
+
 	}
 
 	return nil
