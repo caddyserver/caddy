@@ -269,7 +269,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		newCfg.Admin != nil &&
 		newCfg.Admin.Config != nil &&
 		newCfg.Admin.Config.LoadRaw != nil &&
-		newCfg.Admin.Config.PullInterval <= 0 {
+		newCfg.Admin.Config.LoadInterval <= 0 {
 		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs")
 	}
 
@@ -482,7 +482,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
 		runLoadedConfig := func(config []byte) {
-			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.PullInterval)))
+			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
 			currentCfgMu.Lock()
 			err := unsyncedDecodeAndRun(config, false)
 			currentCfgMu.Unlock()
@@ -492,11 +492,11 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 				Log().Error("running dynamically-loaded config failed", zap.Error(err))
 			}
 		}
-		if cfg.Admin.Config.PullInterval > 0 {
+		if cfg.Admin.Config.LoadInterval > 0 {
 			go func() {
 				select {
-				// if PullInterval is positive, will wait for the interval and then run with new config
-				case <-time.After(time.Duration(cfg.Admin.Config.PullInterval)):
+				// if LoadInterval is positive, will wait for the interval and then run with new config
+				case <-time.After(time.Duration(cfg.Admin.Config.LoadInterval)):
 					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 					if err != nil {
 						Log().Error("loading dynamic config failed", zap.Error(err))
@@ -508,7 +508,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 				}
 			}()
 		} else {
-			// if no PullInterval is provided, will load config synchronously
+			// if no LoadInterval is provided, will load config synchronously
 			loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 			if err != nil {
 				return fmt.Errorf("loading dynamic config from %T: %v", val, err)
