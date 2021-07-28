@@ -270,7 +270,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		newCfg.Admin.Config != nil &&
 		newCfg.Admin.Config.LoadRaw != nil &&
 		newCfg.Admin.Config.LoadInterval <= 0 {
-		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs")
+		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs without positive load_interval")
 	}
 
 	// run the new config and start all its apps
