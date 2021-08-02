@@ -522,6 +522,16 @@ func (st *ServerType) serversFromPairings(
 			}
 		}
 
+		// if needed, the ServerLogConfig is initialized beforehand so
+		// that all server blocks can populate it with data, even when not
+		// coming with a log directive
+		for _, sblock := range p.serverBlocks {
+			if len(sblock.pile["custom_log"]) != 0 {
+				srv.Logs = new(caddyhttp.ServerLogConfig)
+				break
+			}
+		}
+
 		// create a subroute for each site in the server block
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock)
@@ -636,9 +646,6 @@ func (st *ServerType) serversFromPairings(
 			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
-				if srv.Logs == nil {
-					srv.Logs = new(caddyhttp.ServerLogConfig)
-				}
 				if sblock.hasHostCatchAllKey() {
 					// all requests for hosts not able to be listed should use
 					// this log because it's a catch-all-hosts server block
