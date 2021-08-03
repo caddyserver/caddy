@@ -1,0 +1,147 @@
+:80
+
+@matcher {
+	header Abc "123"
+	header Bcd "456"
+}
+respond @matcher "Abc Bcd headers matched"
+
+@not-matcher {
+	not @matcher
+}
+respond @not-matcher 403
+
+@nested-not {
+	not {
+		not @matcher
+	}
+}
+respond @nested-not 401
+
+@another-matcher {
+	header XYZ "123"
+}
+
+@nested-not-single-line not not not not @another-matcher
+respond @nested-not-single-line 403
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"header": {
+										"Abc": [
+											"123"
+										],
+										"Bcd": [
+											"456"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "Abc Bcd headers matched",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"header": {
+												"Abc": [
+													"123"
+												],
+												"Bcd": [
+													"456"
+												]
+											}
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"status_code": 403
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"not": [
+												{
+													"header": {
+														"Abc": [
+															"123"
+														],
+														"Bcd": [
+															"456"
+														]
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"status_code": 401
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"not": [
+												{
+													"not": [
+														{
+															"not": [
+																{
+																	"header": {
+																		"Xyz": [
+																			"123"
+																		]
+																	}
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"status_code": 403
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

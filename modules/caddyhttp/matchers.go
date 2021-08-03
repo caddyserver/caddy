@@ -32,6 +32,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// MatcherPrefix is the prefix used for matcher names.
+const MatcherPrefix = "@"
+
 type (
 	// MatchHost matches requests by the Host value (case-insensitive).
 	//
@@ -181,13 +184,7 @@ func (MatchHost) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		*m = append(*m, d.RemainingArgs()...)
-		if d.NextBlock(0) {
-			return d.Err("malformed host matcher: blocks are not supported")
-		}
-	}
-	return nil
+	return unmarshalStringSlice((*[]string)(m), "host", d)
 }
 
 // Provision sets up and validates m, including making it more efficient for large lists.
@@ -374,13 +371,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		*m = append(*m, d.RemainingArgs()...)
-		if d.NextBlock(0) {
-			return d.Err("malformed path matcher: blocks are not supported")
-		}
-	}
-	return nil
+	return unmarshalStringSlice((*[]string)(m), "path", d)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -407,13 +398,7 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		*m = append(*m, d.RemainingArgs()...)
-		if d.NextBlock(0) {
-			return d.Err("malformed method matcher: blocks are not supported")
-		}
-	}
-	return nil
+	return unmarshalStringSlice((*[]string)(m), "method", d)
 }
 
 // Match returns true if r matches m.
@@ -710,13 +695,7 @@ func (MatchNot) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	// first, unmarshal each matcher in the set from its tokens
-	type matcherPair struct {
-		raw     caddy.ModuleMap
-		decoded MatcherSet
-	}
 	for d.Next() {
-		var mp matcherPair
 		matcherMap := make(map[string]RequestMatcher)
 
 		// in case there are multiple instances of the same matcher, concatenate
@@ -728,39 +707,30 @@ func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			matcherName := d.Val()
 			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
 		}
+
 		for matcherName, tokens := range tokensByMatcherName {
-			mod, err := caddy.GetModule("http.matchers." + matcherName)
+			rm, err := BuildMatcher(matcherName, tokens)
 			if err != nil {
-				return d.Errf("getting matcher module '%s': %v", matcherName, err)
-			}
-			unm, ok := mod.New().(caddyfile.Unmarshaler)
-			if !ok {
-				return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
-			}
-			err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
-			if err != nil {
-				return err
-			}
-			rm, ok := unm.(RequestMatcher)
-			if !ok {
-				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+				return d.Errf("error building matcher %s: %v", matcherName, err)
 			}
 			matcherMap[matcherName] = rm
-			mp.decoded = append(mp.decoded, rm)
 		}
 
-		// we should now have a functional 'not' matcher, but we also
-		// need to be able to marshal as JSON, otherwise config
-		// adaptation will be missing the matchers!
-		mp.raw = make(caddy.ModuleMap)
-		for name, matcher := range matcherMap {
-			jsonBytes, err := json.Marshal(matcher)
-			if err != nil {
-				return fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+		// If the not matcher consists entirely of embedded matchers, then there is nothing else to do.
+		if len(matcherMap) != 0 {
+			// we should now have a functional 'not' matcher, but we also
+			// need to be able to marshal as JSON, otherwise config
+			// adaptation will be missing the matchers!
+			mp := make(caddy.ModuleMap)
+			for name, matcher := range matcherMap {
+				jsonBytes, err := json.Marshal(matcher)
+				if err != nil {
+					return fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+				}
+				mp[name] = jsonBytes
 			}
-			mp.raw[name] = jsonBytes
+			m.MatcherSetsRaw = append(m.MatcherSetsRaw, mp)
 		}
-		m.MatcherSetsRaw = append(m.MatcherSetsRaw, mp.raw)
 	}
 	return nil
 }
@@ -983,6 +953,41 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// BuildMatcher returns a matcher parsed from the given tokens using any previously parsed named matchers.
+func BuildMatcher(matcherName string, tokens []caddyfile.Token) (RequestMatcher, error) {
+	mod, err := caddy.GetModule("http.matchers." + matcherName)
+	if err != nil {
+		return nil, fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
+	}
+
+	unm := mod.New()
+	switch unm := unm.(type) {
+	case caddyfile.Unmarshaler:
+		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
+	default:
+		err = fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+	}
+	if err != nil {
+		return nil, err
+	}
+	rm, ok := unm.(RequestMatcher)
+	if !ok {
+		return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+	}
+
+	return rm, nil
+}
+
+func unmarshalStringSlice(s *[]string, matcherType string, d *caddyfile.Dispenser) error {
+	for d.Next() {
+		*s = append(*s, d.RemainingArgs()...)
+		if d.NextBlock(0) {
+			return d.Errf("malformed %s matcher: blocks are not supported", matcherType)
+		}
+	}
+	return nil
+}
+
 var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
@@ -1017,6 +1022,7 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
 	_ caddyfile.Unmarshaler = (*MatchVarsRE)(nil)
+	_ caddyfile.Unmarshaler = (*MatchNot)(nil)
 
 	_ json.Marshaler   = (*MatchNot)(nil)
 	_ json.Unmarshaler = (*MatchNot)(nil)

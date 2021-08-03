@@ -1,0 +1,174 @@
+:80 {
+	@matcher1 {
+		query foo=bar foo=baz bar=foo
+		query bar=baz
+	}
+
+	@matcher2 {
+		header !Foo
+		header Bar foo
+	}
+
+	@matcher3 {
+		@matcher1
+		@matcher2
+		header Fuzz foo
+	}
+	respond @matcher3 "matched 1 and 2 with Fuzz header"
+
+	@matcher4 {
+		path /foo
+	}
+
+	@matcher5 {
+		@matcher2
+		@matcher4
+		path /bar
+	}
+	respond @matcher5 "matched both 2 and 4 with extra /bar path"
+
+	# Even embedded matchers that embed matchers can be used
+	@matcher6 {
+		@matcher3
+		@matcher5
+	}
+	respond @matcher6 "matched with embedded matcher with embedded matchers"
+
+	# Matchers that can have only one value will have the last value.
+	@matcher7 {
+		path_regexp /foo*
+		protocol http
+	}
+
+	@matcher8 {
+		path_regexp /bar*
+		protocol grcp
+	}
+
+	@matcher9 {
+		@matcher7
+		@matcher8
+	}
+	respond @matcher9 "matched with /bar* and grpc"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo"
+										],
+										"Foo": null
+									},
+									"path": [
+										"/foo",
+										"/bar"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "matched both 2 and 4 with extra /bar path",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo",
+											"foo"
+										],
+										"Foo": null,
+										"Fuzz": [
+											"foo"
+										]
+									},
+									"path": [
+										"/foo",
+										"/bar"
+									],
+									"query": {
+										"bar": [
+											"foo",
+											"baz"
+										],
+										"foo": [
+											"bar",
+											"baz"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "matched with embedded matcher with embedded matchers",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo"
+										],
+										"Foo": null,
+										"Fuzz": [
+											"foo"
+										]
+									},
+									"query": {
+										"bar": [
+											"foo",
+											"baz"
+										],
+										"foo": [
+											"bar",
+											"baz"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "matched 1 and 2 with Fuzz header",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path_regexp": {
+										"pattern": "/bar*"
+									},
+									"protocol": "grcp"
+								}
+							],
+							"handle": [
+								{
+									"body": "matched with /bar* and grpc",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

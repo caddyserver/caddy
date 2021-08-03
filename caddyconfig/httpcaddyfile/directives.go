@@ -135,12 +135,13 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 type Helper struct {
 	*caddyfile.Dispenser
 	// State stores intermediate variables during caddyfile adaptation.
-	State        map[string]interface{}
-	options      map[string]interface{}
-	warnings     *[]caddyconfig.Warning
-	matcherDefs  map[string]caddy.ModuleMap
-	parentBlock  caddyfile.ServerBlock
-	groupCounter counter
+	State            map[string]interface{}
+	options          map[string]interface{}
+	warnings         *[]caddyconfig.Warning
+	matcherDefs      map[string]caddy.ModuleMap
+	matcherDefTokens map[string]map[string][]caddyfile.Token
+	parentBlock      caddyfile.ServerBlock
+	groupCounter     counter
 }
 
 // Option gets the option keyed by name.
@@ -305,16 +306,22 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 		// copy existing matcher definitions so we can augment
 		// new ones that are defined only in this scope
 		matcherDefs := make(map[string]caddy.ModuleMap, len(h.matcherDefs))
+		matcherDefTokens := make(map[string]map[string][]caddyfile.Token, len(h.matcherDefTokens))
 		for key, val := range h.matcherDefs {
 			matcherDefs[key] = val
+		}
+		for matcherName, matcherDef := range h.matcherDefTokens {
+			for key, val := range matcherDef {
+				matcherDefTokens[matcherName][key] = val
+			}
 		}
 
 		// find and extract any embedded matcher definitions in this scope
 		for i := 0; i < len(segments); i++ {
 			seg := segments[i]
-			if strings.HasPrefix(seg.Directive(), matcherPrefix) {
+			if strings.HasPrefix(seg.Directive(), caddyhttp.MatcherPrefix) {
 				// parse, then add the matcher to matcherDefs
-				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs)
+				err := parseMatcherDefinitions(caddyfile.NewDispenser(seg), matcherDefs, matcherDefTokens)
 				if err != nil {
 					return nil, err
 				}
@@ -335,6 +342,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			subHelper := h
 			subHelper.Dispenser = caddyfile.NewDispenser(seg)
 			subHelper.matcherDefs = matcherDefs
+			subHelper.matcherDefTokens = matcherDefTokens
 
 			results, err := dirFunc(subHelper)
 			if err != nil {

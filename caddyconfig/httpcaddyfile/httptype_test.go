@@ -59,6 +59,57 @@ func TestMatcherSyntax(t *testing.T) {
 			`,
 			expectError: true,
 		},
+		{
+			input: `http://localhost
+			@matcher {
+				path /somepath*
+			}
+			@embeddedmatcher {
+				@matcher
+				path /otherpath*
+			}
+			`,
+			expectError: false,
+		},
+		{
+			input: `http://localhost
+			@matcher {
+				@nonexistent
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `http://localhost
+			@matcher {
+				@non-yet-parsed-matcher
+			}
+			@non-yet-parsed-matcher {
+				path /somepath*
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `http://localhost
+			@matcher {
+				path /somepath* /otherpath*
+			}
+			@not-matcher {
+				not @matcher
+			}
+			`,
+			expectError: false,
+		},
+		{
+			input: `http://localhost
+			@matcher {
+				path /somepath* /otherpath*
+			}
+			@not-matcher not @matcher
+			`,
+			expectError: false,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{

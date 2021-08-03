@@ -148,10 +148,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 
 		// extract matcher definitions
 		matcherDefs := make(map[string]caddy.ModuleMap)
+		matcherDefTokens := make(map[string]map[string][]caddyfile.Token)
 		for _, segment := range sb.block.Segments {
-			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
+			if dir := segment.Directive(); strings.HasPrefix(dir, caddyhttp.MatcherPrefix) {
 				d := sb.block.DispenseDirective(dir)
-				err := parseMatcherDefinitions(d, matcherDefs)
+				err := parseMatcherDefinitions(d, matcherDefs, matcherDefTokens)
 				if err != nil {
 					return nil, warnings, err
 				}
@@ -162,7 +163,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		for _, segment := range sb.block.Segments {
 			dir := segment.Directive()
 
-			if strings.HasPrefix(dir, matcherPrefix) {
+			if strings.HasPrefix(dir, caddyhttp.MatcherPrefix) {
 				// matcher definitions were pre-processed
 				continue
 			}
@@ -174,13 +175,14 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			}
 
 			h := Helper{
-				Dispenser:    caddyfile.NewDispenser(segment),
-				options:      options,
-				warnings:     &warnings,
-				matcherDefs:  matcherDefs,
-				parentBlock:  sb.block,
-				groupCounter: gc,
-				State:        state,
+				Dispenser:        caddyfile.NewDispenser(segment),
+				options:          options,
+				warnings:         &warnings,
+				matcherDefs:      matcherDefs,
+				matcherDefTokens: matcherDefTokens,
+				parentBlock:      sb.block,
+				groupCounter:     gc,
+				State:            state,
 			}
 
 			results, err := dirFunc(h)
@@ -1088,7 +1090,7 @@ func matcherSetFromMatcherToken(
 		return caddy.ModuleMap{
 			"path": caddyconfig.JSON(caddyhttp.MatchPath{tkn.Text}, warnings),
 		}, true, nil
-	} else if strings.HasPrefix(tkn.Text, matcherPrefix) {
+	} else if strings.HasPrefix(tkn.Text, caddyhttp.MatcherPrefix) {
 		// pre-defined matcher
 		m, ok := matcherDefs[tkn.Text]
 		if !ok {
@@ -1184,7 +1186,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	return matcherSetsEnc, nil
 }
 
-func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.ModuleMap) error {
+func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.ModuleMap, matcherTokens map[string]map[string][]caddyfile.Token) error {
 	for d.Next() {
 		definitionName := d.Val()
 
@@ -1192,6 +1194,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 			return fmt.Errorf("matcher is defined more than once: %s", definitionName)
 		}
 		matchers[definitionName] = make(caddy.ModuleMap)
+		matcherTokens[definitionName] = make(map[string][]caddyfile.Token)
 
 		// in case there are multiple instances of the same matcher, concatenate
 		// their tokens (we expect that UnmarshalCaddyfile should be able to
@@ -1200,29 +1203,106 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		tokensByMatcherName := make(map[string][]caddyfile.Token)
 		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 			matcherName := d.Val()
-			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+			if !strings.HasPrefix(matcherName, caddyhttp.MatcherPrefix) {
+				replacedSegment, err := replaceEmbeddedMatchers(d.NextSegment(), matcherTokens)
+				if err != nil {
+					return err
+				}
+				tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], replacedSegment...)
+			} else if _, ok := matchers[matcherName]; ok {
+				// Add the matcher type to tokensByMatcherName so that it can be added to the matcher.
+				for name := range matchers[matcherName] {
+					tokensByMatcherName[name] = append(tokensByMatcherName[name], matcherTokens[matcherName][name]...)
+				}
+			} else {
+				return fmt.Errorf("unknown matcher name: %s", matcherName)
+			}
 		}
 		for matcherName, tokens := range tokensByMatcherName {
-			mod, err := caddy.GetModule("http.matchers." + matcherName)
+			rm, err := caddyhttp.BuildMatcher(matcherName, tokens)
 			if err != nil {
-				return fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
-			}
-			unm, ok := mod.New().(caddyfile.Unmarshaler)
-			if !ok {
-				return fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
-			}
-			err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
-			if err != nil {
-				return err
-			}
-			rm, ok := unm.(caddyhttp.RequestMatcher)
-			if !ok {
-				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+				return fmt.Errorf("error building matcher %s: %v", matcherName, err)
 			}
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			matcherTokens[definitionName][matcherName] = tokens
 		}
 	}
 	return nil
+}
+
+func replaceEmbeddedMatchers(seg []caddyfile.Token, matcherTokens map[string]map[string][]caddyfile.Token) ([]caddyfile.Token, error) {
+	replacedTokens := make([]caddyfile.Token, 0, len(seg))
+	d := caddyfile.NewDispenser(seg)
+	for d.Next() {
+		matcherName := d.Val()
+		// If the embedded matcher is the first item on a line, then we can assume the embedded matcher is in a new block.
+		// Therefore, we can blindly replace them.
+		if strings.HasPrefix(matcherName, caddyhttp.MatcherPrefix) {
+			if embeddedMatcher, ok := matcherTokens[d.Val()]; ok {
+				for _, val := range embeddedMatcher {
+					replacedTokens = append(replacedTokens, val...)
+				}
+			} else {
+				return nil, fmt.Errorf("unknown matcher name: %s", d.Val())
+			}
+		} else {
+			replacedTokens = append(replacedTokens, d.Token())
+		}
+
+		if d.NextBlock(d.Nesting()) {
+			// We need the '{' in this case.
+			d.Prev()
+			replacedTokens = append(replacedTokens, d.Token())
+			d.Next()
+			// Replace the embedded matchers in the nested block.
+			nestedReplacedTokens, err := replaceEmbeddedMatchers(d.NextSegment(), matcherTokens)
+			if err != nil {
+				return nil, err
+			}
+
+			// Append tokens from the block with embedded tokens replaced.
+			replacedTokens = append(replacedTokens, nestedReplacedTokens...)
+			// Append the '}'
+			d.Next()
+			replacedTokens = append(replacedTokens, d.Token())
+		} else {
+			var lineOffset int
+			var file string
+			for d.NextArg() {
+				if strings.HasPrefix(d.Val(), caddyhttp.MatcherPrefix) {
+					if lineOffset == 0 {
+						// If an embedded matcher has been found, then we need to keep track of the line offset.
+						lineOffset = d.Line()
+						file = d.Token().File
+						// Add an opening brace to start a new block when in-line embedded matchers are found.
+						replacedTokens = append(replacedTokens, caddyfile.Token{Text: "{", Line: lineOffset, File: file})
+					}
+					if embeddedMatcher, ok := matcherTokens[d.Val()]; ok {
+						for _, val := range embeddedMatcher {
+							embeddedMatcherLineBegin := val[0].Line
+							for _, token := range val {
+								// Adjust the line and file of the embedded matcher.
+								token.Line = lineOffset + token.Line - embeddedMatcherLineBegin + 1
+								token.File = file
+								replacedTokens = append(replacedTokens, token)
+							}
+						}
+					} else {
+						return nil, fmt.Errorf("unknown matcher name: %s", d.Val())
+					}
+				} else {
+					replacedTokens = append(replacedTokens, d.Token())
+				}
+			}
+			if lineOffset != 0 {
+				// Add a closing brace to end the block for in-line embedded matchers.
+				replacedTokens = append(replacedTokens, caddyfile.Token{Text: "}", Line: lineOffset + len(replacedTokens), File: file})
+				lineOffset = 0
+			}
+		}
+	}
+
+	return replacedTokens, nil
 }
 
 func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
@@ -1341,8 +1421,6 @@ type sbAddrAssociation struct {
 	addresses    []string
 	serverBlocks []serverBlock
 }
-
-const matcherPrefix = "@"
 
 // Interface guard
 var _ caddyfile.ServerType = (*ServerType)(nil)
