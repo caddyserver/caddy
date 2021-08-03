@@ -15,8 +15,8 @@
 package caddyauth
 
 import (
+	"crypto/sha512"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	weakrand "math/rand"
@@ -174,7 +174,11 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 	}
 
 	// compute a cache key that is unique for these input parameters
-	cacheKey := hex.EncodeToString(append(append(account.password, account.salt...), plaintextPassword...))
+	hasher := sha512.New()
+	hasher.Write(account.password)
+	hasher.Write(account.salt)
+	hasher.Write(plaintextPassword)
+	cacheKey := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
 
 	// fast track: if the result of the input is already cached, use it
 	hba.HashCache.mu.RLock()
