@@ -292,9 +292,9 @@ latest versions. EXPERIMENTAL: May be changed or removed.`,
 	})
 
 	RegisterCommand(Command{
-		Name:  "add-packages",
-		Func:  cmdAddPackages,
-		Usage: "[<packageName>]",
+		Name:  "add-package",
+		Func:  cmdAddPackage,
+		Usage: "<packages...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
@@ -304,9 +304,9 @@ already included. EXPERIMENTAL: May be changed or removed.
 	})
 
 	RegisterCommand(Command{
-		Name:  "remove-packages",
-		Func:  cmdRemovePackages,
-		Usage: "[<packageName>]",
+		Name:  "remove-package",
+		Func:  cmdRemovePackage,
+		Usage: "<packages...>",
 		Short: "Removes Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binaries without the specified packages (module/plugin). 
