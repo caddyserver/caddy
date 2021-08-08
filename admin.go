@@ -335,6 +335,8 @@ func replaceLocalAdminServer(cfg *Config) error {
 		return err
 	}
 
+	serverMu.Lock()
+	defer serverMu.Unlock()
 	localAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
 		Handler:           handler,
@@ -346,7 +348,10 @@ func replaceLocalAdminServer(cfg *Config) error {
 
 	adminLogger := Log().Named("admin")
 	go func() {
-		if err := localAdminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		serverMu.Lock()
+		server := localAdminServer
+		serverMu.Unlock()
+		if err := server.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 			adminLogger.Error("admin server shutdown for unknown reason", zap.Error(err))
 		}
 	}()
@@ -474,6 +479,8 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 		return err
 	}
 
+	serverMu.Lock()
+	defer serverMu.Unlock()
 	// create secure HTTP server
 	remoteAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
@@ -494,7 +501,10 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	ln = tls.NewListener(ln, tlsConfig)
 
 	go func() {
-		if err := remoteAdminServer.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		serverMu.Lock()
+		server := remoteAdminServer
+		serverMu.Unlock()
+		if err := server.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 			remoteLogger.Error("admin remote server shutdown for unknown reason", zap.Error(err))
 		}
 	}()
@@ -1229,6 +1239,7 @@ var bufPool = sync.Pool{
 
 // keep a reference to admin endpoint singletons while they're active
 var (
+	serverMu                            sync.Mutex
 	localAdminServer, remoteAdminServer *http.Server
 	identityCertCache                   *certmagic.Cache
 )
