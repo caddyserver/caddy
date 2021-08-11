@@ -291,6 +291,30 @@ Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.`,
 	})
 
+	RegisterCommand(Command{
+		Name:  "add-package",
+		Func:  cmdAddPackage,
+		Usage: "<packages...>",
+		Short: "Adds Caddy packages (EXPERIMENTAL)",
+		Long: `
+Downloads an updated Caddy binary with the specified packages (module/plugin)
+added. Retains existing packages. Returns an error if the any of packages are 
+already included. EXPERIMENTAL: May be changed or removed.
+`,
+	})
+
+	RegisterCommand(Command{
+		Name:  "remove-package",
+		Func:  cmdRemovePackage,
+		Usage: "<packages...>",
+		Short: "Removes Caddy packages (EXPERIMENTAL)",
+		Long: `
+Downloads an updated Caddy binaries without the specified packages (module/plugin). 
+Returns an error if any of the packages are not included. 
+EXPERIMENTAL: May be changed or removed.
+`,
+	})
+
 }
 
 // RegisterCommand registers the command cmd.
