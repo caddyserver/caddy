@@ -301,6 +301,10 @@ func globalDefaultReplacements(key string) (interface{}, bool) {
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":
 		return strconv.Itoa(nowFunc().Year()), true
+	case "time.now.unix":
+		return strconv.FormatInt(nowFunc().Unix(), 10), true
+	case "time.now.unix_ms":
+		return strconv.FormatInt(nanoToMilliseconds(nowFunc().UnixNano()), 10), true
 	}
 
 	return nil, false
@@ -322,3 +326,7 @@ var nowFunc = time.Now
 const ReplacerCtxKey CtxKey = "replacer"
 
 const phOpen, phClose, phEscape = '{', '}', '\\'
+
+func nanoToMilliseconds(d int64) int64 {
+	return d / 1e6
+}
