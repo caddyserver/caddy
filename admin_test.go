@@ -17,8 +17,27 @@ package caddy
 import (
 	"encoding/json"
 	"reflect"
+	"sync"
 	"testing"
 )
+
+var testCfg = []byte(`{
+			"apps": {
+				"http": {
+					"servers": {
+						"myserver": {
+							"listen": ["tcp/localhost:8080-8084"],
+							"read_timeout": "30s"
+						},
+						"yourserver": {
+							"listen": ["127.0.0.1:5000"],
+							"read_header_timeout": "15s"
+						}
+					}
+				}
+			}
+		}
+		`)
 
 func TestUnsyncedConfigAccess(t *testing.T) {
 	// each test is performed in sequence, so
@@ -108,25 +127,24 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 	}
 }
 
+// TestLoadConcurrent exercises Load under concurrent conditions
+// and is most useful under test with `-race` enabled.
+func TestLoadConcurrent(t *testing.T) {
+	var wg sync.WaitGroup
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			_ = Load(testCfg, true)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+}
+
 func BenchmarkLoad(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		cfg := []byte(`{
-			"apps": {
-				"http": {
-					"servers": {
-						"myserver": {
-							"listen": ["tcp/localhost:8080-8084"],
-							"read_timeout": "30s"
-						},
-						"yourserver": {
-							"listen": ["127.0.0.1:5000"],
-							"read_header_timeout": "15s"
-						}
-					}
-				}
-			}
-		}
-		`)
-		Load(cfg, true)
+		Load(testCfg, true)
 	}
 }
