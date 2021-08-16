@@ -336,7 +336,6 @@ func replaceLocalAdminServer(cfg *Config) error {
 	}
 
 	serverMu.Lock()
-	defer serverMu.Unlock()
 	localAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
 		Handler:           handler,
@@ -345,6 +344,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1024 * 64,
 	}
+	serverMu.Unlock()
 
 	adminLogger := Log().Named("admin")
 	go func() {
@@ -480,7 +480,6 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	}
 
 	serverMu.Lock()
-	defer serverMu.Unlock()
 	// create secure HTTP server
 	remoteAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
@@ -492,6 +491,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 		MaxHeaderBytes:    1024 * 64,
 		ErrorLog:          serverLogger,
 	}
+	serverMu.Unlock()
 
 	// start listener
 	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
