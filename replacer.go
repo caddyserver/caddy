@@ -301,6 +301,10 @@ func globalDefaultReplacements(key string) (interface{}, bool) {
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":
 		return strconv.Itoa(nowFunc().Year()), true
+	case "time.now.unix":
+		return strconv.FormatInt(nowFunc().Unix(), 10), true
+	case "time.now.unix_ms":
+		return strconv.FormatInt(nowFunc().UnixNano()/int64(time.Millisecond), 10), true
 	}
 
 	return nil, false
