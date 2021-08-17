@@ -46,7 +46,7 @@ func TestLogDirectiveSyntax(t *testing.T) {
 				}
 			}
 			`,
-			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"encoder":{"fields":"request\u003eremote_addr":{"filter":"ip_mask","ipv4_cidr":24,"ipv6_cidr":32}},"format":"filter","wrap":{"format":"console"}},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"encoder":{"fields":{"request\u003eremote_addr":{"filter":"ip_mask","ipv4_cidr":24,"ipv6_cidr":32}},"format":"filter","wrap":{"format":"console"}},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
 			expectError: false,
 		},
 		{
