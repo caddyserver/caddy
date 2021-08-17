@@ -61,7 +61,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         lb_try_interval <interval>
 //
 //         # active health checking
-//         health_path <path>
+//         health_uri  <uri>
 //         health_port <port>
 //         health_interval <interval>
 //         health_timeout <duration>
