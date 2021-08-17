@@ -371,7 +371,7 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 		reverse_proxy {
 			to localhost:2020
 	
-			health_path /health
+			health_uri /health
 			health_port 2021
 			health_interval 2s
 			health_timeout 5s
@@ -426,7 +426,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 		reverse_proxy {
 			to unix/%s
 	
-			health_path /health
+			health_uri /health
 			health_port 2021
 			health_interval 2s
 			health_timeout 5s
@@ -481,7 +481,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 		reverse_proxy {
 			to unix/%s
 	
-			health_path /health
+			health_uri /health
 			health_interval 2s
 			health_timeout 5s
 		}

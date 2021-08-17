@@ -135,6 +135,7 @@ func (SingleFieldEncoder) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the encoder.
 func (se *SingleFieldEncoder) Provision(ctx caddy.Context) error {
+	caddy.Log().Named("caddy.logging.encoders.single_field").Warn("the 'single_field' encoder is deprecated and will be removed soon!")
 	if se.FallbackRaw != nil {
 		val, err := ctx.LoadModule(se, "FallbackRaw")
 		if err != nil {
