@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -119,7 +120,7 @@ func cmdStart(fl Flags) (int, error) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				if !strings.Contains(err.Error(), "use of closed network connection") {
+				if !errors.Is(err, net.ErrClosed) {
 					log.Println(err)
 				}
 				break
