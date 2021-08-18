@@ -329,7 +329,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			dir := seg.Directive()
 			dirFunc, ok := registeredDirectives[dir]
 			if !ok {
-				return nil, h.Errf("unrecognized directive: %s", dir)
+				return nil, h.Errf("unrecognized directive: %s - are you sure your Caddyfile structure (nesting and braces) is correct?", dir)
 			}
 
 			subHelper := h
