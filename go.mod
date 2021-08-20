@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.2.0
 	github.com/klauspost/compress v1.13.1
 	github.com/klauspost/cpuid/v2 v2.0.6
-	github.com/lucas-clemente/quic-go v0.21.1
+	github.com/lucas-clemente/quic-go v0.23.0
 	github.com/mholt/acmez v0.1.3
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
