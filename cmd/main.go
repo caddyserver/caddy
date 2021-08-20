@@ -363,7 +363,8 @@ func loadEnvFromFile(envFile string) error {
 
 	// Update the storage paths to ensure they have the proper
 	// value after loading a specified env file.
-	caddy.UpdateStoragePaths()
+	caddy.ConfigAutosavePath = filepath.Join(caddy.AppConfigDir(), "autosave.json")
+	caddy.DefaultStorage = &certmagic.FileStorage{Path: caddy.AppDataDir()}
 
 	return nil
 }

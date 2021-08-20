@@ -153,16 +153,6 @@ func AppDataDir() string {
 	return "./caddy"
 }
 
-// UpdateStoragePaths sets the config auto save and default storage path
-// again. This ensures that env files that overwrite the paths
-// have the expected effect.
-// If used, this function must be called before ConfigAutosavePath and
-// DefaultStorage are being used.
-func UpdateStoragePaths() {
-	ConfigAutosavePath = filepath.Join(AppConfigDir(), "autosave.json")
-	DefaultStorage = &certmagic.FileStorage{Path: AppDataDir()}
-}
-
 // ConfigAutosavePath is the default path to which the last config will be persisted.
 var ConfigAutosavePath = filepath.Join(AppConfigDir(), "autosave.json")
 
