@@ -82,7 +82,19 @@ type (
 	// MatchMethod matches requests by the method.
 	MatchMethod []string
 
-	// MatchQuery matches requests by URI's query string.
+	// MatchQuery matches requests by the URI's query string. It takes a JSON object
+	// keyed by the query keys, with an array of string values to match for that key.
+	// Query key matches are exact, but wildcards may be used for value matches. Both
+	// keys and values may be placeholders.
+	// An example of the structure to match `?key=value&topic=api&query=something` is:
+	//
+	// ```json
+	// {
+	// 	"key": ["value"],
+	//	"topic": ["api"],
+	//	"query": ["*"]
+	// }
+	// ```
 	MatchQuery url.Values
 
 	// MatchHeader matches requests by header fields. It performs fast,
