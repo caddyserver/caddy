@@ -170,7 +170,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			dirFunc, ok := registeredDirectives[dir]
 			if !ok {
 				tkn := segment[0]
-				return nil, warnings, fmt.Errorf("%s:%d: unrecognized directive: %s", tkn.File, tkn.Line, dir)
+				message := "%s:%d: unrecognized directive: %s"
+				if !sb.block.HasBraces {
+					message += "\nDid you mean to define a second site? If so, you must use curly braces around each site to separate their configurations."
+				}
+				return nil, warnings, fmt.Errorf(message, tkn.File, tkn.Line, dir)
 			}
 
 			h := Helper{
