@@ -229,6 +229,13 @@ func (p *parser) addresses() error {
 				expectingAnother = false // but we may still see another one on this line
 			}
 
+			// If there's a comma here, it's probably because they didn't use a space
+			// between their two domains, e.g. "foo.com,bar.com", which would not be
+			// parsed as two separate site addresses.
+			if strings.Contains(tkn, ",") {
+				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", tkn)
+			}
+
 			p.block.Keys = append(p.block.Keys, tkn)
 		}
 
