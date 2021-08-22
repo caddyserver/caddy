@@ -61,6 +61,7 @@ type (
 	// matches are exact, but wildcards may be used:
 	//
 	// - At the end, for a prefix match (`/prefix/*`)
+	// - At the end, with the trailing slash being optional (`/prefix/*?`)
 	// - At the beginning, for a suffix match (`*.suffix`)
 	// - On both sides, for a substring match (`*/contains/*`)
 	// - In the middle, for a globular match (`/accounts/*/info`)
@@ -347,6 +348,22 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// treat it as a fast suffix match
 		if strings.HasPrefix(matchPath, "*") {
 			if strings.HasSuffix(lowerPath, matchPath[1:]) {
+				return true
+			}
+			continue
+		}
+
+		// special case: ends with a wildcard with optional trailing slash,
+		// treat it as an exact match for the portion before the slash,
+		// or a fast prefix match for the remainder past the slash
+		if strings.HasSuffix(matchPath, "/*?") {
+			// Check if the portion before the slash is an exact match
+			if lowerPath == matchPath[:len(matchPath)-3] {
+				return true
+			}
+
+			// Otherwise, fast prefix match including the slash
+			if strings.HasPrefix(lowerPath, matchPath[:len(matchPath)-2]) {
 				return true
 			}
 			continue
