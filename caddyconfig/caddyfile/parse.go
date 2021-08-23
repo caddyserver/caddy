@@ -211,6 +211,12 @@ func (p *parser) addresses() error {
 			if expectingAnother {
 				return p.Errf("Expected another address but had '%s' - check for extra comma", tkn)
 			}
+			// Mark this server block as being defined with braces.
+			// This is used to provide a better error message when
+			// the user may have tried to define two server blocks
+			// without having used braces, which are required in
+			// that case.
+			p.block.HasBraces = true
 			break
 		}
 
@@ -571,8 +577,9 @@ func (p *parser) snippetTokens() ([]Token, error) {
 // head of the server block with tokens, which are
 // grouped by segments.
 type ServerBlock struct {
-	Keys     []string
-	Segments []Segment
+	HasBraces bool
+	Keys      []string
+	Segments  []Segment
 }
 
 // DispenseDirective returns a dispenser that contains
