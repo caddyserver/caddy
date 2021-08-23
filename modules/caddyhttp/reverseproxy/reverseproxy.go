@@ -691,15 +691,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	}
 
 	rw.WriteHeader(res.StatusCode)
-
-	// some apps need the response headers before starting to stream content with http2,
-	// so it's important to explicitly flush the headers to the client before streaming the data.
-	// (see https://github.com/caddyserver/caddy/issues/3556 for use case and nuances)
-	if h.isBidirectionalStream(req, res) {
-		if wf, ok := rw.(http.Flusher); ok {
-			wf.Flush()
-		}
-	}
 	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if err != nil {
