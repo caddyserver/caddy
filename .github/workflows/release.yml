@@ -88,6 +88,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go${{ matrix.go }}-release
 
+    - name: Create the 'caddy-build' dir for GoReleaser
+      run: |
+        mkdir -p caddy-build
+
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v2
