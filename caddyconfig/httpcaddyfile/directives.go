@@ -44,9 +44,9 @@ var directiveOrder = []string{
 	"request_body",
 
 	"redir",
-	"rewrite",
 
 	// URI manipulation
+	"rewrite",
 	"uri",
 	"try_files",
 
@@ -54,23 +54,23 @@ var directiveOrder = []string{
 	"basicauth",
 	"request_header",
 	"encode",
+	"push",
 	"templates",
 
 	// special routing & dispatching directives
 	"handle",
 	"handle_path",
 	"route",
-	"push",
 
 	// handlers that typically respond to requests
+	"abort",
+	"error",
 	"respond",
 	"metrics",
 	"reverse_proxy",
 	"php_fastcgi",
 	"file_server",
 	"acme_server",
-	"abort",
-	"error",
 }
 
 // directiveIsOrdered returns true if dir is
