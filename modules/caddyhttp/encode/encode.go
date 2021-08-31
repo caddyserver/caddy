@@ -200,10 +200,10 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 // until headers were written.
 func (rw *responseWriter) Flush() {
 	if !rw.wroteHeader {
-		// flushing the underlying ResponseWriter will write header and status code
+		// flushing the underlying ResponseWriter will write header and status code,
 		// but we need to delay that until we can determine if we must encode and
-		// therefore add the Content-Encoding header
-		// this happens in the first call to rw.Write
+		// therefore add the Content-Encoding header; this happens in the first call
+		// to rw.Write (see bug in #4314)
 		return
 	}
 	rw.ResponseWriterWrapper.Flush()
