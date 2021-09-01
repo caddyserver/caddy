@@ -173,31 +173,7 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template. Similar to include, but passes one argument accessible to filename as .
 func (c TemplateContext) funcRender(filename string, data interface{}) (string, error) {
-	if c.Root == nil {
-		return "", fmt.Errorf("root file system not specified")
-	}
-
-	file, err := c.Root.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	bodyBuf := bufPool.Get().(*bytes.Buffer)
-	bodyBuf.Reset()
-	defer bufPool.Put(bodyBuf)
-
-	_, err = io.Copy(bodyBuf, file)
-	if err != nil {
-		return "", err
-	}
-
-	err = c.renderTemplateInBuffer(filename, bodyBuf, data)
-	if err != nil {
-		return "", err
-	}
-
-	return bodyBuf.String(), nil
+	return c.funcInclude(filename, data, "cmVuZGVy")
 }
 
 func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
@@ -210,20 +186,13 @@ func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buff
 
 	buf.Reset() // reuse buffer for output
 
-	return parsedTpl.Execute(buf, c)
-}
-
-func (c TemplateContext) renderTemplateInBuffer(tplName string, buf *bytes.Buffer, data interface{}) error {
-	tpl := c.NewTemplate(tplName)
-
-	parsedTpl, err := tpl.Parse(buf.String())
-	if err != nil {
-		return err
+	if len(c.Args) > 1 {
+		if c.Args[1] == "cmVuZGVy" {
+			return parsedTpl.Execute(buf, c.Args[0])
+		}
 	}
 
-	buf.Reset() // reuse buffer for output
-
-	return parsedTpl.Execute(buf, data)
+	return parsedTpl.Execute(buf, c)
 }
 
 func (c TemplateContext) funcPlaceholder(name string) string {
