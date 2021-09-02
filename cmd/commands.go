@@ -61,6 +61,12 @@ type Command struct {
 // any error that occurred.
 type CommandFunc func(Flags) (int, error)
 
+// Commands returns a list of commands initialised by
+// RegisterCommand
+func Commands() map[string]Command {
+	return commands
+}
+
 var commands = make(map[string]Command)
 
 func init() {
