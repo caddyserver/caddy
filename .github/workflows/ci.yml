@@ -156,9 +156,6 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
-
-      - name: Create 'caddy-build'
-        run: mkdir -p caddy-build
       
       - uses: goreleaser/goreleaser-action@v2
         with:
