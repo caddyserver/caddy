@@ -63,6 +63,30 @@ func TestFileMatcher(t *testing.T) {
 			path:    "/missingfile.php",
 			matched: false,
 		},
+		{
+			path:         "ملف.txt", // the path file name is not escaped
+			expectedPath: "ملف.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         url.PathEscape("ملف.txt"), // singly-escaped path
+			expectedPath: "ملف.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         url.PathEscape(url.PathEscape("ملف.txt")), // doubly-escaped path
+			expectedPath: "%D9%85%D9%84%D9%81.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "./with:in-name.txt", // browsers send the request with the path as such
+			expectedPath: "with:in-name.txt",
+			expectedType: "file",
+			matched:      true,
+		},
 	} {
 		m := &MatchFile{
 			Root:     "./testdata",
