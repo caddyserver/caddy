@@ -17,12 +17,31 @@ package fileserver
 import (
 	"net/http"
 	"net/url"
+	"os"
+	"runtime"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestFileMatcher(t *testing.T) {
+
+	// Windows doesn't like colons in files names
+	isWindows := runtime.GOOS == "windows"
+	if !isWindows {
+		filename := "with:in-name.txt"
+		f, err := os.Create("./testdata/" + filename)
+		if err != nil {
+			t.Fail()
+			return
+		}
+		t.Cleanup(func() {
+			os.Remove("./testdata/" + filename)
+		})
+		f.WriteString(filename)
+		f.Close()
+	}
+
 	for i, tc := range []struct {
 		path         string
 		expectedPath string
@@ -85,7 +104,7 @@ func TestFileMatcher(t *testing.T) {
 			path:         "./with:in-name.txt", // browsers send the request with the path as such
 			expectedPath: "with:in-name.txt",
 			expectedType: "file",
-			matched:      true,
+			matched:      !isWindows,
 		},
 	} {
 		m := &MatchFile{
