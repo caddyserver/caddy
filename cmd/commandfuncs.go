@@ -331,7 +331,7 @@ func cmdReload(fl Flags) (int, error) {
 }
 
 func cmdVersion(_ Flags) (int, error) {
-	fmt.Println(caddyVersion())
+	fmt.Println(CaddyVersion())
 	return caddy.ExitCodeSuccess, nil
 }
 
