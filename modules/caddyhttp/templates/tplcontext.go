@@ -180,17 +180,17 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 }
 
 // funcImport parses the filename into the current template stack, enabling use of {{block}} and {{template}}
-func (c *TemplateContext) funcImport(filename string) error {
+func (c *TemplateContext) funcImport(filename string) (string, error) {
 	bodyBuf, err := c.readFileToBuffer(filename)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = c.tpl.Parse(bodyBuf.String())
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+	return "", nil
 }
 
 func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
