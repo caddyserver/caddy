@@ -46,25 +46,26 @@ type TemplateContext struct {
 	RespHeader WrappedHeader
 
 	config *Templates
+	tpl    *template.Template
 }
 
 // NewTemplate returns a new template intended to be evaluated with this
 // context, as it is initialized with configuration from this context.
-func (c TemplateContext) NewTemplate(tplName string) *template.Template {
-	tpl := template.New(tplName)
+func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
+	c.tpl = template.New(tplName)
 
 	// customize delimiters, if applicable
 	if c.config != nil && len(c.config.Delimiters) == 2 {
-		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
+		c.tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
 	}
 
 	// add sprig library
-	tpl.Funcs(sprigFuncMap)
+	c.tpl.Funcs(sprigFuncMap)
 
 	// add our own library
-	tpl.Funcs(template.FuncMap{
+	c.tpl.Funcs(template.FuncMap{
 		"include":          c.funcInclude,
-		"render":           c.funcRender,
+		"import":           c.funcImport,
 		"httpInclude":      c.funcHTTPInclude,
 		"stripHTML":        c.funcStripHTML,
 		"markdown":         c.funcMarkdown,
@@ -75,8 +76,7 @@ func (c TemplateContext) NewTemplate(tplName string) *template.Template {
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
 	})
-
-	return tpl
+	return c.tpl
 }
 
 // OriginalReq returns the original, unmodified, un-rewritten request as
@@ -91,21 +91,8 @@ func (c TemplateContext) OriginalReq() http.Request {
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
 func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
-	if c.Root == nil {
-		return "", fmt.Errorf("root file system not specified")
-	}
+	bodyBuf, err := c.readFileToBuffer(filename)
 
-	file, err := c.Root.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	bodyBuf := bufPool.Get().(*bytes.Buffer)
-	bodyBuf.Reset()
-	defer bufPool.Put(bodyBuf)
-
-	_, err = io.Copy(bodyBuf, file)
 	if err != nil {
 		return "", err
 	}
@@ -118,6 +105,30 @@ func (c TemplateContext) funcInclude(filename string, args ...interface{}) (stri
 	}
 
 	return bodyBuf.String(), nil
+}
+
+// readFileToBuffer returns the contents of filename relative to root as a buffer
+func (c TemplateContext) readFileToBuffer(filename string) (*bytes.Buffer, error) {
+	if c.Root == nil {
+		return nil, fmt.Errorf("root file system not specified")
+	}
+
+	file, err := c.Root.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	bodyBuf := bufPool.Get().(*bytes.Buffer)
+	bodyBuf.Reset()
+	defer bufPool.Put(bodyBuf)
+
+	_, err = io.Copy(bodyBuf, file)
+	if err != nil {
+		return nil, err
+	}
+
+	return bodyBuf, nil
 }
 
 // funcHTTPInclude returns the body of a virtual (lightweight) request
@@ -168,31 +179,31 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	return buf.String(), nil
 }
 
-// funcRender returns the rendered contents of filename relative to the site root.
-// Note that included files are NOT escaped, so you should only include
-// trusted files. If it is not trusted, be sure to use escaping functions
-// in your template. Similar to include, but passes one argument accessible to filename as .
-func (c TemplateContext) funcRender(filename string, data interface{}) (string, error) {
-	return c.funcInclude(filename, data, "cmVuZGVy")
+// funcImport parses the filename into the current template stack, enabling use of {{block}} and {{template}}
+func (c *TemplateContext) funcImport(filename string) error {
+	bodyBuf, err := c.readFileToBuffer(filename)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.tpl.Parse(bodyBuf.String())
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := c.NewTemplate(tplName)
+func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
+	c.NewTemplate(tplName)
 
-	parsedTpl, err := tpl.Parse(buf.String())
+	_, err := c.tpl.Parse(buf.String())
 	if err != nil {
 		return err
 	}
 
 	buf.Reset() // reuse buffer for output
 
-	if len(c.Args) > 1 {
-		if c.Args[1] == "cmVuZGVy" {
-			return parsedTpl.Execute(buf, c.Args[0])
-		}
-	}
-
-	return parsedTpl.Execute(buf, c)
+	return c.tpl.Execute(buf, c)
 }
 
 func (c TemplateContext) funcPlaceholder(name string) string {
