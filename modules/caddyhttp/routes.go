@@ -200,6 +200,18 @@ func wrapRoute(route Route) Middleware {
 
 			// route must match at least one of the matcher sets
 			if !route.MatcherSets.AnyMatch(req) {
+				// allow matchers the opportunity to short circuit
+				// the request and trigger the error handling chain
+				repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+				val, ok := repl.Get(MatcherErrorPlaceholder)
+				if ok {
+					if err, ok := val.(error); ok {
+						return err
+					}
+				}
+
+				// call the next handler, and skip this one,
+				// since the matcher didn't match
 				return nextCopy.ServeHTTP(rw, req)
 			}
 
