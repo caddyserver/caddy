@@ -986,7 +986,7 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
-const MatcherErrorPlaceholder = "http.matchers.error"
+const MatcherErrorVarKey = "matchers.error"
 
 // Interface guards
 var (

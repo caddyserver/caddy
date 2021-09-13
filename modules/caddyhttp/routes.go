@@ -202,12 +202,9 @@ func wrapRoute(route Route) Middleware {
 			if !route.MatcherSets.AnyMatch(req) {
 				// allow matchers the opportunity to short circuit
 				// the request and trigger the error handling chain
-				repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-				val, ok := repl.Get(MatcherErrorPlaceholder)
+				err, ok := GetVar(req.Context(), MatcherErrorVarKey).(error)
 				if ok {
-					if err, ok := val.(error); ok {
-						return err
-					}
+					return err
 				}
 
 				// call the next handler, and skip this one,

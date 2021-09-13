@@ -211,7 +211,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
 			if err := parseErrorCode(f); err != nil {
-				repl.Set(caddyhttp.MatcherErrorPlaceholder, err)
+				caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
 				return
 			}
 			suffix, fullpath, remainder := prepareFilePath(f)
