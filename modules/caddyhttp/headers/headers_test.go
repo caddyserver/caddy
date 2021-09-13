@@ -160,6 +160,28 @@ func TestHandler(t *testing.T) {
 				"Fail-5xx": []string{"true"},
 			},
 		},
+		{
+			handler: Handler{
+				Request: &HeaderOps{
+					Replace: map[string][]Replacement{
+						"Case-Insensitive": {
+							Replacement{
+								Search:  "issue4330",
+								Replace: "issue #4330",
+							},
+						},
+					},
+				},
+			},
+			reqHeader: http.Header{
+				"case-insensitive": []string{"issue4330"},
+				"Other-Header":     []string{"issue4330"},
+			},
+			expectedReqHeader: http.Header{
+				"case-insensitive": []string{"issue #4330"},
+				"Other-Header":     []string{"issue4330"},
+			},
+		},
 	} {
 		rr := httptest.NewRecorder()
 
@@ -191,7 +213,7 @@ func TestHandler(t *testing.T) {
 		})
 
 		if err := tc.handler.ServeHTTP(rr, req, next); err != nil {
-			t.Errorf("Test %d: %w", i, err)
+			t.Errorf("Test %d: %v", i, err)
 			continue
 		}
 
