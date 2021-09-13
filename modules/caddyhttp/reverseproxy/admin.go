@@ -34,7 +34,8 @@ type adminUpstreams struct{}
 
 // upstreamResults holds the status of a particular upstream
 type upstreamStatus struct {
-	Address     string `json:"address"`
+	ID          string `json:"id"`
+	Address     string `json:"address"` // Address is deprecated, should be removed in a future release.
 	Healthy     bool   `json:"healthy"`
 	NumRequests int    `json:"num_requests"`
 	Fails       int    `json:"fails"`
@@ -78,7 +79,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 	// Iterate over the upstream pool (needs to be fast)
 	var rangeErr error
 	hosts.Range(func(key, val interface{}) bool {
-		address, ok := key.(string)
+		id, ok := key.(string)
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,
@@ -97,7 +98,8 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		}
 
 		results = append(results, upstreamStatus{
-			Address:     address,
+			ID:          id,
+			Address:     id,
 			Healthy:     !upstream.Unhealthy(),
 			NumRequests: upstream.NumRequests(),
 			Fails:       upstream.Fails(),

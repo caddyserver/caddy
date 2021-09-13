@@ -65,6 +65,12 @@ type UpstreamPool []*Upstream
 type Upstream struct {
 	Host `json:"-"`
 
+	// The unique ID for this upstream, to disambiguate multiple
+	// upstreams with the same Dial address. This is optional,
+	// and only necessary if the upstream states need to be
+	// separate, such as having different health checking policies.
+	ID string `json:"id,omitempty"`
+
 	// The [network address](/docs/conventions#network-addresses)
 	// to dial to connect to the upstream. Must represent precisely
 	// one socket (i.e. no port ranges). A valid network address
@@ -98,6 +104,9 @@ type Upstream struct {
 }
 
 func (u Upstream) String() string {
+	if u.ID != "" {
+		return u.ID
+	}
 	if u.LookupSRV != "" {
 		return u.LookupSRV
 	}
