@@ -219,6 +219,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// treated as a SRV-based upstream, and any port will be
 	// dropped.
 	appendUpstream := func(address string) error {
+		var id string
+		if strings.Contains(address, "|") {
+			parts := strings.SplitN(address, "|", 2)
+			id = parts[0]
+			address = parts[1]
+		}
 		isSRV := strings.HasPrefix(address, "srv+")
 		if isSRV {
 			address = strings.TrimPrefix(address, "srv+")
@@ -231,9 +237,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if host, _, err := net.SplitHostPort(dialAddr); err == nil {
 				dialAddr = host
 			}
-			h.Upstreams = append(h.Upstreams, &Upstream{LookupSRV: dialAddr})
+			h.Upstreams = append(h.Upstreams, &Upstream{ID: id, LookupSRV: dialAddr})
 		} else {
-			h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
+			h.Upstreams = append(h.Upstreams, &Upstream{ID: id, Dial: dialAddr})
 		}
 		return nil
 	}

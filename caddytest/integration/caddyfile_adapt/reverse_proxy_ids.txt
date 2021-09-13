@@ -1,0 +1,46 @@
+:8884
+
+reverse_proxy one|http://localhost two|http://localhost {
+	to three|srv+http://localhost four|srv+http://localhost
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "localhost:80",
+											"id": "one"
+										},
+										{
+											"dial": "localhost:80",
+											"id": "two"
+										},
+										{
+											"id": "three",
+											"lookup_srv": "localhost"
+										},
+										{
+											"id": "four",
+											"lookup_srv": "localhost"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
