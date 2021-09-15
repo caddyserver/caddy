@@ -207,7 +207,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		t := &HTTPTransport{
 			KeepAlive: &KeepAlive{
 				ProbeInterval:       caddy.Duration(30 * time.Second),
-				IdleConnTimeout:     caddy.Duration(2 * time.Minute),
+				IdleConnTimeout:     caddy.Duration(1 * time.Minute),
 				MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
 			},
 			DialTimeout: caddy.Duration(10 * time.Second),
@@ -352,10 +352,12 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Cleanup cleans up the resources made by h during provisioning.
 func (h *Handler) Cleanup() error {
-	// TODO: Close keepalive connections on reload? https://github.com/caddyserver/caddy/pull/2507/files#diff-70219fd88fe3f36834f474ce6537ed26R762
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
+		if transport, ok := h.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
 		_, _ = hosts.Delete(upstream.String())
 	}
 

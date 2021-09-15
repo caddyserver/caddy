@@ -556,16 +556,32 @@ func unsyncedStop(cfg *Config) {
 		return
 	}
 
+	errors := make(chan error, 1)
 	// stop each app
 	for name, a := range cfg.apps {
-		err := a.Stop()
-		if err != nil {
-			log.Printf("[ERROR] stop %s: %v", name, err)
-		}
+		go func(app App, appName string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+			defer cancel()
+
+			for {
+				select {
+				case errors <- app.Stop():
+					if errors != nil {
+						log.Printf("[ERROR] stop %s: %v", appName, errors)
+
+					}
+					return
+				case <-ctx.Done():
+					log.Printf("[ERROR] timeout stopping %s", appName)
+					return
+				}
+			}
+		}(a, name)
 	}
 
 	// clean up all modules
 	cfg.cancelFunc()
+
 }
 
 // Validate loads, provisions, and validates
