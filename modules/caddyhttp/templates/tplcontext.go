@@ -350,9 +350,8 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 	return false, nil
 }
 
-// funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL.
-// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed (Go 1.17).
-// Example usage might be: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
+// funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
+// Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
