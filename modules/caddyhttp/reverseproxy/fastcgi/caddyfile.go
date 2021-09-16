@@ -192,7 +192,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// NOTE: we delete the tokens as we go so that the reverse_proxy
 	// unmarshal doesn't see these subdirectives which it cannot handle
 	for dispenser.Next() {
-		for dispenser.NextBlock(0) {
+		for dispenser.NextBlock(0) && dispenser.Nesting() == 1 {
 			switch dispenser.Val() {
 			case "root":
 				if !dispenser.NextArg() {
