@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,7 +61,11 @@ type MatchFile struct {
 	// directories are treated distinctly, so to match
 	// a directory, the filepath MUST end in a forward
 	// slash `/`. To match a regular file, there must
-	// be no trailing slash. Accepts placeholders.
+	// be no trailing slash. Accepts placeholders. If
+	// the policy is "first_exist", then an error may
+	// be triggered as a fallback by configuring "="
+	// followed by a status code number,
+	// for example "=404".
 	TryFiles []string `json:"try_files,omitempty"`
 
 	// How to choose a file in TryFiles. Can be:
@@ -205,6 +210,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, f := range m.TryFiles {
+			if err := parseErrorCode(f); err != nil {
+				caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
+				return
+			}
 			suffix, fullpath, remainder := prepareFilePath(f)
 			if info, exists := strictFileExists(fullpath); exists {
 				setPlaceholders(info, suffix, fullpath, remainder)
@@ -272,6 +281,20 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	}
 
 	return
+}
+
+// parseErrorCode checks if the input is a status
+// code number, prefixed by "=", and returns an
+// error if so.
+func parseErrorCode(input string) error {
+	if len(input) > 1 && input[0] == '=' {
+		code, err := strconv.Atoi(input[1:])
+		if err != nil || code < 100 || code > 999 {
+			return nil
+		}
+		return caddyhttp.Error(code, fmt.Errorf("%s", input[1:]))
+	}
+	return nil
 }
 
 // strictFileExists returns true if file exists
