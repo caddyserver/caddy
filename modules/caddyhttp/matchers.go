@@ -986,6 +986,11 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
+
+// MatcherErrorVarKey is the key used for the variable that
+// holds an optional error emitted from a request matcher,
+// to short-circuit the handler chain, since matchers cannot
+// return errors via the RequestMatcher interface.
 const MatcherErrorVarKey = "matchers.error"
 
 // Interface guards
