@@ -86,7 +86,7 @@ func (c TemplateContext) OriginalReq() http.Request {
 	return or
 }
 
-// funcInclude returns the contents of filename relative to the site root.
+// funcInclude returns the contents of filename relative to the site root and renders it in place.
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
@@ -179,7 +179,10 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	return buf.String(), nil
 }
 
-// funcImport parses the filename into the current template stack, enabling use of {{block}} and {{template}}
+// funcImport parses the filename into the current template stack. The imported
+// file will be rendered within the current template by calling {{ block }} or
+// {{ template }} from the standard template library. If the imported file has
+// no {{ define }} blocks, the name of the import will be the path
 func (c *TemplateContext) funcImport(filename string) (string, error) {
 	bodyBuf, err := c.readFileToBuffer(filename)
 	if err != nil {
