@@ -213,7 +213,7 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 
 	// replace
 	for fieldName, replacements := range ops.Replace {
-		fieldName = repl.ReplaceAll(fieldName, "")
+		fieldName = http.CanonicalHeaderKey(repl.ReplaceAll(fieldName, ""))
 
 		// all fields...
 		if fieldName == "*" {
@@ -237,11 +237,17 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 		for _, r := range replacements {
 			search := repl.ReplaceAll(r.Search, "")
 			replace := repl.ReplaceAll(r.Replace, "")
-			for i := range hdr[fieldName] {
-				if r.re != nil {
-					hdr[fieldName][i] = r.re.ReplaceAllString(hdr[fieldName][i], replace)
-				} else {
-					hdr[fieldName][i] = strings.ReplaceAll(hdr[fieldName][i], search, replace)
+			for hdrFieldName, vals := range hdr {
+				// see issue #4330 for why we don't simply use hdr[fieldName]
+				if http.CanonicalHeaderKey(hdrFieldName) != fieldName {
+					continue
+				}
+				for i := range vals {
+					if r.re != nil {
+						hdr[hdrFieldName][i] = r.re.ReplaceAllString(hdr[hdrFieldName][i], replace)
+					} else {
+						hdr[hdrFieldName][i] = strings.ReplaceAll(hdr[hdrFieldName][i], search, replace)
+					}
 				}
 			}
 		}

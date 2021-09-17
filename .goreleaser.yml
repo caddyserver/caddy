@@ -75,7 +75,7 @@ nfpms:
   - id: default
     package_name: caddy
 
-    vendor: Light Code Labs
+    vendor: Dyanim
     homepage: https://caddyserver.com
     maintainer: Matthew Holt <mholt@users.noreply.github.com>
     description: |

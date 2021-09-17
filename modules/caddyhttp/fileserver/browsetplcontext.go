@@ -42,14 +42,15 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 
 		isDir := f.IsDir() || isSymlinkTargetDir(f, root, urlPath)
 
+		u := url.URL{Path: url.PathEscape(name)}
+
+		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
-			name += "/"
+			u.Path += "/"
 			dirCount++
 		} else {
 			fileCount++
 		}
-
-		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		fileInfos = append(fileInfos, fileInfo{
 			IsDir:     isDir,

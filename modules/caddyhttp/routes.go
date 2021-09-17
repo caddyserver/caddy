@@ -200,6 +200,15 @@ func wrapRoute(route Route) Middleware {
 
 			// route must match at least one of the matcher sets
 			if !route.MatcherSets.AnyMatch(req) {
+				// allow matchers the opportunity to short circuit
+				// the request and trigger the error handling chain
+				err, ok := GetVar(req.Context(), MatcherErrorVarKey).(error)
+				if ok {
+					return err
+				}
+
+				// call the next handler, and skip this one,
+				// since the matcher didn't match
 				return nextCopy.ServeHTTP(rw, req)
 			}
 
