@@ -124,21 +124,22 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // is equivalent to a route consisting of:
 //
+//     # Add trailing slash for directory requests
 //     @canonicalPath {
-//         file {
-//             try_files {path}/index.php
-//         }
-//         not {
-//             path */
-//         }
+//         file {path}/index.php
+//         not path */
 //     }
 //     redir @canonicalPath {path}/ 308
 //
-//     try_files {path} {path}/index.php index.php
-//
-//     @phpFiles {
-//         path *.php
+//     # If the requested file does not exist, try index files
+//     @indexFiles file {
+//         try_files {path} {path}/index.php index.php
+//         split_path .php
 //     }
+//     rewrite @indexFiles {http.matchers.file.relative}
+//
+//     # Proxy PHP files to the FastCGI responder
+//     @phpFiles path *.php
 //     reverse_proxy @phpFiles localhost:7777 {
 //         transport fastcgi {
 //             split .php
@@ -171,6 +172,9 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// set the default index file for the try_files rewrites
 	indexFile := "index.php"
+
+	// set up for explicitly overriding try_files
+	tryFiles := []string{}
 
 	// if the user specified a matcher token, use that
 	// matcher in a route that wraps both of our routes;
@@ -236,6 +240,17 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.ArgErr()
 				}
 				indexFile = args[0]
+
+			case "try_files":
+				args := dispenser.RemainingArgs()
+				dispenser.Delete()
+				for range args {
+					dispenser.Delete()
+				}
+				if len(args) < 1 {
+					return nil, dispenser.ArgErr()
+				}
+				tryFiles = args
 
 			case "resolve_root_symlink":
 				args := dispenser.RemainingArgs()
@@ -318,10 +333,15 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(redirHandler, "handler", "static_response", nil)},
 		}
 
+		// if tryFiles wasn't overridden, use a reasonable default
+		if len(tryFiles) == 0 {
+			tryFiles = []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile}
+		}
+
 		// route to rewrite to PHP index file
 		rewriteMatcherSet := caddy.ModuleMap{
 			"file": h.JSON(fileserver.MatchFile{
-				TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile},
+				TryFiles:  tryFiles,
 				SplitPath: extensions,
 			}),
 		}
