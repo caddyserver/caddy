@@ -91,9 +91,25 @@ func init() {
 // {{httpInclude "/foo/bar?q=val"}}
 // ```
 //
+// ##### `import`
+//
+// Imports the contents of another file and adds any template definitions to the template stack. If there are no defitions, the filepath will be the defition name. Any {{ define }} blocks will be accessible by {{ template }} or {{ block }}. Imports must happen before the template or block action is called
+//
+// **filename.html**
+// ```
+// {{ define "main" }}
+// content
+// {{ end }}
+//
+// **index.html**
+// ```
+// {{ import "/path/to/file.html" }}
+// {{ template "main" }}
+// ```
+//
 // ##### `include`
 //
-// Includes the contents of another file. Optionally can pass key-value pairs as arguments to be accessed by the included file.
+// Includes the contents of another file and renders in-place. Optionally can pass key-value pairs as arguments to be accessed by the included file.
 //
 // ```
 // {{include "path/to/file.html"}}  // no arguments
