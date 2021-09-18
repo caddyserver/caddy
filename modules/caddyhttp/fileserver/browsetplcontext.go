@@ -52,9 +52,9 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			fileCount++
 		}
 
-		isSymlink := isSymlink(f)
+		fileIsSymlink := isSymlink(f)
 		size := f.Size()
-		if isSymlink {
+		if fileIsSymlink {
 			info, err := os.Stat(name)
 			if err != nil {
 				return browseTemplateContext{}, err
@@ -64,7 +64,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 
 		fileInfos = append(fileInfos, fileInfo{
 			IsDir:     isDir,
-			IsSymlink: isSymlink,
+			IsSymlink: fileIsSymlink,
 			Name:      name,
 			Size:      size,
 			URL:       u.String(),
