@@ -91,6 +91,63 @@ func TestCookie(t *testing.T) {
 	}
 }
 
+func TestImport(t *testing.T) {
+	for i, test := range []struct {
+		fileContent string
+		fileName    string
+		shouldErr   bool
+		expect      string
+	}{
+		{
+			// file exists, template is defined
+			fileContent: `{{ define "imported" }}text{{end}}`,
+			fileName:    "file1",
+			shouldErr:   false,
+			expect:      `"imported"`,
+		},
+		{
+			// file does not exit
+			fileContent: "",
+			fileName:    "",
+			shouldErr:   true,
+		},
+	} {
+		context := getContextOrFail(t)
+		var absFilePath string
+
+		// create files for test case
+		if test.fileName != "" {
+			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
+			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
+				os.RemoveAll(absFilePath)
+				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
+			}
+		}
+
+		// perform test
+		context.NewTemplate("parent")
+		actual, err := context.funcImport(test.fileName)
+		templateWasDefined := strings.Contains(context.tpl.DefinedTemplates(), test.expect)
+		if err != nil {
+			if !test.shouldErr {
+				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
+			}
+		} else if test.shouldErr {
+			t.Errorf("Test %d: Expected error but had none", i)
+		} else if !templateWasDefined && actual != "" {
+			// template should be defined, return value should be an empty string
+			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, context.tpl.DefinedTemplates())
+
+		}
+
+		if absFilePath != "" {
+			if err := os.RemoveAll(absFilePath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
+			}
+		}
+	}
+}
+
 func TestInclude(t *testing.T) {
 	for i, test := range []struct {
 		fileContent string
