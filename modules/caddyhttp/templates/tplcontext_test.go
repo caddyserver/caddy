@@ -91,6 +91,83 @@ func TestCookie(t *testing.T) {
 	}
 }
 
+func TestInclude(t *testing.T) {
+	for i, test := range []struct {
+		fileContent string
+		fileName    string
+		shouldErr   bool
+		expect      string
+		args        string
+	}{
+		{
+			// file exists, content is text only
+			fileContent: "text",
+			fileName:    "file1",
+			shouldErr:   false,
+			expect:      "text",
+		},
+		{
+			// file exists, content is template
+			fileContent: "{{ if . }}text{{ end }}",
+			fileName:    "file1",
+			shouldErr:   false,
+			expect:      "text",
+		},
+		{
+			// file does not exit
+			fileContent: "",
+			fileName:    "",
+			shouldErr:   true,
+		},
+		{
+			// args
+			fileContent: "{{ index .Args 0 }}",
+			fileName:    "file1",
+			shouldErr:   false,
+			args:        "text",
+			expect:      "text",
+		},
+		{
+			// args, reference arg out of range
+			fileContent: "{{ index .Args 1 }}",
+			fileName:    "file1",
+			shouldErr:   true,
+			args:        "text",
+		},
+	} {
+		context := getContextOrFail(t)
+		var absFilePath string
+
+		// create files for test case
+		if test.fileName != "" {
+			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
+			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
+				os.RemoveAll(absFilePath)
+				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
+			}
+		}
+
+		// perform test
+		actual, err := context.funcInclude(test.fileName, test.args)
+		if err != nil {
+			if !test.shouldErr {
+				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
+			}
+		} else if test.shouldErr {
+			t.Errorf("Test %d: Expected error but had none", i)
+		} else if actual != test.expect {
+			t.Errorf("Test %d: Expected %s but got %s", i, test.expect, actual)
+
+		}
+
+		if absFilePath != "" {
+			if err := os.RemoveAll(absFilePath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
+			}
+		}
+	}
+}
+
 func TestCookieMultipleCookies(t *testing.T) {
 	context := getContextOrFail(t)
 
