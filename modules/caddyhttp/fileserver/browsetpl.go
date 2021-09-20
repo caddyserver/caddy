@@ -39,6 +39,10 @@ h1 a:hover {
 	color: #319cff;
 }
 
+a:visited {
+  color: #800080;
+}
+
 header,
 #summary {
 	padding-left: 5%;
