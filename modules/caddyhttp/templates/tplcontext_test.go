@@ -119,7 +119,7 @@ func TestImport(t *testing.T) {
 		if test.fileName != "" {
 			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
 			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
-				os.RemoveAll(absFilePath)
+				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
 		}
@@ -141,7 +141,7 @@ func TestImport(t *testing.T) {
 		}
 
 		if absFilePath != "" {
-			if err := os.RemoveAll(absFilePath); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
@@ -199,7 +199,7 @@ func TestInclude(t *testing.T) {
 		if test.fileName != "" {
 			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
 			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
-				os.RemoveAll(absFilePath)
+				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
 		}
@@ -218,7 +218,7 @@ func TestInclude(t *testing.T) {
 		}
 
 		if absFilePath != "" {
-			if err := os.RemoveAll(absFilePath); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
