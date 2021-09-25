@@ -47,7 +47,7 @@ type TLS struct {
 	// have to be refreshed manually before they expire.
 	CertificatesRaw caddy.ModuleMap `json:"certificates,omitempty" caddy:"namespace=tls.certificates"`
 
-	// Configures the automation of certificate management.
+	// Configures certificate automation.
 	Automation *AutomationConfig `json:"automation,omitempty"`
 
 	// Configures session ticket ephemeral keys (STEKs).
@@ -527,14 +527,14 @@ type Certificate struct {
 	Tags []string
 }
 
-// AutomateLoader will automatically manage certificates for the names
-// in the list, including obtaining and renewing certificates. Automated
-// certificates are managed according to their matching automation policy,
-// configured elsewhere in this app.
+// AutomateLoader will automatically manage certificates for the names in the
+// list, including obtaining and renewing certificates. Automated certificates
+// are managed according to their matching automation policy, configured
+// elsewhere in this app.
 //
-// This is a no-op certificate loader module that is treated as a special
-// case: it uses this app's automation features to load certificates for the
-// list of hostnames, rather than loading certificates manually.
+// Technically, this is a no-op certificate loader module that is treated as
+// a special case: it uses this app's automation features to load certificates
+// for the list of hostnames, rather than loading certificates manually.
 type AutomateLoader []string
 
 // CaddyModule returns the Caddy module information.
@@ -549,8 +549,7 @@ func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
 type CertCacheOptions struct {
 	// Maximum number of certificates to allow in the
 	// cache. If reached, certificates will be randomly
-	// evicted to make room for new ones. Default: 0
-	// (no limit).
+	// evicted to make room for new ones. Default: 10,000
 	Capacity int `json:"capacity,omitempty"`
 }
 

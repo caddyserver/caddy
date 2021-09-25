@@ -237,7 +237,8 @@ type Templates struct {
 	// Default is text/plain, text/markdown, and text/html.
 	MIMETypes []string `json:"mime_types,omitempty"`
 
-	// The template action delimiters.
+	// The template action delimiters. If set, must be precisely two elements:
+	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
 }
 
