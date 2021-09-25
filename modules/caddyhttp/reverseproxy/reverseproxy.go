@@ -574,12 +574,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	duration := time.Since(start)
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
+		zap.Duration("duration", duration),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
 	)
 	if err != nil {
-		logger.Debug("upstream roundtrip",
-			zap.Duration("duration", duration),
-			zap.Error(err))
+		logger.Error("upstream roundtrip", zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
