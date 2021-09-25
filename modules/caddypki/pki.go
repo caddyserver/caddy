@@ -26,10 +26,15 @@ func init() {
 }
 
 // PKI provides Public Key Infrastructure facilities for Caddy.
+//
+// This app can define certificate authorities (CAs) which are capable
+// of signing certificates. Other modules can be configured to use
+// the CAs defined by this app for issuing certificates or getting
+// key information needed for establishing trust.
 type PKI struct {
-	// The CAs to manage. Each CA is keyed by an ID that is used
-	// to uniquely identify it from other CAs. The default CA ID
-	// is "local".
+	// The certificate authorities to manage. Each CA is keyed by an
+	// ID that is used to uniquely identify it from other CAs.
+	// The default CA ID is "local".
 	CAs map[string]*CA `json:"certificate_authorities,omitempty"`
 
 	ctx caddy.Context

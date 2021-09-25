@@ -97,7 +97,8 @@ type (
 	// ```
 	MatchQuery url.Values
 
-	// MatchHeader matches requests by header fields. It performs fast,
+	// MatchHeader matches requests by header fields. The key is the field
+	// name and the array is the list of field values. It performs fast,
 	// exact string comparisons of the field values. Fast prefix, suffix,
 	// and substring matches can also be done by suffixing, prefixing, or
 	// surrounding the value with the wildcard `*` character, respectively.
@@ -114,7 +115,8 @@ type (
 	// (potentially leading to collisions).
 	MatchHeaderRE map[string]*MatchRegexp
 
-	// MatchProtocol matches requests by protocol.
+	// MatchProtocol matches requests by protocol. Recognized values are
+	// "http", "https", and "grpc".
 	MatchProtocol string
 
 	// MatchRemoteIP matches requests by client IP (or CIDR range).
@@ -139,9 +141,9 @@ type (
 	// matchers within a set work the same (i.e. different matchers in
 	// the same set are AND'ed).
 	//
-	// Note that the generated docs which describe the structure of
-	// this module are wrong because of how this type unmarshals JSON
-	// in a custom way. The correct structure is:
+	// NOTE: The generated docs which describe the structure of this
+	// module are wrong because of how this type unmarshals JSON in a
+	// custom way. The correct structure is:
 	//
 	// ```json
 	// [
