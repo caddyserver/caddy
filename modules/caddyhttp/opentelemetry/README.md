@@ -46,7 +46,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=localhost:12345
 Here is an example of **Caddyfile**:
 
 ```
-handle /myHanlder {
+handle /myHandler {
     opentelemetry {
             span_name my-span
     }       
