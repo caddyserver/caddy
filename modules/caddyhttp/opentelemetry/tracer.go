@@ -42,7 +42,7 @@ const (
 
 var (
 	ErrUnspecifiedTracesProtocol  = errors.New("unspecified opentelemetry traces protocol")
-	ErrNonSupportedTracesProtocol = errors.New("non supported opentelemetry traces protocol")
+	ErrUnsupportedTracesProtocol = errors.New("unsupported opentelemetry traces protocol")
 	ErrUnspecifiedPropagators     = errors.New("unspecified opentelemtry propagators")
 )
 
