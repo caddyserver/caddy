@@ -41,9 +41,9 @@ const (
 )
 
 var (
-	ErrUnspecifiedTracesProtocol  = errors.New("unspecified opentelemetry traces protocol")
+	ErrUnspecifiedTracesProtocol = errors.New("unspecified opentelemetry traces protocol")
 	ErrUnsupportedTracesProtocol = errors.New("unsupported opentelemetry traces protocol")
-	ErrUnspecifiedPropagators     = errors.New("unspecified opentelemtry propagators")
+	ErrUnspecifiedPropagators    = errors.New("unspecified opentelemtry propagators")
 )
 
 // openTelemetryWrapper is responsible for the tracing injection, extraction and propagation.
@@ -171,7 +171,7 @@ func (ot *openTelemetryWrapper) getTracerExporter(ctx context.Context) (*otlptra
 	case "":
 		return nil, ErrUnspecifiedTracesProtocol
 	default:
-		return nil, fmt.Errorf("%w: tracesProtocol %s", ErrNonSupportedTracesProtocol, exporterTracesProtocol)
+		return nil, fmt.Errorf("%w: tracesProtocol %s", ErrUnsupportedTracesProtocol, exporterTracesProtocol)
 	}
 }
 

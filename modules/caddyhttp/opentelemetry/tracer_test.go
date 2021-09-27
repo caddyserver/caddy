@@ -76,7 +76,7 @@ func TestOpenTelemetry_newOpenTelemetryWrapper_Error(t *testing.T) {
 			unsetEnv: func() error {
 				return os.Unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 			},
-			wantErrType: ErrNonSupportedTracesProtocol,
+			wantErrType: ErrUnsupportedTracesProtocol,
 		},
 	}
 	for _, tt := range tests {
