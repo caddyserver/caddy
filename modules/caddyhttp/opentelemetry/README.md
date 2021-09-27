@@ -11,8 +11,8 @@ It is based on `https://github.com/open-telemetry/opentelemetry-go`.
 
 ### Environment variables
 
-It can be configured using environment variables defined
-by [spec](https://github.com/open-telemetry/opentelemetry-specification).
+It can be configured using the environment variables defined
+by the [OpenTelemetry Environment Variable Specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md).
 
 IMPORTANT: Please, consider the version
 of [https://github.com/open-telemetry/opentelemetry-go](https://github.com/open-telemetry/opentelemetry-go). Some parts
