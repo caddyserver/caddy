@@ -5,10 +5,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
 	"net/http"
 	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"

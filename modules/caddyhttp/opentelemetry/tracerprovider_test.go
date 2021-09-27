@@ -1,8 +1,9 @@
 package opentelemetry
 
 import (
-	"go.uber.org/zap"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func Test_tracersProvider_getTracerProvider(t *testing.T) {
