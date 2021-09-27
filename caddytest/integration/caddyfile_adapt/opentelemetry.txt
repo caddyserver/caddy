@@ -23,7 +23,8 @@
 							],
 							"handle": [
 								{
-									"span_name": "my-span",
+									"handler": "opentelemetry",
+									"span_name": "my-span"
 								}
 							]
 						}
