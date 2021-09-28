@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -94,7 +93,7 @@ func Main() {
 // the bytes in expect, or returns an error if it doesn't.
 func handlePingbackConn(conn net.Conn, expect []byte) error {
 	defer conn.Close()
-	confirmationBytes, err := ioutil.ReadAll(io.LimitReader(conn, 32))
+	confirmationBytes, err := io.ReadAll(io.LimitReader(conn, 32))
 	if err != nil {
 		return err
 	}
@@ -124,9 +123,9 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 	var err error
 	if configFile != "" {
 		if configFile == "-" {
-			config, err = ioutil.ReadAll(os.Stdin)
+			config, err = io.ReadAll(os.Stdin)
 		} else {
-			config, err = ioutil.ReadFile(configFile)
+			config, err = os.ReadFile(configFile)
 		}
 		if err != nil {
 			return nil, "", fmt.Errorf("reading config file: %v", err)
@@ -140,7 +139,7 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 		// plugged in, and if so, try using a default Caddyfile
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
-			config, err = ioutil.ReadFile("Caddyfile")
+			config, err = os.ReadFile("Caddyfile")
 			if os.IsNotExist(err) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil

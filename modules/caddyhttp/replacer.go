@@ -28,7 +28,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -162,7 +161,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 					return "", true
 				}
 				// replace real body with buffered data
-				req.Body = ioutil.NopCloser(buf)
+				req.Body = io.NopCloser(buf)
 				return buf.String(), true
 
 				// original request, before any internal changes

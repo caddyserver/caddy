@@ -17,7 +17,6 @@ package templates
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -118,7 +117,7 @@ func TestImport(t *testing.T) {
 		// create files for test case
 		if test.fileName != "" {
 			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
-			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
+			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
 				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
@@ -198,7 +197,7 @@ func TestInclude(t *testing.T) {
 		// create files for test case
 		if test.fileName != "" {
 			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
-			if err := ioutil.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
+			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
 				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
@@ -357,13 +356,13 @@ func TestFileListing(t *testing.T) {
 
 		// create files for test case
 		if test.fileNames != nil {
-			dirPath, err = ioutil.TempDir(fmt.Sprintf("%s", context.Root), "caddy_ctxtest")
+			dirPath, err = os.MkdirTemp(fmt.Sprintf("%s", context.Root), "caddy_ctxtest")
 			if err != nil {
 				t.Fatalf("Test %d: Expected no error creating directory, got: '%s'", i, err.Error())
 			}
 			for _, name := range test.fileNames {
 				absFilePath := filepath.Join(dirPath, name)
-				if err = ioutil.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
+				if err = os.WriteFile(absFilePath, []byte(""), os.ModePerm); err != nil {
 					os.RemoveAll(dirPath)
 					t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 				}
