@@ -20,10 +20,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"time"
 
@@ -364,7 +364,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			rootPool.AddCert(caCert)
 		}
 		for _, pemFile := range t.RootCAPEMFiles {
-			pemData, err := ioutil.ReadFile(pemFile)
+			pemData, err := os.ReadFile(pemFile)
 			if err != nil {
 				return nil, fmt.Errorf("failed reading ca cert: %v", err)
 			}

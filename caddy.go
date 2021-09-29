@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -300,7 +299,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 				zap.String("dir", dir),
 				zap.Error(err))
 		} else {
-			err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
 			if err == nil {
 				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
@@ -700,13 +699,13 @@ func ParseDuration(s string) (time.Duration, error) {
 // have its own unique ID.
 func InstanceID() (uuid.UUID, error) {
 	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
-	uuidFileBytes, err := ioutil.ReadFile(uuidFilePath)
+	uuidFileBytes, err := os.ReadFile(uuidFilePath)
 	if os.IsNotExist(err) {
 		uuid, err := uuid.NewRandom()
 		if err != nil {
 			return uuid, err
 		}
-		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
+		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
 		return uuid, err
 	} else if err != nil {
 		return [16]byte{}, err
