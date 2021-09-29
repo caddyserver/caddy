@@ -26,7 +26,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -166,7 +165,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	}
 
 	defer resp.Body.Close()
-	content, _ = ioutil.ReadAll(resp.Body)
+	content, _ = io.ReadAll(resp.Body)
 
 	log.Println("c: send data length ≈", length, string(content))
 	fcgi.Close()

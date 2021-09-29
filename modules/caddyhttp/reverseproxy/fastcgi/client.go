@@ -30,7 +30,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -445,7 +444,7 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	if chunked(resp.TransferEncoding) {
 		resp.Body = clientCloser{c, httputil.NewChunkedReader(rb)}
 	} else {
-		resp.Body = clientCloser{c, ioutil.NopCloser(rb)}
+		resp.Body = clientCloser{c, io.NopCloser(rb)}
 	}
 	return
 }

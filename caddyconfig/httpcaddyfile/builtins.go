@@ -19,8 +19,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"html"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -230,7 +230,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 							return nil, h.ArgErr()
 						}
 						filename := h.Val()
-						certDataPEM, err := ioutil.ReadFile(filename)
+						certDataPEM, err := os.ReadFile(filename)
 						if err != nil {
 							return nil, err
 						}

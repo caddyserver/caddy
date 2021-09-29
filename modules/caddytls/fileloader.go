@@ -17,7 +17,7 @@ package caddytls
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -59,11 +59,11 @@ type CertKeyFilePair struct {
 func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
 	certs := make([]Certificate, 0, len(fl))
 	for _, pair := range fl {
-		certData, err := ioutil.ReadFile(pair.Certificate)
+		certData, err := os.ReadFile(pair.Certificate)
 		if err != nil {
 			return nil, err
 		}
-		keyData, err := ioutil.ReadFile(pair.Key)
+		keyData, err := os.ReadFile(pair.Key)
 		if err != nil {
 			return nil, err
 		}
