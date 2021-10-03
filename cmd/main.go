@@ -85,7 +85,9 @@ func Main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
 	}
-
+	if err := cleanup(); err != nil {
+		fmt.Fprintf(os.Stderr, "error restoring console to functional state: %v\n", err)
+	}
 	os.Exit(exitCode)
 }
 
