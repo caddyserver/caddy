@@ -50,6 +50,9 @@ func init() {
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() of your program.
 func Main() {
+	if err := resetTerminalState(); err != nil {
+		fmt.Fprintf(os.Stderr, "error restoring console to functional state: %v\n", err)
+	}
 	switch len(os.Args) {
 	case 0:
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
@@ -84,9 +87,6 @@ func Main() {
 	exitCode, err := subcommand.Func(Flags{fs})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
-	}
-	if err := cleanup(); err != nil {
-		fmt.Fprintf(os.Stderr, "error restoring console to functional state: %v\n", err)
 	}
 	os.Exit(exitCode)
 }

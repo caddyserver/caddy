@@ -13,7 +13,7 @@ var inMode, outMode uint32
 var _ = windows.GetConsoleMode(windows.Stdin, &inMode)
 var _ = windows.GetConsoleMode(windows.Stdout, &outMode)
 
-func cleanup() error {
+func resetTerminalState() error {
 	if err := windows.SetConsoleMode(windows.Stdin, inMode); err != nil {
 		return err
 	}

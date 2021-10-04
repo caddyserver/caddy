@@ -3,4 +3,4 @@
 
 package caddycmd
 
-func cleanup() error { return nil }
+func resetTerminalState() error { return nil }
