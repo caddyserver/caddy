@@ -44,7 +44,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=localhost:12345
 
 ### Caddy file configuration
 
-Here is an example of **Caddyfile**:
+Here is a **Caddyfile** example:
 
 ```
 handle /myHandler {
