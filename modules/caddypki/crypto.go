@@ -23,7 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -137,11 +137,11 @@ type KeyPair struct {
 func (kp KeyPair) Load() (*x509.Certificate, interface{}, error) {
 	switch kp.Format {
 	case "", "pem_file":
-		certData, err := ioutil.ReadFile(kp.Certificate)
+		certData, err := os.ReadFile(kp.Certificate)
 		if err != nil {
 			return nil, nil, err
 		}
-		keyData, err := ioutil.ReadFile(kp.PrivateKey)
+		keyData, err := os.ReadFile(kp.PrivateKey)
 		if err != nil {
 			return nil, nil, err
 		}

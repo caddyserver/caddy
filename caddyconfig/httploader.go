@@ -18,8 +18,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -95,7 +96,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		return nil, fmt.Errorf("server responded with HTTP %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 		if len(hl.TLS.RootCAPEMFiles) > 0 {
 			rootPool := x509.NewCertPool()
 			for _, pemFile := range hl.TLS.RootCAPEMFiles {
-				pemData, err := ioutil.ReadFile(pemFile)
+				pemData, err := os.ReadFile(pemFile)
 				if err != nil {
 					return nil, fmt.Errorf("failed reading ca cert: %v", err)
 				}

@@ -16,7 +16,7 @@ package caddyhttp
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -44,7 +44,7 @@ func TestStaticResponseHandler(t *testing.T) {
 	}
 
 	resp := w.Result()
-	respBody, _ := ioutil.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected status %d but got %d", http.StatusNotFound, resp.StatusCode)

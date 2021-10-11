@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -630,9 +629,9 @@ func (StderrWriter) OpenWriter() (io.WriteCloser, error) {
 	return notClosable{os.Stderr}, nil
 }
 
-// OpenWriter returns ioutil.Discard that can't be closed.
+// OpenWriter returns io.Discard that can't be closed.
 func (DiscardWriter) OpenWriter() (io.WriteCloser, error) {
-	return notClosable{ioutil.Discard}, nil
+	return notClosable{io.Discard}, nil
 }
 
 // notClosable is an io.WriteCloser that can't be closed.

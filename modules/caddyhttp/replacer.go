@@ -25,10 +25,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -162,7 +162,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 					return "", true
 				}
 				// replace real body with buffered data
-				req.Body = ioutil.NopCloser(buf)
+				req.Body = io.NopCloser(buf)
 				return buf.String(), true
 
 				// original request, before any internal changes
@@ -353,6 +353,8 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		case "client.certificate_pem":
 			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), true
+		case "client.certificate_der_base64":
+			return base64.StdEncoding.EncodeToString(cert.Raw), true
 		default:
 			return nil, false
 		}

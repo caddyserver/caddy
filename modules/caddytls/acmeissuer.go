@@ -18,8 +18,8 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -152,7 +152,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	if len(iss.TrustedRootsPEMFiles) > 0 {
 		iss.rootPool = x509.NewCertPool()
 		for _, pemFile := range iss.TrustedRootsPEMFiles {
-			pemData, err := ioutil.ReadFile(pemFile)
+			pemData, err := os.ReadFile(pemFile)
 			if err != nil {
 				return fmt.Errorf("loading trusted root CA's PEM file: %s: %v", pemFile, err)
 			}
