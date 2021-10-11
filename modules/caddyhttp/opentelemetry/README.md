@@ -18,10 +18,6 @@ IMPORTANT: Please, consider the version
 of [https://github.com/open-telemetry/opentelemetry-go](https://github.com/open-telemetry/opentelemetry-go). Some parts
 of the specification may be not implemented yet.
 
-These environment variables are required by this module:
-- `OTEL_EXPORTER_OTLP_PROTOCOL` or `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`
-- `OTEL_PROPAGATORS`
-
 If neither OTEL_EXPORTER_OTLP_INSECURE nor OTEL_EXPORTER_OTLP_SPAN_INSECURE is provided, then:
 
 1. If OTEL_EXPORTER_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE are specified they will be used for TLS.

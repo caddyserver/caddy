@@ -13,15 +13,6 @@ func TestOpenTelemetry_newOpenTelemetryWrapper(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
-	if err := th.SetEnv(); err != nil {
-		t.Errorf("Environment variable set error: %v", err)
-	}
-	defer func() {
-		if err := th.UnsetEnv(); err != nil {
-			t.Errorf("Environment variable set error: %v", err)
-		}
-	}()
-
 	var otw openTelemetryWrapper
 	var err error
 
@@ -48,26 +39,6 @@ func TestOpenTelemetry_newOpenTelemetryWrapper_Error(t *testing.T) {
 		setEnv      func() error
 		unsetEnv    func() error
 	}{
-		{
-			name: "With OTEL_EXPORTER_OTLP_PROTOCOL environment variables only",
-			setEnv: func() error {
-				return os.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-			},
-			unsetEnv: func() error {
-				return os.Unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL")
-			},
-			wantErrType: ErrUnspecifiedPropagators,
-		},
-		{
-			name: "With OTEL_PROPAGATORS environment variables only",
-			setEnv: func() error {
-				return os.Setenv("OTEL_PROPAGATORS", "tracecontext,baggage")
-			},
-			unsetEnv: func() error {
-				return os.Unsetenv("OTEL_PROPAGATORS")
-			},
-			wantErrType: ErrUnspecifiedTracesProtocol,
-		},
 		{
 			name: "Not supported protocol",
 			setEnv: func() error {

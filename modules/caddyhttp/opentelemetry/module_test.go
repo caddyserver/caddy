@@ -120,8 +120,8 @@ func TestOpenTelemetry_Provision_WithoutEnvironmentVariables(t *testing.T) {
 
 	ot := &OpenTelemetry{}
 
-	if err := ot.Provision(ctx); err == nil {
-		t.Errorf("Provision() error should not be nil")
+	if err := ot.Provision(ctx); err != nil {
+		t.Errorf("Provision() error should be nil")
 	}
 }
 

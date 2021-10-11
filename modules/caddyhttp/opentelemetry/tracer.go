@@ -36,14 +36,14 @@ const (
 	envOtelExporterOtlpInsecure     = "OTEL_EXPORTER_OTLP_INSECURE"
 	envOtelExporterOtlpSpanInsecure = "OTEL_EXPORTER_OTLP_SPAN_INSECURE"
 
-	webEngineName   = "Caddy"
-	defaultSpanName = "handler"
+	webEngineName                   = "Caddy"
+	defaultSpanName                 = "handler"
+	defaultOtelExporterOtlpProtocol = "grpc"
+	defaultOtelPropagators          = "tracecontext"
 )
 
 var (
-	ErrUnspecifiedTracesProtocol = errors.New("unspecified opentelemetry traces protocol")
 	ErrUnsupportedTracesProtocol = errors.New("unsupported opentelemetry traces protocol")
-	ErrUnspecifiedPropagators    = errors.New("unspecified opentelemtry propagators")
 )
 
 // openTelemetryWrapper is responsible for the tracing injection, extraction and propagation.
@@ -82,7 +82,7 @@ func newOpenTelemetryWrapper(
 	// Please check status of https://github.com/open-telemetry/opentelemetry-go/issues/1698.
 	propagators := os.Getenv(envOtelPropagators)
 	if propagators == "" {
-		return ot, ErrUnspecifiedPropagators
+		propagators = defaultOtelPropagators
 	}
 
 	ot.propagators = ot.getPropagators(propagators)
@@ -153,6 +153,9 @@ func (ot *openTelemetryWrapper) newResource(
 // then default TLS with default `tls.Config` config will be used.
 func (ot *openTelemetryWrapper) getTracerExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 	exporterTracesProtocol := ot.getTracesProtocolFromEnv()
+	if exporterTracesProtocol == "" {
+		exporterTracesProtocol = defaultOtelExporterOtlpProtocol
+	}
 
 	switch exporterTracesProtocol {
 	case "grpc":
@@ -168,8 +171,6 @@ func (ot *openTelemetryWrapper) getTracerExporter(ctx context.Context) (*otlptra
 		}
 
 		return otlptracegrpc.New(ctx, opts...)
-	case "":
-		return nil, ErrUnspecifiedTracesProtocol
 	default:
 		return nil, fmt.Errorf("%w: tracesProtocol %s", ErrUnsupportedTracesProtocol, exporterTracesProtocol)
 	}
