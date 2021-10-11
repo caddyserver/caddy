@@ -1,6 +1,6 @@
 :80 {
 	opentelemetry /myhandler {
-        span_name my-span
+		span_name my-span
 	}
 }
 ----------
