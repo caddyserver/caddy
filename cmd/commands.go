@@ -282,7 +282,7 @@ If you wish you use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("format", flag.ExitOnError)
+			fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
 			return fs
 		}(),
