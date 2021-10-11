@@ -96,13 +96,11 @@ func newOpenTelemetryWrapper(
 
 // ServeHTTP extract current tracing context or create a new one, then method propagates it to the wrapped next handler.
 func (ot *openTelemetryWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	commonLabels := semconv.HTTPServerAttributesFromHTTPRequest("", "", r)
-
 	// It will be default span kind as for now. Proper span kind (Span.Kind.LOAD_BALANCER (PROXY/SIDECAR)) is being discussed here https://github.com/open-telemetry/opentelemetry-specification/issues/51.
 	ctx, span := ot.tracer.Start(
 		ot.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header)),
 		ot.spanName,
-		trace.WithAttributes(commonLabels...),
+		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest("", "", r)...),
 	)
 	defer span.End()
 
