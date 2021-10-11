@@ -48,10 +48,10 @@ Here is a **Caddyfile** example:
 
 ```
 handle /myHandler {
-    opentelemetry {
-            span_name my-span
-    }       
-    reverse_proxy 127.0.0.1:8081
+	opentelemetry {
+		span_name my-span
+	}
+	reverse_proxy 127.0.0.1:8081
 }
 ```
 
