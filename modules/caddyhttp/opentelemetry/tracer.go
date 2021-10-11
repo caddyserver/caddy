@@ -9,8 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -98,13 +96,7 @@ func newOpenTelemetryWrapper(
 
 // ServeHTTP extract current tracing context or create a new one, then method propagates it to the wrapped next handler.
 func (ot *openTelemetryWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-
-	commonLabels := []attribute.KeyValue{
-		attribute.String("http.method", r.Method),
-		attribute.String("http.scheme", r.URL.Scheme),
-		attribute.String("http.host", r.Host),
-		attribute.String("http.user_agent", r.UserAgent()),
-	}
+	commonLabels := semconv.HTTPServerAttributesFromHTTPRequest("", "", r)
 
 	// It will be default span kind as for now. Proper span kind (Span.Kind.LOAD_BALANCER (PROXY/SIDECAR)) is being discussed here https://github.com/open-telemetry/opentelemetry-specification/issues/51.
 	ctx, span := ot.tracer.Start(
