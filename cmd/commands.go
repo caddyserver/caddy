@@ -259,7 +259,7 @@ Loads and provisions the provided config, but does not start running it.
 This reveals any errors with the configuration through the loading and
 provisioning stages.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("load", flag.ExitOnError)
+			fs := flag.NewFlagSet("validate", flag.ExitOnError)
 			fs.String("config", "", "Input configuration file")
 			fs.String("adapter", "", "Name of config adapter")
 			return fs
