@@ -1,7 +1,7 @@
 # OpenTelemetry module
 
 This module provides integration with OpenTelemetry tracing facilities. It is implemented
-as `caddyhttp.MiddlewareHandler` and can be chained into a list of other handlers.
+as a `caddyhttp.MiddlewareHandler` and can be chained into a list of other handlers.
 
 When enabled, it propagates an existing tracing context or will init a new one otherwise.
 
