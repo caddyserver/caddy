@@ -16,6 +16,7 @@ package templates
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,10 +26,49 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+type handle struct {
+}
+
+func (h *handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Accept-Encoding") == "identity" {
+		w.Write([]byte("good contents"))
+	} else {
+		w.Write([]byte("bad cause Accept-Encoding: " + r.Header.Get("Accept-Encoding")))
+	}
+}
+
+func TestHTTPInclude(t *testing.T) {
+	tplContext := getContextOrFail(t)
+	for i, test := range []struct {
+		uri     string
+		handler *handle
+		expect  string
+	}{
+		{
+			uri:     "https://example.com/foo/bar",
+			handler: &handle{},
+			expect:  "good contents",
+		},
+	} {
+		ctx := context.WithValue(tplContext.Req.Context(), caddyhttp.ServerCtxKey, test.handler)
+		tplContext.Req = tplContext.Req.WithContext(ctx)
+		tplContext.Req.Header.Add("Accept-Encoding", "gzip")
+		result, err := tplContext.funcHTTPInclude(test.uri)
+		if result != test.expect {
+			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expect, result)
+		}
+		if err != nil {
+			t.Errorf("Test %d: got error: %v", i, result)
+		}
+	}
+}
+
 func TestMarkdown(t *testing.T) {
-	context := getContextOrFail(t)
+	tplContext := getContextOrFail(t)
 
 	for i, test := range []struct {
 		body   string
@@ -39,7 +79,7 @@ func TestMarkdown(t *testing.T) {
 			expect: "<ul>\n<li>str1</li>\n<li>str2</li>\n</ul>\n",
 		},
 	} {
-		result, err := context.funcMarkdown(test.body)
+		result, err := tplContext.funcMarkdown(test.body)
 		if result != test.expect {
 			t.Errorf("Test %d: expected '%s' but got '%s'", i, test.expect, result)
 		}
@@ -80,9 +120,9 @@ func TestCookie(t *testing.T) {
 			expect:     "cookieValue",
 		},
 	} {
-		context := getContextOrFail(t)
-		context.Req.AddCookie(test.cookie)
-		actual := context.Cookie(test.cookieName)
+		tplContext := getContextOrFail(t)
+		tplContext.Req.AddCookie(test.cookie)
+		actual := tplContext.Cookie(test.cookieName)
 		if actual != test.expect {
 			t.Errorf("Test %d: Expected cookie value '%s' but got '%s' for cookie with name '%s'",
 				i, test.expect, actual, test.cookieName)
@@ -111,12 +151,12 @@ func TestImport(t *testing.T) {
 			shouldErr:   true,
 		},
 	} {
-		context := getContextOrFail(t)
+		tplContext := getContextOrFail(t)
 		var absFilePath string
 
 		// create files for test case
 		if test.fileName != "" {
-			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
+			absFilePath := filepath.Join(fmt.Sprintf("%s", tplContext.Root), test.fileName)
 			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
 				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
@@ -124,9 +164,9 @@ func TestImport(t *testing.T) {
 		}
 
 		// perform test
-		context.NewTemplate("parent")
-		actual, err := context.funcImport(test.fileName)
-		templateWasDefined := strings.Contains(context.tpl.DefinedTemplates(), test.expect)
+		tplContext.NewTemplate("parent")
+		actual, err := tplContext.funcImport(test.fileName)
+		templateWasDefined := strings.Contains(tplContext.tpl.DefinedTemplates(), test.expect)
 		if err != nil {
 			if !test.shouldErr {
 				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
@@ -135,7 +175,7 @@ func TestImport(t *testing.T) {
 			t.Errorf("Test %d: Expected error but had none", i)
 		} else if !templateWasDefined && actual != "" {
 			// template should be defined, return value should be an empty string
-			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, context.tpl.DefinedTemplates())
+			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
 
 		}
 
@@ -191,12 +231,12 @@ func TestInclude(t *testing.T) {
 			args:        "text",
 		},
 	} {
-		context := getContextOrFail(t)
+		tplContext := getContextOrFail(t)
 		var absFilePath string
 
 		// create files for test case
 		if test.fileName != "" {
-			absFilePath := filepath.Join(fmt.Sprintf("%s", context.Root), test.fileName)
+			absFilePath := filepath.Join(fmt.Sprintf("%s", tplContext.Root), test.fileName)
 			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
 				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
@@ -204,7 +244,7 @@ func TestInclude(t *testing.T) {
 		}
 
 		// perform test
-		actual, err := context.funcInclude(test.fileName, test.args)
+		actual, err := tplContext.funcInclude(test.fileName, test.args)
 		if err != nil {
 			if !test.shouldErr {
 				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
@@ -225,12 +265,12 @@ func TestInclude(t *testing.T) {
 }
 
 func TestCookieMultipleCookies(t *testing.T) {
-	context := getContextOrFail(t)
+	tplContext := getContextOrFail(t)
 
 	cookieNameBase, cookieValueBase := "cookieName", "cookieValue"
 
 	for i := 0; i < 10; i++ {
-		context.Req.AddCookie(&http.Cookie{
+		tplContext.Req.AddCookie(&http.Cookie{
 			Name:  fmt.Sprintf("%s%d", cookieNameBase, i),
 			Value: fmt.Sprintf("%s%d", cookieValueBase, i),
 		})
@@ -238,7 +278,7 @@ func TestCookieMultipleCookies(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		expectedCookieVal := fmt.Sprintf("%s%d", cookieValueBase, i)
-		actualCookieVal := context.Cookie(fmt.Sprintf("%s%d", cookieNameBase, i))
+		actualCookieVal := tplContext.Cookie(fmt.Sprintf("%s%d", cookieNameBase, i))
 		if actualCookieVal != expectedCookieVal {
 			t.Errorf("Expected cookie value %s, found %s", expectedCookieVal, actualCookieVal)
 		}
@@ -246,7 +286,7 @@ func TestCookieMultipleCookies(t *testing.T) {
 }
 
 func TestIP(t *testing.T) {
-	context := getContextOrFail(t)
+	tplContext := getContextOrFail(t)
 	for i, test := range []struct {
 		inputRemoteAddr string
 		expect          string
@@ -257,15 +297,15 @@ func TestIP(t *testing.T) {
 		{"[2001:db8:a0b:12f0::1]", "[2001:db8:a0b:12f0::1]"},
 		{`[fe80:1::3%eth0]:44`, `fe80:1::3%eth0`},
 	} {
-		context.Req.RemoteAddr = test.inputRemoteAddr
-		if actual := context.RemoteIP(); actual != test.expect {
+		tplContext.Req.RemoteAddr = test.inputRemoteAddr
+		if actual := tplContext.RemoteIP(); actual != test.expect {
 			t.Errorf("Test %d: Expected %s but got %s", i, test.expect, actual)
 		}
 	}
 }
 
 func TestStripHTML(t *testing.T) {
-	context := getContextOrFail(t)
+	tplContext := getContextOrFail(t)
 
 	for i, test := range []struct {
 		input  string
@@ -302,7 +342,7 @@ func TestStripHTML(t *testing.T) {
 			expect: `<h1hi`,
 		},
 	} {
-		actual := context.funcStripHTML(test.input)
+		actual := tplContext.funcStripHTML(test.input)
 		if actual != test.expect {
 			t.Errorf("Test %d: Expected %s, found %s. Input was StripHTML(%s)", i, test.expect, actual, test.input)
 		}
@@ -350,13 +390,13 @@ func TestFileListing(t *testing.T) {
 			verifyErr: os.IsNotExist,
 		},
 	} {
-		context := getContextOrFail(t)
+		tplContext := getContextOrFail(t)
 		var dirPath string
 		var err error
 
 		// create files for test case
 		if test.fileNames != nil {
-			dirPath, err = os.MkdirTemp(fmt.Sprintf("%s", context.Root), "caddy_ctxtest")
+			dirPath, err = os.MkdirTemp(fmt.Sprintf("%s", tplContext.Root), "caddy_ctxtest")
 			if err != nil {
 				t.Fatalf("Test %d: Expected no error creating directory, got: '%s'", i, err.Error())
 			}
@@ -371,7 +411,7 @@ func TestFileListing(t *testing.T) {
 
 		// perform test
 		input := filepath.ToSlash(filepath.Join(filepath.Base(dirPath), test.inputBase))
-		actual, err := context.funcListFiles(input)
+		actual, err := tplContext.funcListFiles(input)
 		if err != nil {
 			if !test.shouldErr {
 				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
@@ -404,7 +444,7 @@ func TestFileListing(t *testing.T) {
 }
 
 func TestSplitFrontMatter(t *testing.T) {
-	context := getContextOrFail(t)
+	tplContext := getContextOrFail(t)
 
 	for i, test := range []struct {
 		input  string
@@ -465,7 +505,7 @@ title = "Welcome"
 			body:   "\n### Test",
 		},
 	} {
-		result, _ := context.funcSplitFrontMatter(test.input)
+		result, _ := tplContext.funcSplitFrontMatter(test.input)
 		if result.Meta["title"] != test.expect {
 			t.Errorf("Test %d: Expected %s, found %s. Input was SplitFrontMatter(%s)", i, test.expect, result.Meta["title"], test.input)
 		}
@@ -477,11 +517,11 @@ title = "Welcome"
 }
 
 func getContextOrFail(t *testing.T) TemplateContext {
-	context, err := initTestContext()
+	tplContext, err := initTestContext()
 	if err != nil {
 		t.Fatalf("failed to prepare test context: %v", err)
 	}
-	return context
+	return tplContext
 }
 
 func initTestContext() (TemplateContext, error) {
