@@ -555,14 +555,6 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
-	// sanitize the request URL; we expect it to not contain the scheme and host
-	// since those should be determined by r.TLS and r.Host respectively, but
-	// some clients may include it in the request-line, which is technically
-	// valid in HTTP, but breaks various expectations, for example when copying
-	// the URL to be used by the reverseproxy module.
-	r.URL.Scheme = ""
-	r.URL.Host = ""
-
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)

@@ -395,9 +395,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// should not permanently change r.Host; issue #3509)
 	reqHost := r.Host
 	reqHeader := r.Header
+
+	// sanitize the request URL; we expect it to not contain the scheme and host
+	// since those should be determined by r.TLS and r.Host respectively, but
+	// some clients may include it in the request-line, which is technically
+	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
+	// dialer will behave. See #4237 for context.
+	origUrlScheme := r.URL.Scheme
+	origUrlHost := r.URL.Host
+	r.URL.Scheme = ""
+	r.URL.Host = ""
+
+	// restore modifications to the request after we're done proxying
 	defer func() {
 		r.Host = reqHost     // TODO: data race, see #4038
 		r.Header = reqHeader // TODO: data race, see #4038
+		r.URL.Scheme = origUrlScheme
+		r.URL.Host = origUrlHost
 	}()
 
 	start := time.Now()
