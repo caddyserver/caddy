@@ -162,7 +162,7 @@ func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 
 	// clean up the backup file
 	if !fl.Bool("skip-cleanup") {
-		if err = os.Remove(backupExecPath); err != nil {
+		if err = removeCaddyBinary(backupExecPath); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
 		}
 	} else {
