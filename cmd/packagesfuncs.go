@@ -31,7 +31,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func cmdUpgrade(_ Flags) (int, error) {
+func cmdUpgrade(fl Flags) (int, error) {
 	_, nonstandard, _, err := getModules()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
@@ -41,7 +41,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
 func cmdAddPackage(fl Flags) (int, error) {
@@ -64,7 +64,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 		pluginPkgs[arg] = struct{}{}
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
 func cmdRemovePackage(fl Flags) (int, error) {
@@ -88,10 +88,10 @@ func cmdRemovePackage(fl Flags) (int, error) {
 		delete(pluginPkgs, arg)
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
-func upgradeBuild(pluginPkgs map[string]struct{}) (int, error) {
+func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 	l := caddy.Log()
 
 	thisExecPath, err := os.Executable()
@@ -161,9 +161,14 @@ func upgradeBuild(pluginPkgs map[string]struct{}) (int, error) {
 	fmt.Println()
 
 	// clean up the backup file
-	if err = os.Remove(backupExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
+	if !fl.Bool("skip-cleanup") {
+		if err = os.Remove(backupExecPath); err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
+		}
+	} else {
+		l.Info("skipped cleaning up the backup file", zap.String("backup_path", backupExecPath))
 	}
+
 	l.Info("upgrade successful; please restart any running Caddy instances", zap.String("executable", thisExecPath))
 
 	return caddy.ExitCodeSuccess, nil
