@@ -152,11 +152,11 @@ func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 	// use the new binary to print out version and module info
 	fmt.Print("\nModule versions:\n\n")
 	if err = listModules(thisExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute 'caddy list-modules': %v", err)
 	}
 	fmt.Println("\nVersion:")
 	if err = showVersion(thisExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute 'caddy version': %v", err)
 	}
 	fmt.Println()
 
@@ -228,22 +228,14 @@ func listModules(path string) error {
 	cmd := exec.Command(path, "list-modules", "--versions", "--skip-standard")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	return nil
+	return cmd.Run()
 }
 
 func showVersion(path string) error {
 	cmd := exec.Command(path, "version")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	return nil
+	return cmd.Run()
 }
 
 func downloadBuild(qs url.Values) (*http.Response, error) {
