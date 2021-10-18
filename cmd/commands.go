@@ -208,6 +208,7 @@ config file; otherwise the default is assumed.`,
 			fs := flag.NewFlagSet("list-modules", flag.ExitOnError)
 			fs.Bool("packages", false, "Print package paths")
 			fs.Bool("versions", false, "Print version information")
+			fs.Bool("skip-standard", false, "Skip printing standard modules")
 			return fs
 		}(),
 	})
