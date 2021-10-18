@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -110,7 +109,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	r, w := io.Pipe()
 	req := &http.Request{
 		Method: "PUT",
-		Body:   ioutil.NopCloser(r),
+		Body:   io.NopCloser(r),
 		URL: &url.URL{
 			Scheme: "https",
 			Host:   "127.0.0.1:9443",
@@ -134,7 +133,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	}()
 
 	defer resp.Body.Close()
-	bytes, err := ioutil.ReadAll(resp.Body)
+	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("unable to read the response body %s", err)
 	}
@@ -319,7 +318,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	r, w := io.Pipe()
 	req := &http.Request{
 		Method: "PUT",
-		Body:   ioutil.NopCloser(r),
+		Body:   io.NopCloser(r),
 		URL: &url.URL{
 			Scheme: "https",
 			Host:   "127.0.0.1:9443",
@@ -342,7 +341,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	}
 
 	defer resp.Body.Close()
-	bytes, err := ioutil.ReadAll(resp.Body)
+	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("unable to read the response body %s", err)
 	}
@@ -370,7 +369,7 @@ func testH2ToH1ChunkedResponseServeH1(t *testing.T) *http.Server {
 		}
 
 		defer r.Body.Close()
-		bytes, err := ioutil.ReadAll(r.Body)
+		bytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("unable to read the response body %s", err)
 		}

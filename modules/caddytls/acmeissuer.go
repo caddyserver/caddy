@@ -18,8 +18,8 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -36,20 +36,16 @@ func init() {
 	caddy.RegisterModule(ACMEIssuer{})
 }
 
-// ACMEIssuer makes an ACME manager
-// for managing certificates using ACME.
-//
-// TODO: support multiple ACME endpoints (probably
-// requires an array of these structs) - caddy would
-// also have to load certs from the backup CAs if the
-// first one is expired...
+// ACMEIssuer manages certificates using the ACME protocol (RFC 8555).
 type ACMEIssuer struct {
-	// The URL to the CA's ACME directory endpoint.
+	// The URL to the CA's ACME directory endpoint. Default:
+	// https://acme-v02.api.letsencrypt.org/directory
 	CA string `json:"ca,omitempty"`
 
 	// The URL to the test CA's ACME directory endpoint.
 	// This endpoint is only used during retries if there
-	// is a failure using the primary CA.
+	// is a failure using the primary CA. Default:
+	// https://acme-staging-v02.api.letsencrypt.org/directory
 	TestCA string `json:"test_ca,omitempty"`
 
 	// Your email address, so the CA can contact you if necessary.
@@ -71,6 +67,7 @@ type ACMEIssuer struct {
 	ExternalAccount *acme.EAB `json:"external_account,omitempty"`
 
 	// Time to wait before timing out an ACME operation.
+	// Default: 0 (no timeout)
 	ACMETimeout caddy.Duration `json:"acme_timeout,omitempty"`
 
 	// Configures the various ACME challenge types.
@@ -155,7 +152,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	if len(iss.TrustedRootsPEMFiles) > 0 {
 		iss.rootPool = x509.NewCertPool()
 		for _, pemFile := range iss.TrustedRootsPEMFiles {
-			pemData, err := ioutil.ReadFile(pemFile)
+			pemData, err := os.ReadFile(pemFile)
 			if err != nil {
 				return fmt.Errorf("loading trusted root CA's PEM file: %s: %v", pemFile, err)
 			}

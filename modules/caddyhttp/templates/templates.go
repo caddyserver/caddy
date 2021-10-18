@@ -16,6 +16,7 @@ package templates
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -90,9 +91,25 @@ func init() {
 // {{httpInclude "/foo/bar?q=val"}}
 // ```
 //
+// ##### `import`
+//
+// Imports the contents of another file and adds any template definitions to the template stack. If there are no defitions, the filepath will be the defition name. Any {{ define }} blocks will be accessible by {{ template }} or {{ block }}. Imports must happen before the template or block action is called
+//
+// **filename.html**
+// ```
+// {{ define "main" }}
+// content
+// {{ end }}
+//
+// **index.html**
+// ```
+// {{ import "/path/to/file.html" }}
+// {{ template "main" }}
+// ```
+//
 // ##### `include`
 //
-// Includes the contents of another file. Optionally can pass key-value pairs as arguments to be accessed by the included file.
+// Includes the contents of another file and renders in-place. Optionally can pass key-value pairs as arguments to be accessed by the included file.
 //
 // ```
 // {{include "path/to/file.html"}}  // no arguments
@@ -220,7 +237,8 @@ type Templates struct {
 	// Default is text/plain, text/markdown, and text/html.
 	MIMETypes []string `json:"mime_types,omitempty"`
 
-	// The template action delimiters.
+	// The template action delimiters. If set, must be precisely two elements:
+	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
 }
 
@@ -312,6 +330,12 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 
 	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())
 	if err != nil {
+		// templates may return a custom HTTP error to be propagated to the client,
+		// otherwise for any other error we assume the template is broken
+		var handlerErr caddyhttp.HandlerError
+		if errors.As(err, &handlerErr) {
+			return handlerErr
+		}
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 

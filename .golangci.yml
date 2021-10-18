@@ -1,6 +1,6 @@
 linters-settings:
   errcheck:
-    ignore: fmt:.*,io/ioutil:^Read.*,go.uber.org/zap/zapcore:^Add.*
+    ignore: fmt:.*,go.uber.org/zap/zapcore:^Add.*
     ignoretests: true
 
 linters:

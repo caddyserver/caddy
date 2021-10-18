@@ -46,24 +46,26 @@ type TemplateContext struct {
 	RespHeader WrappedHeader
 
 	config *Templates
+	tpl    *template.Template
 }
 
 // NewTemplate returns a new template intended to be evaluated with this
 // context, as it is initialized with configuration from this context.
-func (c TemplateContext) NewTemplate(tplName string) *template.Template {
-	tpl := template.New(tplName)
+func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
+	c.tpl = template.New(tplName)
 
 	// customize delimiters, if applicable
 	if c.config != nil && len(c.config.Delimiters) == 2 {
-		tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
+		c.tpl.Delims(c.config.Delimiters[0], c.config.Delimiters[1])
 	}
 
 	// add sprig library
-	tpl.Funcs(sprigFuncMap)
+	c.tpl.Funcs(sprigFuncMap)
 
 	// add our own library
-	tpl.Funcs(template.FuncMap{
+	c.tpl.Funcs(template.FuncMap{
 		"include":          c.funcInclude,
+		"import":           c.funcImport,
 		"httpInclude":      c.funcHTTPInclude,
 		"stripHTML":        c.funcStripHTML,
 		"markdown":         c.funcMarkdown,
@@ -74,8 +76,7 @@ func (c TemplateContext) NewTemplate(tplName string) *template.Template {
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
 	})
-
-	return tpl
+	return c.tpl
 }
 
 // OriginalReq returns the original, unmodified, un-rewritten request as
@@ -85,26 +86,13 @@ func (c TemplateContext) OriginalReq() http.Request {
 	return or
 }
 
-// funcInclude returns the contents of filename relative to the site root.
+// funcInclude returns the contents of filename relative to the site root and renders it in place.
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
 func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
-	if c.Root == nil {
-		return "", fmt.Errorf("root file system not specified")
-	}
+	bodyBuf, err := c.readFileToBuffer(filename)
 
-	file, err := c.Root.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	bodyBuf := bufPool.Get().(*bytes.Buffer)
-	bodyBuf.Reset()
-	defer bufPool.Put(bodyBuf)
-
-	_, err = io.Copy(bodyBuf, file)
 	if err != nil {
 		return "", err
 	}
@@ -117,6 +105,30 @@ func (c TemplateContext) funcInclude(filename string, args ...interface{}) (stri
 	}
 
 	return bodyBuf.String(), nil
+}
+
+// readFileToBuffer returns the contents of filename relative to root as a buffer
+func (c TemplateContext) readFileToBuffer(filename string) (*bytes.Buffer, error) {
+	if c.Root == nil {
+		return nil, fmt.Errorf("root file system not specified")
+	}
+
+	file, err := c.Root.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	bodyBuf := bufPool.Get().(*bytes.Buffer)
+	bodyBuf.Reset()
+	defer bufPool.Put(bodyBuf)
+
+	_, err = io.Copy(bodyBuf, file)
+	if err != nil {
+		return nil, err
+	}
+
+	return bodyBuf, nil
 }
 
 // funcHTTPInclude returns the body of a virtual (lightweight) request
@@ -148,6 +160,7 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	}
 	virtReq.Host = c.Req.Host
 	virtReq.Header = c.Req.Header.Clone()
+	virtReq.Header.Set("Accept-Encoding", "identity") // https://github.com/caddyserver/caddy/issues/4352
 	virtReq.Trailer = c.Req.Trailer.Clone()
 	virtReq.Header.Set(recursionPreventionHeader, strconv.Itoa(recursionCount))
 
@@ -167,17 +180,34 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	return buf.String(), nil
 }
 
-func (c TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
-	tpl := c.NewTemplate(tplName)
+// funcImport parses the filename into the current template stack. The imported
+// file will be rendered within the current template by calling {{ block }} or
+// {{ template }} from the standard template library. If the imported file has
+// no {{ define }} blocks, the name of the import will be the path
+func (c *TemplateContext) funcImport(filename string) (string, error) {
+	bodyBuf, err := c.readFileToBuffer(filename)
+	if err != nil {
+		return "", err
+	}
 
-	parsedTpl, err := tpl.Parse(buf.String())
+	_, err = c.tpl.Parse(bodyBuf.String())
+	if err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buffer) error {
+	c.NewTemplate(tplName)
+
+	_, err := c.tpl.Parse(buf.String())
 	if err != nil {
 		return err
 	}
 
 	buf.Reset() // reuse buffer for output
 
-	return parsedTpl.Execute(buf, c)
+	return c.tpl.Execute(buf, c)
 }
 
 func (c TemplateContext) funcPlaceholder(name string) string {
@@ -350,9 +380,8 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 	return false, nil
 }
 
-// funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL.
-// TODO: Requires https://github.com/golang/go/issues/34201 to be fixed (Go 1.17).
-// Example usage might be: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
+// funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
+// Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }

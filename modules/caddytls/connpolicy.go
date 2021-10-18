@@ -20,7 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -387,7 +387,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			caPool.AddCert(clientCA)
 		}
 		for _, pemFile := range clientauth.TrustedCACertPEMFiles {
-			pemContents, err := ioutil.ReadFile(pemFile)
+			pemContents, err := os.ReadFile(pemFile)
 			if err != nil {
 				return fmt.Errorf("reading %s: %v", pemFile, err)
 			}

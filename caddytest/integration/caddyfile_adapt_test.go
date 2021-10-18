@@ -3,7 +3,7 @@ package integration
 import (
 	jsonMod "encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,7 +14,7 @@ import (
 
 func TestCaddyfileAdaptToJSON(t *testing.T) {
 	// load the list of test files from the dir
-	files, err := ioutil.ReadDir("./caddyfile_adapt")
+	files, err := os.ReadDir("./caddyfile_adapt")
 	if err != nil {
 		t.Errorf("failed to read caddyfile_adapt dir: %s", err)
 	}
@@ -29,7 +29,7 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 
 		// read the test file
 		filename := f.Name()
-		data, err := ioutil.ReadFile("./caddyfile_adapt/" + filename)
+		data, err := os.ReadFile("./caddyfile_adapt/" + filename)
 		if err != nil {
 			t.Errorf("failed to read %s dir: %s", filename, err)
 		}

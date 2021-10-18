@@ -136,7 +136,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 					if output := m.Outputs[destIdx]; output == nil {
 						continue
 					} else {
-						output = m.re.ReplaceAllString(input, m.Outputs[destIdx].(string))
+						var result []byte
+						for _, submatches := range m.re.FindAllStringSubmatchIndex(input, -1) {
+							result = m.re.ExpandString(result, m.Outputs[destIdx].(string), input, submatches)
+						}
+						output = string(result)
 						return output, true
 					}
 				}

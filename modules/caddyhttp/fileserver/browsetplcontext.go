@@ -27,7 +27,7 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
@@ -42,20 +42,31 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 
 		isDir := f.IsDir() || isSymlinkTargetDir(f, root, urlPath)
 
+		u := url.URL{Path: url.PathEscape(name)}
+
+		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
-			name += "/"
+			u.Path += "/"
 			dirCount++
 		} else {
 			fileCount++
 		}
 
-		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+		fileIsSymlink := isSymlink(f)
+		size := f.Size()
+		if fileIsSymlink {
+			info, err := os.Stat(name)
+			if err != nil {
+				return browseTemplateContext{}, err
+			}
+			size = info.Size()
+		}
 
 		fileInfos = append(fileInfos, fileInfo{
 			IsDir:     isDir,
-			IsSymlink: isSymlink(f),
-			Name:      f.Name(),
-			Size:      f.Size(),
+			IsSymlink: fileIsSymlink,
+			Name:      name,
+			Size:      size,
 			URL:       u.String(),
 			ModTime:   f.ModTime().UTC(),
 			Mode:      f.Mode(),
@@ -69,7 +80,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 		Items:    fileInfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
-	}
+	}, nil
 }
 
 // browseTemplateContext provides the template context for directory listings.

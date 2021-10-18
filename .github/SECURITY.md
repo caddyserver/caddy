@@ -48,7 +48,7 @@ We consider publicly-registered domain names to be public information. This nece
 
 It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, depending on available resources. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. (We get a lot of invalid reports.) Thank you for understanding.
 
-When you are ready, please email Matt Holt (the author) directly: matt [at] lightcodelabs [dot com].
+When you are ready, please email Matt Holt (the author) directly: matt at dyanim dot com.
 
 Please don't encrypt the email body. It only makes the process more complicated.
 

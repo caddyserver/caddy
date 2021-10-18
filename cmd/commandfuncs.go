@@ -19,16 +19,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
-	"reflect"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -121,7 +119,7 @@ func cmdStart(fl Flags) (int, error) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				if !strings.Contains(err.Error(), "use of closed network connection") {
+				if !errors.Is(err, net.ErrClosed) {
 					log.Println(err)
 				}
 				break
@@ -182,7 +180,7 @@ func cmdRun(fl Flags) (int, error) {
 	var config []byte
 	var err error
 	if runCmdResumeFlag {
-		config, err = ioutil.ReadFile(caddy.ConfigAutosavePath)
+		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if os.IsNotExist(err) {
 			// not a bad error; just can't resume if autosave file doesn't exist
 			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
@@ -220,7 +218,7 @@ func cmdRun(fl Flags) (int, error) {
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
 	if runCmdPingbackFlag != "" {
-		confirmationBytes, err := ioutil.ReadAll(os.Stdin)
+		confirmationBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
@@ -332,7 +330,7 @@ func cmdReload(fl Flags) (int, error) {
 }
 
 func cmdVersion(_ Flags) (int, error) {
-	fmt.Println(caddyVersion())
+	fmt.Println(CaddyVersion())
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -458,7 +456,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("unrecognized config adapter: %s", adaptCmdAdapterFlag)
 	}
 
-	input, err := ioutil.ReadFile(adaptCmdInputFlag)
+	input, err := os.ReadFile(adaptCmdInputFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
@@ -542,7 +540,7 @@ func cmdFmt(fl Flags) (int, error) {
 
 	// as a special case, read from stdin if the file name is "-"
 	if formatCmdConfigFile == "-" {
-		input, err := ioutil.ReadAll(os.Stdin)
+		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading stdin: %v", err)
@@ -551,7 +549,7 @@ func cmdFmt(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	input, err := ioutil.ReadFile(formatCmdConfigFile)
+	input, err := os.ReadFile(formatCmdConfigFile)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
@@ -560,157 +558,12 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := ioutil.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
+		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, nil
 		}
 	} else {
 		fmt.Print(string(output))
 	}
-
-	return caddy.ExitCodeSuccess, nil
-}
-
-func cmdUpgrade(_ Flags) (int, error) {
-	l := caddy.Log()
-
-	thisExecPath, err := os.Executable()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("determining current executable path: %v", err)
-	}
-	thisExecStat, err := os.Stat(thisExecPath)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("retrieving current executable permission bits: %v", err)
-	}
-	l.Info("this executable will be replaced", zap.String("path", thisExecPath))
-
-	// get the list of nonstandard plugins
-	_, nonstandard, _, err := getModules()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
-	}
-	pluginPkgs := make(map[string]struct{})
-	for _, mod := range nonstandard {
-		if mod.goModule.Replace != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("cannot auto-upgrade when Go module has been replaced: %s => %s",
-				mod.goModule.Path, mod.goModule.Replace.Path)
-		}
-		l.Info("found non-standard module",
-			zap.String("id", mod.caddyModuleID),
-			zap.String("package", mod.goModule.Path))
-		pluginPkgs[mod.goModule.Path] = struct{}{}
-	}
-
-	// build the request URL to download this custom build
-	qs := url.Values{
-		"os":   {runtime.GOOS},
-		"arch": {runtime.GOARCH},
-	}
-	for pkg := range pluginPkgs {
-		qs.Add("p", pkg)
-	}
-	urlStr := fmt.Sprintf("https://caddyserver.com/api/download?%s", qs.Encode())
-
-	// initiate the build
-	l.Info("requesting build",
-		zap.String("os", qs.Get("os")),
-		zap.String("arch", qs.Get("arch")),
-		zap.Strings("packages", qs["p"]))
-	resp, err := http.Get(urlStr)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("secure request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		var details struct {
-			StatusCode int `json:"status_code"`
-			Error      struct {
-				Message string `json:"message"`
-				ID      string `json:"id"`
-			} `json:"error"`
-		}
-		err2 := json.NewDecoder(resp.Body).Decode(&details)
-		if err2 != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("download and error decoding failed: HTTP %d: %v", resp.StatusCode, err2)
-		}
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download failed: HTTP %d: %s (id=%s)", resp.StatusCode, details.Error.Message, details.Error.ID)
-	}
-
-	// back up the current binary, in case something goes wrong we can replace it
-	backupExecPath := thisExecPath + ".tmp"
-	l.Info("build acquired; backing up current executable",
-		zap.String("current_path", thisExecPath),
-		zap.String("backup_path", backupExecPath))
-	err = os.Rename(thisExecPath, backupExecPath)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("backing up current binary: %v", err)
-	}
-	defer func() {
-		if err != nil {
-			err2 := os.Rename(backupExecPath, thisExecPath)
-			if err2 != nil {
-				l.Error("restoring original executable failed; will need to be restored manually",
-					zap.String("backup_path", backupExecPath),
-					zap.String("original_path", thisExecPath),
-					zap.Error(err2))
-			}
-		}
-	}()
-
-	// download the file; do this in a closure to close reliably before we execute it
-	writeFile := func() error {
-		destFile, err := os.OpenFile(thisExecPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, thisExecStat.Mode())
-		if err != nil {
-			return fmt.Errorf("unable to open destination file: %v", err)
-		}
-		defer destFile.Close()
-
-		l.Info("downloading binary", zap.String("source", urlStr), zap.String("destination", thisExecPath))
-
-		_, err = io.Copy(destFile, resp.Body)
-		if err != nil {
-			return fmt.Errorf("unable to download file: %v", err)
-		}
-
-		err = destFile.Sync()
-		if err != nil {
-			return fmt.Errorf("syncing downloaded file to device: %v", err)
-		}
-
-		return nil
-	}
-	err = writeFile()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
-	}
-
-	l.Info("download successful; displaying new binary details", zap.String("location", thisExecPath))
-
-	// use the new binary to print out version and module info
-	fmt.Print("\nModule versions:\n\n")
-	cmd := exec.Command(thisExecPath, "list-modules", "--versions")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	fmt.Println("\nVersion:")
-	cmd = exec.Command(thisExecPath, "version")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	fmt.Println()
-
-	// clean up the backup file
-	err = os.Remove(backupExecPath)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
-	}
-
-	l.Info("upgrade successful; please restart any running Caddy instances", zap.String("executable", thisExecPath))
 
 	return caddy.ExitCodeSuccess, nil
 }
@@ -779,56 +632,6 @@ commands:
 	return caddy.ExitCodeSuccess, nil
 }
 
-func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		err = fmt.Errorf("no build info")
-		return
-	}
-
-	for _, modID := range caddy.Modules() {
-		modInfo, err := caddy.GetModule(modID)
-		if err != nil {
-			// that's weird, shouldn't happen
-			unknown = append(unknown, moduleInfo{caddyModuleID: modID, err: err})
-			continue
-		}
-
-		// to get the Caddy plugin's version info, we need to know
-		// the package that the Caddy module's value comes from; we
-		// can use reflection but we need a non-pointer value (I'm
-		// not sure why), and since New() should return a pointer
-		// value, we need to dereference it first
-		iface := interface{}(modInfo.New())
-		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
-			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
-		}
-		modPkgPath := reflect.TypeOf(iface).PkgPath()
-
-		// now we find the Go module that the Caddy module's package
-		// belongs to; we assume the Caddy module package path will
-		// be prefixed by its Go module path, and we will choose the
-		// longest matching prefix in case there are nested modules
-		var matched *debug.Module
-		for _, dep := range bi.Deps {
-			if strings.HasPrefix(modPkgPath, dep.Path) {
-				if matched == nil || len(dep.Path) > len(matched.Path) {
-					matched = dep
-				}
-			}
-		}
-
-		caddyModGoMod := moduleInfo{caddyModuleID: modID, goModule: matched}
-
-		if strings.HasPrefix(modPkgPath, caddy.ImportPath) {
-			standard = append(standard, caddyModGoMod)
-		} else {
-			nonstandard = append(nonstandard, caddyModGoMod)
-		}
-	}
-	return
-}
-
 // apiRequest makes an API request to the endpoint adminAddr with the
 // given HTTP method and request URI. If body is non-nil, it will be
 // assumed to be Content-Type application/json.
@@ -895,7 +698,7 @@ func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Read
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
-		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
 		if err != nil {
 			return fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}

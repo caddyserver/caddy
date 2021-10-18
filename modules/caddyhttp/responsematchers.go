@@ -32,7 +32,7 @@ type ResponseMatcher struct {
 
 	// If set, each header specified must be one of the
 	// specified values, with the same logic used by the
-	// request header matcher.
+	// [request header matcher](/docs/json/apps/http/servers/routes/match/header/).
 	Headers http.Header `json:"headers,omitempty"`
 }
 

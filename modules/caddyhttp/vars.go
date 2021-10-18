@@ -29,9 +29,14 @@ func init() {
 	caddy.RegisterModule(MatchVarsRE{})
 }
 
-// VarsMiddleware is an HTTP middleware which sets variables
-// in the context, mainly for use by placeholders. The
-// placeholders have the form: `{http.vars.variable_name}`
+// VarsMiddleware is an HTTP middleware which sets variables to
+// have values that can be used in the HTTP request handler
+// chain. The primary way to access variables is with placeholders,
+// which have the form: `{http.vars.variable_name}`, or with
+// the `vars` and `vars_regexp` request matchers.
+//
+// The key is the variable name, and the value is the value of the
+// variable. Both the name and value may use or contain placeholders.
 type VarsMiddleware map[string]string
 
 // CaddyModule returns the Caddy module information.

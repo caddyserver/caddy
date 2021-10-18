@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -80,10 +81,13 @@ type Handler struct {
 	// Upstreams is the list of backends to proxy to.
 	Upstreams UpstreamPool `json:"upstreams,omitempty"`
 
-	// Adjusts how often to flush the response buffer. A
-	// negative value disables response buffering.
-	// TODO: figure out good defaults and write docs for this
-	// (see https://github.com/caddyserver/caddy/issues/1460)
+	// Adjusts how often to flush the response buffer. By default,
+	// no periodic flushing is done. A negative value disables
+	// response buffering, and flushes immediately after each
+	// write to the client. This option is ignored when the upstream's
+	// response is recognized as a streaming response, or if its
+	// content length is -1; for such responses, writes are flushed
+	// to the client immediately.
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
 
 	// Headers manipulates headers between Caddy and the backend.
@@ -528,13 +532,19 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		// If we aren't the first proxy retain prior
 		// X-Forwarded-For information as a comma+space
 		// separated list and fold multiple headers into one.
-		if prior, ok := req.Header["X-Forwarded-For"]; ok {
+		prior, ok := req.Header["X-Forwarded-For"]
+		omit := ok && prior == nil // Issue 38079: nil now means don't populate the header
+		if len(prior) > 0 {
 			clientIP = strings.Join(prior, ", ") + ", " + clientIP
 		}
-		req.Header.Set("X-Forwarded-For", clientIP)
+		if !omit {
+			req.Header.Set("X-Forwarded-For", clientIP)
+		}
 	}
 
-	if req.Header.Get("X-Forwarded-Proto") == "" {
+	prior, ok := req.Header["X-Forwarded-Proto"]
+	omit := ok && prior == nil
+	if len(prior) == 0 && !omit {
 		// set X-Forwarded-Proto; many backend apps expect this too
 		proto := "https"
 		if req.TLS == nil {
@@ -564,12 +574,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	duration := time.Since(start)
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
+		zap.Duration("duration", duration),
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
 	)
 	if err != nil {
-		logger.Debug("upstream roundtrip",
-			zap.Duration("duration", duration),
-			zap.Error(err))
+		logger.Debug("upstream roundtrip", zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
@@ -681,15 +690,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	}
 
 	rw.WriteHeader(res.StatusCode)
-
-	// some apps need the response headers before starting to stream content with http2,
-	// so it's important to explicitly flush the headers to the client before streaming the data.
-	// (see https://github.com/caddyserver/caddy/issues/3556 for use case and nuances)
-	if h.isBidirectionalStream(req, res) {
-		if wf, ok := rw.(http.Flusher); ok {
-			wf.Flush()
-		}
-	}
 	err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if err != nil {
@@ -827,10 +827,10 @@ func upgradeType(h http.Header) string {
 // removeConnectionHeaders removes hop-by-hop headers listed in the "Connection" header of h.
 // See RFC 7230, section 6.1
 func removeConnectionHeaders(h http.Header) {
-	if c := h.Get("Connection"); c != "" {
-		for _, f := range strings.Split(c, ",") {
-			if f = strings.TrimSpace(f); f != "" {
-				h.Del(f)
+	for _, f := range h["Connection"] {
+		for _, sf := range strings.Split(f, ",") {
+			if sf = textproto.TrimString(sf); sf != "" {
+				h.Del(sf)
 			}
 		}
 	}

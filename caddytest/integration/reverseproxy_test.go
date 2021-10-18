@@ -2,7 +2,6 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -85,7 +84,7 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 		t.SkipNow()
 	}
 
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return
@@ -371,7 +370,7 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 		reverse_proxy {
 			to localhost:2020
 	
-			health_path /health
+			health_uri /health
 			health_port 2021
 			health_interval 2s
 			health_timeout 5s
@@ -387,7 +386,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return
@@ -426,7 +425,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 		reverse_proxy {
 			to unix/%s
 	
-			health_path /health
+			health_uri /health
 			health_port 2021
 			health_interval 2s
 			health_timeout 5s
@@ -442,7 +441,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return
@@ -481,7 +480,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 		reverse_proxy {
 			to unix/%s
 	
-			health_path /health
+			health_uri /health
 			health_interval 2s
 			health_timeout 5s
 		}
