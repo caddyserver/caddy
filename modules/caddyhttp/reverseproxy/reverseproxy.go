@@ -401,8 +401,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// some clients may include it in the request-line, which is technically
 	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
 	// dialer will behave. See #4237 for context.
-	origUrlScheme := r.URL.Scheme
-	origUrlHost := r.URL.Host
+	origURLScheme := r.URL.Scheme
+	origURLHost := r.URL.Host
 	r.URL.Scheme = ""
 	r.URL.Host = ""
 
@@ -410,8 +410,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	defer func() {
 		r.Host = reqHost     // TODO: data race, see #4038
 		r.Header = reqHeader // TODO: data race, see #4038
-		r.URL.Scheme = origUrlScheme
-		r.URL.Host = origUrlHost
+		r.URL.Scheme = origURLScheme
+		r.URL.Host = origURLHost
 	}()
 
 	start := time.Now()
