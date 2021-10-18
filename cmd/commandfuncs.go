@@ -360,6 +360,7 @@ func cmdBuildInfo(fl Flags) (int, error) {
 func cmdListModules(fl Flags) (int, error) {
 	packages := fl.Bool("packages")
 	versions := fl.Bool("versions")
+	skipStandard := fl.Bool("skip-standard")
 
 	printModuleInfo := func(mi moduleInfo) {
 		fmt.Print(mi.caddyModuleID)
@@ -388,14 +389,19 @@ func cmdListModules(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	if len(standard) > 0 {
-		for _, mod := range standard {
-			printModuleInfo(mod)
-		}
-	}
-	fmt.Printf("\n  Standard modules: %d\n", len(standard))
-	if len(nonstandard) > 0 {
+	// Standard modules (always shipped with Caddy)
+	if !skipStandard {
 		if len(standard) > 0 {
+			for _, mod := range standard {
+				printModuleInfo(mod)
+			}
+		}
+		fmt.Printf("\n  Standard modules: %d\n", len(standard))
+	}
+
+	// Non-standard modules (third party plugins)
+	if len(nonstandard) > 0 {
+		if len(standard) > 0 && !skipStandard {
 			fmt.Println()
 		}
 		for _, mod := range nonstandard {
@@ -403,8 +409,10 @@ func cmdListModules(fl Flags) (int, error) {
 		}
 	}
 	fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
+
+	// Unknown modules (couldn't get Caddy module info)
 	if len(unknown) > 0 {
-		if len(standard) > 0 || len(nonstandard) > 0 {
+		if (len(standard) > 0 && !skipStandard) || len(nonstandard) > 0 {
 			fmt.Println()
 		}
 		for _, mod := range unknown {
