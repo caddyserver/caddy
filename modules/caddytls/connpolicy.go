@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"strings"
@@ -54,6 +55,18 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		err = pol.buildStandardTLSConfig(ctx)
 		if err != nil {
 			return fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
+		}
+
+		if pol.ClientAuthentication != nil {
+			if len(pol.ClientAuthentication.ValidatorsRaw) > 0 {
+				clientCertValidations, err := ctx.LoadModule(pol.ClientAuthentication, "ValidatorsRaw")
+				if err != nil {
+					return fmt.Errorf("loading client cert validators: %v", err)
+				}
+				for _, validator := range clientCertValidations.([]interface{}) {
+					cp[i].ClientAuthentication.Validators = append(cp[i].ClientAuthentication.Validators, validator.(ClientCertValidator))
+				}
+			}
 		}
 	}
 
@@ -298,6 +311,13 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
+	//List of client certificate validators used to verify the cert
+	//Validators can be used to add additional checks like revocation checks
+	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_cert_validators inline_key=validator"`
+
+	//Decoded Validators
+	Validators []ClientCertValidator `json:"-"`
+
 	// The mode for authenticating the client. Allowed values are:
 	//
 	// Mode | Description
@@ -312,8 +332,6 @@ type ClientAuthentication struct {
 	// are provided; otherwise, the default mode is `require`.
 	Mode string `json:"mode,omitempty"`
 
-	// state established with the last call to ConfigureTLSConfig
-	trustedLeafCerts       []*x509.Certificate
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
 }
 
@@ -378,28 +396,26 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		cfg.ClientCAs = caPool
 	}
 
-	// enforce leaf verification by writing our own verify function
+	// enforce leaf verification by adding a validator
 	if len(clientauth.TrustedLeafCerts) > 0 {
-		clientauth.trustedLeafCerts = []*x509.Certificate{}
+		var trustedLeafCerts = []*x509.Certificate{}
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
 			clientCert, err := decodeBase64DERCert(clientCertString)
 			if err != nil {
 				return fmt.Errorf("parsing certificate: %v", err)
 			}
-			clientauth.trustedLeafCerts = append(clientauth.trustedLeafCerts, clientCert)
+			trustedLeafCerts = append(trustedLeafCerts, clientCert)
 		}
-		// if a custom verification function already exists, wrap it
-		clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
-		cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
+		clientauth.Validators = append(clientauth.Validators, LeafVerificationValidator{TrustedLeafCerts: trustedLeafCerts})
 	}
 
+	// if a custom verification function already exists, wrap it
+	clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
+	cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
 	return nil
 }
 
-// verifyPeerCertificate is for use as a tls.Config.VerifyPeerCertificate
-// callback to do custom client certificate verification. It is intended
-// for installation only by clientauth.ConfigureTLSConfig().
-func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	// first use any pre-existing custom verification function
 	if clientauth.existingVerifyPeerCert != nil {
 		err := clientauth.existingVerifyPeerCert(rawCerts, verifiedChains)
@@ -407,23 +423,13 @@ func (clientauth ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, 
 			return err
 		}
 	}
-
-	if len(rawCerts) == 0 {
-		return fmt.Errorf("no client certificate provided")
-	}
-
-	remoteLeafCert, err := x509.ParseCertificate(rawCerts[0])
-	if err != nil {
-		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
-	}
-
-	for _, trustedLeafCert := range clientauth.trustedLeafCerts {
-		if remoteLeafCert.Equal(trustedLeafCert) {
-			return nil
+	for _, validator := range clientauth.Validators {
+		err := validator.VerifyClientCertificate(rawCerts, verifiedChains)
+		if err != nil {
+			return err
 		}
 	}
-
-	return fmt.Errorf("client leaf certificate failed validation")
+	return nil
 }
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
@@ -459,6 +465,31 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	}
 
 	cfg.PreferServerCipherSuites = true
+}
+
+// Validator to do custom client certificate verification. It is intended
+// for installation only by clientauth.ConfigureTLSConfig().
+type LeafVerificationValidator struct {
+	TrustedLeafCerts []*x509.Certificate
+}
+
+func (l LeafVerificationValidator) VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	if len(rawCerts) == 0 {
+		return fmt.Errorf("no client certificate provided")
+	}
+
+	remoteLeafCert, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
+	}
+
+	for _, trustedLeafCert := range l.TrustedLeafCerts {
+		if remoteLeafCert.Equal(trustedLeafCert) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("client leaf certificate failed validation")
 }
 
 // PublicKeyAlgorithm is a JSON-unmarshalable wrapper type.
