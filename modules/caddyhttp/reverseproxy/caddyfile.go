@@ -33,6 +33,7 @@ import (
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("reverse_proxy", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("copy_response", parseCopyResponseCaddyfile)
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -1013,6 +1014,46 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+func parseCopyResponseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	crh := new(CopyResponseHandler)
+	err := crh.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return crh, nil
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//    copy_response [<matcher>] [<status>] {
+//        status <status>
+//    }
+//
+func (h *CopyResponseHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) == 1 {
+			if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+				h.StatusCode = caddyhttp.WeakString(args[0])
+				break
+			}
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "status":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.StatusCode = caddyhttp.WeakString(d.Val())
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
 			}
 		}
 	}

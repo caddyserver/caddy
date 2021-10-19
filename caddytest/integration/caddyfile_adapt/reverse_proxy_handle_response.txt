@@ -22,7 +22,8 @@ reverse_proxy 127.0.0.1:65535 {
 	}
 
 	handle_response {
-		respond "Any! This should be last in the JSON!"
+		header Foo "This should be last in the JSON!"
+		copy_response 404
 	}
 
 	@403 {
@@ -168,8 +169,18 @@ reverse_proxy 127.0.0.1:65535 {
 												{
 													"handle": [
 														{
-															"body": "Any! This should be last in the JSON!",
-															"handler": "static_response"
+															"handler": "headers",
+															"response": {
+																"set": {
+																	"Foo": [
+																		"This should be last in the JSON!"
+																	]
+																}
+															}
+														},
+														{
+															"handler": "copy_response",
+															"status_code": 404
 														}
 													]
 												}
