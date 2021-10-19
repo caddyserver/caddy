@@ -75,7 +75,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 
 // TLSConfig returns a standard-lib-compatible TLS configuration which
 // selects the first matching policy based on the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
+func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies
@@ -467,13 +467,13 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.PreferServerCipherSuites = true
 }
 
-// Validator to do custom client certificate verification. It is intended
-// for installation only by clientauth.ConfigureTLSConfig().
+// LeafVerificationValidator Implements Custom client certificate verification.
+// It is intended for installation only by clientauth.ConfigureTLSConfig()
 type LeafVerificationValidator struct {
 	TrustedLeafCerts []*x509.Certificate
 }
 
-func (l LeafVerificationValidator) VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+func (l LeafVerificationValidator) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	if len(rawCerts) == 0 {
 		return fmt.Errorf("no client certificate provided")
 	}
@@ -510,6 +510,12 @@ func (a *PublicKeyAlgorithm) UnmarshalJSON(b []byte) error {
 // ConnectionMatcher is a type which matches TLS handshakes.
 type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
+}
+
+// ClientCertValidator is a type which validates client certificates
+// It is called during verifyPeerCertificate in tls handshake
+type ClientCertValidator interface {
+	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
 
 var defaultALPN = []string{"h2", "http/1.1"}
