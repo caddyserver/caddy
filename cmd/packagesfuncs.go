@@ -220,7 +220,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 }
 
 func listModules(path string) error {
-	cmd := exec.Command(path, "list-modules", "--versions")
+	cmd := exec.Command(path, "list-modules", "--versions", "--skip-standard")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
