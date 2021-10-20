@@ -856,6 +856,13 @@ func (h Handler) finalizeResponse(
 		res.Header.Del(h)
 	}
 
+	// remove the content length if we're not going to be copying
+	// from the response, because otherwise there'll be a mismatch
+	// between bytes written and the advertised length
+	if bodyClosed {
+		res.Header.Del("Content-Length")
+	}
+
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
 		if h.Headers.Response.Require == nil ||
