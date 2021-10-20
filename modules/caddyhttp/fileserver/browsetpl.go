@@ -430,7 +430,7 @@ footer {
 		</footer>
 		<script>
 			var filterEl = document.getElementById('filter');
-			filterEl.focus();
+			filterEl.focus({preventScroll:true});
 
 			function initFilter() {
 				if (!filterEl.value) {
