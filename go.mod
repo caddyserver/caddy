@@ -33,3 +33,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
+
+// avoid license conflict from juju/ansiterm until https://github.com/manifoldco/promptui/pull/181
+// is merged or other dependency in path currently in violation fixes compliance
+replace github.com/manifoldco/promptui => github.com/nguyer/promptui v0.8.1-0.20210517132806-70ccd4709797
