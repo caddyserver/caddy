@@ -90,8 +90,7 @@ http://localhost:8081 {
 								"module": "zerossl"
 							}
 						]
-					},
-					{}
+					}
 				]
 			}
 		}
