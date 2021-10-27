@@ -191,6 +191,13 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 				// decide whether to retry a request
 				return nil, DialError{err}
 			}
+			repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			upstreamAddr, ok := repl.GetString("http.reverse_proxy.upstream.addr")
+			if ok {
+				repl.Set("http.reverse_proxy.upstream.addr", fmt.Sprintf("%s, %s", upstreamAddr, conn.RemoteAddr()))
+			} else {
+				repl.Set("http.reverse_proxy.upstream.addr", conn.RemoteAddr())
+			}
 			return conn, nil
 		},
 		MaxConnsPerHost:        h.MaxConnsPerHost,
