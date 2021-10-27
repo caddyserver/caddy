@@ -55,7 +55,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 
 	handlerErr = nil
 	if err := ih.ServeHTTP(w, r, h); err != nil {
-		t.Errorf("Received unexpected error: %w", err)
+		t.Errorf("Received unexpected error: %v", err)
 	}
 
 	// an empty handler - no errors, no header written
@@ -67,7 +67,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	w = httptest.NewRecorder()
 
 	if err := ih.ServeHTTP(w, r, h); err != nil {
-		t.Errorf("Received unexpected error: %w", err)
+		t.Errorf("Received unexpected error: %v", err)
 	}
 	if actual := w.Result().StatusCode; actual != 200 {
 		t.Errorf("Not same: expected status code %#v, but got %#v", 200, actual)
