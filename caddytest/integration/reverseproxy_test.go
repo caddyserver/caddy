@@ -489,3 +489,95 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
+
+func TestReverseProxyPlaceholderUpstreamAddr(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		"apps": {
+			"http": {
+				"servers": {
+					"srv0": {
+						"listen": [
+							":8080"
+						],
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "static_response",
+										"body": "Hello, World!"
+									}
+								],
+								"terminal": true
+							}
+						],
+						"automatic_https": {
+							"skip": [
+								"localhost"
+							]
+						}
+					},
+					"srv1": {
+						"listen": [
+							":9080"
+						],
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+	
+										"handler": "reverse_proxy",
+										"upstreams": [
+											{
+												"dial": "localhost:8080"
+											}
+										],
+										"headers": {
+											"response": {
+												"add": {
+													"upstream-addr": ["{http.reverse_proxy.upstream.addr}"]
+												}
+											}
+										}
+									}
+								],
+								"terminal": true
+							}
+						],
+						"automatic_https": {
+							"skip": [
+								"localhost"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+  	`, "json")
+
+	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080", nil)
+	if err != nil {
+		t.Fail()
+		return
+	}
+	resp := tester.AssertResponseCode(req, 200)
+	if resp.Header.Get("upstream-addr") == "" {
+		t.Fail()
+	}
+}
