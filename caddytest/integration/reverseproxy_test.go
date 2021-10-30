@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,8 +10,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddytest"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
+
+func init() {
+	caddy.RegisterModule(upstreamAddrPlaceholderWrapper{})
+}
 
 func TestSRVReverseProxy(t *testing.T) {
 	tester := caddytest.NewTester(t)
@@ -547,6 +555,12 @@ func TestReverseProxyPlaceholderUpstreamAddr(t *testing.T) {
 												"dial": "localhost:8080"
 											}
 										],
+										"transport": {
+											"protocol": "http",
+											"dial_context_wrappers": [{
+												"wrapper": "upstream_addr_placeholder"
+											}]
+										},
 										"headers": {
 											"response": {
 												"add": {
@@ -581,3 +595,35 @@ func TestReverseProxyPlaceholderUpstreamAddr(t *testing.T) {
 		t.Fail()
 	}
 }
+
+type upstreamAddrPlaceholderWrapper struct{}
+
+func (upstreamAddrPlaceholderWrapper) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.dial_context_wrappers.upstream_addr_placeholder",
+		New: func() caddy.Module { return new(upstreamAddrPlaceholderWrapper) },
+	}
+}
+
+func (upstreamAddrPlaceholderWrapper) WrapDialContext(dc reverseproxy.DialContext) reverseproxy.DialContext {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := dc(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		upstreamAddr, ok := repl.GetString("http.reverse_proxy.upstream.addr")
+		if ok {
+			repl.Set("http.reverse_proxy.upstream.addr", fmt.Sprintf("%s, %s", upstreamAddr, conn.RemoteAddr()))
+		} else {
+			repl.Set("http.reverse_proxy.upstream.addr", conn.RemoteAddr())
+		}
+		return conn, nil
+	}
+}
+
+func (upstreamAddrPlaceholderWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error { return nil }
+
+// Interface guard
+var _ reverseproxy.DialContextWrapper = (*upstreamAddrPlaceholderWrapper)(nil)
+var _ caddyfile.Unmarshaler = (*upstreamAddrPlaceholderWrapper)(nil)

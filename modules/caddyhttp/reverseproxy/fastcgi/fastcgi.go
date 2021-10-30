@@ -17,6 +17,7 @@ package fastcgi
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -67,14 +68,19 @@ type Transport struct {
 	// The duration used to set a deadline when connecting to an upstream.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
+	// A list of DialContext wrapper modules, which can modify the behavior
+	// of the base dialer.DialContext. They are applied in the given order.
+	DialContextWrappersRaw []json.RawMessage `json:"dial_context_wrappers,omitempty" caddy:"namespace=caddy.dial_context_wrappers inline_key=wrapper"`
+
 	// The duration used to set a deadline when reading from the FastCGI server.
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// The duration used to set a deadline when sending to the FastCGI server.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
-	serverSoftware string
-	logger         *zap.Logger
+	serverSoftware      string
+	dialContextWrappers []reverseproxy.DialContextWrapper
+	logger              *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -94,6 +100,15 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 	t.serverSoftware = "Caddy"
 	if mod := caddy.GoModule(); mod.Version != "" {
 		t.serverSoftware += "/" + mod.Version
+	}
+	if t.DialContextWrappersRaw != nil {
+		vals, err := ctx.LoadModule(t, "DialContextWrappersRaw")
+		if err != nil {
+			return fmt.Errorf("loading dial context wrapper modules: %v", err)
+		}
+		for _, val := range vals.([]interface{}) {
+			t.dialContextWrappers = append(t.dialContextWrappers, val.(reverseproxy.DialContextWrapper))
+		}
 	}
 	return nil
 }
@@ -126,7 +141,10 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		zap.Any("env", env), // TODO: this uses reflection I think
 	)
 
-	fcgiBackend, err := DialContext(ctx, network, address)
+	dialer := net.Dialer{
+		Timeout: time.Duration(t.DialTimeout),
+	}
+	fcgiBackend, err := DialWithDialerContext(ctx, network, address, dialer, t.dialContextWrappers...)
 	if err != nil {
 		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)

@@ -42,6 +42,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -185,9 +187,13 @@ type FCGIClient struct {
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
 // and a context.
 // See func net.Dial for a description of the network and address parameters.
-func DialWithDialerContext(ctx context.Context, network, address string, dialer net.Dialer) (fcgi *FCGIClient, err error) {
+func DialWithDialerContext(ctx context.Context, network, address string, dialer net.Dialer, wrappers ...reverseproxy.DialContextWrapper) (fcgi *FCGIClient, err error) {
 	var conn net.Conn
-	conn, err = dialer.DialContext(ctx, network, address)
+	dialContext := dialer.DialContext
+	for _, wrapper := range wrappers {
+		dialContext = wrapper.WrapDialContext(dialContext)
+	}
+	conn, err = dialContext(ctx, network, address)
 	if err != nil {
 		return
 	}

@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	weakrand "math/rand"
 	"net"
@@ -70,6 +71,10 @@ type HTTPTransport struct {
 	// connection. A negative value disables this.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
+	// A list of DialContext wrapper modules, which can modify the behavior
+	// of the base dialer.DialContext. They are applied in the given order.
+	DialContextWrappersRaw []json.RawMessage `json:"dial_context_wrappers,omitempty" caddy:"namespace=caddy.dial_context_wrappers inline_key=wrapper"`
+
 	// How long to wait for reading response headers from server.
 	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
 
@@ -96,7 +101,8 @@ type HTTPTransport struct {
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
-	h2cTransport *http2.Transport
+	h2cTransport        *http2.Transport
+	dialContextWrappers []DialContextWrapper
 }
 
 // CaddyModule returns the Caddy module information.
@@ -142,6 +148,16 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 		h.h2cTransport = h2t
 	}
 
+	if h.DialContextWrappersRaw != nil {
+		vals, err := ctx.LoadModule(h, "DialContextWrappersRaw")
+		if err != nil {
+			return fmt.Errorf("loading dial context wrapper modules: %v", err)
+		}
+		for _, val := range vals.([]interface{}) {
+			h.dialContextWrappers = append(h.dialContextWrappers, val.(DialContextWrapper))
+		}
+	}
+
 	return nil
 }
 
@@ -184,19 +200,16 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}
-			conn, err := dialer.DialContext(ctx, network, address)
+			dialContext := dialer.DialContext
+			for _, wrapper := range h.dialContextWrappers {
+				dialContext = wrapper.WrapDialContext(dialContext)
+			}
+			conn, err := dialContext(ctx, network, address)
 			if err != nil {
 				// identify this error as one that occurred during
 				// dialing, which can be important when trying to
 				// decide whether to retry a request
 				return nil, DialError{err}
-			}
-			repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-			upstreamAddr, ok := repl.GetString("http.reverse_proxy.upstream.addr")
-			if ok {
-				repl.Set("http.reverse_proxy.upstream.addr", fmt.Sprintf("%s, %s", upstreamAddr, conn.RemoteAddr()))
-			} else {
-				repl.Set("http.reverse_proxy.upstream.addr", conn.RemoteAddr())
 			}
 			return conn, nil
 		},
