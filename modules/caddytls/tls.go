@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevent"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -73,6 +74,7 @@ type TLS struct {
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
 	logger             *zap.Logger
+	event              *caddyevent.EventApp
 }
 
 // CaddyModule returns the Caddy module information.
@@ -88,6 +90,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 	t.logger = ctx.Logger(t)
 	repl := caddy.NewReplacer()
+
+	eventAppIface, err := ctx.App("event")
+	if err != nil {
+		return fmt.Errorf("getting event app: %v", err)
+	}
+	t.event = eventAppIface.(*caddyevent.EventApp)
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -189,6 +197,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
+		OnEvent: t.onEvent,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
