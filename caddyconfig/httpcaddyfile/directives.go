@@ -41,6 +41,7 @@ var directiveOrder = []string{
 	"root",
 
 	"header",
+	"copy_response_headers",
 	"request_body",
 
 	"redir",

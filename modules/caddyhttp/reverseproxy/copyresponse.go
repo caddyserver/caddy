@@ -26,11 +26,12 @@ import (
 
 func init() {
 	caddy.RegisterModule(CopyResponseHandler{})
+	caddy.RegisterModule(CopyResponseHeadersHandler{})
 }
 
-// CopyResponseHandler is a special HTTP handler which may only be used
-// within reverse_proxy's handle_response routes, to copy the response
-// from the
+// CopyResponseHandler is a special HTTP handler which may
+// only be used within reverse_proxy's handle_response routes,
+// to copy the proxy response.
 type CopyResponseHandler struct {
 	// To write the upstream response's body but with a different
 	// status code, set this field to the desired status code.
@@ -53,6 +54,7 @@ func (h *CopyResponseHandler) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// ServeHTTP implements the Handler interface.
 func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request, _ caddyhttp.Handler) error {
 	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	hrc, ok := req.Context().Value(proxyHandleResponseContextCtxKey).(*handleResponseContext)
@@ -81,8 +83,107 @@ func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	return hrc.handler.finalizeResponse(rw, req, hrc.response, repl, hrc.start, hrc.logger, false)
 }
 
+// CopyResponseHeadersHandler is a special HTTP handler which may
+// only be used within reverse_proxy's handle_response routes,
+// to copy headers from the proxy response.
+type CopyResponseHeadersHandler struct {
+	// A list of header fields to copy from the response.
+	// Cannot be defined at the same time as Exclude.
+	Include []string `json:"include,omitempty"`
+
+	// A list of header fields to skip copying from the response.
+	// Cannot be defined at the same time as Include.
+	Exclude []string `json:"exclude,omitempty"`
+
+	includeMap map[string]struct{}
+	excludeMap map[string]struct{}
+	ctx        caddy.Context
+}
+
+// CaddyModule returns the Caddy module information.
+func (CopyResponseHeadersHandler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.copy_response_headers",
+		New: func() caddy.Module { return new(CopyResponseHeadersHandler) },
+	}
+}
+
+// Validate ensures the h's configuration is valid.
+func (h *CopyResponseHeadersHandler) Validate() error {
+	if len(h.Exclude) > 0 && len(h.Include) > 0 {
+		return fmt.Errorf("cannot define both 'exclude' and 'include' lists at the same time")
+	}
+
+	return nil
+}
+
+// Provision ensures that h is set up properly before use.
+func (h *CopyResponseHeadersHandler) Provision(ctx caddy.Context) error {
+	h.ctx = ctx
+
+	// Optimize the include list by converting it to a map
+	if len(h.Include) > 0 {
+		h.includeMap = map[string]struct{}{}
+	}
+	for _, field := range h.Include {
+		h.includeMap[http.CanonicalHeaderKey(field)] = struct{}{}
+	}
+
+	// Optimize the exclude list by converting it to a map
+	if len(h.Exclude) > 0 {
+		h.excludeMap = map[string]struct{}{}
+	}
+	for _, field := range h.Exclude {
+		h.excludeMap[http.CanonicalHeaderKey(field)] = struct{}{}
+	}
+
+	return nil
+}
+
+// ServeHTTP implements the Handler interface.
+func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
+	hrc, ok := req.Context().Value(proxyHandleResponseContextCtxKey).(*handleResponseContext)
+
+	// don't allow this to be used outside of handle_response routes
+	if !ok {
+		return caddyhttp.Error(http.StatusInternalServerError,
+			fmt.Errorf("cannot use 'copy_response_headers' outside of reverse_proxy's handle_response routes"))
+	}
+
+	for field, values := range hrc.response.Header {
+		// Check the include list first, skip
+		// the header if it's _not_ in this list.
+		if len(h.includeMap) > 0 {
+			if _, ok := h.includeMap[field]; !ok {
+				continue
+			}
+		}
+
+		// Then, check the exclude list, skip
+		// the header if it _is_ in this list.
+		if len(h.excludeMap) > 0 {
+			if _, ok := h.excludeMap[field]; ok {
+				continue
+			}
+		}
+
+		// Copy all the values for the header.
+		for _, value := range values {
+			rw.Header().Add(field, value)
+		}
+	}
+
+	return next.ServeHTTP(rw, req)
+}
+
 // Interface guards
 var (
 	_ caddyhttp.MiddlewareHandler = (*CopyResponseHandler)(nil)
 	_ caddyfile.Unmarshaler       = (*CopyResponseHandler)(nil)
+	_ caddy.Provisioner           = (*CopyResponseHandler)(nil)
+
+	_ caddyhttp.MiddlewareHandler = (*CopyResponseHeadersHandler)(nil)
+	_ caddyfile.Unmarshaler       = (*CopyResponseHeadersHandler)(nil)
+	_ caddy.Provisioner           = (*CopyResponseHeadersHandler)(nil)
+	_ caddy.Validator             = (*CopyResponseHeadersHandler)(nil)
 )
