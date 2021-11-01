@@ -659,11 +659,17 @@ type adminHandler struct {
 // ServeHTTP is the external entry point for API requests.
 // It will only be called once per request.
 func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ip, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+		port = ""
+	}
 	log := Log().Named("admin.api").With(
 		zap.String("method", r.Method),
 		zap.String("host", r.Host),
 		zap.String("uri", r.RequestURI),
-		zap.String("remote_addr", r.RemoteAddr),
+		zap.String("remote_ip", ip),
+		zap.String("remote_port", port),
 		zap.Reflect("headers", r.Header),
 	)
 	if r.TLS != nil {
