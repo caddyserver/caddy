@@ -25,7 +25,6 @@ require (
 	github.com/yuin/goldmark v1.4.0
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
 	go.opentelemetry.io/otel v1.1.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.1.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.1.0
 	go.opentelemetry.io/otel/sdk v1.1.0
 	go.opentelemetry.io/otel/trace v1.1.0
