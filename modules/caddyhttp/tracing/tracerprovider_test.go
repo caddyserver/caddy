@@ -1,4 +1,4 @@
-package opentelemetry
+package tracing
 
 import (
 	"testing"

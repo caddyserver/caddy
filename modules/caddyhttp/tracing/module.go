@@ -1,4 +1,4 @@
-package opentelemetry
+package tracing
 
 import (
 	"errors"
@@ -59,7 +59,7 @@ func (ot *Tracing) Cleanup() error {
 // Validate implements caddy.Validator.
 func (ot *Tracing) Validate() error {
 	if ot.otel.tracer == nil {
-		return errors.New("openTelemetry tracer is nil")
+		return errors.New("tracer is nil")
 	}
 
 	return nil

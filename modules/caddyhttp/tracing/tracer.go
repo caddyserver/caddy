@@ -1,8 +1,7 @@
-package opentelemetry
+package tracing
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -20,10 +19,6 @@ const (
 	webEngineName   = "Caddy"
 	defaultSpanName = "handler"
 	tracerName      = "github.com/caddyserver/caddy/v2/modules/caddyhttp/tracing"
-)
-
-var (
-	ErrUnsupportedTracesProtocol = errors.New("unsupported opentelemetry traces protocol")
 )
 
 // openTelemetryWrapper is responsible for the tracing injection, extraction and propagation.

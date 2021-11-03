@@ -1,4 +1,4 @@
-package opentelemetry
+package tracing
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func TestOpenTelemetry_UnmarshalCaddyfile(t *testing.T) {
 			name:     "Full config",
 			spanName: "my-span",
 			d: caddyfile.NewTestDispenser(`
-opentelemetry {
+tracing {
 	span_name my-span
 }`),
 			wantErr: false,
@@ -33,7 +33,7 @@ opentelemetry {
 			name:     "Only span name in the config",
 			spanName: "my-span",
 			d: caddyfile.NewTestDispenser(`
-opentelemetry {
+tracing {
 	span_name my-span
 }`),
 			wantErr: false,
@@ -41,7 +41,7 @@ opentelemetry {
 		{
 			name: "Empty config",
 			d: caddyfile.NewTestDispenser(`
-opentelemetry {
+tracing {
 }`),
 			wantErr: false,
 		},
@@ -69,7 +69,7 @@ func TestOpenTelemetry_UnmarshalCaddyfile_Error(t *testing.T) {
 		{
 			name: "Unknown parameter",
 			d: caddyfile.NewTestDispenser(`
-		opentelemetry {
+		tracing {
 			foo bar
 		}`),
 			wantErr: true,
@@ -77,7 +77,7 @@ func TestOpenTelemetry_UnmarshalCaddyfile_Error(t *testing.T) {
 		{
 			name: "Missed argument",
 			d: caddyfile.NewTestDispenser(`
-opentelemetry {
+tracing {
 	span_name
 }`),
 			wantErr: true,

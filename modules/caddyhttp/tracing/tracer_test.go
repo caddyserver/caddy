@@ -1,8 +1,7 @@
-package opentelemetry
+package tracing
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 
@@ -29,49 +28,6 @@ func TestOpenTelemetry_newOpenTelemetryWrapper(t *testing.T) {
 
 	if otw.propagators == nil {
 		t.Errorf("Propagators should not be empty")
-	}
-}
-
-func TestOpenTelemetry_newOpenTelemetryWrapper_Error(t *testing.T) {
-	tests := []struct {
-		name        string
-		wantErrType error
-		setEnv      func() error
-		unsetEnv    func() error
-	}{
-		{
-			name: "Not supported protocol",
-			setEnv: func() error {
-				return os.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "ftp")
-			},
-			unsetEnv: func() error {
-				return os.Unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL")
-			},
-			wantErrType: ErrUnsupportedTracesProtocol,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-			defer cancel()
-
-			if err := tt.setEnv(); err != nil {
-				t.Errorf("Environment variable set error: %v", err)
-			}
-			defer func() {
-				if err := tt.unsetEnv(); err != nil {
-					t.Errorf("Environment variable unset error: %v", err)
-				}
-			}()
-
-			_, err := newOpenTelemetryWrapper(ctx,
-				"",
-			)
-
-			if !errors.Is(err, tt.wantErrType) {
-				t.Errorf("newOpenTelemetryWrapper() error is %v, expected %v", err, tt.wantErrType)
-			}
-		})
 	}
 }
 

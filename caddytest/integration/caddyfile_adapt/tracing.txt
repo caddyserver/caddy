@@ -1,5 +1,5 @@
 :80 {
-	opentelemetry /myhandler {
+	tracing /myhandler {
 		span_name my-span
 	}
 }
