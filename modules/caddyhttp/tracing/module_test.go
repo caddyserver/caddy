@@ -12,7 +12,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func TestOpenTelemetry_UnmarshalCaddyfile(t *testing.T) {
+func TestTracing_UnmarshalCaddyfile(t *testing.T) {
 	tests := []struct {
 		name     string
 		spanName string
@@ -59,7 +59,7 @@ tracing {
 	}
 }
 
-func TestOpenTelemetry_UnmarshalCaddyfile_Error(t *testing.T) {
+func TestTracing_UnmarshalCaddyfile_Error(t *testing.T) {
 	tests := []struct {
 		name    string
 		d       *caddyfile.Dispenser
@@ -92,7 +92,7 @@ tracing {
 	}
 }
 
-func TestOpenTelemetry_Provision(t *testing.T) {
+func TestTracing_Provision(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
@@ -103,7 +103,7 @@ func TestOpenTelemetry_Provision(t *testing.T) {
 	}
 }
 
-func TestOpenTelemetry_Provision_WithoutEnvironmentVariables(t *testing.T) {
+func TestTracing_Provision_WithoutEnvironmentVariables(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
@@ -114,7 +114,7 @@ func TestOpenTelemetry_Provision_WithoutEnvironmentVariables(t *testing.T) {
 	}
 }
 
-func TestOpenTelemetry_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
+func TestTracing_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
 	ot := &Tracing{
 		SpanName: "mySpan",
 	}
@@ -144,7 +144,7 @@ func TestOpenTelemetry_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.
 	}
 }
 
-func TestOpenTelemetry_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
+func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 	ot := &Tracing{
 		SpanName: "mySpan",
 	}

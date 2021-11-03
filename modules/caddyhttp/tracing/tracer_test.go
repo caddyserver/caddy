@@ -7,7 +7,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-func TestOpenTelemetry_newOpenTelemetryWrapper(t *testing.T) {
+func TestOpenTelemetryWrapper_newOpenTelemetryWrapper(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
