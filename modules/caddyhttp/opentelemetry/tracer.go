@@ -2,7 +2,6 @@ package opentelemetry
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -19,25 +17,14 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/credentials"
 )
 
 const (
 	envOtelPropagators = "OTEL_PROPAGATORS"
 
-	envOtelExporterOtlpProtocol       = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOtelExporterOtlpTracesProtocol = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
-
-	envOtelExporterOtlpCertificate       = "OTEL_EXPORTER_OTLP_CERTIFICATE"
-	envOtelExporterOtlpTracesCertificate = "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"
-
-	envOtelExporterOtlpInsecure     = "OTEL_EXPORTER_OTLP_INSECURE"
-	envOtelExporterOtlpSpanInsecure = "OTEL_EXPORTER_OTLP_SPAN_INSECURE"
-
-	webEngineName                   = "Caddy"
-	defaultSpanName                 = "handler"
-	defaultOtelExporterOtlpProtocol = "grpc"
-	defaultOtelPropagators          = "tracecontext"
+	webEngineName          = "Caddy"
+	defaultSpanName        = "handler"
+	defaultOtelPropagators = "tracecontext"
 )
 
 var (
@@ -70,8 +57,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	//
-	traceExporter, err := ot.getTracerExporter(ctx)
+	traceExporter, err := otlptracegrpc.New(ctx)
 	if err != nil {
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
@@ -141,59 +127,6 @@ func (ot *openTelemetryWrapper) newResource(
 	}
 
 	return resource.Merge(resource.Default(), caddyResource)
-}
-
-// getTracerExporter returns protocol specific exporter or error if the protocol is not supported by current module implementation.
-//
-// If opentelemetry is not configured with "insecure" parameter and certificate related headers missed,
-// then default TLS with default `tls.Config` config will be used.
-func (ot *openTelemetryWrapper) getTracerExporter(ctx context.Context) (*otlptrace.Exporter, error) {
-	exporterTracesProtocol := ot.getTracesProtocolFromEnv()
-	if exporterTracesProtocol == "" {
-		exporterTracesProtocol = defaultOtelExporterOtlpProtocol
-	}
-
-	switch exporterTracesProtocol {
-	case "grpc":
-		var opts []otlptracegrpc.Option
-		if ot.getInsecureFromEnv() {
-			opts = append(opts, otlptracegrpc.WithInsecure())
-		} else {
-			if !ot.isCertificateHeaderSet() {
-				var tlsConf tls.Config
-				transportCredentials := credentials.NewTLS(&tlsConf)
-				opts = append(opts, otlptracegrpc.WithTLSCredentials(transportCredentials))
-			}
-		}
-
-		return otlptracegrpc.New(ctx, opts...)
-	default:
-		return nil, fmt.Errorf("%w: tracesProtocol %s", ErrUnsupportedTracesProtocol, exporterTracesProtocol)
-	}
-}
-
-// getTracesProtocolFromEnv returns opentelemetry exporter otlp protocol, if it is specified via environment variable or empty string if not.
-func (ot *openTelemetryWrapper) getTracesProtocolFromEnv() string {
-	protocol := os.Getenv(envOtelExporterOtlpTracesProtocol)
-	if protocol == "" {
-		protocol = os.Getenv(envOtelExporterOtlpProtocol)
-	}
-
-	return protocol
-}
-
-// getInsecureFromEnv returns value of "insecure" option if it was specified by environment variable.
-func (ot *openTelemetryWrapper) getInsecureFromEnv() bool {
-	insecure := os.Getenv(envOtelExporterOtlpSpanInsecure)
-	if insecure == "" {
-		insecure = os.Getenv(envOtelExporterOtlpInsecure)
-	}
-
-	return strings.ToLower(insecure) == "true"
-}
-
-func (ot *openTelemetryWrapper) isCertificateHeaderSet() bool {
-	return os.Getenv(envOtelExporterOtlpCertificate) != "" || os.Getenv(envOtelExporterOtlpTracesCertificate) != ""
 }
 
 // getPropagators deduplicate propagators, according to the specification https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md#general-sdk-configuration.
