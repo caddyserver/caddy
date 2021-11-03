@@ -92,28 +92,6 @@ tracing {
 	}
 }
 
-func TestTracing_Provision(t *testing.T) {
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
-
-	ot := &Tracing{}
-
-	if err := ot.Provision(ctx); err != nil {
-		t.Errorf("Provision() error = %v", err)
-	}
-}
-
-func TestTracing_Provision_WithoutEnvironmentVariables(t *testing.T) {
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
-
-	ot := &Tracing{}
-
-	if err := ot.Provision(ctx); err != nil {
-		t.Errorf("Provision() error should be nil")
-	}
-}
-
 func TestTracing_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
 	ot := &Tracing{
 		SpanName: "mySpan",
