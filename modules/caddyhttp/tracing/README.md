@@ -32,14 +32,14 @@ export OTEL_EXPORTER_OTLP_HEADERS="myAuthHeader=myToken,anotherHeader=value"
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://my-otlp-endpoint:55680
 ```
 
-### Caddy file configuration
+### Caddyfile configuration
 
 Here is a **Caddyfile** example:
 
 ```
 handle /myHandler {
-	opentelemetry {
-		span_name my-span
+	tracing {
+		span my-span
 	}
 	reverse_proxy 127.0.0.1:8081
 }
