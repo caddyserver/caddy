@@ -47,7 +47,7 @@ func newOpenTelemetryWrapper(
 		spanName: spanName,
 	}
 
-	res, err := ot.newResource(ctx, webEngineName, caddycmd.CaddyVersion())
+	res, err := ot.newResource(webEngineName, caddycmd.CaddyVersion())
 	if err != nil {
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
@@ -100,19 +100,11 @@ func (ot *openTelemetryWrapper) cleanup(logger *zap.Logger) error {
 
 // newResource creates a resource that describe current handler instance and merge it with a default attributes value.
 func (ot *openTelemetryWrapper) newResource(
-	ctx context.Context,
 	webEngineName,
 	webEngineVersion string,
 ) (*resource.Resource, error) {
-	option := resource.WithAttributes(
+	return resource.Merge(resource.Default(), resource.NewSchemaless(
 		semconv.WebEngineNameKey.String(webEngineName),
 		semconv.WebEngineVersionKey.String(webEngineVersion),
-	)
-
-	caddyResource, err := resource.New(ctx, option)
-	if err != nil {
-		return nil, err
-	}
-
-	return resource.Merge(resource.Default(), caddyResource)
+	))
 }

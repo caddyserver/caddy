@@ -79,7 +79,7 @@ func Test_openTelemetryWrapper_newResource_WithServiceName(t *testing.T) {
 	err := os.Setenv("OTEL_SERVICE_NAME", "MyService")
 	defer os.Unsetenv("OTEL_SERVICE_NAME")
 
-	res, err := (&openTelemetryWrapper{}).newResource(context.Background(), "TestEngine", "Version 1")
+	res, err := (&openTelemetryWrapper{}).newResource("TestEngine", "Version 1")
 
 	if err != nil {
 		t.Errorf("can not create resource: %v", err)
