@@ -96,17 +96,27 @@ func newOpenTelemetryWrapper(
 
 // ServeHTTP extract current tracing context or create a new one, then method propagates it to the wrapped next handler.
 func (ot *openTelemetryWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	// It will be default span kind as for now. Proper span kind (Span.Kind.LOAD_BALANCER (PROXY/SIDECAR)) is being discussed here https://github.com/open-telemetry/opentelemetry-specification/issues/51.
-	ctx, span := ot.tracer.Start(
-		ot.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header)),
-		ot.spanName,
+	opts := []trace.SpanStartOption{
+		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest("tcp", r)...),
+		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(r)...),
 		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest("", "", r)...),
-	)
+	}
+
+	ctx := ot.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	// It will be default span kind as for now. Proper span kind (Span.Kind.LOAD_BALANCER (PROXY/SIDECAR)) is being discussed here https://github.com/open-telemetry/opentelemetry-specification/issues/51.
+	ctx, span := ot.tracer.Start(ctx, ot.spanName, opts...)
 	defer span.End()
 
 	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 
-	return next.ServeHTTP(w, r)
+	err := next.ServeHTTP(w, r)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return nil
 }
 
 // cleanup flush all remaining data and shutdown a tracerProvider
