@@ -1,6 +1,6 @@
 :80 {
 	tracing /myhandler {
-		span_name my-span
+		span my-span
 	}
 }
 ----------
@@ -24,7 +24,7 @@
 							"handle": [
 								{
 									"handler": "tracing",
-									"span_name": "my-span"
+									"span": "my-span"
 								}
 							]
 						}
