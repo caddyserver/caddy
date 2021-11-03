@@ -11,15 +11,8 @@ It is based on `https://github.com/open-telemetry/opentelemetry-go`.
 
 ### Environment variables
 
-It can be configured using the environment variables defined
+This module can be configured using the environment variables defined
 by the [OpenTelemetry Environment Variable Specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md).
-
-
-If neither OTEL_EXPORTER_OTLP_INSECURE nor OTEL_EXPORTER_OTLP_SPAN_INSECURE is provided, then:
-
-1. If OTEL_EXPORTER_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE are specified they will be used for TLS.
-2. Else if both OTEL_EXPORTER_OTLP_CERTIFICATE and OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE are not specified, then default
-   TLS with the default `tls.Config` config will be used for an exporter.
 
 For the exporter configuration details, please
 see [spec](https://github.com/open-telemetry/opentelemetry-specification/blob/v1.7.0/specification/protocol/exporter.md)
