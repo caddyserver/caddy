@@ -37,7 +37,7 @@ import (
 // The header directive goes second so that headers
 // can be manipulated before doing redirects.
 var directiveOrder = []string{
-	"opentelemetry",
+	"tracing",
 
 	"map",
 	"root",

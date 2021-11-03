@@ -19,7 +19,7 @@ import (
 const (
 	webEngineName   = "Caddy"
 	defaultSpanName = "handler"
-	tracerName      = "github.com/caddyserver/caddy/v2/modules/caddyhttp/opentelemetry"
+	tracerName      = "github.com/caddyserver/caddy/v2/modules/caddyhttp/tracing"
 )
 
 var (

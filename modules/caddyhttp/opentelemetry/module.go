@@ -17,10 +17,10 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("tracing", parseCaddyfile)
 }
 
-// OpenTelemetry implements an HTTP handler that adds support for the opentelemetry tracing.
+// Tracing implements an HTTP handler that adds support for the opentelemetry tracing.
 // It is responsible for the injection and propagation of the tracing contexts.
-// OpenTelemetry module can be configured via environment variables https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md. Some values can be overwritten with values from the configuration file.
-type OpenTelemetry struct {
+// Tracing module can be configured via environment variables https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md. Some values can be overwritten with values from the configuration file.
+type Tracing struct {
 	// SpanName is a span name. It SHOULD follow the naming guideline https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
 	SpanName string `json:"span"`
 
@@ -31,15 +31,15 @@ type OpenTelemetry struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (OpenTelemetry) CaddyModule() caddy.ModuleInfo {
+func (Tracing) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.opentelemetry",
-		New: func() caddy.Module { return new(OpenTelemetry) },
+		ID:  "http.handlers.tracing",
+		New: func() caddy.Module { return new(Tracing) },
 	}
 }
 
 // Provision implements caddy.Provisioner.
-func (ot *OpenTelemetry) Provision(ctx caddy.Context) error {
+func (ot *Tracing) Provision(ctx caddy.Context) error {
 	ot.logger = ctx.Logger(ot)
 
 	var err error
@@ -49,7 +49,7 @@ func (ot *OpenTelemetry) Provision(ctx caddy.Context) error {
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections. It calls Shutdown method for a trace provider https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#shutdown.
-func (ot *OpenTelemetry) Cleanup() error {
+func (ot *Tracing) Cleanup() error {
 	if err := ot.otel.cleanup(ot.logger); err != nil {
 		return fmt.Errorf("tracerProvider shutdown: %w", err)
 	}
@@ -57,7 +57,7 @@ func (ot *OpenTelemetry) Cleanup() error {
 }
 
 // Validate implements caddy.Validator.
-func (ot *OpenTelemetry) Validate() error {
+func (ot *Tracing) Validate() error {
 	if ot.otel.tracer == nil {
 		return errors.New("openTelemetry tracer is nil")
 	}
@@ -66,12 +66,12 @@ func (ot *OpenTelemetry) Validate() error {
 }
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
-func (ot *OpenTelemetry) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	return ot.otel.ServeHTTP(w, r, next)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (ot *OpenTelemetry) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	setParameter := func(d *caddyfile.Dispenser, val *string) error {
 		if d.NextArg() {
 			*val = d.Val()
@@ -109,15 +109,15 @@ func (ot *OpenTelemetry) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var m OpenTelemetry
+	var m Tracing
 	err := m.UnmarshalCaddyfile(h.Dispenser)
 	return &m, err
 }
 
 // Interface guards
 var (
-	_ caddy.Provisioner           = (*OpenTelemetry)(nil)
-	_ caddy.Validator             = (*OpenTelemetry)(nil)
-	_ caddyhttp.MiddlewareHandler = (*OpenTelemetry)(nil)
-	_ caddyfile.Unmarshaler       = (*OpenTelemetry)(nil)
+	_ caddy.Provisioner           = (*Tracing)(nil)
+	_ caddy.Validator             = (*Tracing)(nil)
+	_ caddyhttp.MiddlewareHandler = (*Tracing)(nil)
+	_ caddyfile.Unmarshaler       = (*Tracing)(nil)
 )

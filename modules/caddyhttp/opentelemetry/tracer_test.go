@@ -97,7 +97,7 @@ func Test_openTelemetryWrapper_newResource_WithServiceName(t *testing.T) {
 
 	for k, v := range map[string]string{
 		"telemetry.sdk.language": "go",
-		"telemetry.sdk.name":     "opentelemetry",
+		"telemetry.sdk.name":     "tracing",
 		"webengine.version":      "Version 1",
 		"webengine.name":         "TestEngine",
 		"service.name":           "MyService",

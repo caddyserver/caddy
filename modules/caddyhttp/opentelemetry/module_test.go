@@ -48,7 +48,7 @@ opentelemetry {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ot := &OpenTelemetry{}
+			ot := &Tracing{}
 			if err := ot.UnmarshalCaddyfile(tt.d); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalCaddyfile() error = %v, wantErrType %v", err, tt.wantErr)
 			}
@@ -85,7 +85,7 @@ opentelemetry {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ot := &OpenTelemetry{}
+			ot := &Tracing{}
 			if err := ot.UnmarshalCaddyfile(tt.d); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalCaddyfile() error = %v, wantErrType %v", err, tt.wantErr)
 			}
@@ -107,7 +107,7 @@ func TestOpenTelemetry_Provision(t *testing.T) {
 		}
 	}()
 
-	ot := &OpenTelemetry{}
+	ot := &Tracing{}
 
 	if err := ot.Provision(ctx); err != nil {
 		t.Errorf("Provision() error = %v", err)
@@ -118,7 +118,7 @@ func TestOpenTelemetry_Provision_WithoutEnvironmentVariables(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
-	ot := &OpenTelemetry{}
+	ot := &Tracing{}
 
 	if err := ot.Provision(ctx); err != nil {
 		t.Errorf("Provision() error should be nil")
@@ -136,7 +136,7 @@ func TestOpenTelemetry_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.
 		}
 	}()
 
-	ot := &OpenTelemetry{
+	ot := &Tracing{
 		SpanName: "mySpan",
 	}
 
@@ -176,7 +176,7 @@ func TestOpenTelemetry_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) 
 		}
 	}()
 
-	ot := &OpenTelemetry{
+	ot := &Tracing{
 		SpanName: "mySpan",
 	}
 
