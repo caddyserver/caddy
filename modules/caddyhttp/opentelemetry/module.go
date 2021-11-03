@@ -86,7 +86,7 @@ func (ot *OpenTelemetry) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	// paramsMap is a mapping between "string" parameter from the Caddyfile and its destination within the module
 	paramsMap := map[string]*string{
-		"span_name": &ot.SpanName,
+		"span": &ot.SpanName,
 	}
 
 	for d.Next() {
