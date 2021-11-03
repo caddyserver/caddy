@@ -4,10 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"os"
-	"strings"
-
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -17,14 +13,12 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"net/http"
 )
 
 const (
-	envOtelPropagators = "OTEL_PROPAGATORS"
-
-	webEngineName          = "Caddy"
-	defaultSpanName        = "handler"
-	defaultOtelPropagators = "tracecontext"
+	webEngineName   = "Caddy"
+	defaultSpanName = "handler"
 )
 
 var (
@@ -62,14 +56,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
 
-	// handle propagators related configuration, because it is not supported by opentelemetry lib yet.
-	// Please check status of https://github.com/open-telemetry/opentelemetry-go/issues/1698.
-	propagators := os.Getenv(envOtelPropagators)
-	if propagators == "" {
-		propagators = defaultOtelPropagators
-	}
-
-	ot.propagators = ot.getPropagators(propagators)
+	ot.propagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 
 	// create a tracer
 	ot.tracer = globalTracerProvider.getTracerProvider(
@@ -127,30 +114,4 @@ func (ot *openTelemetryWrapper) newResource(
 	}
 
 	return resource.Merge(resource.Default(), caddyResource)
-}
-
-// getPropagators deduplicate propagators, according to the specification https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md#general-sdk-configuration.
-// Parameter propagators is a "," separated string, ex: "baggage,tracecontext".
-// Current implementation supports only "baggage" and "tracecontext" values.
-func (ot *openTelemetryWrapper) getPropagators(propagators string) propagation.TextMapPropagator {
-	// deduplicationMap filters duplicated propagator
-	deduplicationMap := make(map[string]struct{})
-
-	// store unique values
-	var propagatorsList []propagation.TextMapPropagator
-
-	for _, v := range strings.Split(propagators, ",") {
-		propagatorName := strings.TrimSpace(v)
-		if _, ok := deduplicationMap[propagatorName]; !ok {
-			deduplicationMap[propagatorName] = struct{}{}
-			switch propagatorName {
-			case "baggage":
-				propagatorsList = append(propagatorsList, propagation.Baggage{})
-			case "tracecontext":
-				propagatorsList = append(propagatorsList, propagation.TraceContext{})
-			}
-		}
-	}
-
-	return propagation.NewCompositeTextMapPropagator(propagatorsList...)
 }
