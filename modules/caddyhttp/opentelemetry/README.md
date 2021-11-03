@@ -22,7 +22,7 @@ If neither OTEL_EXPORTER_OTLP_INSECURE nor OTEL_EXPORTER_OTLP_SPAN_INSECURE is p
    TLS with the default `tls.Config` config will be used for an exporter.
 
 For the exporter configuration details, please
-see [spec](https://github.com/open-telemetry/opentelemetry-specification/blob/a4440931b522c7351b0485ff4899f786b4ff4459/specification/protocol/exporter.md)
+see [spec](https://github.com/open-telemetry/opentelemetry-specification/blob/v1.7.0/specification/protocol/exporter.md)
 .
 
 Example:
