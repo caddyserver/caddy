@@ -45,6 +45,4 @@ handle /myHandler {
 }
 ```
 
-Please check span
-naming [guideline](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span)
-.
+Please see span naming [guidelines](https://github.com/open-telemetry/opentelemetry-specification/blob/v1.7.0/specification/trace/api.md).
