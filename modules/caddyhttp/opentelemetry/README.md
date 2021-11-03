@@ -28,11 +28,8 @@ see [spec](https://github.com/open-telemetry/opentelemetry-specification/blob/v1
 Example:
 
 ```bash
-export OTEL_EXPORTER_OTLP_HEADERS="myAuthHeader=myToken"
-export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-export OTEL_PROPAGATORS=tracecontext,baggage
-export OTEL_EXPORTER_OTLP_SPAN_INSECURE=false
-export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=localhost:12345
+export OTEL_EXPORTER_OTLP_HEADERS="myAuthHeader=myToken,anotherHeader=value"
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://my-otlp-endpoint:55680
 ```
 
 ### Caddy file configuration
