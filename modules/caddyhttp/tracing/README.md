@@ -7,6 +7,8 @@ When enabled, it propagates an existing tracing context or will init a new one o
 
 It is based on `https://github.com/open-telemetry/opentelemetry-go`.
 
+This module uses `gRPC` as an exporter protocol and  W3C `tracecontext` and `baggage` as propagators.
+
 ## Configuration
 
 ### Environment variables
