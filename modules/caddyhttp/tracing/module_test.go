@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestOpenTelemetry_UnmarshalCaddyfile(t *testing.T) {
 			spanName: "my-span",
 			d: caddyfile.NewTestDispenser(`
 tracing {
-	span_name my-span
+	span my-span
 }`),
 			wantErr: false,
 		},
@@ -34,7 +33,7 @@ tracing {
 			spanName: "my-span",
 			d: caddyfile.NewTestDispenser(`
 tracing {
-	span_name my-span
+	span my-span
 }`),
 			wantErr: false,
 		},
@@ -78,7 +77,7 @@ func TestOpenTelemetry_UnmarshalCaddyfile_Error(t *testing.T) {
 			name: "Missed argument",
 			d: caddyfile.NewTestDispenser(`
 tracing {
-	span_name
+	span
 }`),
 			wantErr: true,
 		},
@@ -96,16 +95,6 @@ tracing {
 func TestOpenTelemetry_Provision(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
-
-	if err := th.SetEnv(); err != nil {
-		t.Errorf("Environment variable set error: %v", err)
-	}
-
-	defer func() {
-		if err := th.UnsetEnv(); err != nil {
-			t.Errorf("Environment variable unset error: %v", err)
-		}
-	}()
 
 	ot := &Tracing{}
 
@@ -126,16 +115,6 @@ func TestOpenTelemetry_Provision_WithoutEnvironmentVariables(t *testing.T) {
 }
 
 func TestOpenTelemetry_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
-	if err := th.SetEnv(); err != nil {
-		t.Errorf("Environment variable set error: %v", err)
-	}
-
-	defer func() {
-		if err := th.UnsetEnv(); err != nil {
-			t.Errorf("Environment variable unset error: %v", err)
-		}
-	}()
-
 	ot := &Tracing{
 		SpanName: "mySpan",
 	}
@@ -166,16 +145,6 @@ func TestOpenTelemetry_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.
 }
 
 func TestOpenTelemetry_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
-	if err := th.SetEnv(); err != nil {
-		t.Errorf("Environment variable set error: %v", err)
-	}
-
-	defer func() {
-		if err := th.UnsetEnv(); err != nil {
-			t.Errorf("Environment variable unset error: %v", err)
-		}
-	}()
-
 	ot := &Tracing{
 		SpanName: "mySpan",
 	}
@@ -204,34 +173,4 @@ func TestOpenTelemetry_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) 
 	if err := ot.ServeHTTP(w, req, handler); err != nil {
 		t.Errorf("ServeHTTP error: %v", err)
 	}
-}
-
-type testHelper struct {
-	SetEnv   func() error
-	UnsetEnv func() error
-}
-
-var th = testHelper{
-	SetEnv: func() error {
-		if err := os.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"); err != nil {
-			return err
-		}
-
-		if err := os.Setenv("OTEL_PROPAGATORS", "tracecontext,baggage"); err != nil {
-			return err
-		}
-
-		return nil
-	},
-	UnsetEnv: func() error {
-		if err := os.Unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL"); err != nil {
-			return err
-		}
-
-		if err := os.Unsetenv("OTEL_PROPAGATORS"); err != nil {
-			return err
-		}
-
-		return nil
-	},
 }
