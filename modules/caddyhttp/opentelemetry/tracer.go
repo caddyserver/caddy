@@ -19,6 +19,7 @@ import (
 const (
 	webEngineName   = "Caddy"
 	defaultSpanName = "handler"
+	tracerName      = "github.com/caddyserver/caddy/v2/modules/caddyhttp/opentelemetry"
 )
 
 var (
@@ -62,7 +63,7 @@ func newOpenTelemetryWrapper(
 	ot.tracer = globalTracerProvider.getTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
 		sdktrace.WithResource(res),
-	).Tracer("github.com/caddyserver/caddy/v2/modules/caddyhttp/opentelemetry")
+	).Tracer(tracerName)
 
 	return ot, nil
 }
