@@ -13,8 +13,8 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(OpenTelemetry{})
-	httpcaddyfile.RegisterHandlerDirective("opentelemetry", parseCaddyfile)
+	caddy.RegisterModule(Tracing{})
+	httpcaddyfile.RegisterHandlerDirective("tracing", parseCaddyfile)
 }
 
 // OpenTelemetry implements an HTTP handler that adds support for the opentelemetry tracing.
