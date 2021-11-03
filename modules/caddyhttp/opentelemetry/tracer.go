@@ -125,11 +125,7 @@ func (ot *openTelemetryWrapper) newResource(
 		semconv.WebEngineVersionKey.String(webEngineVersion),
 	)
 
-	caddyResource, err := resource.New(ctx,
-		option,
-		resource.WithFromEnv(),
-	)
-
+	caddyResource, err := resource.New(ctx, option)
 	if err != nil {
 		return nil, err
 	}
