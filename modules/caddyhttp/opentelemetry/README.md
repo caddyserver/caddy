@@ -14,9 +14,6 @@ It is based on `https://github.com/open-telemetry/opentelemetry-go`.
 It can be configured using the environment variables defined
 by the [OpenTelemetry Environment Variable Specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md).
 
-IMPORTANT: Please, consider the version
-of [https://github.com/open-telemetry/opentelemetry-go](https://github.com/open-telemetry/opentelemetry-go). Some parts
-of the specification may be not implemented yet.
 
 If neither OTEL_EXPORTER_OTLP_INSECURE nor OTEL_EXPORTER_OTLP_SPAN_INSECURE is provided, then:
 
