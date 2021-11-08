@@ -31,7 +31,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func cmdUpgrade(_ Flags) (int, error) {
+func cmdUpgrade(fl Flags) (int, error) {
 	_, nonstandard, _, err := getModules()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unable to enumerate installed plugins: %v", err)
@@ -41,7 +41,7 @@ func cmdUpgrade(_ Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
 func cmdAddPackage(fl Flags) (int, error) {
@@ -64,7 +64,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 		pluginPkgs[arg] = struct{}{}
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
 func cmdRemovePackage(fl Flags) (int, error) {
@@ -88,10 +88,10 @@ func cmdRemovePackage(fl Flags) (int, error) {
 		delete(pluginPkgs, arg)
 	}
 
-	return upgradeBuild(pluginPkgs)
+	return upgradeBuild(pluginPkgs, fl)
 }
 
-func upgradeBuild(pluginPkgs map[string]struct{}) (int, error) {
+func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 	l := caddy.Log()
 
 	thisExecPath, err := os.Executable()
@@ -152,18 +152,23 @@ func upgradeBuild(pluginPkgs map[string]struct{}) (int, error) {
 	// use the new binary to print out version and module info
 	fmt.Print("\nModule versions:\n\n")
 	if err = listModules(thisExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute 'caddy list-modules': %v", err)
 	}
 	fmt.Println("\nVersion:")
 	if err = showVersion(thisExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to execute 'caddy version': %v", err)
 	}
 	fmt.Println()
 
 	// clean up the backup file
-	if err = os.Remove(backupExecPath); err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
+	if !fl.Bool("keep-backup") {
+		if err = removeCaddyBinary(backupExecPath); err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("download succeeded, but unable to clean up backup binary: %v", err)
+		}
+	} else {
+		l.Info("skipped cleaning up the backup file", zap.String("backup_path", backupExecPath))
 	}
+
 	l.Info("upgrade successful; please restart any running Caddy instances", zap.String("executable", thisExecPath))
 
 	return caddy.ExitCodeSuccess, nil
@@ -223,22 +228,14 @@ func listModules(path string) error {
 	cmd := exec.Command(path, "list-modules", "--versions", "--skip-standard")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	return nil
+	return cmd.Run()
 }
 
 func showVersion(path string) error {
 	cmd := exec.Command(path, "version")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("download succeeded, but unable to execute: %v", err)
-	}
-	return nil
+	return cmd.Run()
 }
 
 func downloadBuild(qs url.Values) (*http.Response, error) {
