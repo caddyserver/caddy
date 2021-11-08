@@ -298,7 +298,7 @@ Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
-			fs.Bool("skip-cleanup", false, "Skips removing the backed up binary")
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
 			return fs
 		}(),
 	})
@@ -315,7 +315,7 @@ already included. EXPERIMENTAL: May be changed or removed.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("add-package", flag.ExitOnError)
-			fs.Bool("skip-cleanup", false, "Skips removing the backed up binary")
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
 			return fs
 		}(),
 	})
@@ -332,7 +332,7 @@ EXPERIMENTAL: May be changed or removed.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("remove-package", flag.ExitOnError)
-			fs.Bool("skip-cleanup", false, "Skips removing the backed up binary")
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
 			return fs
 		}(),
 	})
