@@ -258,6 +258,21 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			match:  MatchPath{"/foo*"},
+			input:  "//foo/bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo*"},
+			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo*"},
+			input:  "/%2F/foo",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"*"},
 			input:  "/",
 			expect: true,
@@ -326,13 +341,28 @@ func TestPathREMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{MatchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/foo"}},
 			input:  "/foo",
 			expect: true,
 		},
 		{
-			match:  MatchPathRE{MatchRegexp{Pattern: "/foo"}},
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/foo"}},
 			input:  "/foo/",
+			expect: true,
+		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/foo"}},
+			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/foo"}},
+			input:  "//foo/",
+			expect: true,
+		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/foo"}},
+			input:  "/%2F/foo/",
 			expect: true,
 		},
 		{
