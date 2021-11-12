@@ -137,12 +137,7 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	l, err := fsrv.directoryListing(files, canGoUp, root, urlPath, repl)
-	if err != nil {
-		return browseTemplateContext{}, err
-	}
-
-	return l, nil
+	return fsrv.directoryListing(files, canGoUp, root, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
