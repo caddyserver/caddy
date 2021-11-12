@@ -432,25 +432,27 @@ func (app *App) Stop() error {
 	// repeated attempts (the bug manifested after a config reload; i.e.
 	// reusing a http3 server or listener was problematic), but it seems
 	// to be working fine now
-	for _, s := range app.h3servers {
-		// TODO: CloseGracefully, once implemented upstream
-		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-		err := s.Close()
-		if err != nil {
-			return err
-		}
-	}
+	// UPDATE: no need to extra closing servers and listeners as they already closing
+	// in lucas-clemente/quic-go@v0.23.0/http3/server.go L:413
+	//for _, s := range app.h3servers {
+	//	// TODO: CloseGracefully, once implemented upstream
+	//	// (see https://github.com/lucas-clemente/quic-go/issues/2103)
+	//	err := s.Close()
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	// closing an http3.Server does not close their underlying listeners
 	// since apparently the listener can be used both by servers and
 	// clients at the same time; so we need to manually call Close()
 	// on the underlying h3 listeners (see lucas-clemente/quic-go#2103)
-	for _, pc := range app.h3listeners {
-		err := pc.Close()
-		if err != nil {
-			return err
-		}
-	}
+	//for _, pc := range app.h3listeners {
+	//	err := pc.Close()
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 	return nil
 }
 
