@@ -188,38 +188,38 @@ type RespHeaderOps struct {
 func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	// add
 	for fieldName, vals := range ops.Add {
-		fieldName = repl.ReplaceAll(fieldName, "")
+		fieldName = repl.ReplaceKnown(fieldName, "")
 		for _, v := range vals {
-			hdr.Add(fieldName, repl.ReplaceAll(v, ""))
+			hdr.Add(fieldName, repl.ReplaceKnown(v, ""))
 		}
 	}
 
 	// set
 	for fieldName, vals := range ops.Set {
-		fieldName = repl.ReplaceAll(fieldName, "")
+		fieldName = repl.ReplaceKnown(fieldName, "")
 		var newVals []string
 		for i := range vals {
 			// append to new slice so we don't overwrite
 			// the original values in ops.Set
-			newVals = append(newVals, repl.ReplaceAll(vals[i], ""))
+			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
 		}
 		hdr.Set(fieldName, strings.Join(newVals, ","))
 	}
 
 	// delete
 	for _, fieldName := range ops.Delete {
-		hdr.Del(repl.ReplaceAll(fieldName, ""))
+		hdr.Del(repl.ReplaceKnown(fieldName, ""))
 	}
 
 	// replace
 	for fieldName, replacements := range ops.Replace {
-		fieldName = http.CanonicalHeaderKey(repl.ReplaceAll(fieldName, ""))
+		fieldName = http.CanonicalHeaderKey(repl.ReplaceKnown(fieldName, ""))
 
 		// all fields...
 		if fieldName == "*" {
 			for _, r := range replacements {
-				search := repl.ReplaceAll(r.Search, "")
-				replace := repl.ReplaceAll(r.Replace, "")
+				search := repl.ReplaceKnown(r.Search, "")
+				replace := repl.ReplaceKnown(r.Replace, "")
 				for fieldName, vals := range hdr {
 					for i := range vals {
 						if r.re != nil {
@@ -235,8 +235,8 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 
 		// ...or only with the named field
 		for _, r := range replacements {
-			search := repl.ReplaceAll(r.Search, "")
-			replace := repl.ReplaceAll(r.Replace, "")
+			search := repl.ReplaceKnown(r.Search, "")
+			replace := repl.ReplaceKnown(r.Replace, "")
 			for hdrFieldName, vals := range hdr {
 				// see issue #4330 for why we don't simply use hdr[fieldName]
 				if http.CanonicalHeaderKey(hdrFieldName) != fieldName {

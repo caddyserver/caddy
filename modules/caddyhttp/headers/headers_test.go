@@ -182,11 +182,31 @@ func TestHandler(t *testing.T) {
 				"Other-Header":     []string{"issue4330"},
 			},
 		},
+		{
+			handler: Handler{
+				Response: &RespHeaderOps{
+					HeaderOps: &HeaderOps{
+						Set: http.Header{
+							"WithReplace":   []string{"an actual {repl}"},
+							"Straight-JSON": []string{`{"foo": "bar"}`},
+							"Escaped":       []string{`\{"foo": "bar"}`},
+						},
+					},
+				},
+			},
+			respHeader: http.Header{},
+			expectedRespHeader: http.Header{
+				"Withreplace":   []string{"an actual replacement"},
+				"Straight-Json": []string{`{"foo": "bar"}`},
+				"Escaped":       []string{`{"foo": "bar"}`},
+			},
+		},
 	} {
 		rr := httptest.NewRecorder()
 
 		req := &http.Request{Header: tc.reqHeader}
 		repl := caddy.NewReplacer()
+		repl.Set("repl", "replacement")
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
