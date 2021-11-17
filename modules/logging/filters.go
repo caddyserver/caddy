@@ -262,8 +262,8 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	for _, a := range m.Actions {
 		switch a.Type {
 		case ReplaceType:
-			if _, ok := q[a.Parameter]; ok {
-				q.Set(a.Parameter, a.Value)
+			for i := range q[a.Parameter] {
+				q[a.Parameter][i] = a.Value
 			}
 
 		case DeleteType:
