@@ -16,6 +16,7 @@ package logging
 
 import (
 	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
@@ -27,6 +28,7 @@ func init() {
 	caddy.RegisterModule(DeleteFilter{})
 	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
+	caddy.RegisterModule(QueryFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -185,15 +187,107 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
+type ActionType string
+
+const (
+	ReplaceType ActionType = "replace"
+	DeleteType  ActionType = "delete"
+)
+
+type queryFilterAction struct {
+	Type      ActionType `json:"type"`
+	Parameter string     `json:"parameter"`
+	Value     string     `json:"value,omitempty"`
+}
+
+// QueryFilter is a Caddy log field filter that
+// filters query parameters.
+type QueryFilter struct {
+	Actions []queryFilterAction `json:"actions"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (QueryFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.query",
+		New: func() caddy.Module { return new(QueryFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			qfa := queryFilterAction{}
+			switch d.Val() {
+			case "replace":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = ReplaceType
+				qfa.Parameter = d.Val()
+
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				qfa.Value = d.Val()
+
+			case "delete":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = DeleteType
+				qfa.Parameter = d.Val()
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+
+			m.Actions = append(m.Actions, qfa)
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
+	u, err := url.Parse(in.String)
+	if err != nil {
+		return in
+	}
+
+	q := u.Query()
+	for _, a := range m.Actions {
+		switch a.Type {
+		case ReplaceType:
+			if q.Has(a.Parameter) {
+				q.Set(a.Parameter, a.Value)
+			}
+
+		case DeleteType:
+			q.Del(a.Parameter)
+		}
+	}
+
+	u.RawQuery = q.Encode()
+	in.String = u.String()
+
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
 	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
+	_ LogFieldFilter = (*QueryFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
 )
