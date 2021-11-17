@@ -3,6 +3,7 @@ package logging
 import (
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -65,5 +66,15 @@ func TestValidateCookieFilter(t *testing.T) {
 	}}
 	if f.Validate() == nil {
 		t.Fatalf("unknown action type must be invalid")
+	}
+}
+
+func TestRegexpFilter(t *testing.T) {
+	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
+	f.Provision(caddy.Context{})
+
+	out := f.Filter(zapcore.Field{String: "foo-secret-bar"})
+	if out.String != "foo-REDACTED-bar" {
+		t.Fatalf("field has not been filtered: %s", out.String)
 	}
 }

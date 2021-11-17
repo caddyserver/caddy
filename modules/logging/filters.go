@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
@@ -32,6 +33,7 @@ func init() {
 	caddy.RegisterModule(IPMaskFilter{})
 	caddy.RegisterModule(QueryFilter{})
 	caddy.RegisterModule(CookieFilter{})
+	caddy.RegisterModule(RegexpFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -426,6 +428,58 @@ OUTER:
 	return in
 }
 
+// RegexpFilter is a Caddy log field filter that
+// replaces the field matching the provided regexp with the indicated string.
+type RegexpFilter struct {
+	// The regular expression pattern defining what to replace.
+	RawRegexp string `json:"regexp,omitempty"`
+
+	// The value to use as replacement
+	Value string `json:"value,omitempty"`
+
+	regexp *regexp.Regexp
+}
+
+// CaddyModule returns the Caddy module information.
+func (RegexpFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.regexp",
+		New: func() caddy.Module { return new(RegexpFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (f *RegexpFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			f.RawRegexp = d.Val()
+		}
+		if d.NextArg() {
+			f.Value = d.Val()
+		}
+	}
+	return nil
+}
+
+// Provision compiles m's regexp.
+func (m *RegexpFilter) Provision(ctx caddy.Context) error {
+	r, err := regexp.Compile(m.RawRegexp)
+	if err != nil {
+		return err
+	}
+
+	m.regexp = r
+
+	return nil
+}
+
+// Filter filters the input field with the replacement value if it matches the regexp.
+func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
+	in.String = f.regexp.ReplaceAllString(in.String, f.Value)
+
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
@@ -433,14 +487,17 @@ var (
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 	_ LogFieldFilter = (*QueryFilter)(nil)
 	_ LogFieldFilter = (*CookieFilter)(nil)
+	_ LogFieldFilter = (*RegexpFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
+	_ caddyfile.Unmarshaler = (*RegexpFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
+	_ caddy.Provisioner = (*RegexpFilter)(nil)
 
 	_ caddy.Validator = (*QueryFilter)(nil)
 )
