@@ -190,19 +190,29 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 type ActionType string
 
 const (
+	// Replace value(s) of query parameter(s).
 	ReplaceType ActionType = "replace"
-	DeleteType  ActionType = "delete"
+	// Delete query parameter(s).
+	DeleteType ActionType = "delete"
 )
 
 type queryFilterAction struct {
-	Type      ActionType `json:"type"`
-	Parameter string     `json:"parameter"`
-	Value     string     `json:"value,omitempty"`
+	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
+	Type ActionType `json:"type"`
+	// The name of the query parameter.
+	Parameter string `json:"parameter"`
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
 }
 
 // QueryFilter is a Caddy log field filter that
-// filters query parameters.
+// filters query parameters from an URL.
+// It updates the filtered URL to remove or replace query parameters containing sensitive data.
+// For instance, it can be used to redact OAuth access tokens, session IDs, magic links tokens
+// or JWT when passed as query parameters (which is generally considered a bad practice, but cannot
+// always be avoided).
 type QueryFilter struct {
+	// A list of actions to apply to the query parameters of the URL.
 	Actions []queryFilterAction `json:"actions"`
 }
 
