@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"crypto/tls"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap/zapcore"
 )
@@ -39,6 +40,8 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // LoggableHTTPHeader makes an HTTP header loggable with zap.Object().
+// Headers with potentially sensitive information (Cookie, Authorization,
+// and Proxy-Authorization) are logged with empty values.
 type LoggableHTTPHeader http.Header
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
@@ -47,6 +50,10 @@ func (h LoggableHTTPHeader) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 		return nil
 	}
 	for key, val := range h {
+		switch strings.ToLower(key) {
+		case "cookie", "authorization", "proxy-authorization":
+			val = []string{}
+		}
 		enc.AddArray(key, LoggableStringArray(val))
 	}
 	return nil
@@ -75,8 +82,6 @@ func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 	enc.AddUint16("version", t.Version)
 	enc.AddUint16("cipher_suite", t.CipherSuite)
 	enc.AddString("proto", t.NegotiatedProtocol)
-	// NegotiatedProtocolIsMutual is deprecated - it's always true
-	enc.AddBool("proto_mutual", true)
 	enc.AddString("server_name", t.ServerName)
 	if len(t.PeerCertificates) > 0 {
 		enc.AddString("client_common_name", t.PeerCertificates[0].Subject.CommonName)
