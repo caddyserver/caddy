@@ -209,18 +209,21 @@ func (a ActionType) IsValid() error {
 type queryFilterAction struct {
 	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
 	Type ActionType `json:"type"`
+
 	// The name of the query parameter.
 	Parameter string `json:"parameter"`
+
 	// The value to use as replacement if the action is `replace`.
 	Value string `json:"value,omitempty"`
 }
 
-// QueryFilter is a Caddy log field filter that
-// filters query parameters from an URL.
-// It updates the filtered URL to remove or replace query parameters containing sensitive data.
-// For instance, it can be used to redact OAuth access tokens, session IDs, magic links tokens
-// or JWT when passed as query parameters (which is generally considered a bad practice, but cannot
-// always be avoided).
+// QueryFilter is a Caddy log field filter that filters
+// query parameters from a URL.
+//
+// This filter updates the logged URL string to remove or replace query
+// parameters containing sensitive data. For instance, it can be used
+// to redact any kind of secrets which were passed as query parameters,
+// such as OAuth access tokens, session IDs, magic link tokens, etc.
 type QueryFilter struct {
 	// A list of actions to apply to the query parameters of the URL.
 	Actions []queryFilterAction `json:"actions"`
