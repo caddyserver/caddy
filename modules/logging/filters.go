@@ -15,6 +15,7 @@
 package logging
 
 import (
+	"errors"
 	"net"
 	"net/url"
 	"strconv"
@@ -196,6 +197,15 @@ const (
 	DeleteType ActionType = "delete"
 )
 
+func (a ActionType) IsValid() error {
+	switch a {
+	case ReplaceType, DeleteType:
+		return nil
+	}
+
+	return errors.New("invalid action type")
+}
+
 type queryFilterAction struct {
 	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
 	Type ActionType `json:"type"`
@@ -214,6 +224,17 @@ type queryFilterAction struct {
 type QueryFilter struct {
 	// A list of actions to apply to the query parameters of the URL.
 	Actions []queryFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *QueryFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -300,4 +321,6 @@ var (
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
+
+	_ caddy.Validator = (*QueryFilter)(nil)
 )
