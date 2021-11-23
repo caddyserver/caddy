@@ -8,10 +8,10 @@ import (
 
 func TestQueryFilter(t *testing.T) {
 	f := QueryFilter{[]queryFilterAction{
-		{ReplaceType, "foo", "REDACTED"},
-		{ReplaceType, "notexist", "REDACTED"},
-		{DeleteType, "bar", ""},
-		{DeleteType, "notexist", ""},
+		{ReplaceAction, "foo", "REDACTED"},
+		{ReplaceAction, "notexist", "REDACTED"},
+		{DeleteAction, "bar", ""},
+		{DeleteAction, "notexist", ""},
 	}}
 
 	if f.Validate() != nil {
