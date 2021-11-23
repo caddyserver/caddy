@@ -192,9 +192,9 @@ type ActionType string
 
 const (
 	// Replace value(s) of query parameter(s).
-	ReplaceType ActionType = "replace"
+	ReplaceAction ActionType = "replace"
 	// Delete query parameter(s).
-	DeleteType ActionType = "delete"
+	DeleteAction ActionType = "delete"
 )
 
 func (a ActionType) IsValid() error {
