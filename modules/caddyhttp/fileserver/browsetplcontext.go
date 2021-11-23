@@ -77,9 +77,9 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			Mode:      f.Mode(),
 		})
 	}
-
+	name, _ := url.PathUnescape(urlPath)
 	return browseTemplateContext{
-		Name:     path.Base(urlPath),
+		Name:     path.Base(name),
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
 		Items:    fileInfos,
@@ -133,13 +133,16 @@ func (l browseTemplateContext) Breadcrumbs() []crumb {
 	if lpath[len(lpath)-1] == '/' {
 		lpath = lpath[:len(lpath)-1]
 	}
-
 	parts := strings.Split(lpath, "/")
 	result := make([]crumb, len(parts))
 	for i, p := range parts {
 		if i == 0 && p == "" {
 			p = "/"
 		}
+		// the directory name could include an encoded slash in its path,
+		// so the item name should be unescaped in the loop rather than unescaping the
+		// entire path outside the loop.
+		p, _ = url.PathUnescape(p)
 		lnk := strings.Repeat("../", len(parts)-i-1)
 		result[i] = crumb{Link: lnk, Text: p}
 	}
