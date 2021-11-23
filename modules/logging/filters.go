@@ -188,18 +188,18 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
-type FilterAction string
+type filterAction string
 
 const (
 	// Replace value(s) of query parameter(s).
-	ReplaceAction FilterAction = "replace"
+	replaceAction filterAction = "replace"
 	// Delete query parameter(s).
-	DeleteAction FilterAction = "delete"
+	deleteAction filterAction = "delete"
 )
 
-func (a FilterAction) IsValid() error {
+func (a filterAction) IsValid() error {
 	switch a {
-	case ReplaceAction, DeleteAction:
+	case replaceAction, deleteAction:
 		return nil
 	}
 
@@ -208,7 +208,7 @@ func (a FilterAction) IsValid() error {
 
 type queryFilterAction struct {
 	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
-	Type FilterAction `json:"type"`
+	Type filterAction `json:"type"`
 
 	// The name of the query parameter.
 	Parameter string `json:"parameter"`
@@ -259,7 +259,7 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
-				qfa.Type = ReplaceAction
+				qfa.Type = replaceAction
 				qfa.Parameter = d.Val()
 
 				if !d.NextArg() {
@@ -272,7 +272,7 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
-				qfa.Type = DeleteAction
+				qfa.Type = deleteAction
 				qfa.Parameter = d.Val()
 
 			default:
@@ -295,12 +295,12 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	q := u.Query()
 	for _, a := range m.Actions {
 		switch a.Type {
-		case ReplaceAction:
+		case replaceAction:
 			for i := range q[a.Parameter] {
 				q[a.Parameter][i] = a.Value
 			}
 
-		case DeleteAction:
+		case deleteAction:
 			q.Del(a.Parameter)
 		}
 	}
