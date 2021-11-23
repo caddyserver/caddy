@@ -188,7 +188,7 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
-type ActionType string
+type FilterAction string
 
 const (
 	// Replace value(s) of query parameter(s).
