@@ -15,7 +15,9 @@
 package logging
 
 import (
+	"errors"
 	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
@@ -27,6 +29,7 @@ func init() {
 	caddy.RegisterModule(DeleteFilter{})
 	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
+	caddy.RegisterModule(QueryFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -185,15 +188,142 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
+type filterAction string
+
+const (
+	// Replace value(s) of query parameter(s).
+	replaceAction filterAction = "replace"
+	// Delete query parameter(s).
+	deleteAction filterAction = "delete"
+)
+
+func (a filterAction) IsValid() error {
+	switch a {
+	case replaceAction, deleteAction:
+		return nil
+	}
+
+	return errors.New("invalid action type")
+}
+
+type queryFilterAction struct {
+	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
+	Type filterAction `json:"type"`
+
+	// The name of the query parameter.
+	Parameter string `json:"parameter"`
+
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
+}
+
+// QueryFilter is a Caddy log field filter that filters
+// query parameters from a URL.
+//
+// This filter updates the logged URL string to remove or replace query
+// parameters containing sensitive data. For instance, it can be used
+// to redact any kind of secrets which were passed as query parameters,
+// such as OAuth access tokens, session IDs, magic link tokens, etc.
+type QueryFilter struct {
+	// A list of actions to apply to the query parameters of the URL.
+	Actions []queryFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *QueryFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (QueryFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.query",
+		New: func() caddy.Module { return new(QueryFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			qfa := queryFilterAction{}
+			switch d.Val() {
+			case "replace":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = replaceAction
+				qfa.Parameter = d.Val()
+
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				qfa.Value = d.Val()
+
+			case "delete":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = deleteAction
+				qfa.Parameter = d.Val()
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+
+			m.Actions = append(m.Actions, qfa)
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
+	u, err := url.Parse(in.String)
+	if err != nil {
+		return in
+	}
+
+	q := u.Query()
+	for _, a := range m.Actions {
+		switch a.Type {
+		case replaceAction:
+			for i := range q[a.Parameter] {
+				q[a.Parameter][i] = a.Value
+			}
+
+		case deleteAction:
+			q.Del(a.Parameter)
+		}
+	}
+
+	u.RawQuery = q.Encode()
+	in.String = u.String()
+
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
 	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
+	_ LogFieldFilter = (*QueryFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
+
+	_ caddy.Validator = (*QueryFilter)(nil)
 )
