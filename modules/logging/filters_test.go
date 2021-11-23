@@ -39,3 +39,31 @@ func TestValidateQueryFilter(t *testing.T) {
 		t.Fatalf("unknown action type must be invalid")
 	}
 }
+
+func TestCookieFilter(t *testing.T) {
+	f := CookieFilter{[]cookieFilterAction{
+		{replaceAction, "foo", "REDACTED"},
+		{deleteAction, "bar", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{String: "foo=a; foo=b; bar=c; bar=d; baz=e"})
+	if out.String != "foo=REDACTED; foo=REDACTED; baz=e" {
+		t.Fatalf("cookies have not been filtered: %s", out.String)
+	}
+}
+
+func TestValidateCookieFilter(t *testing.T) {
+	f := CookieFilter{[]cookieFilterAction{
+		{},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("empty action type must be invalid")
+	}
+
+	f = CookieFilter{[]cookieFilterAction{
+		{Type: "foo"},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("unknown action type must be invalid")
+	}
+}

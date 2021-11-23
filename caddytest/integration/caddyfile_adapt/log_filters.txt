@@ -11,6 +11,10 @@ log {
 			}
 			request>headers>Authorization replace REDACTED
 			request>headers>Server delete
+			request>headers>Cookie cookie {
+				replace foo REDACTED
+				delete bar
+			}
 			request>remote_addr ip_mask {
 				ipv4 24
 				ipv6 32
@@ -36,6 +40,20 @@ log {
 						"request\u003eheaders\u003eAuthorization": {
 							"filter": "replace",
 							"value": "REDACTED"
+						},
+						"request\u003eheaders\u003eCookie": {
+							"actions": [
+								{
+									"name": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"name": "bar",
+									"type": "delete"
+								}
+							],
+							"filter": "cookie"
 						},
 						"request\u003eheaders\u003eServer": {
 							"filter": "delete"

@@ -17,6 +17,7 @@ package logging
 import (
 	"errors"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 
@@ -30,6 +31,7 @@ func init() {
 	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
 	caddy.RegisterModule(QueryFilter{})
+	caddy.RegisterModule(CookieFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -311,17 +313,132 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
+type cookieFilterAction struct {
+	// `replace` to replace the value of the cookie or `delete` to remove it entirely.
+	Type filterAction `json:"type"`
+
+	// The name of the cookie.
+	Name string `json:"name"`
+
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
+}
+
+// CookieFilter is a Caddy log field filter that filters
+// cookies.
+//
+// This filter updates the logged HTTP header string
+// to remove or replace cookies containing sensitive data. For instance,
+// it can be used to redact any kind of secrets, such as session IDs.
+//
+// If several actions are configured for the same cookie name, only the first
+// will be applied.
+type CookieFilter struct {
+	// A list of actions to apply to the cookies.
+	Actions []cookieFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *CookieFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (CookieFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.cookie",
+		New: func() caddy.Module { return new(CookieFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			cfa := cookieFilterAction{}
+			switch d.Val() {
+			case "replace":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				cfa.Type = replaceAction
+				cfa.Name = d.Val()
+
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				cfa.Value = d.Val()
+
+			case "delete":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				cfa.Type = deleteAction
+				cfa.Name = d.Val()
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+
+			m.Actions = append(m.Actions, cfa)
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
+	originRequest := http.Request{Header: http.Header{"Cookie": []string{in.String}}}
+	cookies := originRequest.Cookies()
+	transformedRequest := http.Request{Header: make(http.Header)}
+
+OUTER:
+	for _, c := range cookies {
+		for _, a := range m.Actions {
+			if c.Name != a.Name {
+				continue
+			}
+
+			switch a.Type {
+			case replaceAction:
+				c.Value = a.Value
+				transformedRequest.AddCookie(c)
+				continue OUTER
+
+			case deleteAction:
+				continue OUTER
+			}
+		}
+
+		transformedRequest.AddCookie(c)
+	}
+
+	in.String = transformedRequest.Header.Get("Cookie")
+
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
 	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 	_ LogFieldFilter = (*QueryFilter)(nil)
+	_ LogFieldFilter = (*CookieFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
+	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
 
