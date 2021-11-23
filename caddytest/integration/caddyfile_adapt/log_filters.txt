@@ -5,6 +5,10 @@ log {
 	format filter {
 		wrap console
 		fields {
+			uri query {
+				replace foo REDACTED
+				delete bar
+			}
 			request>headers>Authorization replace REDACTED
 			request>headers>Server delete
 			request>remote_addr ip_mask {
@@ -40,6 +44,20 @@ log {
 							"filter": "ip_mask",
 							"ipv4_cidr": 24,
 							"ipv6_cidr": 32
+						},
+						"uri": {
+							"actions": [
+								{
+									"parameter": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"parameter": "bar",
+									"type": "delete"
+								}
+							],
+							"filter": "query"
 						}
 					},
 					"format": "filter",
