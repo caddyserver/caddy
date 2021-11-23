@@ -19,6 +19,7 @@ log {
 				ipv4 24
 				ipv6 32
 			}
+			request>headers>Regexp regexp secret REDACTED
 		}
 	}
 }
@@ -54,6 +55,11 @@ log {
 								}
 							],
 							"filter": "cookie"
+						},
+						"request\u003eheaders\u003eRegexp": {
+							"filter": "regexp",
+							"regexp": "secret",
+							"value": "REDACTED"
 						},
 						"request\u003eheaders\u003eServer": {
 							"filter": "delete"
