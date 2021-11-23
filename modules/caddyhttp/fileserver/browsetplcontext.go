@@ -24,10 +24,11 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
@@ -52,14 +53,18 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			fileCount++
 		}
 
-		fileIsSymlink := isSymlink(f)
 		size := f.Size()
+		fileIsSymlink := isSymlink(f)
 		if fileIsSymlink {
-			info, err := os.Stat(name)
-			if err != nil {
-				return browseTemplateContext{}, err
+			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
+			fileInfo, err := os.Stat(path)
+			if err == nil {
+				size = fileInfo.Size()
 			}
-			size = info.Size()
+			// An error most likely means the symlink target doesn't exist,
+			// which isn't entirely unusual and shouldn't fail the listing.
+			// In this case, just use the size of the symlink itself, which
+			// was already set above.
 		}
 
 		fileInfos = append(fileInfos, fileInfo{
@@ -80,7 +85,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 		Items:    fileInfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
-	}, nil
+	}
 }
 
 // browseTemplateContext provides the template context for directory listings.
