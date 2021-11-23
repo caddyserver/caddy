@@ -15,7 +15,9 @@
 package logging
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,6 +36,7 @@ func init() {
 	caddy.RegisterModule(QueryFilter{})
 	caddy.RegisterModule(CookieFilter{})
 	caddy.RegisterModule(RegexpFilter{})
+	caddy.RegisterModule(HashFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -62,6 +65,35 @@ func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Filter filters the input field.
 func (DeleteFilter) Filter(in zapcore.Field) zapcore.Field {
 	in.Type = zapcore.SkipType
+	return in
+}
+
+// hash returns the first 4 bytes of the SHA-256 hash of the given data as hexadecimal
+func hash(s string) string {
+	return fmt.Sprintf("%.4x", sha256.Sum256([]byte(s)))
+}
+
+// HashFilter is a Caddy log field filter that
+// replaces the field with the initial 4 bytes of the SHA-256 hash of the content.
+type HashFilter struct {
+}
+
+// CaddyModule returns the Caddy module information.
+func (HashFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.hash",
+		New: func() caddy.Module { return new(HashFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
+// Filter filters the input field with the replacement value.
+func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
+	in.String = hash(in.String)
 	return in
 }
 
@@ -195,15 +227,19 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 type filterAction string
 
 const (
-	// Replace value(s) of query parameter(s).
+	// Replace value(s).
 	replaceAction filterAction = "replace"
-	// Delete query parameter(s).
+
+	// Hash value(s).
+	hashAction filterAction = "hash"
+
+	// Delete.
 	deleteAction filterAction = "delete"
 )
 
 func (a filterAction) IsValid() error {
 	switch a {
-	case replaceAction, deleteAction:
+	case replaceAction, deleteAction, hashAction:
 		return nil
 	}
 
@@ -211,7 +247,7 @@ func (a filterAction) IsValid() error {
 }
 
 type queryFilterAction struct {
-	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
+	// `replace` to replace the value(s) associated with the parameter(s), `hash` to replace them with the 4 initial bytes of the SHA-156 of their content or `delete` to remove them entirely.
 	Type filterAction `json:"type"`
 
 	// The name of the query parameter.
@@ -224,9 +260,9 @@ type queryFilterAction struct {
 // QueryFilter is a Caddy log field filter that filters
 // query parameters from a URL.
 //
-// This filter updates the logged URL string to remove or replace query
-// parameters containing sensitive data. For instance, it can be used
-// to redact any kind of secrets which were passed as query parameters,
+// This filter updates the logged URL string to remove, replace or hash
+// query parameters containing sensitive data. For instance, it can be
+// used to redact any kind of secrets which were passed as query parameters,
 // such as OAuth access tokens, session IDs, magic link tokens, etc.
 type QueryFilter struct {
 	// A list of actions to apply to the query parameters of the URL.
@@ -271,6 +307,14 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				qfa.Value = d.Val()
 
+			case "hash":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = hashAction
+				qfa.Parameter = d.Val()
+
 			case "delete":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -304,6 +348,11 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 				q[a.Parameter][i] = a.Value
 			}
 
+		case hashAction:
+			for i := range q[a.Parameter] {
+				q[a.Parameter][i] = hash(a.Value)
+			}
+
 		case deleteAction:
 			q.Del(a.Parameter)
 		}
@@ -316,7 +365,7 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 type cookieFilterAction struct {
-	// `replace` to replace the value of the cookie or `delete` to remove it entirely.
+	// `replace` to replace the value of the cookie, `hash` to replace it with the 4 initial bytes of the SHA-156 of its content or `delete` to remove it entirely.
 	Type filterAction `json:"type"`
 
 	// The name of the cookie.
@@ -330,7 +379,7 @@ type cookieFilterAction struct {
 // cookies.
 //
 // This filter updates the logged HTTP header string
-// to remove or replace cookies containing sensitive data. For instance,
+// to remove, replace or hash cookies containing sensitive data. For instance,
 // it can be used to redact any kind of secrets, such as session IDs.
 //
 // If several actions are configured for the same cookie name, only the first
@@ -378,6 +427,14 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				cfa.Value = d.Val()
 
+			case "hash":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				cfa.Type = hashAction
+				cfa.Name = d.Val()
+
 			case "delete":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -412,6 +469,11 @@ OUTER:
 			switch a.Type {
 			case replaceAction:
 				c.Value = a.Value
+				transformedRequest.AddCookie(c)
+				continue OUTER
+
+			case hashAction:
+				c.Value = hash(c.Value)
 				transformedRequest.AddCookie(c)
 				continue OUTER
 

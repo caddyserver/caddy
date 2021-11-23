@@ -8,18 +8,21 @@ log {
 			uri query {
 				replace foo REDACTED
 				delete bar
+				hash baz
 			}
 			request>headers>Authorization replace REDACTED
 			request>headers>Server delete
 			request>headers>Cookie cookie {
 				replace foo REDACTED
 				delete bar
+				hash baz
 			}
 			request>remote_addr ip_mask {
 				ipv4 24
 				ipv6 32
 			}
 			request>headers>Regexp regexp secret REDACTED
+			request>headers>Hash hash
 		}
 	}
 }
@@ -52,9 +55,16 @@ log {
 								{
 									"name": "bar",
 									"type": "delete"
+								},
+								{
+									"name": "baz",
+									"type": "hash"
 								}
 							],
 							"filter": "cookie"
+						},
+						"request\u003eheaders\u003eHash": {
+							"filter": "hash"
 						},
 						"request\u003eheaders\u003eRegexp": {
 							"filter": "regexp",
@@ -79,6 +89,10 @@ log {
 								{
 									"parameter": "bar",
 									"type": "delete"
+								},
+								{
+									"parameter": "baz",
+									"type": "hash"
 								}
 							],
 							"filter": "query"
