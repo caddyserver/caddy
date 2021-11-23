@@ -24,10 +24,11 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
+func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
@@ -52,14 +53,18 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			fileCount++
 		}
 
-		fileIsSymlink := isSymlink(f)
 		size := f.Size()
+		fileIsSymlink := isSymlink(f)
 		if fileIsSymlink {
-			info, err := os.Stat(name)
-			if err != nil {
-				return browseTemplateContext{}, err
+			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
+			fileInfo, err := os.Stat(path)
+			if err == nil {
+				size = fileInfo.Size()
 			}
-			size = info.Size()
+			// An error most likely means the symlink target doesn't exist,
+			// which isn't entirely unusual and shouldn't fail the listing.
+			// In this case, just use the size of the symlink itself, which
+			// was already set above.
 		}
 
 		fileInfos = append(fileInfos, fileInfo{
@@ -72,15 +77,15 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			Mode:      f.Mode(),
 		})
 	}
-
+	name, _ := url.PathUnescape(urlPath)
 	return browseTemplateContext{
-		Name:     path.Base(urlPath),
+		Name:     path.Base(name),
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
 		Items:    fileInfos,
 		NumDirs:  dirCount,
 		NumFiles: fileCount,
-	}, nil
+	}
 }
 
 // browseTemplateContext provides the template context for directory listings.
@@ -128,13 +133,16 @@ func (l browseTemplateContext) Breadcrumbs() []crumb {
 	if lpath[len(lpath)-1] == '/' {
 		lpath = lpath[:len(lpath)-1]
 	}
-
 	parts := strings.Split(lpath, "/")
 	result := make([]crumb, len(parts))
 	for i, p := range parts {
 		if i == 0 && p == "" {
 			p = "/"
 		}
+		// the directory name could include an encoded slash in its path,
+		// so the item name should be unescaped in the loop rather than unescaping the
+		// entire path outside the loop.
+		p, _ = url.PathUnescape(p)
 		lnk := strings.Repeat("../", len(parts)-i-1)
 		result[i] = crumb{Link: lnk, Text: p}
 	}
