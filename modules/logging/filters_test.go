@@ -51,3 +51,19 @@ func TestCookieFilter(t *testing.T) {
 		t.Fatalf("cookies have not been filtered: %s", out.String)
 	}
 }
+
+func TestValidateCookieFilter(t *testing.T) {
+	f := CookieFilter{[]cookieFilterAction{
+		{},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("empty action type must be invalid")
+	}
+
+	f = CookieFilter{[]cookieFilterAction{
+		{Type: "foo"},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("unknown action type must be invalid")
+	}
+}

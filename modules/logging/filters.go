@@ -314,15 +314,39 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 type cookieFilterAction struct {
-	Type  filterAction `json:"type"`
-	Name  string       `json:"name"`
-	Value string       `json:"value,omitempty"`
+	// `replace` to replace the value of the cookie or `delete` to remove it entirely.
+	Type filterAction `json:"type"`
+
+	// The name of the cookie.
+	Name string `json:"name"`
+
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
 }
 
-// CookiesFilter is a Caddy log field filter that
-// filters cookies.
+// CookieFilter is a Caddy log field filter that filters
+// cookies.
+//
+// This filter updates the logged HTTP header string
+// to remove or replace cookies containing sensitive data. For instance,
+// it can be used to redact any kind of secrets, such as session IDs.
+//
+// If several actions are configured for the same cookie name, only the first
+// will be applied.
 type CookieFilter struct {
+	// A list of actions to apply to the cookies.
 	Actions []cookieFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *CookieFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // CaddyModule returns the Caddy module information.
