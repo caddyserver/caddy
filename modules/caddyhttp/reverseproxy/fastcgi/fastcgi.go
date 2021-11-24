@@ -64,7 +64,7 @@ type Transport struct {
 	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
 
-	// The duration used to set a deadline when connecting to an upstream.
+	// The duration used to set a deadline when connecting to an upstream. Default: `3s`.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
 	// The duration used to set a deadline when reading from the FastCGI server.
@@ -88,13 +88,22 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 // Provision sets up t.
 func (t *Transport) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger(t)
+
 	if t.Root == "" {
 		t.Root = "{http.vars.root}"
 	}
+
 	t.serverSoftware = "Caddy"
 	if mod := caddy.GoModule(); mod.Version != "" {
 		t.serverSoftware += "/" + mod.Version
 	}
+
+	// Set a relatively short default dial timeout.
+	// This is helpful to make load-balancer retries more speedy.
+	if t.DialTimeout == 0 {
+		t.DialTimeout = caddy.Duration(3 * time.Second)
+	}
+
 	return nil
 }
 
