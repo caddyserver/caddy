@@ -204,14 +204,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up transport
 	if h.Transport == nil {
-		t := &HTTPTransport{
-			KeepAlive: &KeepAlive{
-				ProbeInterval:       caddy.Duration(30 * time.Second),
-				IdleConnTimeout:     caddy.Duration(2 * time.Minute),
-				MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
-			},
-			DialTimeout: caddy.Duration(10 * time.Second),
-		}
+		t := &HTTPTransport{}
 		err := t.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning default transport: %v", err)

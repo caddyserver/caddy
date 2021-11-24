@@ -22,6 +22,7 @@ https://example.com {
 			compression off
 			max_conns_per_host 5
 			keepalive_idle_conns_per_host 2
+			keepalive_interval 30s
 		}
 	}
 }
@@ -80,7 +81,8 @@ https://example.com {
 														"dial_timeout": 3000000000,
 														"expect_continue_timeout": 9000000000,
 														"keep_alive": {
-															"max_idle_conns_per_host": 2
+															"max_idle_conns_per_host": 2,
+															"probe_interval": 30000000000
 														},
 														"max_conns_per_host": 5,
 														"max_response_header_size": 30000000,
