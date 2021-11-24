@@ -26,44 +26,13 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// Host represents a remote host which can be proxied to.
-// Its methods must be safe for concurrent use.
-type Host interface {
-	// NumRequests returns the number of requests
-	// currently in process with the host.
-	NumRequests() int
-
-	// Fails returns the count of recent failures.
-	Fails() int
-
-	// Unhealthy returns true if the backend is unhealthy.
-	Unhealthy() bool
-
-	// CountRequest atomically counts the given number of
-	// requests as currently in process with the host. The
-	// count should not go below 0.
-	CountRequest(int) error
-
-	// CountFail atomically counts the given number of
-	// failures with the host. The count should not go
-	// below 0.
-	CountFail(int) error
-
-	// SetHealthy atomically marks the host as either
-	// healthy (true) or unhealthy (false). If the given
-	// status is the same, this should be a no-op and
-	// return false. It returns true if the status was
-	// changed; i.e. if it is now different from before.
-	SetHealthy(bool) (bool, error)
-}
-
 // UpstreamPool is a collection of upstreams.
 type UpstreamPool []*Upstream
 
 // Upstream bridges this proxy's configuration to the
 // state of the backend host it is correlated with.
 type Upstream struct {
-	Host `json:"-"`
+	*Host `json:"-"`
 
 	// The [network address](/docs/conventions#network-addresses)
 	// to dial to connect to the upstream. Must represent precisely
@@ -174,34 +143,33 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	}, nil
 }
 
-// upstreamHost is the basic, in-memory representation
-// of the state of a remote host. It implements the
-// Host interface.
-type upstreamHost struct {
+// Host is the basic, in-memory representation
+// of the state of a remote host.
+type Host struct {
 	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails       int64
 	unhealthy   int32
 }
 
 // NumRequests returns the number of active requests to the upstream.
-func (uh *upstreamHost) NumRequests() int {
-	return int(atomic.LoadInt64(&uh.numRequests))
+func (h *Host) NumRequests() int {
+	return int(atomic.LoadInt64(&h.numRequests))
 }
 
 // Fails returns the number of recent failures with the upstream.
-func (uh *upstreamHost) Fails() int {
-	return int(atomic.LoadInt64(&uh.fails))
+func (h *Host) Fails() int {
+	return int(atomic.LoadInt64(&h.fails))
 }
 
 // Unhealthy returns whether the upstream is healthy.
-func (uh *upstreamHost) Unhealthy() bool {
-	return atomic.LoadInt32(&uh.unhealthy) == 1
+func (h *Host) Unhealthy() bool {
+	return atomic.LoadInt32(&h.unhealthy) == 1
 }
 
 // CountRequest mutates the active request count by
 // delta. It returns an error if the adjustment fails.
-func (uh *upstreamHost) CountRequest(delta int) error {
-	result := atomic.AddInt64(&uh.numRequests, int64(delta))
+func (h *Host) CountRequest(delta int) error {
+	result := atomic.AddInt64(&h.numRequests, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -210,8 +178,8 @@ func (uh *upstreamHost) CountRequest(delta int) error {
 
 // CountFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
-func (uh *upstreamHost) CountFail(delta int) error {
-	result := atomic.AddInt64(&uh.fails, int64(delta))
+func (h *Host) CountFail(delta int) error {
+	result := atomic.AddInt64(&h.fails, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -220,12 +188,12 @@ func (uh *upstreamHost) CountFail(delta int) error {
 
 // SetHealthy sets the upstream has healthy or unhealthy
 // and returns true if the new value is different.
-func (uh *upstreamHost) SetHealthy(healthy bool) (bool, error) {
+func (h *Host) SetHealthy(healthy bool) (bool, error) {
 	var unhealthy, compare int32 = 1, 0
 	if healthy {
 		unhealthy, compare = 0, 1
 	}
-	swapped := atomic.CompareAndSwapInt32(&uh.unhealthy, compare, unhealthy)
+	swapped := atomic.CompareAndSwapInt32(&h.unhealthy, compare, unhealthy)
 	return swapped, nil
 }
 

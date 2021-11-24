@@ -81,6 +81,9 @@ type Handler struct {
 	// Upstreams is the list of backends to proxy to.
 	Upstreams UpstreamPool `json:"upstreams,omitempty"`
 
+	// TODO: godoc
+	DynamicUpstreamsRaw json.RawMessage `json:"dynamic_upstreams,omitempty" caddy:"namespace=http.reverse_proxy.upstreams inline_key=source"`
+
 	// Adjusts how often to flush the response buffer. By default,
 	// no periodic flushing is done. A negative value disables
 	// response buffering, and flushes immediately after each
@@ -130,8 +133,9 @@ type Handler struct {
 	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
-	Transport http.RoundTripper `json:"-"`
-	CB        CircuitBreaker    `json:"-"`
+	Transport        http.RoundTripper `json:"-"`
+	CB               CircuitBreaker    `json:"-"`
+	DynamicUpstreams UpstreamSource    `json:"-"`
 
 	// Holds the named response matchers from the Caddyfile while adapting
 	responseMatchers map[string]caddyhttp.ResponseMatcher
@@ -191,6 +195,13 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 		h.CB = mod.(CircuitBreaker)
 	}
+	if h.DynamicUpstreamsRaw != nil {
+		mod, err := ctx.LoadModule(h, "DynamicUpstreamsRaw")
+		if err != nil {
+			return fmt.Errorf("loading upstream source module: %v", err)
+		}
+		h.DynamicUpstreams = mod.(UpstreamSource)
+	}
 
 	// ensure any embedded headers handler module gets provisioned
 	// (see https://caddy.community/t/set-cookie-manipulation-in-reverse-proxy/7666?u=matt
@@ -238,10 +249,10 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
-		var host Host = new(upstreamHost)
+		host := new(Host)
 		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
 		if loaded {
-			host = existingHost.(Host)
+			host = existingHost.(*Host)
 		}
 		upstream.Host = host
 
@@ -413,10 +424,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.duration", time.Since(start))
 	}()
 
+	// get the list of upstreams
+	upstreams := h.Upstreams
+	if h.DynamicUpstreams != nil {
+		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+		if err != nil {
+			h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
+		} else {
+			upstreams = dUpstreams
+		}
+	}
+
 	var proxyErr error
 	for {
 		// choose an available upstream
-		upstream := h.LoadBalancing.SelectionPolicy.Select(h.Upstreams, r, w)
+		upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 		if upstream == nil {
 			if proxyErr == nil {
 				proxyErr = fmt.Errorf("no upstreams available")
@@ -927,6 +949,13 @@ type LoadBalancing struct {
 // Selector selects an available upstream from the pool.
 type Selector interface {
 	Select(UpstreamPool, *http.Request, http.ResponseWriter) *Upstream
+}
+
+// UpstreamSource gets the list of upstreams that can be used when
+// proxying a request. Returned upstreams will be load balanced and
+// health-checked.
+type UpstreamSource interface {
+	GetUpstreams(*http.Request) ([]*Upstream, error)
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.

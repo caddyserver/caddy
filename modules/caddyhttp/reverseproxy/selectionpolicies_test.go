@@ -22,9 +22,9 @@ import (
 
 func testPool() UpstreamPool {
 	return UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 }
 
@@ -167,8 +167,8 @@ func TestIPHashPolicy(t *testing.T) {
 	// We should be able to resize the host pool and still be able to predict
 	// where a req will be routed with the same IP's used above
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 	req.RemoteAddr = "172.0.0.1:80"
 	h = ipHash.Select(pool, req, nil)
@@ -201,15 +201,15 @@ func TestIPHashPolicy(t *testing.T) {
 
 	// Reproduce #4135
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 	pool[0].SetHealthy(false)
 	pool[1].SetHealthy(false)
@@ -271,8 +271,8 @@ func TestURIHashPolicy(t *testing.T) {
 	// We should be able to resize the host pool and still be able to predict
 	// where a request will be routed with the same URI's used above
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)

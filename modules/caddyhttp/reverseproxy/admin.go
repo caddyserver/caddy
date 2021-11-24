@@ -87,7 +87,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			return false
 		}
 
-		upstream, ok := val.(*upstreamHost)
+		upstream, ok := val.(*Host)
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,

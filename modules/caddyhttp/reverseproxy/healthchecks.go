@@ -213,7 +213,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host Host) error {
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *Host) error {
 	// create the URL for the request that acts as a health check
 	scheme := "http"
 	if ht, ok := h.Transport.(TLSTransport); ok && ht.TLSEnabled() {
@@ -375,7 +375,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	}
 
 	// forget it later
-	go func(host Host, failDuration time.Duration) {
+	go func(host *Host, failDuration time.Duration) {
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("[PANIC] health check failure forgetter: %v\n%s", err, debug.Stack())
