@@ -247,7 +247,7 @@ func (a filterAction) IsValid() error {
 }
 
 type queryFilterAction struct {
-	// `replace` to replace the value(s) associated with the parameter(s), `hash` to replace them with the 4 initial bytes of the SHA-156 of their content or `delete` to remove them entirely.
+	// `replace` to replace the value(s) associated with the parameter(s), `hash` to replace them with the 4 initial bytes of the SHA-256 of their content or `delete` to remove them entirely.
 	Type filterAction `json:"type"`
 
 	// The name of the query parameter.
