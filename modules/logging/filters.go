@@ -365,7 +365,7 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 type cookieFilterAction struct {
-	// `replace` to replace the value of the cookie, `hash` to replace it with the 4 initial bytes of the SHA-156 of its content or `delete` to remove it entirely.
+	// `replace` to replace the value of the cookie, `hash` to replace it with the 4 initial bytes of the SHA-256 of its content or `delete` to remove it entirely.
 	Type filterAction `json:"type"`
 
 	// The name of the cookie.
