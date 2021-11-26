@@ -47,7 +47,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
-			u.Path += "/"
+			name += "/"
 			dirCount++
 		} else {
 			fileCount++
