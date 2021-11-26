@@ -354,7 +354,7 @@ func (t Transport) splitPos(path string) int {
 	return -1
 }
 
-// envVars is a simple type alias to allow for speeding up zap log encoding.
+// envVars is a simple type to allow for speeding up zap log encoding.
 type envVars map[string]string
 
 func (env envVars) MarshalLogObject(enc zapcore.ObjectEncoder) error {
