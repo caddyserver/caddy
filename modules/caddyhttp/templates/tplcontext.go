@@ -91,7 +91,12 @@ func (c TemplateContext) OriginalReq() http.Request {
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
 func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
-	bodyBuf, err := c.readFileToBuffer(filename)
+	
+	bodyBuf := bufPool.Get().(*bytes.Buffer)
+	bodyBuf.Reset()
+	defer bufPool.Put(bodyBuf)
+
+        err := c.readFileToBuffer(filename, bodyBuf)
 
 	if err != nil {
 		return "", err
@@ -107,28 +112,24 @@ func (c TemplateContext) funcInclude(filename string, args ...interface{}) (stri
 	return bodyBuf.String(), nil
 }
 
-// readFileToBuffer returns the contents of filename relative to root as a buffer
-func (c TemplateContext) readFileToBuffer(filename string) (*bytes.Buffer, error) {
+// readFileToBuffer reads a file into a buffer
+func (c TemplateContext) readFileToBuffer(filename string, bodyBuf *bytes.Buffer) (error) {
 	if c.Root == nil {
-		return nil, fmt.Errorf("root file system not specified")
+		return fmt.Errorf("root file system not specified")
 	}
 
 	file, err := c.Root.Open(filename)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer file.Close()
 
-	bodyBuf := bufPool.Get().(*bytes.Buffer)
-	bodyBuf.Reset()
-	defer bufPool.Put(bodyBuf)
-
 	_, err = io.Copy(bodyBuf, file)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	return bodyBuf, nil
+	
+        return nil
 }
 
 // funcHTTPInclude returns the body of a virtual (lightweight) request
@@ -185,7 +186,12 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 // {{ template }} from the standard template library. If the imported file has
 // no {{ define }} blocks, the name of the import will be the path
 func (c *TemplateContext) funcImport(filename string) (string, error) {
-	bodyBuf, err := c.readFileToBuffer(filename)
+
+	bodyBuf := bufPool.Get().(*bytes.Buffer)
+	bodyBuf.Reset()
+	defer bufPool.Put(bodyBuf)
+
+        err := c.readFileToBuffer(filename, bodyBuf)
 	if err != nil {
 		return "", err
 	}
@@ -437,3 +443,4 @@ var bufPool = sync.Pool{
 var sprigFuncMap = sprig.TxtFuncMap()
 
 const recursionPreventionHeader = "Caddy-Templates-Include"
+
