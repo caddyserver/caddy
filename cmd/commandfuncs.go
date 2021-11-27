@@ -202,7 +202,7 @@ func cmdRun(fl Flags) (int, error) {
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
 	var configFile string
 	if !runCmdResumeFlag {
-		config, configFile, err = loadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+		config, configFile, err = LoadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		}
@@ -277,11 +277,12 @@ func cmdRun(fl Flags) (int, error) {
 func cmdStop(fl Flags) (int, error) {
 	stopCmdAddrFlag := fl.String("address")
 
-	err := apiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil, nil)
+	resp, err := ApiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil, nil)
 	if err != nil {
 		caddy.Log().Warn("failed using API to stop instance", zap.Error(err))
 		return caddy.ExitCodeFailedStartup, err
 	}
+	defer resp.Body.Close()
 
 	return caddy.ExitCodeSuccess, nil
 }
@@ -293,7 +294,7 @@ func cmdReload(fl Flags) (int, error) {
 	reloadCmdForceFlag := fl.Bool("force")
 
 	// get the config in caddy's native format
-	config, configFile, err := loadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	config, configFile, err := LoadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -321,10 +322,11 @@ func cmdReload(fl Flags) (int, error) {
 		headers.Set("Cache-Control", "must-revalidate")
 	}
 
-	err = apiRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
+	resp, err := ApiRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("sending configuration to instance: %v", err)
 	}
+	defer resp.Body.Close()
 
 	return caddy.ExitCodeSuccess, nil
 }
@@ -518,7 +520,7 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
 
-	input, _, err := loadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
+	input, _, err := LoadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -640,17 +642,18 @@ commands:
 	return caddy.ExitCodeSuccess, nil
 }
 
-// apiRequest makes an API request to the endpoint adminAddr with the
+// ApiRequest makes an API request to the endpoint adminAddr with the
 // given HTTP method and request URI. If body is non-nil, it will be
-// assumed to be Content-Type application/json.
-func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) error {
+// assumed to be Content-Type application/json. The caller should
+// close the response body.
+func ApiRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) (*http.Response, error) {
 	// parse the admin address
 	if adminAddr == "" {
 		adminAddr = caddy.DefaultAdminListen
 	}
 	parsedAddr, err := caddy.ParseNetworkAddress(adminAddr)
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
-		return fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
+		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
 	}
 	origin := parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
@@ -660,7 +663,7 @@ func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Read
 	// form the request
 	req, err := http.NewRequest(method, "http://"+origin+uri, body)
 	if err != nil {
-		return fmt.Errorf("making request: %v", err)
+		return nil, fmt.Errorf("making request: %v", err)
 	}
 	if parsedAddr.IsUnixNetwork() {
 		// When listening on a unix socket, the admin endpoint doesn't
@@ -700,20 +703,19 @@ func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Read
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("performing request: %v", err)
+		return nil, fmt.Errorf("performing request: %v", err)
 	}
-	defer resp.Body.Close()
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
 		if err != nil {
-			return fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
+			return nil, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}
-		return fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
+		return nil, fmt.Errorf("caddy responded with error: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
-	return nil
+	return resp, nil
 }
 
 type moduleInfo struct {
