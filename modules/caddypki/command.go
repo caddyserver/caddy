@@ -15,9 +15,12 @@
 package caddypki
 
 import (
-	"context"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -30,20 +33,34 @@ func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "trust",
 		Func:  cmdTrust,
+		Usage: "[--ca <id>] [--address <listen>] [--config <path> [--adapter <name>]]",
 		Short: "Installs a CA certificate into local trust stores",
 		Long: `
-Adds a root certificate into the local trust stores. Intended for
-development environments only.
+Adds a root certificate into the local trust stores.
 
-Since Caddy will install its root certificates into the local trust
-stores automatically when they are first generated, this command is
-only necessary if you need to pre-install the certificates before
-using them; for example, if you have elevated privileges at one
-point but not later, you will want to use this command so that a
-password prompt is not required later.
+Caddy will attempt to install its root certificates into the local
+trust stores automatically when they are first generated, but it
+might fail if Caddy doesn't have the appropriate permissions to
+write to the trust store. This command is necessary to pre-install
+the certificates before using them, if the server process runs as an
+unprivileged user (such as via systemd).
 
-This command installs the root certificate only for Caddy's
-default CA.`,
+By default, this command installs the root certificate for Caddy's
+default CA (i.e. 'local'). You may specify the ID of another CA
+with the --ca flag.
+
+Also, this command will attempt to connect to the Caddy's admin API
+running at '` + caddy.DefaultAdminListen + `' to fetch the root certificate. You may
+explicitly specify the --address, or use the --config flag to load
+the admin address from your config, if not using the default.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("trust", flag.ExitOnError)
+			fs.String("ca", "", "The ID of the CA to trust (defaults to 'local')")
+			fs.String("address", "", "Address of the administration API listener (if --config is not used)")
+			fs.String("config", "", "Configuration file (if --address is not used)")
+			fs.String("adapter", "", "Name of config adapter to apply (if --config is used)")
+			return fs
+		}(),
 	})
 
 	caddycmd.RegisterCommand(caddycmd.Command{
@@ -77,22 +94,85 @@ If no flags are specified, --ca=local is assumed.`,
 	})
 }
 
-func cmdTrust(fs caddycmd.Flags) (int, error) {
-	// we have to create a sort of dummy context so that
-	// the CA can provision itself...
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
+func cmdTrust(fl caddycmd.Flags) (int, error) {
+	caID := fl.String("ca")
+	addrFlag := fl.String("address")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
 
-	// provision the CA, which generates and stores a root
-	// certificate if one doesn't already exist in storage
-	ca := CA{
-		storage: caddy.DefaultStorage,
+	// Prepare the URI to the admin endpoint
+	if caID == "" {
+		caID = DefaultCAID
 	}
-	err := ca.Provision(ctx, DefaultCAID, caddy.Log())
+	uri := amdinPKICertificatesEndpoint + caID
+
+	// Prefer the address flag, but if a config is specified,
+	// try to load the admin address from there.
+	adminAddr := addrFlag
+	if adminAddr == "" && configFlag != "" {
+		// get the config in caddy's native format
+		config, configFile, err := caddycmd.LoadConfig(configFlag, configAdapterFlag)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		if configFile == "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
+		}
+
+		// get the address of the admin listener
+		if len(config) > 0 {
+			var tmpStruct struct {
+				Admin caddy.AdminConfig `json:"admin"`
+			}
+			err = json.Unmarshal(config, &tmpStruct)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup,
+					fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+			}
+			adminAddr = tmpStruct.Admin.Listen
+		}
+	}
+	if adminAddr == "" {
+		adminAddr = caddy.DefaultAdminListen
+	}
+
+	// Make the request to fetch the CA info
+	resp, err := caddycmd.ApiRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("requesting CA info: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Decode the resposne
+	caInfo := new(CAInfo)
+	err = json.NewDecoder(resp.Body).Decode(caInfo)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode JSON response: %v", err)
 	}
 
+	// Decode the root
+	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
+	if rootBlock == nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode root certificate: %v", err)
+	}
+	rootCert, err := x509.ParseCertificate(rootBlock.Bytes)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to parse root certificate: %v", err)
+	}
+
+	// Set up the CA struct; we only need to fill in the root
+	// because we're only using it to make use of the installRoot()
+	// function. Also needs a logger for warnings, and a "cert path"
+	// for the root cert; since we're loading from the API and we
+	// don't know the actual storage path via this flow, we'll just
+	// pass through the admin API address instead.
+	ca := CA{
+		log:          caddy.Log(),
+		root:         rootCert,
+		rootCertPath: adminAddr + uri,
+	}
+
+	// Install the cert!
 	err = ca.installRoot()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
