@@ -427,6 +427,13 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}
 
+	// Provision any admin routers which may need to access
+	// some of the other apps at runtime
+	err = newCfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Start
 	err = func() error {
 		var started []string
@@ -523,7 +530,6 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			// do this in a goroutine so current config can finish being loaded; otherwise deadlock
 			go runLoadedConfig(loadedConfig)
 		}
-
 	}
 
 	return nil
