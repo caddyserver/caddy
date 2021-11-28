@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -66,29 +65,36 @@ the admin address from your config, if not using the default.`,
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "untrust",
 		Func:  cmdUntrust,
-		Usage: "[--ca <id> | --cert <path>]",
+		Usage: "[--cert <path>] | [[--ca <id>] [--address <listen>] [--config <path> [--adapter <name>]]]",
 		Short: "Untrusts a locally-trusted CA certificate",
 		Long: `
-Untrusts a root certificate from the local trust store(s). Intended
-for development environments only.
+Untrusts a root certificate from the local trust store(s).
 
 This command uninstalls trust; it does not necessarily delete the
 root certificate from trust stores entirely. Thus, repeatedly
 trusting and untrusting new certificates can fill up trust databases.
 
-This command does not delete or modify certificate files.
+This command does not delete or modify certificate files from Caddy's
+configured storage.
 
-Specify which certificate to untrust either by the ID of its CA with
-the --ca flag, or the direct path to the certificate file with the
---cert flag. If the --ca flag is used, only the default storage paths
-are assumed (i.e. using --ca flag with custom storage backends or file
-paths will not work).
+This command can be used in one of two ways. Either by specifying
+which certificate to untrust by a direct path to the certificate
+file with the --cert flag, or by fetching the root certificate for
+the CA from the admin API (default behaviour).
 
-If no flags are specified, --ca=local is assumed.`,
+If the admin API is used, then the CA defaults to 'local'. You may
+specify the ID of another CA with the --ca flag. By default, this
+will attempt to connect to the Caddy's admin API running at
+'` + caddy.DefaultAdminListen + `' to fetch the root certificate.
+You may explicitly specify the --address, or use the --config flag
+to load the admin address from your config, if not using the default.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("untrust", flag.ExitOnError)
-			fs.String("ca", "", "The ID of the CA to untrust")
 			fs.String("cert", "", "The path to the CA certificate to untrust")
+			fs.String("ca", "", "The ID of the CA to untrust (defaults to 'local')")
+			fs.String("address", "", "Address of the administration API listener (if --config is not used)")
+			fs.String("config", "", "Configuration file (if --address is not used)")
+			fs.String("adapter", "", "Name of config adapter to apply (if --config is used)")
 			return fs
 		}(),
 	})
@@ -181,32 +187,103 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdUntrust(fs caddycmd.Flags) (int, error) {
-	ca := fs.String("ca")
-	cert := fs.String("cert")
+func cmdUntrust(fl caddycmd.Flags) (int, error) {
+	certFile := fl.String("cert")
+	caID := fl.String("ca")
+	addrFlag := fl.String("address")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
 
-	if ca != "" && cert != "" {
+	if certFile != "" && (caID != "" || addrFlag != "" || configFlag != "") {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("conflicting command line arguments")
 	}
-	if ca == "" && cert == "" {
-		ca = DefaultCAID
-	}
-	if ca != "" {
-		cert = filepath.Join(caddy.AppDataDir(), "pki", "authorities", ca, "root.crt")
+
+	// If a file was specified, try to uninstall the cert matching that file
+	if certFile != "" {
+		// Sanity check, make sure cert file exists first
+		_, err := os.Stat(certFile)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing certificate file: %v", err)
+		}
+
+		// Uninstall the file!
+		err = truststore.UninstallFile(certFile,
+			truststore.WithDebug(),
+			truststore.WithFirefox(),
+			truststore.WithJava())
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to uninstall certificate file: %v", err)
+		}
+
+		return caddy.ExitCodeSuccess, nil
 	}
 
-	// sanity check, make sure cert file exists first
-	_, err := os.Stat(cert)
+	if caID == "" {
+		caID = DefaultCAID
+	}
+	uri := amdinPKICertificatesEndpoint + caID
+
+	// Prefer the address flag, but if a config is specified,
+	// try to load the admin address from there.
+	adminAddr := addrFlag
+	if adminAddr == "" && configFlag != "" {
+		// get the config in caddy's native format
+		config, configFile, err := caddycmd.LoadConfig(configFlag, configAdapterFlag)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		if configFile == "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
+		}
+
+		// get the address of the admin listener
+		if len(config) > 0 {
+			var tmpStruct struct {
+				Admin caddy.AdminConfig `json:"admin"`
+			}
+			err = json.Unmarshal(config, &tmpStruct)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup,
+					fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+			}
+			adminAddr = tmpStruct.Admin.Listen
+		}
+	}
+	if adminAddr == "" {
+		adminAddr = caddy.DefaultAdminListen
+	}
+
+	// Make the request to fetch the CA info
+	resp, err := caddycmd.ApiRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing certificate file: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("requesting CA info: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Decode the resposne
+	caInfo := new(CAInfo)
+	err = json.NewDecoder(resp.Body).Decode(caInfo)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode JSON response: %v", err)
 	}
 
-	err = truststore.UninstallFile(cert,
+	// Decode the root
+	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
+	if rootBlock == nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode root certificate: %v", err)
+	}
+	rootCert, err := x509.ParseCertificate(rootBlock.Bytes)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to parse root certificate: %v", err)
+	}
+
+	// Uninstall the cert!
+	err = truststore.Uninstall(rootCert,
 		truststore.WithDebug(),
 		truststore.WithFirefox(),
 		truststore.WithJava())
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to uninstall certificate file: %v", err)
 	}
 
 	return caddy.ExitCodeSuccess, nil
