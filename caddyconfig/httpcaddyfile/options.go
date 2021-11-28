@@ -34,6 +34,7 @@ func init() {
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
 	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
+	RegisterGlobalOption("renew_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
