@@ -1,9 +1,31 @@
 {
 	skip_install_trust
+	pki {
+		name "Local"
+		root_common_name "Custom Local Root Name"
+		intermediate_common_name "Custom Local Intermediate Name"
+	}
+	pki foo {
+		name "Foo"
+		root_common_name "Custom Foo Root Name"
+		intermediate_common_name "Custom Foo Intermediate Name"
+	}
 }
 
 a.example.com {
 	tls internal
+}
+
+acme.example.com {
+	acme_server {
+		ca foo
+	}
+}
+
+acme-bar.example.com {
+	acme_server {
+		ca bar
+	}
 }
 ----------
 {
@@ -15,6 +37,56 @@ a.example.com {
 						":443"
 					],
 					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"acme-bar.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "bar",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"acme.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "foo",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
 						{
 							"match": [
 								{
@@ -31,7 +103,15 @@ a.example.com {
 		},
 		"pki": {
 			"certificate_authorities": {
+				"bar": {
+					"install_trust": false
+				},
+				"foo": {
+					"name": "Custom Foo Intermediate Name",
+					"install_trust": false
+				},
 				"local": {
+					"name": "Custom Local Intermediate Name",
 					"install_trust": false
 				}
 			}
@@ -39,6 +119,12 @@ a.example.com {
 		"tls": {
 			"automation": {
 				"policies": [
+					{
+						"subjects": [
+							"acme-bar.example.com",
+							"acme.example.com"
+						]
+					},
 					{
 						"subjects": [
 							"a.example.com"
