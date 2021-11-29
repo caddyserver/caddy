@@ -187,7 +187,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			userID, _ := repl.GetString("http.auth.user.id")
 
 			log("handled request",
-				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
 				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
@@ -626,14 +625,6 @@ func cloneURL(from, to *url.URL) {
 		to.User = userInfo
 	}
 }
-
-const (
-	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
-
-	// commonLogEmptyValue is the common empty log value.
-	commonLogEmptyValue = "-"
-)
 
 // Context keys for HTTP request context values.
 const (
