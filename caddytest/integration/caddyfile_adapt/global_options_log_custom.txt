@@ -3,7 +3,6 @@
 		format filter {
 			wrap console
 			fields {
-				common_log delete
 				request>remote_addr ip_mask {
 					ipv4 24
 					ipv6 32
@@ -19,9 +18,6 @@
 			"custom-logger": {
 				"encoder": {
 					"fields": {
-						"common_log": {
-							"filter": "delete"
-						},
 						"request\u003eremote_addr": {
 							"filter": "ip_mask",
 							"ipv4_cidr": 24,
