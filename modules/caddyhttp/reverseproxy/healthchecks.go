@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -282,7 +281,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 	}
 	defer func() {
 		// drain any remaining body so connection could be re-used
-		_, _ = io.Copy(ioutil.Discard, body)
+		_, _ = io.Copy(io.Discard, body)
 		resp.Body.Close()
 	}()
 
@@ -313,7 +312,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host H
 
 	// if body does not match regex, mark down
 	if h.HealthChecks.Active.bodyRegexp != nil {
-		bodyBytes, err := ioutil.ReadAll(body)
+		bodyBytes, err := io.ReadAll(body)
 		if err != nil {
 			h.HealthChecks.Active.logger.Info("failed to read response body",
 				zap.String("host", hostAddr),

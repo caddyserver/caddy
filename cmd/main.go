@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -94,7 +93,7 @@ func Main() {
 // the bytes in expect, or returns an error if it doesn't.
 func handlePingbackConn(conn net.Conn, expect []byte) error {
 	defer conn.Close()
-	confirmationBytes, err := ioutil.ReadAll(io.LimitReader(conn, 32))
+	confirmationBytes, err := io.ReadAll(io.LimitReader(conn, 32))
 	if err != nil {
 		return err
 	}
@@ -124,9 +123,9 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 	var err error
 	if configFile != "" {
 		if configFile == "-" {
-			config, err = ioutil.ReadAll(os.Stdin)
+			config, err = io.ReadAll(os.Stdin)
 		} else {
-			config, err = ioutil.ReadFile(configFile)
+			config, err = os.ReadFile(configFile)
 		}
 		if err != nil {
 			return nil, "", fmt.Errorf("reading config file: %v", err)
@@ -140,7 +139,7 @@ func loadConfig(configFile, adapterName string) ([]byte, string, error) {
 		// plugged in, and if so, try using a default Caddyfile
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
-			config, err = ioutil.ReadFile("Caddyfile")
+			config, err = os.ReadFile("Caddyfile")
 			if os.IsNotExist(err) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil
@@ -361,6 +360,11 @@ func loadEnvFromFile(envFile string) error {
 		}
 	}
 
+	// Update the storage paths to ensure they have the proper
+	// value after loading a specified env file.
+	caddy.ConfigAutosavePath = filepath.Join(caddy.AppConfigDir(), "autosave.json")
+	caddy.DefaultStorage = &certmagic.FileStorage{Path: caddy.AppDataDir()}
+
 	return nil
 }
 
@@ -415,7 +419,7 @@ func printEnvironment() {
 	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
 	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
 	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
-	fmt.Printf("caddy.Version=%s\n", caddyVersion())
+	fmt.Printf("caddy.Version=%s\n", CaddyVersion())
 	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
 	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
 	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
@@ -432,8 +436,8 @@ func printEnvironment() {
 	}
 }
 
-// caddyVersion returns a detailed version string, if available.
-func caddyVersion() string {
+// CaddyVersion returns a detailed version string, if available.
+func CaddyVersion() string {
 	goModule := caddy.GoModule()
 	ver := goModule.Version
 	if goModule.Sum != "" {

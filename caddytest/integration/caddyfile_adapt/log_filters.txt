@@ -5,12 +5,21 @@ log {
 	format filter {
 		wrap console
 		fields {
+			uri query {
+				replace foo REDACTED
+				delete bar
+			}
 			request>headers>Authorization replace REDACTED
 			request>headers>Server delete
+			request>headers>Cookie cookie {
+				replace foo REDACTED
+				delete bar
+			}
 			request>remote_addr ip_mask {
 				ipv4 24
 				ipv6 32
 			}
+			request>headers>Regexp regexp secret REDACTED
 		}
 	}
 }
@@ -33,6 +42,25 @@ log {
 							"filter": "replace",
 							"value": "REDACTED"
 						},
+						"request\u003eheaders\u003eCookie": {
+							"actions": [
+								{
+									"name": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"name": "bar",
+									"type": "delete"
+								}
+							],
+							"filter": "cookie"
+						},
+						"request\u003eheaders\u003eRegexp": {
+							"filter": "regexp",
+							"regexp": "secret",
+							"value": "REDACTED"
+						},
 						"request\u003eheaders\u003eServer": {
 							"filter": "delete"
 						},
@@ -40,6 +68,20 @@ log {
 							"filter": "ip_mask",
 							"ipv4_cidr": 24,
 							"ipv6_cidr": 32
+						},
+						"uri": {
+							"actions": [
+								{
+									"parameter": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"parameter": "bar",
+									"type": "delete"
+								}
+							],
+							"filter": "query"
 						}
 					},
 					"format": "filter",

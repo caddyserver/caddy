@@ -20,10 +20,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"time"
 
@@ -63,28 +63,28 @@ type HTTPTransport struct {
 	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
 
 	// How long to wait before timing out trying to connect to
-	// an upstream.
+	// an upstream. Default: `3s`.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
 	// How long to wait before spawning an RFC 6555 Fast Fallback
-	// connection. A negative value disables this.
+	// connection. A negative value disables this. Default: `300ms`.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
-	// How long to wait for reading response headers from server.
+	// How long to wait for reading response headers from server. Default: No timeout.
 	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
 
 	// The length of time to wait for a server's first response
 	// headers after fully writing the request headers if the
-	// request has a header "Expect: 100-continue".
+	// request has a header "Expect: 100-continue". Default: No timeout.
 	ExpectContinueTimeout caddy.Duration `json:"expect_continue_timeout,omitempty"`
 
-	// The maximum bytes to read from response headers.
+	// The maximum bytes to read from response headers. Default: `10MiB`.
 	MaxResponseHeaderSize int64 `json:"max_response_header_size,omitempty"`
 
-	// The size of the write buffer in bytes.
+	// The size of the write buffer in bytes. Default: `4KiB`.
 	WriteBufferSize int `json:"write_buffer_size,omitempty"`
 
-	// The size of the read buffer in bytes.
+	// The size of the read buffer in bytes. Default: `4KiB`.
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 
 	// The versions of HTTP to support. As a special case, "h2c"
@@ -147,6 +147,21 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 
 // NewTransport builds a standard-lib-compatible http.Transport value from h.
 func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error) {
+	// Set keep-alive defaults if it wasn't otherwise configured
+	if h.KeepAlive == nil {
+		h.KeepAlive = &KeepAlive{
+			ProbeInterval:       caddy.Duration(30 * time.Second),
+			IdleConnTimeout:     caddy.Duration(2 * time.Minute),
+			MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
+		}
+	}
+
+	// Set a relatively short default dial timeout.
+	// This is helpful to make load-balancer retries more speedy.
+	if h.DialTimeout == 0 {
+		h.DialTimeout = caddy.Duration(3 * time.Second)
+	}
+
 	dialer := &net.Dialer{
 		Timeout:       time.Duration(h.DialTimeout),
 		FallbackDelay: time.Duration(h.FallbackDelay),
@@ -303,7 +318,7 @@ type TLSConfig struct {
 	// option except in testing or local development environments.
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 
-	// The duration to allow a TLS handshake to a server.
+	// The duration to allow a TLS handshake to a server. Default: No timeout.
 	HandshakeTimeout caddy.Duration `json:"handshake_timeout,omitempty"`
 
 	// The server name (SNI) to use in TLS handshakes.
@@ -364,7 +379,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			rootPool.AddCert(caCert)
 		}
 		for _, pemFile := range t.RootCAPEMFiles {
-			pemData, err := ioutil.ReadFile(pemFile)
+			pemData, err := os.ReadFile(pemFile)
 			if err != nil {
 				return nil, fmt.Errorf("failed reading ca cert: %v", err)
 			}
@@ -405,7 +420,7 @@ type KeepAlive struct {
 	// Whether HTTP Keep-Alive is enabled. Default: true
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// How often to probe for liveness.
+	// How often to probe for liveness. Default: `30s`.
 	ProbeInterval caddy.Duration `json:"probe_interval,omitempty"`
 
 	// Maximum number of idle connections. Default: 0, which means no limit.
@@ -414,7 +429,7 @@ type KeepAlive struct {
 	// Maximum number of idle connections per host. Default: 32.
 	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
 
-	// How long connections should be kept alive when idle. Default: 0, which means no timeout.
+	// How long connections should be kept alive when idle. Default: `2m`.
 	IdleConnTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2015 Light Code Labs, LLC
+// Copyright 2015 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package caddyfile
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -37,7 +37,13 @@ import (
 // Environment variables in {$ENVIRONMENT_VARIABLE} notation
 // will be replaced before parsing begins.
 func Parse(filename string, input []byte) ([]ServerBlock, error) {
-	tokens, err := allTokens(filename, input)
+	// unfortunately, we must copy the input because parsing must
+	// remain a read-only operation, but we have to expand environment
+	// variables before we parse, which changes the underlying array (#4422)
+	inputCopy := make([]byte, len(input))
+	copy(inputCopy, input)
+
+	tokens, err := allTokens(filename, inputCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +57,23 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	return p.parseAll()
 }
 
+// allTokens lexes the entire input, but does not parse it.
+// It returns all the tokens from the input, unstructured
+// and in order. It may mutate input as it expands env vars.
+func allTokens(filename string, input []byte) ([]Token, error) {
+	inputCopy, err := replaceEnvVars(input)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := Tokenize(inputCopy, filename)
+	if err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
 // replaceEnvVars replaces all occurrences of environment variables.
+// It mutates the underlying array and returns the updated slice.
 func replaceEnvVars(input []byte) ([]byte, error) {
 	var offset int
 	for {
@@ -94,21 +116,6 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		offset = begin + len(envVarBytes)
 	}
 	return input, nil
-}
-
-// allTokens lexes the entire input, but does not parse it.
-// It returns all the tokens from the input, unstructured
-// and in order.
-func allTokens(filename string, input []byte) ([]Token, error) {
-	input, err := replaceEnvVars(input)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := Tokenize(input, filename)
-	if err != nil {
-		return nil, err
-	}
-	return tokens, nil
 }
 
 type parser struct {
@@ -211,6 +218,12 @@ func (p *parser) addresses() error {
 			if expectingAnother {
 				return p.Errf("Expected another address but had '%s' - check for extra comma", tkn)
 			}
+			// Mark this server block as being defined with braces.
+			// This is used to provide a better error message when
+			// the user may have tried to define two server blocks
+			// without having used braces, which are required in
+			// that case.
+			p.block.HasBraces = true
 			break
 		}
 
@@ -227,6 +240,13 @@ func (p *parser) addresses() error {
 				expectingAnother = true
 			} else {
 				expectingAnother = false // but we may still see another one on this line
+			}
+
+			// If there's a comma here, it's probably because they didn't use a space
+			// between their two domains, e.g. "foo.com,bar.com", which would not be
+			// parsed as two separate site addresses.
+			if strings.Contains(tkn, ",") {
+				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", tkn)
 			}
 
 			p.block.Keys = append(p.block.Keys, tkn)
@@ -434,7 +454,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
-	input, err := ioutil.ReadAll(file)
+	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
 	}
@@ -564,8 +584,9 @@ func (p *parser) snippetTokens() ([]Token, error) {
 // head of the server block with tokens, which are
 // grouped by segments.
 type ServerBlock struct {
-	Keys     []string
-	Segments []Segment
+	HasBraces bool
+	Keys      []string
+	Segments  []Segment
 }
 
 // DispenseDirective returns a dispenser that contains

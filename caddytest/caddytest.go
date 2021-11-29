@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -129,7 +129,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 				return
 			}
 			defer res.Body.Close()
-			body, _ := ioutil.ReadAll(res.Body)
+			body, _ := io.ReadAll(res.Body)
 
 			var out bytes.Buffer
 			_ = json.Indent(&out, body, "", "  ")
@@ -162,7 +162,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	timeElapsed(start, "caddytest: config load time")
 
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		tc.t.Errorf("unable to read response. %s", err)
 		return err
@@ -202,7 +202,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 			return nil
 		}
 		defer resp.Body.Close()
-		actualBytes, err := ioutil.ReadAll(resp.Body)
+		actualBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil
 		}
@@ -471,7 +471,7 @@ func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expe
 	resp := tc.AssertResponseCode(req, expectedStatusCode)
 
 	defer resp.Body.Close()
-	bytes, err := ioutil.ReadAll(resp.Body)
+	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		tc.t.Fatalf("unable to read the response body %s", err)
 	}

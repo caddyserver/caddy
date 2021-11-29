@@ -19,9 +19,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -119,7 +119,7 @@ func cmdStart(fl Flags) (int, error) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				if !strings.Contains(err.Error(), "use of closed network connection") {
+				if !errors.Is(err, net.ErrClosed) {
 					log.Println(err)
 				}
 				break
@@ -180,7 +180,7 @@ func cmdRun(fl Flags) (int, error) {
 	var config []byte
 	var err error
 	if runCmdResumeFlag {
-		config, err = ioutil.ReadFile(caddy.ConfigAutosavePath)
+		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if os.IsNotExist(err) {
 			// not a bad error; just can't resume if autosave file doesn't exist
 			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
@@ -218,7 +218,7 @@ func cmdRun(fl Flags) (int, error) {
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
 	if runCmdPingbackFlag != "" {
-		confirmationBytes, err := ioutil.ReadAll(os.Stdin)
+		confirmationBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
@@ -330,7 +330,7 @@ func cmdReload(fl Flags) (int, error) {
 }
 
 func cmdVersion(_ Flags) (int, error) {
-	fmt.Println(caddyVersion())
+	fmt.Println(CaddyVersion())
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -360,6 +360,7 @@ func cmdBuildInfo(fl Flags) (int, error) {
 func cmdListModules(fl Flags) (int, error) {
 	packages := fl.Bool("packages")
 	versions := fl.Bool("versions")
+	skipStandard := fl.Bool("skip-standard")
 
 	printModuleInfo := func(mi moduleInfo) {
 		fmt.Print(mi.caddyModuleID)
@@ -388,14 +389,19 @@ func cmdListModules(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	if len(standard) > 0 {
-		for _, mod := range standard {
-			printModuleInfo(mod)
-		}
-	}
-	fmt.Printf("\n  Standard modules: %d\n", len(standard))
-	if len(nonstandard) > 0 {
+	// Standard modules (always shipped with Caddy)
+	if !skipStandard {
 		if len(standard) > 0 {
+			for _, mod := range standard {
+				printModuleInfo(mod)
+			}
+		}
+		fmt.Printf("\n  Standard modules: %d\n", len(standard))
+	}
+
+	// Non-standard modules (third party plugins)
+	if len(nonstandard) > 0 {
+		if len(standard) > 0 && !skipStandard {
 			fmt.Println()
 		}
 		for _, mod := range nonstandard {
@@ -403,8 +409,10 @@ func cmdListModules(fl Flags) (int, error) {
 		}
 	}
 	fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
+
+	// Unknown modules (couldn't get Caddy module info)
 	if len(unknown) > 0 {
-		if len(standard) > 0 || len(nonstandard) > 0 {
+		if (len(standard) > 0 && !skipStandard) || len(nonstandard) > 0 {
 			fmt.Println()
 		}
 		for _, mod := range unknown {
@@ -456,7 +464,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("unrecognized config adapter: %s", adaptCmdAdapterFlag)
 	}
 
-	input, err := ioutil.ReadFile(adaptCmdInputFlag)
+	input, err := os.ReadFile(adaptCmdInputFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
@@ -540,7 +548,7 @@ func cmdFmt(fl Flags) (int, error) {
 
 	// as a special case, read from stdin if the file name is "-"
 	if formatCmdConfigFile == "-" {
-		input, err := ioutil.ReadAll(os.Stdin)
+		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading stdin: %v", err)
@@ -549,7 +557,7 @@ func cmdFmt(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	input, err := ioutil.ReadFile(formatCmdConfigFile)
+	input, err := os.ReadFile(formatCmdConfigFile)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
@@ -558,7 +566,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := ioutil.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
+		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, nil
 		}
 	} else {
@@ -698,7 +706,7 @@ func apiRequest(adminAddr, method, uri string, headers http.Header, body io.Read
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
-		respBody, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
 		if err != nil {
 			return fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}

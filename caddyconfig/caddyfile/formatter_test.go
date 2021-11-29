@@ -180,6 +180,11 @@ d {
 }`,
 		},
 		{
+			description: "env var placeholders with port",
+			input:       `:{$PORT}`,
+			expect:      `:{$PORT}`,
+		},
+		{
 			description: "comments",
 			input: `#a "\n"
 

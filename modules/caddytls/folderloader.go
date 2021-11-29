@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +78,7 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
-	bundle, err := ioutil.ReadFile(fpath)
+	bundle, err := os.ReadFile(fpath)
 	if err != nil {
 		return tls.Certificate{}, err
 	}

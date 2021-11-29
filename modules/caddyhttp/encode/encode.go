@@ -182,6 +182,7 @@ type responseWriter struct {
 	buf          *bytes.Buffer
 	config       *Encode
 	statusCode   int
+	wroteHeader  bool
 }
 
 // WriteHeader stores the status to write when the time comes
@@ -193,6 +194,19 @@ func (rw *responseWriter) WriteHeader(status int) {
 // Match determines, if encoding should be done based on the ResponseMatcher.
 func (enc *Encode) Match(rw *responseWriter) bool {
 	return enc.Matcher.Match(rw.statusCode, rw.Header())
+}
+
+// Flush implements http.Flusher. It delays the actual Flush of the underlying ResponseWriterWrapper
+// until headers were written.
+func (rw *responseWriter) Flush() {
+	if !rw.wroteHeader {
+		// flushing the underlying ResponseWriter will write header and status code,
+		// but we need to delay that until we can determine if we must encode and
+		// therefore add the Content-Encoding header; this happens in the first call
+		// to rw.Write (see bug in #4314)
+		return
+	}
+	rw.ResponseWriterWrapper.Flush()
 }
 
 // Write writes to the response. If the response qualifies,
@@ -225,6 +239,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	if rw.statusCode > 0 {
 		rw.ResponseWriter.WriteHeader(rw.statusCode)
 		rw.statusCode = 0
+		rw.wroteHeader = true
 	}
 
 	switch {
@@ -271,6 +286,7 @@ func (rw *responseWriter) Close() error {
 		// that rely on If-None-Match, for example
 		rw.ResponseWriter.WriteHeader(rw.statusCode)
 		rw.statusCode = 0
+		rw.wroteHeader = true
 	}
 	if rw.w != nil {
 		err2 := rw.w.Close()

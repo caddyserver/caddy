@@ -2,7 +2,6 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -85,7 +84,7 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 		t.SkipNow()
 	}
 
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return
@@ -387,7 +386,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return
@@ -442,7 +441,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := ioutil.TempFile("", "*.sock")
+	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
 		return

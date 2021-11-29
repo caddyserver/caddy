@@ -61,6 +61,12 @@ type Command struct {
 // any error that occurred.
 type CommandFunc func(Flags) (int, error)
 
+// Commands returns a list of commands initialised by
+// RegisterCommand
+func Commands() map[string]Command {
+	return commands
+}
+
 var commands = make(map[string]Command)
 
 func init() {
@@ -202,6 +208,7 @@ config file; otherwise the default is assumed.`,
 			fs := flag.NewFlagSet("list-modules", flag.ExitOnError)
 			fs.Bool("packages", false, "Print package paths")
 			fs.Bool("versions", false, "Print version information")
+			fs.Bool("skip-standard", false, "Skip printing standard modules")
 			return fs
 		}(),
 	})
@@ -253,7 +260,7 @@ Loads and provisions the provided config, but does not start running it.
 This reveals any errors with the configuration through the loading and
 provisioning stages.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("load", flag.ExitOnError)
+			fs := flag.NewFlagSet("validate", flag.ExitOnError)
 			fs.String("config", "", "Input configuration file")
 			fs.String("adapter", "", "Name of config adapter")
 			return fs
@@ -276,7 +283,7 @@ If you wish you use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.`,
 		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("format", flag.ExitOnError)
+			fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
 			return fs
 		}(),
@@ -289,6 +296,11 @@ is always printed to stdout.`,
 		Long: `
 Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
+			return fs
+		}(),
 	})
 
 	RegisterCommand(Command{
@@ -301,6 +313,11 @@ Downloads an updated Caddy binary with the specified packages (module/plugin)
 added. Retains existing packages. Returns an error if the any of packages are 
 already included. EXPERIMENTAL: May be changed or removed.
 `,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("add-package", flag.ExitOnError)
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
+			return fs
+		}(),
 	})
 
 	RegisterCommand(Command{
@@ -313,6 +330,11 @@ Downloads an updated Caddy binaries without the specified packages (module/plugi
 Returns an error if any of the packages are not included. 
 EXPERIMENTAL: May be changed or removed.
 `,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("remove-package", flag.ExitOnError)
+			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
+			return fs
+		}(),
 	})
 
 }

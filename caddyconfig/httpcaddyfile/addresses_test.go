@@ -106,67 +106,128 @@ func TestAddressString(t *testing.T) {
 func TestKeyNormalization(t *testing.T) {
 	testCases := []struct {
 		input  string
-		expect string
+		expect Address
 	}{
 		{
-			input:  "example.com",
-			expect: "example.com",
+			input: "example.com",
+			expect: Address{
+				Host: "example.com",
+			},
 		},
 		{
-			input:  "http://host:1234/path",
-			expect: "http://host:1234/path",
+			input: "http://host:1234/path",
+			expect: Address{
+				Scheme: "http",
+				Host:   "host",
+				Port:   "1234",
+				Path:   "/path",
+			},
 		},
 		{
-			input:  "HTTP://A/ABCDEF",
-			expect: "http://a/ABCDEF",
+			input: "HTTP://A/ABCDEF",
+			expect: Address{
+				Scheme: "http",
+				Host:   "a",
+				Path:   "/ABCDEF",
+			},
 		},
 		{
-			input:  "A/ABCDEF",
-			expect: "a/ABCDEF",
+			input: "A/ABCDEF",
+			expect: Address{
+				Host: "a",
+				Path: "/ABCDEF",
+			},
 		},
 		{
-			input:  "A:2015/Path",
-			expect: "a:2015/Path",
+			input: "A:2015/Path",
+			expect: Address{
+				Host: "a",
+				Port: "2015",
+				Path: "/Path",
+			},
 		},
 		{
-			input:  "sub.{env.MY_DOMAIN}",
-			expect: "sub.{env.MY_DOMAIN}",
+			input: "sub.{env.MY_DOMAIN}",
+			expect: Address{
+				Host: "sub.{env.MY_DOMAIN}",
+			},
 		},
 		{
-			input:  "sub.ExAmPle",
-			expect: "sub.example",
+			input: "sub.ExAmPle",
+			expect: Address{
+				Host: "sub.example",
+			},
 		},
 		{
-			input:  "sub.\\{env.MY_DOMAIN\\}",
-			expect: "sub.\\{env.my_domain\\}",
+			input: "sub.\\{env.MY_DOMAIN\\}",
+			expect: Address{
+				Host: "sub.\\{env.my_domain\\}",
+			},
 		},
 		{
-			input:  "sub.{env.MY_DOMAIN}.com",
-			expect: "sub.{env.MY_DOMAIN}.com",
+			input: "sub.{env.MY_DOMAIN}.com",
+			expect: Address{
+				Host: "sub.{env.MY_DOMAIN}.com",
+			},
 		},
 		{
-			input:  ":80",
-			expect: ":80",
+			input: ":80",
+			expect: Address{
+				Port: "80",
+			},
 		},
 		{
-			input:  ":443",
-			expect: ":443",
+			input: ":443",
+			expect: Address{
+				Port: "443",
+			},
 		},
 		{
-			input:  ":1234",
-			expect: ":1234",
+			input: ":1234",
+			expect: Address{
+				Port: "1234",
+			},
 		},
 		{
 			input:  "",
-			expect: "",
+			expect: Address{},
 		},
 		{
 			input:  ":",
-			expect: "",
+			expect: Address{},
 		},
 		{
-			input:  "[::]",
-			expect: "::",
+			input: "[::]",
+			expect: Address{
+				Host: "::",
+			},
+		},
+		{
+			input: "127.0.0.1",
+			expect: Address{
+				Host: "127.0.0.1",
+			},
+		},
+		{
+			input: "[2001:db8:85a3:8d3:1319:8a2e:370:7348]:1234",
+			expect: Address{
+				Host: "2001:db8:85a3:8d3:1319:8a2e:370:7348",
+				Port: "1234",
+			},
+		},
+		{
+			// IPv4 address in IPv6 form (#4381)
+			input: "[::ffff:cff4:e77d]:1234",
+			expect: Address{
+				Host: "::ffff:cff4:e77d",
+				Port: "1234",
+			},
+		},
+		{
+			input: "::ffff:cff4:e77d",
+			expect: Address{
+				Host: "::ffff:cff4:e77d",
+			},
 		},
 	}
 	for i, tc := range testCases {
@@ -175,9 +236,18 @@ func TestKeyNormalization(t *testing.T) {
 			t.Errorf("Test %d: Parsing address '%s': %v", i, tc.input, err)
 			continue
 		}
-		if actual := addr.Normalize().Key(); actual != tc.expect {
-			t.Errorf("Test %d: Input '%s': Expected '%s' but got '%s'", i, tc.input, tc.expect, actual)
+		actual := addr.Normalize()
+		if actual.Scheme != tc.expect.Scheme {
+			t.Errorf("Test %d: Input '%s': Expected Scheme='%s' but got Scheme='%s'", i, tc.input, tc.expect.Scheme, actual.Scheme)
 		}
-
+		if actual.Host != tc.expect.Host {
+			t.Errorf("Test %d: Input '%s': Expected Host='%s' but got Host='%s'", i, tc.input, tc.expect.Host, actual.Host)
+		}
+		if actual.Port != tc.expect.Port {
+			t.Errorf("Test %d: Input '%s': Expected Port='%s' but got Port='%s'", i, tc.input, tc.expect.Port, actual.Port)
+		}
+		if actual.Path != tc.expect.Path {
+			t.Errorf("Test %d: Input '%s': Expected Path='%s' but got Path='%s'", i, tc.input, tc.expect.Path, actual.Path)
+		}
 	}
 }

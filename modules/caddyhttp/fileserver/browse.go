@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,6 +31,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"go.uber.org/zap"
 )
+
+//go:embed browse.html
+var defaultBrowseTemplate string
 
 // Browse configures directory browsing.
 type Browse struct {

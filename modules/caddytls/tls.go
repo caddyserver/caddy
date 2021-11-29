@@ -47,7 +47,7 @@ type TLS struct {
 	// have to be refreshed manually before they expire.
 	CertificatesRaw caddy.ModuleMap `json:"certificates,omitempty" caddy:"namespace=tls.certificates"`
 
-	// Configures the automation of certificate management.
+	// Configures certificate automation.
 	Automation *AutomationConfig `json:"automation,omitempty"`
 
 	// Configures session ticket ephemeral keys (STEKs).
@@ -458,19 +458,16 @@ func (t *TLS) cleanStorageUnits() {
 	defer storageCleanMu.Unlock()
 
 	// If storage was cleaned recently, don't do it again for now. Although the ticker
-	// drops missed ticks for us, config reloads discard the old ticker and replace it
-	// with a new one, possibly invoking a cleaning to happen again too soon.
-	// (We divide the interval by 2 because the actual cleaning takes non-zero time,
-	// and we don't want to skip cleanings if we don't have to; whereas if a cleaning
-	// took the entire interval, we'd probably want to skip the next one so we aren't
+	// calling this function drops missed ticks for us, config reloads discard the old
+	// ticker and replace it with a new one, possibly invoking a cleaning to happen again
+	// too soon. (We divide the interval by 2 because the actual cleaning takes non-zero
+	// time, and we don't want to skip cleanings if we don't have to; whereas if a cleaning
+	// took most of the interval, we'd probably want to skip the next one so we aren't
 	// constantly cleaning. This allows cleanings to take up to half the interval's
 	// duration before we decide to skip the next one.)
 	if !storageClean.IsZero() && time.Since(storageClean) < t.storageCleanInterval()/2 {
 		return
 	}
-
-	// mark when storage cleaning was last initiated
-	storageClean = time.Now()
 
 	options := certmagic.CleanStorageOptions{
 		OCSPStaples:            true,
@@ -504,6 +501,9 @@ func (t *TLS) cleanStorageUnits() {
 		}
 	}
 
+	// remember last time storage was finished cleaning
+	storageClean = time.Now()
+
 	t.logger.Info("finished cleaning storage units")
 }
 
@@ -527,14 +527,14 @@ type Certificate struct {
 	Tags []string
 }
 
-// AutomateLoader will automatically manage certificates for the names
-// in the list, including obtaining and renewing certificates. Automated
-// certificates are managed according to their matching automation policy,
-// configured elsewhere in this app.
+// AutomateLoader will automatically manage certificates for the names in the
+// list, including obtaining and renewing certificates. Automated certificates
+// are managed according to their matching automation policy, configured
+// elsewhere in this app.
 //
-// This is a no-op certificate loader module that is treated as a special
-// case: it uses this app's automation features to load certificates for the
-// list of hostnames, rather than loading certificates manually.
+// Technically, this is a no-op certificate loader module that is treated as
+// a special case: it uses this app's automation features to load certificates
+// for the list of hostnames, rather than loading certificates manually.
 type AutomateLoader []string
 
 // CaddyModule returns the Caddy module information.
@@ -549,8 +549,7 @@ func (AutomateLoader) CaddyModule() caddy.ModuleInfo {
 type CertCacheOptions struct {
 	// Maximum number of certificates to allow in the
 	// cache. If reached, certificates will be randomly
-	// evicted to make room for new ones. Default: 0
-	// (no limit).
+	// evicted to make room for new ones. Default: 10,000
 	Capacity int `json:"capacity,omitempty"`
 }
 

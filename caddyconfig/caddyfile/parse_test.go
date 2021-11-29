@@ -1,4 +1,4 @@
-// Copyright 2015 Light Code Labs, LLC
+// Copyright 2015 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@ package caddyfile
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -280,7 +279,7 @@ func TestRecursiveImport(t *testing.T) {
 	}
 
 	// test relative recursive import
-	err = ioutil.WriteFile(recursiveFile1, []byte(
+	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
 		import recursive_import_test2`), 0644)
@@ -289,7 +288,7 @@ func TestRecursiveImport(t *testing.T) {
 	}
 	defer os.Remove(recursiveFile1)
 
-	err = ioutil.WriteFile(recursiveFile2, []byte("dir2 1"), 0644)
+	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +313,7 @@ func TestRecursiveImport(t *testing.T) {
 	}
 
 	// test absolute recursive import
-	err = ioutil.WriteFile(recursiveFile1, []byte(
+	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
 		import `+recursiveFile2), 0644)
@@ -370,7 +369,7 @@ func TestDirectiveImport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = ioutil.WriteFile(directiveFile, []byte(`prop1 1
+	err = os.WriteFile(directiveFile, []byte(`prop1 1
 	prop2 2`), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +632,7 @@ func TestSnippets(t *testing.T) {
 }
 
 func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
-	file, err := ioutil.TempFile("", t.Name())
+	file, err := os.CreateTemp("", t.Name())
 	if err != nil {
 		panic(err) // get a stack trace so we know where this was called from.
 	}

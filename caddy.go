@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -300,7 +299,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 				zap.String("dir", dir),
 				zap.Error(err))
 		} else {
-			err := ioutil.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
 			if err == nil {
 				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
@@ -494,17 +493,20 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		}
 		if cfg.Admin.Config.LoadInterval > 0 {
 			go func() {
-				select {
-				// if LoadInterval is positive, will wait for the interval and then run with new config
-				case <-time.After(time.Duration(cfg.Admin.Config.LoadInterval)):
-					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-					if err != nil {
-						Log().Error("loading dynamic config failed", zap.Error(err))
+				for {
+					select {
+					// if LoadInterval is positive, will wait for the interval and then run with new config
+					case <-time.After(time.Duration(cfg.Admin.Config.LoadInterval)):
+						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+						if err != nil {
+							Log().Error("loading dynamic config failed", zap.Error(err))
+							return
+						}
+						runLoadedConfig(loadedConfig)
+					case <-ctx.Done():
+						Log().Info("stopping config load interval")
 						return
 					}
-					runLoadedConfig(loadedConfig)
-				case <-ctx.Done():
-					return
 				}
 			}()
 		} else {
@@ -700,13 +702,13 @@ func ParseDuration(s string) (time.Duration, error) {
 // have its own unique ID.
 func InstanceID() (uuid.UUID, error) {
 	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
-	uuidFileBytes, err := ioutil.ReadFile(uuidFilePath)
+	uuidFileBytes, err := os.ReadFile(uuidFilePath)
 	if os.IsNotExist(err) {
 		uuid, err := uuid.NewRandom()
 		if err != nil {
 			return uuid, err
 		}
-		err = ioutil.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
+		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
 		return uuid, err
 	} else if err != nil {
 		return [16]byte{}, err
