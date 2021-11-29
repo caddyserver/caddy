@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"crypto/tls"
+	"net"
 	"net/http"
 	"strings"
 
@@ -27,7 +28,14 @@ type LoggableHTTPRequest struct{ *http.Request }
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("remote_addr", r.RemoteAddr)
+	ip, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+		port = ""
+	}
+
+	enc.AddString("remote_ip", ip)
+	enc.AddString("remote_port", port)
 	enc.AddString("proto", r.Proto)
 	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
