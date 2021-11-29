@@ -91,12 +91,12 @@ func (c TemplateContext) OriginalReq() http.Request {
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
 func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
-	
+
 	bodyBuf := bufPool.Get().(*bytes.Buffer)
 	bodyBuf.Reset()
 	defer bufPool.Put(bodyBuf)
 
-        err := c.readFileToBuffer(filename, bodyBuf)
+	err := c.readFileToBuffer(filename, bodyBuf)
 
 	if err != nil {
 		return "", err
@@ -113,7 +113,7 @@ func (c TemplateContext) funcInclude(filename string, args ...interface{}) (stri
 }
 
 // readFileToBuffer reads a file into a buffer
-func (c TemplateContext) readFileToBuffer(filename string, bodyBuf *bytes.Buffer) (error) {
+func (c TemplateContext) readFileToBuffer(filename string, bodyBuf *bytes.Buffer) error {
 	if c.Root == nil {
 		return fmt.Errorf("root file system not specified")
 	}
@@ -128,8 +128,8 @@ func (c TemplateContext) readFileToBuffer(filename string, bodyBuf *bytes.Buffer
 	if err != nil {
 		return err
 	}
-	
-        return nil
+
+	return nil
 }
 
 // funcHTTPInclude returns the body of a virtual (lightweight) request
@@ -191,7 +191,7 @@ func (c *TemplateContext) funcImport(filename string) (string, error) {
 	bodyBuf.Reset()
 	defer bufPool.Put(bodyBuf)
 
-        err := c.readFileToBuffer(filename, bodyBuf)
+	err := c.readFileToBuffer(filename, bodyBuf)
 	if err != nil {
 		return "", err
 	}
@@ -443,4 +443,3 @@ var bufPool = sync.Pool{
 var sprigFuncMap = sprig.TxtFuncMap()
 
 const recursionPreventionHeader = "Caddy-Templates-Include"
-

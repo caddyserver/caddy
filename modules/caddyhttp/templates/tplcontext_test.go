@@ -154,7 +154,7 @@ func TestCookie(t *testing.T) {
 // 	} {
 // 		tplContext := getContextOrFail(t)
 // 		var absFilePath string
-// 
+//
 // 		// create files for test case
 // 		if test.fileName != "" {
 // 			absFilePath := filepath.Join(fmt.Sprintf("%s", tplContext.Root), test.fileName)
@@ -163,7 +163,7 @@ func TestCookie(t *testing.T) {
 // 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 // 			}
 // 		}
-// 
+//
 // 		// perform test
 // 		tplContext.NewTemplate("parent")
 // 		actual, err := tplContext.funcImport(test.fileName)
@@ -177,9 +177,9 @@ func TestCookie(t *testing.T) {
 // 		} else if !templateWasDefined && actual != "" {
 // 			// template should be defined, return value should be an empty string
 // 			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
-// 
+//
 // 		}
-// 
+//
 // 		if absFilePath != "" {
 // 			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
 // 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
@@ -203,7 +203,7 @@ func TestNestedInclude(t *testing.T) {
 			// include in parent
 			child:      `{{ include "file1" }}`,
 			childFile:  "file0",
-                        parent:     `{{ $content := "file2" }}{{ $p := include $content}}`,
+			parent:     `{{ $content := "file2" }}{{ $p := include $content}}`,
 			parentFile: "file1",
 			shouldErr:  false,
 			expect:     ``,
@@ -275,7 +275,7 @@ func TestNestedInclude(t *testing.T) {
 			}
 		}
 	}
-      }
+}
 
 func TestInclude(t *testing.T) {
 	for i, test := range []struct {
