@@ -131,62 +131,62 @@ func TestCookie(t *testing.T) {
 	}
 }
 
-// func TestImport(t *testing.T) {
-// 	for i, test := range []struct {
-// 		fileContent string
-// 		fileName    string
-// 		shouldErr   bool
-// 		expect      string
-// 	}{
-// 		{
-// 			// file exists, template is defined
-// 			fileContent: `{{ define "imported" }}text{{end}}`,
-// 			fileName:    "file1",
-// 			shouldErr:   false,
-// 			expect:      `"imported"`,
-// 		},
-// 		{
-// 			// file does not exit
-// 			fileContent: "",
-// 			fileName:    "",
-// 			shouldErr:   true,
-// 		},
-// 	} {
-// 		tplContext := getContextOrFail(t)
-// 		var absFilePath string
-// 
-// 		// create files for test case
-// 		if test.fileName != "" {
-// 			absFilePath := filepath.Join(fmt.Sprintf("%s", tplContext.Root), test.fileName)
-// 			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
-// 				os.Remove(absFilePath)
-// 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
-// 			}
-// 		}
-// 
-// 		// perform test
-// 		tplContext.NewTemplate("parent")
-// 		actual, err := tplContext.funcImport(test.fileName)
-// 		templateWasDefined := strings.Contains(tplContext.tpl.DefinedTemplates(), test.expect)
-// 		if err != nil {
-// 			if !test.shouldErr {
-// 				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
-// 			}
-// 		} else if test.shouldErr {
-// 			t.Errorf("Test %d: Expected error but had none", i)
-// 		} else if !templateWasDefined && actual != "" {
-// 			// template should be defined, return value should be an empty string
-// 			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
-// 
-// 		}
-// 
-// 		if absFilePath != "" {
-// 			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
-// 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
-// 			}
-// 		}
-// 	}
-// }
+func TestImport(t *testing.T) {
+	for i, test := range []struct {
+		fileContent string
+		fileName    string
+		shouldErr   bool
+		expect      string
+	}{
+		{
+			// file exists, template is defined
+			fileContent: `{{ define "imported" }}text{{end}}`,
+			fileName:    "file1",
+			shouldErr:   false,
+			expect:      `"imported"`,
+		},
+		{
+			// file does not exit
+			fileContent: "",
+			fileName:    "",
+			shouldErr:   true,
+		},
+	} {
+		tplContext := getContextOrFail(t)
+		var absFilePath string
+
+		// create files for test case
+		if test.fileName != "" {
+			absFilePath := filepath.Join(fmt.Sprintf("%s", tplContext.Root), test.fileName)
+			if err := os.WriteFile(absFilePath, []byte(test.fileContent), os.ModePerm); err != nil {
+				os.Remove(absFilePath)
+				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
+			}
+		}
+
+		// perform test
+		tplContext.NewTemplate("parent")
+		actual, err := tplContext.funcImport(test.fileName)
+		templateWasDefined := strings.Contains(tplContext.tpl.DefinedTemplates(), test.expect)
+		if err != nil {
+			if !test.shouldErr {
+				t.Errorf("Test %d: Expected no error, got: '%s'", i, err)
+			}
+		} else if test.shouldErr {
+			t.Errorf("Test %d: Expected error but had none", i)
+		} else if !templateWasDefined && actual != "" {
+			// template should be defined, return value should be an empty string
+			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
+
+		}
+
+		if absFilePath != "" {
+			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
+			}
+		}
+	}
+}
 
 func TestNestedInclude(t *testing.T) {
 	for i, test := range []struct {
@@ -203,7 +203,7 @@ func TestNestedInclude(t *testing.T) {
 			// include in parent
 			child:      `{{ include "file1" }}`,
 			childFile:  "file0",
-                        parent:     `{{ $content := "file2" }}{{ $p := include $content}}`,
+			parent:     `{{ $content := "file2" }}{{ $p := include $content}}`,
 			parentFile: "file1",
 			shouldErr:  false,
 			expect:     ``,
@@ -275,7 +275,7 @@ func TestNestedInclude(t *testing.T) {
 			}
 		}
 	}
-      }
+}
 
 func TestInclude(t *testing.T) {
 	for i, test := range []struct {
