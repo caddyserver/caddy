@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build gofuzz
-// +build gofuzz
+//go:build !windows
+// +build !windows
 
-package templates
+package caddycmd
 
-func FuzzExtractFrontMatter(data []byte) int {
-	_, _, err := extractFrontMatter(string(data))
-	if err != nil {
-		return 0
-	}
-	return 1
+import (
+	"os"
+)
+
+// removeCaddyBinary removes the Caddy binary at the given path.
+//
+// On any non-Windows OS, this simply calls os.Remove, since they should
+// probably not exhibit any issue with processes deleting themselves.
+func removeCaddyBinary(path string) error {
+	return os.Remove(path)
 }

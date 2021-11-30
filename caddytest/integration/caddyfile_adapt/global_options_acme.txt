@@ -21,6 +21,7 @@
 		burst 20
 	}
 	storage_clean_interval 7d
+	renew_interval 1d
 
 	key_type ed25519
 }
@@ -82,6 +83,7 @@
 					},
 					"ask": "https://example.com"
 				},
+				"renew_interval": 86400000000000,
 				"storage_clean_interval": 604800000000000
 			}
 		}

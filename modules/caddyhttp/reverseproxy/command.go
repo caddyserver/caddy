@@ -59,7 +59,7 @@ default, all incoming headers are passed through unmodified.)
 			fs.String("from", "localhost", "Address on which to receive traffic")
 			fs.String("to", "", "Upstream address to which to to proxy traffic")
 			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
-			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY, WHY ARE YOU EVEN USING TLS?)")
+			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING SSL CERTIFICATES!)")
 			return fs
 		}(),
 	})

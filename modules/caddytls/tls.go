@@ -458,19 +458,16 @@ func (t *TLS) cleanStorageUnits() {
 	defer storageCleanMu.Unlock()
 
 	// If storage was cleaned recently, don't do it again for now. Although the ticker
-	// drops missed ticks for us, config reloads discard the old ticker and replace it
-	// with a new one, possibly invoking a cleaning to happen again too soon.
-	// (We divide the interval by 2 because the actual cleaning takes non-zero time,
-	// and we don't want to skip cleanings if we don't have to; whereas if a cleaning
-	// took the entire interval, we'd probably want to skip the next one so we aren't
+	// calling this function drops missed ticks for us, config reloads discard the old
+	// ticker and replace it with a new one, possibly invoking a cleaning to happen again
+	// too soon. (We divide the interval by 2 because the actual cleaning takes non-zero
+	// time, and we don't want to skip cleanings if we don't have to; whereas if a cleaning
+	// took most of the interval, we'd probably want to skip the next one so we aren't
 	// constantly cleaning. This allows cleanings to take up to half the interval's
 	// duration before we decide to skip the next one.)
 	if !storageClean.IsZero() && time.Since(storageClean) < t.storageCleanInterval()/2 {
 		return
 	}
-
-	// mark when storage cleaning was last initiated
-	storageClean = time.Now()
 
 	options := certmagic.CleanStorageOptions{
 		OCSPStaples:            true,
@@ -503,6 +500,9 @@ func (t *TLS) cleanStorageUnits() {
 			storagesCleaned[storageStr] = struct{}{}
 		}
 	}
+
+	// remember last time storage was finished cleaning
+	storageClean = time.Now()
 
 	t.logger.Info("finished cleaning storage units")
 }

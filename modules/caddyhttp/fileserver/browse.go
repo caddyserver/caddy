@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,6 +31,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"go.uber.org/zap"
 )
+
+//go:embed browse.html
+var defaultBrowseTemplate string
 
 // Browse configures directory browsing.
 type Browse struct {
@@ -137,12 +141,7 @@ func (fsrv *FileServer) loadDirectoryContents(dir *os.File, root, urlPath string
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	l, err := fsrv.directoryListing(files, canGoUp, root, urlPath, repl)
-	if err != nil {
-		return browseTemplateContext{}, err
-	}
-
-	return l, nil
+	return fsrv.directoryListing(files, canGoUp, root, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.

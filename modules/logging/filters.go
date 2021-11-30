@@ -15,7 +15,11 @@
 package logging
 
 import (
+	"errors"
 	"net"
+	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
@@ -27,6 +31,9 @@ func init() {
 	caddy.RegisterModule(DeleteFilter{})
 	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
+	caddy.RegisterModule(QueryFilter{})
+	caddy.RegisterModule(CookieFilter{})
+	caddy.RegisterModule(RegexpFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -185,15 +192,312 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
+type filterAction string
+
+const (
+	// Replace value(s) of query parameter(s).
+	replaceAction filterAction = "replace"
+	// Delete query parameter(s).
+	deleteAction filterAction = "delete"
+)
+
+func (a filterAction) IsValid() error {
+	switch a {
+	case replaceAction, deleteAction:
+		return nil
+	}
+
+	return errors.New("invalid action type")
+}
+
+type queryFilterAction struct {
+	// `replace` to replace the value(s) associated with the parameter(s) or `delete` to remove them entirely.
+	Type filterAction `json:"type"`
+
+	// The name of the query parameter.
+	Parameter string `json:"parameter"`
+
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
+}
+
+// QueryFilter is a Caddy log field filter that filters
+// query parameters from a URL.
+//
+// This filter updates the logged URL string to remove or replace query
+// parameters containing sensitive data. For instance, it can be used
+// to redact any kind of secrets which were passed as query parameters,
+// such as OAuth access tokens, session IDs, magic link tokens, etc.
+type QueryFilter struct {
+	// A list of actions to apply to the query parameters of the URL.
+	Actions []queryFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *QueryFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (QueryFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.query",
+		New: func() caddy.Module { return new(QueryFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			qfa := queryFilterAction{}
+			switch d.Val() {
+			case "replace":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = replaceAction
+				qfa.Parameter = d.Val()
+
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				qfa.Value = d.Val()
+
+			case "delete":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				qfa.Type = deleteAction
+				qfa.Parameter = d.Val()
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+
+			m.Actions = append(m.Actions, qfa)
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
+	u, err := url.Parse(in.String)
+	if err != nil {
+		return in
+	}
+
+	q := u.Query()
+	for _, a := range m.Actions {
+		switch a.Type {
+		case replaceAction:
+			for i := range q[a.Parameter] {
+				q[a.Parameter][i] = a.Value
+			}
+
+		case deleteAction:
+			q.Del(a.Parameter)
+		}
+	}
+
+	u.RawQuery = q.Encode()
+	in.String = u.String()
+
+	return in
+}
+
+type cookieFilterAction struct {
+	// `replace` to replace the value of the cookie or `delete` to remove it entirely.
+	Type filterAction `json:"type"`
+
+	// The name of the cookie.
+	Name string `json:"name"`
+
+	// The value to use as replacement if the action is `replace`.
+	Value string `json:"value,omitempty"`
+}
+
+// CookieFilter is a Caddy log field filter that filters
+// cookies.
+//
+// This filter updates the logged HTTP header string
+// to remove or replace cookies containing sensitive data. For instance,
+// it can be used to redact any kind of secrets, such as session IDs.
+//
+// If several actions are configured for the same cookie name, only the first
+// will be applied.
+type CookieFilter struct {
+	// A list of actions to apply to the cookies.
+	Actions []cookieFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *CookieFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (CookieFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.cookie",
+		New: func() caddy.Module { return new(CookieFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			cfa := cookieFilterAction{}
+			switch d.Val() {
+			case "replace":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				cfa.Type = replaceAction
+				cfa.Name = d.Val()
+
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				cfa.Value = d.Val()
+
+			case "delete":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+
+				cfa.Type = deleteAction
+				cfa.Name = d.Val()
+
+			default:
+				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+
+			m.Actions = append(m.Actions, cfa)
+		}
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
+	originRequest := http.Request{Header: http.Header{"Cookie": []string{in.String}}}
+	cookies := originRequest.Cookies()
+	transformedRequest := http.Request{Header: make(http.Header)}
+
+OUTER:
+	for _, c := range cookies {
+		for _, a := range m.Actions {
+			if c.Name != a.Name {
+				continue
+			}
+
+			switch a.Type {
+			case replaceAction:
+				c.Value = a.Value
+				transformedRequest.AddCookie(c)
+				continue OUTER
+
+			case deleteAction:
+				continue OUTER
+			}
+		}
+
+		transformedRequest.AddCookie(c)
+	}
+
+	in.String = transformedRequest.Header.Get("Cookie")
+
+	return in
+}
+
+// RegexpFilter is a Caddy log field filter that
+// replaces the field matching the provided regexp with the indicated string.
+type RegexpFilter struct {
+	// The regular expression pattern defining what to replace.
+	RawRegexp string `json:"regexp,omitempty"`
+
+	// The value to use as replacement
+	Value string `json:"value,omitempty"`
+
+	regexp *regexp.Regexp
+}
+
+// CaddyModule returns the Caddy module information.
+func (RegexpFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.regexp",
+		New: func() caddy.Module { return new(RegexpFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (f *RegexpFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			f.RawRegexp = d.Val()
+		}
+		if d.NextArg() {
+			f.Value = d.Val()
+		}
+	}
+	return nil
+}
+
+// Provision compiles m's regexp.
+func (m *RegexpFilter) Provision(ctx caddy.Context) error {
+	r, err := regexp.Compile(m.RawRegexp)
+	if err != nil {
+		return err
+	}
+
+	m.regexp = r
+
+	return nil
+}
+
+// Filter filters the input field with the replacement value if it matches the regexp.
+func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
+	in.String = f.regexp.ReplaceAllString(in.String, f.Value)
+
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
 	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
+	_ LogFieldFilter = (*QueryFilter)(nil)
+	_ LogFieldFilter = (*CookieFilter)(nil)
+	_ LogFieldFilter = (*RegexpFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
+	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
+	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
+	_ caddyfile.Unmarshaler = (*RegexpFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
+	_ caddy.Provisioner = (*RegexpFilter)(nil)
+
+	_ caddy.Validator = (*QueryFilter)(nil)
 )

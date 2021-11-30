@@ -487,7 +487,7 @@ func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 		if addr.Host == "" {
 			continue
 		}
-		if addr.Scheme != "http" && addr.Port != httpPort {
+		if addr.Scheme != "http" || addr.Port != httpPort {
 			hostMap[addr.Host] = struct{}{}
 		}
 	}
