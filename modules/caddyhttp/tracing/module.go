@@ -51,7 +51,8 @@ func (ot *Tracing) Provision(ctx caddy.Context) error {
 	return err
 }
 
-// Cleanup implements caddy.CleanerUpper and closes any idle connections. It calls Shutdown method for a trace provider https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#shutdown.
+// Cleanup implements caddy.CleanerUpper and closes any idle connections. It
+// calls Shutdown method for a trace provider https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#shutdown.
 func (ot *Tracing) Cleanup() error {
 	if err := ot.otel.cleanup(ot.logger); err != nil {
 		return fmt.Errorf("tracerProvider shutdown: %w", err)
