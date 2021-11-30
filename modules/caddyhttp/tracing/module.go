@@ -23,7 +23,8 @@ func init() {
 // variables (see https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md).
 // Some values can be overwritten in the configuration file.
 type Tracing struct {
-	// SpanName is a span name. It SHOULD follow the naming guideline https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
+	// SpanName is a span name. It should follow the naming guidelines here:
+	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
 	SpanName string `json:"span"`
 
 	// otel implements opentelemetry related logic.
