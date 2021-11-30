@@ -17,9 +17,11 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("tracing", parseCaddyfile)
 }
 
-// Tracing implements an HTTP handler that adds support for the opentelemetry tracing.
-// It is responsible for the injection and propagation of the tracing contexts.
-// Tracing module can be configured via environment variables https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md. Some values can be overwritten with values from the configuration file.
+// Tracing implements an HTTP handler that adds support for distributed tracing,
+// using OpenTelemetry. This module is responsible for the injection and
+// propagation of the trace context. Configure this module via environment
+// variables (see https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/sdk-environment-variables.md).
+// Some values can be overwritten in the configuration file.
 type Tracing struct {
 	// SpanName is a span name. It SHOULD follow the naming guideline https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
 	SpanName string `json:"span"`
