@@ -26,64 +26,66 @@ func init() {
 
 // parsePKIApp parses the global log option. Syntax:
 //
-//     pki [id] {
-//         name                     <name>
-//         root_common_name         <name>
-//         intermediate_common_name <name>
+//     pki {
+//         ca [<id>] {
+//             name                     <name>
+//             root_common_name         <name>
+//             intermediate_common_name <name>
+//         }
 //     }
 //
 // When the CA ID is unspecified, 'local' is assumed.
 //
 func parsePKIApp(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error) {
-	var pki *caddypki.PKI
-	if existingVal != nil {
-		unwrappedPki, ok := existingVal.(*caddypki.PKI)
-		if !ok {
-			return nil, d.Errf("failed to unwrap existing PKI value")
-		}
-		pki = unwrappedPki
-	} else {
-		pki = &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}
-	}
+	pki := &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}
 
-	pkiCa := new(caddypki.CA)
 	for d.Next() {
-		if d.NextArg() {
-			pkiCa.ID = d.Val()
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-		}
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			switch d.Val() {
-			case "name":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
+			case "ca":
+				pkiCa := new(caddypki.CA)
+				if d.NextArg() {
+					pkiCa.ID = d.Val()
+					if d.NextArg() {
+						return nil, d.ArgErr()
+					}
 				}
-				pkiCa.Name = d.Val()
+				if pkiCa.ID == "" {
+					pkiCa.ID = caddypki.DefaultCAID
+				}
 
-			case "root_common_name":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				pkiCa.Name = d.Val()
+				for nesting := d.Nesting(); d.NextBlock(nesting); {
+					switch d.Val() {
+					case "name":
+						if !d.NextArg() {
+							return nil, d.ArgErr()
+						}
+						pkiCa.Name = d.Val()
 
-			case "intermediate_common_name":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
+					case "root_common_name":
+						if !d.NextArg() {
+							return nil, d.ArgErr()
+						}
+						pkiCa.Name = d.Val()
+
+					case "intermediate_common_name":
+						if !d.NextArg() {
+							return nil, d.ArgErr()
+						}
+						pkiCa.Name = d.Val()
+
+					default:
+						return nil, d.Errf("unrecognized pki ca option '%s'", d.Val())
+					}
 				}
-				pkiCa.Name = d.Val()
+
+				pki.CAs[pkiCa.ID] = pkiCa
 
 			default:
 				return nil, d.Errf("unrecognized pki option '%s'", d.Val())
 			}
 		}
 	}
-	if pkiCa.ID == "" {
-		pkiCa.ID = caddypki.DefaultCAID
-	}
-
-	pki.CAs[pkiCa.ID] = pkiCa
 
 	return pki, nil
 }

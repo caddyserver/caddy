@@ -1,14 +1,16 @@
 {
 	skip_install_trust
 	pki {
-		name "Local"
-		root_common_name "Custom Local Root Name"
-		intermediate_common_name "Custom Local Intermediate Name"
-	}
-	pki foo {
-		name "Foo"
-		root_common_name "Custom Foo Root Name"
-		intermediate_common_name "Custom Foo Intermediate Name"
+		ca {
+			name "Local"
+			root_common_name "Custom Local Root Name"
+			intermediate_common_name "Custom Local Intermediate Name"
+		}
+		ca foo {
+			name "Foo"
+			root_common_name "Custom Foo Root Name"
+			intermediate_common_name "Custom Foo Intermediate Name"
+		}
 	}
 }
 
