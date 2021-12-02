@@ -574,6 +574,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	// point the request to this upstream
 	h.directRequest(req, di)
 
+	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
+	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
+
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
 	start := time.Now()
@@ -582,14 +585,20 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Duration("duration", duration),
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
+		zap.Object("request", caddyhttp.LoggableHTTPRequest{
+			Request:              req,
+			ShouldLogCredentials: shouldLogCredentials,
+		}),
 	)
 	if err != nil {
 		logger.Debug("upstream roundtrip", zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
-		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
+		zap.Object("headers", caddyhttp.LoggableHTTPHeader{
+			Header:               res.Header,
+			ShouldLogCredentials: shouldLogCredentials,
+		}),
 		zap.Int("status", res.StatusCode))
 
 	// duration until upstream wrote response headers (roundtrip duration)

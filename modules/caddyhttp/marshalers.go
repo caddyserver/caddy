@@ -24,7 +24,11 @@ import (
 )
 
 // LoggableHTTPRequest makes an HTTP request loggable with zap.Object().
-type LoggableHTTPRequest struct{ *http.Request }
+type LoggableHTTPRequest struct {
+	*http.Request
+
+	ShouldLogCredentials bool
+}
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
@@ -40,7 +44,10 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
 	enc.AddString("uri", r.RequestURI)
-	enc.AddObject("headers", LoggableHTTPHeader(r.Header))
+	enc.AddObject("headers", LoggableHTTPHeader{
+		Header:               r.Header,
+		ShouldLogCredentials: r.ShouldLogCredentials,
+	})
 	if r.TLS != nil {
 		enc.AddObject("tls", LoggableTLSConnState(*r.TLS))
 	}
@@ -48,19 +55,25 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // LoggableHTTPHeader makes an HTTP header loggable with zap.Object().
-// Headers with potentially sensitive information (Cookie, Authorization,
-// and Proxy-Authorization) are logged with empty values.
-type LoggableHTTPHeader http.Header
+// Headers with potentially sensitive information (Cookie, Set-Cookie,
+// Authorization, and Proxy-Authorization) are logged with empty values.
+type LoggableHTTPHeader struct {
+	http.Header
+
+	ShouldLogCredentials bool
+}
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (h LoggableHTTPHeader) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	if h == nil {
+	if h.Header == nil {
 		return nil
 	}
-	for key, val := range h {
-		switch strings.ToLower(key) {
-		case "cookie", "authorization", "proxy-authorization":
-			val = []string{}
+	for key, val := range h.Header {
+		if !h.ShouldLogCredentials {
+			switch strings.ToLower(key) {
+			case "cookie", "set-cookie", "authorization", "proxy-authorization":
+				val = []string{}
+			}
 		}
 		enc.AddArray(key, LoggableStringArray(val))
 	}
