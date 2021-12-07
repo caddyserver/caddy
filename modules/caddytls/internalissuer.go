@@ -68,18 +68,30 @@ func (InternalIssuer) CaddyModule() caddy.ModuleInfo {
 func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger(iss)
 
+	// set some defaults
+	if iss.CA == "" {
+		iss.CA = caddypki.DefaultCAID
+	}
+
 	// get a reference to the configured CA
 	appModule, err := ctx.App("pki")
 	if err != nil {
 		return err
 	}
 	pkiApp := appModule.(*caddypki.PKI)
-	if iss.CA == "" {
-		iss.CA = caddypki.DefaultCAID
-	}
 	ca, ok := pkiApp.CAs[iss.CA]
 	if !ok {
-		return fmt.Errorf("no certificate authority configured with id: %s", iss.CA)
+		// for anything other than the default CA ID, error out if it wasn't configured
+		if iss.CA != caddypki.DefaultCAID {
+			return fmt.Errorf("no certificate authority configured with id: %s", iss.CA)
+		}
+
+		// for the default CA ID, provision it, because we want it to "just work"
+		err = pkiApp.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to provision default CA: %s", err)
+		}
+		ca = pkiApp.CAs[iss.CA]
 	}
 	iss.ca = ca
 

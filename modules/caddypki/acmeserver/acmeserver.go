@@ -104,7 +104,17 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	pkiApp := appModule.(*caddypki.PKI)
 	ca, ok := pkiApp.CAs[ash.CA]
 	if !ok {
-		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
+		// for anything other than the default CA ID, error out if it wasn't configured
+		if ash.CA != caddypki.DefaultCAID {
+			return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
+		}
+
+		// for the default CA ID, provision it, because we want it to "just work"
+		err = pkiApp.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to provision default CA: %s", err)
+		}
+		ca = pkiApp.CAs[ash.CA]
 	}
 
 	database, err := ash.openDatabase()

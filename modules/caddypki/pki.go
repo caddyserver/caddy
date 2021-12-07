@@ -54,14 +54,8 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 	p.ctx = ctx
 	p.log = ctx.Logger(p)
 
-	// if this app is initialized at all, ensure there's at
-	// least a default CA that can be used: the standard CA
-	// which is used implicitly for signing local-use certs
 	if p.CAs == nil {
 		p.CAs = make(map[string]*CA)
-	}
-	if _, ok := p.CAs[DefaultCAID]; !ok {
-		p.CAs[DefaultCAID] = new(CA)
 	}
 
 	for caID, ca := range p.CAs {
@@ -71,7 +65,27 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// if this app is initialized at all, ensure there's at
+	// least a default CA that can be used: the standard CA
+	// which is used implicitly for signing local-use certs
+	if len(p.CAs) == 0 {
+		err := p.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning CA '%s': %v", DefaultCAID, err)
+		}
+	}
+
 	return nil
+}
+
+// ProvisionDefaultCA sets up the default CA.
+func (p *PKI) ProvisionDefaultCA(ctx caddy.Context) error {
+	if p.CAs == nil {
+		p.CAs = make(map[string]*CA)
+	}
+
+	p.CAs[DefaultCAID] = new(CA)
+	return p.CAs[DefaultCAID].Provision(ctx, DefaultCAID, p.log)
 }
 
 // Start starts the PKI app.
