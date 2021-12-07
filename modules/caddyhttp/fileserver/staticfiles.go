@@ -46,7 +46,7 @@ type FileServer struct {
 	Root string `json:"root,omitempty"`
 
 	// A list of files or folders to hide; the file server will pretend as if
-	// they don't exist. Accepts globular patterns like "*.ext" or "/foo/*/bar"
+	// they don't exist. Accepts globular patterns like `*.ext` or `/foo/*/bar`
 	// as well as placeholders. Because site roots can be dynamic, this list
 	// uses file system paths, not request paths. To clarify, the base of
 	// relative paths is the current working directory, NOT the site root.
