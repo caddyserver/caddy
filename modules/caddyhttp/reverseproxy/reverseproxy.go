@@ -249,12 +249,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
-		host := new(Host)
-		existingHost, loaded := hosts.LoadOrStore(upstream.String(), host)
-		if loaded {
-			host = existingHost.(*Host)
-		}
-		upstream.Host = host
+		upstream.setHost()
 
 		// give it the circuit breaker, if any
 		upstream.cb = h.CB
@@ -424,19 +419,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.duration", time.Since(start))
 	}()
 
-	// get the list of upstreams
-	upstreams := h.Upstreams
-	if h.DynamicUpstreams != nil {
-		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
-		if err != nil {
-			h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
-		} else {
-			upstreams = dUpstreams
-		}
-	}
-
 	var proxyErr error
 	for {
+		// get the updated list of upstreams
+		upstreams := h.Upstreams
+		if h.DynamicUpstreams != nil {
+			dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+			if err != nil {
+				h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
+			} else {
+				upstreams = dUpstreams
+			}
+		}
+
 		// choose an available upstream
 		upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 		if upstream == nil {
@@ -953,7 +948,14 @@ type Selector interface {
 
 // UpstreamSource gets the list of upstreams that can be used when
 // proxying a request. Returned upstreams will be load balanced and
-// health-checked.
+// health-checked. This should be a very fast function -- instant
+// if possible -- and the return value must be as stable as possible.
+// In other words, the list of upstreams should ideally not change much
+// across successive calls. If the list of upstreams changes or the
+// ordering is not stable, load balancing will suffer. This function
+// may be called during each retry, multiple times per request, and as
+// such, needs to be instantaneous. The returned slice will not be
+// modified.
 type UpstreamSource interface {
 	GetUpstreams(*http.Request) ([]*Upstream, error)
 }

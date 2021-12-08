@@ -143,6 +143,15 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	}, nil
 }
 
+func (u *Upstream) setHost() {
+	host := new(Host)
+	existingHost, loaded := hosts.LoadOrStore(u.String(), host)
+	if loaded {
+		host = existingHost.(*Host)
+	}
+	u.Host = host
+}
+
 // Host is the basic, in-memory representation
 // of the state of a remote host.
 type Host struct {
