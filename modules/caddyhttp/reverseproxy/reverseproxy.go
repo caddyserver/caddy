@@ -381,32 +381,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
 
-	// we will need the original headers and Host value if
-	// header operations are configured; and we should
-	// restore them after we're done if they are changed
-	// (for example, changing the outbound Host header
-	// should not permanently change r.Host; issue #3509)
-	reqHost := r.Host
-	reqHeader := r.Header
-
-	// sanitize the request URL; we expect it to not contain the scheme and host
-	// since those should be determined by r.TLS and r.Host respectively, but
-	// some clients may include it in the request-line, which is technically
-	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
-	// dialer will behave. See #4237 for context.
-	origURLScheme := r.URL.Scheme
-	origURLHost := r.URL.Host
-	r.URL.Scheme = ""
-	r.URL.Host = ""
-
-	// restore modifications to the request after we're done proxying
-	defer func() {
-		r.Host = reqHost     // TODO: data race, see #4038
-		r.Header = reqHeader // TODO: data race, see #4038
-		r.URL.Scheme = origURLScheme
-		r.URL.Host = origURLHost
-	}()
-
 	start := time.Now()
 	defer func() {
 		// total proxying duration, including time spent on LB and retries
@@ -449,6 +423,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
 		repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
+		// preserve the mutable parts of the request, and
+		// set up a defer to make sure it's always reset
+		// by the end of the proxy handler
+		reqHost, reqHeader, resetRequest := h.preserveRequest(r)
+		defer resetRequest()
+
 		// mutate request headers according to this upstream;
 		// because we're in a retry loop, we have to copy
 		// headers (and the r.Host value) from the original
@@ -461,7 +441,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		// proxy the request to that upstream
-		proxyErr = h.reverseProxy(w, r, repl, dialInfo, next)
+		proxyErr = h.reverseProxy(w, r, repl, dialInfo, resetRequest, next)
 		if proxyErr == nil || proxyErr == context.Canceled {
 			// context.Canceled happens when the downstream client
 			// cancels the request, which is not our failure
@@ -483,9 +463,45 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
 			break
 		}
+
+		// make sure to reset the request before retrying
+		resetRequest()
 	}
 
 	return statusError(proxyErr)
+}
+
+// preserveRequest makes sure we preserve the parts of the
+// request that we mutate while performing a proxy roundtrip
+// and returns a callback to reset the request once done.
+func (h Handler) preserveRequest(r *http.Request) (string, http.Header, func()) {
+	// we will need the original headers and Host value if
+	// header operations are configured; and we should
+	// restore them after we're done if they are changed
+	// (for example, changing the outbound Host header
+	// should not permanently change r.Host; issue #3509)
+	reqHost := r.Host
+	reqHeader := r.Header
+
+	// sanitize the request URL; we expect it to not contain the scheme and host
+	// since those should be determined by r.TLS and r.Host respectively, but
+	// some clients may include it in the request-line, which is technically
+	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
+	// dialer will behave. See #4237 for context.
+	origURLScheme := r.URL.Scheme
+	origURLHost := r.URL.Host
+	r.URL.Scheme = ""
+	r.URL.Host = ""
+
+	// restore modifications to the request after we're done proxying
+	resetRequest := func() {
+		r.Host = reqHost     // TODO: data race, see #4038
+		r.Header = reqHeader // TODO: data race, see #4038
+		r.URL.Scheme = origURLScheme
+		r.URL.Host = origURLHost
+	}
+
+	return reqHost, reqHeader, resetRequest
 }
 
 // prepareRequest modifies req so that it is ready to be proxied,
@@ -566,7 +582,7 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
-func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
+func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, resetRequest func(), next caddyhttp.Handler) error {
 	_ = di.Upstream.Host.CountRequest(1)
 	//nolint:errcheck
 	defer di.Upstream.Host.CountRequest(-1)
@@ -600,6 +616,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 			ShouldLogCredentials: shouldLogCredentials,
 		}),
 		zap.Int("status", res.StatusCode))
+
+	// make sure the request is reset to its original state after
+	// having performed the roundtrip, but before writing the response
+	resetRequest()
 
 	// duration until upstream wrote response headers (roundtrip duration)
 	repl.Set("http.reverse_proxy.upstream.latency", duration)
