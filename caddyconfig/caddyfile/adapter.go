@@ -88,7 +88,7 @@ func formattingDifference(filename string, body []byte) (caddyconfig.Warning, bo
 	return caddyconfig.Warning{
 		File:    filename,
 		Line:    line,
-		Message: "input is not formatted with 'caddy fmt'",
+		Message: "Caddyfile input is not formatted; run the 'caddy fmt' command to fix inconsistencies",
 	}, true
 }
 
