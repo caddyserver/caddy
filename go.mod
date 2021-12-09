@@ -21,7 +21,7 @@ require (
 	github.com/smallstep/certificates v0.17.5-0.20211008195551-04fe3126bebf
 	github.com/smallstep/cli v0.17.6
 	github.com/smallstep/nosql v0.3.8
-	github.com/smallstep/truststore v0.10.0
+	github.com/smallstep/truststore v0.10.1
 	github.com/yuin/goldmark v1.4.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
 	go.uber.org/zap v1.19.0
