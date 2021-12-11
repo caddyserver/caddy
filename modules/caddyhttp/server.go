@@ -157,7 +157,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// it enters any handler chain; this is necessary
 	// to capture the original request in case it gets
 	// modified during handling
-	loggableReq := zap.Object("request", LoggableHTTPRequest{r})
+	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
+	loggableReq := zap.Object("request", LoggableHTTPRequest{
+		Request:              r,
+		ShouldLogCredentials: shouldLogCredentials,
+	})
 	errLog := s.errorLogger.With(loggableReq)
 
 	var duration time.Duration
@@ -187,12 +191,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			userID, _ := repl.GetString("http.auth.user.id")
 
 			log("handled request",
-				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
 				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
-				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
+				zap.Object("resp_headers", LoggableHTTPHeader{
+					Header:               wrec.Header(),
+					ShouldLogCredentials: shouldLogCredentials,
+				}),
 			)
 		}()
 	}
@@ -509,6 +515,12 @@ type ServerLogConfig struct {
 	// If true, requests to any host not appearing in the
 	// LoggerNames (logger_names) map will not be logged.
 	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
+
+	// If true, credentials that are otherwise omitted, will be logged.
+	// The definition of credentials is defined by https://fetch.spec.whatwg.org/#credentials,
+	// and this includes some request and response headers, i.e `Cookie`,
+	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
+	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
 }
 
 // wrapLogger wraps logger in a logger named according to user preferences for the given host.
@@ -626,14 +638,6 @@ func cloneURL(from, to *url.URL) {
 		to.User = userInfo
 	}
 }
-
-const (
-	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
-
-	// commonLogEmptyValue is the common empty log value.
-	commonLogEmptyValue = "-"
-)
 
 // Context keys for HTTP request context values.
 const (
