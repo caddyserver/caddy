@@ -340,6 +340,9 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			if err != nil {
 				return nil, h.Errf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
+
+			dir = normalizeDirectiveName(dir)
+
 			for _, result := range results {
 				result.directive = dir
 				allResults = append(allResults, result)
