@@ -102,9 +102,9 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return err
 	}
 	pkiApp := appModule.(*caddypki.PKI)
-	ca, ok := pkiApp.CAs[ash.CA]
-	if !ok {
-		return fmt.Errorf("no certificate authority configured with id: %s", ash.CA)
+	ca, err := pkiApp.GetCA(ash.CA, &ctx)
+	if err != nil {
+		return err
 	}
 
 	database, err := ash.openDatabase()
