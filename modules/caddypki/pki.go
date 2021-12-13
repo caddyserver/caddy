@@ -121,9 +121,8 @@ func (p *PKI) Stop() error {
 
 // GetCA retrieves a CA by ID. If the ID is the default
 // CA ID, and it hasn't been provisioned yet, it will
-// be provisioned. The context must be passed if this
-// is called from a module's Provision().
-func (p *PKI) GetCA(id string, ctx *caddy.Context) (*CA, error) {
+// be provisioned.
+func (p *PKI) GetCA(ctx caddy.Context, id string) (*CA, error) {
 	ca, ok := p.CAs[id]
 	if !ok {
 		// for anything other than the default CA ID, error out if it wasn't configured
@@ -132,10 +131,7 @@ func (p *PKI) GetCA(id string, ctx *caddy.Context) (*CA, error) {
 		}
 
 		// for the default CA ID, provision it, because we want it to "just work"
-		if ctx == nil {
-			return nil, fmt.Errorf("cannot provision default CA without the context")
-		}
-		err := p.ProvisionDefaultCA(*ctx)
+		err := p.ProvisionDefaultCA(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to provision default CA: %s", err)
 		}

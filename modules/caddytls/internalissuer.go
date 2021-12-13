@@ -78,7 +78,7 @@ func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
 		return err
 	}
 	pkiApp := appModule.(*caddypki.PKI)
-	ca, err := pkiApp.GetCA(iss.CA, &ctx)
+	ca, err := pkiApp.GetCA(ctx, iss.CA)
 	if err != nil {
 		return err
 	}

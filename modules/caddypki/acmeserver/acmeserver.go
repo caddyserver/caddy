@@ -102,7 +102,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return err
 	}
 	pkiApp := appModule.(*caddypki.PKI)
-	ca, err := pkiApp.GetCA(ash.CA, &ctx)
+	ca, err := pkiApp.GetCA(ctx, ash.CA)
 	if err != nil {
 		return err
 	}
