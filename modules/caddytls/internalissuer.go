@@ -19,7 +19,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -79,19 +78,9 @@ func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
 		return err
 	}
 	pkiApp := appModule.(*caddypki.PKI)
-	ca, ok := pkiApp.CAs[iss.CA]
-	if !ok {
-		// for anything other than the default CA ID, error out if it wasn't configured
-		if iss.CA != caddypki.DefaultCAID {
-			return fmt.Errorf("no certificate authority configured with id: %s", iss.CA)
-		}
-
-		// for the default CA ID, provision it, because we want it to "just work"
-		err = pkiApp.ProvisionDefaultCA(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to provision default CA: %s", err)
-		}
-		ca = pkiApp.CAs[iss.CA]
+	ca, err := pkiApp.GetCA(iss.CA, &ctx)
+	if err != nil {
+		return err
 	}
 	iss.ca = ca
 

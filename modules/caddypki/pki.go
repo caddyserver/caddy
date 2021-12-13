@@ -34,6 +34,8 @@ func init() {
 type PKI struct {
 	// The certificate authorities to manage. Each CA is keyed by an
 	// ID that is used to uniquely identify it from other CAs.
+	// At runtime, the GetCA() method should be used instead to ensure
+	// the default CA is provisioned if it hadn't already been.
 	// The default CA ID is "local".
 	CAs map[string]*CA `json:"certificate_authorities,omitempty"`
 
@@ -53,10 +55,6 @@ func (PKI) CaddyModule() caddy.ModuleInfo {
 func (p *PKI) Provision(ctx caddy.Context) error {
 	p.ctx = ctx
 	p.log = ctx.Logger(p)
-
-	if p.CAs == nil {
-		p.CAs = make(map[string]*CA)
-	}
 
 	for caID, ca := range p.CAs {
 		err := ca.Provision(ctx, caID, p.log)
@@ -119,6 +117,32 @@ func (p *PKI) Start() error {
 // Stop stops the PKI app.
 func (p *PKI) Stop() error {
 	return nil
+}
+
+// GetCA retrieves a CA by ID. If the ID is the default
+// CA ID, and it hasn't been provisioned yet, it will
+// be provisioned. The context must be passed if this
+// is called from a module's Provision().
+func (p *PKI) GetCA(id string, ctx *caddy.Context) (*CA, error) {
+	ca, ok := p.CAs[id]
+	if !ok {
+		// for anything other than the default CA ID, error out if it wasn't configured
+		if id != DefaultCAID {
+			return nil, fmt.Errorf("no certificate authority configured with id: %s", id)
+		}
+
+		// for the default CA ID, provision it, because we want it to "just work"
+		if ctx == nil {
+			return nil, fmt.Errorf("cannot provision default CA without the context")
+		}
+		err := p.ProvisionDefaultCA(*ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision default CA: %s", err)
+		}
+		ca = p.CAs[id]
+	}
+
+	return ca, nil
 }
 
 // Interface guards
