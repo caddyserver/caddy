@@ -249,7 +249,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// set up upstreams
 	for _, upstream := range h.Upstreams {
 		// create or get the host representation for this upstream
-		upstream.setHost()
+		upstream.fillHost()
 
 		// give it the circuit breaker, if any
 		upstream.cb = h.CB

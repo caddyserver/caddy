@@ -143,7 +143,7 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	}, nil
 }
 
-func (u *Upstream) setHost() {
+func (u *Upstream) fillHost() {
 	host := new(Host)
 	existingHost, loaded := hosts.LoadOrStore(u.String(), host)
 	if loaded {

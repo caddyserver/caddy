@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -42,6 +43,8 @@ type SRVUpstreams struct {
 	// The name label; or, if service and proto are
 	// empty, the entire domain name to look up.
 	Name string `json:"name,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,7 +60,8 @@ func (su SRVUpstreams) String() string {
 	return fmt.Sprintf("_%s._%s.%s", su.Service, su.Proto, su.Name)
 }
 
-func (su *SRVUpstreams) Provision(_ caddy.Context) error {
+func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
+	su.logger = ctx.Logger(su)
 	if su.Proto != "tcp" && su.Proto != "udp" {
 		return fmt.Errorf("invalid proto '%s'", su.Proto)
 	}
@@ -74,7 +78,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	srvsMu.RLock()
 	cached := srvs[suStr]
 	srvsMu.RUnlock()
-	if cached.fresh() {
+	if cached.isFresh() {
 		return cached.upstreams, nil
 	}
 
@@ -86,7 +90,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// lock from when we first checked freshness; another goroutine might
 	// have refreshed it in the meantime before we re-obtained our lock
 	cached = srvs[suStr]
-	if cached.fresh() {
+	if cached.isFresh() {
 		return cached.upstreams, nil
 	}
 
@@ -98,7 +102,13 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 
 	_, records, err := net.DefaultResolver.LookupSRV(r.Context(), service, proto, name)
 	if err != nil {
-		return nil, err
+		// From LookupSRV docs: "If the response contains invalid names, those records are filtered
+		// out and an error will be returned alongside the the remaining results, if any." Thus, we
+		// only return an error if no records were also returned.
+		if len(records) == 0 {
+			return nil, err
+		}
+		su.logger.Warn("SRV records filtered", zap.Error(err))
 	}
 
 	upstreams := make([]*Upstream, len(records))
@@ -106,7 +116,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i] = &Upstream{
 			Dial: net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port))),
 		}
-		upstreams[i].setHost()
+		upstreams[i].fillHost()
 	}
 
 	// TODO: expire these somehow
@@ -125,7 +135,7 @@ type srvLookup struct {
 	upstreams    []*Upstream
 }
 
-func (sl srvLookup) fresh() bool {
+func (sl srvLookup) isFresh() bool {
 	return time.Since(sl.freshness) < sl.srvUpstreams.Refresh
 }
 
@@ -176,7 +186,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	aAaaaMu.RLock()
 	cached := aAaaa[auStr]
 	aAaaaMu.RUnlock()
-	if cached.fresh() {
+	if cached.isFresh() {
 		return cached.upstreams, nil
 	}
 
@@ -188,7 +198,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// lock from when we first checked freshness; another goroutine might
 	// have refreshed it in the meantime before we re-obtained our lock
 	cached = aAaaa[auStr]
-	if cached.fresh() {
+	if cached.isFresh() {
 		return cached.upstreams, nil
 	}
 
@@ -206,7 +216,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i] = &Upstream{
 			Dial: net.JoinHostPort(ip.String(), port),
 		}
-		upstreams[i].setHost()
+		upstreams[i].fillHost()
 	}
 
 	// TODO: expire these somehow
@@ -225,7 +235,7 @@ type aLookup struct {
 	upstreams  []*Upstream
 }
 
-func (al aLookup) fresh() bool {
+func (al aLookup) isFresh() bool {
 	return time.Since(al.freshness) < al.aUpstreams.Refresh
 }
 
