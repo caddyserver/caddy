@@ -34,6 +34,8 @@ func init() {
 type PKI struct {
 	// The certificate authorities to manage. Each CA is keyed by an
 	// ID that is used to uniquely identify it from other CAs.
+	// At runtime, the GetCA() method should be used instead to ensure
+	// the default CA is provisioned if it hadn't already been.
 	// The default CA ID is "local".
 	CAs map[string]*CA `json:"certificate_authorities,omitempty"`
 
@@ -54,16 +56,6 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 	p.ctx = ctx
 	p.log = ctx.Logger(p)
 
-	// if this app is initialized at all, ensure there's at
-	// least a default CA that can be used: the standard CA
-	// which is used implicitly for signing local-use certs
-	if p.CAs == nil {
-		p.CAs = make(map[string]*CA)
-	}
-	if _, ok := p.CAs[DefaultCAID]; !ok {
-		p.CAs[DefaultCAID] = new(CA)
-	}
-
 	for caID, ca := range p.CAs {
 		err := ca.Provision(ctx, caID, p.log)
 		if err != nil {
@@ -71,7 +63,27 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// if this app is initialized at all, ensure there's at
+	// least a default CA that can be used: the standard CA
+	// which is used implicitly for signing local-use certs
+	if len(p.CAs) == 0 {
+		err := p.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning CA '%s': %v", DefaultCAID, err)
+		}
+	}
+
 	return nil
+}
+
+// ProvisionDefaultCA sets up the default CA.
+func (p *PKI) ProvisionDefaultCA(ctx caddy.Context) error {
+	if p.CAs == nil {
+		p.CAs = make(map[string]*CA)
+	}
+
+	p.CAs[DefaultCAID] = new(CA)
+	return p.CAs[DefaultCAID].Provision(ctx, DefaultCAID, p.log)
 }
 
 // Start starts the PKI app.
@@ -105,6 +117,28 @@ func (p *PKI) Start() error {
 // Stop stops the PKI app.
 func (p *PKI) Stop() error {
 	return nil
+}
+
+// GetCA retrieves a CA by ID. If the ID is the default
+// CA ID, and it hasn't been provisioned yet, it will
+// be provisioned.
+func (p *PKI) GetCA(ctx caddy.Context, id string) (*CA, error) {
+	ca, ok := p.CAs[id]
+	if !ok {
+		// for anything other than the default CA ID, error out if it wasn't configured
+		if id != DefaultCAID {
+			return nil, fmt.Errorf("no certificate authority configured with id: %s", id)
+		}
+
+		// for the default CA ID, provision it, because we want it to "just work"
+		err := p.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision default CA: %s", err)
+		}
+		ca = p.CAs[id]
+	}
+
+	return ca, nil
 }
 
 // Interface guards
