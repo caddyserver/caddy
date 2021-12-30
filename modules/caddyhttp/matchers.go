@@ -325,17 +325,17 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 	lowerPath := strings.ToLower(unescapedPath)
 
+	// Clean the path, merges doubled slashes, etc.
+	// This ensures maliciously crafted requests can't bypass
+	// the path matcher. See #4407
+	lowerPath = path.Clean(lowerPath)
+
 	// see #2917; Windows ignores trailing dots and spaces
 	// when accessing files (sigh), potentially causing a
 	// security risk (cry) if PHP files end up being served
 	// as static files, exposing the source code, instead of
 	// being matched by *.php to be treated as PHP scripts
 	lowerPath = strings.TrimRight(lowerPath, ". ")
-
-	// Clean the path, merges doubled slashes, etc.
-	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407
-	lowerPath = path.Clean(lowerPath)
 
 	// Cleaning may remove the trailing slash, but we want to keep it
 	if lowerPath != "/" && strings.HasSuffix(r.URL.Path, "/") {
