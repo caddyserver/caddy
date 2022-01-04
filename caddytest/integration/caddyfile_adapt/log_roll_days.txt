@@ -3,6 +3,7 @@
 log {
 	output file /var/log/access.log {
 		roll_size 1gb
+		roll_uncompressed
 		roll_keep 5
 		roll_keep_for 90d
 	}
@@ -20,6 +21,7 @@ log {
 				"writer": {
 					"filename": "/var/log/access.log",
 					"output": "file",
+					"roll_gzip": false,
 					"roll_keep": 5,
 					"roll_keep_days": 90,
 					"roll_size_mb": 954
