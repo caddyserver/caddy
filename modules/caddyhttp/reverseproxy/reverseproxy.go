@@ -792,10 +792,15 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 	}
 
 	// otherwise, wait and try the next available host
+	timer := time.NewTimer(time.Duration(lb.TryInterval))
 	select {
-	case <-time.After(time.Duration(lb.TryInterval)):
+	case <-timer.C:
 		return true
 	case <-ctx.Done():
+		if !timer.Stop() {
+			// if the timer has been stopped then read from the channel
+			<-timer.C
+		}
 		return false
 	}
 }
