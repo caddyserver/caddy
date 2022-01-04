@@ -13,6 +13,10 @@
 	header @images {
 		Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
 	}
+	header {
+		+Link "Foo"
+		+Link "Bar"
+	}
 }
 ----------
 {
@@ -118,6 +122,17 @@
 										"set": {
 											"Tim": [
 												"Berners-Lee"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Link": [
+												"Foo",
+												"Bar"
 											]
 										}
 									}

@@ -222,7 +222,7 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 		if ops.Add == nil {
 			ops.Add = make(http.Header)
 		}
-		ops.Add.Set(field[1:], value)
+		ops.Add.Add(field[1:], value)
 
 	case strings.HasPrefix(field, "-"): // delete
 		ops.Delete = append(ops.Delete, field[1:])
