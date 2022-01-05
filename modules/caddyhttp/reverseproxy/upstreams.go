@@ -119,7 +119,14 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i].fillHost()
 	}
 
-	// TODO: expire these somehow
+	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
+	if cached.freshness.IsZero() && len(srvs) >= 1000 {
+		for randomKey := range srvs {
+			delete(srvs, randomKey)
+			break
+		}
+	}
+
 	srvs[suStr] = srvLookup{
 		srvUpstreams: su,
 		freshness:    time.Now(),
@@ -219,7 +226,14 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i].fillHost()
 	}
 
-	// TODO: expire these somehow
+	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
+	if cached.freshness.IsZero() && len(srvs) >= 1000 {
+		for randomKey := range aAaaa {
+			delete(aAaaa, randomKey)
+			break
+		}
+	}
+
 	aAaaa[auStr] = aLookup{
 		aUpstreams: au,
 		freshness:  time.Now(),
