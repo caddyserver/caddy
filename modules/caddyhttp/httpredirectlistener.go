@@ -29,12 +29,6 @@ type httpRedirectListener struct {
 	net.Listener
 }
 
-// NewHttpRedirectListener wraps inner, handling
-func NewHttpRedirectListener(inner net.Listener) net.Listener {
-	l := &httpRedirectListener{Listener: inner}
-	return l
-}
-
 // Accept waits for and returns the next connection to the listener,
 // wrapping it with a httpRedirectConn.
 func (l *httpRedirectListener) Accept() (net.Conn, error) {

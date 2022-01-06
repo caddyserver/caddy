@@ -346,7 +346,7 @@ func (app *App) Start() error {
 					// create HTTP redirect wrapper, which detects if
 					// the request had HTTP bytes on the HTTPS port, and
 					// triggers a redirect if so.
-					ln = NewHttpRedirectListener(ln)
+					ln = &httpRedirectListener{Listener: ln}
 
 					// create TLS listener
 					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
