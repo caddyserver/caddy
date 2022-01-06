@@ -3,13 +3,13 @@
 	pki {
 		ca {
 			name "Local"
-			root_common_name "Custom Local Root Name"
-			intermediate_common_name "Custom Local Intermediate Name"
+			root_cn "Custom Local Root Name"
+			intermediate_cn "Custom Local Intermediate Name"
 		}
 		ca foo {
 			name "Foo"
-			root_common_name "Custom Foo Root Name"
-			intermediate_common_name "Custom Foo Intermediate Name"
+			root_cn "Custom Foo Root Name"
+			intermediate_cn "Custom Foo Intermediate Name"
 		}
 	}
 }
@@ -109,11 +109,15 @@ acme-bar.example.com {
 					"install_trust": false
 				},
 				"foo": {
-					"name": "Custom Foo Intermediate Name",
+					"name": "Foo",
+					"root_common_name": "Custom Foo Root Name",
+					"intermediate_common_name": "Custom Foo Intermediate Name",
 					"install_trust": false
 				},
 				"local": {
-					"name": "Custom Local Intermediate Name",
+					"name": "Local",
+					"root_common_name": "Custom Local Root Name",
+					"intermediate_common_name": "Custom Local Intermediate Name",
 					"install_trust": false
 				}
 			}

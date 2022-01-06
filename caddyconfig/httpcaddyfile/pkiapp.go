@@ -28,9 +28,9 @@ func init() {
 //
 //     pki {
 //         ca [<id>] {
-//             name                     <name>
-//             root_common_name         <name>
-//             intermediate_common_name <name>
+//             name            <name>
+//             root_cn         <name>
+//             intermediate_cn <name>
 //         }
 //     }
 //
@@ -62,17 +62,17 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, 
 						}
 						pkiCa.Name = d.Val()
 
-					case "root_common_name":
+					case "root_cn":
 						if !d.NextArg() {
 							return nil, d.ArgErr()
 						}
-						pkiCa.Name = d.Val()
+						pkiCa.RootCommonName = d.Val()
 
-					case "intermediate_common_name":
+					case "intermediate_cn":
 						if !d.NextArg() {
 							return nil, d.ArgErr()
 						}
-						pkiCa.Name = d.Val()
+						pkiCa.IntermediateCommonName = d.Val()
 
 					default:
 						return nil, d.Errf("unrecognized pki ca option '%s'", d.Val())
