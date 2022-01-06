@@ -466,6 +466,9 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	}
 
 	// create TLS config that will enforce mutual authentication
+	if identityCertCache == nil {
+		return fmt.Errorf("cannot enable remote admin without a certificate cache; configure identity management to initialize a certificate cache")
+	}
 	cmCfg := cfg.Admin.Identity.certmagicConfig(remoteLogger, false)
 	tlsConfig := cmCfg.TLSConfig()
 	tlsConfig.NextProtos = nil // this server does not solve ACME challenges
