@@ -131,7 +131,7 @@ func (fcl *fakeCloseListener) Close() error {
 		// and this is kind of cheating, but it works, and
 		// it apparently even works on Windows.
 		_ = fcl.sharedListener.setDeadline()
-		listenerPool.Delete(fcl.sharedListener.key)
+		_, _ = listenerPool.Delete(fcl.sharedListener.key)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ type fakeClosePacketConn struct {
 
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		listenerPool.Delete(fcpc.sharedPacketConn.key)
+		_, _ = listenerPool.Delete(fcpc.sharedPacketConn.key)
 	}
 	return nil
 }
