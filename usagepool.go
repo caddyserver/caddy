@@ -94,8 +94,15 @@ func (up *UsagePool) LoadOrNew(key interface{}, construct Constructor) (value in
 		if err == nil {
 			upv.value = value
 		} else {
-			// TODO: remove error'ed entries from map
 			upv.err = err
+			up.Lock()
+			// this *should* be safe, I think, because we have a
+			// write lock on upv, but we might also need to ensure
+			// that upv.err is nil before doing this, since we
+			// released the write lock on up during construct...
+			// but then again it's also after midnight...
+			delete(up.pool, key)
+			up.Unlock()
 		}
 		upv.Unlock()
 	}
