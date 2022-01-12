@@ -160,7 +160,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
 
-	// verify SRV compatibility
+	// verify SRV compatibility - TODO: LookupSRV deprecated; will be removed
 	for i, v := range h.Upstreams {
 		if v.LookupSRV == "" {
 			continue

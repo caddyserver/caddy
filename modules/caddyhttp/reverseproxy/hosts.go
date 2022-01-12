@@ -46,6 +46,10 @@ type Upstream struct {
 	// backends is down. Also be aware of open proxy vulnerabilities.
 	Dial string `json:"dial,omitempty"`
 
+	// DEPRECATED: Use the SRVUpstreams module instead
+	// (http.reverse_proxy.upstreams.srv). This field will be
+	// removed in a future version of Caddy.
+	//
 	// If DNS SRV records are used for service discovery with this
 	// upstream, specify the DNS name for which to look up SRV
 	// records here, instead of specifying a dial address.
