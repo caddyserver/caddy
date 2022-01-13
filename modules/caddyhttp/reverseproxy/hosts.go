@@ -161,7 +161,7 @@ func (u *Upstream) fillHost() {
 type Host struct {
 	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails       int64
-	unhealthy   int32
+	unhealthy   int32 // TODO: this should be removed from Host; this decision should be made by the health checker
 }
 
 // NumRequests returns the number of active requests to the upstream.

@@ -247,33 +247,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	}
 
 	// set up upstreams
-	for _, upstream := range h.Upstreams {
-		// create or get the host representation for this upstream
-		upstream.fillHost()
-
-		// give it the circuit breaker, if any
-		upstream.cb = h.CB
-
-		// if the passive health checker has a non-zero UnhealthyRequestCount
-		// but the upstream has no MaxRequests set (they are the same thing,
-		// but the passive health checker is a default value for for upstreams
-		// without MaxRequests), copy the value into this upstream, since the
-		// value in the upstream (MaxRequests) is what is used during
-		// availability checks
-		if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-			h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
-			if h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
-				upstream.MaxRequests == 0 {
-				upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
-			}
-		}
-
-		// upstreams need independent access to the passive
-		// health check policy because passive health checks
-		// run without access to h.
-		if h.HealthChecks != nil {
-			upstream.healthCheckPolicy = h.HealthChecks.Passive
-		}
+	for _, u := range h.Upstreams {
+		h.provisionUpstream(u)
 	}
 
 	if h.HealthChecks != nil {
@@ -429,6 +404,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
 			} else {
 				upstreams = dUpstreams
+			}
+			for _, dUp := range dUpstreams {
+				// TODO: we should reuse the Host contained within upstreams...
+				h.provisionUpstream(dUp)
 			}
 		}
 
@@ -836,6 +815,35 @@ func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	}
 
 	req.URL.Host = reqHost
+}
+
+func (h Handler) provisionUpstream(upstream *Upstream) {
+	// create or get the host representation for this upstream
+	upstream.fillHost()
+
+	// give it the circuit breaker, if any
+	upstream.cb = h.CB
+
+	// if the passive health checker has a non-zero UnhealthyRequestCount
+	// but the upstream has no MaxRequests set (they are the same thing,
+	// but the passive health checker is a default value for for upstreams
+	// without MaxRequests), copy the value into this upstream, since the
+	// value in the upstream (MaxRequests) is what is used during
+	// availability checks
+	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
+		h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
+		if h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
+			upstream.MaxRequests == 0 {
+			upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
+		}
+	}
+
+	// upstreams need independent access to the passive
+	// health check policy because passive health checks
+	// run without access to h.
+	if h.HealthChecks != nil {
+		upstream.healthCheckPolicy = h.HealthChecks.Passive
+	}
 }
 
 // bufferedBody reads originalBody into a buffer, then returns a reader for the buffer.

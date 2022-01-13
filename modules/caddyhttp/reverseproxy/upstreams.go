@@ -116,11 +116,10 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i] = &Upstream{
 			Dial: net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port))),
 		}
-		upstreams[i].fillHost()
 	}
 
 	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(srvs) >= 1000 {
+	if cached.freshness.IsZero() && len(srvs) >= 100 {
 		for randomKey := range srvs {
 			delete(srvs, randomKey)
 			break
@@ -223,11 +222,10 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams[i] = &Upstream{
 			Dial: net.JoinHostPort(ip.String(), port),
 		}
-		upstreams[i].fillHost()
 	}
 
 	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(srvs) >= 1000 {
+	if cached.freshness.IsZero() && len(srvs) >= 100 {
 		for randomKey := range aAaaa {
 			delete(aAaaa, randomKey)
 			break
