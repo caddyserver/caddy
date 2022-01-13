@@ -86,14 +86,14 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		m.cidrs = append(m.cidrs, cidrs)
+		m.cidrs = append(m.cidrs, cidrs...)
 	}
 	for _, str := range m.NotRanges {
 		cidrs, err := m.parseIPRange(str)
 		if err != nil {
 			return err
 		}
-		m.notCidrs = append(m.notCidrs, cidrs)
+		m.notCidrs = append(m.notCidrs, cidrs...)
 	}
 	return nil
 }
