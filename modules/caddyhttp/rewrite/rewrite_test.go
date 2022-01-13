@@ -189,6 +189,21 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/?a=b"),
 			expect: newRequest(t, "GET", "/foo/bar?c=d"),
 		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/%C2%B7%E2%88%B5.png"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png"),
+		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/·∵.png?a=b"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png?a=b"),
+		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/%C2%B7%E2%88%B5.png?a=b"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png?a=b"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},

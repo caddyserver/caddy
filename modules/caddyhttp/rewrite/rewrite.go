@@ -168,7 +168,20 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// in a temporary variable so that they all read the
 		// same version of the URI
 		var newPath, newQuery, newFrag string
+
 		if path != "" {
+			// Since the 'uri' placeholder performs a URL-encode,
+			// we need to intercept it so that it doesn't, because
+			// otherwise we risk a double-encode of the path.
+			uriPlaceholder := "{http.request.uri}"
+			if strings.Contains(path, uriPlaceholder) {
+				tmpUri := r.URL.Path
+				if r.URL.RawQuery != "" {
+					tmpUri += "?" + r.URL.RawQuery
+				}
+				path = strings.ReplaceAll(path, uriPlaceholder, tmpUri)
+			}
+
 			newPath = repl.ReplaceAll(path, "")
 		}
 
