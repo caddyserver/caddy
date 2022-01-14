@@ -78,10 +78,18 @@ type Handler struct {
 	// up or down. Down backends will not be proxied to.
 	HealthChecks *HealthChecks `json:"health_checks,omitempty"`
 
-	// Upstreams is the list of backends to proxy to.
+	// Upstreams is the static list of backends to proxy to.
 	Upstreams UpstreamPool `json:"upstreams,omitempty"`
 
-	// TODO: godoc
+	// A module for retrieving the list of upstreams dynamically. Dynamic
+	// upstreams are retrieved at every iteration of the proxy loop for
+	// each request (i.e. before every proxy attempt within every request).
+	// Active health checks do not work on dynamic upstreams, and passive
+	// health checks are only effective on dynamic upstreams if the proxy
+	// server is busy enough that concurrent requests to the same backends
+	// are continuous. Instead of health checks for dynamic upstreams, it
+	// is recommended that the dynamic upstream module only return available
+	// backends in the first place.
 	DynamicUpstreamsRaw json.RawMessage `json:"dynamic_upstreams,omitempty" caddy:"namespace=http.reverse_proxy.upstreams inline_key=source"`
 
 	// Adjusts how often to flush the response buffer. By default,
@@ -394,94 +402,122 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		repl.Set("http.reverse_proxy.duration", time.Since(start))
 	}()
 
+	// in the proxy loop, each iteration is an attempt to proxy the request,
+	// and because we may retry some number of times, carry over the error
+	// from previous tries because of the nuances of load balancing & retries
 	var proxyErr error
 	for {
-		// get the updated list of upstreams
-		upstreams := h.Upstreams
-		if h.DynamicUpstreams != nil {
-			dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
-			if err != nil {
-				h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
-			} else {
-				upstreams = dUpstreams
-			}
-			for _, dUp := range dUpstreams {
-				// TODO: we should reuse the Host contained within upstreams...
-				h.provisionUpstream(dUp)
-			}
-		}
-
-		// choose an available upstream
-		upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
-		if upstream == nil {
-			if proxyErr == nil {
-				proxyErr = fmt.Errorf("no upstreams available")
-			}
-			if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
-				break
-			}
-			continue
-		}
-
-		// the dial address may vary per-request if placeholders are
-		// used, so perform those replacements here; the resulting
-		// DialInfo struct should have valid network address syntax
-		dialInfo, err := upstream.fillDialInfo(r)
-		if err != nil {
-			return statusError(fmt.Errorf("making dial info: %v", err))
-		}
-
-		// attach to the request information about how to dial the upstream;
-		// this is necessary because the information cannot be sufficiently
-		// or satisfactorily represented in a URL
-		caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
-
-		// set placeholders with information about this upstream
-		repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
-		repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
-		repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
-		repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-		repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
-		repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
-		repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
-
-		// mutate request headers according to this upstream;
-		// because we're in a retry loop, we have to copy
-		// headers (and the r.Host value) from the original
-		// so that each retry is identical to the first
-		if h.Headers != nil && h.Headers.Request != nil {
-			r.Header = make(http.Header)
-			copyHeader(r.Header, reqHeader)
-			r.Host = reqHost
-			h.Headers.Request.ApplyToRequest(r)
-		}
-
-		// proxy the request to that upstream
-		proxyErr = h.reverseProxy(w, r, repl, dialInfo, next)
-		if proxyErr == nil || proxyErr == context.Canceled {
-			// context.Canceled happens when the downstream client
-			// cancels the request, which is not our failure
-			return nil
-		}
-
-		// if the roundtrip was successful, don't retry the request or
-		// ding the health status of the upstream (an error can still
-		// occur after the roundtrip if, for example, a response handler
-		// after the roundtrip returns an error)
-		if succ, ok := proxyErr.(roundtripSucceeded); ok {
-			return succ.error
-		}
-
-		// remember this failure (if enabled)
-		h.countFailure(upstream)
-
-		// if we've tried long enough, break
-		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+		var done bool
+		done, proxyErr = h.proxyLoopIteration(r, w, proxyErr, start, repl, reqHeader, reqHost, next)
+		if done {
 			break
 		}
 	}
 
-	return statusError(proxyErr)
+	if proxyErr != nil {
+		return statusError(proxyErr)
+	}
+
+	return nil
+}
+
+// proxyLoopIteration implements an iteration of the proxy loop. Despite the enormous amount of local state
+// that has to be passed in, we brought this into its own method so that we could run defer more easily.
+// It returns true when the loop is done and should break; false otherwise. The error value returned should
+// be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
+func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
+	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
+	// get the updated list of upstreams
+	upstreams := h.Upstreams
+	if h.DynamicUpstreams != nil {
+		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+		if err != nil {
+			h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
+		} else {
+			upstreams = dUpstreams
+			for _, dUp := range dUpstreams {
+				h.provisionUpstream(dUp)
+			}
+			defer func() {
+				// these upstreams are dynamic, so they are only used for this iteration
+				// of the proxy loop; be sure to let them go away when we're done with them
+				for _, upstream := range dUpstreams {
+					_, _ = hosts.Delete(upstream.String())
+				}
+			}()
+		}
+	}
+
+	// choose an available upstream
+	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
+	if upstream == nil {
+		if proxyErr == nil {
+			proxyErr = fmt.Errorf("no upstreams available")
+		}
+		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+			return true, proxyErr
+		}
+		return false, proxyErr
+	}
+
+	// the dial address may vary per-request if placeholders are
+	// used, so perform those replacements here; the resulting
+	// DialInfo struct should have valid network address syntax
+	dialInfo, err := upstream.fillDialInfo(r)
+	if err != nil {
+		return true, fmt.Errorf("making dial info: %v", err)
+	}
+
+	// attach to the request information about how to dial the upstream;
+	// this is necessary because the information cannot be sufficiently
+	// or satisfactorily represented in a URL
+	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
+
+	// set placeholders with information about this upstream
+	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
+	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
+	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
+	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
+	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+
+	// mutate request headers according to this upstream;
+	// because we're in a retry loop, we have to copy
+	// headers (and the r.Host value) from the original
+	// so that each retry is identical to the first
+	if h.Headers != nil && h.Headers.Request != nil {
+		r.Header = make(http.Header)
+		copyHeader(r.Header, reqHeader)
+		r.Host = reqHost
+		h.Headers.Request.ApplyToRequest(r)
+	}
+
+	// proxy the request to that upstream
+	proxyErr = h.reverseProxy(w, r, repl, dialInfo, next)
+	if proxyErr == nil || proxyErr == context.Canceled {
+		// context.Canceled happens when the downstream client
+		// cancels the request, which is not our failure
+		return true, nil
+	}
+
+	// if the roundtrip was successful, don't retry the request or
+	// ding the health status of the upstream (an error can still
+	// occur after the roundtrip if, for example, a response handler
+	// after the roundtrip returns an error)
+	if succ, ok := proxyErr.(roundtripSucceeded); ok {
+		return true, succ.error
+	}
+
+	// remember this failure (if enabled)
+	h.countFailure(upstream)
+
+	// if we've tried long enough, break
+	if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+		return true, proxyErr
+	}
+
+	return false, proxyErr
 }
 
 // prepareRequest modifies req so that it is ready to be proxied,
@@ -563,9 +599,9 @@ func (h Handler) prepareRequest(req *http.Request) error {
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
 func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
-	_ = di.Upstream.Host.CountRequest(1)
+	_ = di.Upstream.Host.countRequest(1)
 	//nolint:errcheck
-	defer di.Upstream.Host.CountRequest(-1)
+	defer di.Upstream.Host.countRequest(-1)
 
 	// point the request to this upstream
 	h.directRequest(req, di)

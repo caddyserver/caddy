@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -37,12 +36,32 @@ import (
 type HealthChecks struct {
 	// Active health checks run in the background on a timer. To
 	// minimally enable active health checks, set either path or
-	// port (or both).
+	// port (or both). Note that active health check status
+	// (healthy/unhealthy) is stored per-proxy-handler, not
+	// globally; this allows different handlers to use different
+	// criteria to decide what defines a healthy backend.
+	//
+	// Active health checks do not run for dynamic upstreams.
 	Active *ActiveHealthChecks `json:"active,omitempty"`
 
 	// Passive health checks monitor proxied requests for errors or timeouts.
 	// To minimally enable passive health checks, specify at least an empty
-	// config object.
+	// config object. Passive health check state is shared (stored globally),
+	// so a failure from one handler will be counted by all handlers; but
+	// the tolerances or standards for what defines healthy/unhealthy backends
+	// is configured per-proxy-handler.
+	//
+	// Passive health checks technically do operate on dynamic upstreams,
+	// but are only effective for very busy proxies where the list of
+	// upstreams is mostly stable. This is because the shared/global
+	// state of upstreams is cleaned up when the upstreams are no longer
+	// used. Since dynamic upstreams are allocated dynamically at each
+	// request (specifically, each iteration of the proxy loop per request),
+	// they are also cleaned up after every request. Thus, if there is a
+	// moment when no requests are actively referring to a particular
+	// upstream host, the passive health check state will be reset because
+	// it will be garbage-collected. It is usually better for the dynamic
+	// upstream module to only return healthy, available backends instead.
 	Passive *PassiveHealthChecks `json:"passive,omitempty"`
 }
 
@@ -132,7 +151,9 @@ type CircuitBreaker interface {
 func (h *Handler) activeHealthChecker() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("[PANIC] active health checks: %v\n%s", err, debug.Stack())
+			h.HealthChecks.Active.logger.Error("active health checker panicked",
+				zap.Any("error", err),
+				zap.ByteString("stack", debug.Stack()))
 		}
 	}()
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
@@ -155,7 +176,9 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 		go func(upstream *Upstream) {
 			defer func() {
 				if err := recover(); err != nil {
-					log.Printf("[PANIC] active health check: %v\n%s", err, debug.Stack())
+					h.HealthChecks.Active.logger.Error("active health check panicked",
+						zap.Any("error", err),
+						zap.ByteString("stack", debug.Stack()))
 				}
 			}()
 
@@ -195,7 +218,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream.Host)
+			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
 					zap.String("address", hostAddr),
@@ -206,14 +229,14 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 	}
 }
 
-// doActiveHealthCheck performs a health check to host which
+// doActiveHealthCheck performs a health check to upstream which
 // can be reached at address hostAddr. The actual address for
 // the request will be built according to active health checker
 // config. The health status of the host will be updated
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *Host) error {
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
 	scheme := "http"
 	if ht, ok := h.Transport.(TLSTransport); ok && ht.TLSEnabled() {
@@ -269,10 +292,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *
 			zap.String("host", hostAddr),
 			zap.Error(err),
 		)
-		_, err2 := host.SetHealthy(false)
-		if err2 != nil {
-			return fmt.Errorf("marking unhealthy: %v", err2)
-		}
+		upstream.setHealthy(false)
 		return nil
 	}
 	var body io.Reader = resp.Body
@@ -292,10 +312,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *
 				zap.Int("status_code", resp.StatusCode),
 				zap.String("host", hostAddr),
 			)
-			_, err := host.SetHealthy(false)
-			if err != nil {
-				return fmt.Errorf("marking unhealthy: %v", err)
-			}
+			upstream.setHealthy(false)
 			return nil
 		}
 	} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
@@ -303,10 +320,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("host", hostAddr),
 		)
-		_, err := host.SetHealthy(false)
-		if err != nil {
-			return fmt.Errorf("marking unhealthy: %v", err)
-		}
+		upstream.setHealthy(false)
 		return nil
 	}
 
@@ -318,33 +332,21 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, host *
 				zap.String("host", hostAddr),
 				zap.Error(err),
 			)
-			_, err := host.SetHealthy(false)
-			if err != nil {
-				return fmt.Errorf("marking unhealthy: %v", err)
-			}
+			upstream.setHealthy(false)
 			return nil
 		}
 		if !h.HealthChecks.Active.bodyRegexp.Match(bodyBytes) {
 			h.HealthChecks.Active.logger.Info("response body failed expectations",
 				zap.String("host", hostAddr),
 			)
-			_, err := host.SetHealthy(false)
-			if err != nil {
-				return fmt.Errorf("marking unhealthy: %v", err)
-			}
+			upstream.setHealthy(false)
 			return nil
 		}
 	}
 
 	// passed health check parameters, so mark as healthy
-	swapped, err := host.SetHealthy(true)
-	if swapped {
-		h.HealthChecks.Active.logger.Info("host is up",
-			zap.String("host", hostAddr),
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("marking healthy: %v", err)
+	if upstream.setHealthy(true) {
+		h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
 	}
 
 	return nil
@@ -366,7 +368,7 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	}
 
 	// count failure immediately
-	err := upstream.Host.CountFail(1)
+	err := upstream.Host.countFail(1)
 	if err != nil {
 		h.HealthChecks.Passive.logger.Error("could not count failure",
 			zap.String("host", upstream.Dial),
@@ -378,11 +380,20 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	go func(host *Host, failDuration time.Duration) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("[PANIC] health check failure forgetter: %v\n%s", err, debug.Stack())
+				h.HealthChecks.Passive.logger.Error("passive health check failure forgetter panicked",
+					zap.Any("error", err),
+					zap.ByteString("stack", debug.Stack()))
 			}
 		}()
-		time.Sleep(failDuration)
-		err := host.CountFail(-1)
+		timer := time.NewTimer(failDuration)
+		select {
+		case <-h.ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+		}
+		err := host.countFail(-1)
 		if err != nil {
 			h.HealthChecks.Passive.logger.Error("could not forget failure",
 				zap.String("host", upstream.Dial),

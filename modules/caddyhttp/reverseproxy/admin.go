@@ -98,7 +98,6 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 
 		results = append(results, upstreamStatus{
 			Address:     address,
-			Healthy:     !upstream.Unhealthy(),
 			NumRequests: upstream.NumRequests(),
 			Fails:       upstream.Fails(),
 		})

@@ -31,6 +31,7 @@ type UpstreamPool []*Upstream
 
 // Upstream bridges this proxy's configuration to the
 // state of the backend host it is correlated with.
+// Upstream values must not be copied.
 type Upstream struct {
 	*Host `json:"-"`
 
@@ -48,7 +49,7 @@ type Upstream struct {
 
 	// DEPRECATED: Use the SRVUpstreams module instead
 	// (http.reverse_proxy.upstreams.srv). This field will be
-	// removed in a future version of Caddy.
+	// removed in a future version of Caddy. TODO: Remove this field.
 	//
 	// If DNS SRV records are used for service discovery with this
 	// upstream, specify the DNS name for which to look up SRV
@@ -68,6 +69,7 @@ type Upstream struct {
 	activeHealthCheckPort int
 	healthCheckPolicy     *PassiveHealthChecks
 	cb                    CircuitBreaker
+	unhealthy             int32 // accessed atomically; status from active health checker
 }
 
 func (u Upstream) String() string {
@@ -90,7 +92,7 @@ func (u *Upstream) Available() bool {
 // is currently known to be healthy or "up".
 // It consults the circuit breaker, if any.
 func (u *Upstream) Healthy() bool {
-	healthy := !u.Host.Unhealthy()
+	healthy := u.healthy()
 	if healthy && u.healthCheckPolicy != nil {
 		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
 	}
@@ -115,7 +117,7 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	var addr caddy.NetworkAddress
 
 	if u.LookupSRV != "" {
-		// perform DNS lookup for SRV records and choose one
+		// perform DNS lookup for SRV records and choose one - TODO: deprecated
 		srvName := repl.ReplaceAll(u.LookupSRV, "")
 		_, records, err := net.DefaultResolver.LookupSRV(r.Context(), "", "", srvName)
 		if err != nil {
@@ -156,12 +158,11 @@ func (u *Upstream) fillHost() {
 	u.Host = host
 }
 
-// Host is the basic, in-memory representation
-// of the state of a remote host.
+// Host is the basic, in-memory representation of the state of a remote host.
+// Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
 	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails       int64
-	unhealthy   int32 // TODO: this should be removed from Host; this decision should be made by the health checker
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -174,14 +175,9 @@ func (h *Host) Fails() int {
 	return int(atomic.LoadInt64(&h.fails))
 }
 
-// Unhealthy returns whether the upstream is healthy.
-func (h *Host) Unhealthy() bool {
-	return atomic.LoadInt32(&h.unhealthy) == 1
-}
-
-// CountRequest mutates the active request count by
+// countRequest mutates the active request count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) CountRequest(delta int) error {
+func (h *Host) countRequest(delta int) error {
 	result := atomic.AddInt64(&h.numRequests, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
@@ -189,9 +185,9 @@ func (h *Host) CountRequest(delta int) error {
 	return nil
 }
 
-// CountFail mutates the recent failures count by
+// countFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) CountFail(delta int) error {
+func (h *Host) countFail(delta int) error {
 	result := atomic.AddInt64(&h.fails, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
@@ -199,15 +195,21 @@ func (h *Host) CountFail(delta int) error {
 	return nil
 }
 
+// healthy returns true if the upstream is not actively marked as unhealthy.
+// (This returns the status only from the "active" health checks.)
+func (u *Upstream) healthy() bool {
+	return atomic.LoadInt32(&u.unhealthy) == 0
+}
+
 // SetHealthy sets the upstream has healthy or unhealthy
-// and returns true if the new value is different.
-func (h *Host) SetHealthy(healthy bool) (bool, error) {
+// and returns true if the new value is different. This
+// sets the status only for the "active" health checks.
+func (u *Upstream) setHealthy(healthy bool) bool {
 	var unhealthy, compare int32 = 1, 0
 	if healthy {
 		unhealthy, compare = 0, 1
 	}
-	swapped := atomic.CompareAndSwapInt32(&h.unhealthy, compare, unhealthy)
-	return swapped, nil
+	return atomic.CompareAndSwapInt32(&u.unhealthy, compare, unhealthy)
 }
 
 // DialInfo contains information needed to dial a
