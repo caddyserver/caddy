@@ -24,10 +24,11 @@ require (
 	github.com/smallstep/truststore v0.10.1
 	github.com/yuin/goldmark v1.4.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
-	go.opentelemetry.io/otel v1.1.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.1.0
-	go.opentelemetry.io/otel/sdk v1.1.0
-	go.opentelemetry.io/otel/trace v1.1.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.28.0 // indirect
+	go.opentelemetry.io/otel v1.3.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.3.0
+	go.opentelemetry.io/otel/sdk v1.3.0
+	go.opentelemetry.io/otel/trace v1.3.0
 	go.uber.org/zap v1.19.0
 	golang.org/x/crypto v0.0.0-20210915214749-c084706c2272
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
