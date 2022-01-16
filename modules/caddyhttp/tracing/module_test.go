@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -150,5 +151,32 @@ func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 
 	if err := ot.ServeHTTP(w, req, handler); err != nil {
 		t.Errorf("ServeHTTP error: %v", err)
+	}
+}
+
+func TestTracing_ServeHTTP_Next_Error(t *testing.T) {
+	ot := &Tracing{
+		SpanName: "mySpan",
+	}
+
+	req := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	w := httptest.NewRecorder()
+
+	expectErr := errors.New("test error")
+
+	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
+		return expectErr
+	}
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	if err := ot.Provision(ctx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
+	if err := ot.ServeHTTP(w, req, handler); err == nil || !errors.Is(err, expectErr) {
+		t.Errorf("expected error, got: %v", err)
 	}
 }
