@@ -567,7 +567,7 @@ func cmdFmt(fl Flags) (int, error) {
 
 	if fl.Bool("overwrite") {
 		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
-			return caddy.ExitCodeFailedStartup, nil
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
 	} else {
 		fmt.Print(string(output))
