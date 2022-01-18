@@ -213,7 +213,11 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
 	if len(lnHosts) == 0 {
-		lnHosts = []string{""}
+		if defaultBind, ok := options["default_bind"].(string); ok {
+			lnHosts = []string{defaultBind}
+		} else {
+			lnHosts = []string{""}
+		}
 	}
 
 	// use a map to prevent duplication
@@ -223,7 +227,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		if err == nil && addr.IsUnixNetwork() {
 			listeners[host] = struct{}{}
 		} else {
-			listeners[net.JoinHostPort(host, lnPort)] = struct{}{}
+			listeners[host+":"+lnPort] = struct{}{}
 		}
 	}
 
