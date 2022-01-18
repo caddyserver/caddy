@@ -223,7 +223,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		if err == nil && addr.IsUnixNetwork() {
 			listeners[host] = struct{}{}
 		} else {
-			listeners[net.JoinHostPort(host, lnPort)] = struct{}{}
+			listeners[host+":"+lnPort] = struct{}{}
 		}
 	}
 
