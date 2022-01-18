@@ -47,7 +47,7 @@ func (t *tracerProvider) cleanupTracerProvider(logger *zap.Logger) error {
 		if t.tracerProvider != nil {
 			// tracerProvider.ForceFlush SHOULD be invoked according to https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#forceflush
 			if err := t.tracerProvider.ForceFlush(context.Background()); err != nil {
-				logger.Error("forceFlush error: " + err.Error())
+				logger.Error("forcing flush", zap.Error(err))
 			}
 
 			// tracerProvider.Shutdown MUST be invoked according to https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#shutdown
