@@ -302,7 +302,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 			err := fmt.Errorf("strict host matching: TLS ServerName (%s) and HTTP Host (%s) values differ",
 				r.TLS.ServerName, hostname)
 			r.Close = true
-			return Error(http.StatusForbidden, err)
+			return Error(http.StatusMisdirectedRequest, err)
 		}
 	}
 	return next.ServeHTTP(w, r)
