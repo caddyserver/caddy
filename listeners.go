@@ -16,7 +16,9 @@ package caddy
 
 import (
 	"fmt"
+	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,11 +39,24 @@ func Listen(network, addr string) (net.Listener, error) {
 	lnKey := network + "/" + addr
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+
+		if isUnixNetwork(network) {
+			_, err := os.Stat(addr)
+			if err == nil {
+				log.Printf("unix socket file '%s' already exists, attempting to unlink it before calling net.Listen...\n", addr)
+				err := syscall.Unlink(addr)
+				if err != nil {
+					log.Printf("attempting to unlink '%s' returned '%s'\n", addr, err)
+				}
+			}
+		}
+
 		ln, err := net.Listen(network, addr)
 		if err != nil {
 			return nil, err
 		}
-		return &sharedListener{Listener: ln, key: lnKey}, nil
+
+		return &sharedListener{Listener: ln, key: lnKey, network: network, addr: addr}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -57,11 +72,24 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	lnKey := network + "/" + addr
 
 	sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+
+		if isUnixNetwork(network) {
+			_, err := os.Stat(addr)
+			if err == nil {
+				log.Printf("unix socket file '%s' already exists, attempting to unlink it before calling net.ListenPacket...\n", addr)
+				err := syscall.Unlink(addr)
+				if err != nil {
+					log.Printf("attempting to unlink '%s' returned '%s'\n", addr, err)
+				}
+			}
+		}
+
 		pc, err := net.ListenPacket(network, addr)
 		if err != nil {
 			return nil, err
 		}
-		return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
+
+		return &sharedPacketConn{PacketConn: pc, key: lnKey, network: network, addr: addr}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -192,7 +220,9 @@ func (fcpc fakeClosePacketConn) SyscallConn() (syscall.RawConn, error) {
 type sharedListener struct {
 	net.Listener
 	key        string // uniquely identifies this listener
-	deadline   bool   // whether a deadline is currently set
+	network    string
+	addr       string
+	deadline   bool // whether a deadline is currently set
 	deadlineMu sync.Mutex
 }
 
@@ -232,18 +262,34 @@ func (sl *sharedListener) setDeadline() error {
 // Destruct is called by the UsagePool when the listener is
 // finally not being used anymore. It closes the socket.
 func (sl *sharedListener) Destruct() error {
-	return sl.Listener.Close()
+	err := sl.Listener.Close()
+	if err != nil {
+		return err
+	}
+	if isUnixNetwork(sl.network) {
+		syscall.Unlink(sl.addr)
+	}
+	return nil
 }
 
 // sharedPacketConn is like sharedListener, but for net.PacketConns.
 type sharedPacketConn struct {
 	net.PacketConn
-	key string
+	key     string
+	network string
+	addr    string
 }
 
 // Destruct closes the underlying socket.
 func (spc *sharedPacketConn) Destruct() error {
-	return spc.PacketConn.Close()
+	err := spc.PacketConn.Close()
+	if err != nil {
+		return err
+	}
+	if isUnixNetwork(spc.network) {
+		syscall.Unlink(spc.addr)
+	}
+	return nil
 }
 
 // NetworkAddress contains the individual components
