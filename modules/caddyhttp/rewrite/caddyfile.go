@@ -27,6 +27,7 @@ import (
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("rewrite", parseCaddyfileRewrite)
+	httpcaddyfile.RegisterHandlerDirective("method", parseCaddyfileMethod)
 	httpcaddyfile.RegisterHandlerDirective("uri", parseCaddyfileURI)
 	httpcaddyfile.RegisterDirective("handle_path", parseCaddyfileHandlePath)
 }
@@ -44,6 +45,24 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 			return nil, h.ArgErr()
 		}
 		rewr.URI = h.Val()
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return rewr, nil
+}
+
+// parseCaddyfileMethod sets up a basic method rewrite handler from Caddyfile tokens. Syntax:
+//
+//     method [<matcher>] <method>
+//
+func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	var rewr Rewrite
+	for h.Next() {
+		if !h.NextArg() {
+			return nil, h.ArgErr()
+		}
+		rewr.Method = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
