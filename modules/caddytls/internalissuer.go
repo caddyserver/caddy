@@ -149,7 +149,9 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
 //     ... internal {
-//         ca <name>
+//         ca       <name>
+//         lifetime <duration>
+//         sign_with_root
 //     }
 //
 func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -160,6 +162,23 @@ func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.AllArgs(&iss.CA) {
 					return d.ArgErr()
 				}
+
+			case "lifetime":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return err
+				}
+				iss.Lifetime = caddy.Duration(dur)
+
+			case "sign_with_root":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				iss.SignWithRoot = true
+
 			}
 		}
 	}
