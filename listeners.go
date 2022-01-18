@@ -52,7 +52,7 @@ func Listen(network, addr string) (net.Listener, error) {
 			return nil, err
 		}
 
-		return &sharedListener{Listener: ln, key: lnKey, network: network, addr: addr}, nil
+		return &sharedListener{Listener: ln, key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 			return nil, err
 		}
 
-		return &sharedPacketConn{PacketConn: pc, key: lnKey, network: network, addr: addr}, nil
+		return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -213,9 +213,7 @@ func (fcpc fakeClosePacketConn) SyscallConn() (syscall.RawConn, error) {
 type sharedListener struct {
 	net.Listener
 	key        string // uniquely identifies this listener
-	network    string
-	addr       string
-	deadline   bool // whether a deadline is currently set
+	deadline   bool   // whether a deadline is currently set
 	deadlineMu sync.Mutex
 }
 
@@ -259,18 +257,13 @@ func (sl *sharedListener) Destruct() error {
 	if err != nil {
 		return err
 	}
-	if isUnixNetwork(sl.network) {
-		syscall.Unlink(sl.addr)
-	}
 	return nil
 }
 
 // sharedPacketConn is like sharedListener, but for net.PacketConns.
 type sharedPacketConn struct {
 	net.PacketConn
-	key     string
-	network string
-	addr    string
+	key string
 }
 
 // Destruct closes the underlying socket.
@@ -278,9 +271,6 @@ func (spc *sharedPacketConn) Destruct() error {
 	err := spc.PacketConn.Close()
 	if err != nil {
 		return err
-	}
-	if isUnixNetwork(spc.network) {
-		syscall.Unlink(spc.addr)
 	}
 	return nil
 }
