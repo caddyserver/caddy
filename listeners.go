@@ -16,7 +16,6 @@ package caddy
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -41,13 +40,10 @@ func Listen(network, addr string) (net.Listener, error) {
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 
 		if isUnixNetwork(network) {
-			_, err := os.Stat(addr)
-			if err == nil {
-				log.Printf("unix socket file '%s' already exists, attempting to unlink it before calling net.Listen...\n", addr)
-				err := syscall.Unlink(addr)
-				if err != nil {
-					log.Printf("attempting to unlink '%s' returned '%s'\n", addr, err)
-				}
+			fileInfo, err := os.Stat(addr)
+			fileIsUnixSocket := (fileInfo.Mode() & os.ModeSocket) != 0
+			if err == nil && fileIsUnixSocket {
+				syscall.Unlink(addr)
 			}
 		}
 
@@ -74,13 +70,10 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 
 		if isUnixNetwork(network) {
-			_, err := os.Stat(addr)
-			if err == nil {
-				log.Printf("unix socket file '%s' already exists, attempting to unlink it before calling net.ListenPacket...\n", addr)
-				err := syscall.Unlink(addr)
-				if err != nil {
-					log.Printf("attempting to unlink '%s' returned '%s'\n", addr, err)
-				}
+			fileInfo, err := os.Stat(addr)
+			fileIsUnixSocket := (fileInfo.Mode() & os.ModeSocket) != 0
+			if err == nil && fileIsUnixSocket {
+				syscall.Unlink(addr)
 			}
 		}
 
