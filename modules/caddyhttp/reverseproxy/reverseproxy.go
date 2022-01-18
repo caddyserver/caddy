@@ -570,6 +570,10 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// remote address and used an invalid value.
 	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
+		// Remove the `X-Forwarded-*` headers to avoid upstreams
+		// potentially trusting a header that came from the client
+		req.Header.Del("X-Forwarded-For")
+		req.Header.Del("X-Forwarded-Proto")
 		return nil
 	}
 

@@ -493,7 +493,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 							"192.168.0.0/16",
 							"172.16.0.0/12",
 							"10.0.0.0/8",
-							"127.0.0.1",
+							"127.0.0.1/8",
 							"fd00::/8",
 							"::1",
 						}...)
