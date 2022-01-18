@@ -253,11 +253,7 @@ func (sl *sharedListener) setDeadline() error {
 // Destruct is called by the UsagePool when the listener is
 // finally not being used anymore. It closes the socket.
 func (sl *sharedListener) Destruct() error {
-	err := sl.Listener.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return sl.Listener.Close()
 }
 
 // sharedPacketConn is like sharedListener, but for net.PacketConns.
@@ -268,11 +264,7 @@ type sharedPacketConn struct {
 
 // Destruct closes the underlying socket.
 func (spc *sharedPacketConn) Destruct() error {
-	err := spc.PacketConn.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return spc.PacketConn.Close()
 }
 
 // NetworkAddress contains the individual components
