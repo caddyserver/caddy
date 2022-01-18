@@ -31,6 +31,16 @@ func init() {
 //             name            <name>
 //             root_cn         <name>
 //             intermediate_cn <name>
+//             root {
+//                 cert   <path>
+//                 key    <path>
+//                 format <format>
+//             }
+//             intermediate {
+//                 cert   <path>
+//                 key    <path>
+//                 format <format>
+//             }
 //         }
 //     }
 //
@@ -73,6 +83,64 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, 
 							return nil, d.ArgErr()
 						}
 						pkiCa.IntermediateCommonName = d.Val()
+
+					case "root":
+						if pkiCa.Root == nil {
+							pkiCa.Root = new(caddypki.KeyPair)
+						}
+						for nesting := d.Nesting(); d.NextBlock(nesting); {
+							switch d.Val() {
+							case "cert":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Root.Certificate = d.Val()
+
+							case "key":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Root.PrivateKey = d.Val()
+
+							case "format":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Root.Format = d.Val()
+
+							default:
+								return nil, d.Errf("unrecognized pki ca root option '%s'", d.Val())
+							}
+						}
+
+					case "intermediate":
+						if pkiCa.Intermediate == nil {
+							pkiCa.Intermediate = new(caddypki.KeyPair)
+						}
+						for nesting := d.Nesting(); d.NextBlock(nesting); {
+							switch d.Val() {
+							case "cert":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Intermediate.Certificate = d.Val()
+
+							case "key":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Intermediate.PrivateKey = d.Val()
+
+							case "format":
+								if !d.NextArg() {
+									return nil, d.ArgErr()
+								}
+								pkiCa.Intermediate.Format = d.Val()
+
+							default:
+								return nil, d.Errf("unrecognized pki ca intermediate option '%s'", d.Val())
+							}
+						}
 
 					default:
 						return nil, d.Errf("unrecognized pki ca option '%s'", d.Val())
