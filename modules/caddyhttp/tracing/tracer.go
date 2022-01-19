@@ -64,7 +64,7 @@ func newOpenTelemetryWrapper(
 	return ot, nil
 }
 
-// ServeHTTP extract current tracing context or create a new one, then method propagates it to the wrapped next handler.
+// ServeHTTP propagates call to the by wrapped by `otelhttp` next handler.
 func (ot *openTelemetryWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	n := &nextCall{
 		next: next,
