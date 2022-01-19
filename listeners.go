@@ -41,7 +41,7 @@ func Listen(network, addr string) (net.Listener, error) {
 		ln, err := net.Listen(network, addr)
 		if err != nil {
 			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {
-				return nil, explainUnixBindAddressAlreadyInUseError(err)
+				return nil, fmt.Errorf("%w: this can happen if Caddy was forcefully killed", err)
 			}
 			return nil, err
 		}
@@ -64,7 +64,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 		pc, err := net.ListenPacket(network, addr)
 		if err != nil {
 			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {
-				return nil, explainUnixBindAddressAlreadyInUseError(err)
+				return nil, fmt.Errorf("%w: this can happen if Caddy was forcefully killed", err)
 			}
 			return nil, err
 		}
@@ -341,30 +341,6 @@ func isListenBindAddressAlreadyInUseError(err error) bool {
 	}
 
 	return false
-}
-
-type ErrorWithExplanation struct {
-	Explanation string
-	Err         error
-}
-
-func (e *ErrorWithExplanation) Unwrap() error { return e.Err }
-func (e *ErrorWithExplanation) Error() string {
-	if e == nil {
-		return "<nil>\n" + e.Explanation
-	}
-	return e.Err.Error() + "\n" + e.Explanation
-}
-
-func explainUnixBindAddressAlreadyInUseError(err error) error {
-	return &ErrorWithExplanation{
-		Explanation: "This can happen either when you have two programs " +
-			"(or two instances of caddy) attempting to listen on the same " +
-			"socket file at the same time, or when caddy did not exit cleanly " +
-			"last time it was run and thus did not get a chance to delete " +
-			"the socket file when it shut down",
-		Err: err,
-	}
 }
 
 // ParseNetworkAddress parses addr into its individual
