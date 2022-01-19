@@ -361,8 +361,8 @@ func explainUnixBindAddressAlreadyInUseError(err error) error {
 		Explanation: "This can happen either when you have two programs " +
 			"(or two instances of caddy) attempting to listen on the same " +
 			"socket file at the same time, or when caddy did not exit cleanly " +
-			"last time it was run and thus did not get a chance to clean up " +
-			"the socket file on shutdown",
+			"last time it was run and thus did not get a chance to delete " +
+			"the socket file when it shut down",
 		Err: err,
 	}
 }
