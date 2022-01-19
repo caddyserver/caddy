@@ -47,7 +47,8 @@ var directiveOrder = []string{
 
 	"redir",
 
-	// URI manipulation
+	// incoming request manipulation
+	"method",
 	"rewrite",
 	"uri",
 	"try_files",
