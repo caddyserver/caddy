@@ -150,6 +150,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// reject very long methods; probably a mistake or an attack
+	if len(r.Method) > 32 {
+		if s.shouldLogRequest(r) {
+			s.accessLogger.Debug("rejecting request with long method",
+				zap.String("method_trunc", r.Method[:32]),
+				zap.String("remote_addr", r.RemoteAddr))
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
 
