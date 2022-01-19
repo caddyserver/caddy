@@ -5,6 +5,16 @@
 			name "Local"
 			root_cn "Custom Local Root Name"
 			intermediate_cn "Custom Local Intermediate Name"
+			root {
+				cert /path/to/cert.pem
+				key /path/to/key.pem
+				format pem_file
+			}
+			intermediate {
+				cert /path/to/cert.pem
+				key /path/to/key.pem
+				format pem_file
+			}
 		}
 		ca foo {
 			name "Foo"
@@ -118,7 +128,17 @@ acme-bar.example.com {
 					"name": "Local",
 					"root_common_name": "Custom Local Root Name",
 					"intermediate_common_name": "Custom Local Intermediate Name",
-					"install_trust": false
+					"install_trust": false,
+					"root": {
+						"certificate": "/path/to/cert.pem",
+						"private_key": "/path/to/key.pem",
+						"format": "pem_file"
+					},
+					"intermediate": {
+						"certificate": "/path/to/cert.pem",
+						"private_key": "/path/to/key.pem",
+						"format": "pem_file"
+					}
 				}
 			}
 		},
