@@ -1,7 +1,6 @@
 package tracing
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -62,10 +61,6 @@ func (ot *Tracing) Cleanup() error {
 
 // Validate implements caddy.Validator.
 func (ot *Tracing) Validate() error {
-	if ot.otel.tracer == nil {
-		return errors.New("tracer is nil")
-	}
-
 	return nil
 }
 

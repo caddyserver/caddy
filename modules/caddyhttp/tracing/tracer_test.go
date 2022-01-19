@@ -21,10 +21,6 @@ func TestOpenTelemetryWrapper_newOpenTelemetryWrapper(t *testing.T) {
 		t.FailNow()
 	}
 
-	if otw.tracer == nil {
-		t.Errorf("Tracer should not be empty")
-	}
-
 	if otw.propagators == nil {
 		t.Errorf("Propagators should not be empty")
 	}
