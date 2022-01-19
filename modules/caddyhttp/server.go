@@ -150,6 +150,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// reject very long methods; probably a mistake or an attack
+	if len(r.Method) > 32 {
+		if s.shouldLogRequest(r) {
+			s.accessLogger.Debug("rejecting request with long method", zap.String("method_truncated", r.Method[:32]))
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
 
@@ -212,14 +221,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// execute the primary handler chain if method isn't insanely long
-	var err error
-	if len(r.Method) > 32 {
-		err = Error(http.StatusMethodNotAllowed, fmt.Errorf("method is too long"))
-		r.Method = r.Method[:32]
-	} else {
-		err = s.primaryHandlerChain.ServeHTTP(w, r)
-	}
+	// execute the primary handler chain
+	err := s.primaryHandlerChain.ServeHTTP(w, r)
 	duration = time.Since(start)
 
 	// if no errors, we're done!
