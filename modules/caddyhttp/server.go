@@ -214,8 +214,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// execute the primary handler chain if method isn't insanely long
 	var err error
-	if len(r.Method) > 64 {
+	if len(r.Method) > 32 {
 		err = Error(http.StatusMethodNotAllowed, fmt.Errorf("method is too long"))
+		r.Method = r.Method[:32]
 	} else {
 		err = s.primaryHandlerChain.ServeHTTP(w, r)
 	}
