@@ -59,11 +59,6 @@ func (ot *Tracing) Cleanup() error {
 	return nil
 }
 
-// Validate implements caddy.Validator.
-func (ot *Tracing) Validate() error {
-	return nil
-}
-
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	return ot.otel.ServeHTTP(w, r, next)
@@ -116,7 +111,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*Tracing)(nil)
-	_ caddy.Validator             = (*Tracing)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Tracing)(nil)
 	_ caddyfile.Unmarshaler       = (*Tracing)(nil)
 )
