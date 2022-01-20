@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"github.com/caddyserver/caddy/v2"
 	"net/http"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -17,9 +18,16 @@ import (
 )
 
 const (
-	webEngineName   = "Caddy"
-	defaultSpanName = "handler"
+	webEngineName                = "Caddy"
+	defaultSpanName              = "handler"
+	nextCallCtxKey  caddy.CtxKey = "nextCall"
 )
+
+// nextCall store the next handler, and the error value return on calling it (if any)
+type nextCall struct {
+	next caddyhttp.Handler
+	err  error
+}
 
 // openTelemetryWrapper is responsible for the tracing injection, extraction and propagation.
 type openTelemetryWrapper struct {
@@ -62,6 +70,13 @@ func newOpenTelemetryWrapper(
 
 	ot.handler = otelhttp.NewHandler(http.HandlerFunc(ot.serveHTTP), ot.spanName, otelhttp.WithTracerProvider(tracerProvider), otelhttp.WithPropagators(ot.propagators))
 	return ot, nil
+}
+
+// serveHTTP injects a tracing context and call the next handler.
+func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	ot.propagators.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+	next := r.Context().Value(nextCallCtxKey).(*nextCall)
+	next.err = next.next.ServeHTTP(w, r)
 }
 
 // ServeHTTP propagates call to the by wrapped by `otelhttp` next handler.
