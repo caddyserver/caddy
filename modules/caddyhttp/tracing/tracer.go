@@ -3,8 +3,9 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"github.com/caddyserver/caddy/v2"
 	"net/http"
+
+	"github.com/caddyserver/caddy/v2"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
