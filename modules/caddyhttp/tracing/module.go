@@ -64,7 +64,12 @@ func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	return ot.otel.ServeHTTP(w, r, next)
 }
 
-// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
+//
+//     tracing {
+//         [span <span_name>]
+//     }
+//
 func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	setParameter := func(d *caddyfile.Dispenser, val *string) error {
 		if d.NextArg() {
