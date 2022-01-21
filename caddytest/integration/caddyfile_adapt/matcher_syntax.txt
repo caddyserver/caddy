@@ -101,7 +101,9 @@
 							"match": [
 								{
 									"vars": {
-										"{http.request.uri}": "/vars-matcher"
+										"{http.request.uri}": [
+											"/vars-matcher"
+										]
 									}
 								}
 							],

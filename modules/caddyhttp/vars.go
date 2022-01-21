@@ -59,8 +59,15 @@ func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 }
 
 // VarsMatcher is an HTTP request matcher which can match
-// requests based on variables in the context.
-type VarsMatcher map[string]string
+// requests based on variables in the context. The key is
+// the name of the variable, and the values are possible
+// values the variable can be in order to match (OR'ed).
+//
+// As a special case, this matcher can also match on
+// placeholders generally. If the key is not an HTTP chain
+// variable, it will be checked to see if it is a
+// placeholder name, and if so, will compare its value.
+type VarsMatcher map[string][]string
 
 // CaddyModule returns the Caddy module information.
 func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
@@ -73,14 +80,18 @@ func (VarsMatcher) CaddyModule() caddy.ModuleInfo {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
-		*m = make(map[string]string)
+		*m = make(map[string][]string)
 	}
 	for d.Next() {
-		var field, val string
-		if !d.Args(&field, &val) {
-			return d.Errf("malformed vars matcher: expected both field and value")
+		var field string
+		if !d.Args(&field) {
+			return d.Errf("malformed vars matcher: expected field name")
 		}
-		(*m)[field] = val
+		vals := d.RemainingArgs()
+		if len(vals) == 0 {
+			return d.Errf("malformed vars matcher: expected at least one value to match against")
+		}
+		(*m)[field] = vals
 		if d.NextBlock(0) {
 			return d.Err("malformed vars matcher: blocks are not supported")
 		}
@@ -88,29 +99,46 @@ func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Match matches a request based on variables in the context.
+// Match matches a request based on variables in the context,
+// or placeholders if the key is not a variable.
 func (m VarsMatcher) Match(r *http.Request) bool {
+	if len(m) == 0 {
+		return true
+	}
+
 	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	for k, v := range m {
-		keyExpanded := repl.ReplaceAll(k, "")
-		valExpanded := repl.ReplaceAll(v, "")
-		var varStr string
-		switch vv := vars[keyExpanded].(type) {
-		case string:
-			varStr = vv
-		case fmt.Stringer:
-			varStr = vv.String()
-		case error:
-			varStr = vv.Error()
-		default:
-			varStr = fmt.Sprintf("%v", vv)
+
+	for key, vals := range m {
+		// look up the comparison value we will check against with this key
+		matcherVarNameExpanded := repl.ReplaceAll(key, "")
+		varValue, ok := vars[matcherVarNameExpanded]
+		if !ok {
+			// as a special case, if it's not an HTTP variable,
+			// see if it's a placeholder name
+			varValue, _ = repl.Get(matcherVarNameExpanded)
 		}
-		if varStr != valExpanded {
-			return false
+
+		// see if any of the values given in the matcher match the actual value
+		for _, v := range vals {
+			matcherValExpanded := repl.ReplaceAll(v, "")
+			var varStr string
+			switch vv := varValue.(type) {
+			case string:
+				varStr = vv
+			case fmt.Stringer:
+				varStr = vv.String()
+			case error:
+				varStr = vv.Error()
+			default:
+				varStr = fmt.Sprintf("%v", vv)
+			}
+			if varStr == matcherValExpanded {
+				return true
+			}
 		}
 	}
-	return true
+	return false
 }
 
 // MatchVarsRE matches the value of the context variables by a given regular expression.

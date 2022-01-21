@@ -16,22 +16,38 @@ package caddyhttp
 
 import (
 	"crypto/tls"
+	"net"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap/zapcore"
 )
 
 // LoggableHTTPRequest makes an HTTP request loggable with zap.Object().
-type LoggableHTTPRequest struct{ *http.Request }
+type LoggableHTTPRequest struct {
+	*http.Request
+
+	ShouldLogCredentials bool
+}
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("remote_addr", r.RemoteAddr)
+	ip, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+		port = ""
+	}
+
+	enc.AddString("remote_ip", ip)
+	enc.AddString("remote_port", port)
 	enc.AddString("proto", r.Proto)
 	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
 	enc.AddString("uri", r.RequestURI)
-	enc.AddObject("headers", LoggableHTTPHeader(r.Header))
+	enc.AddObject("headers", LoggableHTTPHeader{
+		Header:               r.Header,
+		ShouldLogCredentials: r.ShouldLogCredentials,
+	})
 	if r.TLS != nil {
 		enc.AddObject("tls", LoggableTLSConnState(*r.TLS))
 	}
@@ -39,14 +55,26 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // LoggableHTTPHeader makes an HTTP header loggable with zap.Object().
-type LoggableHTTPHeader http.Header
+// Headers with potentially sensitive information (Cookie, Set-Cookie,
+// Authorization, and Proxy-Authorization) are logged with empty values.
+type LoggableHTTPHeader struct {
+	http.Header
+
+	ShouldLogCredentials bool
+}
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (h LoggableHTTPHeader) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	if h == nil {
+	if h.Header == nil {
 		return nil
 	}
-	for key, val := range h {
+	for key, val := range h.Header {
+		if !h.ShouldLogCredentials {
+			switch strings.ToLower(key) {
+			case "cookie", "set-cookie", "authorization", "proxy-authorization":
+				val = []string{}
+			}
+		}
 		enc.AddArray(key, LoggableStringArray(val))
 	}
 	return nil
@@ -75,8 +103,6 @@ func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 	enc.AddUint16("version", t.Version)
 	enc.AddUint16("cipher_suite", t.CipherSuite)
 	enc.AddString("proto", t.NegotiatedProtocol)
-	// NegotiatedProtocolIsMutual is deprecated - it's always true
-	enc.AddBool("proto_mutual", true)
 	enc.AddString("server_name", t.ServerName)
 	if len(t.PeerCertificates) > 0 {
 		enc.AddString("client_common_name", t.PeerCertificates[0].Subject.CommonName)

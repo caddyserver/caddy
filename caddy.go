@@ -494,9 +494,10 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		if cfg.Admin.Config.LoadInterval > 0 {
 			go func() {
 				for {
+					timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadInterval))
 					select {
 					// if LoadInterval is positive, will wait for the interval and then run with new config
-					case <-time.After(time.Duration(cfg.Admin.Config.LoadInterval)):
+					case <-timer.C:
 						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 						if err != nil {
 							Log().Error("loading dynamic config failed", zap.Error(err))
@@ -504,6 +505,10 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 						}
 						runLoadedConfig(loadedConfig)
 					case <-ctx.Done():
+						if !timer.Stop() {
+							// if the timer has been stopped then read from the channel
+							<-timer.C
+						}
 						Log().Info("stopping config load interval")
 						return
 					}

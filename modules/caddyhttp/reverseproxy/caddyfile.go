@@ -361,15 +361,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "health_headers":
 				healthHeaders := make(http.Header)
-				for d.Next() {
-					for d.NextBlock(0) {
-						key := d.Val()
-						values := d.RemainingArgs()
-						if len(values) == 0 {
-							values = append(values, "")
-						}
-						healthHeaders[key] = values
+				for nesting := d.Nesting(); d.NextBlock(nesting); {
+					key := d.Val()
+					values := d.RemainingArgs()
+					if len(values) == 0 {
+						values = append(values, "")
 					}
+					healthHeaders[key] = values
 				}
 				if h.HealthChecks == nil {
 					h.HealthChecks = new(HealthChecks)
@@ -806,7 +804,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         tls_trusted_ca_certs <cert_files...>
 //         tls_server_name <sni>
 //         keepalive [off|<duration>]
+//         keepalive_interval <interval>
 //         keepalive_idle_conns <max_count>
+//         keepalive_idle_conns_per_host <count>
 //         versions <versions...>
 //         compression off
 //         max_conns_per_host <count>
@@ -965,6 +965,19 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.KeepAlive.IdleConnTimeout = caddy.Duration(dur)
+
+			case "keepalive_interval":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad interval value '%s': %v", d.Val(), err)
+				}
+				if h.KeepAlive == nil {
+					h.KeepAlive = new(KeepAlive)
+				}
+				h.KeepAlive.ProbeInterval = caddy.Duration(dur)
 
 			case "keepalive_idle_conns":
 				if !d.NextArg() {

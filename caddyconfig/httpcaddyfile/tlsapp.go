@@ -286,6 +286,14 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.StorageCleanInterval = storageCleanInterval
 	}
 
+	// set the expired certificates renew interval if configured
+	if renewCheckInterval, ok := options["renew_interval"].(caddy.Duration); ok {
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.RenewCheckInterval = renewCheckInterval
+	}
+
 	// if any hostnames appear on the same server block as a key with
 	// no host, they will not be used with route matchers because the
 	// hostless key matches all hosts, therefore, it wouldn't be

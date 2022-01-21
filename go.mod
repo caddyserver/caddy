@@ -18,10 +18,10 @@ require (
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/smallstep/certificates v0.17.5-0.20211008195551-04fe3126bebf
-	github.com/smallstep/cli v0.17.6
-	github.com/smallstep/nosql v0.3.8
-	github.com/smallstep/truststore v0.9.6
+	github.com/smallstep/certificates v0.18.0
+	github.com/smallstep/cli v0.18.0
+	github.com/smallstep/nosql v0.3.9
+	github.com/smallstep/truststore v0.10.1
 	github.com/yuin/goldmark v1.4.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
 	go.uber.org/zap v1.19.0
@@ -33,7 +33,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
-
-// avoid license conflict from juju/ansiterm until https://github.com/manifoldco/promptui/pull/181
-// is merged or other dependency in path currently in violation fixes compliance
-replace github.com/manifoldco/promptui => github.com/nguyer/promptui v0.8.1-0.20210517132806-70ccd4709797

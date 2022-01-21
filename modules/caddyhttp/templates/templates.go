@@ -153,6 +153,10 @@ func init() {
 // {{.Req.Header.Get "User-Agent"}}
 // ```
 //
+// ##### `.OriginalReq`
+//
+// Like .Req, except it accesses the original HTTP request before rewrites or other internal modifications.
+//
 // ##### `.RespHeader.Add`
 //
 // Adds a header field to the HTTP response.

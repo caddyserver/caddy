@@ -69,6 +69,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
+	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
 	// create header for push requests
 	hdr := h.initializePushHeaders(r, repl)
@@ -79,7 +81,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 			zap.String("uri", r.RequestURI),
 			zap.String("push_method", resource.Method),
 			zap.String("push_target", resource.Target),
-			zap.Object("push_headers", caddyhttp.LoggableHTTPHeader(hdr)))
+			zap.Object("push_headers", caddyhttp.LoggableHTTPHeader{
+				Header:               hdr,
+				ShouldLogCredentials: shouldLogCredentials,
+			}))
 		err := pusher.Push(repl.ReplaceAll(resource.Target, "."), &http.PushOptions{
 			Method: resource.Method,
 			Header: hdr,
