@@ -311,11 +311,11 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
-	//List of client certificate validators used to verify the cert
-	//Validators can be used to add additional checks like revocation checks
+	// A list of client certificate validators, for additional
+	// verification. These can perform custom checks, like ensuring
+	// the certificate is not revoked.
 	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_cert_validators inline_key=validator"`
 
-	//Decoded Validators
 	Validators []ClientCertValidator `json:"-"`
 
 	// The mode for authenticating the client. Allowed values are:
