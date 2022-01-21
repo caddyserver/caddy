@@ -415,6 +415,9 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	return nil
 }
 
+// verifyPeerCertificate is for use as a tls.Config.VerifyPeerCertificate
+// callback to do custom client certificate verification. It is intended
+// for installation only by clientauth.ConfigureTLSConfig().
 func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	// first use any pre-existing custom verification function
 	if clientauth.existingVerifyPeerCert != nil {
