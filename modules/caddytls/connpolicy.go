@@ -512,8 +512,8 @@ type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
 }
 
-// ClientCertValidator is a type which validates client certificates
-// It is called during verifyPeerCertificate in tls handshake
+// ClientCertValidator is a type which validates client certificates.
+// It is called during verifyPeerCertificate in the TLS handshake.
 type ClientCertValidator interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
