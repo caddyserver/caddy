@@ -3,10 +3,11 @@ module github.com/caddyserver/caddy/v2
 go 1.16
 
 require (
+	cloud.google.com/go/kms v1.1.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.9.2
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.15.2
+	github.com/caddyserver/certmagic v0.15.3-0.20220121234610-3db37c1a9611
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.7.3
@@ -25,11 +26,12 @@ require (
 	github.com/yuin/goldmark v1.4.1
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
 	go.uber.org/zap v1.19.0
-	golang.org/x/crypto v0.0.0-20210915214749-c084706c2272
-	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
-	golang.org/x/term v0.0.0-20210503060354-a79de5458b56
-	google.golang.org/genproto v0.0.0-20210719143636-1d5a45f8e492
+	golang.org/x/crypto v0.0.0-20211202192323-5770296d904e
+	golang.org/x/net v0.0.0-20211205041911-012df41ee64c
+	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
+	google.golang.org/genproto v0.0.0-20211018162055-cf77aa76bad2
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
+	tailscale.com v1.20.1
 )

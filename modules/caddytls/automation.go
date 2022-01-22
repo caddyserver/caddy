@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -89,6 +90,14 @@ type AutomationPolicy struct {
 	// zerossl.
 	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
+	// A module that can get a custom certificate to use for any
+	// given TLS handshake at handshake-time. Custom certificates
+	// can be useful if another entity is managing certificates
+	// and Caddy need only get it and serve it. Setting this field
+	// implicitly enables On-Demand TLS (as if `on_demand: true`).
+	// TODO: This is an EXPERIMENTAL feature. It is subject to change or removal.
+	GetCertificateRaw json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
+
 	// If true, certificates will be requested with MustStaple. Not all
 	// CAs support this, and there are potentially serious consequences
 	// of enabling this feature without proper threat modeling.
@@ -113,7 +122,7 @@ type AutomationPolicy struct {
 
 	// If true, certificates will be managed "on demand"; that is, during
 	// TLS handshakes or when needed, as opposed to at startup or config
-	// load.
+	// load. This enable On-Demand TLS for this policy.
 	OnDemand bool `json:"on_demand,omitempty"`
 
 	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
@@ -174,6 +183,18 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				return nil
 			},
 		}
+	}
+
+	// load and provision any cert-getter module
+	if ap.GetCertificateRaw != nil {
+		certGetterModule, err := tlsApp.ctx.LoadModule(ap, "GetCertificateRaw")
+		if err != nil {
+			return fmt.Errorf("loading custom certificate getter: %v", err)
+		}
+		if ond == nil {
+			ond = new(certmagic.OnDemandConfig)
+		}
+		ond.CustomGetCertificate = certGetterModule.(CertificateGetter).GetCertificate
 	}
 
 	// load and provision any explicitly-configured issuer modules
@@ -385,6 +406,18 @@ type RateLimit struct {
 // cache to solve ACME challenges.
 type ConfigSetter interface {
 	SetConfig(cfg *certmagic.Config)
+}
+
+// CertificateGetter is a type that can get a certificate during
+// every TLS handshake (so it should be as fast as possible).
+// TODO: This is an EXPERIMENTAL API. It is subject to change/removal.
+type CertificateGetter interface {
+	// GetCertificate returns the certificate to use to complete the handshake,
+	// and true if Caddy should cache and reuse the certificate until close to
+	// expiration, or false if it should not be cached. It returns nil+false+nil
+	// if there is no certificate available (but no error to speak of, either),
+	// and normal certificate logic will continue.
+	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, bool, error)
 }
 
 // These perpetual values are used for on-demand TLS.
