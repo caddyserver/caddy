@@ -94,8 +94,8 @@ func TestSanitizeMethod(t *testing.T) {
 		{method: "OPTIONS", expected: "OPTIONS"},
 		{method: "connect", expected: "CONNECT"},
 		{method: "trace", expected: "TRACE"},
-		{method: "UNKNOWN", expected: "other"},
-		{method: strings.Repeat("ohno", 9999), expected: "other"},
+		{method: "UNKNOWN", expected: "OTHER"},
+		{method: strings.Repeat("ohno", 9999), expected: "OTHER"},
 	}
 
 	for _, d := range tests {
