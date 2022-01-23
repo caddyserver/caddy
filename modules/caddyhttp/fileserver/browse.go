@@ -82,8 +82,10 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	listing, err := fsrv.loadDirectoryContents(dir, root, path.Clean(r.URL.Path), repl)
 	switch {
 	case os.IsPermission(err):
+		fsrv.logger.Debug("permission error loading directory contents", zap.String("dir_path", dirPath), zap.Error(err))
 		return caddyhttp.Error(http.StatusForbidden, err)
 	case os.IsNotExist(err):
+		fsrv.logger.Debug("not exists error loading directory contents", zap.String("dir_path", dirPath), zap.Error(err))
 		return fsrv.notFound(w, r, next)
 	case err != nil:
 		return caddyhttp.Error(http.StatusInternalServerError, err)
