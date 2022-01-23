@@ -97,5 +97,5 @@ func sanitizeMethod(m string) string {
 		return m
 	}
 
-	return "other"
+	return "OTHER"
 }

@@ -180,7 +180,7 @@ func sanitizeMethod(m string) string {
 		return m
 	}
 
-	return "other"
+	return "OTHER"
 }
 
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
