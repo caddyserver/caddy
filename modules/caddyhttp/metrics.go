@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -109,7 +108,7 @@ func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metric
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	server := serverNameFromContext(r.Context())
 	labels := prometheus.Labels{"server": server, "handler": h.handler}
-	method := strings.ToUpper(r.Method)
+	method := sanitizeMethod(r.Method)
 	// the "code" value is set later, but initialized here to eliminate the possibility
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
@@ -158,6 +157,30 @@ func sanitizeCode(code int) string {
 		return "200"
 	}
 	return strconv.Itoa(code)
+}
+
+// Only support the list of "regular" HTTP methods, see
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
+var methodMap = map[string]string{
+	"GET": http.MethodGet, "get": http.MethodGet,
+	"HEAD": http.MethodHead, "head": http.MethodHead,
+	"PUT": http.MethodPut, "put": http.MethodPut,
+	"POST": http.MethodPost, "post": http.MethodPost,
+	"DELETE": http.MethodDelete, "delete": http.MethodDelete,
+	"CONNECT": http.MethodConnect, "connect": http.MethodConnect,
+	"OPTIONS": http.MethodOptions, "options": http.MethodOptions,
+	"TRACE": http.MethodTrace, "trace": http.MethodTrace,
+	"PATCH": http.MethodPatch, "patch": http.MethodPatch,
+}
+
+// sanitizeMethod sanitizes the method for use as a metric label. This helps
+// prevent high cardinality on the method label. The name is always upper case.
+func sanitizeMethod(m string) string {
+	if m, ok := methodMap[m]; ok {
+		return m
+	}
+
+	return "other"
 }
 
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
