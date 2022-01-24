@@ -1194,4 +1194,6 @@ const matcherPrefix = "@"
 var (
 	_ caddyfile.Unmarshaler = (*Handler)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPTransport)(nil)
+	_ caddyfile.Unmarshaler = (*SRVUpstreams)(nil)
+	_ caddyfile.Unmarshaler = (*AUpstreams)(nil)
 )
