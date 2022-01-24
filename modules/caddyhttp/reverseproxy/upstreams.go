@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,10 +31,6 @@ func init() {
 //
 // Returned upstreams are sorted by priority and weight.
 type SRVUpstreams struct {
-	// The interval at which to refresh the SRV lookup.
-	// Results are cached between lookups. Default: 1m
-	Refresh time.Duration `json:"refresh,omitempty"`
-
 	// The service label.
 	Service string `json:"service,omitempty"`
 
@@ -43,6 +40,10 @@ type SRVUpstreams struct {
 	// The name label; or, if service and proto are
 	// empty, the entire domain name to look up.
 	Name string `json:"name,omitempty"`
+
+	// The interval at which to refresh the SRV lookup.
+	// Results are cached between lookups. Default: 1m
+	Refresh caddy.Duration `json:"refresh,omitempty"`
 
 	logger *zap.Logger
 }
@@ -66,7 +67,7 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("invalid proto '%s'", su.Proto)
 	}
 	if su.Refresh == 0 {
-		su.Refresh = time.Minute
+		su.Refresh = caddy.Duration(time.Minute)
 	}
 	return nil
 }
@@ -135,6 +136,19 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	return upstreams, nil
 }
 
+// ParseAddress takes a full SRV address and parses it into
+// its three constituent parts. Used for parsing configuration
+// so that users may specify the address with dots instead of
+// specifying each part separately.
+func (SRVUpstreams) ParseAddress(address string) (string, string, string, error) {
+	parts := strings.SplitN(address, ".", 3)
+	if len(parts) != 3 {
+		return "", "", "", fmt.Errorf("expected 3 parts (service, proto, name), got %d parts", len(parts))
+	}
+
+	return strings.TrimLeft(parts[0], "_"), strings.TrimLeft(parts[1], "_"), strings.TrimLeft(parts[2], "_"), nil
+}
+
 type srvLookup struct {
 	srvUpstreams SRVUpstreams
 	freshness    time.Time
@@ -142,7 +156,7 @@ type srvLookup struct {
 }
 
 func (sl srvLookup) isFresh() bool {
-	return time.Since(sl.freshness) < sl.srvUpstreams.Refresh
+	return time.Since(sl.freshness) < time.Duration(sl.srvUpstreams.Refresh)
 }
 
 var (
@@ -160,9 +174,9 @@ type AUpstreams struct {
 	// The port to use with the upstreams. Default: 80
 	Port string `json:"port,omitempty"`
 
-	// The interval at which to refresh the SRV lookup.
+	// The interval at which to refresh the A lookup.
 	// Results are cached between lookups. Default: 1m
-	Refresh time.Duration `json:"refresh,omitempty"`
+	Refresh caddy.Duration `json:"refresh,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -177,7 +191,7 @@ func (au AUpstreams) String() string { return au.Name }
 
 func (au *AUpstreams) Provision(_ caddy.Context) error {
 	if au.Refresh == 0 {
-		au.Refresh = time.Minute
+		au.Refresh = caddy.Duration(time.Minute)
 	}
 	if au.Port == "" {
 		au.Port = "80"
@@ -248,7 +262,7 @@ type aLookup struct {
 }
 
 func (al aLookup) isFresh() bool {
-	return time.Since(al.freshness) < al.aUpstreams.Refresh
+	return time.Since(al.freshness) < time.Duration(al.aUpstreams.Refresh)
 }
 
 var (

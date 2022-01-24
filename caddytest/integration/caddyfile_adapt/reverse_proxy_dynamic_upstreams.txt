@@ -1,0 +1,96 @@
+:8884 {
+	reverse_proxy {
+		dynamic a foo 9000
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name foo
+			port 9000
+			refresh 5m
+		}
+	}
+}
+
+:8885 {
+	reverse_proxy {
+		dynamic srv _api._http.example.com
+	}
+
+	reverse_proxy {
+		dynamic srv {
+			service api
+			proto http
+			name example.com
+			refresh 5m
+		}
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"dynamic_upstreams": {
+										"name": "foo",
+										"port": "9000",
+										"source": "a"
+									},
+									"handler": "reverse_proxy"
+								},
+								{
+									"dynamic_upstreams": {
+										"name": "foo",
+										"port": "9000",
+										"refresh": 300000000000,
+										"source": "a"
+									},
+									"handler": "reverse_proxy"
+								}
+							]
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8885"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"dynamic_upstreams": {
+										"name": "example.com",
+										"proto": "http",
+										"service": "api",
+										"source": "srv"
+									},
+									"handler": "reverse_proxy"
+								},
+								{
+									"dynamic_upstreams": {
+										"name": "example.com",
+										"proto": "http",
+										"refresh": 300000000000,
+										"service": "api",
+										"source": "srv"
+									},
+									"handler": "reverse_proxy"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

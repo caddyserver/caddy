@@ -54,6 +54,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //     reverse_proxy [<matcher>] [<upstreams...>] {
 //         # upstreams
 //         to <upstreams...>
+//         dynamic <name> [...]
 //
 //         # load balancing
 //         lb_policy <name> [<options...>]
@@ -269,6 +270,25 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						return err
 					}
 				}
+
+			case "dynamic":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.DynamicUpstreams != nil {
+					return d.Err("dynamic upstreams already specified")
+				}
+				dynModule := d.Val()
+				modID := "http.reverse_proxy.upstreams." + dynModule
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return err
+				}
+				source, ok := unm.(UpstreamSource)
+				if !ok {
+					return d.Errf("module %s (%T) is not an UpstreamSource", modID, unm)
+				}
+				h.DynamicUpstreamsRaw = caddyconfig.JSONModuleObject(source, "source", dynModule, nil)
 
 			case "lb_policy":
 				if !d.NextArg() {
@@ -1034,6 +1054,137 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 	}
+	return nil
+}
+
+// UnmarshalCaddyfile deserializes Caddyfile tokens into h.
+//
+//     dynamic srv [<address>] {
+//         service <service>
+//         proto   <proto>
+//         name    <name>
+//         refresh <interval>
+//     }
+//
+func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) > 1 {
+			return d.ArgErr()
+		}
+		if len(args) > 0 {
+			service, proto, name, err := u.ParseAddress(args[0])
+			if err != nil {
+				return err
+			}
+			u.Service = service
+			u.Proto = proto
+			u.Name = name
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "service":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Service != "" {
+					return d.Errf("srv service has already been specified")
+				}
+				u.Service = d.Val()
+
+			case "proto":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Proto != "" {
+					return d.Errf("srv proto has already been specified")
+				}
+				u.Proto = d.Val()
+
+			case "name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Name != "" {
+					return d.Errf("srv name has already been specified")
+				}
+				u.Name = d.Val()
+
+			case "refresh":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("parsing refresh interval duration: %v", err)
+				}
+				u.Refresh = caddy.Duration(dur)
+
+			default:
+				return d.Errf("unrecognized srv option '%s'", d.Val())
+			}
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalCaddyfile deserializes Caddyfile tokens into h.
+//
+//     dynamic a [<name> <port] {
+//         name    <name>
+//         port    <port>
+//         refresh <interval>
+//     }
+//
+func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) > 2 {
+			return d.ArgErr()
+		}
+		if len(args) > 0 {
+			u.Name = args[0]
+			u.Port = args[1]
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Name != "" {
+					return d.Errf("a name has already been specified")
+				}
+				u.Name = d.Val()
+
+			case "port":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Port != "" {
+					return d.Errf("a port has already been specified")
+				}
+				u.Port = d.Val()
+
+			case "refresh":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("parsing refresh interval duration: %v", err)
+				}
+				u.Refresh = caddy.Duration(dur)
+
+			default:
+				return d.Errf("unrecognized srv option '%s'", d.Val())
+			}
+		}
+	}
+
 	return nil
 }
 
