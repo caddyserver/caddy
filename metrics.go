@@ -2,8 +2,8 @@ package caddy
 
 import (
 	"net/http"
-	"strconv"
 
+	"github.com/caddyserver/caddy/v2/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -45,8 +45,8 @@ func instrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler)
 		d := newDelegator(w)
 		next.ServeHTTP(d, r)
 		counter.With(prometheus.Labels{
-			"code":   sanitizeCode(d.status),
-			"method": sanitizeMethod(r.Method),
+			"code":   metrics.SanitizeCode(d.status),
+			"method": metrics.SanitizeMethod(r.Method),
 		}).Inc()
 	})
 }
@@ -65,37 +65,4 @@ type delegator struct {
 func (d *delegator) WriteHeader(code int) {
 	d.status = code
 	d.ResponseWriter.WriteHeader(code)
-}
-
-func sanitizeCode(s int) string {
-	switch s {
-	case 0, 200:
-		return "200"
-	default:
-		return strconv.Itoa(s)
-	}
-}
-
-// Only support the list of "regular" HTTP methods, see
-// https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
-var methodMap = map[string]string{
-	"GET": http.MethodGet, "get": http.MethodGet,
-	"HEAD": http.MethodHead, "head": http.MethodHead,
-	"PUT": http.MethodPut, "put": http.MethodPut,
-	"POST": http.MethodPost, "post": http.MethodPost,
-	"DELETE": http.MethodDelete, "delete": http.MethodDelete,
-	"CONNECT": http.MethodConnect, "connect": http.MethodConnect,
-	"OPTIONS": http.MethodOptions, "options": http.MethodOptions,
-	"TRACE": http.MethodTrace, "trace": http.MethodTrace,
-	"PATCH": http.MethodPatch, "patch": http.MethodPatch,
-}
-
-// sanitizeMethod sanitizes the method for use as a metric label. This helps
-// prevent high cardinality on the method label. The name is always upper case.
-func sanitizeMethod(m string) string {
-	if m, ok := methodMap[m]; ok {
-		return m
-	}
-
-	return "OTHER"
 }
