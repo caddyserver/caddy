@@ -17,13 +17,13 @@
 
 :8885 {
 	reverse_proxy {
-		dynamic srv _api._http.example.com
+		dynamic srv _api._tcp.example.com
 	}
 
 	reverse_proxy {
 		dynamic srv {
 			service api
-			proto http
+			proto tcp
 			name example.com
 			refresh 5m
 			resolvers 8.8.8.8 8.8.4.4
@@ -83,9 +83,7 @@
 							"handle": [
 								{
 									"dynamic_upstreams": {
-										"name": "example.com",
-										"proto": "http",
-										"service": "api",
+										"name": "_api._tcp.example.com",
 										"source": "srv"
 									},
 									"handler": "reverse_proxy"
@@ -95,7 +93,7 @@
 										"dial_fallback_delay": -1000000000,
 										"dial_timeout": 1000000000,
 										"name": "example.com",
-										"proto": "http",
+										"proto": "tcp",
 										"refresh": 300000000000,
 										"resolver": {
 											"addresses": [

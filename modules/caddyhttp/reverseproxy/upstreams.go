@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -80,9 +79,6 @@ func (su SRVUpstreams) String() string {
 
 func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 	su.logger = ctx.Logger(su)
-	if su.Proto != "tcp" && su.Proto != "udp" {
-		return fmt.Errorf("invalid proto '%s'", su.Proto)
-	}
 	if su.Refresh == 0 {
 		su.Refresh = caddy.Duration(time.Minute)
 	}
@@ -174,19 +170,6 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	}
 
 	return upstreams, nil
-}
-
-// ParseAddress takes a full SRV address and parses it into
-// its three constituent parts. Used for parsing configuration
-// so that users may specify the address with dots instead of
-// specifying each part separately.
-func (SRVUpstreams) ParseAddress(address string) (string, string, string, error) {
-	parts := strings.SplitN(address, ".", 3)
-	if len(parts) != 3 {
-		return "", "", "", fmt.Errorf("expected 3 parts (service, proto, name), got %d parts", len(parts))
-	}
-
-	return strings.TrimLeft(parts[0], "_"), strings.TrimLeft(parts[1], "_"), strings.TrimLeft(parts[2], "_"), nil
 }
 
 type srvLookup struct {
