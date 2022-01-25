@@ -36,6 +36,19 @@ func TestBreadcrumbs(t *testing.T) {
 			{Link: "../", Text: "quux"},
 			{Link: "", Text: "corge"},
 		}},
+		{"/مجلد/", []crumb{
+			{Link: "../", Text: "/"},
+			{Link: "", Text: "مجلد"},
+		}},
+		{"/مجلد-1/مجلد-2", []crumb{
+			{Link: "../../", Text: "/"},
+			{Link: "../", Text: "مجلد-1"},
+			{Link: "", Text: "مجلد-2"},
+		}},
+		{"/مجلد%2F1", []crumb{
+			{Link: "../", Text: "/"},
+			{Link: "", Text: "مجلد/1"},
+		}},
 	}
 
 	for _, d := range testdata {

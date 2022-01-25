@@ -40,6 +40,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/google/uuid"
 )
 
 // NewTestReplacer creates a replacer for an http.Request
@@ -54,6 +55,7 @@ func NewTestReplacer(req *http.Request) *caddy.Replacer {
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	SetVar(req.Context(), "start_time", time.Now())
+	SetVar(req.Context(), "uuid", new(requestID))
 
 	httpVars := func(key string) (interface{}, bool) {
 		if req != nil {
@@ -146,6 +148,9 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.duration":
 				start := GetVar(req.Context(), "start_time").(time.Time)
 				return time.Since(start), true
+			case "http.request.uuid":
+				id := GetVar(req.Context(), "uuid").(*requestID)
+				return id.String(), true
 			case "http.request.body":
 				if req.Body == nil {
 					return "", true
@@ -398,6 +403,20 @@ func getTLSPeerCert(cs *tls.ConnectionState) *x509.Certificate {
 		return nil
 	}
 	return cs.PeerCertificates[0]
+}
+
+type requestID struct {
+	value string
+}
+
+// Lazy generates UUID string or return cached value if present
+func (rid *requestID) String() string {
+	if rid.value == "" {
+		if id, err := uuid.NewRandom(); err == nil {
+			rid.value = id.String()
+		}
+	}
+	return rid.value
 }
 
 const (

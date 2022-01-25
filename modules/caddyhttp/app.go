@@ -50,6 +50,7 @@ func init() {
 // `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
+// `{http.request.uuid}` | The request unique identifier
 // `{http.request.header.*}` | Specific request header field
 // `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
 // `{http.request.host}` | The host part of the request's Host header
@@ -342,6 +343,11 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
+					// create HTTP redirect wrapper, which detects if
+					// the request had HTTP bytes on the HTTPS port, and
+					// triggers a redirect if so.
+					ln = &httpRedirectListener{Listener: ln}
+
 					// create TLS listener
 					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)

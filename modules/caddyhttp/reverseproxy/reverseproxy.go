@@ -204,14 +204,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up transport
 	if h.Transport == nil {
-		t := &HTTPTransport{
-			KeepAlive: &KeepAlive{
-				ProbeInterval:       caddy.Duration(30 * time.Second),
-				IdleConnTimeout:     caddy.Duration(2 * time.Minute),
-				MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
-			},
-			DialTimeout: caddy.Duration(10 * time.Second),
-		}
+		t := &HTTPTransport{}
 		err := t.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning default transport: %v", err)
@@ -395,9 +388,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// should not permanently change r.Host; issue #3509)
 	reqHost := r.Host
 	reqHeader := r.Header
+
+	// sanitize the request URL; we expect it to not contain the scheme and host
+	// since those should be determined by r.TLS and r.Host respectively, but
+	// some clients may include it in the request-line, which is technically
+	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
+	// dialer will behave. See #4237 for context.
+	origURLScheme := r.URL.Scheme
+	origURLHost := r.URL.Host
+	r.URL.Scheme = ""
+	r.URL.Host = ""
+
+	// restore modifications to the request after we're done proxying
 	defer func() {
 		r.Host = reqHost     // TODO: data race, see #4038
 		r.Header = reqHeader // TODO: data race, see #4038
+		r.URL.Scheme = origURLScheme
+		r.URL.Host = origURLHost
 	}()
 
 	start := time.Now()
@@ -567,6 +574,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	// point the request to this upstream
 	h.directRequest(req, di)
 
+	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
+	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
+
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
 	start := time.Now()
@@ -575,14 +585,20 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Duration("duration", duration),
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: req}),
+		zap.Object("request", caddyhttp.LoggableHTTPRequest{
+			Request:              req,
+			ShouldLogCredentials: shouldLogCredentials,
+		}),
 	)
 	if err != nil {
 		logger.Debug("upstream roundtrip", zap.Error(err))
 		return err
 	}
 	logger.Debug("upstream roundtrip",
-		zap.Object("headers", caddyhttp.LoggableHTTPHeader(res.Header)),
+		zap.Object("headers", caddyhttp.LoggableHTTPHeader{
+			Header:               res.Header,
+			ShouldLogCredentials: shouldLogCredentials,
+		}),
 		zap.Int("status", res.StatusCode))
 
 	// duration until upstream wrote response headers (roundtrip duration)
@@ -776,10 +792,15 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 	}
 
 	// otherwise, wait and try the next available host
+	timer := time.NewTimer(time.Duration(lb.TryInterval))
 	select {
-	case <-time.After(time.Duration(lb.TryInterval)):
+	case <-timer.C:
 		return true
 	case <-ctx.Done():
+		if !timer.Stop() {
+			// if the timer has been stopped then read from the channel
+			<-timer.C
+		}
 		return false
 	}
 }

@@ -81,6 +81,9 @@ func pemEncodePrivateKey(key crypto.PrivateKey) ([]byte, error) {
 // TODO: this is the same thing as in certmagic. Should we reuse that code somehow? It's unexported.
 func pemDecodePrivateKey(keyPEMBytes []byte) (crypto.PrivateKey, error) {
 	keyBlockDER, _ := pem.Decode(keyPEMBytes)
+	if keyBlockDER == nil {
+		return nil, fmt.Errorf("no PEM data found")
+	}
 
 	if keyBlockDER.Type != "PRIVATE KEY" && !strings.HasSuffix(keyBlockDER.Type, " PRIVATE KEY") {
 		return nil, fmt.Errorf("unknown PEM header %q", keyBlockDER.Type)

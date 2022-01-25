@@ -29,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -64,7 +65,7 @@ type Transport struct {
 	// Extra environment variables.
 	EnvVars map[string]string `json:"env,omitempty"`
 
-	// The duration used to set a deadline when connecting to an upstream.
+	// The duration used to set a deadline when connecting to an upstream. Default: `3s`.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
 	// The duration used to set a deadline when reading from the FastCGI server.
@@ -88,13 +89,22 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 // Provision sets up t.
 func (t *Transport) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger(t)
+
 	if t.Root == "" {
 		t.Root = "{http.vars.root}"
 	}
+
 	t.serverSoftware = "Caddy"
 	if mod := caddy.GoModule(); mod.Version != "" {
 		t.serverSoftware += "/" + mod.Version
 	}
+
+	// Set a relatively short default dial timeout.
+	// This is helpful to make load-balancer retries more speedy.
+	if t.DialTimeout == 0 {
+		t.DialTimeout = caddy.Duration(3 * time.Second)
+	}
+
 	return nil
 }
 
@@ -123,7 +133,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	t.logger.Debug("roundtrip",
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 		zap.String("dial", address),
-		zap.Any("env", env), // TODO: this uses reflection I think
+		zap.Object("env", env),
 	)
 
 	fcgiBackend, err := DialContext(ctx, network, address)
@@ -162,10 +172,10 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // buildEnv returns a set of CGI environment variables for the request.
-func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
+func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	var env map[string]string
+	var env envVars
 
 	// Separate remote IP and port; more lenient than net.SplitHostPort
 	var ip, port string
@@ -250,7 +260,7 @@ func (t Transport) buildEnv(r *http.Request) (map[string]string, error) {
 
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
-	env = map[string]string{
+	env = envVars{
 		// Variables defined in CGI 1.1 spec
 		"AUTH_TYPE":         "", // Not used
 		"CONTENT_LENGTH":    r.Header.Get("Content-Length"),
@@ -344,6 +354,16 @@ func (t Transport) splitPos(path string) int {
 	return -1
 }
 
+// envVars is a simple type to allow for speeding up zap log encoding.
+type envVars map[string]string
+
+func (env envVars) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	for k, v := range env {
+		enc.AddString(k, v)
+	}
+	return nil
+}
+
 // Map of supported protocols to Apache ssl_mod format
 // Note that these are slightly different from SupportedProtocols in caddytls/config.go
 var tlsProtocolStrings = map[uint16]string{
@@ -357,6 +377,8 @@ var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
 
 // Interface guards
 var (
+	_ zapcore.ObjectMarshaler = (*envVars)(nil)
+
 	_ caddy.Provisioner = (*Transport)(nil)
 	_ http.RoundTripper = (*Transport)(nil)
 )

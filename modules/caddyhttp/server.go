@@ -150,6 +150,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// reject very long methods; probably a mistake or an attack
+	if len(r.Method) > 32 {
+		if s.shouldLogRequest(r) {
+			s.accessLogger.Debug("rejecting request with long method",
+				zap.String("method_trunc", r.Method[:32]),
+				zap.String("remote_addr", r.RemoteAddr))
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
 
@@ -157,7 +168,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// it enters any handler chain; this is necessary
 	// to capture the original request in case it gets
 	// modified during handling
-	loggableReq := zap.Object("request", LoggableHTTPRequest{r})
+	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
+	loggableReq := zap.Object("request", LoggableHTTPRequest{
+		Request:              r,
+		ShouldLogCredentials: shouldLogCredentials,
+	})
 	errLog := s.errorLogger.With(loggableReq)
 
 	var duration time.Duration
@@ -187,12 +202,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			userID, _ := repl.GetString("http.auth.user.id")
 
 			log("handled request",
-				zap.String("common_log", repl.ReplaceAll(commonLogFormat, commonLogEmptyValue)),
 				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
 				zap.Int("status", wrec.Status()),
-				zap.Object("resp_headers", LoggableHTTPHeader(wrec.Header())),
+				zap.Object("resp_headers", LoggableHTTPHeader{
+					Header:               wrec.Header(),
+					ShouldLogCredentials: shouldLogCredentials,
+				}),
 			)
 		}()
 	}
@@ -244,6 +261,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// successfully, so now just log the error
 			if errStatus >= 500 {
 				logger.Error(errMsg, errFields...)
+			} else {
+				logger.Debug(errMsg, errFields...)
 			}
 		} else {
 			// well... this is awkward
@@ -262,6 +281,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		if errStatus >= 500 {
 			logger.Error(errMsg, errFields...)
+		} else {
+			logger.Debug(errMsg, errFields...)
 		}
 		w.WriteHeader(errStatus)
 	}
@@ -292,7 +313,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 			err := fmt.Errorf("strict host matching: TLS ServerName (%s) and HTTP Host (%s) values differ",
 				r.TLS.ServerName, hostname)
 			r.Close = true
-			return Error(http.StatusForbidden, err)
+			return Error(http.StatusMisdirectedRequest, err)
 		}
 	}
 	return next.ServeHTTP(w, r)
@@ -505,6 +526,12 @@ type ServerLogConfig struct {
 	// If true, requests to any host not appearing in the
 	// LoggerNames (logger_names) map will not be logged.
 	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
+
+	// If true, credentials that are otherwise omitted, will be logged.
+	// The definition of credentials is defined by https://fetch.spec.whatwg.org/#credentials,
+	// and this includes some request and response headers, i.e `Cookie`,
+	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
+	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
 }
 
 // wrapLogger wraps logger in a logger named according to user preferences for the given host.
@@ -622,14 +649,6 @@ func cloneURL(from, to *url.URL) {
 		to.User = userInfo
 	}
 }
-
-const (
-	// commonLogFormat is the common log format. https://en.wikipedia.org/wiki/Common_Log_Format
-	commonLogFormat = `{http.request.remote.host} ` + commonLogEmptyValue + ` {http.auth.user.id} [{time.now.common_log}] "{http.request.orig_method} {http.request.orig_uri} {http.request.proto}" {http.response.status} {http.response.size}`
-
-	// commonLogEmptyValue is the common empty log value.
-	commonLogEmptyValue = "-"
-)
 
 // Context keys for HTTP request context values.
 const (

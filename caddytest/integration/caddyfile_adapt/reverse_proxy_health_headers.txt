@@ -7,6 +7,7 @@ reverse_proxy 127.0.0.1:65535 {
 		X-Header-Keys VbG4NZwWnipo 335Q9/MhqcNU3s2TO
 		X-Empty-Value
 	}
+	health_uri /health
 }
 ----------
 {
@@ -38,7 +39,8 @@ reverse_proxy 127.0.0.1:65535 {
 													"VbG4NZwWnipo",
 													"335Q9/MhqcNU3s2TO"
 												]
-											}
+											},
+											"uri": "/health"
 										}
 									},
 									"upstreams": [

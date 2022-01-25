@@ -37,7 +37,13 @@ import (
 // Environment variables in {$ENVIRONMENT_VARIABLE} notation
 // will be replaced before parsing begins.
 func Parse(filename string, input []byte) ([]ServerBlock, error) {
-	tokens, err := allTokens(filename, input)
+	// unfortunately, we must copy the input because parsing must
+	// remain a read-only operation, but we have to expand environment
+	// variables before we parse, which changes the underlying array (#4422)
+	inputCopy := make([]byte, len(input))
+	copy(inputCopy, input)
+
+	tokens, err := allTokens(filename, inputCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +57,23 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	return p.parseAll()
 }
 
+// allTokens lexes the entire input, but does not parse it.
+// It returns all the tokens from the input, unstructured
+// and in order. It may mutate input as it expands env vars.
+func allTokens(filename string, input []byte) ([]Token, error) {
+	inputCopy, err := replaceEnvVars(input)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := Tokenize(inputCopy, filename)
+	if err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
 // replaceEnvVars replaces all occurrences of environment variables.
+// It mutates the underlying array and returns the updated slice.
 func replaceEnvVars(input []byte) ([]byte, error) {
 	var offset int
 	for {
@@ -94,21 +116,6 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		offset = begin + len(envVarBytes)
 	}
 	return input, nil
-}
-
-// allTokens lexes the entire input, but does not parse it.
-// It returns all the tokens from the input, unstructured
-// and in order.
-func allTokens(filename string, input []byte) ([]Token, error) {
-	input, err := replaceEnvVars(input)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := Tokenize(input, filename)
-	if err != nil {
-		return nil, err
-	}
-	return tokens, nil
 }
 
 type parser struct {

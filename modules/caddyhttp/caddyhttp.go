@@ -20,7 +20,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -228,7 +227,6 @@ func StatusCodeMatches(actual, configured int) bool {
 // never be outside of root. The resulting path can be used
 // with the local file system.
 func SanitizedPathJoin(root, reqPath string) string {
-	reqPath, _ = url.PathUnescape(reqPath)
 	if root == "" {
 		root = "."
 	}
