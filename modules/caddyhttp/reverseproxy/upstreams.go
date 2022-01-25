@@ -1,7 +1,9 @@
 package reverseproxy
 
 import (
+	"context"
 	"fmt"
+	weakrand "math/rand"
 	"net"
 	"net/http"
 	"strconv"
@@ -45,6 +47,21 @@ type SRVUpstreams struct {
 	// Results are cached between lookups. Default: 1m
 	Refresh caddy.Duration `json:"refresh,omitempty"`
 
+	// Configures the DNS resolver used to resolve the
+	// SRV address to SRV records.
+	Resolver *UpstreamResolver `json:"resolver,omitempty"`
+
+	// If Resolver is configured, how long to wait before
+	// timing out trying to connect to the DNS server.
+	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
+
+	// If Resolver is configured, how long to wait before
+	// spawning an RFC 6555 Fast Fallback connection.
+	// A negative value disables this.
+	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
+
+	resolver *net.Resolver
+
 	logger *zap.Logger
 }
 
@@ -69,6 +86,29 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 	if su.Refresh == 0 {
 		su.Refresh = caddy.Duration(time.Minute)
 	}
+
+	if su.Resolver != nil {
+		err := su.Resolver.ParseAddresses()
+		if err != nil {
+			return err
+		}
+		d := &net.Dialer{
+			Timeout:       time.Duration(su.DialTimeout),
+			FallbackDelay: time.Duration(su.FallbackDelay),
+		}
+		su.resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				//nolint:gosec
+				addr := su.Resolver.netAddrs[weakrand.Intn(len(su.Resolver.netAddrs))]
+				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+			},
+		}
+	}
+	if su.resolver == nil {
+		su.resolver = net.DefaultResolver
+	}
+
 	return nil
 }
 
@@ -101,7 +141,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	proto := repl.ReplaceAll(su.Proto, "")
 	name := repl.ReplaceAll(su.Name, "")
 
-	_, records, err := net.DefaultResolver.LookupSRV(r.Context(), service, proto, name)
+	_, records, err := su.resolver.LookupSRV(r.Context(), service, proto, name)
 	if err != nil {
 		// From LookupSRV docs: "If the response contains invalid names, those records are filtered
 		// out and an error will be returned alongside the the remaining results, if any." Thus, we
@@ -177,6 +217,21 @@ type AUpstreams struct {
 	// The interval at which to refresh the A lookup.
 	// Results are cached between lookups. Default: 1m
 	Refresh caddy.Duration `json:"refresh,omitempty"`
+
+	// Configures the DNS resolver used to resolve the
+	// domain name to A records.
+	Resolver *UpstreamResolver `json:"resolver,omitempty"`
+
+	// If Resolver is configured, how long to wait before
+	// timing out trying to connect to the DNS server.
+	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
+
+	// If Resolver is configured, how long to wait before
+	// spawning an RFC 6555 Fast Fallback connection.
+	// A negative value disables this.
+	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
+
+	resolver *net.Resolver
 }
 
 // CaddyModule returns the Caddy module information.
@@ -196,6 +251,29 @@ func (au *AUpstreams) Provision(_ caddy.Context) error {
 	if au.Port == "" {
 		au.Port = "80"
 	}
+
+	if au.Resolver != nil {
+		err := au.Resolver.ParseAddresses()
+		if err != nil {
+			return err
+		}
+		d := &net.Dialer{
+			Timeout:       time.Duration(au.DialTimeout),
+			FallbackDelay: time.Duration(au.FallbackDelay),
+		}
+		au.resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				//nolint:gosec
+				addr := au.Resolver.netAddrs[weakrand.Intn(len(au.Resolver.netAddrs))]
+				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+			},
+		}
+	}
+	if au.resolver == nil {
+		au.resolver = net.DefaultResolver
+	}
+
 	return nil
 }
 
@@ -226,7 +304,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
-	ips, err := net.DefaultResolver.LookupIPAddr(r.Context(), name)
+	ips, err := au.resolver.LookupIPAddr(r.Context(), name)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +341,34 @@ type aLookup struct {
 
 func (al aLookup) isFresh() bool {
 	return time.Since(al.freshness) < time.Duration(al.aUpstreams.Refresh)
+}
+
+// UpstreamResolver holds the set of addresses of DNS resolvers of
+// upstream addresses
+type UpstreamResolver struct {
+	// The addresses of DNS resolvers to use when looking up the addresses of proxy upstreams.
+	// It accepts [network addresses](/docs/conventions#network-addresses)
+	// with port range of only 1. If the host is an IP address, it will be dialed directly to resolve the upstream server.
+	// If the host is not an IP address, the addresses are resolved using the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library.
+	// If the array contains more than 1 resolver address, one is chosen at random.
+	Addresses []string `json:"addresses,omitempty"`
+	netAddrs  []caddy.NetworkAddress
+}
+
+// ParseAddresses parses all the configured network addresses
+// and ensures they're ready to be used.
+func (u UpstreamResolver) ParseAddresses() error {
+	for _, v := range u.Addresses {
+		addr, err := caddy.ParseNetworkAddress(v)
+		if err != nil {
+			return err
+		}
+		if addr.PortRangeSize() != 1 {
+			return fmt.Errorf("resolver address must have exactly one address; cannot call %v", addr)
+		}
+		u.netAddrs = append(u.netAddrs, addr)
+	}
+	return nil
 }
 
 var (
