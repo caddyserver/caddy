@@ -311,11 +311,11 @@ type ClientAuthentication struct {
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
-	//List of client certificate validators used to verify the cert
-	//Validators can be used to add additional checks like revocation checks
+	// A list of client certificate validators, for additional
+	// verification. These can perform custom checks, like ensuring
+	// the certificate is not revoked.
 	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_cert_validators inline_key=validator"`
 
-	//Decoded Validators
 	Validators []ClientCertValidator `json:"-"`
 
 	// The mode for authenticating the client. Allowed values are:
@@ -415,6 +415,9 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	return nil
 }
 
+// verifyPeerCertificate is for use as a tls.Config.VerifyPeerCertificate
+// callback to do custom client certificate verification. It is intended
+// for installation only by clientauth.ConfigureTLSConfig().
 func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	// first use any pre-existing custom verification function
 	if clientauth.existingVerifyPeerCert != nil {
@@ -467,8 +470,8 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.PreferServerCipherSuites = true
 }
 
-// LeafVerificationValidator Implements Custom client certificate verification.
-// It is intended for installation only by clientauth.ConfigureTLSConfig()
+// LeafVerificationValidator implements custom client certificate verification.
+// It is intended for installation only by clientauth.ConfigureTLSConfig().
 type LeafVerificationValidator struct {
 	TrustedLeafCerts []*x509.Certificate
 }
@@ -512,8 +515,8 @@ type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
 }
 
-// ClientCertValidator is a type which validates client certificates
-// It is called during verifyPeerCertificate in tls handshake
+// ClientCertValidator is a type which validates client certificates.
+// It is called during verifyPeerCertificate in the TLS handshake.
 type ClientCertValidator interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
