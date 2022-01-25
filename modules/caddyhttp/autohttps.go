@@ -482,8 +482,8 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 		}
 	}
 	if baseACMEIssuer == nil {
-		// note that this happens if basePolicy.Issuer is nil
-		// OR if it is not nil but is not an ACMEIssuer
+		// note that this happens if basePolicy.Issuers is empty
+		// OR if it is not empty but does not have not an ACMEIssuer
 		baseACMEIssuer = new(caddytls.ACMEIssuer)
 	}
 

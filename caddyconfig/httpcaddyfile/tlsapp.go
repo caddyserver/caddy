@@ -116,6 +116,11 @@ func (st ServerType) buildTLSApp(
 			if _, ok := sblock.pile["tls.on_demand"]; ok {
 				ap.OnDemand = true
 			}
+			if certGetterVals, ok := sblock.pile["tls.cert_getter"]; ok {
+				certGetter := certGetterVals[0].Value.(certmagic.CertificateGetter)
+				certGetterName := certGetter.(caddy.Module).CaddyModule().ID.Name()
+				ap.GetCertificateRaw = caddyconfig.JSONModuleObject(certGetter, "via", certGetterName, &warnings)
+			}
 
 			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)

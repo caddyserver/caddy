@@ -15,7 +15,6 @@
 package caddytls
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -138,10 +137,12 @@ type AutomationPolicy struct {
 	// EXPERIMENTAL. Subject to change.
 	OCSPOverrides map[string]string `json:"ocsp_overrides,omitempty"`
 
-	// Issuers stores the decoded issuer parameters. This is only
-	// used to populate an underlying certmagic.Config's Issuers
-	// field; it is not referenced thereafter.
-	Issuers []certmagic.Issuer `json:"-"`
+	// Issuers and GetCertificate store the decoded issuer and
+	// certificate getter modules; they are only used to populate
+	// an underlying certmagic.Config's fields during provisioning,
+	// so that the modules could survive a re-provisioning.
+	Issuers        []certmagic.Issuer          `json:"-"`
+	GetCertificate certmagic.CertificateGetter `json:"-"`
 
 	magic   *certmagic.Config
 	storage certmagic.Storage
@@ -162,6 +163,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		ap.storage = cmStorage
 	}
 
+	// handle explicitly-enabled on-demand TLS
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand {
 		ond = &certmagic.OnDemandConfig{
@@ -185,16 +187,27 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		}
 	}
 
+	// we don't store loaded modules directly in the certmagic config since
+	// policy provisioning may happen more than once (during auto-HTTPS) and
+	// loading a module clears its config bytes; thus, load the module and
+	// store them on the policy before putting it on the config
+
 	// load and provision any cert-getter module
 	if ap.GetCertificateRaw != nil {
 		certGetterModule, err := tlsApp.ctx.LoadModule(ap, "GetCertificateRaw")
 		if err != nil {
 			return fmt.Errorf("loading custom certificate getter: %v", err)
 		}
+		ap.GetCertificate = certGetterModule.(certmagic.CertificateGetter)
+	}
+
+	// if a cert-getter is configured, this also enables on-demand TLS
+	if ap.GetCertificate != nil {
 		if ond == nil {
 			ond = new(certmagic.OnDemandConfig)
 		}
-		ond.CustomGetCertificate = certGetterModule.(CertificateGetter).GetCertificate
+		ond.CustomGetCertificate = ap.GetCertificate
+		ap.OnDemand = true
 	}
 
 	// load and provision any explicitly-configured issuer modules
@@ -406,18 +419,6 @@ type RateLimit struct {
 // cache to solve ACME challenges.
 type ConfigSetter interface {
 	SetConfig(cfg *certmagic.Config)
-}
-
-// CertificateGetter is a type that can get a certificate during
-// every TLS handshake (so it should be as fast as possible).
-// TODO: This is an EXPERIMENTAL API. It is subject to change/removal.
-type CertificateGetter interface {
-	// GetCertificate returns the certificate to use to complete the handshake,
-	// and true if Caddy should cache and reuse the certificate until close to
-	// expiration, or false if it should not be cached. It returns nil+false+nil
-	// if there is no certificate available (but no error to speak of, either),
-	// and normal certificate logic will continue.
-	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, bool, error)
 }
 
 // These perpetual values are used for on-demand TLS.

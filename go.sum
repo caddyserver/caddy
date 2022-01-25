@@ -256,8 +256,8 @@ github.com/breml/bidichk v0.2.1/go.mod h1:zbfeitpevDUGI7V91Uzzuwrn4Vls8MoBMrwtt7
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
 github.com/butuzov/ireturn v0.1.1/go.mod h1:Wh6Zl3IMtTpaIKbmwzqi6olnM9ptYQxxVacMsOEFPoc=
 github.com/caarlos0/ctrlc v1.0.0/go.mod h1:CdXpj4rmq0q/1Eb44M9zi2nKB0QraNKuRGYGrrHhcQw=
-github.com/caddyserver/certmagic v0.15.3-0.20220121234610-3db37c1a9611 h1:rONgN5tyhLJTkGDtaacmBu7TBLRsbhDZyTIWJFwoq/E=
-github.com/caddyserver/certmagic v0.15.3-0.20220121234610-3db37c1a9611/go.mod h1:qhkAOthf72ufAcp3Y5jF2RaGE96oip3UbEQRIzwe3/8=
+github.com/caddyserver/certmagic v0.15.3-0.20220124232840-098d54f87dd3 h1:cGRciZigmkGgabKBBnbonjNDROYV3acb6SutQdENLbE=
+github.com/caddyserver/certmagic v0.15.3-0.20220124232840-098d54f87dd3/go.mod h1:qhkAOthf72ufAcp3Y5jF2RaGE96oip3UbEQRIzwe3/8=
 github.com/campoy/unique v0.0.0-20180121183637-88950e537e7e/go.mod h1:9IOqJGCPMSc6E5ydlp5NIonxObaeu/Iub/X03EKPVYo=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e/go.mod h1:oDpT4efm8tSYHXV5tHSdRvBet/b/QzxZ+XyyPehvm3A=
