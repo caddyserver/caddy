@@ -340,7 +340,7 @@ type UpstreamResolver struct {
 
 // ParseAddresses parses all the configured network addresses
 // and ensures they're ready to be used.
-func (u UpstreamResolver) ParseAddresses() error {
+func (u *UpstreamResolver) ParseAddresses() error {
 	for _, v := range u.Addresses {
 		addr, err := caddy.ParseNetworkAddress(v)
 		if err != nil {
