@@ -11,7 +11,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/certmagic"
-	"tailscale.com/client/tailscale"
+	"github.com/tailscale/tscert"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -25,6 +26,8 @@ type Tailscale struct {
 	// If true, Tailscale will only be asked for a certificate if it does not already
 	// exist in Caddy's cache, or if it is nearing expiration.
 	Cache bool `json:"cache,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -35,9 +38,36 @@ func (Tailscale) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (ts Tailscale) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
-	cert, err := tailscale.GetCertificate(hello)
+func (ts *Tailscale) Provision(ctx caddy.Context) error {
+	ts.logger = ctx.Logger(ts)
+	return nil
+}
+
+func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
+	canGetCert, err := ts.canHazCertificate(ctx, hello)
+	if err == nil && !canGetCert {
+		// pass-thru: Tailscale can't offer a cert for this name, so rely on other/default configuration for cert
+		return nil, false, nil
+	}
+	if err != nil {
+		ts.logger.Error("could not get status; will try to get certificate anyway", zap.Error(err))
+	}
+	cert, err := tscert.GetCertificate(hello)
 	return cert, ts.Cache, err
+}
+
+// canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
+func (Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (bool, error) {
+	status, err := tscert.GetStatus(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, domain := range status.CertDomains {
+		if certmagic.MatchWildcard(hello.ServerName, domain) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
@@ -102,7 +132,7 @@ func (hcg *HTTPCertGetter) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (hcg HTTPCertGetter) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
+func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
 	sigs := make([]string, len(hello.SignatureSchemes))
 	for i, sig := range hello.SignatureSchemes {
 		sigs[i] = fmt.Sprintf("%x", uint16(sig))
@@ -162,8 +192,10 @@ func (hcg *HTTPCertGetter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Interface guards
 var (
 	_ certmagic.CertificateGetter = (*Tailscale)(nil)
+	_ caddy.Provisioner           = (*Tailscale)(nil)
 	_ caddyfile.Unmarshaler       = (*Tailscale)(nil)
 
 	_ certmagic.CertificateGetter = (*HTTPCertGetter)(nil)
+	_ caddy.Provisioner           = (*HTTPCertGetter)(nil)
 	_ caddyfile.Unmarshaler       = (*HTTPCertGetter)(nil)
 )
