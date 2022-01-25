@@ -121,7 +121,7 @@ type AutomationPolicy struct {
 
 	// If true, certificates will be managed "on demand"; that is, during
 	// TLS handshakes or when needed, as opposed to at startup or config
-	// load. This enable On-Demand TLS for this policy.
+	// load. This enables On-Demand TLS for this policy.
 	OnDemand bool `json:"on_demand,omitempty"`
 
 	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
