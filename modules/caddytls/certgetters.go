@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -110,7 +111,13 @@ type HTTPCertGetter struct {
 	// - signature_schemes: Comma-separated list of hex IDs of signatures
 	// - cipher_suites: Comma-separated list of hex IDs of cipher suites
 	//
-	// To be valid, the response must be HTTP 200 with ... TODO: body format?
+	// To be valid, the response must be HTTP 200 with a PEM body
+	// consisting of blocks for the certificate chain and the private
+	// key.
+	//
+	// The certificate will be cached and reused if the response
+	// header Cache-Control does not exist or does not contain
+	// the value "no-cache" (other value are ignored).
 	URL string `json:"url,omitempty"`
 
 	ctx context.Context
@@ -135,7 +142,7 @@ func (hcg *HTTPCertGetter) Provision(ctx caddy.Context) error {
 func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
 	sigs := make([]string, len(hello.SignatureSchemes))
 	for i, sig := range hello.SignatureSchemes {
-		sigs[i] = fmt.Sprintf("%x", uint16(sig))
+		sigs[i] = fmt.Sprintf("%x", uint16(sig)) // you won't believe what %x uses if the val is a Stringer
 	}
 	suites := make([]string, len(hello.CipherSuites))
 	for i, cs := range hello.CipherSuites {
@@ -166,7 +173,17 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 		return nil, false, fmt.Errorf("got HTTP %d", resp.StatusCode)
 	}
 
-	return nil, false, fmt.Errorf("TODO: not implemented")
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	cert, err := tlsCertFromCertAndKeyPEMBundle(bodyBytes)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &cert, resp.Header.Get("Cache-Control") != "no-cache", nil
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
