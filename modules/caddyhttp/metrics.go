@@ -3,11 +3,10 @@ package caddyhttp
 import (
 	"context"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -109,7 +108,7 @@ func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metric
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	server := serverNameFromContext(r.Context())
 	labels := prometheus.Labels{"server": server, "handler": h.handler}
-	method := strings.ToUpper(r.Method)
+	method := metrics.SanitizeMethod(r.Method)
 	// the "code" value is set later, but initialized here to eliminate the possibility
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
@@ -124,7 +123,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// being called when the headers are written.
 	// Effectively the same behaviour as promhttp.InstrumentHandlerTimeToWriteHeader.
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
-		statusLabels["code"] = sanitizeCode(status)
+		statusLabels["code"] = metrics.SanitizeCode(status)
 		ttfb := time.Since(start).Seconds()
 		httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
 		return false
@@ -143,7 +142,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if statusLabels["code"] == "" {
 		// we still sanitize it, even though it's likely to be 0. A 200 is
 		// returned on fallthrough so we want to reflect that.
-		statusLabels["code"] = sanitizeCode(wrec.Status())
+		statusLabels["code"] = metrics.SanitizeCode(wrec.Status())
 	}
 
 	httpMetrics.requestDuration.With(statusLabels).Observe(dur)
@@ -151,13 +150,6 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
 
 	return nil
-}
-
-func sanitizeCode(code int) string {
-	if code == 0 {
-		return "200"
-	}
-	return strconv.Itoa(code)
 }
 
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
