@@ -364,6 +364,9 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 					return &cert.Certificate, nil
 				}
 			}
+			if err == nil {
+				err = fmt.Errorf("no client certificate found for automate name: %s", t.ClientCertificateAutomate)
+			}
 			return nil, err
 		}
 	}
