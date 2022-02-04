@@ -314,7 +314,7 @@ type ClientAuthentication struct {
 	// A list of client certificate validators, for additional
 	// verification. These can perform custom checks, like ensuring
 	// the certificate is not revoked.
-	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_cert_validators inline_key=validator"`
+	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_auth inline_key=validator"`
 
 	Validators []ClientCertValidator `json:"-"`
 
@@ -472,7 +472,7 @@ func setDefaultTLSParams(cfg *tls.Config) {
 
 // LeafVerificationValidator implements custom client certificate verification.
 // It is intended for installation only by clientauth.ConfigureTLSConfig().
-type LeafVerificationValidator struct {
+type LeafCertClientAuth struct {
 	TrustedLeafCerts []*x509.Certificate
 }
 
