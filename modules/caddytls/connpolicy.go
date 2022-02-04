@@ -64,7 +64,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 					return fmt.Errorf("loading client cert validators: %v", err)
 				}
 				for _, validator := range clientCertValidations.([]interface{}) {
-					cp[i].ClientAuthentication.Validators = append(cp[i].ClientAuthentication.Validators, validator.(ClientCertValidator))
+					cp[i].ClientAuthentication.validators = append(cp[i].ClientAuthentication.validators, validator.(ClientCertValidator))
 				}
 			}
 		}
@@ -316,7 +316,7 @@ type ClientAuthentication struct {
 	// the certificate is not revoked.
 	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_auth inline_key=validator"`
 
-	Validators []ClientCertValidator `json:"-"`
+	validators []ClientCertValidator
 
 	// The mode for authenticating the client. Allowed values are:
 	//
@@ -406,7 +406,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			}
 			trustedLeafCerts = append(trustedLeafCerts, clientCert)
 		}
-		clientauth.Validators = append(clientauth.Validators, LeafVerificationValidator{TrustedLeafCerts: trustedLeafCerts})
+		clientauth.validators = append(clientauth.validators, LeafCertClientAuth{TrustedLeafCerts: trustedLeafCerts})
 	}
 
 	// if a custom verification function already exists, wrap it
@@ -426,7 +426,7 @@ func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte,
 			return err
 		}
 	}
-	for _, validator := range clientauth.Validators {
+	for _, validator := range clientauth.validators {
 		err := validator.VerifyClientCertificate(rawCerts, verifiedChains)
 		if err != nil {
 			return err
@@ -476,7 +476,7 @@ type LeafCertClientAuth struct {
 	TrustedLeafCerts []*x509.Certificate
 }
 
-func (l LeafVerificationValidator) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	if len(rawCerts) == 0 {
 		return fmt.Errorf("no client certificate provided")
 	}
