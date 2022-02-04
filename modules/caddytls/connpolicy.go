@@ -472,7 +472,7 @@ func setDefaultTLSParams(cfg *tls.Config) {
 
 // LeafVerificationValidator implements custom client certificate verification.
 // It is intended for installation only by clientauth.ConfigureTLSConfig().
-type LeafVerificationValidator struct {
+type LeafCertClientAuth struct {
 	TrustedLeafCerts []*x509.Certificate
 }
 
