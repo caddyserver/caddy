@@ -33,6 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/certmagic"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 )
 
@@ -74,14 +75,15 @@ func Main() {
 	if fs == nil {
 		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
 	}
-
+	pfs := pflag.NewFlagSet(subcommand.Name, pflag.ExitOnError)
+	pfs.AddGoFlagSet(fs)
 	err := fs.Parse(os.Args[2:])
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	exitCode, err := subcommand.Func(Flags{fs})
+	exitCode, err := subcommand.Func(Flags{pfs})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
 	}
@@ -280,7 +282,7 @@ func watchConfigFile(filename, adapterName string) {
 // Flags wraps a FlagSet so that typed values
 // from flags can be easily retrieved.
 type Flags struct {
-	*flag.FlagSet
+	*pflag.FlagSet
 }
 
 // String returns the string representation of the
@@ -324,22 +326,6 @@ func (f Flags) Float64(name string) float64 {
 func (f Flags) Duration(name string) time.Duration {
 	val, _ := caddy.ParseDuration(f.String(name))
 	return val
-}
-
-// flagHelp returns the help text for fs.
-func flagHelp(fs *flag.FlagSet) string {
-	if fs == nil {
-		return ""
-	}
-
-	// temporarily redirect output
-	out := fs.Output()
-	defer fs.SetOutput(out)
-
-	buf := new(bytes.Buffer)
-	fs.SetOutput(buf)
-	fs.PrintDefaults()
-	return buf.String()
 }
 
 func loadEnvFromFile(envFile string) error {

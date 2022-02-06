@@ -71,13 +71,6 @@ var commands = make(map[string]Command)
 
 func init() {
 	RegisterCommand(Command{
-		Name:  "help",
-		Func:  cmdHelp,
-		Usage: "<command>",
-		Short: "Shows help for a Caddy subcommand",
-	})
-
-	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
 		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--watch] [--pidfile <file>]",
@@ -369,7 +362,7 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	commands[cmd.Name] = cmd
+	rootCmd.AddCommand(caddyCmdToCoral(cmd))
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)

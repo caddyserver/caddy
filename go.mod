@@ -15,6 +15,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.10
 	github.com/lucas-clemente/quic-go v0.24.0
 	github.com/mholt/acmez v1.0.2
+	github.com/muesli/coral v1.0.0
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.12.1
@@ -22,6 +23,7 @@ require (
 	github.com/smallstep/cli v0.18.0
 	github.com/smallstep/nosql v0.3.9
 	github.com/smallstep/truststore v0.10.1
+	github.com/spf13/pflag v1.0.5
 	github.com/yuin/goldmark v1.4.4
 	github.com/yuin/goldmark-highlighting v0.0.0-20210516132338-9216f9c5aa01
 	go.uber.org/zap v1.20.0

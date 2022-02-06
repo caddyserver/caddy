@@ -239,7 +239,7 @@ func validateTestPrerequisites() error {
 		// start inprocess caddy server
 		os.Args = []string{"caddy", "run"}
 		go func() {
-			caddycmd.Main()
+			caddycmd.Execute()
 		}()
 
 		// wait for caddy to start serving the initial config
