@@ -23,11 +23,6 @@ func init() {
 
 // Tailscale is a module that can get certificates from the local Tailscale process.
 type Tailscale struct {
-	// Whether to cache returned certificates in Caddy's in-memory certificate cache.
-	// If true, Tailscale will only be asked for a certificate if it does not already
-	// exist in Caddy's cache, or if it is nearing expiration.
-	Cache bool `json:"cache,omitempty"`
-
 	logger *zap.Logger
 }
 
@@ -54,7 +49,7 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 		ts.logger.Error("could not get status; will try to get certificate anyway", zap.Error(err))
 	}
 	cert, err := tscert.GetCertificate(hello)
-	return cert, ts.Cache, err
+	return cert, false, err
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
@@ -73,28 +68,12 @@ func (Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloIn
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
 //
-//     ... tailscale {
-//         cache
-//     }
+//     ... tailscale
 //
 func (ts *Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "cache":
-				if ts.Cache {
-					return d.Errf("caching is already enabled")
-				}
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				ts.Cache = true
-			default:
-				return d.Errf("unrecognized tailscale property: %s", d.Val())
-			}
 		}
 	}
 	return nil
@@ -115,9 +94,9 @@ type HTTPCertGetter struct {
 	// consisting of blocks for the certificate chain and the private
 	// key.
 	//
-	// The certificate will be cached and reused if the response
-	// header Cache-Control does not exist or does not contain
-	// the value "no-cache" (other value are ignored).
+	// The certificate will be cached and reused if the Cache-Control
+	// response header does not exist or does not contain the value
+	// "no-cache" (other value are ignored).
 	URL string `json:"url,omitempty"`
 
 	ctx context.Context
