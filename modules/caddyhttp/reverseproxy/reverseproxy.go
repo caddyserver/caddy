@@ -438,6 +438,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 			for _, dUp := range dUpstreams {
 				h.provisionUpstream(dUp)
 			}
+			h.logger.Debug("provisioned dynamic upstreams", zap.Int("count", len(dUpstreams)))
 			defer func() {
 				// these upstreams are dynamic, so they are only used for this iteration
 				// of the proxy loop; be sure to let them go away when we're done with them
@@ -467,6 +468,10 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 	if err != nil {
 		return true, fmt.Errorf("making dial info: %v", err)
 	}
+
+	h.logger.Debug("selected upstream",
+		zap.String("dial", dialInfo.Address),
+		zap.Int("total_upstreams", len(upstreams)))
 
 	// attach to the request information about how to dial the upstream;
 	// this is necessary because the information cannot be sufficiently
