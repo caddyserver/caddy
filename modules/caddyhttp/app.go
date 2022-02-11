@@ -343,10 +343,11 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
-					// create HTTP redirect wrapper, which detects if
-					// the request had HTTP bytes on the HTTPS port, and
-					// triggers a redirect if so.
-					ln = &httpRedirectListener{Listener: ln}
+					// TODO: disabled while debugging
+					// // create HTTP redirect wrapper, which detects if
+					// // the request had HTTP bytes on the HTTPS port, and
+					// // triggers a redirect if so.
+					// ln = &httpRedirectListener{Listener: ln}
 
 					// create TLS listener
 					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
