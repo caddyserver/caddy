@@ -924,10 +924,16 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 
 	parts := strings.Split(idPath, "/")
 	if len(parts) < 3 || parts[2] == "" {
-		return fmt.Errorf("request path is missing object ID")
+		return APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("request path is missing object ID"),
+		}
 	}
 	if parts[0] != "" || parts[1] != "id" {
-		return fmt.Errorf("malformed object path")
+		return APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("malformed object path"),
+		}
 	}
 	id := parts[2]
 
@@ -936,7 +942,10 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	expanded, ok := rawCfgIndex[id]
 	defer currentCfgMu.RUnlock()
 	if !ok {
-		return fmt.Errorf("unknown object ID '%s'", id)
+		return APIError{
+			HTTPStatus: http.StatusNotFound,
+			Err:        fmt.Errorf("unknown object ID '%s'", id),
+		}
 	}
 
 	// piece the full URL path back together
