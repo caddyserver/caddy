@@ -905,6 +905,11 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, error) {
 			remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
 		}
 	}
+	// Some local ipv6-adresses contain zone identifiers at the end,
+	// which are separated with "%"
+	if strings.Contains(remote, "%") {
+		remote = strings.Split(remote, "%")[0]
+	}
 	ipStr, _, err := net.SplitHostPort(remote)
 	if err != nil {
 		ipStr = remote // OK; probably didn't have a port
