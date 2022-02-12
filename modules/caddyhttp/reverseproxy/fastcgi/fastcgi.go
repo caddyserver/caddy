@@ -296,10 +296,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	}
 
 	// compliance with the CGI specification requires that
-	// SERVER_PORT should only exist if it's a valid numeric value.
-	// Info: https://www.ietf.org/rfc/rfc3875 Page 18
+	// the SERVER_PORT variable MUST be set to the TCP/IP port number on which this request is received from the client
+	// even if the port is the default port for the scheme and could otherwise be omitted from a URI.
+	// https://tools.ietf.org/html/rfc3875#section-4.1.15
 	if reqPort != "" {
 		env["SERVER_PORT"] = reqPort
+	} else if requestScheme == "http" {
+		env["SERVER_PORT"] = "80"
+	} else if requestScheme == "https" {
+		env["SERVER_PORT"] = "443"
 	}
 
 	// Some web apps rely on knowing HTTPS or not
