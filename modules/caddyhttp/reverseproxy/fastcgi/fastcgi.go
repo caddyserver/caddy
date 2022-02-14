@@ -203,7 +203,8 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	fpath := r.URL.Path
+	// No NULL character allowed here, fix a Windows Pro OS'+PHP security flaw
+	fpath := strings.ReplaceAll(r.URL.Path, "\x00", "")
 	scriptName := fpath
 
 	docURI := fpath
