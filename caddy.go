@@ -17,6 +17,8 @@ package caddy
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -110,7 +112,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 		}
 	}()
 
-	return changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, forceReload)
+	return changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
 }
 
 // changeConfig changes the current config (rawCfg) according to the
@@ -119,7 +121,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // If the resulting config is the same as the previous, no reload will
 // occur unless forceReload is true. This function is safe for
 // concurrent use.
-func changeConfig(method, path string, input []byte, forceReload bool) error {
+func changeConfig(method, path string, input []byte, ifMatch string, forceReload bool) error {
 	switch method {
 	case http.MethodGet,
 		http.MethodHead,
@@ -131,6 +133,13 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	currentCfgMu.Lock()
 	defer currentCfgMu.Unlock()
+
+	if ifMatch != "" && ifMatch != rawCfgHash {
+		return APIError{
+			HTTPStatus: http.StatusPreconditionFailed,
+			Err:        fmt.Errorf("If-Match header did not match current config hash"),
+		}
+	}
 
 	err := unsyncedConfigAccess(method, path, input, nil)
 	if err != nil {
@@ -189,6 +198,8 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	// each config change)
 	rawCfgJSON = newCfg
 	rawCfgIndex = idx
+	md5Hash := md5.Sum(rawCfgJSON)
+	rawCfgHash = hex.EncodeToString(md5Hash[:])
 
 	return nil
 }
@@ -199,6 +210,15 @@ func readConfig(path string, out io.Writer) error {
 	currentCfgMu.RLock()
 	defer currentCfgMu.RUnlock()
 	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
+}
+
+// configHash simply returns the cache of the current configs hash.
+// This is recomputed after each change to the config so should be quick
+// to access.
+func configHash() string {
+	currentCfgMu.RLock()
+	defer currentCfgMu.RUnlock()
+	return rawCfgHash
 }
 
 // indexConfigObjects recursively searches ptr for object fields named
@@ -548,6 +568,7 @@ func Stop() error {
 	currentCfg = nil
 	rawCfgJSON = nil
 	rawCfgIndex = nil
+	rawCfgHash = ""
 	rawCfg[rawConfigKey] = nil
 	return nil
 }
@@ -780,6 +801,11 @@ var (
 	// rawCfgIndex is the map of user-assigned ID to expanded
 	// path, for converting /id/ paths to /config/ paths.
 	rawCfgIndex map[string]string
+
+	// rawCfgHash is the MD5 hash of the current rawCfgJSON. Using
+	// this combined with ETags clients are able to avoid mid-air
+	// collisions. The rawCfgHash is hex encoded.
+	rawCfgHash string
 )
 
 // ImportPath is the package import path for Caddy core.

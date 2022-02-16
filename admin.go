@@ -865,6 +865,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", configHash())
 
 		err := readConfig(r.URL.Path, w)
 		if err != nil {
@@ -904,7 +905,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
-		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
+		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil {
 			return err
 		}
