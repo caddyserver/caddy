@@ -31,12 +31,19 @@ import (
 // HTTPS is enabled automatically and by default when
 // qualifying hostnames are available from the config.
 type AutoHTTPSConfig struct {
-	// If true, automatic HTTPS will be entirely disabled.
+	// If true, automatic HTTPS will be entirely disabled,
+	// including certificate management and redirects.
 	Disabled bool `json:"disable,omitempty"`
 
 	// If true, only automatic HTTP->HTTPS redirects will
-	// be disabled.
+	// be disabled, but other auto-HTTPS features will
+	// remain enabled.
 	DisableRedir bool `json:"disable_redirects,omitempty"`
+
+	// If true, automatic certificate management will be
+	// disabled, but other auto-HTTPS features will
+	// remain enabled.
+	DisableCerts bool `json:"disable_certificates,omitempty"`
 
 	// Hosts/domain names listed here will not be included
 	// in automatic HTTPS (they will not have certificates
@@ -104,12 +111,13 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 		if srv.AutoHTTPS.Disabled {
+			app.logger.Warn("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
 			continue
 		}
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
-			app.logger.Info("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
+			app.logger.Warn("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
 				zap.String("server_name", srvName),
 				zap.Int("http_port", app.httpPort()),
 			)
@@ -166,30 +174,35 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// for all the hostnames we found, filter them so we have
 		// a deduplicated list of names for which to obtain certs
-		for d := range serverDomainSet {
-			if certmagic.SubjectQualifiesForCert(d) &&
-				!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
-				// if a certificate for this name is already loaded,
-				// don't obtain another one for it, unless we are
-				// supposed to ignore loaded certificates
-				if !srv.AutoHTTPS.IgnoreLoadedCerts &&
-					len(app.tlsApp.AllMatchingCertificates(d)) > 0 {
-					app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
-						zap.String("domain", d),
-						zap.String("server_name", srvName),
-					)
-					continue
-				}
+		// (only if cert management not disabled for this server)
+		if srv.AutoHTTPS.DisableCerts {
+			app.logger.Warn("skipping automated certificate management for server because it is disabled", zap.String("server_name", srvName))
+		} else {
+			for d := range serverDomainSet {
+				if certmagic.SubjectQualifiesForCert(d) &&
+					!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					// if a certificate for this name is already loaded,
+					// don't obtain another one for it, unless we are
+					// supposed to ignore loaded certificates
+					if !srv.AutoHTTPS.IgnoreLoadedCerts &&
+						len(app.tlsApp.AllMatchingCertificates(d)) > 0 {
+						app.logger.Info("skipping automatic certificate management because one or more matching certificates are already loaded",
+							zap.String("domain", d),
+							zap.String("server_name", srvName),
+						)
+						continue
+					}
 
-				// most clients don't accept wildcards like *.tld... we
-				// can handle that, but as a courtesy, warn the user
-				if strings.Contains(d, "*") &&
-					strings.Count(strings.Trim(d, "."), ".") == 1 {
-					app.logger.Warn("most clients do not trust second-level wildcard certificates (*.tld)",
-						zap.String("domain", d))
-				}
+					// most clients don't accept wildcards like *.tld... we
+					// can handle that, but as a courtesy, warn the user
+					if strings.Contains(d, "*") &&
+						strings.Count(strings.Trim(d, "."), ".") == 1 {
+						app.logger.Warn("most clients do not trust second-level wildcard certificates (*.tld)",
+							zap.String("domain", d))
+					}
 
-				uniqueDomainsForCerts[d] = struct{}{}
+					uniqueDomainsForCerts[d] = struct{}{}
+				}
 			}
 		}
 
@@ -200,12 +213,11 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// nothing left to do if auto redirects are disabled
 		if srv.AutoHTTPS.DisableRedir {
+			app.logger.Warn("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
 			continue
 		}
 
-		app.logger.Info("enabling automatic HTTP->HTTPS redirects",
-			zap.String("server_name", srvName),
-		)
+		app.logger.Info("enabling automatic HTTP->HTTPS redirects", zap.String("server_name", srvName))
 
 		// create HTTP->HTTPS redirects
 		for _, addr := range srv.Listen {
@@ -459,6 +471,16 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 			}
 		}
 
+		// if no external managers were configured, enable
+		// implicit Tailscale support for convenience
+		if ap.Managers == nil {
+			ts, err := implicitTailscale(ctx)
+			if err != nil {
+				return err
+			}
+			ap.Managers = []certmagic.CertificateManager{ts}
+		}
+
 		// while we're here, is this the catch-all/base policy?
 		if !foundBasePolicy && len(ap.Subjects) == 0 {
 			basePolicy = ap
@@ -467,8 +489,14 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 	}
 
 	if basePolicy == nil {
-		// no base policy found, we will make one!
-		basePolicy = new(caddytls.AutomationPolicy)
+		// no base policy found, we will make one! (with implicit Tailscale integration)
+		ts, err := implicitTailscale(ctx)
+		if err != nil {
+			return err
+		}
+		basePolicy = &caddytls.AutomationPolicy{
+			Managers: []certmagic.CertificateManager{ts},
+		}
 	}
 
 	// if the basePolicy has an existing ACMEIssuer (particularly to
@@ -482,8 +510,8 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 		}
 	}
 	if baseACMEIssuer == nil {
-		// note that this happens if basePolicy.Issuer is nil
-		// OR if it is not nil but is not an ACMEIssuer
+		// note that this happens if basePolicy.Issuers is empty
+		// OR if it is not empty but does not have not an ACMEIssuer
 		baseACMEIssuer = new(caddytls.ACMEIssuer)
 	}
 
@@ -651,6 +679,13 @@ func (app *App) automaticHTTPSPhase2() error {
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
+}
+
+// implicitTailscale returns a new and provisioned Tailscale module configured to be optional.
+func implicitTailscale(ctx caddy.Context) (caddytls.Tailscale, error) {
+	ts := caddytls.Tailscale{Optional: true}
+	err := ts.Provision(ctx)
+	return ts, err
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }

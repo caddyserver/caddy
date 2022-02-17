@@ -61,9 +61,13 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 				return nil
 			}
 
-			cert, err := x509CertFromCertAndKeyPEMFile(fpath)
+			bundle, err := os.ReadFile(fpath)
 			if err != nil {
 				return err
+			}
+			cert, err := tlsCertFromCertAndKeyPEMBundle(bundle)
+			if err != nil {
+				return fmt.Errorf("%s: %w", fpath, err)
 			}
 
 			certs = append(certs, Certificate{Certificate: cert})
@@ -77,12 +81,7 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 	return certs, nil
 }
 
-func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
-	bundle, err := os.ReadFile(fpath)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
+func tlsCertFromCertAndKeyPEMBundle(bundle []byte) (tls.Certificate, error) {
 	certBuilder, keyBuilder := new(bytes.Buffer), new(bytes.Buffer)
 	var foundKey bool // use only the first key in the file
 
@@ -96,8 +95,7 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 
 		if derBlock.Type == "CERTIFICATE" {
 			// Re-encode certificate as PEM, appending to certificate chain
-			err = pem.Encode(certBuilder, derBlock)
-			if err != nil {
+			if err := pem.Encode(certBuilder, derBlock); err != nil {
 				return tls.Certificate{}, err
 			}
 		} else if derBlock.Type == "EC PARAMETERS" {
@@ -105,18 +103,16 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 			// parameters and key (parameter block should come first)
 			if !foundKey {
 				// Encode parameters
-				err = pem.Encode(keyBuilder, derBlock)
-				if err != nil {
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
 					return tls.Certificate{}, err
 				}
 
 				// Key must immediately follow
 				derBlock, bundle = pem.Decode(bundle)
 				if derBlock == nil || derBlock.Type != "EC PRIVATE KEY" {
-					return tls.Certificate{}, fmt.Errorf("%s: expected elliptic private key to immediately follow EC parameters", fpath)
+					return tls.Certificate{}, fmt.Errorf("expected elliptic private key to immediately follow EC parameters")
 				}
-				err = pem.Encode(keyBuilder, derBlock)
-				if err != nil {
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
 					return tls.Certificate{}, err
 				}
 				foundKey = true
@@ -124,28 +120,27 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 		} else if derBlock.Type == "PRIVATE KEY" || strings.HasSuffix(derBlock.Type, " PRIVATE KEY") {
 			// RSA key
 			if !foundKey {
-				err = pem.Encode(keyBuilder, derBlock)
-				if err != nil {
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
 					return tls.Certificate{}, err
 				}
 				foundKey = true
 			}
 		} else {
-			return tls.Certificate{}, fmt.Errorf("%s: unrecognized PEM block type: %s", fpath, derBlock.Type)
+			return tls.Certificate{}, fmt.Errorf("unrecognized PEM block type: %s", derBlock.Type)
 		}
 	}
 
 	certPEMBytes, keyPEMBytes := certBuilder.Bytes(), keyBuilder.Bytes()
 	if len(certPEMBytes) == 0 {
-		return tls.Certificate{}, fmt.Errorf("%s: failed to parse PEM data", fpath)
+		return tls.Certificate{}, fmt.Errorf("failed to parse PEM data")
 	}
 	if len(keyPEMBytes) == 0 {
-		return tls.Certificate{}, fmt.Errorf("%s: no private key block found", fpath)
+		return tls.Certificate{}, fmt.Errorf("no private key block found")
 	}
 
 	cert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
 	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("%s: making X509 key pair: %v", fpath, err)
+		return tls.Certificate{}, fmt.Errorf("making X509 key pair: %v", err)
 	}
 
 	return cert, nil

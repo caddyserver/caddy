@@ -133,6 +133,13 @@ func (st ServerType) buildTLSApp(
 				ap.Issuers = issuers
 			}
 
+			// certificate managers
+			if certManagerVals, ok := sblock.pile["tls.cert_manager"]; ok {
+				for _, certManager := range certManagerVals {
+					certGetterName := certManager.Value.(caddy.Module).CaddyModule().ID.Name()
+					ap.ManagersRaw = append(ap.ManagersRaw, caddyconfig.JSONModuleObject(certManager.Value, "via", certGetterName, &warnings))
+				}
+			}
 			// custom bind host
 			for _, cfgVal := range sblock.pile["bind"] {
 				for _, iss := range ap.Issuers {
