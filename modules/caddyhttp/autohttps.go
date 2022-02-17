@@ -471,6 +471,16 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 			}
 		}
 
+		// if no external managers were configured, enable
+		// implicit Tailscale support for convenience
+		if ap.Managers == nil {
+			ts, err := implicitTailscale(ctx)
+			if err != nil {
+				return err
+			}
+			ap.Managers = []certmagic.CertificateManager{ts}
+		}
+
 		// while we're here, is this the catch-all/base policy?
 		if !foundBasePolicy && len(ap.Subjects) == 0 {
 			basePolicy = ap
@@ -479,8 +489,14 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 	}
 
 	if basePolicy == nil {
-		// no base policy found, we will make one!
-		basePolicy = new(caddytls.AutomationPolicy)
+		// no base policy found, we will make one! (with implicit Tailscale integration)
+		ts, err := implicitTailscale(ctx)
+		if err != nil {
+			return err
+		}
+		basePolicy = &caddytls.AutomationPolicy{
+			Managers: []certmagic.CertificateManager{ts},
+		}
 	}
 
 	// if the basePolicy has an existing ACMEIssuer (particularly to
@@ -663,6 +679,13 @@ func (app *App) automaticHTTPSPhase2() error {
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
+}
+
+// implicitTailscale returns a new and provisioned Tailscale module configured to be optional.
+func implicitTailscale(ctx caddy.Context) (caddytls.Tailscale, error) {
+	ts := caddytls.Tailscale{Optional: true}
+	err := ts.Provision(ctx)
+	return ts, err
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }

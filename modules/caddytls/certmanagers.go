@@ -23,6 +23,14 @@ func init() {
 
 // Tailscale is a module that can get certificates from the local Tailscale process.
 type Tailscale struct {
+	// If true, this module will operate in "best-effort" mode and
+	// ignore "soft" errors; i.e. try Tailscale, and if it doesn't connect
+	// or return a certificate, oh well. Failure to connect to Tailscale
+	// results in a no-op instead of an error. Intended for the use case
+	// where this module is added implicitly for convenience, even if
+	// Tailscale isn't necessarily running.
+	Optional bool `json:"optional,omitempty"`
+
 	logger *zap.Logger
 }
 
@@ -42,19 +50,24 @@ func (ts *Tailscale) Provision(ctx caddy.Context) error {
 func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	canGetCert, err := ts.canHazCertificate(ctx, hello)
 	if err == nil && !canGetCert {
-		// pass-thru: Tailscale can't offer a cert for this name, so rely on other/default configuration for cert
-		return nil, nil
+		return nil, nil // pass-thru: Tailscale can't offer a cert for this name
 	}
 	if err != nil {
-		ts.logger.Error("could not get status; will try to get certificate anyway", zap.Error(err))
+		ts.logger.Warn("could not get status; will try to get certificate anyway", zap.Error(err))
 	}
 	return tscert.GetCertificate(hello)
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
-func (Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (bool, error) {
+func (ts Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (bool, error) {
+	if ts.Optional && !strings.HasSuffix(strings.ToLower(hello.ServerName), tailscaleDomainAliasEnding) {
+		return false, nil
+	}
 	status, err := tscert.GetStatus(ctx)
 	if err != nil {
+		if ts.Optional {
+			return false, nil // ignore error if we don't expect/require it to work anyway
+		}
 		return false, err
 	}
 	for _, domain := range status.CertDomains {
@@ -69,7 +82,7 @@ func (Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloIn
 //
 //     ... tailscale
 //
-func (ts *Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -77,6 +90,9 @@ func (ts *Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	return nil
 }
+
+// tailscaleDomainAliasEnding is the ending for all Tailscale custom domains.
+const tailscaleDomainAliasEnding = ".ts.net"
 
 // HTTPCertGetter can get a certificate via HTTP(S) request.
 type HTTPCertGetter struct {
