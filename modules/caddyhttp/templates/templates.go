@@ -126,7 +126,11 @@ func init() {
 //
 // ##### `markdown`
 //
-// Renders the given Markdown text as HTML.
+// Renders the given Markdown text as HTML. This uses the
+// [Goldmark](https://github.com/yuin/goldmark) library,
+// which is CommonMark compliant. It also has these plugins
+// enabled: Github Flavored Markdown, Footnote and syntax
+// highlighting provided by [Chroma](https://github.com/alecthomas/chroma).
 //
 // ```
 // {{markdown "My _markdown_ text"}}

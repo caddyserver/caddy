@@ -608,6 +608,9 @@ title = "Welcome"
 
 func getContextOrFail(t *testing.T) TemplateContext {
 	tplContext, err := initTestContext()
+	t.Cleanup(func() {
+		os.RemoveAll(string(tplContext.Root.(http.Dir)))
+	})
 	if err != nil {
 		t.Fatalf("failed to prepare test context: %v", err)
 	}
@@ -620,8 +623,12 @@ func initTestContext() (TemplateContext, error) {
 	if err != nil {
 		return TemplateContext{}, err
 	}
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "caddy")
+	if err != nil {
+		return TemplateContext{}, err
+	}
 	return TemplateContext{
-		Root:       http.Dir(os.TempDir()),
+		Root:       http.Dir(tmpDir),
 		Req:        request,
 		RespHeader: WrappedHeader{make(http.Header)},
 	}, nil
