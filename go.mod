@@ -9,7 +9,6 @@ require (
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
 	github.com/caddyserver/certmagic v0.15.4-0.20220217003627-a709bba86379
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-chi/chi v4.1.2+incompatible
@@ -33,7 +32,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210915214749-c084706c2272
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
 	golang.org/x/term v0.0.0-20210503060354-a79de5458b56
-	google.golang.org/genproto v0.0.0-20210831024726-fe130286e0e2
+	google.golang.org/genproto v0.0.0-20211018162055-cf77aa76bad2
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
