@@ -39,17 +39,16 @@ func (ts *Tailscale) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
+func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	canGetCert, err := ts.canHazCertificate(ctx, hello)
 	if err == nil && !canGetCert {
 		// pass-thru: Tailscale can't offer a cert for this name, so rely on other/default configuration for cert
-		return nil, false, nil
+		return nil, nil
 	}
 	if err != nil {
 		ts.logger.Error("could not get status; will try to get certificate anyway", zap.Error(err))
 	}
-	cert, err := tscert.GetCertificate(hello)
-	return cert, false, err
+	return tscert.GetCertificate(hello)
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
@@ -93,10 +92,6 @@ type HTTPCertGetter struct {
 	// To be valid, the response must be HTTP 200 with a PEM body
 	// consisting of blocks for the certificate chain and the private
 	// key.
-	//
-	// The certificate will be cached and reused if the Cache-Control
-	// response header does not exist or does not contain the value
-	// "no-cache" (other value are ignored).
 	URL string `json:"url,omitempty"`
 
 	ctx context.Context
@@ -118,7 +113,7 @@ func (hcg *HTTPCertGetter) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, bool, error) {
+func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	sigs := make([]string, len(hello.SignatureSchemes))
 	for i, sig := range hello.SignatureSchemes {
 		sigs[i] = fmt.Sprintf("%x", uint16(sig)) // you won't believe what %x uses if the val is a Stringer
@@ -130,7 +125,7 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 
 	parsed, err := url.Parse(hcg.URL)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	qs := parsed.Query()
 	qs.Set("server_name", hello.ServerName)
@@ -140,29 +135,29 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 
 	req, err := http.NewRequestWithContext(hcg.ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("got HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("got HTTP %d", resp.StatusCode)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, false, fmt.Errorf("error reading response body: %v", err)
+		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
 	cert, err := tlsCertFromCertAndKeyPEMBundle(bodyBytes)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	return &cert, resp.Header.Get("Cache-Control") != "no-cache", nil
+	return &cert, nil
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
@@ -187,11 +182,11 @@ func (hcg *HTTPCertGetter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Interface guards
 var (
-	_ certmagic.CertificateGetter = (*Tailscale)(nil)
-	_ caddy.Provisioner           = (*Tailscale)(nil)
-	_ caddyfile.Unmarshaler       = (*Tailscale)(nil)
+	_ certmagic.CertificateManager = (*Tailscale)(nil)
+	_ caddy.Provisioner            = (*Tailscale)(nil)
+	_ caddyfile.Unmarshaler        = (*Tailscale)(nil)
 
-	_ certmagic.CertificateGetter = (*HTTPCertGetter)(nil)
-	_ caddy.Provisioner           = (*HTTPCertGetter)(nil)
-	_ caddyfile.Unmarshaler       = (*HTTPCertGetter)(nil)
+	_ certmagic.CertificateManager = (*HTTPCertGetter)(nil)
+	_ caddy.Provisioner            = (*HTTPCertGetter)(nil)
+	_ caddyfile.Unmarshaler        = (*HTTPCertGetter)(nil)
 )

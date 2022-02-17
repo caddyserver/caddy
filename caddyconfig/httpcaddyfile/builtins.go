@@ -94,7 +94,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var keyType string
 	var internalIssuer *caddytls.InternalIssuer
 	var issuers []certmagic.Issuer
-	var certGetter certmagic.CertificateGetter
+	var certManagers []certmagic.CertificateManager
 	var onDemand bool
 
 	for h.Next() {
@@ -319,11 +319,11 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				if err != nil {
 					return nil, err
 				}
-				var ok bool
-				certGetter, ok = unm.(certmagic.CertificateGetter)
+				certManager, ok := unm.(certmagic.CertificateManager)
 				if !ok {
-					return nil, h.Errf("module %s (%T) is not a certmagic.CertificateGetter", modID, unm)
+					return nil, h.Errf("module %s (%T) is not a certmagic.CertificateManager", modID, unm)
 				}
+				certManagers = append(certManagers, certManager)
 
 			case "dns":
 				if !h.NextArg() {
@@ -471,10 +471,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			Value: true,
 		})
 	}
-	if certGetter != nil {
+	for _, certManager := range certManagers {
 		configVals = append(configVals, ConfigValue{
-			Class: "tls.cert_getter",
-			Value: certGetter,
+			Class: "tls.cert_manager",
+			Value: certManager,
 		})
 	}
 

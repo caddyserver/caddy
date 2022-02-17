@@ -116,11 +116,6 @@ func (st ServerType) buildTLSApp(
 			if _, ok := sblock.pile["tls.on_demand"]; ok {
 				ap.OnDemand = true
 			}
-			if certGetterVals, ok := sblock.pile["tls.cert_getter"]; ok {
-				certGetter := certGetterVals[0].Value.(certmagic.CertificateGetter)
-				certGetterName := certGetter.(caddy.Module).CaddyModule().ID.Name()
-				ap.GetCertificateRaw = caddyconfig.JSONModuleObject(certGetter, "via", certGetterName, &warnings)
-			}
 
 			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)
@@ -138,6 +133,13 @@ func (st ServerType) buildTLSApp(
 				ap.Issuers = issuers
 			}
 
+			// certificate managers
+			if certManagerVals, ok := sblock.pile["tls.cert_manager"]; ok {
+				for _, certManager := range certManagerVals {
+					certGetterName := certManager.Value.(caddy.Module).CaddyModule().ID.Name()
+					ap.ManagersRaw = append(ap.ManagersRaw, caddyconfig.JSONModuleObject(certManager.Value, "via", certGetterName, &warnings))
+				}
+			}
 			// custom bind host
 			for _, cfgVal := range sblock.pile["bind"] {
 				for _, iss := range ap.Issuers {
