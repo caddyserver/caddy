@@ -71,21 +71,28 @@ func (HTTPLoader) CaddyModule() caddy.ModuleInfo {
 
 // LoadConfig loads a Caddy config.
 func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
+	repl := caddy.NewReplacer()
+
 	client, err := hl.makeClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	method := hl.Method
+	method := repl.ReplaceAll(hl.Method, "")
 	if method == "" {
 		method = http.MethodGet
 	}
 
-	req, err := http.NewRequest(method, hl.URL, nil)
+	url := repl.ReplaceAll(hl.URL, "")
+	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header = hl.Headers
+	for key, vals := range hl.Headers {
+		for _, val := range vals {
+			req.Header.Add(repl.ReplaceAll(key, ""), repl.ReplaceKnown(val, ""))
+		}
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
