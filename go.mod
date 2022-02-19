@@ -12,7 +12,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-chi/chi v4.1.2+incompatible
-	github.com/google/cel-go v0.9.0
+	github.com/google/cel-go v0.7.3
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.14.2
 	github.com/klauspost/cpuid/v2 v2.0.10
