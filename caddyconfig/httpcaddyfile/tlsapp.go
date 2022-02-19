@@ -301,6 +301,11 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.RenewCheckInterval = renewCheckInterval
 	}
 
+	// set whether OCSP stapling should be disabled for manually-managed certificates
+	if ocspConfig, ok := options["ocsp_stapling"].(certmagic.OCSPConfig); ok {
+		tlsApp.DisableOCSPStapling = ocspConfig.DisableStapling
+	}
+
 	// if any hostnames appear on the same server block as a key with
 	// no host, they will not be used with route matchers because the
 	// hostless key matches all hosts, therefore, it wouldn't be

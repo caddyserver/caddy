@@ -10,6 +10,7 @@
 	}
 	acme_ca https://example.com
 	acme_ca_root /path/to/ca.crt
+	ocsp_stapling off
 
 	email test@example.com
 	admin off
@@ -61,7 +62,8 @@
 								"module": "internal"
 							}
 						],
-						"key_type": "ed25519"
+						"key_type": "ed25519",
+						"disable_ocsp_stapling": true
 					}
 				],
 				"on_demand": {
@@ -71,7 +73,8 @@
 					},
 					"ask": "https://example.com"
 				}
-			}
+			},
+			"disable_ocsp_stapling": true
 		}
 	}
 }
