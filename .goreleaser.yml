@@ -6,8 +6,7 @@ before:
     # subsequently causes gorleaser to refuse running.
     - mkdir -p caddy-build
     - cp cmd/caddy/main.go caddy-build/main.go
-    - cp ./go.mod caddy-build/go.mod
-    - sed -i.bkp 's|github.com/caddyserver/caddy/v2|caddy|g' ./caddy-build/go.mod
+    - /bin/sh -c 'cd ./caddy-build && go mod init caddy'
     # GoReleaser doesn't seem to offer {{.Tag}} at this stage, so we have to embed it into the env
     # so we run: TAG=$(git describe --abbrev=0) goreleaser release --rm-dist --skip-publish --skip-validate
     - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./caddy-build/go.mod
@@ -36,9 +35,9 @@ builds:
   - s390x
   - ppc64le
   goarm:
-  - 5
-  - 6
-  - 7
+  - "5"
+  - "6"
+  - "7"
   ignore:
     - goos: darwin
       goarch: arm
@@ -56,7 +55,7 @@ builds:
       goarch: s390x
     - goos: freebsd
       goarch: arm
-      goarm: 5
+      goarm: "5"
   flags:
   - -trimpath
   ldflags:
