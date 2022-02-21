@@ -259,11 +259,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
-			if errStatus >= 500 {
-				logger.Error(errMsg, errFields...)
-			} else {
-				logger.Debug(errMsg, errFields...)
-			}
+			logger.Debug(errMsg, errFields...)
 		} else {
 			// well... this is awkward
 			errFields = append([]zapcore.Field{

@@ -89,6 +89,14 @@ type AutomationPolicy struct {
 	// zerossl.
 	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
+	// Modules that can get a custom certificate to use for any
+	// given TLS handshake at handshake-time. Custom certificates
+	// can be useful if another entity is managing certificates
+	// and Caddy need only get it and serve it.
+	//
+	// TODO: This is an EXPERIMENTAL feature. It is subject to change or removal.
+	ManagersRaw []json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
+
 	// If true, certificates will be requested with MustStaple. Not all
 	// CAs support this, and there are potentially serious consequences
 	// of enabling this feature without proper threat modeling.
@@ -113,7 +121,7 @@ type AutomationPolicy struct {
 
 	// If true, certificates will be managed "on demand"; that is, during
 	// TLS handshakes or when needed, as opposed to at startup or config
-	// load.
+	// load. This enables On-Demand TLS for this policy.
 	OnDemand bool `json:"on_demand,omitempty"`
 
 	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
@@ -129,10 +137,12 @@ type AutomationPolicy struct {
 	// EXPERIMENTAL. Subject to change.
 	OCSPOverrides map[string]string `json:"ocsp_overrides,omitempty"`
 
-	// Issuers stores the decoded issuer parameters. This is only
-	// used to populate an underlying certmagic.Config's Issuers
-	// field; it is not referenced thereafter.
-	Issuers []certmagic.Issuer `json:"-"`
+	// Issuers and Managers store the decoded issuer and manager modules;
+	// they are only used to populate an underlying certmagic.Config's
+	// fields during provisioning so that the modules can survive a
+	// re-provisioning.
+	Issuers  []certmagic.Issuer             `json:"-"`
+	Managers []certmagic.CertificateManager `json:"-"`
 
 	magic   *certmagic.Config
 	storage certmagic.Storage
@@ -153,6 +163,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		ap.storage = cmStorage
 	}
 
+	// on-demand TLS
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand {
 		ond = &certmagic.OnDemandConfig{
@@ -173,6 +184,22 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				}
 				return nil
 			},
+		}
+	}
+
+	// we don't store loaded modules directly in the certmagic config since
+	// policy provisioning may happen more than once (during auto-HTTPS) and
+	// loading a module clears its config bytes; thus, load the module and
+	// store them on the policy before putting it on the config
+
+	// load and provision any cert manager modules
+	if ap.ManagersRaw != nil {
+		vals, err := tlsApp.ctx.LoadModule(ap, "ManagersRaw")
+		if err != nil {
+			return fmt.Errorf("loading external certificate manager modules: %v", err)
+		}
+		for _, getCertVal := range vals.([]interface{}) {
+			ap.Managers = append(ap.Managers, getCertVal.(certmagic.CertificateManager))
 		}
 	}
 
@@ -225,9 +252,10 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 			DisableStapling:    ap.DisableOCSPStapling,
 			ResponderOverrides: ap.OCSPOverrides,
 		},
-		Storage: storage,
-		Issuers: issuers,
-		Logger:  tlsApp.logger,
+		Storage:  storage,
+		Issuers:  issuers,
+		Managers: ap.Managers,
+		Logger:   tlsApp.logger,
 	}
 	ap.magic = certmagic.New(tlsApp.certCache, template)
 
