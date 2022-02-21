@@ -156,16 +156,19 @@ development environment.`,
 	RegisterCommand(Command{
 		Name:  "stop",
 		Func:  cmdStop,
+		Usage: "[--address <interface>] [--config <path> [--adapter <name>]]",
 		Short: "Gracefully stops a started Caddy process",
 		Long: `
 Stops the background Caddy process as gracefully as possible.
 
 It requires that the admin API is enabled and accessible, since it will
-use the API's /stop endpoint. The address of this request can be
-customized using the --address flag if it is not the default.`,
+use the API's /stop endpoint. The address of this request can be customized
+using the --address flag, or from the given --config, if not the default.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("stop", flag.ExitOnError)
 			fs.String("address", "", "The address to use to reach the admin API endpoint, if not the default")
+			fs.String("config", "", "Configuration file to use to parse the admin address, if --address is not used")
+			fs.String("adapter", "", "Name of config adapter to apply (when --config is used)")
 			return fs
 		}(),
 	})

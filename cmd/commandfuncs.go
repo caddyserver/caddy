@@ -275,9 +275,16 @@ func cmdRun(fl Flags) (int, error) {
 }
 
 func cmdStop(fl Flags) (int, error) {
-	stopCmdAddrFlag := fl.String("address")
+	addrFlag := fl.String("address")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
 
-	resp, err := ApiRequest(stopCmdAddrFlag, http.MethodPost, "/stop", nil, nil)
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
+	}
+
+	resp, err := AdminAPIRequest(adminAddr, http.MethodPost, "/stop", nil, nil)
 	if err != nil {
 		caddy.Log().Warn("failed using API to stop instance", zap.Error(err))
 		return caddy.ExitCodeFailedStartup, err
@@ -288,13 +295,13 @@ func cmdStop(fl Flags) (int, error) {
 }
 
 func cmdReload(fl Flags) (int, error) {
-	reloadCmdConfigFlag := fl.String("config")
-	reloadCmdConfigAdapterFlag := fl.String("adapter")
-	reloadCmdAddrFlag := fl.String("address")
-	reloadCmdForceFlag := fl.Bool("force")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
+	addrFlag := fl.String("address")
+	forceFlag := fl.Bool("force")
 
 	// get the config in caddy's native format
-	config, configFile, err := LoadConfig(reloadCmdConfigFlag, reloadCmdConfigAdapterFlag)
+	config, configFile, err := LoadConfig(configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -302,27 +309,18 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	// get the address of the admin listener; use flag if specified
-	adminAddr := reloadCmdAddrFlag
-	if adminAddr == "" && len(config) > 0 {
-		var tmpStruct struct {
-			Admin caddy.AdminConfig `json:"admin"`
-		}
-		err = json.Unmarshal(config, &tmpStruct)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("unmarshaling admin listener address from config: %v", err)
-		}
-		adminAddr = tmpStruct.Admin.Listen
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
 
 	// optionally force a config reload
 	headers := make(http.Header)
-	if reloadCmdForceFlag {
+	if forceFlag {
 		headers.Set("Cache-Control", "must-revalidate")
 	}
 
-	resp, err := ApiRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
+	resp, err := AdminAPIRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("sending configuration to instance: %v", err)
 	}
@@ -642,15 +640,12 @@ commands:
 	return caddy.ExitCodeSuccess, nil
 }
 
-// ApiRequest makes an API request to the endpoint adminAddr with the
-// given HTTP method and request URI. If body is non-nil, it will be
-// assumed to be Content-Type application/json. The caller should
-// close the response body.
-func ApiRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) (*http.Response, error) {
-	// parse the admin address
-	if adminAddr == "" {
-		adminAddr = caddy.DefaultAdminListen
-	}
+// AdminAPIRequest makes an API request according to the CLI flags given,
+// with the given HTTP method and request URI. If body is non-nil, it will
+// be assumed to be Content-Type application/json. The caller should close
+// the response body. Should only be used by Caddy CLI commands which
+// need to interact with a running instance of Caddy via the admin API.
+func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) (*http.Response, error) {
 	parsedAddr, err := caddy.ParseNetworkAddress(adminAddr)
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
 		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
@@ -716,6 +711,45 @@ func ApiRequest(adminAddr, method, uri string, headers http.Header, body io.Read
 	}
 
 	return resp, nil
+}
+
+// DetermineAdminAPIAddress determines which admin API endpoint address should
+// be used based on the inputs. By priority: if `address` is specified, then
+// it is returned; if `configFile` (and `configAdapter`) are specified, then that
+// config will be loaded to find the admin address; otherwise, the default
+// admin listen address will be returned.
+func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string, error) {
+	// Prefer the address if specified and non-empty
+	if address != "" {
+		return address, nil
+	}
+
+	// Try to load the config from file if specified, with the given adapter name
+	if configFile != "" {
+		// get the config in caddy's native format
+		config, loadedConfigFile, err := LoadConfig(configFile, configAdapter)
+		if err != nil {
+			return "", err
+		}
+		if loadedConfigFile == "" {
+			return "", fmt.Errorf("no config file to load")
+		}
+
+		// get the address of the admin listener
+		if len(config) > 0 {
+			var tmpStruct struct {
+				Admin caddy.AdminConfig `json:"admin"`
+			}
+			err = json.Unmarshal(config, &tmpStruct)
+			if err != nil {
+				return "", fmt.Errorf("unmarshaling admin listener address from config: %v", err)
+			}
+			return tmpStruct.Admin.Listen, nil
+		}
+	}
+
+	// Fallback to the default listen address otherwise
+	return caddy.DefaultAdminListen, nil
 }
 
 type moduleInfo struct {

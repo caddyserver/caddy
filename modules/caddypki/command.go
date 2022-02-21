@@ -110,60 +110,17 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	if caID == "" {
 		caID = DefaultCAID
 	}
-	uri := amdinPKICertificatesEndpoint + caID
 
-	// Prefer the address flag, but if a config is specified,
-	// try to load the admin address from there.
-	adminAddr := addrFlag
-	if adminAddr == "" && configFlag != "" {
-		// get the config in caddy's native format
-		config, configFile, err := caddycmd.LoadConfig(configFlag, configAdapterFlag)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, err
-		}
-		if configFile == "" {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
-		}
-
-		// get the address of the admin listener
-		if len(config) > 0 {
-			var tmpStruct struct {
-				Admin caddy.AdminConfig `json:"admin"`
-			}
-			err = json.Unmarshal(config, &tmpStruct)
-			if err != nil {
-				return caddy.ExitCodeFailedStartup,
-					fmt.Errorf("unmarshaling admin listener address from config: %v", err)
-			}
-			adminAddr = tmpStruct.Admin.Listen
-		}
-	}
-	if adminAddr == "" {
-		adminAddr = caddy.DefaultAdminListen
-	}
-
-	// Make the request to fetch the CA info
-	resp, err := caddycmd.ApiRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
+	// Determine where we're sending the request to get the CA info
+	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("requesting CA info: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Decode the resposne
-	caInfo := new(CAInfo)
-	err = json.NewDecoder(resp.Body).Decode(caInfo)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode JSON response: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
 
-	// Decode the root
-	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
-	if rootBlock == nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode root certificate: %v", err)
-	}
-	rootCert, err := x509.ParseCertificate(rootBlock.Bytes)
+	// Fetch the root cert from the admin API
+	rootCert, err := rootCertFromAdmin(adminAddr, caID)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to parse root certificate: %v", err)
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// Set up the CA struct; we only need to fill in the root
@@ -175,7 +132,7 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	ca := CA{
 		log:          caddy.Log(),
 		root:         rootCert,
-		rootCertPath: adminAddr + uri,
+		rootCertPath: adminAddr + adminPKICertificatesEndpoint + caID,
 	}
 
 	// Install the cert!
@@ -195,7 +152,7 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 	configAdapterFlag := fl.String("adapter")
 
 	if certFile != "" && (caID != "" || addrFlag != "" || configFlag != "") {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("conflicting command line arguments")
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("conflicting command line arguments, cannot use --cert with other flags")
 	}
 
 	// If a file was specified, try to uninstall the cert matching that file
@@ -218,63 +175,21 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
+	// Prepare the URI to the admin endpoint
 	if caID == "" {
 		caID = DefaultCAID
 	}
-	uri := amdinPKICertificatesEndpoint + caID
 
-	// Prefer the address flag, but if a config is specified,
-	// try to load the admin address from there.
-	adminAddr := addrFlag
-	if adminAddr == "" && configFlag != "" {
-		// get the config in caddy's native format
-		config, configFile, err := caddycmd.LoadConfig(configFlag, configAdapterFlag)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, err
-		}
-		if configFile == "" {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
-		}
-
-		// get the address of the admin listener
-		if len(config) > 0 {
-			var tmpStruct struct {
-				Admin caddy.AdminConfig `json:"admin"`
-			}
-			err = json.Unmarshal(config, &tmpStruct)
-			if err != nil {
-				return caddy.ExitCodeFailedStartup,
-					fmt.Errorf("unmarshaling admin listener address from config: %v", err)
-			}
-			adminAddr = tmpStruct.Admin.Listen
-		}
-	}
-	if adminAddr == "" {
-		adminAddr = caddy.DefaultAdminListen
-	}
-
-	// Make the request to fetch the CA info
-	resp, err := caddycmd.ApiRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
+	// Determine where we're sending the request to get the CA info
+	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("requesting CA info: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Decode the resposne
-	caInfo := new(CAInfo)
-	err = json.NewDecoder(resp.Body).Decode(caInfo)
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode JSON response: %v", err)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
 
-	// Decode the root
-	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
-	if rootBlock == nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to decode root certificate: %v", err)
-	}
-	rootCert, err := x509.ParseCertificate(rootBlock.Bytes)
+	// Fetch the root cert from the admin API
+	rootCert, err := rootCertFromAdmin(adminAddr, caID)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to parse root certificate: %v", err)
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// Uninstall the cert!
@@ -287,4 +202,35 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+// rootCertFromAdmin makes the API request to fetch the
+func rootCertFromAdmin(adminAddr string, caID string) (*x509.Certificate, error) {
+	uri := adminPKICertificatesEndpoint + caID
+
+	// Make the request to fetch the CA info
+	resp, err := caddycmd.AdminAPIRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
+	if err != nil {
+		return nil, fmt.Errorf("requesting CA info: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Decode the resposne
+	caInfo := new(CAInfo)
+	err = json.NewDecoder(resp.Body).Decode(caInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode JSON response: %v", err)
+	}
+
+	// Decode the root
+	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
+	if rootBlock == nil {
+		return nil, fmt.Errorf("failed to decode root certificate: %v", err)
+	}
+	rootCert, err := x509.ParseCertificate(rootBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse root certificate: %v", err)
+	}
+
+	return rootCert, nil
 }

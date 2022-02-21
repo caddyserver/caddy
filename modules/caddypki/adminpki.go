@@ -72,7 +72,7 @@ func (a *adminPKI) Provision(ctx caddy.Context) error {
 func (a *adminPKI) Routes() []caddy.AdminRoute {
 	return []caddy.AdminRoute{
 		{
-			Pattern: amdinPKICertificatesEndpoint,
+			Pattern: adminPKICertificatesEndpoint,
 			Handler: caddy.AdminHandlerFunc(a.handleCertificates),
 		},
 	}
@@ -159,7 +159,7 @@ func (a *adminPKI) handleCertificates(w http.ResponseWriter, r *http.Request) er
 
 	// Build the response
 	response := CAInfo{
-		Id:           ca.ID,
+		ID:           ca.ID,
 		Name:         ca.Name,
 		Root:         rootPem,
 		Intermediate: interPem,
@@ -179,13 +179,13 @@ func (a *adminPKI) handleCertificates(w http.ResponseWriter, r *http.Request) er
 
 // CAInfo is the response from the certificates API endpoint
 type CAInfo struct {
-	Id           string `json:"id"`
+	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Root         string `json:"root"`
 	Intermediate string `json:"intermediate"`
 }
 
-const amdinPKICertificatesEndpoint = "/pki/certificates/"
+const adminPKICertificatesEndpoint = "/pki/certificates/"
 
 // Interface guards
 var (
