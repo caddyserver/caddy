@@ -20,7 +20,44 @@ import (
 	"net"
 	"net/http"
 	"sync"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
+
+func init() {
+	caddy.RegisterModule(HTTPRedirectListenerWrapper{})
+}
+
+// HTTPRedirectListenerWrapper provides HTTP->HTTPS redirects for
+// connections that come on the TLS port as an HTTP request,
+// by detecting using the first few bytes that it's not a TLS
+// handshake, but instead an HTTP request.
+//
+// This is especially useful when using a non-standard HTTPS port.
+// A user may simply type the address in their browser without the
+// https:// scheme, which would cause the browser to attempt the
+// connection over HTTP, but this would cause a "Client sent an
+// HTTP request to an HTTPS server" error response.
+//
+// This listener wrapper must be placed BEFORE the "tls" listener
+// wrapper, for it to work properly.
+type HTTPRedirectListenerWrapper struct{}
+
+func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.listeners.http_redirect",
+		New: func() caddy.Module { return new(HTTPRedirectListenerWrapper) },
+	}
+}
+
+func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
+func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
+	return &httpRedirectListener{l}
+}
 
 // httpRedirectListener is listener that checks the first few bytes
 // of the request when the server is intended to accept HTTPS requests,
@@ -112,3 +149,8 @@ func firstBytesLookLikeHTTP(hdr []byte) bool {
 	}
 	return false
 }
+
+var (
+	_ caddy.ListenerWrapper = (*HTTPRedirectListenerWrapper)(nil)
+	_ caddyfile.Unmarshaler = (*HTTPRedirectListenerWrapper)(nil)
+)

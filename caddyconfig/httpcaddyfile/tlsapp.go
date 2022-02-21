@@ -133,6 +133,13 @@ func (st ServerType) buildTLSApp(
 				ap.Issuers = issuers
 			}
 
+			// certificate managers
+			if certManagerVals, ok := sblock.pile["tls.cert_manager"]; ok {
+				for _, certManager := range certManagerVals {
+					certGetterName := certManager.Value.(caddy.Module).CaddyModule().ID.Name()
+					ap.ManagersRaw = append(ap.ManagersRaw, caddyconfig.JSONModuleObject(certManager.Value, "via", certGetterName, &warnings))
+				}
+			}
 			// custom bind host
 			for _, cfgVal := range sblock.pile["bind"] {
 				for _, iss := range ap.Issuers {
@@ -292,6 +299,11 @@ func (st ServerType) buildTLSApp(
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
 		tlsApp.Automation.RenewCheckInterval = renewCheckInterval
+	}
+
+	// set whether OCSP stapling should be disabled for manually-managed certificates
+	if ocspConfig, ok := options["ocsp_stapling"].(certmagic.OCSPConfig); ok {
+		tlsApp.DisableOCSPStapling = ocspConfig.DisableStapling
 	}
 
 	// if any hostnames appear on the same server block as a key with

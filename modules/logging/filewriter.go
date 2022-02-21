@@ -135,6 +135,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 //         roll_disabled
 //         roll_size     <size>
 //         roll_uncompressed
+//         roll_local_time
 //         roll_keep     <num>
 //         roll_keep_for <days>
 //     }
@@ -184,6 +185,12 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "roll_uncompressed":
 				var f bool
 				fw.RollCompress = &f
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "roll_local_time":
+				fw.RollLocalTime = true
 				if d.NextArg() {
 					return d.ArgErr()
 				}
