@@ -131,8 +131,9 @@ type (
 		// to spoof request headers. Default: false
 		Forwarded bool `json:"forwarded,omitempty"`
 
-		cidrs  []*net.IPNet
-		logger *zap.Logger
+		zone_id string
+		cidrs   []*net.IPNet
+		logger  *zap.Logger
 	}
 
 	// MatchNot matches requests by negating the results of its matcher
@@ -877,6 +878,10 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
 	for _, str := range m.Ranges {
+		if strings.Contains(str, "%") {
+			m.zone_id = strings.Split(str, "%")[1]
+			str = strings.Split(str, "%")[0]
+		}
 		if strings.Contains(str, "/") {
 			_, ipNet, err := net.ParseCIDR(str)
 			if err != nil {
@@ -898,12 +903,18 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, error) {
+func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 	remote := r.RemoteAddr
+	zone_id := ""
 	if m.Forwarded {
 		if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
 			remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
 		}
+	}
+	// Some link-local IPv6-Adresses can contain zone identifiers at the end,
+	// which are separated with "%"
+		zone_id = strings.Split(remote, "%")[1]
+		remote = strings.Split(remote, "%")[0]
 	}
 	ipStr, _, err := net.SplitHostPort(remote)
 	if err != nil {
@@ -911,20 +922,27 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, error) {
 	}
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid client IP address: %s", ipStr)
+		return nil, zone_id, fmt.Errorf("invalid client IP address: %s", ipStr)
 	}
-	return ip, nil
+	return ip, zone_id, nil
 }
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
-	clientIP, err := m.getClientIP(r)
+	clientIP, zone_id_got, err := m.getClientIP(r)
 	if err != nil {
 		m.logger.Error("getting client IP", zap.Error(err))
 		return false
 	}
 	for _, ipRange := range m.cidrs {
 		if ipRange.Contains(clientIP) {
+			if zone_id_got != "" {
+				if m.zone_id != zone_id_got {
+					// don't really know how to handle error logging at this place
+					// m.logger.Error("incomming zone_id matches not the those in the remote_ip filter: ", m.zone_id)
+					return false
+				}
+			}
 			return true
 		}
 	}
