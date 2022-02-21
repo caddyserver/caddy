@@ -3,6 +3,9 @@
 		timeouts {
 			idle 90s
 		}
+		protocol {
+			strict_sni_host off
+		}
 	}
 	servers :80 {
 		timeouts {
@@ -12,6 +15,9 @@
 	servers :443 {
 		timeouts {
 			idle 30s
+		}
+		protocol {
+			strict_sni_host
 		}
 	}
 }
@@ -46,7 +52,8 @@ http://bar.com {
 							],
 							"terminal": true
 						}
-					]
+					],
+					"strict_sni_host": true
 				},
 				"srv1": {
 					"listen": [
@@ -70,7 +77,8 @@ http://bar.com {
 					"listen": [
 						":8080"
 					],
-					"idle_timeout": 90000000000
+					"idle_timeout": 90000000000,
+					"strict_sni_host": false
 				}
 			}
 		}
