@@ -913,6 +913,7 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 	}
 	// Some link-local IPv6-Adresses can contain zone identifiers at the end,
 	// which are separated with "%"
+	if strings.Contains(remote, "%") {
 		zone_id = strings.Split(remote, "%")[1]
 		remote = strings.Split(remote, "%")[0]
 	}
