@@ -931,7 +931,6 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 func (m MatchRemoteIP) Match(r *http.Request) bool {
 	clientIP, zone_id_got, err := m.getClientIP(r)
 	zoneFilter := true
-	var normFilter bool
 	if err != nil {
 		m.logger.Error("getting client IP", zap.Error(err))
 		return false
@@ -946,21 +945,19 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 				zone_id_def = strings.Split(zone_id_def, "%")[1]
 				// Check if the incomming zone_id is that one in filter.
 				// Assign true or false for the handling of multible ips with or without zone_ids in Filter
-				// and handling of the "zone_id not match" warning.
+				// and handling of the "zone_id not match" info.
 				if zone_id_def == zone_id_got {
-					normFilter = true
+					return true
 				} else {
 					zoneFilter = false
 				}
 			} else {
-				normFilter = true
+				return true
 			}
 		}
 	}
-	if normFilter == true {
-		return true
-	} else if zoneFilter == false {
-		m.logger.Warn("zone_id from remote Client, don't matches one in the filter.")
+	if zoneFilter == false {
+		m.logger.Info("zone_id from remote Client, don't matches that one in remote_ip filter.")
 	}
 	return false
 }
