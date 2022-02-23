@@ -877,6 +877,7 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
 	for _, str := range m.Ranges {
+		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {
 			str = strings.Split(str, "%")[0]
 		}
@@ -909,13 +910,10 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 			remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
 		}
 	}
-
 	ipStr, _, err := net.SplitHostPort(remote)
-
 	if err != nil {
 		ipStr = remote // OK; probably didn't have a port
 	}
-
 	// Some IPv6-Adresses can contain zone identifiers at the end,
 	// which are separated with "%"
 	if strings.Contains(ipStr, "%") {
@@ -932,17 +930,23 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
 	clientIP, zone_id_got, err := m.getClientIP(r)
-	var zoneFilter bool
+	zoneFilter := true
 	var normFilter bool
 	if err != nil {
 		m.logger.Error("getting client IP", zap.Error(err))
 		return false
 	}
 	for i, ipRange := range m.cidrs {
-		zone_id_def := m.Ranges[i]
+
 		if ipRange.Contains(clientIP) {
+			// Assign the right ip string for zone_id handling.
+			zone_id_def := m.Ranges[i]
+			// Check if the filter ips contain zone identifiers.
 			if strings.Contains(zone_id_def, "%") {
 				zone_id_def = strings.Split(zone_id_def, "%")[1]
+				// Check if the incomming zone_id is that one in filter.
+				// Assign true or false for the handling of multible ips with or without zone_ids in Filter
+				// and handling of the "zone_id not match" warning.
 				if zone_id_def == zone_id_got {
 					normFilter = true
 				} else {
@@ -956,7 +960,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 	if normFilter == true {
 		return true
 	} else if zoneFilter == false {
-		m.logger.Warn("zone_id from remote Client, don't matches one in the filter. Blocked!")
+		m.logger.Warn("zone_id from remote Client, don't matches one in the filter.")
 	}
 	return false
 }
