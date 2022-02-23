@@ -884,7 +884,7 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 		if strings.Contains(str, "/") {
 			_, ipNet, err := net.ParseCIDR(str)
 			if err != nil {
-				return fmt.Errorf("parsing CIDR expression: %v for IP %s", err, str)
+				return fmt.Errorf("parsing CIDR expression '%s': %v", str, err)
 			}
 			m.cidrs = append(m.cidrs, ipNet)
 		} else {
@@ -917,8 +917,9 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 	// Some IPv6-Adresses can contain zone identifiers at the end,
 	// which are separated with "%"
 	if strings.Contains(ipStr, "%") {
-		zone_id = strings.Split(ipStr, "%")[1]
-		ipStr = strings.Split(ipStr, "%")[0]
+		split := strings.Split(ipStr, "%")
+		ipStr = split[0]
+		zoneID = split[1]
 	}
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
@@ -930,11 +931,11 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
 	clientIP, zone_id_got, err := m.getClientIP(r)
-	zoneFilter := true
 	if err != nil {
 		m.logger.Error("getting client IP", zap.Error(err))
 		return false
 	}
+	zoneFilter := true
 	for i, ipRange := range m.cidrs {
 
 		if ipRange.Contains(clientIP) {
@@ -956,8 +957,8 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			}
 		}
 	}
-	if zoneFilter == false {
-		m.logger.Info("zone_id from remote Client, don't matches that one in remote_ip filter.")
+	if !zoneFilter {
+		m.logger.Debug("zone ID from remote '%s' did not match", zoneID)
 	}
 	return false
 }
