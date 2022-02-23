@@ -144,6 +144,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
+				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
 			}
 		}
 	}
@@ -416,6 +417,19 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(iss.Challenges.DNS.Resolvers) == 0 {
 					return d.ArgErr()
 				}
+
+			case "override_domain":
+				arg := d.RemainingArgs()
+				if len(arg) != 1 {
+					return d.ArgErr()
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.OverrideDomain = arg[0]
 
 			case "preferred_chains":
 				chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
