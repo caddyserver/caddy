@@ -819,6 +819,7 @@ func (h Handler) directRequest(req *http.Request, di DialInfo) {
 	}
 
 	req.URL.Host = reqHost
+	req.Host = reqHost
 }
 
 // bufferedBody reads originalBody into a buffer, then returns a reader for the buffer.
