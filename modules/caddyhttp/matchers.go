@@ -125,16 +125,16 @@ type (
 		// The IPs or CIDR ranges to match.
 		Ranges []string `json:"ranges,omitempty"`
 
-		// The zone identifiers to match.
-		zones []string
-
 		// If true, prefer the first IP in the request's X-Forwarded-For
 		// header, if present, rather than the immediate peer's IP, as
 		// the reference IP against which to match. Note that it is easy
 		// to spoof request headers. Default: false
 		Forwarded bool `json:"forwarded,omitempty"`
 
+		// cidrs and zones vars should aligned always in the same 
+		// length and indexes for matching later
 		cidrs  []*net.IPNet
+		zones  []string
 		logger *zap.Logger
 	}
 
@@ -879,11 +879,10 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
-	var split []string
 	for _, str := range m.Ranges {
 		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {
-			split = strings.Split(str, "%")
+			split := strings.Split(str, "%")
 			str = split[0]
 			// write zone identifiers in m.zones for matching later 
 			m.zones = append(m.zones, split[1])
