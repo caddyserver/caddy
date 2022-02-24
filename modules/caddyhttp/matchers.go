@@ -950,7 +950,9 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			if m.zones[i] == "" || zoneID == m.zones[i] {
 				return true
 			}
+			if m.zones[i] != "" {
 			zoneFilter = false
+			}
 		}
 	}
 	if !zoneFilter {
