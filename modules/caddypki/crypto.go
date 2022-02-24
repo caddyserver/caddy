@@ -17,14 +17,12 @@ package caddypki
 import (
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"os"
-	"strings"
+
+	"github.com/caddyserver/certmagic"
 )
 
 func pemDecodeSingleCert(pemDER []byte) (*x509.Certificate, error) {
@@ -43,70 +41,6 @@ func pemDecodeSingleCert(pemDER []byte) (*x509.Certificate, error) {
 
 func pemEncodeCert(der []byte) ([]byte, error) {
 	return pemEncode("CERTIFICATE", der)
-}
-
-// pemEncodePrivateKey marshals a EC or RSA private key into a PEM-encoded array of bytes.
-// TODO: this is the same thing as in certmagic. Should we reuse that code somehow? It's unexported.
-func pemEncodePrivateKey(key crypto.PrivateKey) ([]byte, error) {
-	var pemType string
-	var keyBytes []byte
-	switch key := key.(type) {
-	case *ecdsa.PrivateKey:
-		var err error
-		pemType = "EC"
-		keyBytes, err = x509.MarshalECPrivateKey(key)
-		if err != nil {
-			return nil, err
-		}
-	case *rsa.PrivateKey:
-		pemType = "RSA"
-		keyBytes = x509.MarshalPKCS1PrivateKey(key)
-	case *ed25519.PrivateKey:
-		var err error
-		pemType = "ED25519"
-		keyBytes, err = x509.MarshalPKCS8PrivateKey(key)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unsupported key type: %T", key)
-	}
-	return pemEncode(pemType+" PRIVATE KEY", keyBytes)
-}
-
-// pemDecodePrivateKey loads a PEM-encoded ECC/RSA private key from an array of bytes.
-// Borrowed from Go standard library, to handle various private key and PEM block types.
-// https://github.com/golang/go/blob/693748e9fa385f1e2c3b91ca9acbb6c0ad2d133d/src/crypto/tls/tls.go#L291-L308
-// https://github.com/golang/go/blob/693748e9fa385f1e2c3b91ca9acbb6c0ad2d133d/src/crypto/tls/tls.go#L238)
-// TODO: this is the same thing as in certmagic. Should we reuse that code somehow? It's unexported.
-func pemDecodePrivateKey(keyPEMBytes []byte) (crypto.PrivateKey, error) {
-	keyBlockDER, _ := pem.Decode(keyPEMBytes)
-	if keyBlockDER == nil {
-		return nil, fmt.Errorf("no PEM data found")
-	}
-
-	if keyBlockDER.Type != "PRIVATE KEY" && !strings.HasSuffix(keyBlockDER.Type, " PRIVATE KEY") {
-		return nil, fmt.Errorf("unknown PEM header %q", keyBlockDER.Type)
-	}
-
-	if key, err := x509.ParsePKCS1PrivateKey(keyBlockDER.Bytes); err == nil {
-		return key, nil
-	}
-
-	if key, err := x509.ParsePKCS8PrivateKey(keyBlockDER.Bytes); err == nil {
-		switch key := key.(type) {
-		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
-			return key, nil
-		default:
-			return nil, fmt.Errorf("found unknown private key type in PKCS#8 wrapping: %T", key)
-		}
-	}
-
-	if key, err := x509.ParseECPrivateKey(keyBlockDER.Bytes); err == nil {
-		return key, nil
-	}
-
-	return nil, fmt.Errorf("unknown private key type")
 }
 
 func pemEncode(blockType string, b []byte) ([]byte, error) {
@@ -137,7 +71,7 @@ type KeyPair struct {
 }
 
 // Load loads the certificate and key.
-func (kp KeyPair) Load() (*x509.Certificate, interface{}, error) {
+func (kp KeyPair) Load() (*x509.Certificate, crypto.Signer, error) {
 	switch kp.Format {
 	case "", "pem_file":
 		certData, err := os.ReadFile(kp.Certificate)
@@ -153,7 +87,7 @@ func (kp KeyPair) Load() (*x509.Certificate, interface{}, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		key, err := pemDecodePrivateKey(keyData)
+		key, err := certmagic.PEMDecodePrivateKey(keyData)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -446,13 +446,14 @@ func (st *ServerType) serversFromPairings(
 		// handle the auto_https global option
 		if autoHTTPS != "on" {
 			srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-			if autoHTTPS == "off" {
+			switch autoHTTPS {
+			case "off":
 				srv.AutoHTTPS.Disabled = true
-			}
-			if autoHTTPS == "disable_redirects" {
+			case "disable_redirects":
 				srv.AutoHTTPS.DisableRedir = true
-			}
-			if autoHTTPS == "ignore_loaded_certs" {
+			case "disable_certs":
+				srv.AutoHTTPS.DisableCerts = true
+			case "ignore_loaded_certs":
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
 			}
 		}
