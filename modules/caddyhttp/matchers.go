@@ -946,14 +946,8 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 	zoneFilter := true
 	for i, ipRange := range m.cidrs {
 		if ipRange.Contains(clientIP) {
-			// We're done if we weren't asked to match a zone
-			if m.zones[i] == "" {
-				return true
-			}
-
-			// Match by zone identifier
-			if zoneID == m.zones[i] {
-				zoneFilter = true
+			// Check if there are zone filters assigned and if they match.
+			if m.zones[i] == "" || zoneID == m.zones[i] {
 				return true
 			}
 			zoneFilter = false
