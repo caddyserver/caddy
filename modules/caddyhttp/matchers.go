@@ -131,7 +131,7 @@ type (
 		// to spoof request headers. Default: false
 		Forwarded bool `json:"forwarded,omitempty"`
 
-		// cidrs and zones vars should aligned always in the same 
+		// cidrs and zones vars should aligned always in the same
 		// length and indexes for matching later
 		cidrs  []*net.IPNet
 		zones  []string
@@ -884,7 +884,7 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 		if strings.Contains(str, "%") {
 			split := strings.Split(str, "%")
 			str = split[0]
-			// write zone identifiers in m.zones for matching later 
+			// write zone identifiers in m.zones for matching later
 			m.zones = append(m.zones, split[1])
 		} else {
 			m.zones = append(m.zones, "")
