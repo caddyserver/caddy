@@ -481,11 +481,23 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
 		runLoadedConfig := func(config []byte) {
-			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
 			currentCfgMu.Lock()
+			defer currentCfgMu.Unlock()
+
+			// Skip if there is no change in the config
+			if bytes.Equal(rawCfgJSON, config) {
+				return
+			}
+
+			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
 			err := unsyncedDecodeAndRun(config, false)
-			currentCfgMu.Unlock()
 			if err == nil {
+				// success, so update our stored copy of the encoded
+				// config to keep it consistent with what caddy is now
+				// running (storing an encoded copy is not strictly
+				// necessary, but avoids an extra json.Marshal for
+				// each config change)
+				rawCfgJSON = config
 				Log().Info("dynamically-loaded config applied successfully")
 			} else {
 				Log().Error("running dynamically-loaded config failed", zap.Error(err))
@@ -503,6 +515,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 							Log().Error("loading dynamic config failed", zap.Error(err))
 							return
 						}
+
 						runLoadedConfig(loadedConfig)
 					case <-ctx.Done():
 						if !timer.Stop() {
