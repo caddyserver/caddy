@@ -268,8 +268,8 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		newCfg.Admin != nil &&
 		newCfg.Admin.Config != nil &&
 		newCfg.Admin.Config.LoadRaw != nil &&
-		newCfg.Admin.Config.LoadInterval <= 0 {
-		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs without positive load_interval")
+		newCfg.Admin.Config.LoadDelay <= 0 {
+		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs without positive load_delay")
 	}
 
 	// run the new config and start all its apps
@@ -483,7 +483,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 
 		logger := Log().Named("config_loader").With(
 			zap.String("module", val.(Module).CaddyModule().ID.Name()),
-			zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
+			zap.Int("load_delay", int(cfg.Admin.Config.LoadDelay)))
 
 		runLoadedConfig := func(config []byte) {
 			logger.Info("applying dynamically-loaded config")
@@ -495,9 +495,9 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			}
 		}
 
-		if cfg.Admin.Config.LoadInterval > 0 {
+		if cfg.Admin.Config.LoadDelay > 0 {
 			go func() {
-				timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadInterval))
+				timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadDelay))
 				select {
 				case <-timer.C:
 					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
@@ -510,11 +510,11 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 					if !timer.Stop() {
 						<-timer.C
 					}
-					Log().Info("stopping config load interval")
+					Log().Info("stopping dynamic config loading")
 				}
 			}()
 		} else {
-			// if no LoadInterval is provided, will load config synchronously
+			// if no LoadDelay is provided, will load config synchronously
 			loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 			if err != nil {
 				return fmt.Errorf("loading dynamic config from %T: %v", val, err)
