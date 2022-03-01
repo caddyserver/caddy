@@ -148,7 +148,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	// if nothing changed, no need to do a whole reload unless the client forces it
 	if !forceReload && bytes.Equal(rawCfgJSON, newCfg) {
-		Log().Named("admin.api").Info("config is unchanged")
+		Log().Info("config is unchanged")
 		return nil
 	}
 
@@ -480,51 +480,37 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
+
+		logger := Log().Named("config_loader").With(
+			zap.String("module", val.(Module).CaddyModule().ID.Name()),
+			zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
+
 		runLoadedConfig := func(config []byte) {
-			currentCfgMu.Lock()
-			defer currentCfgMu.Unlock()
-
-			// Skip if there is no change in the config
-			if bytes.Equal(rawCfgJSON, config) {
-				return
-			}
-
-			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
-			err := unsyncedDecodeAndRun(config, false)
+			logger.Info("applying dynamically-loaded config")
+			err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, false)
 			if err == nil {
-				// success, so update our stored copy of the encoded
-				// config to keep it consistent with what caddy is now
-				// running (storing an encoded copy is not strictly
-				// necessary, but avoids an extra json.Marshal for
-				// each config change)
-				rawCfgJSON = config
-				Log().Info("dynamically-loaded config applied successfully")
+				logger.Info("successfully applied dynamically-loaded config")
 			} else {
-				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+				logger.Error("failed to run dynamically-loaded config", zap.Error(err))
 			}
 		}
+
 		if cfg.Admin.Config.LoadInterval > 0 {
 			go func() {
-				for {
-					timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadInterval))
-					select {
-					// if LoadInterval is positive, will wait for the interval and then run with new config
-					case <-timer.C:
-						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-						if err != nil {
-							Log().Error("loading dynamic config failed", zap.Error(err))
-							return
-						}
-
-						runLoadedConfig(loadedConfig)
-					case <-ctx.Done():
-						if !timer.Stop() {
-							// if the timer has been stopped then read from the channel
-							<-timer.C
-						}
-						Log().Info("stopping config load interval")
+				timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadInterval))
+				select {
+				case <-timer.C:
+					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+					if err != nil {
+						Log().Error("loading dynamic config failed", zap.Error(err))
 						return
 					}
+					runLoadedConfig(loadedConfig)
+				case <-ctx.Done():
+					if !timer.Stop() {
+						<-timer.C
+					}
+					Log().Info("stopping config load interval")
 				}
 			}()
 		} else {
@@ -536,7 +522,6 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			// do this in a goroutine so current config can finish being loaded; otherwise deadlock
 			go runLoadedConfig(loadedConfig)
 		}
-
 	}
 
 	return nil
