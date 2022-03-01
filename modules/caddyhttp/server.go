@@ -27,6 +27,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -484,7 +485,7 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
-		if r.Host == dh {
+		if certmagic.MatchWildcard(r.Host, dh) {
 			return false
 		}
 	}
