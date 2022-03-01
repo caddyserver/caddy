@@ -91,12 +91,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //             ...
 //         }
 //
-//         # handle responses
+//         # intercepting responses
 //         @name {
 //             status <code...>
 //             header <field> [<value>]
 //         }
-//         handle_response [<matcher>] [status_code] {
+//         replace_status <matcher> <status_code>
+//         handle_response [<matcher>] {
 //             <directives...>
 //         }
 //     }
@@ -651,6 +652,39 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				// See h.FinalizeUnmarshalCaddyfile
 				h.handleResponseSegments = append(h.handleResponseSegments, d.NewFromNextSegment())
 
+			case "replace_status":
+				args := d.RemainingArgs()
+				if len(args) != 2 {
+					return d.Errf("must have two arguments: a response matcher and a status code")
+				}
+
+				if !strings.HasPrefix(args[0], matcherPrefix) {
+					return d.Errf("must use a named response matcher, starting with '@'")
+				}
+
+				foundMatcher, ok := h.responseMatchers[args[0]]
+				if !ok {
+					return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+				}
+
+				_, err := strconv.Atoi(args[1])
+				if err != nil {
+					return d.Errf("bad integer value '%s': %v", args[1], err)
+				}
+
+				// make sure there's no block, cause it doesn't make sense
+				if d.NextBlock(1) {
+					return d.Errf("cannot define routes for 'replace_status', use 'handle_response' instead.")
+				}
+
+				h.HandleResponse = append(
+					h.HandleResponse,
+					caddyhttp.ResponseHandler{
+						Match:      &foundMatcher,
+						StatusCode: caddyhttp.WeakString(args[1]),
+					},
+				)
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
@@ -699,20 +733,20 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 	for _, d := range h.handleResponseSegments {
 		// consume the "handle_response" token
 		d.Next()
-
-		var matcher *caddyhttp.ResponseMatcher
 		args := d.RemainingArgs()
 
-		// the first arg should be a matcher (optional)
-		// the second arg should be a status code (optional)
-		// any more than that isn't currently supported
-		if len(args) > 2 {
+		// TODO: Remove this check at some point in the future
+		if len(args) == 2 {
+			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
+		}
+
+		if len(args) > 1 {
 			return d.Errf("too many arguments for 'handle_response': %s", args)
 		}
 
-		// the first arg should always be a matcher.
-		// it doesn't really make sense to support status code without a matcher.
-		if len(args) > 0 {
+		var matcher *caddyhttp.ResponseMatcher
+		if len(args) == 1 {
+			// the first arg should always be a matcher.
 			if !strings.HasPrefix(args[0], matcherPrefix) {
 				return d.Errf("must use a named response matcher, starting with '@'")
 			}
@@ -722,29 +756,6 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 				return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
 			}
 			matcher = &foundMatcher
-		}
-
-		// a second arg should be a status code, in which case
-		// we skip parsing the block for routes
-		if len(args) == 2 {
-			_, err := strconv.Atoi(args[1])
-			if err != nil {
-				return d.Errf("bad integer value '%s': %v", args[1], err)
-			}
-
-			// make sure there's no block, cause it doesn't make sense
-			if d.NextBlock(1) {
-				return d.Errf("cannot define routes for 'handle_response' when changing the status code")
-			}
-
-			h.HandleResponse = append(
-				h.HandleResponse,
-				caddyhttp.ResponseHandler{
-					Match:      matcher,
-					StatusCode: caddyhttp.WeakString(args[1]),
-				},
-			)
-			continue
 		}
 
 		// parse the block as routes
