@@ -101,20 +101,26 @@ type ConfigSettings struct {
 	// are not persisted; only configs that are pushed to Caddy get persisted.
 	Persist *bool `json:"persist,omitempty"`
 
-	// Loads a configuration to use. This is helpful if your configs are
-	// managed elsewhere, and you want Caddy to pull its config dynamically
+	// Loads a new configuration. This is helpful if your configs are
+	// managed elsewhere and you want Caddy to pull its config dynamically
 	// when it starts. The pulled config completely replaces the current
 	// one, just like any other config load. It is an error if a pulled
-	// config is configured to pull another config.
+	// config is configured to pull another config without a load_delay,
+	// as this creates a tight loop.
 	//
 	// EXPERIMENTAL: Subject to change.
 	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 
-	// The interval to pull config. With a non-zero value, will pull config
-	// from config loader (eg. a http loader) with given interval.
+	// The duration after which to load config. If set, config will be pulled
+	// from the config loader after this duration. A delay is required if a
+	// dynamically-loaded config is configured to load yet another config. To
+	// load configs on a regular interval, ensure this value is set the same
+	// on all loaded configs; it can also be variable if needed, and to stop
+	// the loop, simply remove dynamic config loading from the next-loaded
+	// config.
 	//
 	// EXPERIMENTAL: Subject to change.
-	LoadInterval Duration `json:"load_interval,omitempty"`
+	LoadDelay Duration `json:"load_delay,omitempty"`
 }
 
 // IdentityConfig configures management of this server's identity. An identity
