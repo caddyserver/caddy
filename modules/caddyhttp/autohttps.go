@@ -152,7 +152,9 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
-							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+							// only include domain if it's not explicitly skipped and it's not a Tailscale domain
+							// (the implicit Tailscale manager module will get those certs at run-time)
+							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) && !isTailscaleDomain(d) {
 								serverDomainSet[d] = struct{}{}
 							}
 						}
@@ -686,6 +688,10 @@ func implicitTailscale(ctx caddy.Context) (caddytls.Tailscale, error) {
 	ts := caddytls.Tailscale{Optional: true}
 	err := ts.Provision(ctx)
 	return ts, err
+}
+
+func isTailscaleDomain(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
