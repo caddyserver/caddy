@@ -4,7 +4,7 @@
 			idle 90s
 		}
 		protocol {
-			strict_sni_host off
+			strict_sni_host insecure_off
 		}
 	}
 	servers :80 {
