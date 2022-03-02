@@ -138,7 +138,7 @@ func (a *adminAPI) handleCAInfo(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(encoded)
+	_, _ = w.Write(encoded)
 
 	return nil
 }
@@ -171,7 +171,7 @@ func (a *adminAPI) handleCACerts(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/pem-certificate-chain")
 	_, err = w.Write(interCert)
 	if err == nil {
-		w.Write(rootCert)
+		_, _ = w.Write(rootCert)
 	}
 
 	return nil
