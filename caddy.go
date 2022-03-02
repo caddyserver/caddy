@@ -427,6 +427,13 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}
 
+	// Provision any admin routers which may need to access
+	// some of the other apps at runtime
+	err = newCfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Start
 	err = func() error {
 		var started []string
