@@ -454,43 +454,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return statusError(proxyErr)
 }
 
-// prepareRequest modifies req so that it is ready to be proxied,
-// except for directing to a specific upstream. This method mutates
-// headers and other necessary properties of the request and should
-// be done just once (before proxying) regardless of proxy retries.
-// This assumes that no mutations of the request are performed
-// by h during or after proxying.
-// Most of this code is borrowed from the Go stdlib reverse proxy,
-// but we make a shallow-ish clone the request (deep clone only
-// the headers and URL) to avoid manipulating the original request
-// when using it to proxy upstream.
-func (h Handler) prepareRequest(origReq *http.Request) (*http.Request, error) {
-	// make a shallow-ish clone of the request
-	req := new(http.Request)
-	*req = *origReq
-	if origReq.URL != nil {
-		newURL := new(url.URL)
-		*newURL = *origReq.URL
-		if origReq.URL.User != nil {
-			newURL.User = new(url.Userinfo)
-			*newURL.User = *origReq.URL.User
-		}
-		// sanitize the request URL; we expect it to not contain the
-		// scheme and host since those should be determined by r.TLS
-		// and r.Host respectively, but some clients may include it
-		// in the request-line, which is technically valid in HTTP,
-		// but breaks reverseproxy behaviour, overriding how the
-		// dialer will behave. See #4237 for context.
-		newURL.Scheme = ""
-		newURL.Host = ""
-		req.URL = newURL
-	}
-	if origReq.Header != nil {
-		req.Header = origReq.Header.Clone()
-	}
-	if origReq.Trailer != nil {
-		req.Trailer = origReq.Trailer.Clone()
-	}
+// prepareRequest clones req so that it can be safely modified without
+// changing the original request or introducing data races. It then
+// modifies it so that it is ready to be proxied, except for directing
+// to a specific upstream. This method adjusts headers and other relevant
+// properties of the cloned request and should be done just once (before
+// proxying) regardless of proxy retries. This assumes that no mutations
+// of the cloned request are performed by h during or after proxying.
+func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
+	req = cloneRequest(req)
 
 	// if enabled, buffer client request; this should only be
 	// enabled if the upstream requires it and does not work
@@ -814,7 +786,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (h Handler) directRequest(req *http.Request, di DialInfo) {
+func (Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -850,6 +822,42 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
 		Reader: buf,
 		buf:    buf,
 	}
+}
+
+// cloneRequest makes a semi-deep clone of origReq.
+//
+// Most of this code is borrowed from the Go stdlib reverse proxy,
+// but we make a shallow-ish clone the request (deep clone only
+// the headers and URL) so we can avoid manipulating the original
+// request when using it to proxy upstream. This prevents request
+// corruption and data races.
+func cloneRequest(origReq *http.Request) *http.Request {
+	req := new(http.Request)
+	*req = *origReq
+	if origReq.URL != nil {
+		newURL := new(url.URL)
+		*newURL = *origReq.URL
+		if origReq.URL.User != nil {
+			newURL.User = new(url.Userinfo)
+			*newURL.User = *origReq.URL.User
+		}
+		// sanitize the request URL; we expect it to not contain the
+		// scheme and host since those should be determined by r.TLS
+		// and r.Host respectively, but some clients may include it
+		// in the request-line, which is technically valid in HTTP,
+		// but breaks reverseproxy behaviour, overriding how the
+		// dialer will behave. See #4237 for context.
+		newURL.Scheme = ""
+		newURL.Host = ""
+		req.URL = newURL
+	}
+	if origReq.Header != nil {
+		req.Header = origReq.Header.Clone()
+	}
+	if origReq.Trailer != nil {
+		req.Trailer = origReq.Trailer.Clone()
+	}
+	return req
 }
 
 func copyHeader(dst, src http.Header) {
