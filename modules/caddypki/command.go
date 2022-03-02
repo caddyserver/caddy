@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 
 	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -132,7 +133,7 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	ca := CA{
 		log:          caddy.Log(),
 		root:         rootCert,
-		rootCertPath: adminAddr + adminPKICertificatesEndpoint + caID,
+		rootCertPath: adminAddr + path.Join(adminPKIEndpointBase, caID, "certificates"),
 	}
 
 	// Install the cert!
@@ -204,9 +205,9 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-// rootCertFromAdmin makes the API request to fetch the
+// rootCertFromAdmin makes the API request to fetch the root certificate for the named CA via admin API.
 func rootCertFromAdmin(adminAddr string, caID string) (*x509.Certificate, error) {
-	uri := adminPKICertificatesEndpoint + caID
+	uri := path.Join(adminPKIEndpointBase, caID, "certificates")
 
 	// Make the request to fetch the CA info
 	resp, err := caddycmd.AdminAPIRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
@@ -216,14 +217,14 @@ func rootCertFromAdmin(adminAddr string, caID string) (*x509.Certificate, error)
 	defer resp.Body.Close()
 
 	// Decode the resposne
-	caInfo := new(CAInfo)
+	caInfo := new(caInfo)
 	err = json.NewDecoder(resp.Body).Decode(caInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode JSON response: %v", err)
 	}
 
-	// Decode the root
-	rootBlock, _ := pem.Decode([]byte(caInfo.Root))
+	// Decode the root cert
+	rootBlock, _ := pem.Decode([]byte(caInfo.RootCert))
 	if rootBlock == nil {
 		return nil, fmt.Errorf("failed to decode root certificate: %v", err)
 	}
