@@ -423,6 +423,17 @@ func (ctx Context) App(name string) (interface{}, error) {
 	return modVal, nil
 }
 
+// AppIsConfigured returns whether an app named name has been
+// configured. Can be called before calling App() to avoid
+// instantiating an empty app when that's not desirable.
+func (ctx Context) AppIsConfigured(name string) bool {
+	if _, ok := ctx.cfg.apps[name]; ok {
+		return true
+	}
+	appRaw := ctx.cfg.AppsRaw[name]
+	return appRaw != nil
+}
+
 // Storage returns the configured Caddy storage implementation.
 func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage

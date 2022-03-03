@@ -92,6 +92,10 @@ type AdminConfig struct {
 	//
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
+
+	// Holds onto the routers so that we can later provision them
+	// if they require provisioning.
+	routers []AdminRouter
 }
 
 // ConfigSettings configures the management of configuration.
@@ -101,20 +105,26 @@ type ConfigSettings struct {
 	// are not persisted; only configs that are pushed to Caddy get persisted.
 	Persist *bool `json:"persist,omitempty"`
 
-	// Loads a configuration to use. This is helpful if your configs are
-	// managed elsewhere, and you want Caddy to pull its config dynamically
+	// Loads a new configuration. This is helpful if your configs are
+	// managed elsewhere and you want Caddy to pull its config dynamically
 	// when it starts. The pulled config completely replaces the current
 	// one, just like any other config load. It is an error if a pulled
-	// config is configured to pull another config.
+	// config is configured to pull another config without a load_delay,
+	// as this creates a tight loop.
 	//
 	// EXPERIMENTAL: Subject to change.
 	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 
-	// The interval to pull config. With a non-zero value, will pull config
-	// from config loader (eg. a http loader) with given interval.
+	// The duration after which to load config. If set, config will be pulled
+	// from the config loader after this duration. A delay is required if a
+	// dynamically-loaded config is configured to load yet another config. To
+	// load configs on a regular interval, ensure this value is set the same
+	// on all loaded configs; it can also be variable if needed, and to stop
+	// the loop, simply remove dynamic config loading from the next-loaded
+	// config.
 	//
 	// EXPERIMENTAL: Subject to change.
-	LoadInterval Duration `json:"load_interval,omitempty"`
+	LoadDelay Duration `json:"load_delay,omitempty"`
 }
 
 // IdentityConfig configures management of this server's identity. An identity
@@ -184,7 +194,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -244,9 +254,30 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admin
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
+		admin.routers = append(admin.routers, router)
 	}
 
 	return muxWrap
+}
+
+// provisionAdminRouters provisions all the router modules
+// in the admin.api namespace that need provisioning.
+func (admin AdminConfig) provisionAdminRouters(ctx Context) error {
+	for _, router := range admin.routers {
+		provisioner, ok := router.(Provisioner)
+		if !ok {
+			continue
+		}
+
+		err := provisioner.Provision(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	// We no longer need the routers once provisioned, allow for GC
+	admin.routers = nil
+	return nil
 }
 
 // allowedOrigins returns a list of origins that are allowed.
@@ -326,25 +357,26 @@ func replaceLocalAdminServer(cfg *Config) error {
 		}
 	}()
 
-	// always get a valid admin config
-	adminConfig := DefaultAdminConfig
-	if cfg != nil && cfg.Admin != nil {
-		adminConfig = cfg.Admin
+	// set a default if admin wasn't otherwise configured
+	if cfg.Admin == nil {
+		cfg.Admin = &AdminConfig{
+			Listen: DefaultAdminListen,
+		}
 	}
 
 	// if new admin endpoint is to be disabled, we're done
-	if adminConfig.Disabled {
+	if cfg.Admin.Disabled {
 		Log().Named("admin").Warn("admin endpoint disabled")
 		return nil
 	}
 
 	// extract a singular listener address
-	addr, err := parseAdminListenAddr(adminConfig.Listen, DefaultAdminListen)
+	addr, err := parseAdminListenAddr(cfg.Admin.Listen, DefaultAdminListen)
 	if err != nil {
 		return err
 	}
 
-	handler := adminConfig.newAdminHandler(addr, false)
+	handler := cfg.Admin.newAdminHandler(addr, false)
 
 	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
 	if err != nil {
@@ -374,7 +406,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 
 	adminLogger.Info("admin endpoint started",
 		zap.String("address", addr.String()),
-		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
+		zap.Bool("enforce_origin", cfg.Admin.EnforceOrigin),
 		zap.Array("origins", loggableURLArray(handler.allowedOrigins)))
 
 	if !handler.enforceHost {
@@ -1238,12 +1270,6 @@ var (
 	// (TLS-authenticated) admin listener, if enabled and not
 	// specified otherwise.
 	DefaultRemoteAdminListen = ":2021"
-
-	// DefaultAdminConfig is the default configuration
-	// for the local administration endpoint.
-	DefaultAdminConfig = &AdminConfig{
-		Listen: DefaultAdminListen,
-	}
 )
 
 // PIDFile writes a pidfile to the file at filename. It

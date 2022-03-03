@@ -157,11 +157,14 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error
 						serverOpts.ExperimentalHTTP3 = true
 
 					case "strict_sni_host":
-						if d.NextArg() {
-							return nil, d.ArgErr()
+						if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
+							return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
 						}
-						trueBool := true
-						serverOpts.StrictSNIHost = &trueBool
+						boolVal := true
+						if d.Val() == "insecure_off" {
+							boolVal = false
+						}
+						serverOpts.StrictSNIHost = &boolVal
 
 					default:
 						return nil, d.Errf("unrecognized protocol option '%s'", d.Val())

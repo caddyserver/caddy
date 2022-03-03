@@ -148,7 +148,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	// if nothing changed, no need to do a whole reload unless the client forces it
 	if !forceReload && bytes.Equal(rawCfgJSON, newCfg) {
-		Log().Named("admin.api").Info("config is unchanged")
+		Log().Info("config is unchanged")
 		return nil
 	}
 
@@ -268,8 +268,8 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 		newCfg.Admin != nil &&
 		newCfg.Admin.Config != nil &&
 		newCfg.Admin.Config.LoadRaw != nil &&
-		newCfg.Admin.Config.LoadInterval <= 0 {
-		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs without positive load_interval")
+		newCfg.Admin.Config.LoadDelay <= 0 {
+		return fmt.Errorf("recursive config loading detected: pulled configs cannot pull other configs without positive load_delay")
 	}
 
 	// run the new config and start all its apps
@@ -427,6 +427,13 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}
 
+	// Provision any admin routers which may need to access
+	// some of the other apps at runtime
+	err = newCfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Start
 	err = func() error {
 		var started []string
@@ -480,42 +487,41 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("loading config loader module: %s", err)
 		}
+
+		logger := Log().Named("config_loader").With(
+			zap.String("module", val.(Module).CaddyModule().ID.Name()),
+			zap.Int("load_delay", int(cfg.Admin.Config.LoadDelay)))
+
 		runLoadedConfig := func(config []byte) {
-			Log().Info("applying dynamically-loaded config", zap.String("loader_module", val.(Module).CaddyModule().ID.Name()), zap.Int("pull_interval", int(cfg.Admin.Config.LoadInterval)))
-			currentCfgMu.Lock()
-			err := unsyncedDecodeAndRun(config, false)
-			currentCfgMu.Unlock()
+			logger.Info("applying dynamically-loaded config")
+			err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, false)
 			if err == nil {
-				Log().Info("dynamically-loaded config applied successfully")
+				logger.Info("successfully applied dynamically-loaded config")
 			} else {
-				Log().Error("running dynamically-loaded config failed", zap.Error(err))
+				logger.Error("failed to run dynamically-loaded config", zap.Error(err))
 			}
 		}
-		if cfg.Admin.Config.LoadInterval > 0 {
+
+		if cfg.Admin.Config.LoadDelay > 0 {
 			go func() {
-				for {
-					timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadInterval))
-					select {
-					// if LoadInterval is positive, will wait for the interval and then run with new config
-					case <-timer.C:
-						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-						if err != nil {
-							Log().Error("loading dynamic config failed", zap.Error(err))
-							return
-						}
-						runLoadedConfig(loadedConfig)
-					case <-ctx.Done():
-						if !timer.Stop() {
-							// if the timer has been stopped then read from the channel
-							<-timer.C
-						}
-						Log().Info("stopping config load interval")
+				timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadDelay))
+				select {
+				case <-timer.C:
+					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+					if err != nil {
+						Log().Error("loading dynamic config failed", zap.Error(err))
 						return
 					}
+					runLoadedConfig(loadedConfig)
+				case <-ctx.Done():
+					if !timer.Stop() {
+						<-timer.C
+					}
+					Log().Info("stopping dynamic config loading")
 				}
 			}()
 		} else {
-			// if no LoadInterval is provided, will load config synchronously
+			// if no LoadDelay is provided, will load config synchronously
 			loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 			if err != nil {
 				return fmt.Errorf("loading dynamic config from %T: %v", val, err)
@@ -523,7 +529,6 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 			// do this in a goroutine so current config can finish being loaded; otherwise deadlock
 			go runLoadedConfig(loadedConfig)
 		}
-
 	}
 
 	return nil
