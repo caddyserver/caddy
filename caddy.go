@@ -504,20 +504,29 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 
 		if cfg.Admin.Config.LoadDelay > 0 {
 			go func() {
-				timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadDelay))
-				select {
-				case <-timer.C:
-					loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
-					if err != nil {
-						Log().Error("loading dynamic config failed", zap.Error(err))
-						return
+				// the loop is here only to iterate if there is an error or a no-op config load,
+				// in which case we simply wait the delay and try again
+				for {
+					timer := time.NewTimer(time.Duration(cfg.Admin.Config.LoadDelay))
+					select {
+					case <-timer.C:
+						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
+						if err != nil {
+							Log().Error("failed loading dynamic config; will retry", zap.Error(err))
+							continue
+						}
+						if loadedConfig == nil {
+							Log().Info("dynamically-loaded config was nil; will retry")
+							continue
+						}
+						runLoadedConfig(loadedConfig)
+					case <-ctx.Done():
+						if !timer.Stop() {
+							<-timer.C
+						}
+						Log().Info("stopping dynamic config loading")
 					}
-					runLoadedConfig(loadedConfig)
-				case <-ctx.Done():
-					if !timer.Stop() {
-						<-timer.C
-					}
-					Log().Info("stopping dynamic config loading")
+					break
 				}
 			}()
 		} else {
@@ -534,8 +543,10 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 	return nil
 }
 
-// ConfigLoader is a type that can load a Caddy config. The
-// returned config must be valid Caddy JSON.
+// ConfigLoader is a type that can load a Caddy config. If
+// the return value is non-nil, it must be valid Caddy JSON;
+// if nil or with non-nil error, it is considered to be a
+// no-op load and may be retried later.
 type ConfigLoader interface {
 	LoadConfig(Context) ([]byte, error)
 }
