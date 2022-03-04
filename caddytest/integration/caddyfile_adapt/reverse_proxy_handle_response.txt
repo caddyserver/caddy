@@ -1,6 +1,9 @@
 :8884
 
 reverse_proxy 127.0.0.1:65535 {
+	@changeStatus status 500
+	replace_status @changeStatus 400
+
 	@accel header X-Accel-Redirect *
 	handle_response @accel {
 		respond "Header X-Accel-Redirect!"
@@ -38,9 +41,6 @@ reverse_proxy 127.0.0.1:65535 {
 	handle_response @multi {
 		respond "Headers Foo, Bar AND statuses 401, 403 and 404!"
 	}
-
-	@changeStatus status 500
-	handle_response @changeStatus 400
 }
 ----------
 {
@@ -56,6 +56,14 @@ reverse_proxy 127.0.0.1:65535 {
 							"handle": [
 								{
 									"handle_response": [
+										{
+											"match": {
+												"status_code": [
+													500
+												]
+											},
+											"status_code": 400
+										},
 										{
 											"match": {
 												"headers": {
@@ -154,14 +162,6 @@ reverse_proxy 127.0.0.1:65535 {
 													]
 												}
 											]
-										},
-										{
-											"match": {
-												"status_code": [
-													500
-												]
-											},
-											"status_code": 400
 										},
 										{
 											"routes": [

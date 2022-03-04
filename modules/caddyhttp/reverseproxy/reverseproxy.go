@@ -347,54 +347,20 @@ func (h *Handler) Cleanup() error {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// if enabled, buffer client request;
-	// this should only be enabled if the
-	// upstream requires it and does not
-	// work with "slow clients" (gunicorn,
-	// etc.) - this obviously has a perf
-	// overhead and makes the proxy at
-	// risk of exhausting memory and more
-	// susceptible to slowloris attacks,
-	// so it is strongly recommended to
-	// only use this feature if absolutely
-	// required, if read timeouts are set,
-	// and if body size is limited
-	if h.BufferRequests {
-		r.Body = h.bufferedBody(r.Body)
-	}
-
 	// prepare the request for proxying; this is needed only once
-	err := h.prepareRequest(r)
+	clonedReq, err := h.prepareRequest(r)
 	if err != nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
 
 	// we will need the original headers and Host value if
-	// header operations are configured; and we should
-	// restore them after we're done if they are changed
-	// (for example, changing the outbound Host header
-	// should not permanently change r.Host; issue #3509)
-	reqHost := r.Host
-	reqHeader := r.Header
-
-	// sanitize the request URL; we expect it to not contain the scheme and host
-	// since those should be determined by r.TLS and r.Host respectively, but
-	// some clients may include it in the request-line, which is technically
-	// valid in HTTP, but breaks reverseproxy behaviour, overriding how the
-	// dialer will behave. See #4237 for context.
-	origURLScheme := r.URL.Scheme
-	origURLHost := r.URL.Host
-	r.URL.Scheme = ""
-	r.URL.Host = ""
-
-	// restore modifications to the request after we're done proxying
-	defer func() {
-		r.Host = reqHost     // TODO: data race, see #4038
-		r.Header = reqHeader // TODO: data race, see #4038
-		r.URL.Scheme = origURLScheme
-		r.URL.Host = origURLHost
-	}()
+	// header operations are configured; this is so that each
+	// retry can apply the modifications, because placeholders
+	// may be used which depend on the selected upstream for
+	// their values
+	reqHost := clonedReq.Host
+	reqHeader := clonedReq.Header
 
 	start := time.Now()
 	defer func() {
@@ -408,7 +374,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	var proxyErr error
 	for {
 		var done bool
-		done, proxyErr = h.proxyLoopIteration(r, w, proxyErr, start, repl, reqHeader, reqHost, next)
+		done, proxyErr = h.proxyLoopIteration(clonedReq, w, proxyErr, start, repl, reqHeader, reqHost, next)
 		if done {
 			break
 		}
@@ -525,14 +491,27 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 	return false, proxyErr
 }
 
-// prepareRequest modifies req so that it is ready to be proxied,
-// except for directing to a specific upstream. This method mutates
-// headers and other necessary properties of the request and should
-// be done just once (before proxying) regardless of proxy retries.
-// This assumes that no mutations of the request are performed
-// by h during or after proxying.
-func (h Handler) prepareRequest(req *http.Request) error {
-	// most of this is borrowed from the Go std lib reverse proxy
+// prepareRequest clones req so that it can be safely modified without
+// changing the original request or introducing data races. It then
+// modifies it so that it is ready to be proxied, except for directing
+// to a specific upstream. This method adjusts headers and other relevant
+// properties of the cloned request and should be done just once (before
+// proxying) regardless of proxy retries. This assumes that no mutations
+// of the cloned request are performed by h during or after proxying.
+func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
+	req = cloneRequest(req)
+
+	// if enabled, buffer client request; this should only be
+	// enabled if the upstream requires it and does not work
+	// with "slow clients" (gunicorn, etc.) - this obviously
+	// has a perf overhead and makes the proxy at risk of
+	// exhausting memory and more susceptible to slowloris
+	// attacks, so it is strongly recommended to only use this
+	// feature if absolutely required, if read timeouts are
+	// set, and if body size is limited
+	if h.BufferRequests {
+		req.Body = h.bufferedBody(req.Body)
+	}
 
 	if req.ContentLength == 0 {
 		req.Body = nil // Issue golang/go#16036: nil Body for http.Transport retries
@@ -597,7 +576,7 @@ func (h Handler) prepareRequest(req *http.Request) error {
 		req.Header.Set("X-Forwarded-Proto", proto)
 	}
 
-	return nil
+	return req, nil
 }
 
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
@@ -844,7 +823,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (h Handler) directRequest(req *http.Request, di DialInfo) {
+func (Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -909,6 +888,42 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
 		Reader: buf,
 		buf:    buf,
 	}
+}
+
+// cloneRequest makes a semi-deep clone of origReq.
+//
+// Most of this code is borrowed from the Go stdlib reverse proxy,
+// but we make a shallow-ish clone the request (deep clone only
+// the headers and URL) so we can avoid manipulating the original
+// request when using it to proxy upstream. This prevents request
+// corruption and data races.
+func cloneRequest(origReq *http.Request) *http.Request {
+	req := new(http.Request)
+	*req = *origReq
+	if origReq.URL != nil {
+		newURL := new(url.URL)
+		*newURL = *origReq.URL
+		if origReq.URL.User != nil {
+			newURL.User = new(url.Userinfo)
+			*newURL.User = *origReq.URL.User
+		}
+		// sanitize the request URL; we expect it to not contain the
+		// scheme and host since those should be determined by r.TLS
+		// and r.Host respectively, but some clients may include it
+		// in the request-line, which is technically valid in HTTP,
+		// but breaks reverseproxy behaviour, overriding how the
+		// dialer will behave. See #4237 for context.
+		newURL.Scheme = ""
+		newURL.Host = ""
+		req.URL = newURL
+	}
+	if origReq.Header != nil {
+		req.Header = origReq.Header.Clone()
+	}
+	if origReq.Trailer != nil {
+		req.Trailer = origReq.Trailer.Clone()
+	}
+	return req
 }
 
 func copyHeader(dst, src http.Header) {
