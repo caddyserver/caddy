@@ -350,7 +350,11 @@ func (d *Dispenser) Err(msg string) error {
 
 // Errf is like Err, but for formatted error messages
 func (d *Dispenser) Errf(format string, args ...interface{}) error {
-	err := fmt.Errorf(format, args...)
+	return d.WrapErr(fmt.Errorf(format, args...))
+}
+
+// WrapErr takes an existing error and adds the Caddyfile file and line number.
+func (d *Dispenser) WrapErr(err error) error {
 	return fmt.Errorf("%s:%d - Error during parsing: %w", d.File(), d.Line(), err)
 }
 

@@ -18,7 +18,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -123,98 +122,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// prefixed with "@" for use with "handle_response" blocks
 	h.responseMatchers = make(map[string]caddyhttp.ResponseMatcher)
 
-	// TODO: the logic in this function is kind of sensitive, we need
-	// to write tests before making any more changes to it
-	upstreamDialAddress := func(upstreamAddr string) (string, error) {
-		var network, scheme, host, port string
-
-		if strings.Contains(upstreamAddr, "://") {
-			// we get a parsing error if a placeholder is specified
-			// so we return a more user-friendly error message instead
-			// to explain what to do instead
-			if strings.Contains(upstreamAddr, "{") {
-				return "", d.Err("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
-			}
-
-			toURL, err := url.Parse(upstreamAddr)
-			if err != nil {
-				return "", d.Errf("parsing upstream URL: %v", err)
-			}
-
-			// there is currently no way to perform a URL rewrite between choosing
-			// a backend and proxying to it, so we cannot allow extra components
-			// in backend URLs
-			if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
-				return "", d.Err("for now, URLs for proxy upstreams only support scheme, host, and port components")
-			}
-
-			// ensure the port and scheme aren't in conflict
-			urlPort := toURL.Port()
-			if toURL.Scheme == "http" && urlPort == "443" {
-				return "", d.Err("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
-			}
-			if toURL.Scheme == "https" && urlPort == "80" {
-				return "", d.Err("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
-			}
-			if toURL.Scheme == "h2c" && urlPort == "443" {
-				return "", d.Err("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
-			}
-
-			// if port is missing, attempt to infer from scheme
-			if toURL.Port() == "" {
-				var toPort string
-				switch toURL.Scheme {
-				case "", "http", "h2c":
-					toPort = "80"
-				case "https":
-					toPort = "443"
-				}
-				toURL.Host = net.JoinHostPort(toURL.Hostname(), toPort)
-			}
-
-			scheme, host, port = toURL.Scheme, toURL.Hostname(), toURL.Port()
-		} else {
-			// extract network manually, since caddy.ParseNetworkAddress() will always add one
-			if idx := strings.Index(upstreamAddr, "/"); idx >= 0 {
-				network = strings.ToLower(strings.TrimSpace(upstreamAddr[:idx]))
-				upstreamAddr = upstreamAddr[idx+1:]
-			}
-			var err error
-			host, port, err = net.SplitHostPort(upstreamAddr)
-			if err != nil {
-				host = upstreamAddr
-			}
-			// we can assume a port if only a hostname is specified, but use of a
-			// placeholder without a port likely means a port will be filled in
-			if port == "" && !strings.Contains(host, "{") {
-				port = "80"
-			}
-		}
-
-		// the underlying JSON does not yet support different
-		// transports (protocols or schemes) to each backend,
-		// so we remember the last one we see and compare them
-		if commonScheme != "" && scheme != commonScheme {
-			return "", d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
-				commonScheme, scheme)
-		}
-		commonScheme = scheme
-
-		// for simplest possible config, we only need to include
-		// the network portion if the user specified one
-		if network != "" {
-			return caddy.JoinNetworkAddress(network, host, port), nil
-		}
-
-		// if the host is a placeholder, then we don't want to join with an empty port,
-		// because that would just append an extra ':' at the end of the address.
-		if port == "" && strings.Contains(host, "{") {
-			return host, nil
-		}
-
-		return net.JoinHostPort(host, port), nil
-	}
-
 	// appendUpstream creates an upstream for address and adds
 	// it to the list. If the address starts with "srv+" it is
 	// treated as a SRV-based upstream, and any port will be
@@ -224,10 +131,21 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if isSRV {
 			address = strings.TrimPrefix(address, "srv+")
 		}
-		dialAddr, err := upstreamDialAddress(address)
+
+		dialAddr, scheme, err := parseUpstreamDialAddress(address)
 		if err != nil {
-			return err
+			return d.WrapErr(err)
 		}
+
+		// the underlying JSON does not yet support different
+		// transports (protocols or schemes) to each backend,
+		// so we remember the last one we see and compare them
+		if commonScheme != "" && scheme != commonScheme {
+			return d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
+				commonScheme, scheme)
+		}
+		commonScheme = scheme
+
 		if isSRV {
 			if host, _, err := net.SplitHostPort(dialAddr); err == nil {
 				dialAddr = host
