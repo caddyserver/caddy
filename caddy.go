@@ -550,7 +550,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 				return fmt.Errorf("loading dynamic config from %T: %v", val, err)
 			}
 			// do this in a goroutine so current config can finish being loaded; otherwise deadlock
-			go runLoadedConfig(loadedConfig)
+			go func() { _ = runLoadedConfig(loadedConfig) }()
 		}
 	}
 
