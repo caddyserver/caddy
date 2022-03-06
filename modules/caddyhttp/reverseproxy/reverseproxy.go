@@ -601,10 +601,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// If we aren't the first proxy, and the proxy is trusted,
 	// retain prior X-Forwarded-For information as a comma+space
 	// separated list and fold multiple headers into one.
-	prior, ok := req.Header["X-Forwarded-For"]
-	omit := ok && prior == nil // Issue 38079: nil now means don't populate the header
-	if trusted && len(prior) > 0 {
-		clientIP = strings.Join(prior, ", ") + ", " + clientIP
+	prior, ok, omit := allHeaderValues(req.Header, "X-Forwarded-For")
+	if trusted && ok && prior != "" {
+		clientIP = prior + ", " + clientIP
 	}
 	if !omit {
 		req.Header.Set("X-Forwarded-For", clientIP)
@@ -617,10 +616,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	if req.TLS == nil {
 		proto = "http"
 	}
-	prior, ok = req.Header["X-Forwarded-Proto"]
-	omit = ok && prior == nil
-	if trusted && len(prior) > 0 {
-		proto = prior[0]
+	prior, ok, omit = lastHeaderValue(req.Header, "X-Forwarded-Proto")
+	if trusted && ok && prior != "" {
+		proto = prior
 	}
 	if !omit {
 		req.Header.Set("X-Forwarded-Proto", proto)
@@ -634,10 +632,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	if err != nil {
 		host = req.Host // OK; there probably was no port
 	}
-	prior, ok = req.Header["X-Forwarded-Host"]
-	omit = ok && prior == nil
-	if trusted && len(prior) > 0 {
-		host = prior[0]
+	prior, ok, omit = lastHeaderValue(req.Header, "X-Forwarded-Host")
+	if trusted && ok && prior != "" {
+		host = prior
 	}
 	if !omit {
 		req.Header.Set("X-Forwarded-Host", host)
@@ -970,6 +967,42 @@ func copyHeader(dst, src http.Header) {
 			dst.Add(k, v)
 		}
 	}
+}
+
+// allHeaderValues gets all values for a given header field,
+// joined by a comma and space if more than one is set. If the
+// header field is nil, then the omit is true, meaning some
+// earlier logic in the server wanted to prevent this header from
+// getting written at all. If the header is empty, then ok is
+// false. Callers should still check that the value is not empty
+// (the header field may be set but have an empty value).
+func allHeaderValues(h http.Header, field string) (value string, ok bool, omit bool) {
+	values, ok := h[field]
+	if ok && values == nil {
+		return "", true, true
+	}
+	if len(values) == 0 {
+		return "", false, false
+	}
+	return strings.Join(values, ", "), true, false
+}
+
+// lastHeaderValue gets the last value for a given header field
+// if more than one is set. If the header field is nil, then
+// the omit is true, meaning some earlier logic in the server
+// wanted to prevent this header from getting written at all.
+// If the header is empty, then ok is false. Callers should
+// still check that the value is not empty (the header field
+// may be set but have an empty value).
+func lastHeaderValue(h http.Header, field string) (value string, ok bool, omit bool) {
+	values, ok := h[field]
+	if ok && values == nil {
+		return "", true, true
+	}
+	if len(values) == 0 {
+		return "", false, false
+	}
+	return values[len(values)-1], true, false
 }
 
 func upgradeType(h http.Header) string {
