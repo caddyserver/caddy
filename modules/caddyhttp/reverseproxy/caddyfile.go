@@ -521,8 +521,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
 						log.Printf("[WARNING] Unnecessary header_up ('Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
 					}
+					if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
+						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-For' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
 					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
 						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Proto' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
+					if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
+						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:

@@ -102,7 +102,8 @@ type Handler struct {
 	// By default, all headers are passed-thru without changes,
 	// with the exceptions of special hop-by-hop headers.
 	//
-	// X-Forwarded-For and X-Forwarded-Proto are also set implicitly.
+	// X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host
+	// are also set implicitly.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
 	// If true, the entire request body will be read and buffered
@@ -574,6 +575,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		// potentially trusting a header that came from the client
 		req.Header.Del("X-Forwarded-For")
 		req.Header.Del("X-Forwarded-Proto")
+		req.Header.Del("X-Forwarded-Host")
 		return nil
 	}
 
@@ -603,12 +605,13 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		req.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	// Set X-Forwarded-Proto; many backend apps expect this too
+	// Set X-Forwarded-Proto; many backend apps expect this,
+	// so that they can properly craft URLs with the right
+	// scheme to match the original request
 	proto := "https"
 	if req.TLS == nil {
 		proto = "http"
 	}
-
 	prior, ok = req.Header["X-Forwarded-Proto"]
 	omit = ok && prior == nil
 	if trusted && len(prior) > 0 {
@@ -616,6 +619,23 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	}
 	if !omit {
 		req.Header.Set("X-Forwarded-Proto", proto)
+	}
+
+	// Set X-Forwarded-Host; often this is redundant because
+	// we pass through the request Host as-is, but in situations
+	// where we proxy over HTTPS, the user may need to override
+	// Host themselves, so it's helpful to send the original too.
+	host, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host = req.Host // OK; there probably was no port
+	}
+	prior, ok = req.Header["X-Forwarded-Host"]
+	omit = ok && prior == nil
+	if trusted && len(prior) > 0 {
+		host = prior[0]
+	}
+	if !omit {
+		req.Header.Set("X-Forwarded-Host", host)
 	}
 
 	return nil
