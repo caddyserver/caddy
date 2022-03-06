@@ -82,6 +82,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_requests
 //
 //         # header manipulation
+//         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
 //
@@ -484,6 +485,22 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 				h.MaxBufferSize = int64(size)
+
+			case "trusted_proxies":
+				for d.NextArg() {
+					if d.Val() == "private_ranges" {
+						h.TrustedProxies = append(h.TrustedProxies, []string{
+							"192.168.0.0/16",
+							"172.16.0.0/12",
+							"10.0.0.0/8",
+							"127.0.0.1",
+							"fd00::/8",
+							"::1",
+						}...)
+						continue
+					}
+					h.TrustedProxies = append(h.TrustedProxies, d.Val())
+				}
 
 			case "header_up":
 				var err error

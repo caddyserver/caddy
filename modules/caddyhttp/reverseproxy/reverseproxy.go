@@ -90,13 +90,19 @@ type Handler struct {
 	// to the client immediately.
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
 
+	// A list of IP ranges (supports CIDR notation) from which
+	// X-Forwarded-* header values should be trusted. By default,
+	// no proxies are trusted, so existing values will be ignored
+	// when setting these headers. If the proxy is trusted, then
+	// existing values will be used when constructing the final
+	// header values.
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+
 	// Headers manipulates headers between Caddy and the backend.
 	// By default, all headers are passed-thru without changes,
 	// with the exceptions of special hop-by-hop headers.
 	//
-	// X-Forwarded-For and X-Forwarded-Proto are also set
-	// implicitly, but this may change in the future if the official
-	// standardized Forwarded header field gains more adoption.
+	// X-Forwarded-For and X-Forwarded-Proto are also set implicitly.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
 	// If true, the entire request body will be read and buffered
@@ -132,6 +138,9 @@ type Handler struct {
 
 	Transport http.RoundTripper `json:"-"`
 	CB        CircuitBreaker    `json:"-"`
+
+	// Holds the parsed CIDR ranges from TrustedProxies
+	trustedProxies []*net.IPNet
 
 	// Holds the named response matchers from the Caddyfile while adapting
 	responseMatchers map[string]caddyhttp.ResponseMatcher
@@ -190,6 +199,27 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading circuit breaker: %s", err)
 		}
 		h.CB = mod.(CircuitBreaker)
+	}
+
+	// parse trusted proxy CIDRs ahead of time
+	for _, str := range h.TrustedProxies {
+		if strings.Contains(str, "/") {
+			_, ipNet, err := net.ParseCIDR(str)
+			if err != nil {
+				return fmt.Errorf("parsing CIDR expression: %v", err)
+			}
+			h.trustedProxies = append(h.trustedProxies, ipNet)
+		} else {
+			ip := net.ParseIP(str)
+			if ip == nil {
+				return fmt.Errorf("invalid IP address: %s", str)
+			}
+			mask := len(ip) * 8
+			h.trustedProxies = append(h.trustedProxies, &net.IPNet{
+				IP:   ip,
+				Mask: net.CIDRMask(mask, mask),
+			})
+		}
 	}
 
 	// ensure any embedded headers handler module gets provisioned
@@ -514,32 +544,77 @@ func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
 		req.Header.Set("Upgrade", reqUpType)
 	}
 
-	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		// If we aren't the first proxy retain prior
-		// X-Forwarded-For information as a comma+space
-		// separated list and fold multiple headers into one.
-		prior, ok := req.Header["X-Forwarded-For"]
-		omit := ok && prior == nil // Issue 38079: nil now means don't populate the header
-		if len(prior) > 0 {
-			clientIP = strings.Join(prior, ", ") + ", " + clientIP
-		}
-		if !omit {
-			req.Header.Set("X-Forwarded-For", clientIP)
-		}
-	}
-
-	prior, ok := req.Header["X-Forwarded-Proto"]
-	omit := ok && prior == nil
-	if len(prior) == 0 && !omit {
-		// set X-Forwarded-Proto; many backend apps expect this too
-		proto := "https"
-		if req.TLS == nil {
-			proto = "http"
-		}
-		req.Header.Set("X-Forwarded-Proto", proto)
+	// Add the supported X-Forwarded-* headers
+	err := h.addForwardedHeaders(req)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
+}
+
+// addForwardedHeaders adds the de-facto standard X-Forwarded-*
+// headers to the request before it is sent upstream.
+//
+// These headers are security sensitive, so care is taken to only
+// use existing values for these headers from the incoming request
+// if the client IP is trusted (i.e. coming from a trusted proxy
+// sitting in front of this server). If the request didn't have
+// the headers at all, then they will be added with the values
+// that we can glean from the request.
+func (h Handler) addForwardedHeaders(req *http.Request) error {
+	// Parse the remote IP, ignore the error as non-fatal,
+	// but the remote IP is required to continue, so we
+	// just return early. This should probably never happen
+	// though, unless some other module manipulated the request's
+	// remote address and used an invalid value.
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
+		return nil
+	}
+
+	ip := net.ParseIP(clientIP)
+	if ip == nil {
+		return fmt.Errorf("invalid client IP address: %s", clientIP)
+	}
+
+	// Check if the client is a trusted proxy
+	trusted := false
+	for _, ipRange := range h.trustedProxies {
+		if ipRange.Contains(ip) {
+			trusted = true
+			break
+		}
+	}
+
+	// If we aren't the first proxy, and the proxy is trusted,
+	// retain prior X-Forwarded-For information as a comma+space
+	// separated list and fold multiple headers into one.
+	prior, ok := req.Header["X-Forwarded-For"]
+	omit := ok && prior == nil // Issue 38079: nil now means don't populate the header
+	if trusted && len(prior) > 0 {
+		clientIP = strings.Join(prior, ", ") + ", " + clientIP
+	}
+	if !omit {
+		req.Header.Set("X-Forwarded-For", clientIP)
+	}
+
+	// Set X-Forwarded-Proto; many backend apps expect this too
+	proto := "https"
+	if req.TLS == nil {
+		proto = "http"
+	}
+
+	prior, ok = req.Header["X-Forwarded-Proto"]
+	omit = ok && prior == nil
+	if trusted && len(prior) > 0 {
+		proto = prior[0]
+	}
+	if !omit {
+		req.Header.Set("X-Forwarded-Proto", proto)
+	}
+
+	return nil
 }
 
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
