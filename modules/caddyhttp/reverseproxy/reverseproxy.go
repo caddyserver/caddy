@@ -579,6 +579,11 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		return nil
 	}
 
+	// Client IP may contain a zone if IPv6, so we need
+	// to pull that out before parsing the IP
+	if idx := strings.IndexByte(clientIP, '%'); idx >= 0 {
+		clientIP = clientIP[:idx]
+	}
 	ip := net.ParseIP(clientIP)
 	if ip == nil {
 		return fmt.Errorf("invalid client IP address: %s", clientIP)
