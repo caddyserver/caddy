@@ -82,6 +82,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_requests
 //
 //         # header manipulation
+//         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
 //
@@ -485,6 +486,22 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.MaxBufferSize = int64(size)
 
+			case "trusted_proxies":
+				for d.NextArg() {
+					if d.Val() == "private_ranges" {
+						h.TrustedProxies = append(h.TrustedProxies, []string{
+							"192.168.0.0/16",
+							"172.16.0.0/12",
+							"10.0.0.0/8",
+							"127.0.0.1/8",
+							"fd00::/8",
+							"::1",
+						}...)
+						continue
+					}
+					h.TrustedProxies = append(h.TrustedProxies, d.Val())
+				}
+
 			case "header_up":
 				var err error
 
@@ -504,8 +521,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
 						log.Printf("[WARNING] Unnecessary header_up ('Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
 					}
+					if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
+						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-For' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
 					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
 						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Proto' field): the reverse proxy's default behavior is to pass headers to the upstream")
+					}
+					if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
+						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:
