@@ -215,6 +215,9 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			if ip == nil {
 				return fmt.Errorf("invalid IP address: %s", str)
 			}
+			if ipv4 := ip.To4(); ipv4 != nil {
+				ip = ipv4
+			}
 			mask := len(ip) * 8
 			h.trustedProxies = append(h.trustedProxies, &net.IPNet{
 				IP:   ip,
@@ -601,12 +604,13 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// If we aren't the first proxy, and the proxy is trusted,
 	// retain prior X-Forwarded-For information as a comma+space
 	// separated list and fold multiple headers into one.
+	clientXFF := clientIP
 	prior, ok, omit := allHeaderValues(req.Header, "X-Forwarded-For")
 	if trusted && ok && prior != "" {
-		clientIP = prior + ", " + clientIP
+		clientXFF = prior + ", " + clientXFF
 	}
 	if !omit {
-		req.Header.Set("X-Forwarded-For", clientIP)
+		req.Header.Set("X-Forwarded-For", clientXFF)
 	}
 
 	// Set X-Forwarded-Proto; many backend apps expect this,
@@ -977,7 +981,7 @@ func copyHeader(dst, src http.Header) {
 // false. Callers should still check that the value is not empty
 // (the header field may be set but have an empty value).
 func allHeaderValues(h http.Header, field string) (value string, ok bool, omit bool) {
-	values, ok := h[field]
+	values, ok := h[http.CanonicalHeaderKey(field)]
 	if ok && values == nil {
 		return "", true, true
 	}
@@ -995,7 +999,7 @@ func allHeaderValues(h http.Header, field string) (value string, ok bool, omit b
 // still check that the value is not empty (the header field
 // may be set but have an empty value).
 func lastHeaderValue(h http.Header, field string) (value string, ok bool, omit bool) {
-	values, ok := h[field]
+	values, ok := h[http.CanonicalHeaderKey(field)]
 	if ok && values == nil {
 		return "", true, true
 	}
