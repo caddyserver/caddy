@@ -22,9 +22,9 @@ import (
 
 func testPool() UpstreamPool {
 	return UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 }
 
@@ -48,20 +48,20 @@ func TestRoundRobinPolicy(t *testing.T) {
 		t.Error("Expected third round robin host to be first host in the pool.")
 	}
 	// mark host as down
-	pool[1].SetHealthy(false)
+	pool[1].setHealthy(false)
 	h = rrPolicy.Select(pool, req, nil)
 	if h != pool[2] {
 		t.Error("Expected to skip down host.")
 	}
 	// mark host as up
-	pool[1].SetHealthy(true)
+	pool[1].setHealthy(true)
 
 	h = rrPolicy.Select(pool, req, nil)
 	if h == pool[2] {
 		t.Error("Expected to balance evenly among healthy hosts")
 	}
 	// mark host as full
-	pool[1].CountRequest(1)
+	pool[1].countRequest(1)
 	pool[1].MaxRequests = 1
 	h = rrPolicy.Select(pool, req, nil)
 	if h != pool[2] {
@@ -74,13 +74,13 @@ func TestLeastConnPolicy(t *testing.T) {
 	lcPolicy := new(LeastConnSelection)
 	req, _ := http.NewRequest("GET", "/", nil)
 
-	pool[0].CountRequest(10)
-	pool[1].CountRequest(10)
+	pool[0].countRequest(10)
+	pool[1].countRequest(10)
 	h := lcPolicy.Select(pool, req, nil)
 	if h != pool[2] {
 		t.Error("Expected least connection host to be third host.")
 	}
-	pool[2].CountRequest(100)
+	pool[2].countRequest(100)
 	h = lcPolicy.Select(pool, req, nil)
 	if h != pool[0] && h != pool[1] {
 		t.Error("Expected least connection host to be first or second host.")
@@ -139,7 +139,7 @@ func TestIPHashPolicy(t *testing.T) {
 	// we should get a healthy host if the original host is unhealthy and a
 	// healthy host is available
 	req.RemoteAddr = "172.0.0.1"
-	pool[1].SetHealthy(false)
+	pool[1].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
 	if h != pool[2] {
 		t.Error("Expected ip hash policy host to be the third host.")
@@ -150,10 +150,10 @@ func TestIPHashPolicy(t *testing.T) {
 	if h != pool[2] {
 		t.Error("Expected ip hash policy host to be the third host.")
 	}
-	pool[1].SetHealthy(true)
+	pool[1].setHealthy(true)
 
 	req.RemoteAddr = "172.0.0.3"
-	pool[2].SetHealthy(false)
+	pool[2].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
 	if h != pool[0] {
 		t.Error("Expected ip hash policy host to be the first host.")
@@ -167,8 +167,8 @@ func TestIPHashPolicy(t *testing.T) {
 	// We should be able to resize the host pool and still be able to predict
 	// where a req will be routed with the same IP's used above
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 	req.RemoteAddr = "172.0.0.1:80"
 	h = ipHash.Select(pool, req, nil)
@@ -192,8 +192,8 @@ func TestIPHashPolicy(t *testing.T) {
 	}
 
 	// We should get nil when there are no healthy hosts
-	pool[0].SetHealthy(false)
-	pool[1].SetHealthy(false)
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
 	if h != nil {
 		t.Error("Expected ip hash policy host to be nil.")
@@ -201,25 +201,25 @@ func TestIPHashPolicy(t *testing.T) {
 
 	// Reproduce #4135
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
-	pool[0].SetHealthy(false)
-	pool[1].SetHealthy(false)
-	pool[2].SetHealthy(false)
-	pool[3].SetHealthy(false)
-	pool[4].SetHealthy(false)
-	pool[5].SetHealthy(false)
-	pool[6].SetHealthy(false)
-	pool[7].SetHealthy(false)
-	pool[8].SetHealthy(true)
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
+	pool[2].setHealthy(false)
+	pool[3].setHealthy(false)
+	pool[4].setHealthy(false)
+	pool[5].setHealthy(false)
+	pool[6].setHealthy(false)
+	pool[7].setHealthy(false)
+	pool[8].setHealthy(true)
 
 	// We should get a result back when there is one healthy host left.
 	h = ipHash.Select(pool, req, nil)
@@ -239,7 +239,7 @@ func TestFirstPolicy(t *testing.T) {
 		t.Error("Expected first policy host to be the first host.")
 	}
 
-	pool[0].SetHealthy(false)
+	pool[0].setHealthy(false)
 	h = firstPolicy.Select(pool, req, nil)
 	if h != pool[1] {
 		t.Error("Expected first policy host to be the second host.")
@@ -256,7 +256,7 @@ func TestURIHashPolicy(t *testing.T) {
 		t.Error("Expected uri policy host to be the first host.")
 	}
 
-	pool[0].SetHealthy(false)
+	pool[0].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != pool[1] {
 		t.Error("Expected uri policy host to be the first host.")
@@ -271,8 +271,8 @@ func TestURIHashPolicy(t *testing.T) {
 	// We should be able to resize the host pool and still be able to predict
 	// where a request will be routed with the same URI's used above
 	pool = UpstreamPool{
-		{Host: new(upstreamHost)},
-		{Host: new(upstreamHost)},
+		{Host: new(Host)},
+		{Host: new(Host)},
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -281,7 +281,7 @@ func TestURIHashPolicy(t *testing.T) {
 		t.Error("Expected uri policy host to be the first host.")
 	}
 
-	pool[0].SetHealthy(false)
+	pool[0].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != pool[1] {
 		t.Error("Expected uri policy host to be the first host.")
@@ -293,8 +293,8 @@ func TestURIHashPolicy(t *testing.T) {
 		t.Error("Expected uri policy host to be the second host.")
 	}
 
-	pool[0].SetHealthy(false)
-	pool[1].SetHealthy(false)
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != nil {
 		t.Error("Expected uri policy policy host to be nil.")
@@ -306,12 +306,12 @@ func TestLeastRequests(t *testing.T) {
 	pool[0].Dial = "localhost:8080"
 	pool[1].Dial = "localhost:8081"
 	pool[2].Dial = "localhost:8082"
-	pool[0].SetHealthy(true)
-	pool[1].SetHealthy(true)
-	pool[2].SetHealthy(true)
-	pool[0].CountRequest(10)
-	pool[1].CountRequest(20)
-	pool[2].CountRequest(30)
+	pool[0].setHealthy(true)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+	pool[0].countRequest(10)
+	pool[1].countRequest(20)
+	pool[2].countRequest(30)
 
 	result := leastRequests(pool)
 
@@ -329,12 +329,12 @@ func TestRandomChoicePolicy(t *testing.T) {
 	pool[0].Dial = "localhost:8080"
 	pool[1].Dial = "localhost:8081"
 	pool[2].Dial = "localhost:8082"
-	pool[0].SetHealthy(false)
-	pool[1].SetHealthy(true)
-	pool[2].SetHealthy(true)
-	pool[0].CountRequest(10)
-	pool[1].CountRequest(20)
-	pool[2].CountRequest(30)
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+	pool[0].countRequest(10)
+	pool[1].countRequest(20)
+	pool[2].countRequest(30)
 
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	randomChoicePolicy := new(RandomChoiceSelection)
@@ -357,9 +357,9 @@ func TestCookieHashPolicy(t *testing.T) {
 	pool[0].Dial = "localhost:8080"
 	pool[1].Dial = "localhost:8081"
 	pool[2].Dial = "localhost:8082"
-	pool[0].SetHealthy(true)
-	pool[1].SetHealthy(false)
-	pool[2].SetHealthy(false)
+	pool[0].setHealthy(true)
+	pool[1].setHealthy(false)
+	pool[2].setHealthy(false)
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()
 	cookieHashPolicy := new(CookieHashSelection)
@@ -374,8 +374,8 @@ func TestCookieHashPolicy(t *testing.T) {
 	if h != pool[0] {
 		t.Error("Expected cookieHashPolicy host to be the first only available host.")
 	}
-	pool[1].SetHealthy(true)
-	pool[2].SetHealthy(true)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)
 	w = httptest.NewRecorder()
 	request.AddCookie(cookieServer1)
@@ -387,7 +387,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	if len(s) != 0 {
 		t.Error("Expected cookieHashPolicy to not set a new cookie.")
 	}
-	pool[0].SetHealthy(false)
+	pool[0].setHealthy(false)
 	request = httptest.NewRequest(http.MethodGet, "/test", nil)
 	w = httptest.NewRecorder()
 	request.AddCookie(cookieServer1)

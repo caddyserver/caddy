@@ -53,6 +53,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //     reverse_proxy [<matcher>] [<upstreams...>] {
 //         # upstreams
 //         to <upstreams...>
+//         dynamic <name> [...]
 //
 //         # load balancing
 //         lb_policy <name> [<options...>]
@@ -189,6 +190,25 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						return err
 					}
 				}
+
+			case "dynamic":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.DynamicUpstreams != nil {
+					return d.Err("dynamic upstreams already specified")
+				}
+				dynModule := d.Val()
+				modID := "http.reverse_proxy.upstreams." + dynModule
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return err
+				}
+				source, ok := unm.(UpstreamSource)
+				if !ok {
+					return d.Errf("module %s (%T) is not an UpstreamSource", modID, unm)
+				}
+				h.DynamicUpstreamsRaw = caddyconfig.JSONModuleObject(source, "source", dynModule, nil)
 
 			case "lb_policy":
 				if !d.NextArg() {
@@ -749,6 +769,7 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         dial_fallback_delay     <duration>
 //         response_header_timeout <duration>
 //         expect_continue_timeout <duration>
+//         resolvers               <resolvers...>
 //         tls
 //         tls_client_auth <automate_name> | <cert_file> <key_file>
 //         tls_insecure_skip_verify
@@ -838,6 +859,15 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
 				}
 				h.ExpectContinueTimeout = caddy.Duration(dur)
+
+			case "resolvers":
+				if h.Resolver == nil {
+					h.Resolver = new(UpstreamResolver)
+				}
+				h.Resolver.Addresses = d.RemainingArgs()
+				if len(h.Resolver.Addresses) == 0 {
+					return d.Errf("must specify at least one resolver address")
+				}
 
 			case "tls_client_auth":
 				if h.TLS == nil {
@@ -989,10 +1019,201 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// UnmarshalCaddyfile deserializes Caddyfile tokens into h.
+//
+//     dynamic srv [<name>] {
+//         service             <service>
+//         proto               <proto>
+//         name                <name>
+//         refresh             <interval>
+//         resolvers           <resolvers...>
+//         dial_timeout        <timeout>
+//         dial_fallback_delay <timeout>
+//     }
+//
+func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) > 1 {
+			return d.ArgErr()
+		}
+		if len(args) > 0 {
+			u.Name = args[0]
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "service":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Service != "" {
+					return d.Errf("srv service has already been specified")
+				}
+				u.Service = d.Val()
+
+			case "proto":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Proto != "" {
+					return d.Errf("srv proto has already been specified")
+				}
+				u.Proto = d.Val()
+
+			case "name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Name != "" {
+					return d.Errf("srv name has already been specified")
+				}
+				u.Name = d.Val()
+
+			case "refresh":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("parsing refresh interval duration: %v", err)
+				}
+				u.Refresh = caddy.Duration(dur)
+
+			case "resolvers":
+				if u.Resolver == nil {
+					u.Resolver = new(UpstreamResolver)
+				}
+				u.Resolver.Addresses = d.RemainingArgs()
+				if len(u.Resolver.Addresses) == 0 {
+					return d.Errf("must specify at least one resolver address")
+				}
+
+			case "dial_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				u.DialTimeout = caddy.Duration(dur)
+
+			case "dial_fallback_delay":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad delay value '%s': %v", d.Val(), err)
+				}
+				u.FallbackDelay = caddy.Duration(dur)
+
+			default:
+				return d.Errf("unrecognized srv option '%s'", d.Val())
+			}
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalCaddyfile deserializes Caddyfile tokens into h.
+//
+//     dynamic a [<name> <port] {
+//         name                <name>
+//         port                <port>
+//         refresh             <interval>
+//         resolvers           <resolvers...>
+//         dial_timeout        <timeout>
+//         dial_fallback_delay <timeout>
+//     }
+//
+func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) > 2 {
+			return d.ArgErr()
+		}
+		if len(args) > 0 {
+			u.Name = args[0]
+			u.Port = args[1]
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "name":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Name != "" {
+					return d.Errf("a name has already been specified")
+				}
+				u.Name = d.Val()
+
+			case "port":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if u.Port != "" {
+					return d.Errf("a port has already been specified")
+				}
+				u.Port = d.Val()
+
+			case "refresh":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("parsing refresh interval duration: %v", err)
+				}
+				u.Refresh = caddy.Duration(dur)
+
+			case "resolvers":
+				if u.Resolver == nil {
+					u.Resolver = new(UpstreamResolver)
+				}
+				u.Resolver.Addresses = d.RemainingArgs()
+				if len(u.Resolver.Addresses) == 0 {
+					return d.Errf("must specify at least one resolver address")
+				}
+
+			case "dial_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+				}
+				u.DialTimeout = caddy.Duration(dur)
+
+			case "dial_fallback_delay":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad delay value '%s': %v", d.Val(), err)
+				}
+				u.FallbackDelay = caddy.Duration(dur)
+
+			default:
+				return d.Errf("unrecognized srv option '%s'", d.Val())
+			}
+		}
+	}
+
+	return nil
+}
+
 const matcherPrefix = "@"
 
 // Interface guards
 var (
 	_ caddyfile.Unmarshaler = (*Handler)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPTransport)(nil)
+	_ caddyfile.Unmarshaler = (*SRVUpstreams)(nil)
+	_ caddyfile.Unmarshaler = (*AUpstreams)(nil)
 )
