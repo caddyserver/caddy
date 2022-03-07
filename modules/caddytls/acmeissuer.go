@@ -418,7 +418,7 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
-			case "override_domain":
+			case "dns_challenge_override_domain":
 				arg := d.RemainingArgs()
 				if len(arg) != 1 {
 					return d.ArgErr()

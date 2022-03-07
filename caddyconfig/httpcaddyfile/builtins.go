@@ -362,7 +362,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.Challenges.DNS.Resolvers = args
 
-			case "override_domain":
+			case "dns_challenge_override_domain":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
 					return nil, h.ArgErr()
