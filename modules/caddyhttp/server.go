@@ -27,6 +27,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -259,11 +260,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
-			if errStatus >= 500 {
-				logger.Error(errMsg, errFields...)
-			} else {
-				logger.Debug(errMsg, errFields...)
-			}
+			logger.Debug(errMsg, errFields...)
 		} else {
 			// well... this is awkward
 			errFields = append([]zapcore.Field{
@@ -488,7 +485,7 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
-		if r.Host == dh {
+		if certmagic.MatchWildcard(r.Host, dh) {
 			return false
 		}
 	}

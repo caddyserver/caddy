@@ -1,6 +1,7 @@
 {
 	servers {
 		listener_wrappers {
+			http_redirect
 			tls
 		}
 		timeouts {
@@ -32,6 +33,9 @@ foo.com {
 						":443"
 					],
 					"listener_wrappers": [
+						{
+							"wrapper": "http_redirect"
+						},
 						{
 							"wrapper": "tls"
 						}

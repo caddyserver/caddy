@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 
@@ -104,32 +103,14 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// set up the upstream address; assume missing information from given parts
-	toAddr, err := httpcaddyfile.ParseAddress(to)
+	toAddr, toScheme, err := parseUpstreamDialAddress(to)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", to, err)
 	}
-	if toAddr.Path != "" {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("paths are not allowed: %s", to)
-	}
-	if toAddr.Scheme == "" {
-		if toAddr.Port == httpsPort {
-			toAddr.Scheme = "https"
-		} else {
-			toAddr.Scheme = "http"
-		}
-	}
-	if toAddr.Port == "" {
-		if toAddr.Scheme == "http" {
-			toAddr.Port = httpPort
-		} else if toAddr.Scheme == "https" {
-			toAddr.Port = httpsPort
-		}
-	}
 
 	// proceed to build the handler and server
-
 	ht := HTTPTransport{}
-	if toAddr.Scheme == "https" {
+	if toScheme == "https" {
 		ht.TLS = new(TLSConfig)
 		if insecure {
 			ht.TLS.InsecureSkipVerify = true
@@ -138,7 +119,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	handler := Handler{
 		TransportRaw: caddyconfig.JSONModuleObject(ht, "protocol", "http", nil),
-		Upstreams:    UpstreamPool{{Dial: net.JoinHostPort(toAddr.Host, toAddr.Port)}},
+		Upstreams:    UpstreamPool{{Dial: toAddr}},
 	}
 
 	if changeHost {
@@ -185,7 +166,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	fmt.Printf("Caddy proxying %s -> %s\n", fromAddr.String(), toAddr.String())
+	fmt.Printf("Caddy proxying %s -> %s\n", fromAddr.String(), toAddr)
 
 	select {}
 }

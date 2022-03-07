@@ -42,6 +42,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // AdminConfig configures Caddy's API endpoint, which is used
@@ -91,6 +92,10 @@ type AdminConfig struct {
 	//
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
+
+	// Holds onto the routers so that we can later provision them
+	// if they require provisioning.
+	routers []AdminRouter
 }
 
 // ConfigSettings configures the management of configuration.
@@ -100,20 +105,26 @@ type ConfigSettings struct {
 	// are not persisted; only configs that are pushed to Caddy get persisted.
 	Persist *bool `json:"persist,omitempty"`
 
-	// Loads a configuration to use. This is helpful if your configs are
-	// managed elsewhere, and you want Caddy to pull its config dynamically
+	// Loads a new configuration. This is helpful if your configs are
+	// managed elsewhere and you want Caddy to pull its config dynamically
 	// when it starts. The pulled config completely replaces the current
 	// one, just like any other config load. It is an error if a pulled
-	// config is configured to pull another config.
+	// config is configured to pull another config without a load_delay,
+	// as this creates a tight loop.
 	//
 	// EXPERIMENTAL: Subject to change.
 	LoadRaw json.RawMessage `json:"load,omitempty" caddy:"namespace=caddy.config_loaders inline_key=module"`
 
-	// The interval to pull config. With a non-zero value, will pull config
-	// from config loader (eg. a http loader) with given interval.
+	// The duration after which to load config. If set, config will be pulled
+	// from the config loader after this duration. A delay is required if a
+	// dynamically-loaded config is configured to load yet another config. To
+	// load configs on a regular interval, ensure this value is set the same
+	// on all loaded configs; it can also be variable if needed, and to stop
+	// the loop, simply remove dynamic config loading from the next-loaded
+	// config.
 	//
 	// EXPERIMENTAL: Subject to change.
-	LoadInterval Duration `json:"load_interval,omitempty"`
+	LoadDelay Duration `json:"load_delay,omitempty"`
 }
 
 // IdentityConfig configures management of this server's identity. An identity
@@ -183,7 +194,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -192,6 +203,7 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admin
 	} else {
 		muxWrap.enforceHost = !addr.isWildcardInterface()
 		muxWrap.allowedOrigins = admin.allowedOrigins(addr)
+		muxWrap.enforceOrigin = admin.EnforceOrigin
 	}
 
 	addRouteWithMetrics := func(pattern string, handlerLabel string, h http.Handler) {
@@ -242,9 +254,31 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admin
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
+		admin.routers = append(admin.routers, router)
 	}
 
 	return muxWrap
+}
+
+// provisionAdminRouters provisions all the router modules
+// in the admin.api namespace that need provisioning.
+func (admin *AdminConfig) provisionAdminRouters(ctx Context) error {
+	for _, router := range admin.routers {
+		provisioner, ok := router.(Provisioner)
+		if !ok {
+			continue
+		}
+
+		err := provisioner.Provision(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	// We no longer need the routers once provisioned, allow for GC
+	admin.routers = nil
+
+	return nil
 }
 
 // allowedOrigins returns a list of origins that are allowed.
@@ -252,7 +286,7 @@ func (admin AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admin
 // will be used as the default origin. If admin.Origins is
 // empty, no origins will be allowed, effectively bricking the
 // endpoint for non-unix-socket endpoints, but whatever.
-func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []string {
+func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	uniqueOrigins := make(map[string]struct{})
 	for _, o := range admin.Origins {
 		uniqueOrigins[o] = struct{}{}
@@ -276,8 +310,23 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []string {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
-	allowed := make([]string, 0, len(uniqueOrigins))
-	for origin := range uniqueOrigins {
+	allowed := make([]*url.URL, 0, len(uniqueOrigins))
+	for originStr := range uniqueOrigins {
+		var origin *url.URL
+		if strings.Contains(originStr, "://") {
+			var err error
+			origin, err = url.Parse(originStr)
+			if err != nil {
+				continue
+			}
+			origin.Path = ""
+			origin.RawPath = ""
+			origin.Fragment = ""
+			origin.RawFragment = ""
+			origin.RawQuery = ""
+		} else {
+			origin = &url.URL{Host: originStr}
+		}
 		allowed = append(allowed, origin)
 	}
 	return allowed
@@ -309,25 +358,26 @@ func replaceLocalAdminServer(cfg *Config) error {
 		}
 	}()
 
-	// always get a valid admin config
-	adminConfig := DefaultAdminConfig
-	if cfg != nil && cfg.Admin != nil {
-		adminConfig = cfg.Admin
+	// set a default if admin wasn't otherwise configured
+	if cfg.Admin == nil {
+		cfg.Admin = &AdminConfig{
+			Listen: DefaultAdminListen,
+		}
 	}
 
 	// if new admin endpoint is to be disabled, we're done
-	if adminConfig.Disabled {
+	if cfg.Admin.Disabled {
 		Log().Named("admin").Warn("admin endpoint disabled")
 		return nil
 	}
 
 	// extract a singular listener address
-	addr, err := parseAdminListenAddr(adminConfig.Listen, DefaultAdminListen)
+	addr, err := parseAdminListenAddr(cfg.Admin.Listen, DefaultAdminListen)
 	if err != nil {
 		return err
 	}
 
-	handler := adminConfig.newAdminHandler(addr, false)
+	handler := cfg.Admin.newAdminHandler(addr, false)
 
 	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
 	if err != nil {
@@ -357,8 +407,8 @@ func replaceLocalAdminServer(cfg *Config) error {
 
 	adminLogger.Info("admin endpoint started",
 		zap.String("address", addr.String()),
-		zap.Bool("enforce_origin", adminConfig.EnforceOrigin),
-		zap.Strings("origins", handler.allowedOrigins))
+		zap.Bool("enforce_origin", cfg.Admin.EnforceOrigin),
+		zap.Array("origins", loggableURLArray(handler.allowedOrigins)))
 
 	if !handler.enforceHost {
 		adminLogger.Warn("admin endpoint on open interface; host checking disabled",
@@ -650,10 +700,10 @@ type AdminRoute struct {
 type adminHandler struct {
 	mux *http.ServeMux
 
-	// security for local/plaintext) endpoint, on by default
+	// security for local/plaintext endpoint
 	enforceOrigin  bool
 	enforceHost    bool
-	allowedOrigins []string
+	allowedOrigins []*url.URL
 
 	// security for remote/encrypted endpoint
 	remoteControl *RemoteAdmin
@@ -779,8 +829,8 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	var allowed bool
-	for _, allowedHost := range h.allowedOrigins {
-		if r.Host == allowedHost {
+	for _, allowedOrigin := range h.allowedOrigins {
+		if r.Host == allowedOrigin.Host {
 			allowed = true
 			break
 		}
@@ -799,43 +849,45 @@ func (h adminHandler) checkHost(r *http.Request) error {
 // sites from issuing requests to our listener. It
 // returns the origin that was obtained from r.
 func (h adminHandler) checkOrigin(r *http.Request) (string, error) {
-	origin := h.getOriginHost(r)
-	if origin == "" {
-		return origin, APIError{
+	originStr, origin := h.getOrigin(r)
+	if origin == nil {
+		return "", APIError{
 			HTTPStatus: http.StatusForbidden,
-			Err:        fmt.Errorf("missing required Origin header"),
+			Err:        fmt.Errorf("required Origin header is missing or invalid"),
 		}
 	}
 	if !h.originAllowed(origin) {
-		return origin, APIError{
+		return "", APIError{
 			HTTPStatus: http.StatusForbidden,
-			Err:        fmt.Errorf("client is not allowed to access from origin %s", origin),
+			Err:        fmt.Errorf("client is not allowed to access from origin '%s'", originStr),
 		}
 	}
-	return origin, nil
+	return origin.String(), nil
 }
 
-func (h adminHandler) getOriginHost(r *http.Request) string {
+func (h adminHandler) getOrigin(r *http.Request) (string, *url.URL) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		origin = r.Header.Get("Referer")
 	}
 	originURL, err := url.Parse(origin)
-	if err == nil && originURL.Host != "" {
-		origin = originURL.Host
+	if err != nil {
+		return origin, nil
 	}
-	return origin
+	originURL.Path = ""
+	originURL.RawPath = ""
+	originURL.Fragment = ""
+	originURL.RawFragment = ""
+	originURL.RawQuery = ""
+	return origin, originURL
 }
 
-func (h adminHandler) originAllowed(origin string) bool {
+func (h adminHandler) originAllowed(origin *url.URL) bool {
 	for _, allowedOrigin := range h.allowedOrigins {
-		originCopy := origin
-		if !strings.Contains(allowedOrigin, "://") {
-			// no scheme specified, so allow both
-			originCopy = strings.TrimPrefix(originCopy, "http://")
-			originCopy = strings.TrimPrefix(originCopy, "https://")
+		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
+			continue
 		}
-		if originCopy == allowedOrigin {
+		if origin.Host == allowedOrigin.Host {
 			return true
 		}
 	}
@@ -886,7 +938,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
 		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
-		if err != nil {
+		if err != nil && !errors.Is(err, errSameConfig) {
 			return err
 		}
 
@@ -1198,6 +1250,18 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 	return x509.ParseCertificate(derBytes)
 }
 
+type loggableURLArray []*url.URL
+
+func (ua loggableURLArray) MarshalLogArray(enc zapcore.ArrayEncoder) error {
+	if ua == nil {
+		return nil
+	}
+	for _, u := range ua {
+		enc.AppendString(u.String())
+	}
+	return nil
+}
+
 var (
 	// DefaultAdminListen is the address for the local admin
 	// listener, if none is specified at startup.
@@ -1207,12 +1271,6 @@ var (
 	// (TLS-authenticated) admin listener, if enabled and not
 	// specified otherwise.
 	DefaultRemoteAdminListen = ":2021"
-
-	// DefaultAdminConfig is the default configuration
-	// for the local administration endpoint.
-	DefaultAdminConfig = &AdminConfig{
-		Listen: DefaultAdminListen,
-	}
 )
 
 // PIDFile writes a pidfile to the file at filename. It

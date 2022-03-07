@@ -239,7 +239,7 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, e
 		if err != nil {
 			return nil, nil, fmt.Errorf("loading root key: %v", err)
 		}
-		rootKey, err = pemDecodePrivateKey(rootKeyPEM)
+		rootKey, err = certmagic.PEMDecodePrivateKey(rootKeyPEM)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoding root key: %v", err)
 		}
@@ -263,7 +263,7 @@ func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey interface{}, err err
 	if err != nil {
 		return nil, nil, fmt.Errorf("saving root certificate: %v", err)
 	}
-	rootKeyPEM, err := pemEncodePrivateKey(rootKey)
+	rootKeyPEM, err := certmagic.PEMEncodePrivateKey(rootKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("encoding root key: %v", err)
 	}
@@ -275,7 +275,7 @@ func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey interface{}, err err
 	return rootCert, rootKey, nil
 }
 
-func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface{}) (interCert *x509.Certificate, interKey interface{}, err error) {
+func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.PrivateKey) (interCert *x509.Certificate, interKey crypto.PrivateKey, err error) {
 	interCertPEM, err := ca.storage.Load(ca.storageKeyIntermediateCert())
 	if err != nil {
 		if _, ok := err.(certmagic.ErrNotExist); !ok {
@@ -301,7 +301,7 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 		if err != nil {
 			return nil, nil, fmt.Errorf("loading intermediate key: %v", err)
 		}
-		interKey, err = pemDecodePrivateKey(interKeyPEM)
+		interKey, err = certmagic.PEMDecodePrivateKey(interKeyPEM)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoding intermediate key: %v", err)
 		}
@@ -310,7 +310,7 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey interface
 	return interCert, interKey, nil
 }
 
-func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (interCert *x509.Certificate, interKey interface{}, err error) {
+func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.PrivateKey) (interCert *x509.Certificate, interKey crypto.PrivateKey, err error) {
 	repl := ca.newReplacer()
 
 	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey)
@@ -325,7 +325,7 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey interface{}) (i
 	if err != nil {
 		return nil, nil, fmt.Errorf("saving intermediate certificate: %v", err)
 	}
-	interKeyPEM, err := pemEncodePrivateKey(interKey)
+	interKeyPEM, err := certmagic.PEMEncodePrivateKey(interKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("encoding intermediate key: %v", err)
 	}
