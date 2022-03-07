@@ -110,6 +110,13 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// Disallow null bytes in the request path, because
+	// PHP upstreams may do bad things, like execute a
+	// non-PHP file as PHP code. See #4574
+	if strings.Contains(r.URL.Path, "\x00") {
+		return nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid request path"))
+	}
+
 	env, err := t.buildEnv(r)
 	if err != nil {
 		return nil, fmt.Errorf("building environment: %v", err)
