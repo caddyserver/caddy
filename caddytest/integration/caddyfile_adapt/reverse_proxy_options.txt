@@ -17,6 +17,7 @@ https://example.com {
 			dial_fallback_delay 5s
 			response_header_timeout 8s
 			expect_continue_timeout 9s
+			resolvers 8.8.8.8 8.8.4.4
 
 			versions h2c 2
 			compression off
@@ -88,6 +89,12 @@ https://example.com {
 														"max_response_header_size": 30000000,
 														"protocol": "http",
 														"read_buffer_size": 10000000,
+														"resolver": {
+															"addresses": [
+																"8.8.8.8",
+																"8.8.4.4"
+															]
+														},
 														"response_header_timeout": 8000000000,
 														"versions": [
 															"h2c",
