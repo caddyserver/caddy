@@ -370,6 +370,11 @@ type DNSChallengeConfig struct {
 	// Often necessary to configure when using split-horizon DNS.
 	Resolvers []string `json:"resolvers,omitempty"`
 
+	// Override the domain to use for the DNS challenge. This
+	// is to delegate the challenge to a different domain,
+	// e.g. one that updates faster or one with a provider API.
+	OverrideDomain string `json:"override_domain,omitempty"`
+
 	solver acmez.Solver
 }
 

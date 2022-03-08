@@ -362,6 +362,22 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.Challenges.DNS.Resolvers = args
 
+			case "dns_challenge_override_domain":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.OverrideDomain = arg[0]
+
 			case "ca_root":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
