@@ -334,8 +334,11 @@ type CustomLog struct {
 	writerOpener WriterOpener
 	writer       io.WriteCloser
 	encoder      zapcore.Encoder
-	levelEnabler zapcore.LevelEnabler
-	core         zapcore.Core
+	// levelEnabler used to control log level, runtime change log level
+	levelEnabler zap.AtomicLevel
+	// zapLogLevel unused, extend field, record initial log level.
+	zapLogLevel zapcore.Level
+	core        zapcore.Core
 }
 
 func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
@@ -346,21 +349,25 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		return fmt.Errorf("invalid log level: %v", err)
 	}
 	level = strings.ToLower(level)
-
+	setLogLevel := func(l zapcore.Level) {
+		cl.levelEnabler = zap.NewAtomicLevel()
+		cl.zapLogLevel = l
+		cl.levelEnabler.SetLevel(l)
+	}
 	// set up the log level
 	switch level {
 	case "debug":
-		cl.levelEnabler = zapcore.DebugLevel
+		setLogLevel(zapcore.DebugLevel)
 	case "", "info":
-		cl.levelEnabler = zapcore.InfoLevel
+		setLogLevel(zapcore.InfoLevel)
 	case "warn":
-		cl.levelEnabler = zapcore.WarnLevel
+		setLogLevel(zapcore.WarnLevel)
 	case "error":
-		cl.levelEnabler = zapcore.ErrorLevel
+		setLogLevel(zapcore.ErrorLevel)
 	case "panic":
-		cl.levelEnabler = zapcore.PanicLevel
+		setLogLevel(zapcore.PanicLevel)
 	case "fatal":
-		cl.levelEnabler = zapcore.FatalLevel
+		setLogLevel(zapcore.FatalLevel)
 	default:
 		return fmt.Errorf("unrecognized log level: %s", cl.Level)
 	}
@@ -442,6 +449,7 @@ func (cl *CustomLog) buildCore() {
 		cl.core = zapcore.NewNopCore()
 		return
 	}
+
 	c := zapcore.NewCore(
 		cl.encoder,
 		zapcore.AddSync(cl.writer),
@@ -465,6 +473,11 @@ func (cl *CustomLog) buildCore() {
 
 func (cl *CustomLog) matchesModule(moduleID string) bool {
 	return cl.loggerAllowed(moduleID, true)
+}
+
+// SetLogLevel  change log level
+func (cl *CustomLog) SetLogLevel(l zapcore.Level) {
+	cl.levelEnabler.SetLevel(l)
 }
 
 // loggerAllowed returns true if name is allowed to emit
@@ -657,7 +670,9 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 		return nil, err
 	}
 	cl.encoder = newDefaultProductionLogEncoder(true)
-	cl.levelEnabler = zapcore.InfoLevel
+	cl.zapLogLevel = zapcore.InfoLevel
+	// use INFO-level logs
+	cl.levelEnabler = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 
 	cl.buildCore()
 
@@ -687,6 +702,13 @@ func Log() *zap.Logger {
 	defaultLoggerMu.RLock()
 	defer defaultLoggerMu.RUnlock()
 	return defaultLogger.logger
+}
+
+// SetLogLevel  change log level
+func SetLogLevel(l zapcore.Level) {
+	defaultLoggerMu.RLock()
+	defer defaultLoggerMu.RUnlock()
+	defaultLogger.SetLogLevel(l)
 }
 
 var (
