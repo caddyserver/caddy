@@ -1272,7 +1272,7 @@ var bufPool = sync.Pool{
 	},
 }
 
-// HandleResponseContext carries some contextual information about the
+// handleResponseContext carries some contextual information about the
 // the current proxy handling.
 type handleResponseContext struct {
 	// handler is the active proxy handler instance, so that

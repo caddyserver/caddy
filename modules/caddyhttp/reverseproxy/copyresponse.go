@@ -31,7 +31,7 @@ func init() {
 
 // CopyResponseHandler is a special HTTP handler which may
 // only be used within reverse_proxy's handle_response routes,
-// to copy the proxy response.
+// to copy the proxy response. EXPERIMENTAL, subject to change.
 type CopyResponseHandler struct {
 	// To write the upstream response's body but with a different
 	// status code, set this field to the desired status code.
@@ -85,7 +85,8 @@ func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 // CopyResponseHeadersHandler is a special HTTP handler which may
 // only be used within reverse_proxy's handle_response routes,
-// to copy headers from the proxy response.
+// to copy headers from the proxy response. EXPERIMENTAL;
+// subject to change.
 type CopyResponseHeadersHandler struct {
 	// A list of header fields to copy from the response.
 	// Cannot be defined at the same time as Exclude.
