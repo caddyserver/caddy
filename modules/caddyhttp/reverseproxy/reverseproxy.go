@@ -790,12 +790,33 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 		h.logger.Debug("handling response", zap.Int("handler", i))
 
-		// pass the request through the response handler routes
-		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, req)
+		// we make some data available via request context to child routes
+		// so that they may inherit some options and functions from the
+		// handler, and be able to copy the response.
+		hrc := &handleResponseContext{
+			handler:  h,
+			response: res,
+			start:    start,
+			logger:   logger,
+		}
+		ctx := req.Context()
+		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
 
-		// always close the response body afterwards since it's expected
+		// pass the request through the response handler routes
+		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, req.WithContext(ctx))
+
+		// if the response handler routes already finalized the response,
+		// we can return early. It should be finalized if the routes executed
+		// included a copy_response handler. If a fresh response was written
+		// by the routes instead, then we still need to finalize the response
+		// without copying the body.
+		if routeErr == nil && hrc.isFinalized {
+			return nil
+		}
+
+		// always close the response body afterwards, since it's expected
 		// that the response handler routes will have written to the
-		// response writer with a new body
+		// response writer with a new body, if it wasn't already finalized.
 		res.Body.Close()
 		bodyClosed = true
 
@@ -804,8 +825,25 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 			// the roundtrip was successful and to not retry
 			return roundtripSucceeded{routeErr}
 		}
+
+		// we've already closed the body, so there's no use allowing
+		// another response handler to run as well
+		break
 	}
 
+	return h.finalizeResponse(rw, req, res, repl, start, logger, bodyClosed)
+}
+
+// finalizeResponse prepares and copies the response.
+func (h Handler) finalizeResponse(
+	rw http.ResponseWriter,
+	req *http.Request,
+	res *http.Response,
+	repl *caddy.Replacer,
+	start time.Time,
+	logger *zap.Logger,
+	bodyClosed bool,
+) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		h.handleUpgradeResponse(logger, rw, req, res)
@@ -816,6 +854,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
+	}
+
+	// remove the content length if we're not going to be copying
+	// from the response, because otherwise there'll be a mismatch
+	// between bytes written and the advertised length
+	if bodyClosed {
+		res.Header.Del("Content-Length")
 	}
 
 	// apply any response header operations
@@ -841,7 +886,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 	rw.WriteHeader(res.StatusCode)
 	if !bodyClosed {
-		err = h.copyResponse(rw, res.Body, h.flushInterval(req, res))
+		err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
 		res.Body.Close() // close now, instead of defer, to populate res.Trailer
 		if err != nil {
 			// we're streaming the response and we've already written headers, so
@@ -863,7 +908,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 	}
 
 	// total duration spent proxying, including writing response body
-	repl.Set("http.reverse_proxy.upstream.duration", duration)
+	repl.Set("http.reverse_proxy.upstream.duration", time.Since(start))
 
 	if len(res.Trailer) == announcedTrailers {
 		copyHeader(rw.Header(), res.Trailer)
@@ -1226,6 +1271,38 @@ var bufPool = sync.Pool{
 		return new(bytes.Buffer)
 	},
 }
+
+// handleResponseContext carries some contextual information about the
+// the current proxy handling.
+type handleResponseContext struct {
+	// handler is the active proxy handler instance, so that
+	// routes like copy_response may inherit some config
+	// options and have access to handler methods.
+	handler *Handler
+
+	// response is the actual response received from the proxy
+	// roundtrip, to potentially be copied if a copy_response
+	// handler is in the handle_response routes.
+	response *http.Response
+
+	// start is the time just before the proxy roundtrip was
+	// performed, used for logging.
+	start time.Time
+
+	// logger is the prepared logger which is used to write logs
+	// with the request, duration, and selected upstream attached.
+	logger *zap.Logger
+
+	// isFinalized is whether the response has been finalized,
+	// i.e. copied and closed, to make sure that it doesn't
+	// happen twice.
+	isFinalized bool
+}
+
+// proxyHandleResponseContextCtxKey is the context key for the active proxy handler
+// so that handle_response routes can inherit some config options
+// from the proxy handler.
+const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
 
 // Interface guards
 var (
