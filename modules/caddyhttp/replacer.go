@@ -162,12 +162,8 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				// read the request body into a buffer (can't pool because we
 				// don't know its lifetime and would have to make a copy anyway)
 				buf := new(bytes.Buffer)
-				_, err := io.Copy(buf, req.Body)
-				if err != nil {
-					return "", true
-				}
-				// replace real body with buffered data
-				req.Body = io.NopCloser(buf)
+				_, _ = io.Copy(buf, req.Body) // can't handle error, so just ignore it
+				req.Body = io.NopCloser(buf)  // replace real body with buffered data
 				return buf.String(), true
 
 				// original request, before any internal changes
