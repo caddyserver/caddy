@@ -91,7 +91,7 @@ func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if len(vals) == 0 {
 			return d.Errf("malformed vars matcher: expected at least one value to match against")
 		}
-		(*m)[field] = vals
+		(*m)[field] = append((*m)[field], vals...)
 		if d.NextBlock(0) {
 			return d.Err("malformed vars matcher: blocks are not supported")
 		}
