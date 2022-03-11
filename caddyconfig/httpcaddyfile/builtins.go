@@ -82,6 +82,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //         on_demand
 //         eab    <key_id> <mac_key>
 //         issuer <module_name> [...]
+//         get_certificate <module_name> [...]
 //     }
 //
 func parseTLS(h Helper) ([]ConfigValue, error) {
@@ -93,6 +94,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var keyType string
 	var internalIssuer *caddytls.InternalIssuer
 	var issuers []certmagic.Issuer
+	var certManagers []certmagic.CertificateManager
 	var onDemand bool
 
 	for h.Next() {
@@ -307,6 +309,22 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				issuers = append(issuers, issuer)
 
+			case "get_certificate":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				modName := h.Val()
+				modID := "tls.get_certificate." + modName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				certManager, ok := unm.(certmagic.CertificateManager)
+				if !ok {
+					return nil, h.Errf("module %s (%T) is not a certmagic.CertificateManager", modID, unm)
+				}
+				certManagers = append(certManagers, certManager)
+
 			case "dns":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -343,6 +361,22 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
 				acmeIssuer.Challenges.DNS.Resolvers = args
+
+			case "dns_challenge_override_domain":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.OverrideDomain = arg[0]
 
 			case "ca_root":
 				arg := h.RemainingArgs()
@@ -451,6 +485,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.on_demand",
 			Value: true,
+		})
+	}
+	for _, certManager := range certManagers {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.cert_manager",
+			Value: certManager,
 		})
 	}
 

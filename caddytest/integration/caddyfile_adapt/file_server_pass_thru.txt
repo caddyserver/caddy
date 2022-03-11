@@ -1,0 +1,32 @@
+:80
+
+file_server {
+	pass_thru
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"pass_thru": true
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -43,10 +43,10 @@ func init() {
 //
 // ##### `.Args`
 //
-// Access arguments passed to this page/context, for example as the result of a `include`.
+// A slice of arguments passed to this page/context, for example as the result of a `include`.
 //
 // ```
-// {{.Args 0}} // first argument
+// {{index .Args 0}} // first argument
 // ```
 //
 // ##### `.Cookie`
