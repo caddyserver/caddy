@@ -66,7 +66,7 @@ func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	}
 
 	// allow a custom status code to be written; otherwise the
-	// status code from the upstream resposne is written
+	// status code from the upstream response is written
 	if codeStr := h.StatusCode.String(); codeStr != "" {
 		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
 		if err != nil {
