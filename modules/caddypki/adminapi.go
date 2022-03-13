@@ -93,7 +93,7 @@ func (a *adminAPI) handleAPIEndpoints(w http.ResponseWriter, r *http.Request) er
 	}
 }
 
-// handleCAInfo returns cinformation about a particular
+// handleCAInfo returns information about a particular
 // CA by its ID. If the CA ID is the default, then the CA will be
 // provisioned if it has not already been. Other CA IDs will return an
 // error if they have not been previously provisioned.
@@ -143,7 +143,7 @@ func (a *adminAPI) handleCAInfo(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// handleCACerts returns cinformation about a particular
+// handleCACerts returns the certificate chain for a particular
 // CA by its ID. If the CA ID is the default, then the CA will be
 // provisioned if it has not already been. Other CA IDs will return an
 // error if they have not been previously provisioned.

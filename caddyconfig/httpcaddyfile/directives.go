@@ -43,7 +43,7 @@ var directiveOrder = []string{
 	"root",
 
 	"header",
-	"copy_response_headers",
+	"copy_response_headers", // only in reverse_proxy's handle_response
 	"request_body",
 
 	"redir",
@@ -69,7 +69,7 @@ var directiveOrder = []string{
 	// handlers that typically respond to requests
 	"abort",
 	"error",
-	"copy_response",
+	"copy_response", // only in reverse_proxy's handle_response
 	"respond",
 	"metrics",
 	"reverse_proxy",
