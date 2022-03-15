@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build windows || plan9 || nacl || js
 // +build windows plan9 nacl js
 
 package caddy
