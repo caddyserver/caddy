@@ -15,6 +15,7 @@
 package maphandler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -78,7 +79,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if out == "-" {
 					outs = append(outs, nil)
 				} else {
-					outs = append(outs, out)
+					outs = append(outs, specificType(out))
 				}
 			}
 
@@ -106,4 +107,17 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 
 	return handler, nil
+}
+
+func specificType(v string) interface{} {
+	if num, err := strconv.Atoi(v); err == nil {
+		return num
+	}
+	if num, err := strconv.ParseFloat(v, 64); err == nil {
+		return num
+	}
+	if bool, err := strconv.ParseBool(v); err == nil {
+		return bool
+	}
+	return v
 }
