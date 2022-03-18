@@ -202,9 +202,9 @@ func (d *Dispenser) Val() string {
 	return d.tokens[d.cursor].Text
 }
 
-// RawVal gets the raw text of the current token (including quotes).
+// ValRaw gets the raw text of the current token (including quotes).
 // If there is no token loaded, it returns empty string.
-func (d *Dispenser) RawVal() string {
+func (d *Dispenser) ValRaw() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	}
@@ -319,7 +319,7 @@ func (d *Dispenser) RemainingArgs() []string {
 func (d *Dispenser) RemainingArgsRaw() []string {
 	var args []string
 	for d.NextArg() {
-		args = append(args, d.RawVal())
+		args = append(args, d.ValRaw())
 	}
 	return args
 }
