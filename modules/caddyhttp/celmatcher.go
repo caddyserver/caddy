@@ -150,7 +150,11 @@ func (m MatchExpression) Match(r *http.Request) bool {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		m.Expr = strings.Join(d.RemainingArgs(), " ")
+		if d.CountRemainingArgs() > 1 {
+			m.Expr = strings.Join(d.RawRemainingArgs(), " ")
+		} else {
+			m.Expr = d.Val()
+		}
 	}
 	return nil
 }

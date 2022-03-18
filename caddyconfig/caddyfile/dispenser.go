@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -201,6 +202,43 @@ func (d *Dispenser) Val() string {
 	return d.tokens[d.cursor].Text
 }
 
+// RawVal gets the raw text of the current token (including quotes).
+// If there is no token loaded, it returns empty string.
+func (d *Dispenser) RawVal() string {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return ""
+	}
+	quote := d.tokens[d.cursor].wasQuoted
+	if quote > 0 {
+		return string(quote) + d.tokens[d.cursor].Text + string(quote)
+	}
+	return d.tokens[d.cursor].Text
+}
+
+// ScalarVal gets value of the current token, converted to the
+// appropriate scalar type. If there is no token loaded, it returns nil.
+func (d *Dispenser) ScalarVal() interface{} {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return nil
+	}
+	quote := d.tokens[d.cursor].wasQuoted
+	text := d.tokens[d.cursor].Text
+
+	if quote > 0 {
+		return text
+	}
+	if num, err := strconv.Atoi(text); err == nil {
+		return num
+	}
+	if num, err := strconv.ParseFloat(text, 64); err == nil {
+		return num
+	}
+	if bool, err := strconv.ParseBool(text); err == nil {
+		return bool
+	}
+	return text
+}
+
 // Line gets the line number of the current token.
 // If there is no token loaded, it returns 0.
 func (d *Dispenser) Line() int {
@@ -249,6 +287,19 @@ func (d *Dispenser) AllArgs(targets ...*string) bool {
 	return true
 }
 
+// CountRemainingArgs counts the amount of remaining arguments
+// (tokens on the same line) without consuming the tokens.
+func (d *Dispenser) CountRemainingArgs() int {
+	count := 0
+	for d.NextArg() {
+		count++
+	}
+	for i := 0; i < count; i++ {
+		d.Prev()
+	}
+	return count
+}
+
 // RemainingArgs loads any more arguments (tokens on the same line)
 // into a slice and returns them. Open curly brace tokens also indicate
 // the end of arguments, and the curly brace is not included in
@@ -257,6 +308,18 @@ func (d *Dispenser) RemainingArgs() []string {
 	var args []string
 	for d.NextArg() {
 		args = append(args, d.Val())
+	}
+	return args
+}
+
+// RawRemainingArgs loads any more arguments (tokens on the same line,
+// retaining quotes) into a slice and returns them. Open curly brace
+// tokens also indicate the end of arguments, and the curly brace is
+// not included in the return value nor is it loaded.
+func (d *Dispenser) RawRemainingArgs() []string {
+	var args []string
+	for d.NextArg() {
+		args = append(args, d.RawVal())
 	}
 	return args
 }
