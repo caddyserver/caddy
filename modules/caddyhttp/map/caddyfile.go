@@ -15,7 +15,6 @@
 package maphandler
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -75,11 +74,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			// every other line maps one input to one or more outputs
 			in := h.Val()
 			var outs []interface{}
-			for _, out := range h.RemainingArgs() {
-				if out == "-" {
+			for h.NextArg() {
+				val := h.ScalarVal()
+				if val == "-" {
 					outs = append(outs, nil)
 				} else {
-					outs = append(outs, specificType(out))
+					outs = append(outs, val)
 				}
 			}
 
@@ -107,17 +107,4 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 
 	return handler, nil
-}
-
-func specificType(v string) interface{} {
-	if num, err := strconv.Atoi(v); err == nil {
-		return num
-	}
-	if num, err := strconv.ParseFloat(v, 64); err == nil {
-		return num
-	}
-	if bool, err := strconv.ParseBool(v); err == nil {
-		return bool
-	}
-	return v
 }
