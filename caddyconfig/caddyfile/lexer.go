@@ -38,7 +38,7 @@ type (
 		File        string
 		Line        int
 		Text        string
-		wasQuoted   rune
+		wasQuoted   rune // enclosing quote character, if any
 		inSnippet   bool
 		snippetName string
 	}
@@ -89,7 +89,7 @@ func (l *lexer) next() bool {
 		ch, _, err := l.reader.ReadRune()
 		if err != nil {
 			if len(val) > 0 {
-				return makeToken(-1)
+				return makeToken(0)
 			}
 			if err == io.EOF {
 				return false
@@ -141,7 +141,7 @@ func (l *lexer) next() bool {
 				comment = false
 			}
 			if len(val) > 0 {
-				return makeToken(-1)
+				return makeToken(0)
 			}
 			continue
 		}

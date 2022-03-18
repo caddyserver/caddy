@@ -210,13 +210,13 @@ func (d *Dispenser) RawVal() string {
 	}
 	quote := d.tokens[d.cursor].wasQuoted
 	if quote > 0 {
-		return string(quote) + d.tokens[d.cursor].Text + string(quote)
+		return string(quote) + d.tokens[d.cursor].Text + string(quote) // string literal
 	}
 	return d.tokens[d.cursor].Text
 }
 
-// ScalarVal gets value of the current token, converted to the
-// appropriate scalar type. If there is no token loaded, it returns nil.
+// ScalarVal gets value of the current token, converted to the closest
+// scalar type. If there is no token loaded, it returns nil.
 func (d *Dispenser) ScalarVal() interface{} {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return nil
@@ -225,7 +225,7 @@ func (d *Dispenser) ScalarVal() interface{} {
 	text := d.tokens[d.cursor].Text
 
 	if quote > 0 {
-		return text
+		return text // string literal
 	}
 	if num, err := strconv.Atoi(text); err == nil {
 		return num
@@ -312,11 +312,11 @@ func (d *Dispenser) RemainingArgs() []string {
 	return args
 }
 
-// RawRemainingArgs loads any more arguments (tokens on the same line,
+// RemainingArgsRaw loads any more arguments (tokens on the same line,
 // retaining quotes) into a slice and returns them. Open curly brace
 // tokens also indicate the end of arguments, and the curly brace is
 // not included in the return value nor is it loaded.
-func (d *Dispenser) RawRemainingArgs() []string {
+func (d *Dispenser) RemainingArgsRaw() []string {
 	var args []string
 	for d.NextArg() {
 		args = append(args, d.RawVal())
