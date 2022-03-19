@@ -200,11 +200,11 @@ func (m MatchVarsRE) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchVarsRE) Match(r *http.Request) bool {
-	vars := r.Context().Value(VarsCtxKey).(*Vars)
+	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, rm := range m {
 		var varStr string
-		switch vv := vars.VarMap[k].(type) {
+		switch vv := vars[k].(type) {
 		case string:
 			varStr = vv
 		case fmt.Stringer:
@@ -238,56 +238,25 @@ func (m MatchVarsRE) Validate() error {
 	return nil
 }
 
-// Vars is structure representing variables stored
-// in a context (usually a request context), with two
-// commonly used variables represented as fields
-// in order to speed up access for them.
-type Vars struct {
-	StartTime interface{}
-	UUID      interface{}
-	VarMap    map[string]interface{}
-}
-
-// NewVars creates a new variable store
-func NewVars() *Vars {
-	return &Vars{
-		VarMap: make(map[string]interface{}, 8),
-	}
-}
-
 // GetVar gets a value out of the context's variable table by key.
 // If the key does not exist, the return value will be nil.
 func GetVar(ctx context.Context, key string) interface{} {
-	vars, ok := ctx.Value(VarsCtxKey).(*Vars)
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
 	if !ok {
 		return nil
 	}
-	switch key {
-	case "start_time":
-		return vars.StartTime
-	case "uuid":
-		return vars.UUID
-	default:
-		return vars.VarMap[key]
-	}
+	return varMap[key]
 }
 
 // SetVar sets a value in the context's variable table with
 // the given key. It overwrites any previous value with the
 // same key.
 func SetVar(ctx context.Context, key string, value interface{}) {
-	vars, ok := ctx.Value(VarsCtxKey).(*Vars)
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
 	if !ok {
 		return
 	}
-	switch key {
-	case "start_time":
-		vars.StartTime = value
-	case "uuid":
-		vars.UUID = value
-	default:
-		vars.VarMap[key] = value
-	}
+	varMap[key] = value
 }
 
 // Interface guards
