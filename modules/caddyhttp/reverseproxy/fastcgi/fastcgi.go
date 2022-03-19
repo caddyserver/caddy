@@ -247,7 +247,7 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	// original URI in as the value of REQUEST_URI (the user can overwrite this
 	// if desired). Most PHP apps seem to want the original URI. Besides, this is
 	// how nginx defaults: http://stackoverflow.com/a/12485156/1048862
-	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(*http.Request)
 
 	requestScheme := "http"
 	if r.TLS != nil {

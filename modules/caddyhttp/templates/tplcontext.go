@@ -81,8 +81,8 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 
 // OriginalReq returns the original, unmodified, un-rewritten request as
 // it originally came in over the wire.
-func (c TemplateContext) OriginalReq() http.Request {
-	or, _ := c.Req.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+func (c TemplateContext) OriginalReq() *http.Request {
+	or, _ := c.Req.Context().Value(caddyhttp.OriginalRequestCtxKey).(*http.Request)
 	return or
 }
 
@@ -91,13 +91,11 @@ func (c TemplateContext) OriginalReq() http.Request {
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
 func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
-
 	bodyBuf := bufPool.Get().(*bytes.Buffer)
 	bodyBuf.Reset()
 	defer bufPool.Put(bodyBuf)
 
 	err := c.readFileToBuffer(filename, bodyBuf)
-
 	if err != nil {
 		return "", err
 	}
@@ -186,7 +184,6 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 // {{ template }} from the standard template library. If the imported file has
 // no {{ define }} blocks, the name of the import will be the path
 func (c *TemplateContext) funcImport(filename string) (string, error) {
-
 	bodyBuf := bufPool.Get().(*bytes.Buffer)
 	bodyBuf.Reset()
 	defer bufPool.Put(bodyBuf)

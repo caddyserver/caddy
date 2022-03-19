@@ -235,7 +235,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// restore original request before invoking error handler chain (issue #3717)
 	// TODO: this does not restore original headers, if modified (for efficiency)
-	origReq := r.Context().Value(OriginalRequestCtxKey).(http.Request)
+	origReq := r.Context().Value(OriginalRequestCtxKey).(*http.Request)
 	r.Method = origReq.Method
 	r.RemoteAddr = origReq.RemoteAddr
 	r.RequestURI = origReq.RequestURI
@@ -579,21 +579,18 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
-	// set up the context for the request
+	// Set up the request context and create a shallow copy containing it
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+	ctx = context.WithValue(ctx, OriginalRequestCtxKey, r)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	// the 8's are used here since if map size hint is <=8, go uses runtime.makemap_small
-	// which is significantly faster than the default runtime.makemap
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}, 8))
-	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}, 8))
-	var url2 url.URL // avoid letting this escape to the heap
-	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
+	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, repl)
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
 	// anymore, finish setting up the replacer
 	addHTTPVarsToReplacer(repl, r, w)
-
 	return r
 }
 
@@ -619,23 +616,6 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 	status = http.StatusInternalServerError
 	msg = err.Error()
 	return
-}
-
-// originalRequest returns a partial, shallow copy of
-// req, including: req.Method, deep copy of req.URL
-// (into the urlCopy parameter, which should be on the
-// stack), req.RequestURI, and req.RemoteAddr. Notably,
-// headers are not copied. This function is designed to
-// be very fast and efficient, and useful primarily for
-// read-only/logging purposes.
-func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
-	cloneURL(req.URL, urlCopy)
-	return http.Request{
-		Method:     req.Method,
-		RemoteAddr: req.RemoteAddr,
-		RequestURI: req.RequestURI,
-		URL:        urlCopy,
-	}
 }
 
 // cloneURL makes a copy of r.URL and returns a

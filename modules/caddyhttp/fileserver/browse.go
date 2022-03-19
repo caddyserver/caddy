@@ -63,7 +63,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	// We also redirect if the path is empty, because this implies the path
 	// prefix was fully stripped away by a `handle_path` handler for example.
 	// See https://github.com/caddyserver/caddy/issues/4466.
-	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(*http.Request)
 	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
 			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
@@ -111,7 +111,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
 		}
 
-		var tplCtx = &templateContext{
+		tplCtx := &templateContext{
 			TemplateContext: templates.TemplateContext{
 				Root:       fs,
 				Req:        r,

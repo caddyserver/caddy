@@ -261,7 +261,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// would have, and we have to be very careful not to introduce unwanted
 		// redirects and especially redirect loops!
 		// See https://github.com/caddyserver/caddy/issues/4205.
-		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(*http.Request)
 		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
 				to := origReq.URL.Path + "/"
