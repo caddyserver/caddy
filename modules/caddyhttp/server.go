@@ -582,8 +582,10 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}, 4))
-	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}, 4))
+	// the 8's are used here since if map size hint is <=8, go uses runtime.makemap_small
+	// which is significantly faster than the default runtime.makemap
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}, 8))
+	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}, 8))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
