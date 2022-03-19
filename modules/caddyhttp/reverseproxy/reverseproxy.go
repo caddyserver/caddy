@@ -1079,7 +1079,7 @@ func cloneRequest(origReq *http.Request) *http.Request {
 func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
-			dst.Add(k, v)
+			dst[k] = append(dst[k], v)
 		}
 	}
 }
