@@ -130,7 +130,8 @@ func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) 
 
 func (r *Replacer) replace(input, empty string,
 	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
-	f ReplacementFunc) (string, error) {
+	f ReplacementFunc,
+) (string, error) {
 	if !strings.Contains(input, string(phOpen)) {
 		return input, nil
 	}
@@ -322,7 +323,9 @@ type ReplacementFunc func(variable string, val interface{}) (interface{}, error)
 // in order to obtain a deterministic time.
 var nowFunc = time.Now
 
+type replacerCtxKeyT int32
+
 // ReplacerCtxKey is the context key for a replacer.
-const ReplacerCtxKey CtxKey = "replacer"
+const ReplacerCtxKey = replacerCtxKeyT(0)
 
 const phOpen, phClose, phEscape = '{', '}', '\\'

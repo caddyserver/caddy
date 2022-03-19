@@ -21,8 +21,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
@@ -112,6 +110,8 @@ func trace() string {
 	return ""
 }
 
+type errorCtxKeyT int32
+
 // ErrorCtxKey is the context key to use when storing
 // an error (for use with context.Context).
-const ErrorCtxKey = caddy.CtxKey("handler_chain_error")
+const ErrorCtxKey = errorCtxKeyT(0)

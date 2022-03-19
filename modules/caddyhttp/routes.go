@@ -327,4 +327,6 @@ func (ms *MatcherSets) FromInterface(matcherSets interface{}) error {
 	return nil
 }
 
-var routeGroupCtxKey = caddy.CtxKey("route_group")
+type routeGroupCtxKeyT int32
+
+const routeGroupCtxKey = routeGroupCtxKeyT(0)

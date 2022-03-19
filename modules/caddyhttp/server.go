@@ -582,8 +582,8 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
-	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}, 4))
+	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}, 4))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
@@ -647,15 +647,21 @@ func cloneURL(from, to *url.URL) {
 	}
 }
 
+type (
+	serverCtxKeyT          int32
+	varsCtxKeyT            int32
+	originalRequestCtxKeyT int32
+)
+
 // Context keys for HTTP request context values.
 const (
 	// For referencing the server instance
-	ServerCtxKey caddy.CtxKey = "server"
+	ServerCtxKey = serverCtxKeyT(0)
 
 	// For the request's variable table
-	VarsCtxKey caddy.CtxKey = "vars"
+	VarsCtxKey = varsCtxKeyT(0)
 
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
-	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+	OriginalRequestCtxKey = originalRequestCtxKeyT(0)
 )
