@@ -3,19 +3,19 @@ package caddycmd
 import (
 	"os"
 
-	"github.com/muesli/coral"
-	"github.com/muesli/coral/doc"
+	"github.com/spf13/cobra"
+	"github.com/spf13/cobra/doc"
 )
 
-var rootCmd = &coral.Command{
+var rootCmd = &cobra.Command{
 	Use: "caddy",
 }
 
 // TODO: figure out the correct directory
-var manpageCmd = &coral.Command{
+var manpageCmd = &cobra.Command{
 	Use:   "manpage",
 	Short: "Generate the man pages",
-	RunE: func(_ *coral.Command, _ []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return doc.GenManTree(rootCmd, &doc.GenManHeader{
 			Title:   "Caddy",
 			Section: "1",
@@ -40,12 +40,12 @@ func Execute() {
 	}
 }
 
-func caddyCmdToCoral(caddyCmd Command) *coral.Command {
-	cmd := &coral.Command{
+func caddyCmdToCoral(caddyCmd Command) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   caddyCmd.Name,
 		Short: caddyCmd.Short,
 		Long:  caddyCmd.Long,
-		RunE: func(cmd *coral.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			fls := cmd.Flags()
 			_, err := caddyCmd.Func(Flags{fls})
 			return err
