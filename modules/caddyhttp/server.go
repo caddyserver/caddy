@@ -580,11 +580,15 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
 	// Set up the request context and create a shallow copy containing it
-	ctx := context.WithValue(r.Context(), VarsCtxKey, make(map[string]interface{}))
-	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
-	ctx = context.WithValue(ctx, OriginalRequestCtxKey, r)
-	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, repl)
+	ctx := &mapContext{
+		Context: r.Context(),
+		values: []contextEntry{
+			{caddy.ReplacerCtxKey, repl},
+			{ServerCtxKey, s},
+			{OriginalRequestCtxKey, r},
+			{VarsCtxKey, make(map[string]interface{})},
+		},
+	}
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change

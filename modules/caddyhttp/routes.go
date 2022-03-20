@@ -215,7 +215,13 @@ func wrapRoute(route Route) Middleware {
 			// if route is part of a group, ensure only the
 			// first matching route in the group is applied
 			if route.Group != "" {
-				groups := req.Context().Value(routeGroupCtxKey).(map[string]struct{})
+				var groups map[string]struct{}
+				if g, ok := req.Context().Value(routeGroupCtxKey).(map[string]struct{}); ok {
+					groups = g
+				} else {
+					groups = make(map[string]struct{})
+					mapContextSetValues(req.Context(), contextEntry{routeGroupCtxKey, groups})
+				}
 
 				if _, ok := groups[route.Group]; ok {
 					// this group has already been
@@ -327,6 +333,6 @@ func (ms *MatcherSets) FromInterface(matcherSets interface{}) error {
 	return nil
 }
 
-type routeGroupCtxKeyT int32
+type routeGroupCtxKeyT struct{}
 
-const routeGroupCtxKey = routeGroupCtxKeyT(0)
+var routeGroupCtxKey = routeGroupCtxKeyT{}
