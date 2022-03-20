@@ -29,10 +29,9 @@ func NewReplacer() *Replacer {
 	rep := &Replacer{
 		static: make(map[string]interface{}),
 	}
-	rep.providers = []ReplacerFunc{
-		globalDefaultReplacements,
-		rep.fromStatic,
-	}
+	rep.providers = make([]ReplacerFunc, 2, 4)
+	rep.providers[0] = globalDefaultReplacements
+	rep.providers[1] = rep.fromStatic
 	return rep
 }
 
@@ -42,9 +41,8 @@ func NewEmptyReplacer() *Replacer {
 	rep := &Replacer{
 		static: make(map[string]interface{}),
 	}
-	rep.providers = []ReplacerFunc{
-		rep.fromStatic,
-	}
+	rep.providers = make([]ReplacerFunc, 1, 4)
+	rep.providers[0] = rep.fromStatic
 	return rep
 }
 

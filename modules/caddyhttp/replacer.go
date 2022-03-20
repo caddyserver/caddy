@@ -55,7 +55,6 @@ func NewTestReplacer(req *http.Request) *caddy.Replacer {
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	SetVar(req.Context(), "start_time", time.Now())
-	SetVar(req.Context(), "uuid", new(requestID))
 
 	httpVars := func(key string) (interface{}, bool) {
 		if req != nil {
@@ -149,8 +148,14 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				start := GetVar(req.Context(), "start_time").(time.Time)
 				return time.Since(start), true
 			case "http.request.uuid":
-				id := GetVar(req.Context(), "uuid").(*requestID)
-				return id.String(), true
+				var uuid *requestID
+				if id, ok := GetVar(req.Context(), "uuid").(*requestID); ok {
+					uuid = id
+				} else {
+					uuid = new(requestID)
+					SetVar(req.Context(), "uuid", uuid)
+				}
+				return uuid.String(), true
 			case "http.request.body":
 				if req.Body == nil {
 					return "", true
