@@ -13,13 +13,17 @@ import (
 // by a single goroutine/worker.
 type RequestContext struct {
 	context.Context
+	// We store the map as a slice to use less space
+	// (storing structs of key,value has an overhead of 16 bytes/pair,
+	//  and storing a map[] has an even bigger overhead)
+	// and speed up the allocation of a RequestContext (again due to the size)
 	values []interface{}
 }
 
 // GetValue looks up a value specifically in this RequestContext,
 // without looking it up in the parent context if not found.
 // This should usually only be used on the known context keys:
-// ReplacerCtxKey, ServerCtxKey, OriginalRequestCtxKey, VarsCtxKey.
+// ReplacerCtxKey, ServerCtxKey, OriginalRequestCtxKey, VarsCtxKey, ErrorCtxKey.
 func (c *RequestContext) GetValue(key interface{}) interface{} {
 	for i := 0; i < len(c.values); i += 2 {
 		if c.values[i] == key {

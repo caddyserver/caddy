@@ -580,7 +580,10 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// Set up the request context and create a shallow copy containing it
 	ctx := &RequestContext{
 		Context: r.Context(),
-		values:  make([]interface{}, 0, 8),
+		// We need 4 straight away, and we might get ErrorCtxKey as well as routeGroupCtxKey
+		// stored in here, so a minimum of 6 is needed to avoid most of the allocations (during a resize).
+		// We can add 2 extra since this will probably be padded out anyways.
+		values: make([]interface{}, 0, 8),
 	}
 	ctx.values = append(ctx.values,
 		caddy.ReplacerCtxKey, repl,
