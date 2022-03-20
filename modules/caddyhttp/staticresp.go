@@ -139,7 +139,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 	// get the status code; if this handler exists in an error route,
 	// use the recommended status code as the default; otherwise 200
 	statusCode := http.StatusOK
-	if reqErr, ok := r.Context().Value(ErrorCtxKey).(error); ok {
+	if reqErr, ok := RequestContextValue(r, ErrorCtxKey).(error); ok {
 		if handlerErr, ok := reqErr.(HandlerError); ok {
 			if handlerErr.StatusCode > 0 {
 				statusCode = handlerErr.StatusCode

@@ -216,11 +216,11 @@ func wrapRoute(route Route) Middleware {
 			// first matching route in the group is applied
 			if route.Group != "" {
 				var groups map[string]struct{}
-				if g, ok := req.Context().Value(routeGroupCtxKey).(map[string]struct{}); ok {
+				if g, ok := RequestContextValue(req, routeGroupCtxKey).(map[string]struct{}); ok {
 					groups = g
 				} else {
 					groups = make(map[string]struct{})
-					mapContextSetValues(req.Context(), contextEntry{routeGroupCtxKey, groups})
+					RequestContextSetValue(req, routeGroupCtxKey, groups)
 				}
 
 				if _, ok := groups[route.Group]; ok {
@@ -235,7 +235,7 @@ func wrapRoute(route Route) Middleware {
 
 			// make terminal routes terminate
 			if route.Terminal {
-				if _, ok := req.Context().Value(ErrorCtxKey).(error); ok {
+				if _, ok := RequestContextValue(req, ErrorCtxKey).(error); ok {
 					nextCopy = errorEmptyHandler
 				} else {
 					nextCopy = emptyHandler

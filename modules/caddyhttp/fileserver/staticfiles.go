@@ -347,7 +347,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// handler chain that is supposed to handle a previous error),
 	// we should set status code to the one from the error instead
 	// of letting http.ServeContent set the default (usually 200)
-	if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
+	if reqErr, ok := caddyhttp.RequestContextValue(r, caddyhttp.ErrorCtxKey).(error); ok {
 		statusCodeOverride = http.StatusInternalServerError
 		if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
 			if handlerErr.StatusCode > 0 {

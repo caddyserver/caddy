@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -461,8 +460,7 @@ type HTTPErrorConfig struct {
 func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	// add the raw error value to the request context
 	// so it can be accessed by error handlers
-	c := context.WithValue(r.Context(), ErrorCtxKey, err)
-	r = r.WithContext(c)
+	RequestContextSetValue(r, ErrorCtxKey, err)
 
 	// add error values to the replacer
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -580,15 +578,16 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
 	// Set up the request context and create a shallow copy containing it
-	ctx := &mapContext{
+	ctx := &RequestContext{
 		Context: r.Context(),
-		values: []contextEntry{
-			{caddy.ReplacerCtxKey, repl},
-			{ServerCtxKey, s},
-			{OriginalRequestCtxKey, r},
-			{VarsCtxKey, make(map[string]interface{})},
-		},
+		values:  make([]interface{}, 0, 8),
 	}
+	ctx.values = append(ctx.values,
+		caddy.ReplacerCtxKey, repl,
+		ServerCtxKey, s,
+		VarsCtxKey, make(map[string]interface{}),
+		OriginalRequestCtxKey, r,
+	)
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
