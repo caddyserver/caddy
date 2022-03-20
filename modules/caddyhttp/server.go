@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -139,6 +140,37 @@ type Server struct {
 	h3server *http3.Server
 }
 
+var requestContextPool = sync.Pool{
+	New: func() interface{} {
+		rctx := &RequestContext{
+			// We need 4 straight away for PrepareRequest, and we might get ErrorCtxKey as well as routeGroupCtxKey
+			// stored in here, so a minimum of 6 is needed to avoid most of the allocations (during an append).
+			values: make([]contextEntry, 0, 6),
+		}
+		rctx.values = append(rctx.values,
+			contextEntry{caddy.ReplacerCtxKey, nil},
+			contextEntry{ServerCtxKey, nil},
+			contextEntry{VarsCtxKey, make(map[string]interface{})},
+			contextEntry{OriginalRequestCtxKey, nil},
+		)
+		return rctx
+	},
+}
+
+// Reset the RequestContext, keeping the capacity of the values
+func putBackRequestContext(rctx *RequestContext) {
+	rctx.Context = nil
+	rctx.values = rctx.values[:4]
+	rctx.values[0].value = nil
+	rctx.values[1].value = nil
+	rctx.values[3].value = nil
+	varMap := rctx.values[2].value.(map[string]interface{})
+	for key := range varMap {
+		delete(varMap, key)
+	}
+	requestContextPool.Put(rctx)
+}
+
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
@@ -161,8 +193,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rctx := requestContextPool.Get().(*RequestContext)
+	defer putBackRequestContext(rctx)
 	repl := caddy.NewReplacer()
-	r = PrepareRequest(r, repl, w, s)
+	r = PrepareRequest(r, rctx, repl, w, s)
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary
@@ -576,22 +610,14 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
-func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
+func PrepareRequest(r *http.Request, rctx *RequestContext, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
 	// Set up the request context and create a shallow copy containing it
-	ctx := &RequestContext{
-		Context: r.Context(),
-		// We need 4 straight away, and we might get ErrorCtxKey as well as routeGroupCtxKey
-		// stored in here, so a minimum of 6 is needed to avoid most of the allocations (during a resize).
-		// We can add 2 extra since this will probably be padded out anyways.
-		values: make([]interface{}, 0, 8),
-	}
-	ctx.values = append(ctx.values,
-		caddy.ReplacerCtxKey, repl,
-		ServerCtxKey, s,
-		VarsCtxKey, make(map[string]interface{}),
-		OriginalRequestCtxKey, r,
-	)
-	r = r.WithContext(ctx)
+	// The order of values here, in requestContextPool.New and putBackRequestContext needs to be the same!
+	rctx.Context = r.Context()
+	rctx.values[0].value = repl // caddy.ReplacerCtxKey
+	rctx.values[1].value = s    // ServerCtxKey
+	rctx.values[3].value = r    // OriginalRequestCtxKey
+	r = r.WithContext(rctx)
 
 	// once the pointer to the request won't change
 	// anymore, finish setting up the replacer

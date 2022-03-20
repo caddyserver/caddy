@@ -5,6 +5,10 @@ import (
 	"net/http"
 )
 
+type contextEntry struct {
+	key, value interface{}
+}
+
 // RequestContext is a fast context.Context implementation
 // which allows for fast lookups and stores in the context of
 // an http.Request. It is not safe to be setting and getting
@@ -13,11 +17,7 @@ import (
 // by a single goroutine/worker.
 type RequestContext struct {
 	context.Context
-	// We store the map as a slice to use less space
-	// (storing structs of key,value has an overhead of 16 bytes/pair,
-	//  and storing a map[] has an even bigger overhead)
-	// and speed up the allocation of a RequestContext (again due to the size)
-	values []interface{}
+	values []contextEntry
 }
 
 // GetValue looks up a value specifically in this RequestContext,
@@ -25,9 +25,9 @@ type RequestContext struct {
 // This should usually only be used on the known context keys:
 // ReplacerCtxKey, ServerCtxKey, OriginalRequestCtxKey, VarsCtxKey, ErrorCtxKey.
 func (c *RequestContext) GetValue(key interface{}) interface{} {
-	for i := 0; i < len(c.values); i += 2 {
-		if c.values[i] == key {
-			return c.values[i+1]
+	for _, entry := range c.values {
+		if entry.key == key {
+			return entry.value
 		}
 	}
 	if key == requestContextKey {
@@ -38,7 +38,7 @@ func (c *RequestContext) GetValue(key interface{}) interface{} {
 
 // SetValue sets a value in the fast RequestContext map.
 func (c *RequestContext) SetValue(key interface{}, value interface{}) {
-	c.values = append(c.values, key, value)
+	c.values = append(c.values, contextEntry{key, value})
 }
 
 // Value looks up a value by key stored in the context.
