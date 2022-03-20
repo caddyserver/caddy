@@ -14,13 +14,13 @@ type mapContext struct {
 }
 
 func (c *mapContext) Value(key interface{}) interface{} {
-	if key == mapContextKey {
-		return c
-	}
 	for i, v := range c.values {
 		if v.k == key {
 			return c.values[i].v
 		}
+	}
+	if key == mapContextKey {
+		return c
 	}
 	return c.Context.Value(key)
 }
