@@ -145,6 +145,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 				return string(result), true
 			}
 			if input == m.Input {
+				if outputStr, ok := output.(string); ok {
+					// NOTE: if the output has a placeholder that has the same key as the input, this is infinite recursion
+					return repl.ReplaceAll(outputStr, ""), true
+				}
 				return output, true
 			}
 		}
