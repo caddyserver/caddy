@@ -186,7 +186,6 @@ func (su SRVUpstreams) expandedAddr(r *http.Request) (addr, service, proto, name
 	name = repl.ReplaceAll(su.Name, "")
 	if su.Service == "" && su.Proto == "" {
 		addr = name
-		name = ""
 		return
 	}
 	service = repl.ReplaceAll(su.Service, "")
