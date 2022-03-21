@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -56,7 +55,6 @@ func TestMatchExpressionProvision(t *testing.T) {
 }
 
 func TestMatchExpressionMatch(t *testing.T) {
-
 	clientCert := []byte(`-----BEGIN CERTIFICATE-----
 MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
 eSBUZXN0IENBMB4XDTE4MDcyNDIxMzUwNVoXDTI4MDcyMTIxMzUwNVowHTEbMBkG
@@ -95,9 +93,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 
 			req := httptest.NewRequest("GET", "https://example.com/foo", nil)
 			repl := caddy.NewReplacer()
-			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-			req = req.WithContext(ctx)
-			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+			req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 			if tt.clientCertificate != nil {
 				block, _ := pem.Decode(clientCert)
@@ -118,7 +114,6 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			if tt.expression.Match(req) != tt.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tt.wantResult, tt.expression)
 			}
-
 		})
 	}
 }

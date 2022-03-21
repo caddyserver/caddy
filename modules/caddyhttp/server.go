@@ -193,10 +193,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rctx := requestContextPool.Get().(*RequestContext)
-	defer putBackRequestContext(rctx)
 	repl := caddy.NewReplacer()
-	r = PrepareRequest(r, rctx, repl, w, s)
+	var rctx *RequestContext
+	r, rctx = PrepareRequest(r, repl, w, s)
+	defer putBackRequestContext(rctx)
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary
@@ -610,9 +610,15 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
-func PrepareRequest(r *http.Request, rctx *RequestContext, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
+// Along with the new request it returns the RequestContext stored inside so that
+// the caller may set additional context values if needed, which should be preferred
+// over context.WithValue and r.WithContext which would be slower and result in more allocations.
+func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) (
+	*http.Request, *RequestContext,
+) {
 	// Set up the request context and create a shallow copy containing it
 	// The order of values here, in requestContextPool.New and putBackRequestContext needs to be the same!
+	rctx := requestContextPool.Get().(*RequestContext)
 	rctx.Context = r.Context()
 	rctx.values[0].value = repl // caddy.ReplacerCtxKey
 	rctx.values[1].value = s    // ServerCtxKey
@@ -622,7 +628,7 @@ func PrepareRequest(r *http.Request, rctx *RequestContext, repl *caddy.Replacer,
 	// once the pointer to the request won't change
 	// anymore, finish setting up the replacer
 	addHTTPVarsToReplacer(repl, r, w)
-	return r
+	return r, rctx
 }
 
 // errLogValues inspects err and returns the status code

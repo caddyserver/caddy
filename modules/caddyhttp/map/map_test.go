@@ -1,7 +1,6 @@
 package maphandler
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -92,10 +91,9 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("Test %d: Creating request: %v", i, err)
 		}
 		repl := caddyhttp.NewTestReplacer(req)
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
-
 		rr := httptest.NewRecorder()
+		req, _ = caddyhttp.PrepareRequest(req, repl, rr, nil)
+
 		noop := caddyhttp.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) error { return nil })
 
 		if err := tc.handler.ServeHTTP(rr, req, noop); err != nil {

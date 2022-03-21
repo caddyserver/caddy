@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -29,8 +28,6 @@ import (
 func TestHTTPVarReplacement(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/", nil)
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
 	req.Host = "example.com:80"
 	req.RemoteAddr = "localhost:1234"
 
@@ -69,7 +66,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	}
 
 	res := httptest.NewRecorder()
-	addHTTPVarsToReplacer(repl, req, res)
+	_, _ = PrepareRequest(req, repl, res, nil)
 
 	for i, tc := range []struct {
 		input  string

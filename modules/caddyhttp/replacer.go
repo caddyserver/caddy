@@ -16,7 +16,6 @@ package caddyhttp
 
 import (
 	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -47,9 +46,8 @@ import (
 // for use in tests that are not in this package
 func NewTestReplacer(req *http.Request) *caddy.Replacer {
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	*req = *req.WithContext(ctx)
-	addHTTPVarsToReplacer(repl, req, nil)
+	preq, _ := PrepareRequest(req, repl, nil, nil)
+	*req = *preq
 	return repl
 }
 

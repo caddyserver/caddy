@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +59,6 @@ func TestStaticResponseHandler(t *testing.T) {
 func fakeRequest() *http.Request {
 	r, _ := http.NewRequest("GET", "/", nil)
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
-	r = r.WithContext(ctx)
+	r, _ = PrepareRequest(r, repl, httptest.NewRecorder(), nil)
 	return r
 }

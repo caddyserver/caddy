@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -145,8 +144,7 @@ func TestHostMatcher(t *testing.T) {
 	} {
 		req := &http.Request{Host: tc.input}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -295,8 +293,7 @@ func TestPathMatcher(t *testing.T) {
 	} {
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -313,8 +310,7 @@ func TestPathMatcherWindows(t *testing.T) {
 
 	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
+	req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 	match := MatchPath{"*.php"}
 	matched := match.Match(req)
@@ -403,9 +399,7 @@ func TestPathREMatcher(t *testing.T) {
 		// set up the fake request and its Replacer
 		req := &http.Request{URL: &url.URL{Path: tc.input}}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
-		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -540,8 +534,7 @@ func TestHeaderMatcher(t *testing.T) {
 		},
 	} {
 		req := &http.Request{Header: tc.input, Host: tc.host}
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -630,10 +623,9 @@ func TestQueryMatcher(t *testing.T) {
 
 		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 		repl.Set("http.vars.debug", "1")
 		repl.Set("http.vars.key", "somekey")
-		req = req.WithContext(ctx)
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
@@ -699,9 +691,7 @@ func TestHeaderREMatcher(t *testing.T) {
 		// set up the fake request and its Replacer
 		req := &http.Request{Header: tc.input, URL: new(url.URL), Host: tc.host}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
-		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -723,7 +713,6 @@ func TestHeaderREMatcher(t *testing.T) {
 }
 
 func BenchmarkHeaderREMatcher(b *testing.B) {
-
 	i := 0
 	match := MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}}
 	input := http.Header{"Field": []string{"foobar"}}
@@ -740,9 +729,7 @@ func BenchmarkHeaderREMatcher(b *testing.B) {
 	// set up the fake request and its Replacer
 	req := &http.Request{Header: input, URL: new(url.URL), Host: host}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
-	addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+	req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 	for run := 0; run < b.N; run++ {
 		match.Match(req)
 	}
@@ -806,13 +793,10 @@ func TestVarREMatcher(t *testing.T) {
 			// set up the fake request and its Replacer
 			req := &http.Request{URL: new(url.URL), Method: http.MethodGet}
 			repl := caddy.NewReplacer()
-			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-			ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
-			req = req.WithContext(ctx)
+			rec := httptest.NewRecorder()
+			req, _ = PrepareRequest(req, repl, rec, nil)
 
-			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
-
-			tc.input.ServeHTTP(httptest.NewRecorder(), req, emptyHandler)
+			tc.input.ServeHTTP(rec, req, emptyHandler)
 
 			actual := tc.match.Match(req)
 			if actual != tc.expect {
@@ -936,8 +920,7 @@ func TestNotMatcher(t *testing.T) {
 	} {
 		req := &http.Request{Host: tc.host, URL: &url.URL{Path: tc.path}}
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
+		req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
@@ -946,6 +929,7 @@ func TestNotMatcher(t *testing.T) {
 		}
 	}
 }
+
 func BenchmarkLargeHostMatcher(b *testing.B) {
 	// this benchmark simulates a large host matcher (thousands of entries) where each
 	// value is an exact hostname (not a placeholder or wildcard) - compare the results
@@ -956,8 +940,7 @@ func BenchmarkLargeHostMatcher(b *testing.B) {
 	lastHost := fmt.Sprintf("%d.example.com", n-1)
 	req := &http.Request{Host: lastHost}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
+	req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 	matcher := make(MatchHost, n)
 	for i := 0; i < n; i++ {
@@ -977,8 +960,7 @@ func BenchmarkLargeHostMatcher(b *testing.B) {
 func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
 	req := &http.Request{Host: "localhost"}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
+	req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 
 	match := MatchHost{"localhost"}
 
@@ -996,8 +978,7 @@ func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 
 	req := &http.Request{Host: "localhost"}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
+	req, _ = PrepareRequest(req, repl, httptest.NewRecorder(), nil)
 	match := MatchHost{"{env.GO_BENCHMARK_DOMAIN}"}
 
 	b.ResetTimer()

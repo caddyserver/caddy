@@ -15,7 +15,6 @@
 package headers
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -183,12 +182,10 @@ func TestHandler(t *testing.T) {
 			},
 		},
 	} {
-		rr := httptest.NewRecorder()
-
 		req := &http.Request{Header: tc.reqHeader}
+		rr := httptest.NewRecorder()
 		repl := caddy.NewReplacer()
-		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-		req = req.WithContext(ctx)
+		req, _ = caddyhttp.PrepareRequest(req, repl, rr, nil)
 
 		tc.handler.Provision(caddy.Context{})
 
