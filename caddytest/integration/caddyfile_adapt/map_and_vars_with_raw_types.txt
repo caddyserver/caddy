@@ -19,6 +19,14 @@ map {host}             {my_placeholder}  {magic_number} {
 	# Should output two strings, second being escaped quote
 	default            "unknown domain"  \"""
 }
+
+vars foo bar
+vars {
+	abc true
+	def 1
+	ghi 2.3
+	jkl "mn op"
+}
 ----------
 {
 	"apps": {
@@ -91,6 +99,17 @@ map {host}             {my_placeholder}  {magic_number} {
 														}
 													],
 													"source": "{http.request.host}"
+												},
+												{
+													"foo": "bar",
+													"handler": "vars"
+												},
+												{
+													"abc": true,
+													"def": 1,
+													"ghi": 2.3,
+													"handler": "vars",
+													"jkl": "mn op"
 												}
 											]
 										}

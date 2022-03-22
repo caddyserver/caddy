@@ -40,6 +40,7 @@ var directiveOrder = []string{
 	"tracing",
 
 	"map",
+	"vars",
 	"root",
 
 	"header",
