@@ -37,7 +37,7 @@ func init() {
 //
 // The key is the variable name, and the value is the value of the
 // variable. Both the name and value may use or contain placeholders.
-type VarsMiddleware map[string]string
+type VarsMiddleware map[string]interface{}
 
 // CaddyModule returns the Caddy module information.
 func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
@@ -47,15 +47,65 @@ func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (t VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
+func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	for k, v := range t {
+	for k, v := range m {
 		keyExpanded := repl.ReplaceAll(k, "")
-		valExpanded := repl.ReplaceAll(v, "")
-		vars[keyExpanded] = valExpanded
+		if valStr, ok := v.(string); ok {
+			v = repl.ReplaceAll(valStr, "")
+		}
+		vars[keyExpanded] = v
 	}
 	return next.ServeHTTP(w, r)
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler. Syntax:
+//
+//     vars [<name> <val>] {
+//         <name> <val>
+//         ...
+//     }
+//
+func (m *VarsMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if *m == nil {
+		*m = make(VarsMiddleware)
+	}
+
+	nextVar := func(headerLine bool) error {
+		if headerLine {
+			// header line is optional
+			if !d.NextArg() {
+				return nil
+			}
+		}
+		varName := d.Val()
+
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		varValue := d.ScalarVal()
+
+		(*m)[varName] = varValue
+
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		return nil
+	}
+
+	for d.Next() {
+		if err := nextVar(true); err != nil {
+			return err
+		}
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			if err := nextVar(false); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // VarsMatcher is an HTTP request matcher which can match
@@ -261,6 +311,8 @@ func SetVar(ctx context.Context, key string, value interface{}) {
 
 // Interface guards
 var (
-	_ MiddlewareHandler = (*VarsMiddleware)(nil)
-	_ RequestMatcher    = (*VarsMatcher)(nil)
+	_ MiddlewareHandler     = (*VarsMiddleware)(nil)
+	_ caddyfile.Unmarshaler = (*VarsMiddleware)(nil)
+	_ RequestMatcher        = (*VarsMatcher)(nil)
+	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
 )
