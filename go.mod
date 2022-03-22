@@ -16,7 +16,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.15.0
 	github.com/klauspost/cpuid/v2 v2.0.11
-	github.com/lucas-clemente/quic-go v0.25.0
+	github.com/lucas-clemente/quic-go v0.26.0
 	github.com/mholt/acmez v1.0.2
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.1
