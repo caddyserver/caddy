@@ -458,6 +458,60 @@ func (d *Dispenser) isNewLine() bool {
 	if d.cursor > len(d.tokens)-1 {
 		return false
 	}
-	return d.tokens[d.cursor-1].File != d.tokens[d.cursor].File ||
-		d.tokens[d.cursor-1].Line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].Line
+
+	prev := d.tokens[d.cursor-1]
+	curr := d.tokens[d.cursor]
+
+	// If the previous token is from a different file,
+	// we can assume it's from a different line
+	if prev.File != curr.File {
+		return true
+	}
+
+	// The previous token may contain line breaks if
+	// it was quoted and spanned multiple lines. e.g:
+	//
+	// dir "foo
+	//   bar
+	//   baz"
+	prevLineBreaks := d.numLineBreaks(d.cursor - 1)
+
+	// If the previous token (incl line breaks) ends
+	// on a line earlier than the current token,
+	// then the current token is on a new line
+	return prev.Line+prevLineBreaks < curr.Line
+}
+
+// isNextOnNewLine determines whether the current token is on a different
+// line (higher line number) than the next token. It handles imported
+// tokens correctly. If there isn't a next token, it returns true.
+func (d *Dispenser) isNextOnNewLine() bool {
+	if d.cursor < 0 {
+		return false
+	}
+	if d.cursor >= len(d.tokens)-1 {
+		return true
+	}
+
+	curr := d.tokens[d.cursor]
+	next := d.tokens[d.cursor+1]
+
+	// If the next token is from a different file,
+	// we can assume it's from a different line
+	if curr.File != next.File {
+		return true
+	}
+
+	// The current token may contain line breaks if
+	// it was quoted and spanned multiple lines. e.g:
+	//
+	// dir "foo
+	//   bar
+	//   baz"
+	currLineBreaks := d.numLineBreaks(d.cursor)
+
+	// If the current token (incl line breaks) ends
+	// on a line earlier than the next token,
+	// then the next token is on a new line
+	return curr.Line+currLineBreaks < next.Line
 }
