@@ -56,6 +56,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		if len(handler.Destinations) == 0 {
 			return nil, h.Err("missing destination argument(s)")
 		}
+		for _, dest := range handler.Destinations {
+			if shorthand := httpcaddyfile.WasReplacedPlaceholderShorthand(dest); shorthand != "" {
+				return nil, h.Errf("destination %s conflicts with a Caddyfile placeholder shorthand", shorthand)
+			}
+		}
 
 		// mappings
 		for h.NextBlock(0) {
