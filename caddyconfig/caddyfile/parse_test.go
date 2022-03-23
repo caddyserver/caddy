@@ -191,6 +191,20 @@ func TestParseOneAndImport(t *testing.T) {
 
 		{``, false, []string{}, []int{}},
 
+		// Unexpected next token after '{' on same line
+		{`localhost
+		  dir1 { a b }`, true, []string{"localhost"}, []int{}},
+		// Workaround with quotes
+		{`localhost
+		  dir1 "{" a b "}"`, false, []string{"localhost"}, []int{5}},
+
+		// Unexpected '{}' at end of line
+		{`localhost
+		  dir1 {}`, true, []string{"localhost"}, []int{}},
+		// Workaround with quotes
+		{`localhost
+		  dir1 "{}"`, false, []string{"localhost"}, []int{2}},
+
 		// import with args
 		{`import testdata/import_args0.txt a`, false, []string{"a"}, []int{}},
 		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
