@@ -461,3 +461,17 @@ func (d *Dispenser) isNewLine() bool {
 	return d.tokens[d.cursor-1].File != d.tokens[d.cursor].File ||
 		d.tokens[d.cursor-1].Line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].Line
 }
+
+// isNextOnNewLine determines whether the current token is on a different
+// line (higher line number) than the next token. It handles imported
+// tokens correctly. If there isn't a next token, it returns true.
+func (d *Dispenser) isNextOnNewLine() bool {
+	if d.cursor < 0 {
+		return false
+	}
+	if d.cursor >= len(d.tokens)-1 {
+		return true
+	}
+	return d.tokens[d.cursor].File != d.tokens[d.cursor+1].File ||
+		d.tokens[d.cursor].Line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].Line
+}
