@@ -112,7 +112,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 	}()
 
 	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, forceReload)
-	if errors.Is(err, errSameConfig) {
+	if errors.Is(err, ErrConfigUnchanged) {
 		err = nil // not really an error
 	}
 	return err
@@ -123,7 +123,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // the new value (if applicable; i.e. "DELETE" doesn't have an input).
 // If the resulting config is the same as the previous, no reload will
 // occur unless forceReload is true. If the config is unchanged and not
-// forcefully reloaded, then errConfigUnchanged This function is safe for
+// forcefully reloaded, then ErrConfigUnchanged. This function is safe for
 // concurrent use.
 func changeConfig(method, path string, input []byte, forceReload bool) error {
 	switch method {
@@ -155,7 +155,7 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 	// if nothing changed, no need to do a whole reload unless the client forces it
 	if !forceReload && bytes.Equal(rawCfgJSON, newCfg) {
 		Log().Info("config is unchanged")
-		return errSameConfig
+		return ErrConfigUnchanged
 	}
 
 	// find any IDs in this config and index them
@@ -500,11 +500,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 
 		runLoadedConfig := func(config []byte) error {
 			logger.Info("applying dynamically-loaded config")
-			err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, false)
-			if errors.Is(err, errSameConfig) {
-				return err
-			}
-			if err != nil {
+			if err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, true); err != nil {
 				logger.Error("failed to run dynamically-loaded config", zap.Error(err))
 				return err
 			}
@@ -522,18 +518,18 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 					case <-timer.C:
 						loadedConfig, err := val.(ConfigLoader).LoadConfig(ctx)
 						if err != nil {
-							logger.Error("failed loading dynamic config; will retry", zap.Error(err))
+							if err == ErrConfigUnchanged {
+								logger.Info("dynamically-loaded config was unchanged; will retry")
+							} else {
+								logger.Error("failed loading dynamic config; will retry", zap.Error(err))
+							}
 							continue
 						}
 						if loadedConfig == nil {
 							logger.Info("dynamically-loaded config was nil; will retry")
 							continue
 						}
-						err = runLoadedConfig(loadedConfig)
-						if errors.Is(err, errSameConfig) {
-							logger.Info("dynamically-loaded config was unchanged; will retry")
-							continue
-						}
+						_ = runLoadedConfig(loadedConfig)
 					case <-ctx.Done():
 						if !timer.Stop() {
 							<-timer.C
@@ -560,7 +556,8 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 // ConfigLoader is a type that can load a Caddy config. If
 // the return value is non-nil, it must be valid Caddy JSON;
 // if nil or with non-nil error, it is considered to be a
-// no-op load and may be retried later.
+// no-op load and may be retried later. In particular, the error
+// ErrConfigUnchanged will be returned if there is no change.
 type ConfigLoader interface {
 	LoadConfig(Context) ([]byte, error)
 }
@@ -812,10 +809,9 @@ var (
 	rawCfgIndex map[string]string
 )
 
-// errSameConfig is returned if the new config is the same
-// as the old one. This isn't usually an actual, actionable
-// error; it's mostly a sentinel value.
-var errSameConfig = errors.New("config is unchanged")
+// ErrConfigUnchanged the error returned by LoadConfig or changeConfig if
+// there is no change in the config.
+var ErrConfigUnchanged = errors.New("config is unchanged")
 
 // ImportPath is the package import path for Caddy core.
 const ImportPath = "github.com/caddyserver/caddy/v2"
