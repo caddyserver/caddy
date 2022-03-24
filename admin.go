@@ -938,7 +938,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
 		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
-		if err != nil && !errors.Is(err, errSameConfig) {
+		if err != nil && !errors.Is(err, ErrConfigUnchanged) {
 			return err
 		}
 
