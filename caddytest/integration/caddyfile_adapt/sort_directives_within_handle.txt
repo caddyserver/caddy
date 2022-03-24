@@ -8,9 +8,9 @@
 			respond "this should be second"
 		}
 	}
-    handle {
-        respond "this should be last"
-    }
+	handle {
+		respond "this should be last"
+	}
 }
 ----------
 {
