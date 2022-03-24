@@ -16,12 +16,12 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go: [ '1.17' ]
+        go: [ '1.18' ]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go }}
 
@@ -45,7 +45,7 @@ jobs:
             cross-build-go${{ matrix.go }}-${{ matrix.goos }}
 
       - name: Checkout code into the Go module directory
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Run Build
         env:

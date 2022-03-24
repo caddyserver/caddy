@@ -33,6 +33,8 @@ import (
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("reverse_proxy", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("copy_response", parseCopyResponseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("copy_response_headers", parseCopyResponseHeadersCaddyfile)
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -51,8 +53,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     reverse_proxy [<matcher>] [<upstreams...>] {
-//         # upstreams
-//         to <upstreams...>
+//         # backends
+//         to      <upstreams...>
 //         dynamic <name> [...]
 //
 //         # load balancing
@@ -61,26 +63,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         lb_try_interval <interval>
 //
 //         # active health checking
-//         health_uri  <uri>
-//         health_port <port>
+//         health_uri      <uri>
+//         health_port     <port>
 //         health_interval <interval>
-//         health_timeout <duration>
-//         health_status <status>
-//         health_body <regexp>
+//         health_timeout  <duration>
+//         health_status   <status>
+//         health_body     <regexp>
 //         health_headers {
 //             <field> [<values...>]
 //         }
 //
 //         # passive health checking
-//         max_fails <num>
-//         fail_duration <duration>
-//         max_conns <num>
-//         unhealthy_status <status>
+//         fail_duration     <duration>
+//         max_fails         <num>
+//         unhealthy_status  <status>
 //         unhealthy_latency <duration>
+//         unhealthy_request_count <num>
 //
 //         # streaming
 //         flush_interval <duration>
 //         buffer_requests
+//         buffer_responses
+//         max_buffer_size <size>
 //
 //         # header manipulation
 //         trusted_proxies [private_ranges] <ranges...>
@@ -92,14 +96,23 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //             ...
 //         }
 //
-//         # intercepting responses
+//         # optionally intercept responses from upstream
 //         @name {
 //             status <code...>
 //             header <field> [<value>]
 //         }
-//         replace_status <matcher> <status_code>
+//         replace_status [<matcher>] <status_code>
 //         handle_response [<matcher>] {
 //             <directives...>
+//
+//             # special directives only available in handle_response
+//             copy_response [<matcher>] [<status>] {
+//                 status <status>
+//             }
+//             copy_response_headers [<matcher>] {
+//                 include <fields...>
+//                 exclude <fields...>
+//             }
 //         }
 //     }
 //
@@ -1013,6 +1026,85 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+func parseCopyResponseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	crh := new(CopyResponseHandler)
+	err := crh.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return crh, nil
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//    copy_response [<matcher>] [<status>] {
+//        status <status>
+//    }
+//
+func (h *CopyResponseHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) == 1 {
+			if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+				h.StatusCode = caddyhttp.WeakString(args[0])
+				break
+			}
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "status":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.StatusCode = caddyhttp.WeakString(d.Val())
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+func parseCopyResponseHeadersCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	crh := new(CopyResponseHeadersHandler)
+	err := crh.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return nil, err
+	}
+	return crh, nil
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
+//
+//    copy_response_headers [<matcher>] {
+//        include <fields...>
+//        exclude <fields...>
+//    }
+//
+func (h *CopyResponseHeadersHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		args := d.RemainingArgs()
+		if len(args) > 0 {
+			return d.ArgErr()
+		}
+
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "include":
+				h.Include = append(h.Include, d.RemainingArgs()...)
+
+			case "exclude":
+				h.Exclude = append(h.Exclude, d.RemainingArgs()...)
+
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
 			}
 		}
 	}

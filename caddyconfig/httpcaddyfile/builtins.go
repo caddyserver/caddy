@@ -39,6 +39,7 @@ func init() {
 	RegisterDirective("bind", parseBind)
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("root", parseRoot)
+	RegisterHandlerDirective("vars", parseVars)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("abort", parseAbort)
@@ -362,6 +363,22 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				acmeIssuer.Challenges.DNS.Resolvers = args
 
+			case "dns_challenge_override_domain":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.OverrideDomain = arg[0]
+
 			case "ca_root":
 				arg := h.RemainingArgs()
 				if len(arg) != 1 {
@@ -512,6 +529,13 @@ func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 	return caddyhttp.VarsMiddleware{"root": root}, nil
+}
+
+// parseVars parses the vars directive. See its UnmarshalCaddyfile method for syntax.
+func parseVars(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	v := new(caddyhttp.VarsMiddleware)
+	err := v.UnmarshalCaddyfile(h.Dispenser)
+	return v, err
 }
 
 // parseRedir parses the redir directive. Syntax:

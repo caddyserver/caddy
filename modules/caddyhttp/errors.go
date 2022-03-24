@@ -80,6 +80,9 @@ func (e HandlerError) Error() string {
 	return strings.TrimSpace(s)
 }
 
+// Unwrap returns the underlying error value. See the `errors` package for info.
+func (e HandlerError) Unwrap() error { return e.Err }
+
 // randString returns a string of n random characters.
 // It is not even remotely secure OR a proper distribution.
 // But it's good enough for some things. It excludes certain

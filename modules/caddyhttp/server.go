@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -636,7 +637,8 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 // If err is a HandlerError, the returned values will
 // have richer information.
 func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
-	if handlerErr, ok := err.(HandlerError); ok {
+	var handlerErr HandlerError
+	if errors.As(err, &handlerErr) {
 		status = handlerErr.StatusCode
 		if handlerErr.Err == nil {
 			msg = err.Error()

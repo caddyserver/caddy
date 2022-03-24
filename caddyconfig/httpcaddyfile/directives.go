@@ -37,10 +37,14 @@ import (
 // The header directive goes second so that headers
 // can be manipulated before doing redirects.
 var directiveOrder = []string{
+	"tracing",
+
 	"map",
+	"vars",
 	"root",
 
 	"header",
+	"copy_response_headers", // only in reverse_proxy's handle_response
 	"request_body",
 
 	"redir",
@@ -66,6 +70,7 @@ var directiveOrder = []string{
 	// handlers that typically respond to requests
 	"abort",
 	"error",
+	"copy_response", // only in reverse_proxy's handle_response
 	"respond",
 	"metrics",
 	"reverse_proxy",

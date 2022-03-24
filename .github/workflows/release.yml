@@ -11,22 +11,22 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go: [ '1.17' ]
+        go: [ '1.18' ]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ${{ matrix.go }}
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
     # Force fetch upstream tags -- because 65 minutes
-    # tl;dr: actions/checkout@v2 runs this line:
+    # tl;dr: actions/checkout@v3 runs this line:
     #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
     # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
     #   git fetch --prune --unshallow
