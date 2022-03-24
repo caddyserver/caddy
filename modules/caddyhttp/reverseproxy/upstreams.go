@@ -342,7 +342,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	return upstreams, nil
 }
 
-func (au AUpstreams) String() string { return au.Name }
+func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port) }
 
 type aLookup struct {
 	aUpstreams AUpstreams
