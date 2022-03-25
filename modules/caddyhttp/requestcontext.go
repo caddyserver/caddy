@@ -5,10 +5,6 @@ import (
 	"net/http"
 )
 
-type contextEntry struct {
-	key, value interface{}
-}
-
 // RequestContext is a fast context.Context implementation
 // which allows for fast lookups and stores in the context of
 // an http.Request. It is not safe to be setting and getting
