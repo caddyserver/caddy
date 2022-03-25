@@ -69,12 +69,12 @@ func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
 }
 
 // newAccountCallback generates EAB if not already provided. It also sets a valid default contact on the account if not set.
-func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, am *certmagic.ACMEManager, acct acme.Account) (acme.Account, error) {
-	if am.ExternalAccount != nil {
+func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, acmeIss *certmagic.ACMEIssuer, acct acme.Account) (acme.Account, error) {
+	if acmeIss.ExternalAccount != nil {
 		return acct, nil
 	}
 	var err error
-	am.ExternalAccount, acct, err = iss.generateEABCredentials(ctx, acct)
+	acmeIss.ExternalAccount, acct, err = iss.generateEABCredentials(ctx, acct)
 	return acct, err
 }
 
@@ -153,7 +153,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.
 	}, acct, nil
 }
 
-// initialize modifies the template for the underlying ACMEManager
+// initialize modifies the template for the underlying ACMEIssuer
 // values by setting the CA endpoint to the ZeroSSL directory and
 // setting the NewAccountFunc callback to one which allows us to
 // generate EAB credentials only if a new account is being made.

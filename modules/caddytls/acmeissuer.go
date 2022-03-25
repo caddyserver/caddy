@@ -85,7 +85,7 @@ type ACMEIssuer struct {
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
-	template certmagic.ACMEManager
+	template certmagic.ACMEIssuer
 	magic    *certmagic.Config
 	logger   *zap.Logger
 }
@@ -172,8 +172,8 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
-	template := certmagic.ACMEManager{
+func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
@@ -224,22 +224,22 @@ func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	return certmagic.NewACMEManager(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEManager(iss.magic, iss.template).Issue(ctx, csr)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEManager(iss.magic, iss.template).IssuerKey()
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	return certmagic.NewACMEManager(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).Revoke(ctx, cert, reason)
 }
 
 // GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because

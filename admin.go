@@ -1000,7 +1000,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 		Log().Error("unable to notify stopping to service manager", zap.Error(err))
 	}
 
-	exitProcess(Log().Named("admin.api"))
+	exitProcess(context.Background(), Log().Named("admin.api"))
 	return nil
 }
 
