@@ -17,7 +17,7 @@ type contextEntry struct {
 // by a single goroutine/worker.
 type RequestContext struct {
 	context.Context
-	values []contextEntry
+	values map[interface{}]interface{}
 }
 
 // GetValue looks up a value specifically in this RequestContext,
@@ -25,12 +25,9 @@ type RequestContext struct {
 // This should usually only be used on the known context keys:
 // ReplacerCtxKey, ServerCtxKey, OriginalRequestCtxKey, VarsCtxKey, ErrorCtxKey.
 func (c *RequestContext) GetValue(key interface{}) interface{} {
-	for _, entry := range c.values {
-		if entry.key == key {
-			return entry.value
-		}
-	}
-	if key == requestContextKey {
+	if value, ok := c.values[key]; ok {
+		return value
+	} else if key == requestContextKey {
 		return c
 	}
 	return nil
@@ -38,7 +35,7 @@ func (c *RequestContext) GetValue(key interface{}) interface{} {
 
 // SetValue sets a value in the fast RequestContext map.
 func (c *RequestContext) SetValue(key interface{}, value interface{}) {
-	c.values = append(c.values, contextEntry{key, value})
+	c.values[key] = value
 }
 
 // Value looks up a value by key stored in the context.

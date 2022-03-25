@@ -143,32 +143,35 @@ type Server struct {
 
 var requestContextPool = sync.Pool{
 	New: func() interface{} {
-		rctx := &RequestContext{
-			// We need 4 straight away for PrepareRequest, and we might get ErrorCtxKey as well as routeGroupCtxKey
-			// stored in here, so a minimum of 6 is needed to avoid most of the allocations (during an append).
-			values: make([]contextEntry, 0, 6),
+		// initialize the map, so that all of the buckets
+		// are allocated and keys stored
+		return &RequestContext{
+			values: map[interface{}]interface{}{
+				caddy.ReplacerCtxKey:  nil,
+				ServerCtxKey:          nil,
+				VarsCtxKey:            make(map[string]interface{}),
+				OriginalRequestCtxKey: nil,
+			},
 		}
-		rctx.values = append(rctx.values,
-			contextEntry{caddy.ReplacerCtxKey, nil},
-			contextEntry{ServerCtxKey, nil},
-			contextEntry{VarsCtxKey, make(map[string]interface{})},
-			contextEntry{OriginalRequestCtxKey, nil},
-		)
-		return rctx
 	},
 }
 
 // Reset the RequestContext, keeping the capacity of the values
 func putBackRequestContext(rctx *RequestContext) {
 	rctx.Context = nil
-	rctx.values = rctx.values[:4]
-	rctx.values[0].value = nil
-	rctx.values[1].value = nil
-	rctx.values[3].value = nil
-	varMap := rctx.values[2].value.(map[string]interface{})
+
+	// only store the vars map to keep it allocated as well
+	// this and the next map clear should be fast and won't resize the map
+	varMap := rctx.values[VarsCtxKey].(map[string]interface{})
 	for key := range varMap {
 		delete(varMap, key)
 	}
+
+	for key := range rctx.values {
+		delete(rctx.values, key)
+	}
+	rctx.values[VarsCtxKey] = varMap
+
 	requestContextPool.Put(rctx)
 }
 
@@ -621,9 +624,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// The order of values here, in requestContextPool.New and putBackRequestContext needs to be the same!
 	rctx := requestContextPool.Get().(*RequestContext)
 	rctx.Context = r.Context()
-	rctx.values[0].value = repl // caddy.ReplacerCtxKey
-	rctx.values[1].value = s    // ServerCtxKey
-	rctx.values[3].value = r    // OriginalRequestCtxKey
+	rctx.values[caddy.ReplacerCtxKey] = repl
+	rctx.values[ServerCtxKey] = s
+	rctx.values[OriginalRequestCtxKey] = r
 	r = r.WithContext(rctx)
 
 	// once the pointer to the request won't change
