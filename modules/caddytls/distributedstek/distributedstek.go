@@ -26,7 +26,9 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"runtime/debug"
 	"time"
@@ -115,7 +117,7 @@ func (s *Provider) Next(doneChan <-chan struct{}) <-chan [][32]byte {
 
 func (s *Provider) loadSTEK() (distributedSTEK, error) {
 	var sg distributedSTEK
-	gobBytes, err := s.storage.Load(stekFileName)
+	gobBytes, err := s.storage.Load(s.ctx, stekFileName)
 	if err != nil {
 		return sg, err // don't wrap, in case error is certmagic.ErrNotExist
 	}
@@ -133,7 +135,7 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 	if err != nil {
 		return fmt.Errorf("encoding STEK gob: %v", err)
 	}
-	err = s.storage.Store(stekFileName, buf.Bytes())
+	err = s.storage.Store(s.ctx, stekFileName, buf.Bytes())
 	if err != nil {
 		return fmt.Errorf("storing STEK gob: %v", err)
 	}
@@ -151,11 +153,11 @@ func (s *Provider) getSTEK() (distributedSTEK, error) {
 	}
 
 	//nolint:errcheck
-	defer s.storage.Unlock(stekLockName)
+	defer s.storage.Unlock(s.ctx, stekLockName)
 
 	// load the current STEKs from storage
 	dstek, err := s.loadSTEK()
-	if _, isNotExist := err.(certmagic.ErrNotExist); isNotExist {
+	if errors.Is(err, fs.ErrNotExist) {
 		// if there is none, then make some right away
 		dstek, err = s.rotateKeys(dstek)
 		if err != nil {
