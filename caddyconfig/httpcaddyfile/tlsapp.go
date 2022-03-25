@@ -101,6 +101,12 @@ func (st ServerType) buildTLSApp(
 		}
 
 		for _, sblock := range p.serverBlocks {
+			// check the scheme of all the site addresses,
+			// skip building AP if they all had http://
+			if sblock.isAllHTTP() {
+				continue
+			}
+
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
 			if err != nil {
