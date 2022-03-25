@@ -494,7 +494,7 @@ func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 		if addr.Host == "" {
 			continue
 		}
-		if addr.Scheme != "http" || addr.Port != httpPort {
+		if addr.Scheme != "http" && addr.Port != httpPort {
 			hostMap[addr.Host] = struct{}{}
 		}
 	}
@@ -517,6 +517,17 @@ func (sb serverBlock) hasHostCatchAllKey() bool {
 		}
 	}
 	return false
+}
+
+// isAllHTTP returns true if all sb keys explicitly specify
+// the http:// scheme
+func (sb serverBlock) isAllHTTP() bool {
+	for _, addr := range sb.keys {
+		if addr.Scheme != "http" {
+			return false
+		}
+	}
+	return true
 }
 
 type (
