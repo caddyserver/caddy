@@ -32,14 +32,13 @@ require (
 	golang.org/x/crypto v0.0.0-20220210151621-f4118a5b28e2
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
-	google.golang.org/genproto v0.0.0-20220118154757-00ab72f36ad5
+	google.golang.org/genproto v0.0.0-20220222213610-43724f9ea8cf
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
-	cloud.google.com/go/kms v1.1.0 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
 	github.com/BurntSushi/toml v1.0.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
@@ -123,11 +122,11 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/sys v0.0.0-20220114195835-da31bd327af9 // indirect
+	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.6-0.20210726203631-07bc1bf47fb2 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	google.golang.org/api v0.58.0 // indirect
+	google.golang.org/api v0.70.0 // indirect
 	google.golang.org/grpc v1.44.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
