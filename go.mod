@@ -17,7 +17,7 @@ require (
 	github.com/mholt/acmez v1.0.2
 	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.12.1
-	github.com/smallstep/certificates v0.18.0
+	github.com/smallstep/certificates v0.18.3-0.20220328195804-49de04661b85
 	github.com/smallstep/cli v0.18.0
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
@@ -39,6 +39,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
 	github.com/BurntSushi/toml v1.0.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
@@ -66,7 +67,6 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
@@ -104,7 +104,8 @@ require (
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
-	github.com/sirupsen/logrus v1.7.0 // indirect
+	github.com/sirupsen/logrus v1.8.1 // indirect
+	github.com/slackhq/nebula v1.5.2 // indirect
 	github.com/spf13/cast v1.4.1 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/urfave/cli v1.22.5 // indirect
@@ -117,18 +118,16 @@ require (
 	go.opentelemetry.io/otel/trace v1.4.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
 	go.step.sm/cli-utils v0.7.0 // indirect
-	go.step.sm/crypto v0.13.0 // indirect
-	go.step.sm/linkedca v0.7.0 // indirect
+	go.step.sm/crypto v0.15.3 // indirect
+	go.step.sm/linkedca v0.11.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
-	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/tools v0.1.6-0.20210726203631-07bc1bf47fb2 // indirect
+	golang.org/x/text v0.3.8-0.20211004125949-5bd84dd9b33b // indirect
+	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	google.golang.org/api v0.70.0 // indirect
 	google.golang.org/grpc v1.44.0 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	howett.net/plist v1.0.0 // indirect
