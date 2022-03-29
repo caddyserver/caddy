@@ -58,8 +58,11 @@ func init() {
 // `{http.reverse_proxy.upstream.max_requests}` | The maximum approximate number of requests allowed to the upstream
 // `{http.reverse_proxy.upstream.fails}` | The number of recent failed requests to the upstream
 // `{http.reverse_proxy.upstream.latency}` | How long it took the proxy upstream to write the response header.
+// `{http.reverse_proxy.upstream.latency_ms}` | Same as 'latency', but in milliseconds.
 // `{http.reverse_proxy.upstream.duration}` | Time spent proxying to the upstream, including writing response body to client.
+// `{http.reverse_proxy.upstream.duration_ms}` | Same as 'upstream.duration', but in milliseconds.
 // `{http.reverse_proxy.duration}` | Total time spent proxying, including selecting an upstream, retries, and writing response.
+// `{http.reverse_proxy.duration_ms}` | Same as 'duration', but in milliseconds.
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.
@@ -400,6 +403,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	defer func() {
 		// total proxying duration, including time spent on LB and retries
 		repl.Set("http.reverse_proxy.duration", time.Since(start))
+		repl.Set("http.reverse_proxy.duration_ms", time.Since(start).Seconds()*1e3)
 	}()
 
 	// in the proxy loop, each iteration is an attempt to proxy the request,
@@ -724,6 +728,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 
 	// duration until upstream wrote response headers (roundtrip duration)
 	repl.Set("http.reverse_proxy.upstream.latency", duration)
+	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3)
 
 	// update circuit breaker on current conditions
 	if di.Upstream.cb != nil {
@@ -909,6 +914,7 @@ func (h Handler) finalizeResponse(
 
 	// total duration spent proxying, including writing response body
 	repl.Set("http.reverse_proxy.upstream.duration", time.Since(start))
+	repl.Set("http.reverse_proxy.upstream.duration_sec", time.Since(start).Seconds()*1e3)
 
 	if len(res.Trailer) == announcedTrailers {
 		copyHeader(rw.Header(), res.Trailer)
