@@ -262,7 +262,7 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admi
 
 // provisionAdminRouters provisions all the router modules
 // in the admin.api namespace that need provisioning.
-func (admin AdminConfig) provisionAdminRouters(ctx Context) error {
+func (admin *AdminConfig) provisionAdminRouters(ctx Context) error {
 	for _, router := range admin.routers {
 		provisioner, ok := router.(Provisioner)
 		if !ok {
@@ -277,6 +277,7 @@ func (admin AdminConfig) provisionAdminRouters(ctx Context) error {
 
 	// We no longer need the routers once provisioned, allow for GC
 	admin.routers = nil
+
 	return nil
 }
 
@@ -937,7 +938,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
 		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
-		if err != nil {
+		if err != nil && !errors.Is(err, errSameConfig) {
 			return err
 		}
 
@@ -999,7 +1000,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 		Log().Error("unable to notify stopping to service manager", zap.Error(err))
 	}
 
-	exitProcess(Log().Named("admin.api"))
+	exitProcess(context.Background(), Log().Named("admin.api"))
 	return nil
 }
 

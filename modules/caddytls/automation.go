@@ -141,8 +141,8 @@ type AutomationPolicy struct {
 	// they are only used to populate an underlying certmagic.Config's
 	// fields during provisioning so that the modules can survive a
 	// re-provisioning.
-	Issuers  []certmagic.Issuer             `json:"-"`
-	Managers []certmagic.CertificateManager `json:"-"`
+	Issuers  []certmagic.Issuer  `json:"-"`
+	Managers []certmagic.Manager `json:"-"`
 
 	magic   *certmagic.Config
 	storage certmagic.Storage
@@ -199,7 +199,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
 		}
 		for _, getCertVal := range vals.([]interface{}) {
-			ap.Managers = append(ap.Managers, getCertVal.(certmagic.CertificateManager))
+			ap.Managers = append(ap.Managers, getCertVal.(certmagic.Manager))
 		}
 	}
 
@@ -369,6 +369,11 @@ type DNSChallengeConfig struct {
 	// Custom DNS resolvers to prefer over system/built-in defaults.
 	// Often necessary to configure when using split-horizon DNS.
 	Resolvers []string `json:"resolvers,omitempty"`
+
+	// Override the domain to use for the DNS challenge. This
+	// is to delegate the challenge to a different domain,
+	// e.g. one that updates faster or one with a provider API.
+	OverrideDomain string `json:"override_domain,omitempty"`
 
 	solver acmez.Solver
 }

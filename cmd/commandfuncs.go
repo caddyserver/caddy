@@ -650,13 +650,13 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
 		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
 	}
-	origin := parsedAddr.JoinHostPort(0)
+	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
 		origin = "unixsocket" // hack so that http.NewRequest() is happy
 	}
 
 	// form the request
-	req, err := http.NewRequest(method, "http://"+origin+uri, body)
+	req, err := http.NewRequest(method, origin+uri, body)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}

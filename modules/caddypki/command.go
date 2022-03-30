@@ -49,8 +49,8 @@ By default, this command installs the root certificate for Caddy's
 default CA (i.e. 'local'). You may specify the ID of another CA
 with the --ca flag.
 
-Also, this command will attempt to connect to the Caddy's admin API
-running at '` + caddy.DefaultAdminListen + `' to fetch the root certificate. You may
+This command will attempt to connect to Caddy's admin API running at
+'` + caddy.DefaultAdminListen + `' to fetch the root certificate. You may
 explicitly specify the --address, or use the --config flag to load
 the admin address from your config, if not using the default.`,
 		Flags: func() *flag.FlagSet {
@@ -216,7 +216,7 @@ func rootCertFromAdmin(adminAddr string, caID string) (*x509.Certificate, error)
 	}
 	defer resp.Body.Close()
 
-	// Decode the resposne
+	// Decode the response
 	caInfo := new(caInfo)
 	err = json.NewDecoder(resp.Body).Decode(caInfo)
 	if err != nil {

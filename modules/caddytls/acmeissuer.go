@@ -85,7 +85,7 @@ type ACMEIssuer struct {
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
-	template certmagic.ACMEManager
+	template certmagic.ACMEIssuer
 	magic    *certmagic.Config
 	logger   *zap.Logger
 }
@@ -144,6 +144,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
+				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
 			}
 		}
 	}
@@ -171,8 +172,8 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEManager, error) {
-	template := certmagic.ACMEManager{
+func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
@@ -223,22 +224,22 @@ func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	return certmagic.NewACMEManager(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEManager(iss.magic, iss.template).Issue(ctx, csr)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEManager(iss.magic, iss.template).IssuerKey()
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	return certmagic.NewACMEManager(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return certmagic.NewACMEIssuer(iss.magic, iss.template).Revoke(ctx, cert, reason)
 }
 
 // GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because
@@ -416,6 +417,19 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(iss.Challenges.DNS.Resolvers) == 0 {
 					return d.ArgErr()
 				}
+
+			case "dns_challenge_override_domain":
+				arg := d.RemainingArgs()
+				if len(arg) != 1 {
+					return d.ArgErr()
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.OverrideDomain = arg[0]
 
 			case "preferred_chains":
 				chainPref, err := ParseCaddyfilePreferredChainsOptions(d)

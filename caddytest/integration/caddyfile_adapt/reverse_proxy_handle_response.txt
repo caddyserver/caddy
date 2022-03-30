@@ -41,6 +41,20 @@ reverse_proxy 127.0.0.1:65535 {
 	handle_response @multi {
 		respond "Headers Foo, Bar AND statuses 401, 403 and 404!"
 	}
+
+	@200 status 200
+	handle_response @200 {
+		copy_response_headers {
+			include Foo Bar
+		}
+		respond "Copied headers from the response"
+	}
+
+	@201 status 201
+	handle_response @201 {
+		header Foo "Copying the response"
+		copy_response 404
+	}
 }
 ----------
 {
@@ -158,6 +172,57 @@ reverse_proxy 127.0.0.1:65535 {
 														{
 															"body": "Headers Foo, Bar AND statuses 401, 403 and 404!",
 															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"status_code": [
+													200
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "copy_response_headers",
+															"include": [
+																"Foo",
+																"Bar"
+															]
+														},
+														{
+															"body": "Copied headers from the response",
+															"handler": "static_response"
+														}
+													]
+												}
+											]
+										},
+										{
+											"match": {
+												"status_code": [
+													201
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"response": {
+																"set": {
+																	"Foo": [
+																		"Copying the response"
+																	]
+																}
+															}
+														},
+														{
+															"handler": "copy_response",
+															"status_code": 404
 														}
 													]
 												}

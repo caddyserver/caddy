@@ -480,7 +480,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 			if err != nil {
 				return err
 			}
-			ap.Managers = []certmagic.CertificateManager{ts}
+			ap.Managers = []certmagic.Manager{ts}
 		}
 
 		// while we're here, is this the catch-all/base policy?
@@ -497,7 +497,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 			return err
 		}
 		basePolicy = &caddytls.AutomationPolicy{
-			Managers: []certmagic.CertificateManager{ts},
+			Managers: []certmagic.Manager{ts},
 		}
 	}
 

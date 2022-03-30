@@ -581,7 +581,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			for _, addr := range sblock.keys {
-				// if server only uses HTTPS port, auto-HTTPS will not apply
+				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
 					// exclude any hosts that were defined explicitly with "http://"
 					// in the key from automated cert management (issue #2998)
