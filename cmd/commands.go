@@ -16,7 +16,13 @@ package caddycmd
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"regexp"
+	"strings"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/spf13/cobra/doc"
 )
 
 // Command represents a subcommand. Name, Func,
@@ -330,6 +336,41 @@ EXPERIMENTAL: May be changed or removed.
 		}(),
 	})
 
+	RegisterCommand(Command{
+		Name: "manpage",
+		Func: func(fl Flags) (int, error) {
+			dir := strings.TrimSpace(fl.String("directory"))
+			section := strings.TrimSpace(fl.String("section"))
+			if dir == "" || section == "" {
+				return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+			}
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+				Title:   "Caddy",
+				Section: section,
+			}, dir); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			return caddy.ExitCodeSuccess, nil
+		},
+		Usage: "--directory <directory path> --section <section number>",
+		Short: "Generates the manual pages of Caddy commands",
+		Long: `
+Generates the manual pages of Caddy commands into the designated directory tagged into the specified section.
+
+The manual page files are generated into the directory specified by the argument of --directory. If the directory does not exist, it will be created.
+
+The manual pages are sorted into the section specified by the argument of --section.
+`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
+			fs.String("directory", "", "The output directory where the manpages are generated")
+			fs.String("section", "", "The section number of the generated manual pages")
+			return fs
+		}(),
+	})
 }
 
 // RegisterCommand registers the command cmd.
