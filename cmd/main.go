@@ -17,7 +17,6 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -59,36 +58,9 @@ func Main() {
 		os.Args = append(os.Args, "help")
 	}
 
-	subcommandName := os.Args[1]
-	subcommand, ok := commands[subcommandName]
-	if !ok {
-		if strings.HasPrefix(os.Args[1], "-") {
-			// user probably forgot to type the subcommand
-			fmt.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
-		} else {
-			fmt.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'\n", os.Args[1])
-		}
-		os.Exit(caddy.ExitCodeFailedStartup)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
-
-	fs := subcommand.Flags
-	if fs == nil {
-		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
-	}
-	pfs := pflag.NewFlagSet(subcommand.Name, pflag.ExitOnError)
-	pfs.AddGoFlagSet(fs)
-	err := fs.Parse(os.Args[2:])
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(caddy.ExitCodeFailedStartup)
-	}
-
-	exitCode, err := subcommand.Func(Flags{pfs})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
-	}
-
-	os.Exit(exitCode)
 }
 
 // handlePingbackConn reads from conn and ensures it matches

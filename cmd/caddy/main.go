@@ -34,5 +34,5 @@ import (
 )
 
 func main() {
-	caddycmd.Execute()
+	caddycmd.Main()
 }
