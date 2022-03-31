@@ -15,6 +15,7 @@
 package caddyevent
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -28,6 +29,9 @@ func init() {
 
 // EventApp is a global event system.
 type EventApp struct {
+	// Registers each of these event subscribers
+	SubscribersRaw []json.RawMessage `json:"subscribers,omitempty" caddy:"namespace=event.subscribers inline_key=subscriber"`
+
 	listeners map[caddy.ModuleID]map[Priority][]ListenerFunc
 	optimized map[caddy.ModuleID][]ListenerFunc
 	ready     bool
@@ -46,6 +50,17 @@ func (EventApp) CaddyModule() caddy.ModuleInfo {
 func (app *EventApp) Provision(ctx caddy.Context) error {
 	app.listeners = make(map[caddy.ModuleID]map[Priority][]ListenerFunc)
 	app.logger = ctx.Logger(app)
+
+	// register all the configured subscribers
+	if app.SubscribersRaw != nil {
+		subscribersIface, err := ctx.LoadModule(app, "SubscribersRaw")
+		if err != nil {
+			return fmt.Errorf("loading event subscriber modules: %v", err)
+		}
+		for _, subscriber := range subscribersIface.([]Subscriber) {
+			app.RegisterSubscriber(subscriber)
+		}
+	}
 
 	return nil
 }
@@ -87,6 +102,7 @@ func (app *EventApp) RegisterSubscriber(subscriber Subscriber) {
 func (app *EventApp) RegisterListener(eventID caddy.ModuleID, entry ListenerEntry) {
 	// if the app is already running, we don't allow adding new listeners.
 	if app.ready {
+		// TODO: Panic or something?
 		return
 	}
 
@@ -137,6 +153,10 @@ func (app *EventApp) Dispatch(event Event) error {
 		// run the listener.
 		err := listener(event)
 		if err != nil {
+			app.logger.Error("listener error",
+				zap.String("event", event.ID().Name()),
+				zap.Error(err),
+			)
 			return err
 		}
 	}
