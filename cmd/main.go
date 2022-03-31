@@ -77,15 +77,15 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 	return nil
 }
 
-// loadConfig loads the config from configFile and adapts it
+// LoadConfig loads the config from configFile and adapts it
 // using adapterName. If adapterName is specified, configFile
 // must be also. If no configFile is specified, it tries
 // loading a default config file. The lack of a config file is
 // not treated as an error, but false will be returned if
 // there is no config available. It prints any warnings to stderr,
 // and returns the resulting JSON config bytes along with
-// whether a config file was loaded or not.
-func loadConfig(configFile, adapterName string) ([]byte, string, error) {
+// the name of the loaded config file (if any).
+func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
 		return nil, "", fmt.Errorf("cannot adapt config without config file (use --config)")
@@ -236,7 +236,7 @@ func watchConfigFile(filename, adapterName string) {
 		lastModified = info.ModTime()
 
 		// load the contents of the file
-		config, _, err := loadConfig(filename, adapterName)
+		config, _, err := LoadConfig(filename, adapterName)
 		if err != nil {
 			logger().Error("unable to load latest config", zap.Error(err))
 			continue

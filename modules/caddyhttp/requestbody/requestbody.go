@@ -15,6 +15,7 @@
 package requestbody
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -28,6 +29,7 @@ func init() {
 // RequestBody is a middleware for manipulating the request body.
 type RequestBody struct {
 	// The maximum number of bytes to allow reading from the body by a later handler.
+	// If more bytes are read, an error with HTTP status 413 is returned.
 	MaxSize int64 `json:"max_size,omitempty"`
 }
 
@@ -44,9 +46,23 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		return next.ServeHTTP(w, r)
 	}
 	if rb.MaxSize > 0 {
-		r.Body = http.MaxBytesReader(w, r.Body, rb.MaxSize)
+		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
 	}
 	return next.ServeHTTP(w, r)
+}
+
+// errorWrapper wraps errors that are returned from Read()
+// so that they can be associated with a proper status code.
+type errorWrapper struct {
+	io.ReadCloser
+}
+
+func (ew errorWrapper) Read(p []byte) (n int, err error) {
+	n, err = ew.ReadCloser.Read(p)
+	if err != nil && err.Error() == "http: request body too large" {
+		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
+	}
+	return
 }
 
 // Interface guard

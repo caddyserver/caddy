@@ -43,10 +43,10 @@ func init() {
 //
 // ##### `.Args`
 //
-// Access arguments passed to this page/context, for example as the result of a `include`.
+// A slice of arguments passed to this page/context, for example as the result of a `include`.
 //
 // ```
-// {{.Args 0}} // first argument
+// {{index .Args 0}} // first argument
 // ```
 //
 // ##### `.Cookie`
@@ -126,7 +126,11 @@ func init() {
 //
 // ##### `markdown`
 //
-// Renders the given Markdown text as HTML.
+// Renders the given Markdown text as HTML. This uses the
+// [Goldmark](https://github.com/yuin/goldmark) library,
+// which is CommonMark compliant. It also has these plugins
+// enabled: Github Flavored Markdown, Footnote and syntax
+// highlighting provided by [Chroma](https://github.com/alecthomas/chroma).
 //
 // ```
 // {{markdown "My _markdown_ text"}}

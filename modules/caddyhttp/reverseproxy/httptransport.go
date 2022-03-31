@@ -168,15 +168,9 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 	}
 
 	if h.Resolver != nil {
-		for _, v := range h.Resolver.Addresses {
-			addr, err := caddy.ParseNetworkAddress(v)
-			if err != nil {
-				return nil, err
-			}
-			if addr.PortRangeSize() != 1 {
-				return nil, fmt.Errorf("resolver address must have exactly one address; cannot call %v", addr)
-			}
-			h.Resolver.netAddrs = append(h.Resolver.netAddrs, addr)
+		err := h.Resolver.ParseAddresses()
+		if err != nil {
+			return nil, err
 		}
 		d := &net.Dialer{
 			Timeout:       time.Duration(h.DialTimeout),
@@ -404,18 +398,6 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// UpstreamResolver holds the set of addresses of DNS resolvers of
-// upstream addresses
-type UpstreamResolver struct {
-	// The addresses of DNS resolvers to use when looking up the addresses of proxy upstreams.
-	// It accepts [network addresses](/docs/conventions#network-addresses)
-	// with port range of only 1. If the host is an IP address, it will be dialed directly to resolve the upstream server.
-	// If the host is not an IP address, the addresses are resolved using the [name resolution convention](https://golang.org/pkg/net/#hdr-Name_Resolution) of the Go standard library.
-	// If the array contains more than 1 resolver address, one is chosen at random.
-	Addresses []string `json:"addresses,omitempty"`
-	netAddrs  []caddy.NetworkAddress
 }
 
 // KeepAlive holds configuration pertaining to HTTP Keep-Alive.

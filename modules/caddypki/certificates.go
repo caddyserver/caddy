@@ -15,6 +15,7 @@
 package caddypki
 
 import (
+	"crypto"
 	"crypto/x509"
 	"time"
 
@@ -30,7 +31,7 @@ func generateRoot(commonName string) (rootCrt *x509.Certificate, privateKey inte
 	return newCert(rootProfile)
 }
 
-func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey interface{}) (cert *x509.Certificate, privateKey interface{}, err error) {
+func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey crypto.PrivateKey) (cert *x509.Certificate, privateKey crypto.PrivateKey, err error) {
 	interProfile, err := x509util.NewIntermediateProfile(commonName, rootCrt, rootKey)
 	if err != nil {
 		return
@@ -39,7 +40,7 @@ func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey 
 	return newCert(interProfile)
 }
 
-func newCert(profile x509util.Profile) (cert *x509.Certificate, privateKey interface{}, err error) {
+func newCert(profile x509util.Profile) (cert *x509.Certificate, privateKey crypto.PrivateKey, err error) {
 	certBytes, err := profile.CreateCertificate()
 	if err != nil {
 		return

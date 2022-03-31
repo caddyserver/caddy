@@ -35,6 +35,8 @@ type StorageLoader struct {
 
 	// Reference to the globally configured storage module.
 	storage certmagic.Storage
+
+	ctx caddy.Context
 }
 
 // CaddyModule returns the Caddy module information.
@@ -48,6 +50,7 @@ func (StorageLoader) CaddyModule() caddy.ModuleInfo {
 // Provision loads the storage module for sl.
 func (sl *StorageLoader) Provision(ctx caddy.Context) error {
 	sl.storage = ctx.Storage()
+	sl.ctx = ctx
 	return nil
 }
 
@@ -55,11 +58,11 @@ func (sl *StorageLoader) Provision(ctx caddy.Context) error {
 func (sl StorageLoader) LoadCertificates() ([]Certificate, error) {
 	certs := make([]Certificate, 0, len(sl.Pairs))
 	for _, pair := range sl.Pairs {
-		certData, err := sl.storage.Load(pair.Certificate)
+		certData, err := sl.storage.Load(sl.ctx, pair.Certificate)
 		if err != nil {
 			return nil, err
 		}
-		keyData, err := sl.storage.Load(pair.Key)
+		keyData, err := sl.storage.Load(sl.ctx, pair.Key)
 		if err != nil {
 			return nil, err
 		}

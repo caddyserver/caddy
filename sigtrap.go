@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"context"
 	"os"
 	"os/signal"
 
@@ -55,7 +56,7 @@ func trapSignalsCrossPlatform() {
 // exitProcessFromSignal exits the process from a system signal.
 func exitProcessFromSignal(sigName string) {
 	logger := Log().With(zap.String("signal", sigName))
-	exitProcess(logger)
+	exitProcess(context.TODO(), logger)
 }
 
 // Exit codes. Generally, you should NOT

@@ -60,8 +60,11 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	// original URI is necessary because that's the URI the browser knows,
 	// we don't want to redirect from internally-rewritten URIs.)
 	// See https://github.com/caddyserver/caddy/issues/4205.
+	// We also redirect if the path is empty, because this implies the path
+	// prefix was fully stripped away by a `handle_path` handler for example.
+	// See https://github.com/caddyserver/caddy/issues/4466.
 	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
-	if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
+	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
 			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
 			origReq.URL.Path += "/"

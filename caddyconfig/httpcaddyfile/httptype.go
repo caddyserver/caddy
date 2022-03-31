@@ -446,13 +446,14 @@ func (st *ServerType) serversFromPairings(
 		// handle the auto_https global option
 		if autoHTTPS != "on" {
 			srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-			if autoHTTPS == "off" {
+			switch autoHTTPS {
+			case "off":
 				srv.AutoHTTPS.Disabled = true
-			}
-			if autoHTTPS == "disable_redirects" {
+			case "disable_redirects":
 				srv.AutoHTTPS.DisableRedir = true
-			}
-			if autoHTTPS == "ignore_loaded_certs" {
+			case "disable_certs":
+				srv.AutoHTTPS.DisableCerts = true
+			case "ignore_loaded_certs":
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
 			}
 		}
@@ -580,7 +581,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			for _, addr := range sblock.keys {
-				// if server only uses HTTPS port, auto-HTTPS will not apply
+				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
 					// exclude any hosts that were defined explicitly with "http://"
 					// in the key from automated cert management (issue #2998)

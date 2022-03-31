@@ -120,6 +120,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				falseBool := false
 				fsrv.CanonicalURIs = &falseBool
 
+			case "pass_thru":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				fsrv.PassThru = true
+
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
