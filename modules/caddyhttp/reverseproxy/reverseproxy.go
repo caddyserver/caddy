@@ -426,7 +426,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
 func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
-	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
+	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler,
+) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
@@ -533,6 +534,9 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 // proxying) regardless of proxy retries. This assumes that no mutations
 // of the cloned request are performed by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
+	// We will pass the request to net/http, which requires the request context
+	// to be alive even after the request is handled. Extend the context's lifespan.
+	caddyhttp.RequestContextExtendLifespan(req)
 	req = cloneRequest(req)
 
 	// if enabled, buffer client request; this should only be

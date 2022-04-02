@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -141,40 +140,6 @@ type Server struct {
 	h3server *http3.Server
 }
 
-var requestContextPool = sync.Pool{
-	New: func() interface{} {
-		// initialize the map, so that all of the buckets
-		// are allocated and keys stored
-		return &RequestContext{
-			values: map[interface{}]interface{}{
-				caddy.ReplacerCtxKey:  nil,
-				ServerCtxKey:          nil,
-				VarsCtxKey:            make(map[string]interface{}),
-				OriginalRequestCtxKey: nil,
-			},
-		}
-	},
-}
-
-// Reset the RequestContext, keeping the capacity of the values
-func putBackRequestContext(rctx *RequestContext) {
-	rctx.Context = nil
-
-	// only store the vars map to keep it allocated as well
-	// this and the next map clear should be fast and won't resize the map
-	varMap := rctx.values[VarsCtxKey].(map[string]interface{})
-	for key := range varMap {
-		delete(varMap, key)
-	}
-
-	for key := range rctx.values {
-		delete(rctx.values, key)
-	}
-	rctx.values[VarsCtxKey] = varMap
-
-	requestContextPool.Put(rctx)
-}
-
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
@@ -200,7 +165,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repl := caddy.NewReplacer()
 	var rctx *RequestContext
 	r, rctx = PrepareRequest(r, repl, w, s)
-	defer putBackRequestContext(rctx)
+	defer rctx.Return()
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary
@@ -621,8 +586,7 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	*http.Request, *RequestContext,
 ) {
 	// Set up the request context and create a shallow copy containing it
-	// The order of values here, in requestContextPool.New and putBackRequestContext needs to be the same!
-	rctx := requestContextPool.Get().(*RequestContext)
+	rctx := NewRequestContext()
 	rctx.Context = r.Context()
 	rctx.values[caddy.ReplacerCtxKey] = repl
 	rctx.values[ServerCtxKey] = s
