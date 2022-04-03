@@ -735,7 +735,7 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 			return "", fmt.Errorf("no config file to load")
 		}
 
-		// get the address of the admin listener
+		// get the address of the admin listener if set
 		if len(config) > 0 {
 			var tmpStruct struct {
 				Admin caddy.AdminConfig `json:"admin"`
@@ -744,7 +744,9 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 			if err != nil {
 				return "", fmt.Errorf("unmarshaling admin listener address from config: %v", err)
 			}
-			return tmpStruct.Admin.Listen, nil
+			if tmpStruct.Admin.Listen != "" {
+				return tmpStruct.Admin.Listen, nil
+			}
 		}
 	}
 
