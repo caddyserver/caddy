@@ -18,7 +18,7 @@ require (
 	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.18.3-0.20220328195804-49de04661b85
-	github.com/smallstep/cli v0.18.0
+	github.com/smallstep/cli v0.18.2
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
 	github.com/tailscale/tscert v0.0.0-20220125204807-4509a5fbaf74
@@ -116,7 +116,7 @@ require (
 	go.opentelemetry.io/otel/metric v0.27.0 // indirect
 	go.opentelemetry.io/otel/trace v1.4.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
-	go.step.sm/cli-utils v0.7.0 // indirect
+	go.step.sm/cli-utils v0.7.2 // indirect
 	go.step.sm/crypto v0.15.3 // indirect
 	go.step.sm/linkedca v0.11.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
