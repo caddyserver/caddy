@@ -208,6 +208,10 @@ func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority
 		signerOption = authority.WithX509SignerFunc(func() ([]*x509.Certificate, crypto.Signer, error) {
 			issuerCert := ca.IntermediateCertificate()
 			issuerKey := ca.IntermediateKey().(crypto.Signer)
+			ca.log.Debug("using intermediate signer",
+				zap.String("serial", issuerCert.SerialNumber.String()),
+				zap.String("not_before", issuerCert.NotBefore.String()),
+				zap.String("not_after", issuerCert.NotAfter.String()))
 			return []*x509.Certificate{issuerCert}, issuerKey, nil
 		})
 	}
