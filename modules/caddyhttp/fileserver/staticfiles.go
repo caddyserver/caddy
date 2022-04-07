@@ -200,6 +200,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var implicitIndexFile bool
 	if info.IsDir() && len(fsrv.IndexNames) > 0 {
 		for _, indexPage := range fsrv.IndexNames {
+			indexPage := repl.ReplaceAll(indexPage, "")
 			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
 			if fileHidden(indexPath, filesToHide) {
 				// pretend this file doesn't exist
