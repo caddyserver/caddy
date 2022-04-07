@@ -128,15 +128,16 @@ type LogEncoderConfig struct {
 // UnmarshalCaddyfile populates the struct from Caddyfile tokens. Syntax:
 //
 //     {
-//         message_key <key>
-//         level_key   <key>
-//         time_key    <key>
-//         name_key    <key>
-//         caller_key  <key>
-//         stacktrace_key <key>
-//         line_ending  <char>
-//         time_format  <format>
-//         level_format <format>
+//         message_key     <key>
+//         level_key       <key>
+//         time_key        <key>
+//         name_key        <key>
+//         caller_key      <key>
+//         stacktrace_key  <key>
+//         line_ending     <char>
+//         time_format     <format>
+//         duration_format <format>
+//         level_format    <format>
 //     }
 //
 func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -163,6 +164,8 @@ func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			lec.LineEnding = &arg
 		case "time_format":
 			lec.TimeFormat = arg
+		case "duration_format":
+			lec.DurationFormat = arg
 		case "level_format":
 			lec.LevelFormat = arg
 		default:
