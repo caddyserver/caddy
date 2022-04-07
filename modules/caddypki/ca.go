@@ -182,7 +182,7 @@ func (ca CA) IntermediateKey() interface{} {
 }
 
 // NewAuthority returns a new Smallstep-powered signing authority for this CA.
-func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
+func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
 	// get the root certificate and the issuer cert+key
 	rootCert := ca.RootCertificate()
 
