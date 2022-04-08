@@ -155,6 +155,12 @@ func TestFileHidden(t *testing.T) {
 			expect:    true,
 		},
 		{
+			inputShow: []string{"/foo"},
+			inputHide: nil,
+			inputPath: "/",
+			expect:    false,
+		},
+		{
 			inputShow: []string{"*.txt"},
 			inputHide: []string{"/foo"},
 			inputPath: "/foo/bar.txt",

@@ -519,6 +519,13 @@ func fileHidden(filename string, show []string, hide []string) bool {
 	// cache the components of the input filename
 	var components []string
 
+	// if the filename is the root of the fileserver, then
+	// it should always be shown, because otherwise the
+	// index would always be hidden
+	if filename == separator {
+		goto shown
+	}
+
 	for _, s := range show {
 		if !strings.Contains(s, separator) {
 			// if there is no separator in s, then we assume the user
