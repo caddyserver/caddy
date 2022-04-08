@@ -29,7 +29,7 @@ import (
 )
 
 func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
-	filesToHide := fsrv.transformHidePaths(repl)
+	filesToShow, filesToHide := fsrv.transformShowHidePaths(repl)
 
 	var dirCount, fileCount int
 	fileInfos := []fileInfo{}
@@ -37,7 +37,7 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 	for _, f := range files {
 		name := f.Name()
 
-		if fileHidden(name, filesToHide) {
+		if fileHidden(name, filesToShow, filesToHide) {
 			continue
 		}
 

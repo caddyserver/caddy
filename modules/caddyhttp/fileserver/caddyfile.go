@@ -36,6 +36,7 @@ func init() {
 //
 //    file_server [<matcher>] [browse] {
 //        root          <path>
+//        show          <files...>
 //        hide          <files...>
 //        index         <files...>
 //        browse        [<template_file>]
@@ -62,6 +63,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "show":
+				fsrv.Show = h.RemainingArgs()
+				if len(fsrv.Show) == 0 {
+					return nil, h.ArgErr()
+				}
+
 			case "hide":
 				fsrv.Hide = h.RemainingArgs()
 				if len(fsrv.Hide) == 0 {
@@ -136,7 +143,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
 		for _, file := range configFiles {
 			file = filepath.Clean(file)
-			if !fileHidden(file, fsrv.Hide) {
+			if !fileHidden(file, fsrv.Show, fsrv.Hide) {
 				// if there's no path separator, the file server module will hide all
 				// files by that name, rather than a specific one; but we want to hide
 				// only this specific file, so ensure there's always a path separator

@@ -45,6 +45,29 @@ type FileServer struct {
 	// or current working directory otherwise.
 	Root string `json:"root,omitempty"`
 
+	// A list of files or folders to show; the file server will pretend as if
+	// only these exist, hiding everything else. If not set, everything is shown
+	// by default. Accepts globular patterns like `*.ext` or `/foo/*/bar` as
+	// well as placeholders. Because site roots can be dynamic, this list uses
+	// file system paths, not request paths. To clarify, the base of relative
+	// paths is the current working directory, NOT the site root.
+	//
+	// Entries without a path separator (`/` or `\` depending on OS) will match
+	// any file or directory of that name regardless of its path. To show only a
+	// specific file with a name that may not be unique, always use a path
+	// separator. For example, to show all files or folder trees named "shown",
+	// put "shown" in the list. To hide only ./shown, put "./shown" in the list.
+	//
+	// When possible, all paths are resolved to their absolute form before
+	// comparisons are made. For maximum clarity and explictness, use complete,
+	// absolute paths; or, for greater portability, use relative paths instead.
+	//
+	// When both `show` and `hide` are used together, shown files or folders are
+	// checked first (hiding anything not matching), and `hide` will be checked
+	// afterwards, further restrict the results. So, a shown directory can have
+	// files within it hidden by `hide`.
+	Show []string `json:"show,omitempty"`
+
 	// A list of files or folders to hide; the file server will pretend as if
 	// they don't exist. Accepts globular patterns like `*.ext` or `/foo/*/bar`
 	// as well as placeholders. Because site roots can be dynamic, this list
@@ -60,6 +83,11 @@ type FileServer struct {
 	// When possible, all paths are resolved to their absolute form before
 	// comparisons are made. For maximum clarity and explictness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
+	//
+	// When both `show` and `hide` are used together, shown files or folders are
+	// checked first (hiding anything not matching), and `hide` will be checked
+	// afterwards, further restrict the results. So, a shown directory can have
+	// files within it hidden by `hide`.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -121,6 +149,16 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.IndexNames = defaultIndexNames
 	}
 
+	// for show paths that are static (i.e. no placeholders), we can transform them into
+	// absolute paths before the server starts for very slight performance improvement
+	for i, s := range fsrv.Show {
+		if !strings.Contains(s, "{") && strings.Contains(s, separator) {
+			if abs, err := filepath.Abs(s); err == nil {
+				fsrv.Show[i] = abs
+			}
+		}
+	}
+
 	// for hide paths that are static (i.e. no placeholders), we can transform them into
 	// absolute paths before the server starts for very slight performance improvement
 	for i, h := range fsrv.Hide {
@@ -163,7 +201,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	filesToHide := fsrv.transformHidePaths(repl)
+	toShow, toHide := fsrv.transformShowHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
 	// PathUnescape returns an error if the escapes aren't well-formed,
@@ -202,11 +240,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		for _, indexPage := range fsrv.IndexNames {
 			indexPage := repl.ReplaceAll(indexPage, "")
 			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
-			if fileHidden(indexPath, filesToHide) {
+			if fileHidden(indexPath, toShow, toHide) {
 				// pretend this file doesn't exist
 				fsrv.logger.Debug("hiding index file",
 					zap.String("filename", indexPath),
-					zap.Strings("files_to_hide", filesToHide))
+					zap.Strings("to_show", toShow),
+					zap.Strings("to_hide", toHide))
 				continue
 			}
 
@@ -237,7 +276,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		fsrv.logger.Debug("no index file in directory",
 			zap.String("path", filename),
 			zap.Strings("index_filenames", fsrv.IndexNames))
-		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
+		if fsrv.Browse != nil && !fileHidden(filename, toShow, toHide) {
 			return fsrv.serveBrowse(root, filename, w, r, next)
 		}
 		return fsrv.notFound(w, r, next)
@@ -245,10 +284,11 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// one last check to ensure the file isn't hidden (we might
 	// have changed the filename from when we last checked)
-	if fileHidden(filename, filesToHide) {
+	if fileHidden(filename, toShow, toHide) {
 		fsrv.logger.Debug("hiding file",
 			zap.String("filename", filename),
-			zap.Strings("files_to_hide", filesToHide))
+			zap.Strings("to_show", toShow),
+			zap.Strings("to_hide", toHide))
 		return fsrv.notFound(w, r, next)
 	}
 
@@ -434,10 +474,20 @@ func mapDirOpenError(originalErr error, name string) error {
 	return originalErr
 }
 
-// transformHidePaths performs replacements for all the elements of fsrv.Hide and
-// makes them absolute paths (if they contain a path separator), then returns a
-// new list of the transformed values.
-func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
+// transformShowHidePaths performs replacements for all the elements of
+// fsrv.Show and fsrv.Hide, makes them absolute paths (if they contain a
+// path separator), then returns a new list of the transformed values.
+func (fsrv *FileServer) transformShowHidePaths(repl *caddy.Replacer) ([]string, []string) {
+	show := make([]string, len(fsrv.Show))
+	for i := range fsrv.Show {
+		show[i] = repl.ReplaceAll(fsrv.Show[i], "")
+		if strings.Contains(show[i], separator) {
+			abs, err := filepath.Abs(show[i])
+			if err == nil {
+				show[i] = abs
+			}
+		}
+	}
 	hide := make([]string, len(fsrv.Hide))
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
@@ -448,15 +498,15 @@ func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 			}
 		}
 	}
-	return hide
+	return show, hide
 }
 
-// fileHidden returns true if filename is hidden according to the hide list.
-// filename must be a relative or absolute file system path, not a request
-// URI path. It is expected that all the paths in the hide list are absolute
-// paths or are singular filenames (without a path separator).
-func fileHidden(filename string, hide []string) bool {
-	if len(hide) == 0 {
+// fileHidden returns true if filename is hidden according to the show and hide lists.
+// filename must be a relative or absolute file system path, not a request URI path.
+// It is expected that all the paths in the show and hide list are absolute paths or
+// are singular filenames (without a path separator).
+func fileHidden(filename string, show []string, hide []string) bool {
+	if len(hide) == 0 && len(show) == 0 {
 		return false
 	}
 
@@ -466,7 +516,49 @@ func fileHidden(filename string, hide []string) bool {
 		filename = filenameAbs
 	}
 
+	// cache the components of the input filename
 	var components []string
+
+	for _, s := range show {
+		if !strings.Contains(s, separator) {
+			// if there is no separator in s, then we assume the user
+			// wants to show any files or folders that match that
+			// name; thus we have to compare against each component
+			// of the filename, e.g. showing "bar" would show "/bar"
+			// as well as "/foo/bar/baz" but not "/barstool".
+			if len(components) == 0 {
+				components = strings.Split(filename, separator)
+			}
+			for _, c := range components {
+				if shown, _ := filepath.Match(s, c); shown {
+					goto shown
+				}
+			}
+		} else if strings.HasPrefix(filename, s) {
+			// if there is a separator in s, and filename is exactly
+			// prefixed with s, then we can do a prefix match so that
+			// "/foo" matches "/foo/bar" but not "/foobar".
+			withoutPrefix := strings.TrimPrefix(filename, s)
+			if strings.HasPrefix(withoutPrefix, separator) {
+				goto shown
+			}
+		}
+
+		// in the general case, a glob match will suffice
+		if shown, _ := filepath.Match(s, filename); shown {
+			goto shown
+		}
+	}
+
+	// if we have show configured and the file was _not_ shown
+	// (i.e. goto didn't skip this condition), then it should be hidden
+	if len(show) > 0 {
+		return true
+	}
+
+	// we jump to here if the file is shown, to give a chance for
+	// the hide list to further restrict visibility
+shown:
 
 	for _, h := range hide {
 		if !strings.Contains(h, separator) {
@@ -499,6 +591,7 @@ func fileHidden(filename string, hide []string) bool {
 		}
 	}
 
+	// file is shown
 	return false
 }
 
