@@ -1,5 +1,7 @@
 http://localhost:2020 {
 	log
+	skip_log /first-hidden*
+	skip_log /second-hidden*
 	respond 200
 }
 
@@ -30,6 +32,26 @@ http://localhost:2020 {
 									"routes": [
 										{
 											"handle": [
+												{
+													"handler": "skip_log",
+													"match": [
+														{
+															"path": [
+																"/first-hidden*"
+															]
+														}
+													]
+												},
+												{
+													"handler": "skip_log",
+													"match": [
+														{
+															"path": [
+																"/second-hidden*"
+															]
+														}
+													]
+												},
 												{
 													"handler": "static_response",
 													"status_code": 200

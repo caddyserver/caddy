@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -217,6 +216,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		accLog := s.accessLogger.With(loggableReq)
 
 		defer func() {
+			// a handler may flag this request as having
+			// its logs omitted, e.g. to reduce log noise
+			// for unimportant static files, or otherwise.
+			if skipLog, ok := GetVar(r.Context(), SkipLogVarKey).(bool); ok && skipLog {
+				return
+			}
+
 			repl.Set("http.response.status", wrec.Status())
 			repl.Set("http.response.size", wrec.Size())
 			repl.Set("http.response.duration", duration)
@@ -567,82 +573,6 @@ func (s *Server) protocol(proto string) bool {
 	return false
 }
 
-// ServerLogConfig describes a server's logging configuration. If
-// enabled without customization, all requests to this server are
-// logged to the default logger; logger destinations may be
-// customized per-request-host.
-type ServerLogConfig struct {
-	// The default logger name for all logs emitted by this server for
-	// hostnames that are not in the LoggerNames (logger_names) map.
-	DefaultLoggerName string `json:"default_logger_name,omitempty"`
-
-	// LoggerNames maps request hostnames to a custom logger name.
-	// For example, a mapping of "example.com" to "example" would
-	// cause access logs from requests with a Host of example.com
-	// to be emitted by a logger named "http.log.access.example".
-	LoggerNames map[string]string `json:"logger_names,omitempty"`
-
-	// By default, all requests to this server will be logged if
-	// access logging is enabled. This field lists the request
-	// hosts for which access logging should be disabled.
-	SkipHosts []string `json:"skip_hosts,omitempty"`
-
-	// If true, requests to any host not appearing in the
-	// LoggerNames (logger_names) map will not be logged.
-	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
-
-	// If true, credentials that are otherwise omitted, will be logged.
-	// The definition of credentials is defined by https://fetch.spec.whatwg.org/#credentials,
-	// and this includes some request and response headers, i.e `Cookie`,
-	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
-	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
-}
-
-// wrapLogger wraps logger in a logger named according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
-	if loggerName := slc.getLoggerName(host); loggerName != "" {
-		return logger.Named(loggerName)
-	}
-	return logger
-}
-
-func (slc ServerLogConfig) getLoggerName(host string) string {
-	tryHost := func(key string) (string, bool) {
-		// first try exact match
-		if loggerName, ok := slc.LoggerNames[key]; ok {
-			return loggerName, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err := net.SplitHostPort(key)
-		if err != nil {
-			return "", false
-		}
-		loggerName, ok := slc.LoggerNames[hostOnly]
-		return loggerName, ok
-	}
-
-	// try the exact hostname first
-	if loggerName, ok := tryHost(host); ok {
-		return loggerName
-	}
-
-	// try matching wildcard domains if other non-specific loggers exist
-	labels := strings.Split(host, ".")
-	for i := range labels {
-		if labels[i] == "" {
-			continue
-		}
-		labels[i] = "*"
-		wildcardHost := strings.Join(labels, ".")
-		if loggerName, ok := tryHost(wildcardHost); ok {
-			return loggerName
-		}
-	}
-
-	return slc.DefaultLoggerName
-}
-
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
@@ -660,31 +590,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	addHTTPVarsToReplacer(repl, r, w)
 
 	return r
-}
-
-// errLogValues inspects err and returns the status code
-// to use, the error log message, and any extra fields.
-// If err is a HandlerError, the returned values will
-// have richer information.
-func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
-	var handlerErr HandlerError
-	if errors.As(err, &handlerErr) {
-		status = handlerErr.StatusCode
-		if handlerErr.Err == nil {
-			msg = err.Error()
-		} else {
-			msg = handlerErr.Err.Error()
-		}
-		fields = []zapcore.Field{
-			zap.Int("status", handlerErr.StatusCode),
-			zap.String("err_id", handlerErr.ID),
-			zap.String("err_trace", handlerErr.Trace),
-		}
-		return
-	}
-	status = http.StatusInternalServerError
-	msg = err.Error()
-	return
 }
 
 // originalRequest returns a partial, shallow copy of
@@ -726,4 +631,8 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// Key used for the variable that holds whether the
+	// request was marked as having access logs skipped
+	SkipLogVarKey = "http.skip_log"
 )

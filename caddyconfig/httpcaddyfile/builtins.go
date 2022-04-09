@@ -48,6 +48,7 @@ func init() {
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterDirective("log", parseLog)
+	RegisterDirective("skip_log", parseSkipLog)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -857,4 +858,31 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 		})
 	}
 	return configValues, nil
+}
+
+// parseSkipLog parses the skip_log directive. Syntax:
+//
+//     skip_log <matcher>
+//
+func parseSkipLog(h Helper) ([]ConfigValue, error) {
+	// consume directive name
+	if !h.Next() {
+		return nil, h.ArgErr()
+	}
+
+	// a matcher must always be provided
+	if h.CountRemainingArgs() != 1 {
+		return nil, h.ArgErr()
+	}
+
+	matcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+
+	skipLog := caddyhttp.SkipLog{
+		MatcherSetsRaw: []caddy.ModuleMap{matcherSet},
+	}
+
+	return h.NewRoute(nil, &skipLog), nil
 }

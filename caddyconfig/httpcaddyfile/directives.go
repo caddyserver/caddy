@@ -42,6 +42,7 @@ var directiveOrder = []string{
 	"map",
 	"vars",
 	"root",
+	"skip_log",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
