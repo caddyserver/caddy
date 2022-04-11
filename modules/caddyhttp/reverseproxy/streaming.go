@@ -32,10 +32,15 @@ import (
 func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
-	// TODO: Update to use "net/http/internal/ascii" once we bumped
-	// the minimum Go version to 1.17.
-	// See https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
-	if reqUpType != resUpType {
+
+	// Taken from https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
+	// We know reqUpType is ASCII, it's checked by the caller.
+	if !asciiIsPrint(resUpType) {
+		h.logger.Debug("backend tried to switch to invalid protocol",
+			zap.String("backend_upgrade", resUpType))
+		return
+	}
+	if !asciiEqualFold(reqUpType, resUpType) {
 		h.logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
 			zap.String("backend_upgrade", resUpType),
 			zap.String("requested_upgrade", reqUpType))
