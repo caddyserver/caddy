@@ -23,7 +23,7 @@
 
 package reverseproxy
 
-// EqualFold is strings.EqualFold, ASCII only. It reports whether s and t
+// asciiEqualFold is strings.EqualFold, ASCII only. It reports whether s and t
 // are equal, ASCII-case-insensitively.
 func asciiEqualFold(s, t string) bool {
 	if len(s) != len(t) {
@@ -37,7 +37,7 @@ func asciiEqualFold(s, t string) bool {
 	return true
 }
 
-// lower returns the ASCII lowercase version of b.
+// asciiLower returns the ASCII lowercase version of b.
 func asciiLower(b byte) byte {
 	if 'A' <= b && b <= 'Z' {
 		return b + ('a' - 'A')
@@ -45,7 +45,7 @@ func asciiLower(b byte) byte {
 	return b
 }
 
-// IsPrint returns whether s is ASCII and printable according to
+// asciiIsPrint returns whether s is ASCII and printable according to
 // https://tools.ietf.org/html/rfc20#section-4.2.
 func asciiIsPrint(s string) bool {
 	for i := 0; i < len(s); i++ {
