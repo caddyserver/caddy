@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aryann/difflib"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -568,6 +569,20 @@ func cmdFmt(fl Flags) (int, error) {
 	if fl.Bool("overwrite") {
 		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
+		}
+	} else if fl.Bool("diff") {
+		diff := difflib.Diff(
+			strings.Split(string(input), "\n"),
+			strings.Split(string(output), "\n"))
+		for _, d := range diff {
+			switch d.Delta {
+			case difflib.Common:
+				fmt.Printf("  %s\n", d.Payload)
+			case difflib.LeftOnly:
+				fmt.Printf("- %s\n", d.Payload)
+			case difflib.RightOnly:
+				fmt.Printf("+ %s\n", d.Payload)
+			}
 		}
 	} else {
 		fmt.Print(string(output))
