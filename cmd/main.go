@@ -24,6 +24,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -369,6 +370,8 @@ func loadEnvFromFile(envFile string) error {
 }
 
 func parseEnvFile(envInput io.Reader) (map[string]string, error) {
+	var singleQuotesRegex = regexp.MustCompile(`\A'(.*)'\z`)
+	var doubleQuotesRegex = regexp.MustCompile(`\A"(.*)"\z`)
 	envMap := make(map[string]string)
 
 	scanner := bufio.NewScanner(envInput)
@@ -403,6 +406,13 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 
 		if key == "" {
 			return nil, fmt.Errorf("missing or empty key on line %d", lineNumber)
+		}
+
+		singleQuotes := singleQuotesRegex.FindStringSubmatch(val)
+		doubleQuotes := doubleQuotesRegex.FindStringSubmatch(val)
+
+		if singleQuotes != nil || doubleQuotes != nil {
+			val = val[1 : len(val)-1]
 		}
 		envMap[key] = val
 	}
