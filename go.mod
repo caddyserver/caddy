@@ -3,6 +3,7 @@ module github.com/caddyserver/caddy/v2
 go 1.17
 
 require (
+	github.com/BurntSushi/toml v1.0.0
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
@@ -15,7 +16,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.11
 	github.com/lucas-clemente/quic-go v0.26.0
 	github.com/mholt/acmez v1.0.2
-	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.18.3-0.20220328195804-49de04661b85
 	github.com/smallstep/cli v0.18.0
@@ -41,7 +41,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
-	github.com/BurntSushi/toml v1.0.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/antlr/antlr4 v0.0.0-20200503195918-621b933c7a7f // indirect
@@ -93,7 +92,6 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
