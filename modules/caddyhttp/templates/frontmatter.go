@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/naoina/toml"
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v2"
 )
 
