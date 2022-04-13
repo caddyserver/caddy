@@ -24,6 +24,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go }}
+          check-latest: true
 
       - name: Print Go version and environment
         id: vars
