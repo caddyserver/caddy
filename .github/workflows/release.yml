@@ -99,7 +99,7 @@ jobs:
         TAG: ${{ steps.vars.outputs.version_tag }}
 
     # Only publish on non-special tags (e.g. non-beta)
-    # We will continue to push to Gemfury for the forseeable future, although
+    # We will continue to push to Gemfury for the foreseeable future, although
     # Cloudsmith is probably better, to not break things for existing users of Gemfury.
     # See https://gemfury.com/caddy/deb:caddy
     - name: Publish .deb to Gemfury
