@@ -182,6 +182,9 @@ func (ca CA) IntermediateKey() interface{} {
 }
 
 // NewAuthority returns a new Smallstep-powered signing authority for this CA.
+// Note that we receive *CA (a pointer) in this method to ensure the closure within it, which
+// executes at a later time, always has the only copy of the CA so it can access the latest,
+// renewed certificates since NewAuthority was called. See #4517 and #4669.
 func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
 	// get the root certificate and the issuer cert+key
 	rootCert := ca.RootCertificate()
