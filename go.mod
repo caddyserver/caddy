@@ -17,7 +17,7 @@ require (
 	github.com/lucas-clemente/quic-go v0.26.0
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
-	github.com/smallstep/certificates v0.18.3-0.20220328195804-49de04661b85
+	github.com/smallstep/certificates v0.18.3-0.20220329212333-b42c1dfe64cf
 	github.com/smallstep/cli v0.18.0
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
