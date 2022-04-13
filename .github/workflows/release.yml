@@ -16,7 +16,7 @@ jobs:
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.17'
+        - go: '1.18'
           GO_SEMVER: '~1.18.1'
 
     runs-on: ${{ matrix.os }}
