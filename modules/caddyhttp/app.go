@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -50,6 +49,7 @@ func init() {
 // `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
+// `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
 // `{http.request.uuid}` | The request unique identifier
 // `{http.request.header.*}` | Specific request header field
 // `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
@@ -116,9 +116,8 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
-	servers     []*http.Server
-	h3servers   []*http3.Server
-	h3listeners []net.PacketConn
+	servers   []*http.Server
+	h3servers []*http3.Server
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -353,9 +352,9 @@ func (app *App) Start() error {
 						app.logger.Info("enabling experimental HTTP/3 listener",
 							zap.String("addr", hostport),
 						)
-						h3ln, err := caddy.ListenPacket("udp", hostport)
+						h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
 						if err != nil {
-							return fmt.Errorf("getting HTTP/3 UDP listener: %v", err)
+							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
 						}
 						h3srv := &http3.Server{
 							Server: &http.Server{
@@ -366,9 +365,8 @@ func (app *App) Start() error {
 							},
 						}
 						//nolint:errcheck
-						go h3srv.Serve(h3ln)
+						go h3srv.ServeListener(h3ln)
 						app.h3servers = append(app.h3servers, h3srv)
-						app.h3listeners = append(app.h3listeners, h3ln)
 						srv.h3server = h3srv
 					}
 					/////////
@@ -426,28 +424,10 @@ func (app *App) Stop() error {
 		}
 	}
 
-	// close the http3 servers; it's unclear whether the bug reported in
-	// https://github.com/caddyserver/caddy/pull/2727#issuecomment-526856566
-	// was ever truly fixed, since it seemed racey/nondeterministic; but
-	// recent tests in 2020 were unable to replicate the issue again after
-	// repeated attempts (the bug manifested after a config reload; i.e.
-	// reusing a http3 server or listener was problematic), but it seems
-	// to be working fine now
 	for _, s := range app.h3servers {
 		// TODO: CloseGracefully, once implemented upstream
 		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
 		err := s.Close()
-		if err != nil {
-			return err
-		}
-	}
-
-	// closing an http3.Server does not close their underlying listeners
-	// since apparently the listener can be used both by servers and
-	// clients at the same time; so we need to manually call Close()
-	// on the underlying h3 listeners (see lucas-clemente/quic-go#2103)
-	for _, pc := range app.h3listeners {
-		err := pc.Close()
 		if err != nil {
 			return err
 		}

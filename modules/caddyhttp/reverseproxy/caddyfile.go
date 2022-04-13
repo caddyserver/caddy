@@ -53,8 +53,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //     reverse_proxy [<matcher>] [<upstreams...>] {
-//         # upstreams
-//         to <upstreams...>
+//         # backends
+//         to      <upstreams...>
 //         dynamic <name> [...]
 //
 //         # load balancing
@@ -63,26 +63,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         lb_try_interval <interval>
 //
 //         # active health checking
-//         health_uri  <uri>
-//         health_port <port>
+//         health_uri      <uri>
+//         health_port     <port>
 //         health_interval <interval>
-//         health_timeout <duration>
-//         health_status <status>
-//         health_body <regexp>
+//         health_timeout  <duration>
+//         health_status   <status>
+//         health_body     <regexp>
 //         health_headers {
 //             <field> [<values...>]
 //         }
 //
 //         # passive health checking
-//         max_fails <num>
-//         fail_duration <duration>
-//         max_conns <num>
-//         unhealthy_status <status>
+//         fail_duration     <duration>
+//         max_fails         <num>
+//         unhealthy_status  <status>
 //         unhealthy_latency <duration>
+//         unhealthy_request_count <num>
 //
 //         # streaming
 //         flush_interval <duration>
 //         buffer_requests
+//         buffer_responses
+//         max_buffer_size <size>
 //
 //         # header manipulation
 //         trusted_proxies [private_ranges] <ranges...>
@@ -94,14 +96,23 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //             ...
 //         }
 //
-//         # intercepting responses
+//         # optionally intercept responses from upstream
 //         @name {
 //             status <code...>
 //             header <field> [<value>]
 //         }
-//         replace_status <matcher> <status_code>
+//         replace_status [<matcher>] <status_code>
 //         handle_response [<matcher>] {
 //             <directives...>
+//
+//             # special directives only available in handle_response
+//             copy_response [<matcher>] [<status>] {
+//                 status <status>
+//             }
+//             copy_response_headers [<matcher>] {
+//                 include <fields...>
+//                 exclude <fields...>
+//             }
 //         }
 //     }
 //
@@ -1073,6 +1084,7 @@ func parseCopyResponseHeadersCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //    copy_response_headers [<matcher>] {
+//        include <fields...>
 //        exclude <fields...>
 //    }
 //

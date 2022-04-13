@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go: [ '1.16', '1.17' ]
+        go: [ '1.17', '1.18' ]
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
@@ -41,12 +41,12 @@ jobs:
 
     steps:
     - name: Install Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ${{ matrix.go }}
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
@@ -130,7 +130,7 @@ jobs:
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
       - name: Checkout code into the Go module directory
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Run Tests
         run: |
           mkdir -p ~/.ssh && echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_ecdsa && chmod og-rwx ~/.ssh/id_ecdsa
@@ -155,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       
       - uses: goreleaser/goreleaser-action@v2
         with:

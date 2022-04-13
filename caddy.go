@@ -653,7 +653,7 @@ func Validate(cfg *Config) error {
 // PID file, and shuts down admin endpoint(s) in a goroutine.
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
-func exitProcess(logger *zap.Logger) {
+func exitProcess(ctx context.Context, logger *zap.Logger) {
 	if logger == nil {
 		logger = Log()
 	}
@@ -668,7 +668,7 @@ func exitProcess(logger *zap.Logger) {
 	}
 
 	// clean up certmagic locks
-	certmagic.CleanUpOwnLocks(logger)
+	certmagic.CleanUpOwnLocks(ctx, logger)
 
 	// remove pidfile
 	if pidfile != "" {

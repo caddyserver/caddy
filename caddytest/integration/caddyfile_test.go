@@ -101,3 +101,27 @@ func TestReadCookie(t *testing.T) {
 	// act and assert
 	tester.AssertGetResponse("http://localhost:9080/cookie.html", 200, "<h2>Cookie.ClientName caddytest</h2>")
 }
+
+func TestReplIndex(t *testing.T) {
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+  {
+    http_port     9080
+    https_port    9443
+  }
+
+  localhost:9080 {
+    templates {
+      root testdata
+    }
+    file_server {
+      root testdata
+      index "index.{host}.html"
+    }
+  }
+  `, "caddyfile")
+
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/", 200, "")
+}

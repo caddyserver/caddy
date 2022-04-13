@@ -198,11 +198,11 @@ func (hcg *HTTPCertGetter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Interface guards
 var (
-	_ certmagic.CertificateManager = (*Tailscale)(nil)
-	_ caddy.Provisioner            = (*Tailscale)(nil)
-	_ caddyfile.Unmarshaler        = (*Tailscale)(nil)
+	_ certmagic.Manager     = (*Tailscale)(nil)
+	_ caddy.Provisioner     = (*Tailscale)(nil)
+	_ caddyfile.Unmarshaler = (*Tailscale)(nil)
 
-	_ certmagic.CertificateManager = (*HTTPCertGetter)(nil)
-	_ caddy.Provisioner            = (*HTTPCertGetter)(nil)
-	_ caddyfile.Unmarshaler        = (*HTTPCertGetter)(nil)
+	_ certmagic.Manager     = (*HTTPCertGetter)(nil)
+	_ caddy.Provisioner     = (*HTTPCertGetter)(nil)
+	_ caddyfile.Unmarshaler = (*HTTPCertGetter)(nil)
 )

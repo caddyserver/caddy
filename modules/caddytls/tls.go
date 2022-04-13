@@ -199,7 +199,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading certificates: %v", err)
 		}
 		for _, cert := range certs {
-			err := magic.CacheUnmanagedTLSCertificate(cert.Certificate, cert.Tags)
+			err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
 			if err != nil {
 				return fmt.Errorf("caching unmanaged certificate: %v", err)
 			}
@@ -336,7 +336,7 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	for _, iss := range ap.magic.Issuers {
 		if am, ok := iss.(acmeCapable); ok {
 			iss := am.GetACMEIssuer()
-			if certmagic.NewACMEManager(iss.magic, iss.template).HandleHTTPChallenge(w, r) {
+			if certmagic.NewACMEIssuer(iss.magic, iss.template).HandleHTTPChallenge(w, r) {
 				return true
 			}
 		}

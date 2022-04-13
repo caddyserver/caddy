@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -201,6 +202,43 @@ func (d *Dispenser) Val() string {
 	return d.tokens[d.cursor].Text
 }
 
+// ValRaw gets the raw text of the current token (including quotes).
+// If there is no token loaded, it returns empty string.
+func (d *Dispenser) ValRaw() string {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return ""
+	}
+	quote := d.tokens[d.cursor].wasQuoted
+	if quote > 0 {
+		return string(quote) + d.tokens[d.cursor].Text + string(quote) // string literal
+	}
+	return d.tokens[d.cursor].Text
+}
+
+// ScalarVal gets value of the current token, converted to the closest
+// scalar type. If there is no token loaded, it returns nil.
+func (d *Dispenser) ScalarVal() interface{} {
+	if d.cursor < 0 || d.cursor >= len(d.tokens) {
+		return nil
+	}
+	quote := d.tokens[d.cursor].wasQuoted
+	text := d.tokens[d.cursor].Text
+
+	if quote > 0 {
+		return text // string literal
+	}
+	if num, err := strconv.Atoi(text); err == nil {
+		return num
+	}
+	if num, err := strconv.ParseFloat(text, 64); err == nil {
+		return num
+	}
+	if bool, err := strconv.ParseBool(text); err == nil {
+		return bool
+	}
+	return text
+}
+
 // Line gets the line number of the current token.
 // If there is no token loaded, it returns 0.
 func (d *Dispenser) Line() int {
@@ -249,6 +287,19 @@ func (d *Dispenser) AllArgs(targets ...*string) bool {
 	return true
 }
 
+// CountRemainingArgs counts the amount of remaining arguments
+// (tokens on the same line) without consuming the tokens.
+func (d *Dispenser) CountRemainingArgs() int {
+	count := 0
+	for d.NextArg() {
+		count++
+	}
+	for i := 0; i < count; i++ {
+		d.Prev()
+	}
+	return count
+}
+
 // RemainingArgs loads any more arguments (tokens on the same line)
 // into a slice and returns them. Open curly brace tokens also indicate
 // the end of arguments, and the curly brace is not included in
@@ -257,6 +308,18 @@ func (d *Dispenser) RemainingArgs() []string {
 	var args []string
 	for d.NextArg() {
 		args = append(args, d.Val())
+	}
+	return args
+}
+
+// RemainingArgsRaw loads any more arguments (tokens on the same line,
+// retaining quotes) into a slice and returns them. Open curly brace
+// tokens also indicate the end of arguments, and the curly brace is
+// not included in the return value nor is it loaded.
+func (d *Dispenser) RemainingArgsRaw() []string {
+	var args []string
+	for d.NextArg() {
+		args = append(args, d.ValRaw())
 	}
 	return args
 }
@@ -395,6 +458,60 @@ func (d *Dispenser) isNewLine() bool {
 	if d.cursor > len(d.tokens)-1 {
 		return false
 	}
-	return d.tokens[d.cursor-1].File != d.tokens[d.cursor].File ||
-		d.tokens[d.cursor-1].Line+d.numLineBreaks(d.cursor-1) < d.tokens[d.cursor].Line
+
+	prev := d.tokens[d.cursor-1]
+	curr := d.tokens[d.cursor]
+
+	// If the previous token is from a different file,
+	// we can assume it's from a different line
+	if prev.File != curr.File {
+		return true
+	}
+
+	// The previous token may contain line breaks if
+	// it was quoted and spanned multiple lines. e.g:
+	//
+	// dir "foo
+	//   bar
+	//   baz"
+	prevLineBreaks := d.numLineBreaks(d.cursor - 1)
+
+	// If the previous token (incl line breaks) ends
+	// on a line earlier than the current token,
+	// then the current token is on a new line
+	return prev.Line+prevLineBreaks < curr.Line
+}
+
+// isNextOnNewLine determines whether the current token is on a different
+// line (higher line number) than the next token. It handles imported
+// tokens correctly. If there isn't a next token, it returns true.
+func (d *Dispenser) isNextOnNewLine() bool {
+	if d.cursor < 0 {
+		return false
+	}
+	if d.cursor >= len(d.tokens)-1 {
+		return true
+	}
+
+	curr := d.tokens[d.cursor]
+	next := d.tokens[d.cursor+1]
+
+	// If the next token is from a different file,
+	// we can assume it's from a different line
+	if curr.File != next.File {
+		return true
+	}
+
+	// The current token may contain line breaks if
+	// it was quoted and spanned multiple lines. e.g:
+	//
+	// dir "foo
+	//   bar
+	//   baz"
+	currLineBreaks := d.numLineBreaks(d.cursor)
+
+	// If the current token (incl line breaks) ends
+	// on a line earlier than the next token,
+	// then the next token is on a new line
+	return curr.Line+currLineBreaks < next.Line
 }

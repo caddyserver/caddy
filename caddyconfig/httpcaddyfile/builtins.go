@@ -39,6 +39,7 @@ func init() {
 	RegisterDirective("bind", parseBind)
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("root", parseRoot)
+	RegisterHandlerDirective("vars", parseVars)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
 	RegisterHandlerDirective("abort", parseAbort)
@@ -94,7 +95,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var keyType string
 	var internalIssuer *caddytls.InternalIssuer
 	var issuers []certmagic.Issuer
-	var certManagers []certmagic.CertificateManager
+	var certManagers []certmagic.Manager
 	var onDemand bool
 
 	for h.Next() {
@@ -319,7 +320,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				if err != nil {
 					return nil, err
 				}
-				certManager, ok := unm.(certmagic.CertificateManager)
+				certManager, ok := unm.(certmagic.Manager)
 				if !ok {
 					return nil, h.Errf("module %s (%T) is not a certmagic.CertificateManager", modID, unm)
 				}
@@ -528,6 +529,13 @@ func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 	return caddyhttp.VarsMiddleware{"root": root}, nil
+}
+
+// parseVars parses the vars directive. See its UnmarshalCaddyfile method for syntax.
+func parseVars(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	v := new(caddyhttp.VarsMiddleware)
+	err := v.UnmarshalCaddyfile(h.Dispenser)
+	return v, err
 }
 
 // parseRedir parses the redir directive. Syntax:

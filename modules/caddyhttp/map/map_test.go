@@ -82,6 +82,22 @@ func TestHandler(t *testing.T) {
 				"output": "3",
 			},
 		},
+		{
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						Input:   "/foo",
+						Outputs: []interface{}{"{testvar}"},
+					},
+				},
+			},
+			expect: map[string]interface{}{
+				"output": "testing",
+			},
+		},
 	} {
 		if err := tc.handler.Provision(caddy.Context{}); err != nil {
 			t.Fatalf("Test %d: Provisioning handler: %v", i, err)
@@ -92,6 +108,7 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("Test %d: Creating request: %v", i, err)
 		}
 		repl := caddyhttp.NewTestReplacer(req)
+		repl.Set("testvar", "testing")
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
