@@ -40,7 +40,6 @@ type serverOptions struct {
 	IdleTimeout          caddy.Duration
 	MaxHeaderBytes       int
 	AllowH2C             bool
-	ExperimentalHTTP3    bool
 	StrictSNIHost        *bool
 	ShouldLogCredentials bool
 }
@@ -150,11 +149,9 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error
 						}
 						serverOpts.AllowH2C = true
 
+					// TODO: deprecated - remove soon!
 					case "experimental_http3":
-						if d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						serverOpts.ExperimentalHTTP3 = true
+						caddy.Log().Named("caddyfile").Warn("the experimental_http3 option is deprecated and will be removed soon as HTTP/3 is now enabled by default and is no longer experimental")
 
 					case "strict_sni_host":
 						if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
@@ -185,17 +182,6 @@ func applyServerOptions(
 	options map[string]interface{},
 	warnings *[]caddyconfig.Warning,
 ) error {
-	// If experimental HTTP/3 is enabled, enable it on each server.
-	// We already know there won't be a conflict with serverOptions because
-	// we validated earlier that "experimental_http3" cannot be set at the same
-	// time as "servers"
-	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
-		*warnings = append(*warnings, caddyconfig.Warning{Message: "the 'experimental_http3' global option is deprecated, please use the 'servers > protocol > experimental_http3' option instead"})
-		for _, srv := range servers {
-			srv.ExperimentalHTTP3 = true
-		}
-	}
-
 	serverOpts, ok := options["servers"].([]serverOptions)
 	if !ok {
 		return nil
@@ -230,7 +216,6 @@ func applyServerOptions(
 		server.IdleTimeout = opts.IdleTimeout
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.AllowH2C = opts.AllowH2C
-		server.ExperimentalHTTP3 = opts.ExperimentalHTTP3
 		server.StrictSNIHost = opts.StrictSNIHost
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {

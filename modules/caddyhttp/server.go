@@ -111,9 +111,9 @@ type Server struct {
 	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
-	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
-	// finished standard and has extremely limited client support.
-	// This field is not subject to compatibility promises.
+	// DEPRECATED: WILL BE REMOVED SOON. HTTP/3 is enabled by default
+	// when possible. Please remove this from your configs.
+	// TODO: remove
 	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
 
 	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,

@@ -346,30 +346,24 @@ func (app *App) Start() error {
 					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)
 
-					/////////
-					// TODO: HTTP/3 support is experimental for now
-					if srv.ExperimentalHTTP3 {
-						app.logger.Info("enabling experimental HTTP/3 listener",
-							zap.String("addr", hostport),
-						)
-						h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
-						if err != nil {
-							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
-						}
-						h3srv := &http3.Server{
-							Server: &http.Server{
-								Addr:      hostport,
-								Handler:   srv,
-								TLSConfig: tlsCfg,
-								ErrorLog:  serverLogger,
-							},
-						}
-						//nolint:errcheck
-						go h3srv.ServeListener(h3ln)
-						app.h3servers = append(app.h3servers, h3srv)
-						srv.h3server = h3srv
+					// create HTTP/3 listener
+					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+					h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
+					if err != nil {
+						return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 					}
-					/////////
+					h3srv := &http3.Server{
+						Server: &http.Server{
+							Addr:      hostport,
+							Handler:   srv,
+							TLSConfig: tlsCfg,
+							ErrorLog:  serverLogger,
+						},
+					}
+					//nolint:errcheck
+					go h3srv.ServeListener(h3ln)
+					app.h3servers = append(app.h3servers, h3srv)
+					srv.h3server = h3srv
 				}
 
 				// finish wrapping listener where we left off before TLS
@@ -388,9 +382,8 @@ func (app *App) Start() error {
 
 				app.logger.Debug("starting server loop",
 					zap.String("address", ln.Addr().String()),
-					zap.Bool("http3", srv.ExperimentalHTTP3),
 					zap.Bool("tls", useTLS),
-				)
+					zap.Bool("http3", srv.h3server != nil))
 
 				//nolint:errcheck
 				go s.Serve(ln)
