@@ -92,7 +92,16 @@ func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
 	lnKey := "quic/" + addr
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
+		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			AcceptToken: func(clientAddr net.Addr, token *quic.Token) bool {
+				if token == nil {
+					return false
+				}
+				// TODO: this is simulated; figure out a real way to compute load
+				highLoad := token.SentTime.UnixMilli()%3 == 0
+				return highLoad
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
