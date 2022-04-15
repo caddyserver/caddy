@@ -87,8 +87,9 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
-// a context other than context.Background is meaningless.
-func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
+// a context other than context.Background is meaningless. If activeRequests
+// is not nil, it should represent the current load on the server.
+func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
 	lnKey := "quic/" + addr
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -97,8 +98,10 @@ func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
 				if token == nil {
 					return false
 				}
-				// TODO: this is simulated; figure out a real way to compute load
-				highLoad := token.SentTime.UnixMilli()%3 == 0
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable
+				}
 				return highLoad
 			},
 		})

@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -36,6 +37,8 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
+	activeRequests int64 // accessed atomically
+
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges. Listener addresses must
@@ -146,6 +149,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
 	if s.h3server != nil {
+		// keep track of active requests for QUIC transport purposes (See AcceptToken callback in quic.Config)
+		atomic.AddInt64(&s.activeRequests, 1)
+		defer atomic.AddInt64(&s.activeRequests, -1)
+
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
 			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))

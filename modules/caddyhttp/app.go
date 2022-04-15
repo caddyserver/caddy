@@ -348,7 +348,7 @@ func (app *App) Start() error {
 
 					// create HTTP/3 listener
 					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-					h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
+					h3ln, err := caddy.ListenQUIC(hostport, tlsCfg, &srv.activeRequests)
 					if err != nil {
 						return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 					}
