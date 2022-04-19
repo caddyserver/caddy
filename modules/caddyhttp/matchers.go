@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -30,7 +32,12 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/checker/decls"
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/zap"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type (
@@ -291,6 +298,28 @@ outer:
 	return false
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression host('localhost')
+func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		"host",
+		"host_match_request_list",
+		[]*exprpb.Type{celTypeListString},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			strList, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			matcher := MatchHost(strList.([]string))
+			err = matcher.Provision(ctx)
+			return matcher, err
+		})
+}
+
 // fuzzy returns true if the given hostname h is not a specific
 // hostname, e.g. has placeholders or wildcards.
 func (MatchHost) fuzzy(h string) bool { return strings.ContainsAny(h, "{*") }
@@ -396,6 +425,32 @@ func (m MatchPath) Match(r *http.Request) bool {
 	return false
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression path('*substring*', '*suffix')
+func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		// name of the macro, this is the function name that users see when writing expressions.
+		"path",
+		// name of the function that the macro will be rewritten to call.
+		"path_match_request_list",
+		// internal data type of the MatchPath value.
+		[]*exprpb.Type{celTypeListString},
+		// function to convert a constant list of strings to a MatchPath instance.
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			strList, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			matcher := MatchPath(strList.([]string))
+			err = matcher.Provision(ctx)
+			return matcher, err
+		})
+}
+
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
@@ -440,6 +495,48 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 	return m.MatchRegexp.Match(cleanedPath, repl)
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression path_regexp('^/bar')
+func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	unnamedPattern, err := celMatcherImpl(
+		"path_regexp",
+		"path_regexp_request_string",
+		[]*exprpb.Type{decls.String},
+		func(data ref.Val) (RequestMatcher, error) {
+			pattern := data.(types.String)
+			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
+			err := matcher.Provision(ctx)
+			return matcher, err
+		})
+	if err != nil {
+		return nil, err
+	}
+	namedPattern, err := celMatcherImpl(
+		"path_regexp",
+		"path_regexp_request_string_string",
+		[]*exprpb.Type{decls.String, decls.String},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			params, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			strParams := params.([]string)
+			matcher := MatchPathRE{MatchRegexp{Name: strParams[0], Pattern: strParams[1]}}
+			err = matcher.Provision(ctx)
+			return matcher, err
+		})
+	if err != nil {
+		return nil, err
+	}
+	envOpts := append(unnamedPattern.CompileOptions(), namedPattern.CompileOptions()...)
+	prgOpts := append(unnamedPattern.ProgramOptions(), namedPattern.ProgramOptions()...)
+	return newMatcherCELLibrary(envOpts, prgOpts), nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -467,6 +564,26 @@ func (m MatchMethod) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression method('PUT', 'POST')
+func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		"method",
+		"method_request_list",
+		[]*exprpb.Type{celTypeListString},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			strList, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			return MatchMethod(strList.([]string)), nil
+		})
 }
 
 // CaddyModule returns the Caddy module information.
@@ -516,6 +633,25 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		}
 	}
 	return len(m) == 0 && len(r.URL.Query()) == 0
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression query({'sort': 'asc'}) || query({'foo': ['*bar*', 'baz']})
+func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		"query",
+		"query_matcher_request_map",
+		[]*exprpb.Type{celTypeJson},
+		func(data ref.Val) (RequestMatcher, error) {
+			mapStrListStr, err := celValueToMapStrList(data)
+			if err != nil {
+				return nil, err
+			}
+			return MatchQuery(url.Values(mapStrListStr)), nil
+		})
 }
 
 // CaddyModule returns the Caddy module information.
@@ -571,6 +707,26 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m MatchHeader) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	return matchHeaders(r.Header, http.Header(m), r.Host, repl)
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression header({'content-type': 'image/png'})
+//    expression header({'foo': ['bar', 'baz']}) // match bar or baz
+func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		"header",
+		"header_matcher_request_map",
+		[]*exprpb.Type{celTypeJson},
+		func(data ref.Val) (RequestMatcher, error) {
+			mapStrListStr, err := celValueToMapStrList(data)
+			if err != nil {
+				return nil, err
+			}
+			return MatchHeader(http.Header(mapStrListStr)), nil
+		})
 }
 
 // getHeaderFieldVals returns the field values for the given fieldName from input.
@@ -741,6 +897,25 @@ func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		*m = MatchProtocol(proto)
 	}
 	return nil
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression protocol('https')
+func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		"protocol",
+		"protocol_request_string",
+		[]*exprpb.Type{decls.String},
+		func(data ref.Val) (RequestMatcher, error) {
+			protocolStr, ok := data.(types.String)
+			if !ok {
+				return nil, errors.New("protocol argument was not a string")
+			}
+			return MatchProtocol(strings.ToLower(string(protocolStr))), nil
+		})
 }
 
 // CaddyModule returns the Caddy module information.
@@ -1062,7 +1237,9 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-var wordRE = regexp.MustCompile(`\w+`)
+var (
+	wordRE = regexp.MustCompile(`\w+`)
+)
 
 const regexpPlaceholderPrefix = "http.regexp"
 
