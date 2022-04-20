@@ -95,14 +95,18 @@ func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.E
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
 			AcceptToken: func(clientAddr net.Addr, token *quic.Token) bool {
-				if token == nil {
-					return false
-				}
 				var highLoad bool
 				if activeRequests != nil {
 					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable
 				}
-				return highLoad
+				if !highLoad {
+					return true
+				}
+				if token == nil {
+					return false
+				}
+				// TODO: validate the token (can we just use quic.defaultAcceptToken? - it also does the nil check btw...)
+				return true
 			},
 		})
 		if err != nil {
