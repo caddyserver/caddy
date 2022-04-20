@@ -317,7 +317,8 @@ func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			matcher := MatchHost(strList.([]string))
 			err = matcher.Provision(ctx)
 			return matcher, err
-		})
+		},
+	)
 }
 
 // fuzzy returns true if the given hostname h is not a specific
@@ -448,7 +449,8 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			matcher := MatchPath(strList.([]string))
 			err = matcher.Provision(ctx)
 			return matcher, err
-		})
+		},
+	)
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
@@ -510,7 +512,8 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
 			err := matcher.Provision(ctx)
 			return matcher, err
-		})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +531,8 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			matcher := MatchPathRE{MatchRegexp{Name: strParams[0], Pattern: strParams[1]}}
 			err = matcher.Provision(ctx)
 			return matcher, err
-		})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +587,8 @@ func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			return MatchMethod(strList.([]string)), nil
-		})
+		},
+	)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -651,7 +656,8 @@ func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			return MatchQuery(url.Values(mapStrListStr)), nil
-		})
+		},
+	)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -726,7 +732,8 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			return MatchHeader(http.Header(mapStrListStr)), nil
-		})
+		},
+	)
 }
 
 // getHeaderFieldVals returns the field values for the given fieldName from input.
@@ -866,6 +873,57 @@ func (m MatchHeaderRE) Validate() error {
 	return nil
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression header_regexp('foo', 'Field', 'fo+')
+func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	unnamedPattern, err := celMatcherImpl(
+		"header_regexp",
+		"header_regexp_request_string_string",
+		[]*exprpb.Type{decls.String, decls.String},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			params, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			strParams := params.([]string)
+			matcher := MatchHeaderRE{}
+			matcher[strParams[0]] = &MatchRegexp{Pattern: strParams[1], Name: ""}
+			err = matcher.Provision(ctx)
+			return matcher, err
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	namedPattern, err := celMatcherImpl(
+		"header_regexp",
+		"header_regexp_request_string_string_string",
+		[]*exprpb.Type{decls.String, decls.String, decls.String},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			params, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			strParams := params.([]string)
+			matcher := MatchHeaderRE{}
+			matcher[strParams[1]] = &MatchRegexp{Pattern: strParams[2], Name: strParams[0]}
+			err = matcher.Provision(ctx)
+			return matcher, err
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	envOpts := append(unnamedPattern.CompileOptions(), namedPattern.CompileOptions()...)
+	prgOpts := append(unnamedPattern.ProgramOptions(), namedPattern.ProgramOptions()...)
+	return newMatcherCELLibrary(envOpts, prgOpts), nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchProtocol) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -915,7 +973,8 @@ func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
 				return nil, errors.New("protocol argument was not a string")
 			}
 			return MatchProtocol(strings.ToLower(string(protocolStr))), nil
-		})
+		},
+	)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -1279,6 +1338,18 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
 	_ caddyfile.Unmarshaler = (*MatchVarsRE)(nil)
+
+	_ CELLibraryProducer = (*MatchHost)(nil)
+	_ CELLibraryProducer = (*MatchPath)(nil)
+	_ CELLibraryProducer = (*MatchPathRE)(nil)
+	_ CELLibraryProducer = (*MatchMethod)(nil)
+	_ CELLibraryProducer = (*MatchQuery)(nil)
+	_ CELLibraryProducer = (*MatchHeader)(nil)
+	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
+	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	// _ CELLibraryProducer = (*MatchRemoteIP)(nil)
+	// _ CELLibraryProducer = (*VarsMatcher)(nil)
+	// _ CELLibraryProducer = (*MatchVarsRE)(nil)
 
 	_ json.Marshaler   = (*MatchNot)(nil)
 	_ json.Unmarshaler = (*MatchNot)(nil)

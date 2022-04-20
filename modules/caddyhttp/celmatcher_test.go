@@ -79,6 +79,42 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr:    true,
 		},
 		{
+			name: "header_regexp matches (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('Field', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: true,
+		},
+		{
+			name: "header_regexp matches with name (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo', 'Field', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: true,
+		},
+		{
+			name: "header_regexp does not match (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo', 'Nope', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: false,
+		},
+		{
+			name: "header_regexp error (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantErr:    true,
+		},
+		{
 			name: "host matches localhost (MatchHost)",
 			expression: &MatchExpression{
 				Expr: `host('localhost')`,

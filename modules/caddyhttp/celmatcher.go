@@ -202,13 +202,15 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	if !ok {
 		return types.NewErr(
 			"invalid request of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
-			lhs.Type())
+			lhs.Type(),
+		)
 	}
 	phStr, ok := rhs.(types.String)
 	if !ok {
 		return types.NewErr(
 			"invalid placeholder variable name of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
-			rhs.Type())
+			rhs.Type(),
+		)
 	}
 
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -340,7 +342,18 @@ func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type,
 		} else {
 			return nil, fmt.Errorf(
 				"unsupported matcher data type: %s, %s",
-				cel.FormatType(matcherDataTypes[0]), cel.FormatType(matcherDataTypes[1]))
+				cel.FormatType(matcherDataTypes[0]), cel.FormatType(matcherDataTypes[1]),
+			)
+		}
+	case 3:
+		if isCELStringType(matcherDataTypes[0]) && isCELStringType(matcherDataTypes[1]) && isCELStringType(matcherDataTypes[2]) {
+			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
+			matcherDataTypes = []*exprpb.Type{celTypeListString}
+		} else {
+			return nil, fmt.Errorf(
+				"unsupported matcher data type: %s, %s, %s",
+				cel.FormatType(matcherDataTypes[0]), cel.FormatType(matcherDataTypes[1]), cel.FormatType(matcherDataTypes[2]),
+			)
 		}
 	}
 	envOptions := []cel.EnvOption{
@@ -350,7 +363,8 @@ func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type,
 				decls.NewOverload(
 					funcName,
 					append([]*exprpb.Type{requestType}, matcherDataTypes...),
-					decls.Bool),
+					decls.Bool,
+				),
 			),
 		),
 	}
@@ -438,7 +452,8 @@ func celMatcherDecorator(funcName string, fac matcherCELFactory) interpreter.Int
 				// to a *http.Request using CEL's ConvertToNative method.
 				httpReq := celReq.Value().(celHTTPRequest)
 				return types.Bool(matcher.Match(httpReq.Request))
-			}), nil
+			},
+		), nil
 	}
 }
 
@@ -500,7 +515,6 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 			Location: eh.OffsetLocation(args[0].GetId()),
 			Message:  "matcher argument must be a string literal",
 		}
-
 	}
 }
 
@@ -524,7 +538,8 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 					Location: eh.OffsetLocation(arg.GetId()),
 					Message: fmt.Sprintf(
 						"matcher input must be a map literal, not a %s",
-						structExpr.GetMessageName()),
+						structExpr.GetMessageName(),
+					),
 				}
 			}
 			for _, entry := range structExpr.GetEntries() {
@@ -667,7 +682,7 @@ func isCELStringListLiteral(e *exprpb.Expr) bool {
 // expressions with a proper CEL function call; this is
 // just for syntactic sugar.
 var (
-	placeholderRegexp    = regexp.MustCompile(`{([\w.-]+)}`)
+	placeholderRegexp    = regexp.MustCompile(`{([a-zA-Z][\w.-]+)}`)
 	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
 
 	celTypeListString = decls.NewListType(decls.String)
