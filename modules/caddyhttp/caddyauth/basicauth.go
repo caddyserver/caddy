@@ -21,6 +21,7 @@ import (
 	"fmt"
 	weakrand "math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,10 +118,18 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("account %d: username and password are required", i)
 		}
 
-		acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
-		if err != nil {
-			return fmt.Errorf("base64-decoding password: %v", err)
+		// Passwords starting with '$' are likely in Modular Crypt Format,
+		// so we don't need to base64 decode them. But historically, we
+		// required redundant base64, so we try to decode it otherwise.
+		if strings.HasPrefix(acct.Password, "$") {
+			acct.password = []byte(acct.Password)
+		} else {
+			acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
+			if err != nil {
+				return fmt.Errorf("base64-decoding password: %v", err)
+			}
 		}
+
 		if acct.Salt != "" {
 			acct.salt, err = base64.StdEncoding.DecodeString(acct.Salt)
 			if err != nil {

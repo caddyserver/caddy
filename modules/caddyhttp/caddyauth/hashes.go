@@ -64,6 +64,8 @@ func (BcryptHash) FakeHash() []byte {
 }
 
 // ScryptHash implements the scrypt KDF as a hash.
+//
+// DEPRECATED, please use 'bcrypt' instead.
 type ScryptHash struct {
 	// scrypt's N parameter. If unset or 0, a safe default is used.
 	N int `json:"N,omitempty"`
@@ -88,8 +90,9 @@ func (ScryptHash) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up s.
-func (s *ScryptHash) Provision(_ caddy.Context) error {
+func (s *ScryptHash) Provision(ctx caddy.Context) error {
 	s.SetDefaults()
+	ctx.Logger(s).Warn("use of 'scrypt' is deprecated, please use 'bcrypt' instead")
 	return nil
 }
 
