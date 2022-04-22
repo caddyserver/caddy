@@ -142,6 +142,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 				DNSProvider:        val.(certmagic.ACMEDNSProvider),
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
+				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
@@ -262,10 +263,13 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //         eab <key_id> <mac_key>
 //         trusted_roots <pem_files...>
 //         dns <provider_name> [<options>]
+//         propagation_delay <duration>
+//         propagation_timeout <duration>
 //         resolvers <dns_servers...>
+//         dns_challenge_override_domain <domain>
 //         preferred_chains [smallest] {
-//           root_common_name <common_names...>
-//           any_common_name  <common_names...>
+//             root_common_name <common_names...>
+//             any_common_name  <common_names...>
 //         }
 //     }
 //
@@ -389,14 +393,38 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return err
 				}
 				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+
+			case "propagation_delay":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				delayStr := d.Val()
+				delay, err := caddy.ParseDuration(delayStr)
+				if err != nil {
+					return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
+
 			case "propagation_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
 				timeoutStr := d.Val()
-				timeout, err := caddy.ParseDuration(timeoutStr)
-				if err != nil {
-					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				var timeout time.Duration
+				if timeoutStr == "-1" {
+					timeout = time.Duration(-1)
+				} else {
+					var err error
+					timeout, err = caddy.ParseDuration(timeoutStr)
+					if err != nil {
+						return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+					}
 				}
 				if iss.Challenges == nil {
 					iss.Challenges = new(ChallengesConfig)
