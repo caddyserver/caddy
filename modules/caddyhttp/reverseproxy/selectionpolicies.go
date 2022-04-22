@@ -524,7 +524,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 	var highestHash uint32
 	var upstream *Upstream
 	for _, up := range pool {
-		if !upstream.Available() {
+		if !up.Available() {
 			continue
 		}
 		h := hash(s + up.String()) // important to hash key and server together
