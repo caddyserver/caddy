@@ -16,6 +16,7 @@ package caddyauth
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 
 	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/crypto/bcrypt"
@@ -53,6 +54,13 @@ func (BcryptHash) Compare(hashed, plaintext, _ []byte) (bool, error) {
 // Hash hashes plaintext using a random salt.
 func (BcryptHash) Hash(plaintext, _ []byte) ([]byte, error) {
 	return bcrypt.GenerateFromPassword(plaintext, 14)
+}
+
+// FakeHash returns a fake hash.
+func (BcryptHash) FakeHash() []byte {
+	// hashed with the following command:
+	// caddy hash-password --plaintext "antitiming" --algorithm "bcrypt"
+	return []byte("$2a$14$X3ulqf/iGxnf1k6oMZ.RZeJUoqI9PX2PM4rS5lkIKJXduLGXGPrt6")
 }
 
 // ScryptHash implements the scrypt KDF as a hash.
@@ -121,6 +129,14 @@ func (s ScryptHash) Compare(hashed, plaintext, salt []byte) (bool, error) {
 // Hash hashes plaintext using the given salt.
 func (s ScryptHash) Hash(plaintext, salt []byte) ([]byte, error) {
 	return scrypt.Key(plaintext, salt, s.N, s.R, s.P, s.KeyLength)
+}
+
+// FakeHash returns a fake hash.
+func (ScryptHash) FakeHash() []byte {
+	// hashed with the following command:
+	// caddy hash-password --plaintext "antitiming" --salt "fakesalt" --algorithm "scrypt"
+	bytes, _ := base64.StdEncoding.DecodeString("kFbjiVemlwK/ZS0tS6/UQqEDeaNMigyCs48KEsGUse8=")
+	return bytes
 }
 
 func hashesMatch(pwdHash1, pwdHash2 []byte) bool {

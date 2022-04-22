@@ -94,7 +94,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 	// if supported, generate a fake password we can compare against if needed
 	if hasher, ok := hba.Hash.(Hasher); ok {
-		hba.fakePassword, err = hasher.Hash([]byte("antitiming"), []byte("fakesalt"))
+		hba.fakePassword = hasher.FakeHash()
 		if err != nil {
 			return fmt.Errorf("generating anti-timing password hash: %v", err)
 		}
@@ -271,9 +271,11 @@ type Comparer interface {
 // that require a salt). Hashing modules which implement
 // this interface can be used with the hash-password
 // subcommand as well as benefitting from anti-timing
-// features.
+// features. A hasher also returns a fake hash which
+// can be used for timing side-channel mitigation.
 type Hasher interface {
 	Hash(plaintext, salt []byte) ([]byte, error)
+	FakeHash() []byte
 }
 
 // Account contains a username, password, and salt (if applicable).
