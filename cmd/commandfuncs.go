@@ -496,7 +496,9 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		if warn.Directive != "" {
 			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 		}
-		fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+		caddy.Log().Named(adaptCmdAdapterFlag).Warn(msg,
+			zap.String("file", warn.File),
+			zap.Int("line", warn.Line))
 	}
 
 	// validate output if requested
