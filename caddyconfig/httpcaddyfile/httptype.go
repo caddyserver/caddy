@@ -129,6 +129,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		{regexp.MustCompile(`{header\.([\w-]*)}`), "{http.request.header.$1}"},
 		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
 		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
+		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
 	}
 
 	for _, sb := range originalServerBlocks {
