@@ -1,0 +1,59 @@
+:80
+
+vars /foobar foo last
+vars /foo foo middle
+vars * foo first
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"foo": "first",
+									"handler": "vars"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/foo"
+									]
+								}
+							],
+							"handle": [
+								{
+									"foo": "middle",
+									"handler": "vars"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/foobar"
+									]
+								}
+							],
+							"handle": [
+								{
+									"foo": "last",
+									"handler": "vars"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
