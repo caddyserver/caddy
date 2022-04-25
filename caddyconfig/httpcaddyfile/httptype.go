@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"regexp"
 	"sort"
@@ -30,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -458,6 +458,17 @@ func (st *ServerType) serversFromPairings(
 			}
 		}
 
+		// Using paths in site addresses is deprecated
+		// See ParseAddress() where parsing should later reject paths
+		// See https://github.com/caddyserver/caddy/pull/4728 for a full explanation
+		for _, sblock := range p.serverBlocks {
+			for _, addr := range sblock.keys {
+				if addr.Path != "" {
+					caddy.Log().Named("caddyfile").Warn("Using a path in a site address is deprecated; please use the 'handle' directive instead", zap.String("address", addr.String()))
+				}
+			}
+		}
+
 		// sort server blocks by their keys; this is important because
 		// only the first matching site should be evaluated, and we should
 		// attempt to match most specific site first (host and path), in
@@ -545,7 +556,7 @@ func (st *ServerType) serversFromPairings(
 			// emit warnings if user put unspecified IP addresses; they probably want the bind directive
 			for _, h := range hosts {
 				if h == "0.0.0.0" || h == "::" {
-					log.Printf("[WARNING] Site block has unspecified IP address %s which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", h)
+					caddy.Log().Named("caddyfile").Warn("Site block has an unspecified IP address which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", zap.String("address", h))
 				}
 			}
 

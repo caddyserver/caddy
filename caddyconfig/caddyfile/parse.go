@@ -18,13 +18,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 // Parse parses the input just enough to group tokens, in
@@ -393,7 +393,7 @@ func (p *parser) doImport() error {
 		}
 		if len(matches) == 0 {
 			if strings.ContainsAny(globPattern, "*?[]") {
-				log.Printf("[WARNING] No files matching import glob pattern: %s", importPattern)
+				caddy.Log().Warn("No files matching import glob pattern", zap.String("pattern", importPattern))
 			} else {
 				return p.Errf("File to import not found: %s", importPattern)
 			}
