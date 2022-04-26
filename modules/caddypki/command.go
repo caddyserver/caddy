@@ -133,7 +133,7 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	ca := CA{
 		log:          caddy.Log(),
 		root:         rootCert,
-		rootCertPath: adminAddr + path.Join(adminPKIEndpointBase, caID, "certificates"),
+		rootCertPath: adminAddr + path.Join(adminPKIEndpointBase, "ca", caID),
 	}
 
 	// Install the cert!
@@ -207,7 +207,7 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 
 // rootCertFromAdmin makes the API request to fetch the root certificate for the named CA via admin API.
 func rootCertFromAdmin(adminAddr string, caID string) (*x509.Certificate, error) {
-	uri := path.Join(adminPKIEndpointBase, caID, "certificates")
+	uri := path.Join(adminPKIEndpointBase, "ca", caID)
 
 	// Make the request to fetch the CA info
 	resp, err := caddycmd.AdminAPIRequest(adminAddr, http.MethodGet, uri, make(http.Header), nil)
