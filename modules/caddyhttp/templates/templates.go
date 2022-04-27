@@ -100,6 +100,7 @@ func init() {
 // {{ define "main" }}
 // content
 // {{ end }}
+// ```
 //
 // **index.html**
 // ```
