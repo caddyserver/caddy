@@ -669,7 +669,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	}
 	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
-		origin = "unixsocket" // hack so that http.NewRequest() is happy
+		origin = "http://unixsocket" // hack so that http.NewRequest() is happy
 	}
 
 	// form the request
