@@ -136,6 +136,19 @@ type Handler struct {
 	// used for the requests and responses (in bytes).
 	MaxBufferSize int64 `json:"max_buffer_size,omitempty"`
 
+	// If true, the request body will not be copied to the backend.
+	// This is useful if you wish to send a request to a backend
+	// to have it decide whether the request should continue being
+	// handled; also known as forward auth.
+	// By default, this is false (disabled).
+	NoBody bool `json:"no_body,omitempty"`
+
+	// If set, overrides the request method on the upstream request.
+	// This is useful for a forward auth scenario, where the method
+	// should always be `GET`.
+	// By default, the incoming request's method is used.
+	OverrideMethod string `json:"override_method,omitempty"`
+
 	// List of handlers and their associated matchers to evaluate
 	// after successful roundtrips. The first handler that matches
 	// the response from a backend will be invoked. The response
@@ -412,7 +425,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	var proxyErr error
 	for {
 		var done bool
-		done, proxyErr = h.proxyLoopIteration(clonedReq, w, proxyErr, start, repl, reqHeader, reqHost, next)
+		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, repl, reqHeader, reqHost, next)
 		if done {
 			break
 		}
@@ -429,7 +442,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // that has to be passed in, we brought this into its own method so that we could run defer more easily.
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
-func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
+func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
 	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
@@ -503,7 +516,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 	}
 
 	// proxy the request to that upstream
-	proxyErr = h.reverseProxy(w, r, repl, dialInfo, next)
+	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
 	if proxyErr == nil || proxyErr == context.Canceled {
 		// context.Canceled happens when the downstream client
 		// cancels the request, which is not our failure
@@ -539,6 +552,15 @@ func (h *Handler) proxyLoopIteration(r *http.Request, w http.ResponseWriter, pro
 func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
 	req = cloneRequest(req)
 
+	if h.OverrideMethod != "" {
+		req.Method = h.OverrideMethod
+	}
+
+	if h.NoBody {
+		req.ContentLength = 0
+		req.Body = nil
+	}
+
 	// if enabled, buffer client request; this should only be
 	// enabled if the upstream requires it and does not work
 	// with "slow clients" (gunicorn, etc.) - this obviously
@@ -547,7 +569,7 @@ func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.BufferRequests {
+	if h.BufferRequests && req.Body != nil {
 		req.Body = h.bufferedBody(req.Body)
 	}
 
@@ -691,7 +713,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
-func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
+func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origReq *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
 	_ = di.Upstream.Host.countRequest(1)
 	//nolint:errcheck
 	defer di.Upstream.Host.countRequest(-1)
@@ -798,17 +820,19 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, repl *
 		// we make some data available via request context to child routes
 		// so that they may inherit some options and functions from the
 		// handler, and be able to copy the response.
+		// we use the original request here, so that any routes from 'next'
+		// see the original request rather than the proxy cloned request.
 		hrc := &handleResponseContext{
 			handler:  h,
 			response: res,
 			start:    start,
 			logger:   logger,
 		}
-		ctx := req.Context()
+		ctx := origReq.Context()
 		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
 
 		// pass the request through the response handler routes
-		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, req.WithContext(ctx))
+		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, origReq.WithContext(ctx))
 
 		// if the response handler routes already finalized the response,
 		// we can return early. It should be finalized if the routes executed

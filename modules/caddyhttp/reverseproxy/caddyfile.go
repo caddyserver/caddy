@@ -85,10 +85,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_responses
 //         max_buffer_size <size>
 //
-//         # header manipulation
+//         # request manipulation
 //         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//         override_method <method>
+//         no_body
 //
 //         # round trip
 //         transport <name> {
@@ -599,6 +601,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if err != nil {
 					return d.Err(err.Error())
 				}
+
+			case "override_method":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.OverrideMethod = d.Val()
+
+			case "no_body":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				h.NoBody = true
 
 			case "transport":
 				if !d.NextArg() {

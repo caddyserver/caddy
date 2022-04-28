@@ -7,6 +7,9 @@ https://example.com {
 		header_up X-Forwarded-Port {server_port}
 		header_up X-Forwarded-Proto "http"
 
+		no_body
+		override_method GET
+
 		buffer_requests
 
 		transport http {
@@ -76,6 +79,8 @@ https://example.com {
 															}
 														}
 													},
+													"no_body": true,
+													"override_method": "GET",
 													"transport": {
 														"compression": false,
 														"dial_fallback_delay": 5000000000,
