@@ -222,11 +222,15 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		app.logger.Info("enabling automatic HTTP->HTTPS redirects", zap.String("server_name", srvName))
 
 		// create HTTP->HTTPS redirects
-		for _, addr := range srv.Listen {
+		for _, listenAddr := range srv.Listen {
 			// figure out the address we will redirect to...
-			addr, err := caddy.ParseNetworkAddress(addr)
+			addr, err := caddy.ParseNetworkAddress(listenAddr)
 			if err != nil {
-				return fmt.Errorf("%s: invalid listener address: %v", srvName, addr)
+				msg := "%s: invalid listener address: %v"
+				if strings.Count(listenAddr, ":") > 1 {
+					msg = msg + ", there are too many colons, so the port is ambiguous. Did you mean to wrap the IPv6 address with [] brackets?"
+				}
+				return fmt.Errorf(msg, srvName, listenAddr)
 			}
 
 			// this address might not have a hostname, i.e. might be a
