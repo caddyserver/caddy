@@ -254,18 +254,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		}
 		customLogs = append(customLogs, ncl)
 	}
+
 	// Apply global log options, when set
 	if options["log"] != nil {
 		for _, logValue := range options["log"].([]ConfigValue) {
 			addCustomLog(logValue.Value.(namedCustomLog))
-		}
-	}
-	// Apply server-specific log options
-	for _, p := range pairings {
-		for _, sb := range p.serverBlocks {
-			for _, clVal := range sb.pile["custom_log"] {
-				addCustomLog(clVal.Value.(namedCustomLog))
-			}
 		}
 	}
 
@@ -277,6 +270,15 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 				name: "default",
 				log:  &caddy.CustomLog{Level: "DEBUG"},
 			})
+		}
+	}
+
+	// Apply server-specific log options
+	for _, p := range pairings {
+		for _, sb := range p.serverBlocks {
+			for _, clVal := range sb.pile["custom_log"] {
+				addCustomLog(clVal.Value.(namedCustomLog))
+			}
 		}
 	}
 
