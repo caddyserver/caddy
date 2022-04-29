@@ -121,7 +121,7 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 		matcherEnvOpts = append(matcherEnvOpts, l.CompileOptions()...)
 		matcherProgramOpts = append(matcherProgramOpts, l.ProgramOptions()...)
 	}
-	matcherLib := cel.Lib(newMatcherCELLibrary(matcherEnvOpts, matcherProgramOpts))
+	matcherLib := cel.Lib(NewMatcherCELLibrary(matcherEnvOpts, matcherProgramOpts))
 
 	// create the CEL environment
 	env, err := cel.NewEnv(
@@ -301,7 +301,7 @@ type CELLibraryProducer interface {
 	CELLibrary(caddy.Context) (cel.Library, error)
 }
 
-// celMatcherImpl creates a new cel.Library based on the following pieces of
+// CelMatcherImpl creates a new cel.Library based on the following pieces of
 // data:
 //
 // - macroName: the function name to be used within CEL. This will be a macro
@@ -316,11 +316,11 @@ type CELLibraryProducer interface {
 // functions exposed within CEL expressions, or an error will be produced
 // during the expression matcher plan time.
 //
-// The existing celMatcherImpl support methods are configured to support a
+// The existing CelMatcherImpl support methods are configured to support a
 // limited set of function signatures. For strong type validation you may need
 // to provide a custom macro which does a more detailed analysis of the CEL
 // literal provided to the macro as an argument.
-func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type, fac matcherCELFactory) (cel.Library, error) {
+func CelMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type, fac matcherCELFactory) (cel.Library, error) {
 	requestType := decls.NewObjectType("http.Request")
 	var macro parser.Macro
 	switch len(matcherDataTypes) {
@@ -338,7 +338,7 @@ func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type,
 	case 2:
 		if isCELStringType(matcherDataTypes[0]) && isCELStringType(matcherDataTypes[1]) {
 			macro = parser.NewGlobalMacro(macroName, 2, celMatcherStringListMacroExpander(funcName))
-			matcherDataTypes = []*exprpb.Type{celTypeListString}
+			matcherDataTypes = []*exprpb.Type{CelTypeListString}
 		} else {
 			return nil, fmt.Errorf(
 				"unsupported matcher data type: %s, %s",
@@ -348,7 +348,7 @@ func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type,
 	case 3:
 		if isCELStringType(matcherDataTypes[0]) && isCELStringType(matcherDataTypes[1]) && isCELStringType(matcherDataTypes[2]) {
 			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
-			matcherDataTypes = []*exprpb.Type{celTypeListString}
+			matcherDataTypes = []*exprpb.Type{CelTypeListString}
 		} else {
 			return nil, fmt.Errorf(
 				"unsupported matcher data type: %s, %s, %s",
@@ -377,7 +377,7 @@ func celMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type,
 			},
 		),
 	}
-	return newMatcherCELLibrary(envOptions, programOptions), nil
+	return NewMatcherCELLibrary(envOptions, programOptions), nil
 }
 
 // matcherCELFactory converts a constant CEL value into a RequestMatcher.
@@ -389,8 +389,8 @@ type matcherCELLibary struct {
 	programOptions []cel.ProgramOption
 }
 
-// newMatcherCELLibrary creates a matcherLibrary from option setes.
-func newMatcherCELLibrary(envOptions []cel.EnvOption, programOptions []cel.ProgramOption) cel.Library {
+// NewMatcherCELLibrary creates a matcherLibrary from option setes.
+func NewMatcherCELLibrary(envOptions []cel.EnvOption, programOptions []cel.ProgramOption) cel.Library {
 	return &matcherCELLibary{
 		envOptions:     envOptions,
 		programOptions: programOptions,
@@ -569,14 +569,14 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 	}
 }
 
-// celValueToMapStrList converts a CEL value to a map[string][]string
+// CelValueToMapStrList converts a CEL value to a map[string][]string
 //
 // Earlier validation stages should guarantee that the value has this type
 // at compile time, and that the runtime value type is map[string]interface{}.
 // The reason for the slight difference in value type is that CEL allows for
 // map literals containing heterogeneous values, in this case string and list
 // of string.
-func celValueToMapStrList(data ref.Val) (map[string][]string, error) {
+func CelValueToMapStrList(data ref.Val) (map[string][]string, error) {
 	mapStrType := reflect.TypeOf(map[string]interface{}{})
 	mapStrRaw, err := data.ConvertToNative(mapStrType)
 	if err != nil {
@@ -685,8 +685,8 @@ var (
 	placeholderRegexp    = regexp.MustCompile(`{([a-zA-Z][\w.-]+)}`)
 	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
 
-	celTypeListString = decls.NewListType(decls.String)
-	celTypeJson       = decls.NewMapType(decls.String, decls.Dyn)
+	CelTypeListString = decls.NewListType(decls.String)
+	CelTypeJson       = decls.NewMapType(decls.String, decls.Dyn)
 )
 
 var httpRequestObjectType = decls.NewObjectType("http.Request")
