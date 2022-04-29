@@ -1121,6 +1121,46 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression remote_ip('forwarded', '192.168.0.0/16', '172.16.0.0/12', '10.0.0.0/8')
+func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return celMatcherImpl(
+		// name of the macro, this is the function name that users see when writing expressions.
+		"remote_ip",
+		// name of the function that the macro will be rewritten to call.
+		"remote_ip_match_request_list",
+		// internal data type of the MatchPath value.
+		[]*exprpb.Type{celTypeListString},
+		// function to convert a constant list of strings to a MatchPath instance.
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			strList, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+
+			m := MatchRemoteIP{}
+
+			for _, input := range strList.([]string) {
+				if input == "forwarded" {
+					if len(m.Ranges) > 0 {
+						return nil, errors.New("if used, 'forwarded' must be first argument")
+					}
+					m.Forwarded = true
+					continue
+				}
+				m.Ranges = append(m.Ranges, input)
+			}
+
+			err = m.Provision(ctx)
+			return m, err
+		},
+	)
+}
+
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger(m)
@@ -1347,7 +1387,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
-	// _ CELLibraryProducer = (*MatchRemoteIP)(nil)
+	_ CELLibraryProducer = (*MatchRemoteIP)(nil)
 	// _ CELLibraryProducer = (*VarsMatcher)(nil)
 	// _ CELLibraryProducer = (*MatchVarsRE)(nil)
 

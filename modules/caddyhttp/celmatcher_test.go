@@ -206,6 +206,14 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
+			name: "path matches one of multiple (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('/foo', '/foo/*', '/bar', '/bar/*', '/baz', '/baz*')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
 			name: "path_regexp with empty regex matches empty path (MatchPathRE)",
 			expression: &MatchExpression{
 				Expr: `path_regexp('')`,
@@ -339,6 +347,38 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 				Expr: `query()`,
 			},
 			urlTarget: "https://example.com/foo/?debug=1",
+			wantErr:   true,
+		},
+		{
+			name: "remote_ip error no args (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip()`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+		{
+			name: "remote_ip single IP match (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('192.0.2.1')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "remote_ip forwarded (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('forwarded', '192.0.2.1')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "remote_ip forwarded not first (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('192.0.2.1', 'forwarded')`,
+			},
+			urlTarget: "https://example.com/foo",
 			wantErr:   true,
 		},
 	}
