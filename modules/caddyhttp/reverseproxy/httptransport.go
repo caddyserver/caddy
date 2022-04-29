@@ -317,6 +317,12 @@ type TLSConfig struct {
 
 	// The server name (SNI) to use in TLS handshakes.
 	ServerName string `json:"server_name,omitempty"`
+
+	// Minimum TLS protocol version to allow. Default: `tls1.2`
+	ProtocolMin string `json:"protocol_min,omitempty"`
+
+	// Maximum TLS protocol version to allow. Default: `tls1.3`
+	ProtocolMax string `json:"protocol_max,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -384,6 +390,17 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 		}
 		cfg.RootCAs = rootPool
+	}
+
+	// min and max protocol versions
+	if (t.ProtocolMin != "" && t.ProtocolMax != "") && t.ProtocolMin > t.ProtocolMax {
+		return nil, fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", t.ProtocolMin, t.ProtocolMax)
+	}
+	if t.ProtocolMin != "" {
+		cfg.MinVersion = caddytls.SupportedProtocols[t.ProtocolMin]
+	}
+	if t.ProtocolMax != "" {
+		cfg.MaxVersion = caddytls.SupportedProtocols[t.ProtocolMax]
 	}
 
 	// custom SNI
