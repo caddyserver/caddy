@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/dustin/go-humanize"
 )
 
@@ -89,8 +90,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
-//         override_method <method>
-//         no_body
+//         method <method>
+//         rewrite <to>
 //
 //         # round trip
 //         transport <name> {
@@ -602,17 +603,29 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err(err.Error())
 				}
 
-			case "override_method":
+			case "method":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				h.OverrideMethod = d.Val()
-
-			case "no_body":
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.Method = d.Val()
 				if d.NextArg() {
 					return d.ArgErr()
 				}
-				h.NoBody = true
+
+			case "rewrite":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.URI = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
 
 			case "transport":
 				if !d.NextArg() {

@@ -106,7 +106,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 	)
 
-	changed := rewr.rewrite(r, repl, logger)
+	changed := rewr.Rewrite(r, repl)
 
 	if changed {
 		logger.Debug("rewrote request",
@@ -121,7 +121,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which should
 // have been obtained from r, but is passed in for efficiency.
 // It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 

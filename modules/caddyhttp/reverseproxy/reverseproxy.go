@@ -35,6 +35,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 )
@@ -136,18 +137,17 @@ type Handler struct {
 	// used for the requests and responses (in bytes).
 	MaxBufferSize int64 `json:"max_buffer_size,omitempty"`
 
-	// If true, the request body will not be copied to the backend.
-	// This is useful if you wish to send a request to a backend
-	// to have it decide whether the request should continue being
-	// handled; also known as forward auth.
-	// By default, this is false (disabled).
-	NoBody bool `json:"no_body,omitempty"`
-
-	// If set, overrides the request method on the upstream request.
-	// This is useful for a forward auth scenario, where the method
-	// should always be `GET`.
-	// By default, the incoming request's method is used.
-	OverrideMethod string `json:"override_method,omitempty"`
+	// If configured, rewrites the copy of the upstream request.
+	// Allows changing the request method and URI (path and query).
+	// Since the rewrite is applied to the copy, it does not persist
+	// past the reverse proxy handler.
+	// If the method is changed to `GET` or `HEAD`, the request body
+	// will not be copied to the backend. This allows a later request
+	// handler -- either in a `handle_response` route, or after -- to
+	// read the body.
+	// By default, no rewrite is performed, and the method and URI
+	// from the incoming request is used as-is for proxying.
+	Rewrite *rewrite.Rewrite `json:"rewrite,omitempty"`
 
 	// List of handlers and their associated matchers to evaluate
 	// after successful roundtrips. The first handler that matches
@@ -268,6 +268,13 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		err := h.Headers.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning embedded headers handler: %v", err)
+		}
+	}
+
+	if h.Rewrite != nil {
+		err := h.Rewrite.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning rewrite: %v", err)
 		}
 	}
 
@@ -398,7 +405,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// prepare the request for proxying; this is needed only once
-	clonedReq, err := h.prepareRequest(r)
+	clonedReq, err := h.prepareRequest(r, repl)
 	if err != nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
@@ -549,16 +556,18 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 // properties of the cloned request and should be done just once (before
 // proxying) regardless of proxy retries. This assumes that no mutations
 // of the cloned request are performed by h during or after proxying.
-func (h Handler) prepareRequest(req *http.Request) (*http.Request, error) {
+func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.Request, error) {
 	req = cloneRequest(req)
 
-	if h.OverrideMethod != "" {
-		req.Method = h.OverrideMethod
-	}
-
-	if h.NoBody {
-		req.ContentLength = 0
-		req.Body = nil
+	// if enabled, perform rewrites on the cloned request; if
+	// the method is GET or HEAD, prevent the request body
+	// from being copied to the upstream
+	if h.Rewrite != nil {
+		changed := h.Rewrite.Rewrite(req, repl)
+		if changed && (h.Rewrite.Method == "GET" || h.Rewrite.Method == "HEAD") {
+			req.ContentLength = 0
+			req.Body = nil
+		}
 	}
 
 	// if enabled, buffer client request; this should only be
