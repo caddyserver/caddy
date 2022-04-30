@@ -1,8 +1,13 @@
 :8884
 
 reverse_proxy 127.0.0.1:65535 {
-	@changeStatus status 500
-	replace_status @changeStatus 400
+	@500 status 500
+	replace_status @500 400
+
+	@all status 2xx 3xx 4xx 5xx
+	replace_status @all {http.error.status_code}
+
+	replace_status {http.error.status_code}
 
 	@accel header X-Accel-Redirect *
 	handle_response @accel {
@@ -77,6 +82,17 @@ reverse_proxy 127.0.0.1:65535 {
 												]
 											},
 											"status_code": 400
+										},
+										{
+											"match": {
+												"status_code": [
+													2,
+													3,
+													4,
+													5
+												]
+											},
+											"status_code": "{http.error.status_code}"
 										},
 										{
 											"match": {
@@ -227,6 +243,9 @@ reverse_proxy 127.0.0.1:65535 {
 													]
 												}
 											]
+										},
+										{
+											"status_code": "{http.error.status_code}"
 										},
 										{
 											"routes": [

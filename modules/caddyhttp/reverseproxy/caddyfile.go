@@ -627,22 +627,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "replace_status":
 				args := d.RemainingArgs()
-				if len(args) != 2 {
-					return d.Errf("must have two arguments: a response matcher and a status code")
+				if len(args) != 1 && len(args) != 2 {
+					return d.Errf("must have one or two arguments: an optional response matcher, and a status code")
 				}
 
-				if !strings.HasPrefix(args[0], matcherPrefix) {
-					return d.Errf("must use a named response matcher, starting with '@'")
-				}
+				responseHandler := caddyhttp.ResponseHandler{}
 
-				foundMatcher, ok := h.responseMatchers[args[0]]
-				if !ok {
-					return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
-				}
-
-				_, err := strconv.Atoi(args[1])
-				if err != nil {
-					return d.Errf("bad integer value '%s': %v", args[1], err)
+				if len(args) == 2 {
+					if !strings.HasPrefix(args[0], matcherPrefix) {
+						return d.Errf("must use a named response matcher, starting with '@'")
+					}
+					foundMatcher, ok := h.responseMatchers[args[0]]
+					if !ok {
+						return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+					}
+					responseHandler.Match = &foundMatcher
+					responseHandler.StatusCode = caddyhttp.WeakString(args[1])
+				} else if len(args) == 1 {
+					responseHandler.StatusCode = caddyhttp.WeakString(args[0])
 				}
 
 				// make sure there's no block, cause it doesn't make sense
@@ -652,10 +654,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				h.HandleResponse = append(
 					h.HandleResponse,
-					caddyhttp.ResponseHandler{
-						Match:      &foundMatcher,
-						StatusCode: caddyhttp.WeakString(args[1]),
-					},
+					responseHandler,
 				)
 
 			default:
