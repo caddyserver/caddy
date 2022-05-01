@@ -254,8 +254,8 @@ type Templates struct {
 	customFuncs []template.FuncMap
 }
 
-type TemplateFunctions interface {
-	GetTemplateFunctions() template.FuncMap
+type CustomFunctions interface {
+	CustomTemplateFunctions() template.FuncMap
 }
 
 // CaddyModule returns the Caddy module information.
@@ -272,11 +272,11 @@ func (t *Templates) Provision(ctx caddy.Context) error {
 	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
 	for _, modInfo := range fnModInfos {
 		mod := modInfo.New()
-		fnMod, ok := mod.(TemplateFunctions)
+		fnMod, ok := mod.(CustomFunctions)
 		if !ok {
 			return fmt.Errorf("module %q does not satisfy the TemplateFunctions interface", modInfo.ID)
 		}
-		customFuncs = append(customFuncs, fnMod.GetTemplateFunctions())
+		customFuncs = append(customFuncs, fnMod.CustomTemplateFunctions())
 	}
 	t.customFuncs = customFuncs
 
