@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -249,6 +250,12 @@ type Templates struct {
 	// The template action delimiters. If set, must be precisely two elements:
 	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
+
+	customFuncs []template.FuncMap
+}
+
+type TemplateFunctions interface {
+	GetTemplateFunctions() template.FuncMap
 }
 
 // CaddyModule returns the Caddy module information.
@@ -261,6 +268,18 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
+	var customFuncs []template.FuncMap
+	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
+	for _, modInfo := range fnModInfos {
+		mod := modInfo.New()
+		fnMod, ok := mod.(TemplateFunctions)
+		if !ok {
+			return fmt.Errorf("module %q does not satisfy the TemplateFunctions interface", modInfo.ID)
+		}
+		customFuncs = append(customFuncs, fnMod.GetTemplateFunctions())
+	}
+	t.customFuncs = customFuncs
+
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
 	}
@@ -331,10 +350,11 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 	}
 
 	ctx := &TemplateContext{
-		Root:       fs,
-		Req:        r,
-		RespHeader: WrappedHeader{rr.Header()},
-		config:     t,
+		Root:        fs,
+		Req:         r,
+		RespHeader:  WrappedHeader{rr.Header()},
+		config:      t,
+		CustomFuncs: t.customFuncs,
 	}
 
 	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())

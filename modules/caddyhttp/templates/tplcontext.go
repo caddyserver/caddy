@@ -40,10 +40,11 @@ import (
 
 // TemplateContext is the TemplateContext with which HTTP templates are executed.
 type TemplateContext struct {
-	Root       http.FileSystem
-	Req        *http.Request
-	Args       []interface{} // defined by arguments to funcInclude
-	RespHeader WrappedHeader
+	Root        http.FileSystem
+	Req         *http.Request
+	Args        []interface{} // defined by arguments to funcInclude
+	RespHeader  WrappedHeader
+	CustomFuncs []template.FuncMap
 
 	config *Templates
 	tpl    *template.Template
@@ -61,6 +62,11 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 
 	// add sprig library
 	c.tpl.Funcs(sprigFuncMap)
+
+	// add all custom functions
+	for _, funcMap := range c.CustomFuncs {
+		c.tpl.Funcs(funcMap)
+	}
 
 	// add our own library
 	c.tpl.Funcs(template.FuncMap{
