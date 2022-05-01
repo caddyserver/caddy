@@ -37,6 +37,8 @@ func init() {
 //
 // ⚠️ Template functions/actions are still experimental, so they are subject to change.
 //
+// Custom template functions can be registered by creating a plugin module under the `http.handlers.templates.functions.*` namespace that implements the `CustomFunctions` interface.
+//
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
 //
 // In addition to the standard functions and the Sprig library, Caddy adds

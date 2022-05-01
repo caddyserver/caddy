@@ -44,7 +44,7 @@ type TemplateContext struct {
 	Req         *http.Request
 	Args        []interface{} // defined by arguments to funcInclude
 	RespHeader  WrappedHeader
-	CustomFuncs []template.FuncMap
+	CustomFuncs []template.FuncMap // functions added by plugins
 
 	config *Templates
 	tpl    *template.Template
