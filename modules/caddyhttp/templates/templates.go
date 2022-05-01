@@ -278,7 +278,7 @@ func (t *Templates) Provision(ctx caddy.Context) error {
 		mod := modInfo.New()
 		fnMod, ok := mod.(CustomFunctions)
 		if !ok {
-			return fmt.Errorf("module %q does not satisfy the TemplateFunctions interface", modInfo.ID)
+			return fmt.Errorf("module %q does not satisfy the CustomFunctions interface", modInfo.ID)
 		}
 		customFuncs = append(customFuncs, fnMod.CustomTemplateFunctions())
 	}
