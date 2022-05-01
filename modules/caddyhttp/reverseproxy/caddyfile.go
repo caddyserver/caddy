@@ -59,6 +59,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //         # load balancing
 //         lb_policy <name> [<options...>]
+//         lb_retries <retries>
 //         lb_try_duration <duration>
 //         lb_try_interval <interval>
 //
@@ -246,6 +247,19 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.LoadBalancing = new(LoadBalancing)
 				}
 				h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
+
+			case "lb_retries":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tries, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.Retries = tries
 
 			case "lb_try_duration":
 				if !d.NextArg() {
