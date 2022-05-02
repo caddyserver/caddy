@@ -15,6 +15,8 @@
 package reverseproxy
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"reflect"
@@ -62,6 +64,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         lb_retries <retries>
 //         lb_try_duration <duration>
 //         lb_try_interval <interval>
+//         lb_retry_match <request-matcher>
 //
 //         # active health checking
 //         health_uri      <uri>
@@ -286,6 +289,60 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
 				h.LoadBalancing.TryInterval = caddy.Duration(dur)
+
+			case "lb_retry_match":
+				// this code is essentially copied from MatchNot
+				var mp struct {
+					raw     caddy.ModuleMap
+					decoded caddyhttp.MatcherSet
+				}
+				matcherMap := make(map[string]caddyhttp.RequestMatcher)
+
+				// in case there are multiple instances of the same matcher, concatenate
+				// their tokens (we expect that UnmarshalCaddyfile should be able to
+				// handle more than one segment); otherwise, we'd overwrite other
+				// instances of the matcher in this set
+				tokensByMatcherName := make(map[string][]caddyfile.Token)
+				for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+					matcherName := d.Val()
+					tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+				}
+				for matcherName, tokens := range tokensByMatcherName {
+					mod, err := caddy.GetModule("http.matchers." + matcherName)
+					if err != nil {
+						return d.Errf("getting matcher module '%s': %v", matcherName, err)
+					}
+					unm, ok := mod.New().(caddyfile.Unmarshaler)
+					if !ok {
+						return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+					}
+					err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
+					if err != nil {
+						return err
+					}
+					rm, ok := unm.(caddyhttp.RequestMatcher)
+					if !ok {
+						return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+					}
+					matcherMap[matcherName] = rm
+					mp.decoded = append(mp.decoded, rm)
+				}
+
+				// we should now have a functional matcher, but we also
+				// need to be able to marshal as JSON, otherwise config
+				// adaptation will be missing the matchers!
+				mp.raw = make(caddy.ModuleMap)
+				for name, matcher := range matcherMap {
+					jsonBytes, err := json.Marshal(matcher)
+					if err != nil {
+						return fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+					}
+					mp.raw[name] = jsonBytes
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, mp.raw)
 
 			case "health_uri":
 				if !d.NextArg() {
