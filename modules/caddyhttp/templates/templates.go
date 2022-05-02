@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -35,6 +36,8 @@ func init() {
 // [text/template package](https://golang.org/pkg/text/template/).
 //
 // ⚠️ Template functions/actions are still experimental, so they are subject to change.
+//
+// Custom template functions can be registered by creating a plugin module under the `http.handlers.templates.functions.*` namespace that implements the `CustomFunctions` interface.
 //
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
 //
@@ -249,6 +252,14 @@ type Templates struct {
 	// The template action delimiters. If set, must be precisely two elements:
 	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
+
+	customFuncs []template.FuncMap
+}
+
+// Customfunctions is the interface for registering custom template functions.
+type CustomFunctions interface {
+	// CustomTemplateFunctions should return the mapping from custom function names to implementations.
+	CustomTemplateFunctions() template.FuncMap
 }
 
 // CaddyModule returns the Caddy module information.
@@ -261,6 +272,18 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
+	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
+	customFuncs := make([]template.FuncMap, len(fnModInfos), 0)
+	for _, modInfo := range fnModInfos {
+		mod := modInfo.New()
+		fnMod, ok := mod.(CustomFunctions)
+		if !ok {
+			return fmt.Errorf("module %q does not satisfy the CustomFunctions interface", modInfo.ID)
+		}
+		customFuncs = append(customFuncs, fnMod.CustomTemplateFunctions())
+	}
+	t.customFuncs = customFuncs
+
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
 	}
@@ -331,10 +354,11 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 	}
 
 	ctx := &TemplateContext{
-		Root:       fs,
-		Req:        r,
-		RespHeader: WrappedHeader{rr.Header()},
-		config:     t,
+		Root:        fs,
+		Req:         r,
+		RespHeader:  WrappedHeader{rr.Header()},
+		config:      t,
+		CustomFuncs: t.customFuncs,
 	}
 
 	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())
