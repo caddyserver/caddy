@@ -281,12 +281,18 @@ human readability. It prints the result to stdout.
 If --overwrite is specified, the output will be written to the config file
 directly instead of printing it.
 
+If --diff is specified, the output will be compared against the input, and
+lines will be prefixed with '-' and '+' where they differ. Note that
+unchanged lines are prefixed with two spaces for alignment, and that this
+is not a valid patch format.
+
 If you wish you use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
+			fs.Bool("diff", false, "Print the differences between the input file and the formatted output")
 			return fs
 		}(),
 	})

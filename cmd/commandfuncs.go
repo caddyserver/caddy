@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/aryann/difflib"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -493,7 +494,9 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		if warn.Directive != "" {
 			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 		}
-		fmt.Fprintf(os.Stderr, "[WARNING][%s] %s:%d: %s\n", adaptCmdAdapterFlag, warn.File, warn.Line, msg)
+		caddy.Log().Named(adaptCmdAdapterFlag).Warn(msg,
+			zap.String("file", warn.File),
+			zap.Int("line", warn.Line))
 	}
 
 	// validate output if requested
@@ -567,6 +570,20 @@ func cmdFmt(fl Flags) (int, error) {
 		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
+	} else if fl.Bool("diff") {
+		diff := difflib.Diff(
+			strings.Split(string(input), "\n"),
+			strings.Split(string(output), "\n"))
+		for _, d := range diff {
+			switch d.Delta {
+			case difflib.Common:
+				fmt.Printf("  %s\n", d.Payload)
+			case difflib.LeftOnly:
+				fmt.Printf("- %s\n", d.Payload)
+			case difflib.RightOnly:
+				fmt.Printf("+ %s\n", d.Payload)
+			}
+		}
 	} else {
 		fmt.Print(string(output))
 	}
@@ -586,7 +603,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	}
 	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
-		origin = "unixsocket" // hack so that http.NewRequest() is happy
+		origin = "http://unixsocket" // hack so that http.NewRequest() is happy
 	}
 
 	// form the request
@@ -669,7 +686,7 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 			return "", fmt.Errorf("no config file to load")
 		}
 
-		// get the address of the admin listener
+		// get the address of the admin listener if set
 		if len(config) > 0 {
 			var tmpStruct struct {
 				Admin caddy.AdminConfig `json:"admin"`
@@ -678,7 +695,9 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 			if err != nil {
 				return "", fmt.Errorf("unmarshaling admin listener address from config: %v", err)
 			}
-			return tmpStruct.Admin.Listen, nil
+			if tmpStruct.Admin.Listen != "" {
+				return tmpStruct.Admin.Listen, nil
+			}
 		}
 	}
 

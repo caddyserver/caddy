@@ -1,0 +1,45 @@
+{
+	debug
+}
+
+:8881 {
+	log {
+		format console
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"level": "DEBUG",
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"encoder": {
+					"format": "console"
+				},
+				"level": "DEBUG",
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}

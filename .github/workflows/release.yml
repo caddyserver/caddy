@@ -12,13 +12,21 @@ jobs:
       matrix:
         os: [ ubuntu-latest ]
         go: [ '1.18' ]
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.18'
+          GO_SEMVER: '~1.18.1'
+
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install Go
       uses: actions/setup-go@v3
       with:
-        go-version: ${{ matrix.go }}
+        go-version: ${{ matrix.GO_SEMVER }}
+        check-latest: true
 
     - name: Checkout code
       uses: actions/checkout@v3
@@ -99,7 +107,7 @@ jobs:
         TAG: ${{ steps.vars.outputs.version_tag }}
 
     # Only publish on non-special tags (e.g. non-beta)
-    # We will continue to push to Gemfury for the forseeable future, although
+    # We will continue to push to Gemfury for the foreseeable future, although
     # Cloudsmith is probably better, to not break things for existing users of Gemfury.
     # See https://gemfury.com/caddy/deb:caddy
     - name: Publish .deb to Gemfury

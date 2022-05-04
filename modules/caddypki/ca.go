@@ -182,30 +182,51 @@ func (ca CA) IntermediateKey() interface{} {
 }
 
 // NewAuthority returns a new Smallstep-powered signing authority for this CA.
-func (ca CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
+// Note that we receive *CA (a pointer) in this method to ensure the closure within it, which
+// executes at a later time, always has the only copy of the CA so it can access the latest,
+// renewed certificates since NewAuthority was called. See #4517 and #4669.
+func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authority, error) {
 	// get the root certificate and the issuer cert+key
 	rootCert := ca.RootCertificate()
-	var issuerCert *x509.Certificate
-	var issuerKey interface{}
+
+	// set up the signer; cert/key which signs the leaf certs
+	var signerOption authority.Option
 	if authorityConfig.SignWithRoot {
+		// if we're signing with root, we can just pass the
+		// cert/key directly, since it's unlikely to expire
+		// while Caddy is running (long lifetime)
+		var issuerCert *x509.Certificate
+		var issuerKey interface{}
 		issuerCert = rootCert
 		var err error
 		issuerKey, err = ca.RootKey()
 		if err != nil {
 			return nil, fmt.Errorf("loading signing key: %v", err)
 		}
+		signerOption = authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer))
 	} else {
-		issuerCert = ca.IntermediateCertificate()
-		issuerKey = ca.IntermediateKey()
+		// if we're signing with intermediate, we need to make
+		// sure it's always fresh, because the intermediate may
+		// renew while Caddy is running (medium lifetime)
+		signerOption = authority.WithX509SignerFunc(func() ([]*x509.Certificate, crypto.Signer, error) {
+			issuerCert := ca.IntermediateCertificate()
+			issuerKey := ca.IntermediateKey().(crypto.Signer)
+			ca.log.Debug("using intermediate signer",
+				zap.String("serial", issuerCert.SerialNumber.String()),
+				zap.String("not_before", issuerCert.NotBefore.String()),
+				zap.String("not_after", issuerCert.NotAfter.String()))
+			return []*x509.Certificate{issuerCert}, issuerKey, nil
+		})
 	}
 
 	opts := []authority.Option{
 		authority.WithConfig(&authority.Config{
 			AuthorityConfig: authorityConfig.AuthConfig,
 		}),
-		authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer)),
+		signerOption,
 		authority.WithX509RootCerts(rootCert),
 	}
+
 	// Add a database if we have one
 	if authorityConfig.DB != nil {
 		opts = append(opts, authority.WithDatabase(*authorityConfig.DB))

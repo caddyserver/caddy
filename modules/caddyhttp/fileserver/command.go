@@ -129,7 +129,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	log.Printf("Caddy 2 serving static files on %s", listen)
+	log.Printf("Caddy serving static files on %s", listen)
 
 	select {}
 }

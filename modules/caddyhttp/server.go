@@ -190,6 +190,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			repl.Set("http.response.status", wrec.Status())
 			repl.Set("http.response.size", wrec.Size())
 			repl.Set("http.response.duration", duration)
+			repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
 
 			logger := accLog
 			if s.Logs != nil {

@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"regexp"
 	"sort"
@@ -30,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -129,6 +129,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		{regexp.MustCompile(`{header\.([\w-]*)}`), "{http.request.header.$1}"},
 		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
 		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
+		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
 	}
 
 	for _, sb := range originalServerBlocks {
@@ -253,18 +254,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		}
 		customLogs = append(customLogs, ncl)
 	}
+
 	// Apply global log options, when set
 	if options["log"] != nil {
 		for _, logValue := range options["log"].([]ConfigValue) {
 			addCustomLog(logValue.Value.(namedCustomLog))
-		}
-	}
-	// Apply server-specific log options
-	for _, p := range pairings {
-		for _, sb := range p.serverBlocks {
-			for _, clVal := range sb.pile["custom_log"] {
-				addCustomLog(clVal.Value.(namedCustomLog))
-			}
 		}
 	}
 
@@ -276,6 +270,15 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 				name: "default",
 				log:  &caddy.CustomLog{Level: "DEBUG"},
 			})
+		}
+	}
+
+	// Apply server-specific log options
+	for _, p := range pairings {
+		for _, sb := range p.serverBlocks {
+			for _, clVal := range sb.pile["custom_log"] {
+				addCustomLog(clVal.Value.(namedCustomLog))
+			}
 		}
 	}
 
@@ -458,6 +461,17 @@ func (st *ServerType) serversFromPairings(
 			}
 		}
 
+		// Using paths in site addresses is deprecated
+		// See ParseAddress() where parsing should later reject paths
+		// See https://github.com/caddyserver/caddy/pull/4728 for a full explanation
+		for _, sblock := range p.serverBlocks {
+			for _, addr := range sblock.keys {
+				if addr.Path != "" {
+					caddy.Log().Named("caddyfile").Warn("Using a path in a site address is deprecated; please use the 'handle' directive instead", zap.String("address", addr.String()))
+				}
+			}
+		}
+
 		// sort server blocks by their keys; this is important because
 		// only the first matching site should be evaluated, and we should
 		// attempt to match most specific site first (host and path), in
@@ -545,7 +559,7 @@ func (st *ServerType) serversFromPairings(
 			// emit warnings if user put unspecified IP addresses; they probably want the bind directive
 			for _, h := range hosts {
 				if h == "0.0.0.0" || h == "::" {
-					log.Printf("[WARNING] Site block has unspecified IP address %s which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", h)
+					caddy.Log().Named("caddyfile").Warn("Site block has an unspecified IP address which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", zap.String("address", h))
 				}
 			}
 

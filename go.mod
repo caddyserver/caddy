@@ -3,10 +3,11 @@ module github.com/caddyserver/caddy/v2
 go 1.17
 
 require (
+	github.com/BurntSushi/toml v1.0.0
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.16.0
+	github.com/caddyserver/certmagic v0.16.1
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.7.3
@@ -15,9 +16,8 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.11
 	github.com/lucas-clemente/quic-go v0.26.0
 	github.com/mholt/acmez v1.0.2
-	github.com/naoina/toml v0.1.1
 	github.com/prometheus/client_golang v1.12.1
-	github.com/smallstep/certificates v0.18.3-0.20220328195804-49de04661b85
+	github.com/smallstep/certificates v0.19.0
 	github.com/smallstep/cli v0.18.0
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
@@ -43,7 +43,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
-	github.com/BurntSushi/toml v1.0.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/antlr/antlr4 v0.0.0-20200503195918-621b933c7a7f // indirect
@@ -68,7 +67,7 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/golang/snappy v0.0.3 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
@@ -96,7 +95,6 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -121,9 +119,9 @@ require (
 	go.opentelemetry.io/otel/trace v1.4.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
 	go.step.sm/cli-utils v0.7.0 // indirect
-	go.step.sm/crypto v0.15.3 // indirect
-	go.step.sm/linkedca v0.11.0 // indirect
-	go.uber.org/atomic v1.7.0 // indirect
+	go.step.sm/crypto v0.16.1 // indirect
+	go.step.sm/linkedca v0.15.0 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
