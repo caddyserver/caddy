@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -372,7 +373,14 @@ func (u *UpstreamResolver) ParseAddresses() error {
 	for _, v := range u.Addresses {
 		addr, err := caddy.ParseNetworkAddress(v)
 		if err != nil {
-			return err
+			// If a port wasn't specified for the resolver,
+			// try defaulting to 53 and parse again
+			if strings.Contains(err.Error(), "missing port in address") {
+				addr, err = caddy.ParseNetworkAddress(v + ":53")
+			}
+			if err != nil {
+				return err
+			}
 		}
 		if addr.PortRangeSize() != 1 {
 			return fmt.Errorf("resolver address must have exactly one address; cannot call %v", addr)
