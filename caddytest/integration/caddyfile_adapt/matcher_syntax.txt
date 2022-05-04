@@ -37,6 +37,9 @@
 		header Bar foo
 	}
 	respond @matcher9 "header matcher with null field matcher"
+
+	@matcher10 remote_ip private_ranges
+	respond @matcher10 "remote_ip matcher with private ranges"
 }
 ----------
 {
@@ -206,6 +209,28 @@
 							"handle": [
 								{
 									"body": "header matcher with null field matcher",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"remote_ip": {
+										"ranges": [
+											"192.168.0.0/16",
+											"172.16.0.0/12",
+											"10.0.0.0/8",
+											"127.0.0.1/8",
+											"fd00::/8",
+											"::1"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "remote_ip matcher with private ranges",
 									"handler": "static_response"
 								}
 							]
