@@ -704,10 +704,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// we pass through the request Host as-is, but in situations
 	// where we proxy over HTTPS, the user may need to override
 	// Host themselves, so it's helpful to send the original too.
-	host, _, err := net.SplitHostPort(req.Host)
-	if err != nil {
-		host = req.Host // OK; there probably was no port
-	}
+	host := req.Host
 	prior, ok, omit = lastHeaderValue(req.Header, "X-Forwarded-Host")
 	if trusted && ok && prior != "" {
 		host = prior
