@@ -149,6 +149,21 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 			expectError: false,
 		},
 		{
+			// this is now allowed so a Location header
+			// can be written and consumed by JS
+			// in the case of XHR requests
+			input: `:8080 {
+				redir * :8081 401
+			}`,
+			expectError: false,
+		},
+		{
+			input: `:8080 {
+				redir * :8081 {http.reverse_proxy.status_code}
+			}`,
+			expectError: false,
+		},
+		{
 			input: `:8080 {
 				redir /old.html /new.html htlm
 			}`,
@@ -157,12 +172,6 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 		{
 			input: `:8080 {
 				redir * :8081 200
-			}`,
-			expectError: true,
-		},
-		{
-			input: `:8080 {
-				redir * :8081 400
 			}`,
 			expectError: true,
 		},
