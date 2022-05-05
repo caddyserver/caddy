@@ -29,6 +29,7 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/aryann/difflib"
 	"github.com/caddyserver/caddy/v2"
