@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/dustin/go-humanize"
 )
 
@@ -85,10 +86,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_responses
 //         max_buffer_size <size>
 //
-//         # header manipulation
+//         # request manipulation
 //         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//         method <method>
+//         rewrite <to>
 //
 //         # round trip
 //         transport <name> {
@@ -598,6 +601,30 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				if err != nil {
 					return d.Err(err.Error())
+				}
+
+			case "method":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.Method = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "rewrite":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.URI = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
 				}
 
 			case "transport":

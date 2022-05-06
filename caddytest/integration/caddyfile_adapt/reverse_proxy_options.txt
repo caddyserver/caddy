@@ -1,11 +1,11 @@
 
 https://example.com {
-	reverse_proxy /path http://localhost:54321 {
-		header_up Host {host}
-		header_up X-Real-IP {remote}
-		header_up X-Forwarded-For {remote}
-		header_up X-Forwarded-Port {server_port}
-		header_up X-Forwarded-Proto "http"
+	reverse_proxy /path https://localhost:54321 {
+		header_up Host {upstream_hostport}
+		header_up Foo bar
+
+		method GET
+		rewrite /rewritten?uri={uri}
 
 		buffer_requests
 
@@ -58,23 +58,18 @@ https://example.com {
 													"headers": {
 														"request": {
 															"set": {
+																"Foo": [
+																	"bar"
+																],
 																"Host": [
-																	"{http.request.host}"
-																],
-																"X-Forwarded-For": [
-																	"{http.request.remote}"
-																],
-																"X-Forwarded-Port": [
-																	"{server_port}"
-																],
-																"X-Forwarded-Proto": [
-																	"http"
-																],
-																"X-Real-Ip": [
-																	"{http.request.remote}"
+																	"{http.reverse_proxy.upstream.hostport}"
 																]
 															}
 														}
+													},
+													"rewrite": {
+														"method": "GET",
+														"uri": "/rewritten?uri={http.request.uri}"
 													},
 													"transport": {
 														"compression": false,
@@ -96,6 +91,7 @@ https://example.com {
 															]
 														},
 														"response_header_timeout": 8000000000,
+														"tls": {},
 														"versions": [
 															"h2c",
 															"2"
