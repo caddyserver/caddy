@@ -1,0 +1,18 @@
+X-Forwarded-For:   {{.Req.Header.Get "X-Forwarded-For"}}
+X-Forwarded-Host:  {{.Req.Header.Get "X-Forwarded-Host"}}
+X-Forwarded-Port:  {{.Req.Header.Get "X-Forwarded-Port"}}
+X-Forwarded-Proto: {{.Req.Header.Get "X-Forwarded-Proto"}}
+Forwarded: {{.Req.Header.Get "Forwarded"}}
+
+content-length: {{placeholder "http.response.header.content-length"}}
+
+{{formatHuman "size" "2048000"}}
+{{ placeholder "http.response.header.content-length" | formatHuman "size" }}
+
+UA: {{.Req.Header.Get "User-Agent"}}
+
+All Headers:
+
+{{range $field, $val := .Req.Header}}
+    {{$field}}: {{$val}}
+{{end}}

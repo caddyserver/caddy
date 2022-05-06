@@ -26,11 +26,13 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/dustin/go-humanize"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
 	"github.com/yuin/goldmark/extension"
@@ -81,6 +83,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
+		"formatHuman":      c.formatHuman,
 	})
 	return c.tpl
 }
@@ -396,6 +399,41 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 // Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
+}
+
+// formatHumane returns a human readable format of some data
+// For time formating is the default format RFC1123Z.
+// on this page are the definitions of that format https://pkg.go.dev/time#pkg-constants
+// Example usage:
+// ```
+// {{formatHuman "size" "2048000"}}
+// {{placeholder "http.response.header.content-length" | formatHuman "size"}}
+// {{formatHuman "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// ```
+func (c TemplateContext) formatHuman(function, data string) (string, error) {
+
+	if function == "size" {
+
+		dataint, dataerr := strconv.ParseUint(data, 10, 64)
+		if dataerr != nil {
+			return "", fmt.Errorf("size: data can't be parsed. Error: %s", dataerr.Error())
+		}
+		return humanize.Bytes(dataint), nil
+	}
+
+	if function == "time" {
+
+		// TODO: add optional layout argument
+		//timelayout := "Mon Jan 02 2006 15:04:05 GMT-0700"
+		dataint, dataerr := time.Parse(time.RFC1123Z, data)
+
+		if dataerr != nil {
+			return "", fmt.Errorf("time: data can't be parsed. Error: %s", dataerr.Error())
+		}
+		return humanize.Time(dataint), nil
+	}
+
+	return "", fmt.Errorf("no know function was given")
 }
 
 // WrappedHeader wraps niladic functions so that they

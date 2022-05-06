@@ -606,6 +606,36 @@ title = "Welcome"
 
 }
 
+func TestFormatHuman(t *testing.T) {
+	tplContext := getContextOrFail(t)
+	for i, test := range []struct {
+		format    string
+		inputData string
+		expect    string
+		verifyErr func(actual_string, substring string) bool
+	}{
+		{
+			format:    "size",
+			inputData: "2048000",
+			expect:    "MB",
+			verifyErr: strings.HasSuffix,
+		},
+		{
+			format:    "time",
+			inputData: "Fri, 05 May 2022 15:04:05 +0200",
+			expect:    "ago",
+			verifyErr: strings.HasSuffix,
+		},
+	} {
+		if actual, err := tplContext.formatHuman(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
+			t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)
+			if err != nil {
+				t.Errorf("Test %d: error: %s", i, err.Error())
+			}
+		}
+	}
+}
+
 func getContextOrFail(t *testing.T) TemplateContext {
 	tplContext, err := initTestContext()
 	t.Cleanup(func() {
