@@ -292,7 +292,7 @@ func TestRewrite(t *testing.T) {
 			rep.re = re
 		}
 
-		changed := tc.rule.rewrite(tc.input, repl, nil)
+		changed := tc.rule.Rewrite(tc.input, repl)
 
 		if expected, actual := !reqEqual(originalInput, tc.input), changed; expected != actual {
 			t.Errorf("Test %d: Expected changed=%t but was %t", i, expected, actual)
