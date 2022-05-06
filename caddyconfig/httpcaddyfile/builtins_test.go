@@ -159,6 +159,12 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 		},
 		{
 			input: `:8080 {
+				redir * :8081 402
+			}`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
 				redir * :8081 {http.reverse_proxy.status_code}
 			}`,
 			expectError: false,

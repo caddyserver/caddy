@@ -596,8 +596,8 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		// Location header and do a window.location redirect manually.
 		// see https://stackoverflow.com/a/2573589/846934
 		// see https://github.com/oauth2-proxy/oauth2-proxy/issues/1522
-		if codeInt < 300 || codeInt > 499 {
-			return nil, h.Errf("Redir code not in the 3xx or 4xx range: '%v'", codeInt)
+		if codeInt < 300 || (codeInt > 399 && codeInt != 401) {
+			return nil, h.Errf("Redir code not in the 3xx range or 401: '%v'", codeInt)
 		}
 	}
 
