@@ -88,34 +88,10 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		return nil, warnings, err
 	}
 
-	// replace shorthand placeholders (which are
-	// convenient when writing a Caddyfile) with
-	// their actual placeholder identifiers or
-	// variable names
-	replacer := strings.NewReplacer(
-		"{dir}", "{http.request.uri.path.dir}",
-		"{file}", "{http.request.uri.path.file}",
-		"{host}", "{http.request.host}",
-		"{hostport}", "{http.request.hostport}",
-		"{port}", "{http.request.port}",
-		"{method}", "{http.request.method}",
-		"{path}", "{http.request.uri.path}",
-		"{query}", "{http.request.uri.query}",
-		"{remote}", "{http.request.remote}",
-		"{remote_host}", "{http.request.remote.host}",
-		"{remote_port}", "{http.request.remote.port}",
-		"{scheme}", "{http.request.scheme}",
-		"{uri}", "{http.request.uri}",
-		"{tls_cipher}", "{http.request.tls.cipher_suite}",
-		"{tls_version}", "{http.request.tls.version}",
-		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
-		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
-		"{tls_client_serial}", "{http.request.tls.client.serial}",
-		"{tls_client_subject}", "{http.request.tls.client.subject}",
-		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
-		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
-		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
-	)
+	// replace shorthand placeholders (which are convenient
+	// when writing a Caddyfile) with their actual placeholder
+	// identifiers or variable names
+	replacer := strings.NewReplacer(placeholderShorthands()...)
 
 	// these are placeholders that allow a user-defined final
 	// parameters, but we still want to provide a shorthand
@@ -1263,6 +1239,58 @@ func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.Modul
 		msEncoded[matcherName] = jsonBytes
 	}
 	return msEncoded, nil
+}
+
+// placeholderShorthands returns a slice of old-new string pairs,
+// where the left of the pair is a placeholder shorthand that may
+// be used in the Caddyfile, and the right is the replacement.
+func placeholderShorthands() []string {
+	return []string{
+		"{dir}", "{http.request.uri.path.dir}",
+		"{file}", "{http.request.uri.path.file}",
+		"{host}", "{http.request.host}",
+		"{hostport}", "{http.request.hostport}",
+		"{port}", "{http.request.port}",
+		"{method}", "{http.request.method}",
+		"{path}", "{http.request.uri.path}",
+		"{query}", "{http.request.uri.query}",
+		"{remote}", "{http.request.remote}",
+		"{remote_host}", "{http.request.remote.host}",
+		"{remote_port}", "{http.request.remote.port}",
+		"{scheme}", "{http.request.scheme}",
+		"{uri}", "{http.request.uri}",
+		"{tls_cipher}", "{http.request.tls.cipher_suite}",
+		"{tls_version}", "{http.request.tls.version}",
+		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
+		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
+		"{tls_client_serial}", "{http.request.tls.client.serial}",
+		"{tls_client_subject}", "{http.request.tls.client.subject}",
+		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
+		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
+		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
+	}
+}
+
+// WasReplacedPlaceholderShorthand checks if a token string was
+// likely a replaced shorthand of the known Caddyfile placeholder
+// replacement outputs. Useful to prevent some user-defined map
+// output destinations from overlapping with one of the
+// predefined shorthands.
+func WasReplacedPlaceholderShorthand(token string) string {
+	prev := ""
+	for i, item := range placeholderShorthands() {
+		// only look at every 2nd item, which is the replacement
+		if i%2 == 0 {
+			prev = item
+			continue
+		}
+		if strings.Trim(token, "{}") == strings.Trim(item, "{}") {
+			// we return the original shorthand so it
+			// can be used for an error message
+			return prev
+		}
+	}
+	return ""
 }
 
 // tryInt tries to convert val to an integer. If it fails,
