@@ -238,6 +238,16 @@ func init() {
 // {{stripHTML "Shows <b>only</b> text content"}}
 // ```
 //
+// ##### `formatHuman`
+//
+// formatHuman transforms size and time inputs to a human readable format.
+//
+// ```
+// {{formatHuman "size" "2048000"}}
+// {{placeholder "http.response.header.content-length" | formatHuman "size"}}
+// {{formatHuman "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// ```
+
 type Templates struct {
 	// The root path from which to load files. Required if template functions
 	// accessing the file system are used (such as include). Default is

@@ -626,6 +626,12 @@ func TestFormatHuman(t *testing.T) {
 			expect:    "ago",
 			verifyErr: strings.HasSuffix,
 		},
+		{
+			format:    "time",
+			inputData: "Fri, 05 May 2022 15:04:05 GMT+0200",
+			expect:    "error:",
+			verifyErr: strings.HasPrefix,
+		},
 	} {
 		if actual, err := tplContext.formatHuman(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)

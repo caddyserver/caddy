@@ -401,27 +401,20 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
-// formatHumane returns a human readable format of some data
-// For time formating is the default format RFC1123Z.
-// on this page are the definitions of that format https://pkg.go.dev/time#pkg-constants
-// Example usage:
-// ```
-// {{formatHuman "size" "2048000"}}
-// {{placeholder "http.response.header.content-length" | formatHuman "size"}}
-// {{formatHuman "time" "Fri, 05 May 2022 15:04:05 +0200"}}
-// ```
+// formatHuman transforms size and time inputs to a human readable format.
+// For time formatting, the default format is RFC1123Z.
+// The supported time formats: https://pkg.go.dev/time#pkg-constants
 func (c TemplateContext) formatHuman(function, data string) (string, error) {
 
-	if function == "size" {
+	switch function {
+	case "size":
 
 		dataint, dataerr := strconv.ParseUint(data, 10, 64)
 		if dataerr != nil {
 			return "", fmt.Errorf("size: data can't be parsed. Error: %s", dataerr.Error())
 		}
 		return humanize.Bytes(dataint), nil
-	}
-
-	if function == "time" {
+	case "time":
 
 		// TODO: add optional layout argument
 		//timelayout := "Mon Jan 02 2006 15:04:05 GMT-0700"
