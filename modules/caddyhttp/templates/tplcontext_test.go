@@ -612,31 +612,37 @@ func TestFormatHuman(t *testing.T) {
 		format    string
 		inputData string
 		expect    string
+		errorCase bool
 		verifyErr func(actual_string, substring string) bool
 	}{
 		{
 			format:    "size",
 			inputData: "2048000",
 			expect:    "MB",
+			errorCase: false,
 			verifyErr: strings.HasSuffix,
 		},
 		{
 			format:    "time",
 			inputData: "Fri, 05 May 2022 15:04:05 +0200",
 			expect:    "ago",
+			errorCase: false,
 			verifyErr: strings.HasSuffix,
 		},
 		{
 			format:    "time",
 			inputData: "Fri, 05 May 2022 15:04:05 GMT+0200",
 			expect:    "error:",
+			errorCase: true,
 			verifyErr: strings.HasPrefix,
 		},
 	} {
 		if actual, err := tplContext.formatHuman(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
-			t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)
-			if err != nil {
-				t.Errorf("Test %d: error: %s", i, err.Error())
+			if !test.errorCase {
+				t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)
+				if err != nil {
+					t.Errorf("Test %d: error: %s", i, err.Error())
+				}
 			}
 		}
 	}
