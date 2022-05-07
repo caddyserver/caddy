@@ -242,10 +242,15 @@ func init() {
 //
 // formatHuman transforms size and time inputs to a human readable format.
 //
+// The paramter time can have a optional argument for time formatting.
+// The default format is RFC1123Z.
+// The supported time formats: https://pkg.go.dev/time#pkg-constants
+//
 // ```
 // {{formatHuman "size" "2048000"}}
 // {{placeholder "http.response.header.content-length" | formatHuman "size"}}
 // {{formatHuman "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// {{formatHuman "time:2006-Jan-02" "2022-May-05"}}
 // ```
 
 type Templates struct {

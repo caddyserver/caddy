@@ -406,7 +406,7 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 // The supported time formats: https://pkg.go.dev/time#pkg-constants
 func (c TemplateContext) formatHuman(function, data string) (string, error) {
 
-	switch function {
+	switch function[:4] {
 	case "size":
 
 		dataint, dataerr := strconv.ParseUint(data, 10, 64)
@@ -416,9 +416,13 @@ func (c TemplateContext) formatHuman(function, data string) (string, error) {
 		return humanize.Bytes(dataint), nil
 	case "time":
 
-		// TODO: add optional layout argument
-		//timelayout := "Mon Jan 02 2006 15:04:05 GMT-0700"
-		dataint, dataerr := time.Parse(time.RFC1123Z, data)
+		timelayout := time.RFC1123Z
+
+		if len(function) > 4 {
+			timelayout = function[5:]
+		}
+
+		dataint, dataerr := time.Parse(timelayout, data)
 
 		if dataerr != nil {
 			return "", fmt.Errorf("time: data can't be parsed. Error: %s", dataerr.Error())

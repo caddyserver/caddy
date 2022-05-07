@@ -630,6 +630,13 @@ func TestFormatHuman(t *testing.T) {
 			verifyErr: strings.HasSuffix,
 		},
 		{
+			format:    "time:2006-Jan-02",
+			inputData: "2022-May-05",
+			expect:    "ago",
+			errorCase: false,
+			verifyErr: strings.HasSuffix,
+		},
+		{
 			format:    "time",
 			inputData: "Fri, 05 May 2022 15:04:05 GMT+0200",
 			expect:    "error:",
