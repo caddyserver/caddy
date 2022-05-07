@@ -325,7 +325,7 @@ func (app *App) Start() error {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
 // 				ln, err := caddy.Listen(listenAddr.Network, hostport)
-				ln, err := caddy.Listen(listenAddr.Network, "60443")
+				ln, err := caddy.Listen(listenAddr.Network, ":60443")
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}
