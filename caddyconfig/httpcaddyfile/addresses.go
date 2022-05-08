@@ -213,8 +213,8 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
 	if len(lnHosts) == 0 {
-		if defaultBind, ok := options["default_bind"].(string); ok {
-			lnHosts = []string{defaultBind}
+		if defaultBind, ok := options["default_bind"].([]string); ok {
+			lnHosts = defaultBind
 		} else {
 			lnHosts = []string{""}
 		}
@@ -236,6 +236,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	for lnStr := range listeners {
 		listenersList = append(listenersList, lnStr)
 	}
+	sort.Strings(listenersList)
 
 	return listenersList, nil
 }
