@@ -204,6 +204,16 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/%C2%B7%E2%88%B5.png?a=b"),
 			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png?a=b"),
 		},
+		{
+			rule:   Rewrite{URI: "/bar#?"},
+			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"), // not a valid query string (is part of fragment)
+			expect: newRequest(t, "GET", "/bar#?"),             // I think this is right? but who knows; std lib drops fragment when parsing
+		},
+		{
+			rule:   Rewrite{URI: "/bar"},
+			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"),
+			expect: newRequest(t, "GET", "/bar#fragFirst?c=d"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -271,10 +281,11 @@ func TestRewrite(t *testing.T) {
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
+		urlCopy := *tc.input.URL
 		originalInput := &http.Request{
 			Method:     tc.input.Method,
 			RequestURI: tc.input.RequestURI,
-			URL:        &*tc.input.URL,
+			URL:        &urlCopy,
 		}
 
 		// populate the replacer just enough for our tests
