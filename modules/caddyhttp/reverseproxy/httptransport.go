@@ -247,8 +247,8 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	h.SetScheme(req)
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
-	// HTTP/2 without TLS, use the alternate H2C-capable transport instead
-	if req.ProtoMajor == 2 && req.URL.Scheme == "http" && h.h2cTransport != nil {
+	// HTTP without TLS, use the alternate H2C-capable transport instead
+	if req.URL.Scheme == "http" && h.h2cTransport != nil {
 		return h.h2cTransport.RoundTrip(req)
 	}
 
