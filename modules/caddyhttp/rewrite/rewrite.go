@@ -135,13 +135,20 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
 		pathEnd, qsEnd := -1, -1
+	loop:
 		for i, ch := range uri {
 			switch {
 			case ch == '?' && qsStart < 0:
 				pathEnd, qsStart = i, i+1
-			case ch == '#' && fragStart < 0:
-				qsEnd, fragStart = i, i+1
-			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+			case ch == '#' && fragStart < 0: // everything after fragment is fragment (very clear in RFC 3986 section 4.2)
+				if qsStart < 0 {
+					pathEnd = i
+				} else {
+					qsEnd = i
+				}
+				fragStart = i + 1
+				break loop
+			case pathStart < 0 && qsStart < 0:
 				pathStart = i
 			}
 		}
