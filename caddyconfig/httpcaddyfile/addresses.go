@@ -102,12 +102,20 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 			}
 		}
 
+		// make a slice of the map keys so we can iterate in sorted order
+		addrs := make([]string, 0, len(addrToKeys))
+		for k := range addrToKeys {
+			addrs = append(addrs, k)
+		}
+		sort.Strings(addrs)
+
 		// now that we know which addresses serve which keys of this
 		// server block, we iterate that mapping and create a list of
 		// new server blocks for each address where the keys of the
 		// server block are only the ones which use the address; but
 		// the contents (tokens) are of course the same
-		for addr, keys := range addrToKeys {
+		for _, addr := range addrs {
+			keys := addrToKeys[addr]
 			// parse keys so that we only have to do it once
 			parsedKeys := make([]Address, 0, len(keys))
 			for _, key := range keys {
@@ -161,6 +169,7 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 				delete(addrToServerBlocks, otherAddr)
 			}
 		}
+		sort.Strings(a.addresses)
 
 		sbaddrs = append(sbaddrs, a)
 	}
@@ -208,7 +217,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// the bind directive specifies hosts, but is optional
-	lnHosts := make([]string, 0, len(sblock.pile))
+	lnHosts := make([]string, 0, len(sblock.pile["bind"]))
 	for _, cfgVal := range sblock.pile["bind"] {
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
