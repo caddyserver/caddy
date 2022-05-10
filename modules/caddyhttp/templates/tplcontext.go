@@ -406,7 +406,7 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 // The supported time formats: https://pkg.go.dev/time#pkg-constants
 func (c TemplateContext) formatHuman(function, data string) (string, error) {
 
-	switch function[:4] {
+	switch strings.Split(function, ":")[0] {
 	case "size":
 
 		dataint, dataerr := strconv.ParseUint(data, 10, 64)
