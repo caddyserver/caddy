@@ -242,7 +242,7 @@ func init() {
 //
 // formatHuman transforms size and time inputs to a human readable format.
 //
-// The paramter time can have a optional argument for time formatting.
+// The parameter time can have a optional argument for time formatting.
 // The default format is RFC1123Z.
 // The supported time formats: https://pkg.go.dev/time#pkg-constants
 //
