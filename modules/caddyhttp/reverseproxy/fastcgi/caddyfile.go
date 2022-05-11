@@ -196,7 +196,15 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// NOTE: we delete the tokens as we go so that the reverse_proxy
 	// unmarshal doesn't see these subdirectives which it cannot handle
 	for dispenser.Next() {
-		for dispenser.NextBlock(0) && dispenser.Nesting() == 1 {
+		for dispenser.NextBlock(0) {
+			// ignore any sub-subdirectives that might
+			// have the same name somewhere within
+			// the reverse_proxy passthrough tokens
+			if dispenser.Nesting() != 1 {
+				continue
+			}
+
+			// parse the php_fastcgi subdirectives
 			switch dispenser.Val() {
 			case "root":
 				if !dispenser.NextArg() {

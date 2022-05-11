@@ -57,6 +57,7 @@ var directiveOrder = []string{
 
 	// middleware handlers; some wrap responses
 	"basicauth",
+	"forward_auth",
 	"request_header",
 	"encode",
 	"push",
@@ -424,14 +425,29 @@ func sortRoutes(routes []ConfigValue) {
 			jPathLen = len(jPM[0])
 		}
 
-		// if both directives have no path matcher, use whichever one
-		// has any kind of matcher defined first.
-		if iPathLen == 0 && jPathLen == 0 {
-			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
-		}
+		// some directives involve setting values which can overwrite
+		// eachother, so it makes most sense to reverse the order so
+		// that the lease specific matcher is first; everything else
+		// has most-specific matcher first
+		if iDir == "vars" {
+			// if both directives have no path matcher, use whichever one
+			// has no matcher first.
+			if iPathLen == 0 && jPathLen == 0 {
+				return len(iRoute.MatcherSetsRaw) == 0 && len(jRoute.MatcherSetsRaw) > 0
+			}
 
-		// sort with the most-specific (longest) path first
-		return iPathLen > jPathLen
+			// sort with the least-specific (shortest) path first
+			return iPathLen < jPathLen
+		} else {
+			// if both directives have no path matcher, use whichever one
+			// has any kind of matcher defined first.
+			if iPathLen == 0 && jPathLen == 0 {
+				return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
+			}
+
+			// sort with the most-specific (longest) path first
+			return iPathLen > jPathLen
+		}
 	})
 }
 

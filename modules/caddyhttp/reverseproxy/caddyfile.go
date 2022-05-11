@@ -15,7 +15,6 @@
 package reverseproxy
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"reflect"
@@ -28,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/dustin/go-humanize"
 )
 
@@ -86,10 +86,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_responses
 //         max_buffer_size <size>
 //
-//         # header manipulation
+//         # request manipulation
 //         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//         method <method>
+//         rewrite <to>
 //
 //         # round trip
 //         transport <name> {
@@ -552,16 +554,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				case 2:
 					// some lint checks, I guess
 					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						log.Printf("[WARNING] Unnecessary header_up ('Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-For' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Proto' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:
@@ -601,6 +603,30 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err(err.Error())
 				}
 
+			case "method":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.Method = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "rewrite":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.URI = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
 			case "transport":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -628,22 +654,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "replace_status":
 				args := d.RemainingArgs()
-				if len(args) != 2 {
-					return d.Errf("must have two arguments: a response matcher and a status code")
+				if len(args) != 1 && len(args) != 2 {
+					return d.Errf("must have one or two arguments: an optional response matcher, and a status code")
 				}
 
-				if !strings.HasPrefix(args[0], matcherPrefix) {
-					return d.Errf("must use a named response matcher, starting with '@'")
-				}
+				responseHandler := caddyhttp.ResponseHandler{}
 
-				foundMatcher, ok := h.responseMatchers[args[0]]
-				if !ok {
-					return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
-				}
-
-				_, err := strconv.Atoi(args[1])
-				if err != nil {
-					return d.Errf("bad integer value '%s': %v", args[1], err)
+				if len(args) == 2 {
+					if !strings.HasPrefix(args[0], matcherPrefix) {
+						return d.Errf("must use a named response matcher, starting with '@'")
+					}
+					foundMatcher, ok := h.responseMatchers[args[0]]
+					if !ok {
+						return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+					}
+					responseHandler.Match = &foundMatcher
+					responseHandler.StatusCode = caddyhttp.WeakString(args[1])
+				} else if len(args) == 1 {
+					responseHandler.StatusCode = caddyhttp.WeakString(args[0])
 				}
 
 				// make sure there's no block, cause it doesn't make sense
@@ -653,10 +681,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				h.HandleResponse = append(
 					h.HandleResponse,
-					caddyhttp.ResponseHandler{
-						Match:      &foundMatcher,
-						StatusCode: caddyhttp.WeakString(args[1]),
-					},
+					responseHandler,
 				)
 
 			default:

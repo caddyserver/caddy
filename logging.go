@@ -661,9 +661,15 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 
 	cl.buildCore()
 
+	logger := zap.New(cl.core)
+
+	// capture logs from other libraries which
+	// may not be using zap logging directly
+	_ = zap.RedirectStdLog(logger)
+
 	return &defaultCustomLog{
 		CustomLog: cl,
-		logger:    zap.New(cl.core),
+		logger:    logger,
 	}, nil
 }
 
