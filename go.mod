@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.15.0
 	github.com/klauspost/cpuid/v2 v2.0.11
-	github.com/lucas-clemente/quic-go v0.26.0
+	github.com/lucas-clemente/quic-go v0.27.0
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.19.0

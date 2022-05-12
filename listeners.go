@@ -184,7 +184,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlySession, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil
