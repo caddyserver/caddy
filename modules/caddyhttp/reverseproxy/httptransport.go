@@ -317,6 +317,14 @@ type TLSConfig struct {
 
 	// The server name (SNI) to use in TLS handshakes.
 	ServerName string `json:"server_name,omitempty"`
+
+	// TLS renegotiation level. TLS renegotiation is the act of performing
+	// subsequent handshakes on a connection after the first.
+	// The level can be:
+	//  "never": (the default) disables renegotiation.
+	//  "once": allows a remote server to request renegotiation once per connection.
+	//  "freely": allows a remote server to repeatedly request renegotiation.
+	Renegotiation string `json:"renegotiation,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -384,6 +392,18 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 		}
 		cfg.RootCAs = rootPool
+	}
+
+	// Renegotiation
+	switch t.Renegotiation {
+	case "never":
+		cfg.Renegotiation = tls.RenegotiateNever
+	case "once":
+		cfg.Renegotiation = tls.RenegotiateOnceAsClient
+	case "freely":
+		cfg.Renegotiation = tls.RenegotiateFreelyAsClient
+	default:
+		return nil, fmt.Errorf("invalid TLS renegotiation level: %v", t.Renegotiation)
 	}
 
 	// custom SNI
