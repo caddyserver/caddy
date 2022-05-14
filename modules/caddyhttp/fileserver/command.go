@@ -53,6 +53,7 @@ respond with a file listing.`,
 			fs.String("domain", "", "Domain name at which to serve the files")
 			fs.String("root", "", "The path to the root of the site")
 			fs.String("listen", "", "The address to which to bind the listener")
+			fs.String("bind", "", "The port to which to listen")
 			fs.Bool("browse", false, "Enable directory browsing")
 			fs.Bool("templates", false, "Enable template rendering")
 			fs.Bool("access-log", false, "Enable the access log")
@@ -67,6 +68,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	domain := fs.String("domain")
 	root := fs.String("root")
 	listen := fs.String("listen")
+	bind := fs.String("bind")
 	browse := fs.Bool("browse")
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
@@ -103,9 +105,18 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 	if listen == "" {
 		if domain == "" {
-			listen = ":80"
+			if bind == "" {
+				listen = ":80"
+			} else {
+				listen = ":" + bind
+			}
+
 		} else {
-			listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
+			if bind == "" {
+				listen = ":" + strconv.Itoa(certmagic.HTTPSPort)
+			} else {
+				listen = ":" + bind
+			}
 		}
 	}
 	server.Listen = []string{listen}
