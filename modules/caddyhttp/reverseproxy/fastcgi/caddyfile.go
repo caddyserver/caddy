@@ -167,6 +167,9 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	// set up the transport for FastCGI, and specifically PHP
 	fcgiTransport := Transport{}
 
+	// set up SCRIPT_NAME as we do not normally pass the variable through FastCGI
+	scgiTransport.EnvVars = map[string]string{"SCRIPT_NAME": "{header.SCRIPT_NAME}"}
+
 	// set up the set of file extensions allowed to execute PHP code
 	extensions := []string{".php"}
 
