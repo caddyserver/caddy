@@ -304,7 +304,7 @@ outer:
 // Example:
 //    expression host('localhost')
 func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		"host",
 		"host_match_request_list",
 		[]*exprpb.Type{CelTypeListString},
@@ -432,7 +432,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 // Example:
 //    expression path('*substring*', '*suffix')
 func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		// name of the macro, this is the function name that users see when writing expressions.
 		"path",
 		// name of the function that the macro will be rewritten to call.
@@ -503,7 +503,7 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 // Example:
 //    expression path_regexp('^/bar')
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	unnamedPattern, err := CelMatcherImpl(
+	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
 		"path_regexp_request_string",
 		[]*exprpb.Type{decls.String},
@@ -517,7 +517,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	if err != nil {
 		return nil, err
 	}
-	namedPattern, err := CelMatcherImpl(
+	namedPattern, err := CELMatcherImpl(
 		"path_regexp",
 		"path_regexp_request_string_string",
 		[]*exprpb.Type{decls.String, decls.String},
@@ -576,7 +576,7 @@ func (m MatchMethod) Match(r *http.Request) bool {
 // Example:
 //    expression method('PUT', 'POST')
 func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		"method",
 		"method_request_list",
 		[]*exprpb.Type{CelTypeListString},
@@ -646,12 +646,12 @@ func (m MatchQuery) Match(r *http.Request) bool {
 // Example:
 //    expression query({'sort': 'asc'}) || query({'foo': ['*bar*', 'baz']})
 func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		"query",
 		"query_matcher_request_map",
 		[]*exprpb.Type{CelTypeJson},
 		func(data ref.Val) (RequestMatcher, error) {
-			mapStrListStr, err := CelValueToMapStrList(data)
+			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
 			}
@@ -722,12 +722,12 @@ func (m MatchHeader) Match(r *http.Request) bool {
 //    expression header({'content-type': 'image/png'})
 //    expression header({'foo': ['bar', 'baz']}) // match bar or baz
 func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		"header",
 		"header_matcher_request_map",
 		[]*exprpb.Type{CelTypeJson},
 		func(data ref.Val) (RequestMatcher, error) {
-			mapStrListStr, err := CelValueToMapStrList(data)
+			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
 			}
@@ -879,7 +879,7 @@ func (m MatchHeaderRE) Validate() error {
 // Example:
 //    expression header_regexp('foo', 'Field', 'fo+')
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	unnamedPattern, err := CelMatcherImpl(
+	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
 		"header_regexp_request_string_string",
 		[]*exprpb.Type{decls.String, decls.String},
@@ -899,7 +899,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	if err != nil {
 		return nil, err
 	}
-	namedPattern, err := CelMatcherImpl(
+	namedPattern, err := CELMatcherImpl(
 		"header_regexp",
 		"header_regexp_request_string_string_string",
 		[]*exprpb.Type{decls.String, decls.String, decls.String},
@@ -963,7 +963,7 @@ func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //    expression protocol('https')
 func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		"protocol",
 		"protocol_request_string",
 		[]*exprpb.Type{decls.String},
@@ -1127,7 +1127,7 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //    expression remote_ip('forwarded', '192.168.0.0/16', '172.16.0.0/12', '10.0.0.0/8')
 func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	return CelMatcherImpl(
+	return CELMatcherImpl(
 		// name of the macro, this is the function name that users see when writing expressions.
 		"remote_ip",
 		// name of the function that the macro will be rewritten to call.

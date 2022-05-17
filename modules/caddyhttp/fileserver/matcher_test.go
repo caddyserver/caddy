@@ -283,6 +283,30 @@ var (
 			wantErr:   true,
 		},
 		{
+			name: "file error bad try files (MatchFile)",
+			expression: &caddyhttp.MatchExpression{
+				Expr: `file({"try_file": ["bad_arg"]})`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+		{
+			name: "file match short pattern index.php (MatchFile)",
+			expression: &caddyhttp.MatchExpression{
+				Expr: `file("index.php")`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "file match short pattern foo.txt (MatchFile)",
+			expression: &caddyhttp.MatchExpression{
+				Expr: `file({http.request.uri.path})`,
+			},
+			urlTarget:  "https://example.com/foo.txt",
+			wantResult: true,
+		},
+		{
 			name: "file match index.php (MatchFile)",
 			expression: &caddyhttp.MatchExpression{
 				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}, "/index.php"]})`,
@@ -291,12 +315,28 @@ var (
 			wantResult: true,
 		},
 		{
-			name: "file match foo.txt (MatchFile)",
+			name: "file match long pattern foo.txt (MatchFile)",
 			expression: &caddyhttp.MatchExpression{
 				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
 			},
 			urlTarget:  "https://example.com/foo.txt",
 			wantResult: true,
+		},
+		{
+			name: "file match long pattern foo.txt with concatenation (MatchFile)",
+			expression: &caddyhttp.MatchExpression{
+				Expr: `file({"root": ".", "try_files": ["./testdata" + {http.request.uri.path}]})`,
+			},
+			urlTarget:  "https://example.com/foo.txt",
+			wantResult: true,
+		},
+		{
+			name: "file not match long pattern (MatchFile)",
+			expression: &caddyhttp.MatchExpression{
+				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
+			},
+			urlTarget:  "https://example.com/nopenope.txt",
+			wantResult: false,
 		},
 	}
 )
@@ -318,6 +358,7 @@ func TestMatchExpressionMatch(t *testing.T) {
 				req.Header = *tc.httpHeader
 			}
 			repl := caddyhttp.NewTestReplacer(req)
+			repl.Set("http.vars.root", "./testdata")
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 			req = req.WithContext(ctx)
 

@@ -302,6 +302,14 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
+			name: "query matches against multiple values (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": ["0", "1", {http.request.uri.query.debug}+"1"]})`,
+			},
+			urlTarget:  "https://example.com/foo/?debug=1",
+			wantResult: true,
+		},
+		{
 			name: "query matches against a wildcard (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": ["*"]})`,
