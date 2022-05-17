@@ -42,10 +42,10 @@ func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status ch
 	status <- svc.Status{State: svc.StartPending}
 
 	for {
-		c := <-request
-		switch c.Cmd {
+		req := <-request
+		switch req.Cmd {
 		case svc.Interrogate:
-			status <- c.CurrentStatus
+			status <- req.CurrentStatus
 		case svc.Stop, svc.Shutdown:
 			status <- svc.Status{State: svc.StopPending}
 			exitProcessFromSignal("SIGINT")
