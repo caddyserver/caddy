@@ -107,7 +107,7 @@ func init() {
 //
 // **index.html**
 // ```
-// {{ import "/path/to/file.html" }}
+// {{ import "/path/to/filename.html" }}
 // {{ template "main" }}
 // ```
 //
