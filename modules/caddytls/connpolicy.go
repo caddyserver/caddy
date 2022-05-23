@@ -260,6 +260,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	setDefaultTLSParams(cfg)
+	setSSLKeylog(cfg)
 
 	p.stdTLSConfig = cfg
 
@@ -459,6 +460,16 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	}
 
 	cfg.PreferServerCipherSuites = true
+}
+
+// SSLKEYLOGFILE
+func setSSLKeylog(cfg *tls.Config) {
+	// TODO: Take sslkeylogfile as the file to write.
+	w, err := os.OpenFile("tls-secrets.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return
+	}
+	cfg.KeyLogWriter = w
 }
 
 // PublicKeyAlgorithm is a JSON-unmarshalable wrapper type.

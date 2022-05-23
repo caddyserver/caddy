@@ -52,6 +52,7 @@ func init() {
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 	RegisterGlobalOption("log", parseLogOptions)
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
+	RegisterGlobalOption("sslkeylogfile", parseOptSingleString)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) { return true, nil }
