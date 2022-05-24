@@ -442,7 +442,7 @@ func run(newCfg *Config, start bool) error {
 
 	// Start
 	err = func() error {
-		var started []string
+		started := make([]string, 0, len(newCfg.apps))
 		for name, a := range newCfg.apps {
 			err := a.Start()
 			if err != nil {
