@@ -3,7 +3,7 @@ module github.com/caddyserver/caddy/v2
 go 1.17
 
 require (
-	github.com/BurntSushi/toml v1.0.0
+	github.com/BurntSushi/toml v1.1.0
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
@@ -12,17 +12,17 @@ require (
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.7.3
 	github.com/google/uuid v1.3.0
-	github.com/klauspost/compress v1.15.0
-	github.com/klauspost/cpuid/v2 v2.0.11
-	github.com/lucas-clemente/quic-go v0.27.0
+	github.com/klauspost/compress v1.15.4
+	github.com/klauspost/cpuid/v2 v2.0.12
+	github.com/lucas-clemente/quic-go v0.27.1
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.19.0
 	github.com/smallstep/cli v0.18.0
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
-	github.com/tailscale/tscert v0.0.0-20220125204807-4509a5fbaf74
-	github.com/yuin/goldmark v1.4.8
+	github.com/tailscale/tscert v0.0.0-20220316030059-54bbcb9f74e2
+	github.com/yuin/goldmark v1.4.12
 	github.com/yuin/goldmark-highlighting v0.0.0-20220208100518-594be1970594
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.29.0
 	go.opentelemetry.io/otel v1.4.0
