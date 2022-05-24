@@ -26,11 +26,13 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/dustin/go-humanize"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
 	"github.com/yuin/goldmark/extension"
@@ -81,6 +83,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
+		"humanize":         c.funcHumanize,
 	})
 	return c.tpl
 }
@@ -396,6 +399,43 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 // Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
+}
+
+// funcHumanize transforms size and time inputs to a human readable format.
+//
+// Size inputs are expected to be integers, and are formatted as a
+// byte size, such as "83 MB".
+//
+// Time inputs are parsed using the given layout (default layout is RFC1123Z)
+// and are formatted as a relative time, such as "2 weeks ago".
+// See https://pkg.go.dev/time#pkg-constants for time layout docs.
+func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
+	// The format type can optionally be followed
+	// by a colon to provide arguments for the format
+	parts := strings.Split(formatType, ":")
+
+	switch parts[0] {
+	case "size":
+		dataint, dataerr := strconv.ParseUint(data, 10, 64)
+		if dataerr != nil {
+			return "", fmt.Errorf("humanize: size cannot be parsed: %s", dataerr.Error())
+		}
+		return humanize.Bytes(dataint), nil
+
+	case "time":
+		timelayout := time.RFC1123Z
+		if len(parts) > 1 {
+			timelayout = parts[1]
+		}
+
+		dataint, dataerr := time.Parse(timelayout, data)
+		if dataerr != nil {
+			return "", fmt.Errorf("humanize: time cannot be parsed: %s", dataerr.Error())
+		}
+		return humanize.Time(dataint), nil
+	}
+
+	return "", fmt.Errorf("no know function was given")
 }
 
 // WrappedHeader wraps niladic functions so that they
