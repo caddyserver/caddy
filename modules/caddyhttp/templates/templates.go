@@ -238,19 +238,27 @@ func init() {
 // {{stripHTML "Shows <b>only</b> text content"}}
 // ```
 //
-// ##### `humanFormat`
+// ##### `humanize`
 //
-// humanFormat transforms size and time inputs to a human readable format.
+// Transforms size and time inputs to a human readable format.
+// This uses the [go-humanize](https://github.com/dustin/go-humanize) library.
 //
-// The parameter time can have a optional argument for time formatting.
-// The default format is RFC1123Z.
-// The supported time formats: https://pkg.go.dev/time#pkg-constants
+// The first argument must be a format type, and the last argument
+// is the input, or the input can be piped in. The supported format
+// types are:
+// - **size** which turns an integer amount of bytes into a string like `2.3 MB`
+// - **time** which turns a time string into a relative time string like `2 weeks ago`
+//
+// For the `time` format, the layout for parsing the input can be configured
+// by appending a colon `:` followed by the desired time layout. You can
+// find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
+// The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
 //
 // ```
-// {{humanFormat "size" "2048000"}}
-// {{placeholder "http.response.header.content-length" | humanFormat "size"}}
-// {{humanFormat "time" "Fri, 05 May 2022 15:04:05 +0200"}}
-// {{humanFormat "time:2006-Jan-02" "2022-May-05"}}
+// {{humanize "size" "2048000"}}
+// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
+// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// {{humanize "time:2006-Jan-02" "2022-May-05"}}
 // ```
 
 type Templates struct {

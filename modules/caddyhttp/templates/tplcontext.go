@@ -83,7 +83,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
-		"humanFormat":      c.humanFormat,
+		"humanize":         c.funcHumanize,
 	})
 	return c.tpl
 }
@@ -401,33 +401,36 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
-// humanFormat transforms size and time inputs to a human readable format.
-// For time formatting, the default format is RFC1123Z.
-// The supported time formats: https://pkg.go.dev/time#pkg-constants
-func (c TemplateContext) humanFormat(function, data string) (string, error) {
-
-	parts := strings.Split(function, ":")
+// funcHumanize transforms size and time inputs to a human readable format.
+//
+// Size inputs are expected to be integers, and are formatted as a
+// byte size, such as "83 MB".
+//
+// Time inputs are parsed using the given layout (default layout is RFC1123Z)
+// and are formatted as a relative time, such as "2 weeks ago".
+// See https://pkg.go.dev/time#pkg-constants for time layout docs.
+func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
+	// The format type can optionally be followed
+	// by a colon to provide arguments for the format
+	parts := strings.Split(formatType, ":")
 
 	switch parts[0] {
 	case "size":
-
 		dataint, dataerr := strconv.ParseUint(data, 10, 64)
 		if dataerr != nil {
-			return "", fmt.Errorf("size: data can't be parsed. Error: %s", dataerr.Error())
+			return "", fmt.Errorf("humanize: size cannot be parsed: %s", dataerr.Error())
 		}
 		return humanize.Bytes(dataint), nil
+
 	case "time":
-
 		timelayout := time.RFC1123Z
-
 		if len(parts) > 1 {
 			timelayout = parts[1]
 		}
 
 		dataint, dataerr := time.Parse(timelayout, data)
-
 		if dataerr != nil {
-			return "", fmt.Errorf("time: data can't be parsed. Error: %s", dataerr.Error())
+			return "", fmt.Errorf("humanize: time cannot be parsed: %s", dataerr.Error())
 		}
 		return humanize.Time(dataint), nil
 	}

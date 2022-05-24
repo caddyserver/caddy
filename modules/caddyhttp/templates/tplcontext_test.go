@@ -606,7 +606,7 @@ title = "Welcome"
 
 }
 
-func TesthumanFormat(t *testing.T) {
+func TestHumanize(t *testing.T) {
 	tplContext := getContextOrFail(t)
 	for i, test := range []struct {
 		format    string
@@ -618,9 +618,9 @@ func TesthumanFormat(t *testing.T) {
 		{
 			format:    "size",
 			inputData: "2048000",
-			expect:    "MB",
+			expect:    "2.0 MB",
 			errorCase: false,
-			verifyErr: strings.HasSuffix,
+			verifyErr: strings.Contains,
 		},
 		{
 			format:    "time",
@@ -644,7 +644,7 @@ func TesthumanFormat(t *testing.T) {
 			verifyErr: strings.HasPrefix,
 		},
 	} {
-		if actual, err := tplContext.humanFormat(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
+		if actual, err := tplContext.funcHumanize(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
 			if !test.errorCase {
 				t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)
 				if err != nil {
