@@ -606,7 +606,7 @@ title = "Welcome"
 
 }
 
-func TestFormatHuman(t *testing.T) {
+func TesthumanFormat(t *testing.T) {
 	tplContext := getContextOrFail(t)
 	for i, test := range []struct {
 		format    string
@@ -644,7 +644,7 @@ func TestFormatHuman(t *testing.T) {
 			verifyErr: strings.HasPrefix,
 		},
 	} {
-		if actual, err := tplContext.formatHuman(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
+		if actual, err := tplContext.humanFormat(test.format, test.inputData); !test.verifyErr(actual, test.expect) {
 			if !test.errorCase {
 				t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, actual)
 				if err != nil {

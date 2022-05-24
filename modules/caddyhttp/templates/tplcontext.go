@@ -83,7 +83,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
-		"formatHuman":      c.formatHuman,
+		"humanFormat":      c.humanFormat,
 	})
 	return c.tpl
 }
@@ -401,10 +401,10 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
-// formatHuman transforms size and time inputs to a human readable format.
+// humanFormat transforms size and time inputs to a human readable format.
 // For time formatting, the default format is RFC1123Z.
 // The supported time formats: https://pkg.go.dev/time#pkg-constants
-func (c TemplateContext) formatHuman(function, data string) (string, error) {
+func (c TemplateContext) humanFormat(function, data string) (string, error) {
 
 	parts := strings.Split(function, ":")
 
