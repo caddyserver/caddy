@@ -7,7 +7,7 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func extractFrontMatter(input string) (map[string]interface{}, string, error) {
