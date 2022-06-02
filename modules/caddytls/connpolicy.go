@@ -27,6 +27,10 @@ import (
 	"github.com/mholt/acmez"
 )
 
+func init() {
+	caddy.RegisterModule(LeafCertClientAuth{})
+}
+
 // ConnectionPolicies govern the establishment of TLS connections. It is
 // an ordered group of connection policies; the first matching policy will
 // be used to configure TLS connections at handshake-time.
@@ -57,14 +61,13 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
 		}
 
-		if pol.ClientAuthentication != nil && len(pol.ClientAuthentication.ValidatorsRaw) > 0 {
-				clientCertValidations, err := ctx.LoadModule(pol.ClientAuthentication, "ValidatorsRaw")
-				if err != nil {
-					return fmt.Errorf("loading client cert validators: %v", err)
-				}
-				for _, validator := range clientCertValidations.([]interface{}) {
-					cp[i].ClientAuthentication.validators = append(cp[i].ClientAuthentication.validators, validator.(ClientCertValidator))
-				}
+		if pol.ClientAuthentication != nil && len(pol.ClientAuthentication.VerifiersRaw) > 0 {
+			clientCertValidations, err := ctx.LoadModule(pol.ClientAuthentication, "VerifiersRaw")
+			if err != nil {
+				return fmt.Errorf("loading client cert validators: %v", err)
+			}
+			for _, validator := range clientCertValidations.([]interface{}) {
+				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
 			}
 		}
 	}
@@ -305,17 +308,21 @@ type ClientAuthentication struct {
 	// these CA certificates will be rejected.
 	TrustedCACertPEMFiles []string `json:"trusted_ca_certs_pem_files,omitempty"`
 
+	// DEPRECATED: This field is deprecated and will be removed in
+	// a future version. Please use the `validators` field instead
+	// with the tls.client_auth.leaf module instead.
+	//
 	// A list of base64 DER-encoded client leaf certs
 	// to accept. If this list is not empty, client certs
 	// which are not in this list will be rejected.
 	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
-	// A list of client certificate validators, for additional
-	// verification. These can perform custom checks, like ensuring
-	// the certificate is not revoked.
-	ValidatorsRaw []json.RawMessage `json:"validators,omitempty" caddy:"namespace=tls.client_auth inline_key=validator"`
+	// Client certificate verification modules. These can perform
+	// custom client authentication checks, such as ensuring the
+	// certificate is not revoked.
+	VerifiersRaw []json.RawMessage `json:"verifiers,omitempty" caddy:"namespace=tls.client_auth inline_key=verifier"`
 
-	validators []ClientCertValidator
+	verifiers []ClientCertificateVerifier
 
 	// The mode for authenticating the client. Allowed values are:
 	//
@@ -395,7 +402,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		cfg.ClientCAs = caPool
 	}
 
-	// enforce leaf verification by adding a validator
+	// TODO: DEPRECATED: Only here for backwards compatibility.
+	// If leaf cert is specified, enforce by adding a client auth module
 	if len(clientauth.TrustedLeafCerts) > 0 {
 		var trustedLeafCerts []*x509.Certificate
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
@@ -405,7 +413,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			}
 			trustedLeafCerts = append(trustedLeafCerts, clientCert)
 		}
-		clientauth.validators = append(clientauth.validators, LeafCertClientAuth{TrustedLeafCerts: trustedLeafCerts})
+		clientauth.verifiers = append(clientauth.verifiers, LeafCertClientAuth{TrustedLeafCerts: trustedLeafCerts})
 	}
 
 	// if a custom verification function already exists, wrap it
@@ -425,8 +433,8 @@ func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte,
 			return err
 		}
 	}
-	for _, validator := range clientauth.validators {
-		err := validator.VerifyClientCertificate(rawCerts, verifiedChains)
+	for _, verifier := range clientauth.verifiers {
+		err := verifier.VerifyClientCertificate(rawCerts, verifiedChains)
 		if err != nil {
 			return err
 		}
@@ -469,10 +477,17 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.PreferServerCipherSuites = true
 }
 
-// LeafVerificationValidator implements custom client certificate verification.
-// It is intended for installation only by clientauth.ConfigureTLSConfig().
+// LeafCertClientAuth verifies the client's leaf certificate.
 type LeafCertClientAuth struct {
 	TrustedLeafCerts []*x509.Certificate
+}
+
+// CaddyModule returns the Caddy module information.
+func (LeafCertClientAuth) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.client_auth.leaf",
+		New: func() caddy.Module { return new(LeafCertClientAuth) },
+	}
 }
 
 func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
@@ -514,9 +529,9 @@ type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
 }
 
-// ClientCertValidator is a type which validates client certificates.
+// ClientCertificateVerifier is a type which verifies client certificates.
 // It is called during verifyPeerCertificate in the TLS handshake.
-type ClientCertificateValidator interface {
+type ClientCertificateVerifier interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
 
