@@ -64,7 +64,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		if pol.ClientAuthentication != nil && len(pol.ClientAuthentication.VerifiersRaw) > 0 {
 			clientCertValidations, err := ctx.LoadModule(pol.ClientAuthentication, "VerifiersRaw")
 			if err != nil {
-				return fmt.Errorf("loading client cert validators: %v", err)
+				return fmt.Errorf("loading client cert verifiers: %v", err)
 			}
 			for _, validator := range clientCertValidations.([]interface{}) {
 				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
@@ -345,7 +345,8 @@ type ClientAuthentication struct {
 func (clientauth ClientAuthentication) Active() bool {
 	return len(clientauth.TrustedCACerts) > 0 ||
 		len(clientauth.TrustedCACertPEMFiles) > 0 ||
-		len(clientauth.TrustedLeafCerts) > 0 ||
+		len(clientauth.TrustedLeafCerts) > 0 || // TODO: DEPRECATED
+		len(clientauth.VerifiersRaw) > 0 ||
 		len(clientauth.Mode) > 0
 }
 
@@ -405,6 +406,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	// TODO: DEPRECATED: Only here for backwards compatibility.
 	// If leaf cert is specified, enforce by adding a client auth module
 	if len(clientauth.TrustedLeafCerts) > 0 {
+		caddy.Log().Named("tls.connection_policy").Warn("trusted_leaf_certs is deprecated; use leaf verifier module instead")
 		var trustedLeafCerts []*x509.Certificate
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
 			clientCert, err := decodeBase64DERCert(clientCertString)
