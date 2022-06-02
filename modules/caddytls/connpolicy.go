@@ -57,8 +57,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("connection policy %d: building standard TLS config: %s", i, err)
 		}
 
-		if pol.ClientAuthentication != nil {
-			if len(pol.ClientAuthentication.ValidatorsRaw) > 0 {
+		if pol.ClientAuthentication != nil && len(pol.ClientAuthentication.ValidatorsRaw) > 0 {
 				clientCertValidations, err := ctx.LoadModule(pol.ClientAuthentication, "ValidatorsRaw")
 				if err != nil {
 					return fmt.Errorf("loading client cert validators: %v", err)
@@ -398,7 +397,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 
 	// enforce leaf verification by adding a validator
 	if len(clientauth.TrustedLeafCerts) > 0 {
-		var trustedLeafCerts = []*x509.Certificate{}
+		var trustedLeafCerts []*x509.Certificate
 		for _, clientCertString := range clientauth.TrustedLeafCerts {
 			clientCert, err := decodeBase64DERCert(clientCertString)
 			if err != nil {
@@ -517,7 +516,7 @@ type ConnectionMatcher interface {
 
 // ClientCertValidator is a type which validates client certificates.
 // It is called during verifyPeerCertificate in the TLS handshake.
-type ClientCertValidator interface {
+type ClientCertificateValidator interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
 
