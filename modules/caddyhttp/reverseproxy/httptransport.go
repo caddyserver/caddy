@@ -322,7 +322,7 @@ type TLSConfig struct {
 	// address is an IP address, then you would need to configure this to the
 	// hostname being served by the upstream server. Currently, this does not
 	// support placeholders because the TLS config is not provisioned on each
-	// request, so a static value must be used.
+	// connection, so a static value must be used.
 	ServerName string `json:"server_name,omitempty"`
 }
 
