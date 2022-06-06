@@ -315,7 +315,14 @@ type TLSConfig struct {
 	// The duration to allow a TLS handshake to a server. Default: No timeout.
 	HandshakeTimeout caddy.Duration `json:"handshake_timeout,omitempty"`
 
-	// The server name (SNI) to use in TLS handshakes.
+	// The server name used when verifying the certificate received in the TLS
+	// handshake. By default, this will use the upstream address' host part.
+	// You only need to override this if your upstream address does not match the
+	// certificate the upstream is likely to use. For example if the upstream
+	// address is an IP address, then you would need to configure this to the
+	// hostname being served by the upstream server. Currently, this does not
+	// support placeholders because the TLS config is not provisioned on each
+	// request, so a static value must be used.
 	ServerName string `json:"server_name,omitempty"`
 }
 
@@ -386,7 +393,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 		cfg.RootCAs = rootPool
 	}
 
-	// custom SNI
+	// override for the server name used verify the TLS handshake
 	cfg.ServerName = t.ServerName
 
 	// throw all security out the window
@@ -402,16 +409,16 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 // KeepAlive holds configuration pertaining to HTTP Keep-Alive.
 type KeepAlive struct {
-	// Whether HTTP Keep-Alive is enabled. Default: true
+	// Whether HTTP Keep-Alive is enabled. Default: `true`
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// How often to probe for liveness. Default: `30s`.
 	ProbeInterval caddy.Duration `json:"probe_interval,omitempty"`
 
-	// Maximum number of idle connections. Default: 0, which means no limit.
+	// Maximum number of idle connections. Default: `0`, which means no limit.
 	MaxIdleConns int `json:"max_idle_conns,omitempty"`
 
-	// Maximum number of idle connections per host. Default: 32.
+	// Maximum number of idle connections per host. Default: `32`.
 	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
 
 	// How long connections should be kept alive when idle. Default: `2m`.
