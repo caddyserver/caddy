@@ -33,6 +33,7 @@ import (
 	"github.com/google/cel-go/common/types/traits"
 	"github.com/google/cel-go/ext"
 	"github.com/google/cel-go/interpreter/functions"
+	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"google.golang.org/protobuf/proto"
 )
@@ -62,6 +63,8 @@ type MatchExpression struct {
 	expandedExpr string
 	prg          cel.Program
 	ta           ref.TypeAdapter
+
+	log *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -83,7 +86,9 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 }
 
 // Provision sets ups m.
-func (m *MatchExpression) Provision(_ caddy.Context) error {
+func (m *MatchExpression) Provision(ctx caddy.Context) error {
+	m.log = ctx.Logger(m)
+
 	// replace placeholders with a function call - this is just some
 	// light (and possibly naïve) syntactic sugar
 	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
@@ -137,9 +142,13 @@ func (m *MatchExpression) Provision(_ caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchExpression) Match(r *http.Request) bool {
-	out, _, _ := m.prg.Eval(map[string]interface{}{
+	out, _, err := m.prg.Eval(map[string]interface{}{
 		"request": celHTTPRequest{r},
 	})
+	if err != nil {
+		m.log.Error("evaluating expression", zap.Error(err))
+		return false
+	}
 	if outBool, ok := out.Value().(bool); ok {
 		return outBool
 	}
