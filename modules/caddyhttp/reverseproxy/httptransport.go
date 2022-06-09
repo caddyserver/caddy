@@ -244,6 +244,11 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if h.Transport.TLSClientConfig != nil {
+		h.Transport.TLSClientConfig.ServerName = repl.ReplaceAll(h.Transport.TLSClientConfig.ServerName, "")
+	}
+
 	h.SetScheme(req)
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
