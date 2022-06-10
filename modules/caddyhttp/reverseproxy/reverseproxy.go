@@ -730,10 +730,39 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
+	// Default to using the transport configured during provisioning stage
+	transport := h.Transport
+
+	if tmpTransport, ok := transport.(*HTTPTransport); ok {
+		// check whether we have TLS and need to replace the servername in the TLSClientConfig
+		if tmpTransport.TLSEnabled() && strings.Contains(tmpTransport.TLS.ServerName, "{") {
+			// make a new transport, "copy" the parts we don't need to touch, add a new *tls.Config, replace servername and then call RoundTrip on that to avoid any races
+			newtransport := &HTTPTransport{
+				Resolver:              tmpTransport.Resolver,
+				TLS:                   tmpTransport.TLS,
+				KeepAlive:             tmpTransport.KeepAlive,
+				Compression:           tmpTransport.Compression,
+				MaxConnsPerHost:       tmpTransport.MaxConnsPerHost,
+				DialTimeout:           tmpTransport.DialTimeout,
+				FallbackDelay:         tmpTransport.FallbackDelay,
+				ResponseHeaderTimeout: tmpTransport.ResponseHeaderTimeout,
+				ExpectContinueTimeout: tmpTransport.ExpectContinueTimeout,
+				MaxResponseHeaderSize: tmpTransport.MaxResponseHeaderSize,
+				WriteBufferSize:       tmpTransport.WriteBufferSize,
+				ReadBufferSize:        tmpTransport.ReadBufferSize,
+				Versions:              tmpTransport.Versions,
+				Transport:             tmpTransport.Transport.Clone(),
+				h2cTransport:          tmpTransport.h2cTransport,
+			}
+			newtransport.Transport.TLSClientConfig.ServerName = repl.ReplaceAll(newtransport.Transport.TLSClientConfig.ServerName, "")
+			transport = newtransport
+		}
+	}
+
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
 	start := time.Now()
-	res, err := h.Transport.RoundTrip(req)
+	res, err := transport.RoundTrip(req)
 	duration := time.Since(start)
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
