@@ -321,9 +321,9 @@ type TLSConfig struct {
 	// TLS renegotiation level. TLS renegotiation is the act of performing
 	// subsequent handshakes on a connection after the first.
 	// The level can be:
-	//  "never": (the default) disables renegotiation.
-	//  "once": allows a remote server to request renegotiation once per connection.
-	//  "freely": allows a remote server to repeatedly request renegotiation.
+	//  - "never": (the default) disables renegotiation.
+	//  - "once": allows a remote server to request renegotiation once per connection.
+	//  - "freely": allows a remote server to repeatedly request renegotiation.
 	Renegotiation string `json:"renegotiation,omitempty"`
 }
 
