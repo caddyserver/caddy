@@ -350,7 +350,6 @@ func (st ServerType) buildTLSApp(
 		globalPreferredChains := options["preferred_chains"]
 		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil || globalPreferredChains != nil
 		if hasGlobalACMEDefaults {
-			// for _, ap := range tlsApp.Automation.Policies {
 			for i := 0; i < len(tlsApp.Automation.Policies); i++ {
 				ap := tlsApp.Automation.Policies[i]
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {

@@ -116,7 +116,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			}
 
 			if tt.expression.Match(req) != tt.wantResult {
-				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tt.wantResult, tt.expression)
+				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tt.wantResult, tt.expression.Expr)
 			}
 
 		})

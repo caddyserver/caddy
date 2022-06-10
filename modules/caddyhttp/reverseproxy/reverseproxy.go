@@ -524,7 +524,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
-	if proxyErr == nil || proxyErr == context.Canceled {
+	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
 		// context.Canceled happens when the downstream client
 		// cancels the request, which is not our failure
 		return true, nil
@@ -1179,6 +1179,11 @@ func removeConnectionHeaders(h http.Header) {
 func statusError(err error) error {
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
+
+	// timeout errors have a standard status code (see issue #4823)
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		statusCode = http.StatusGatewayTimeout
+	}
 
 	// if the client canceled the request (usually this means they closed
 	// the connection, so they won't see any response), we can report it
