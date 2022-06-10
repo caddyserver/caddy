@@ -24,6 +24,7 @@ https://example.com {
 			max_conns_per_host 5
 			keepalive_idle_conns_per_host 2
 			keepalive_interval 30s
+			renegotiation freely
 		}
 	}
 }
@@ -91,7 +92,9 @@ https://example.com {
 															]
 														},
 														"response_header_timeout": 8000000000,
-														"tls": {},
+														"tls": {
+															"renegotiation": "freely"
+														},
 														"versions": [
 															"h2c",
 															"2"
