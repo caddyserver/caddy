@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/mholt/acmez"
@@ -33,6 +34,9 @@ import (
 
 func init() {
 	caddy.RegisterModule(LeafCertClientAuth{})
+	caddy.RegisterType("tls.handshake_match", []reflect.Type{
+		reflect.TypeOf((*ConnectionMatcher)(nil)).Elem(),
+	})
 }
 
 // ConnectionPolicies govern the establishment of TLS connections. It is

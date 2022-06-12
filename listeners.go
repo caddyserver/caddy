@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,12 @@ import (
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
+
+func init() {
+	RegisterType("caddy.listeners", []reflect.Type{
+		reflect.TypeOf((*ListenerWrapper)(nil)).Elem(),
+	})
+}
 
 // NetworkAddress represents one or more network addresses.
 // It contains the individual components for a parsed network

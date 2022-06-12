@@ -21,12 +21,19 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func init() {
+	caddy.RegisterType("tls.stek", []reflect.Type{
+		reflect.TypeOf((*STEKProvider)(nil)).Elem(),
+	})
+}
 
 // SessionTicketService configures and manages TLS session tickets.
 type SessionTicketService struct {

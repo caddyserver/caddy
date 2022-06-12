@@ -27,6 +27,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -40,6 +41,15 @@ import (
 
 	"github.com/caddyserver/caddy/v2/notify"
 )
+
+func init() {
+	RegisterType("", []reflect.Type{
+		reflect.TypeOf((*App)(nil)).Elem(),
+	})
+	RegisterType("caddy.storage", []reflect.Type{
+		reflect.TypeOf((*StorageConverter)(nil)).Elem(),
+	})
+}
 
 // Config is the top (or beginning) of the Caddy configuration structure.
 // Caddy config is expressed natively as a JSON document. If you prefer
@@ -72,11 +82,15 @@ type Config struct {
 	// module is `caddy.storage.file_system` (the local file system),
 	// and the default path
 	// [depends on the OS and environment](/docs/conventions#data-directory).
+	// A storage `module` should implement the following interfaces:
+	// - [StorageConverter](https://pkg.go.dev/github.com/caddyserver/caddy/v2#StorageConverter)
 	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
 
 	// AppsRaw are the apps that Caddy will load and run. The
 	// app module name is the key, and the app's config is the
 	// associated value.
+	// An `app` should implement the following interfaces:
+	// - [caddy.App](https://pkg.go.dev/github.com/caddyserver/caddy/v2?tab=doc#App)
 	AppsRaw ModuleMap `json:"apps,omitempty" caddy:"namespace="`
 
 	apps    map[string]App

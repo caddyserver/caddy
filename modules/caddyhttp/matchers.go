@@ -197,6 +197,8 @@ type (
 	// where each of the array elements is a matcher set, i.e. an
 	// object keyed by matcher name.
 	MatchNot struct {
+		// A `matcher` should implement the following interfaces:
+		// - [caddyhttp.RequestMatcher](https://pkg.go.dev/github.com/caddyserver/caddy/v2/modules/caddyhttp?tab=doc#RequestMatcher)
 		MatcherSetsRaw []caddy.ModuleMap `json:"-" caddy:"namespace=http.matchers"`
 		MatcherSets    []MatcherSet      `json:"-"`
 	}
@@ -212,6 +214,9 @@ func init() {
 	caddy.RegisterModule(MatchHeaderRE{})
 	caddy.RegisterModule(new(MatchProtocol))
 	caddy.RegisterModule(MatchNot{})
+	caddy.RegisterType("http.matchers", []reflect.Type{
+		reflect.TypeOf((*RequestMatcher)(nil)).Elem(),
+	})
 }
 
 // CaddyModule returns the Caddy module information.

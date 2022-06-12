@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -29,6 +30,18 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func init() {
+	caddy.RegisterType("dns.provider", []reflect.Type{
+		reflect.TypeOf((*acmez.Solver)(nil)).Elem(),
+	})
+	caddy.RegisterType("tls.get_certificate", []reflect.Type{
+		reflect.TypeOf((*certmagic.Manager)(nil)).Elem(),
+	})
+	caddy.RegisterType("tls.issuance", []reflect.Type{
+		reflect.TypeOf((*certmagic.Issuer)(nil)).Elem(),
+	})
+}
 
 // AutomationConfig governs the automated management of TLS certificates.
 type AutomationConfig struct {

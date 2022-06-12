@@ -21,8 +21,10 @@ import (
 	"fmt"
 	weakrand "math/rand"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/singleflight"
 
@@ -31,6 +33,15 @@ import (
 
 func init() {
 	caddy.RegisterModule(HTTPBasicAuth{})
+
+	caddy.RegisterType("http.authentication.hashes", []reflect.Type{
+		reflect.TypeOf((*Comparer)(nil)).Elem(),
+	})
+	caddy.RegisterType("http.authentication.providers", []reflect.Type{
+		reflect.TypeOf((*Authenticator)(nil)).Elem(),
+	})
+
+	weakrand.Seed(time.Now().UnixNano())
 }
 
 // HTTPBasicAuth facilitates HTTP basic authentication.

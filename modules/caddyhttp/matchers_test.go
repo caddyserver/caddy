@@ -1145,3 +1145,9 @@ func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 		match.Match(req)
 	}
 }
+
+func TestConformsToNamespace(t *testing.T) {
+	if ok, err := caddy.ConformsToNamespace(new(StaticResponse), "http.matchers"); !ok || err != nil {
+		t.Errorf("%s", err)
+	}
+}

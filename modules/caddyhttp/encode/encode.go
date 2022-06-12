@@ -26,6 +26,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,9 @@ import (
 
 func init() {
 	caddy.RegisterModule(Encode{})
+	caddy.RegisterType("http.encoders", []reflect.Type{
+		reflect.TypeOf((*Encoding)(nil)).Elem(),
+	})
 }
 
 // Encode is a middleware which can encode responses.
