@@ -922,6 +922,20 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
+			case "renegotiation":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch renegotiation := d.Val(); renegotiation {
+				case "never", "once", "freely":
+					h.TLS.Renegotiation = renegotiation
+				default:
+					return d.ArgErr()
+				}
+
 			case "tls":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
