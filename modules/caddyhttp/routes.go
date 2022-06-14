@@ -18,14 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 
 	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
-	caddy.RegisterType("http.handlers", []reflect.Type{
-		reflect.TypeOf((*MiddlewareHandler)(nil)).Elem(),
+	caddy.RegisterType("http.handlers", []interface{}{
+		(*MiddlewareHandler)(nil),
 	})
 }
 

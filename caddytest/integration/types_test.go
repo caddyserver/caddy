@@ -7,8 +7,8 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
-// Validates Caddy's the registered internal types implement the necessary interfaces of their
-// namespaces
+// Validates that Caddy's registered internal modules implement the necessary interfaces of their
+// respective namespaces
 func TestTypes(t *testing.T) {
 	var i int
 	for _, v := range caddy.Modules() {

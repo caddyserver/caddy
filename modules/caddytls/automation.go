@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 	"time"
 
@@ -32,14 +31,14 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("dns.provider", []reflect.Type{
-		reflect.TypeOf((*acmez.Solver)(nil)).Elem(),
+	caddy.RegisterType("dns.provider", []interface{}{
+		(*acmez.Solver)(nil),
 	})
-	caddy.RegisterType("tls.get_certificate", []reflect.Type{
-		reflect.TypeOf((*certmagic.Manager)(nil)).Elem(),
+	caddy.RegisterType("tls.get_certificate", []interface{}{
+		(*certmagic.Manager)(nil),
 	})
-	caddy.RegisterType("tls.issuance", []reflect.Type{
-		reflect.TypeOf((*certmagic.Issuer)(nil)).Elem(),
+	caddy.RegisterType("tls.issuance", []interface{}{
+		(*certmagic.Issuer)(nil),
 	})
 }
 

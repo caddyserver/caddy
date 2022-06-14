@@ -27,7 +27,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -43,11 +42,11 @@ import (
 )
 
 func init() {
-	RegisterType("", []reflect.Type{
-		reflect.TypeOf((*App)(nil)).Elem(),
+	RegisterType("", []interface{}{
+		(*App)(nil),
 	})
-	RegisterType("caddy.storage", []reflect.Type{
-		reflect.TypeOf((*StorageConverter)(nil)).Elem(),
+	RegisterType("caddy.storage", []interface{}{
+		(*StorageConverter)(nil),
 	})
 }
 

@@ -20,7 +20,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -34,11 +33,11 @@ func init() {
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
 	RegisterModule(DiscardWriter{})
-	RegisterType("caddy.logging.encoders", []reflect.Type{
-		reflect.TypeOf((*zapcore.Encoder)(nil)).Elem(),
+	RegisterType("caddy.logging.encoders", []interface{}{
+		(*zapcore.Encoder)(nil),
 	})
-	RegisterType("caddy.logging.writers", []reflect.Type{
-		reflect.TypeOf((*WriterOpener)(nil)).Elem(),
+	RegisterType("caddy.logging.writers", []interface{}{
+		(*WriterOpener)(nil),
 	})
 }
 

@@ -214,8 +214,8 @@ func init() {
 	caddy.RegisterModule(MatchHeaderRE{})
 	caddy.RegisterModule(new(MatchProtocol))
 	caddy.RegisterModule(MatchNot{})
-	caddy.RegisterType("http.matchers", []reflect.Type{
-		reflect.TypeOf((*RequestMatcher)(nil)).Elem(),
+	caddy.RegisterType("http.matchers", []interface{}{
+		(*RequestMatcher)(nil),
 	})
 }
 

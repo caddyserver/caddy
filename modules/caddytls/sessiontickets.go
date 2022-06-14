@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -30,8 +29,8 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("tls.stek", []reflect.Type{
-		reflect.TypeOf((*STEKProvider)(nil)).Elem(),
+	caddy.RegisterType("tls.stek", []interface{}{
+		(*STEKProvider)(nil),
 	})
 }
 

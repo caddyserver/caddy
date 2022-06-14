@@ -26,7 +26,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,8 +37,8 @@ import (
 
 func init() {
 	caddy.RegisterModule(Encode{})
-	caddy.RegisterType("http.encoders", []reflect.Type{
-		reflect.TypeOf((*Encoding)(nil)).Elem(),
+	caddy.RegisterType("http.encoders", []interface{}{
+		(*Encoding)(nil),
 	})
 }
 

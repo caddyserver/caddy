@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,8 +38,8 @@ import (
 )
 
 func init() {
-	RegisterType("caddy.listeners", []reflect.Type{
-		reflect.TypeOf((*ListenerWrapper)(nil)).Elem(),
+	RegisterType("caddy.listeners", []interface{}{
+		(*ListenerWrapper)(nil),
 	})
 }
 
