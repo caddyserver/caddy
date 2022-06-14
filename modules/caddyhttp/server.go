@@ -132,6 +132,7 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
+	strict              *StrictOptions
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
@@ -315,7 +316,44 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 			return Error(http.StatusMisdirectedRequest, err)
 		}
 	}
+
+	if err := s.strict.enforce(r); err != nil {
+		return err
+	}
+
 	return next.ServeHTTP(w, r)
+}
+
+func (strict *StrictOptions) enforce(r *http.Request) error {
+	if strict != nil && strict.Disabled {
+		return nil
+	}
+
+	// Reject query strings with unencoded ;
+	if strict == nil || !strict.LenientQueryStrings {
+		_, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			return Error(http.StatusBadRequest, fmt.Errorf("invalid query string: %w", err))
+		}
+	}
+
+	// Reject header fields with _ in name (#4830)
+	if strict == nil || !strict.LenientHeaders {
+		for field := range r.Header {
+			if strings.Contains(field, "_") {
+				return Error(http.StatusBadRequest, fmt.Errorf("invalid header field name: %s", field))
+			}
+		}
+	}
+
+	// Reject paths with // or ..
+	if strict == nil || !strict.LenientPaths {
+		if strings.Contains(r.URL.Path, "//") || strings.Contains(r.URL.Path, "..") {
+			return Error(http.StatusBadRequest, fmt.Errorf("invalid request path: %s", r.URL.RawPath))
+		}
+	}
+
+	return nil
 }
 
 // listenersUseAnyPortOtherThan returns true if there are any

@@ -624,9 +624,18 @@ func TestQueryMatcher(t *testing.T) {
 			input:    "/?somekey=1",
 			expect:   true,
 		},
+		{
+			scenario: "invalid query string",
+			match:    MatchQuery{"test": []string{"*"}},
+			input:    "/?test=1;",
+			expect:   false,
+		},
 	} {
-
-		u, _ := url.Parse(tc.input)
+		u, err := url.Parse(tc.input)
+		if err != nil {
+			t.Errorf("Test %d: Parsing URL: %v", i, err)
+			continue
+		}
 
 		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()

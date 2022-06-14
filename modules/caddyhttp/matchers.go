@@ -503,15 +503,20 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	reqQuery, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return false
+	}
 	for param, vals := range m {
 		param = repl.ReplaceAll(param, "")
-		paramVal, found := r.URL.Query()[param]
-		if found {
-			for _, v := range vals {
-				v = repl.ReplaceAll(v, "")
-				if paramVal[0] == v || v == "*" {
-					return true
-				}
+		paramVal, found := reqQuery[param]
+		if !found {
+			continue
+		}
+		for _, v := range vals {
+			v = repl.ReplaceAll(v, "")
+			if paramVal[0] == v || v == "*" {
+				return true
 			}
 		}
 	}

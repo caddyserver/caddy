@@ -111,6 +111,8 @@ type App struct {
 	// be forcefully closed.
 	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
 
+	Strict *StrictOptions `json:"strict,omitempty"`
+
 	// Servers is the list of servers, keyed by arbitrary names chosen
 	// at your discretion for your own convenience; the keys do not
 	// affect functionality.
@@ -125,6 +127,13 @@ type App struct {
 
 	// used temporarily between phases 1 and 2 of auto HTTPS
 	allCertDomains []string
+}
+
+type StrictOptions struct {
+	Disabled            bool `json:"disable,omitempty"`
+	LenientQueryStrings bool `json:"lenient_query_strings,omitempty"`
+	LenientPaths        bool `json:"lenient_paths,omitempty"`
+	LenientHeaders      bool `json:"lenient_headers,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -162,6 +171,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
+		srv.strict = app.Strict
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
