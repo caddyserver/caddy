@@ -298,7 +298,7 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func (h *HTTPTransport) SetScheme(req *http.Request) {
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
-		if h.TLS != nil && req.URL.Port() != "80" {
+		if h.TLS != nil {
 			req.URL.Scheme = "https"
 		}
 	}
