@@ -348,7 +348,7 @@ func (strict *StrictOptions) enforce(r *http.Request) error {
 
 	// Reject paths with // or ..
 	if strict == nil || !strict.LenientPaths {
-		if strings.Contains(r.URL.Path, "//") || strings.Contains(r.URL.Path, "..") {
+		if strings.Contains(r.URL.Path, "//") || strings.Contains(r.URL.Path, "..") || strings.Contains(r.URL.Path, "\x00") {
 			return Error(http.StatusBadRequest, fmt.Errorf("invalid request path: %s", r.URL.RawPath))
 		}
 	}
