@@ -440,7 +440,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// Renegotiation
 	switch t.Renegotiation {
-	case "never":
+	case "never", "":
 		cfg.Renegotiation = tls.RenegotiateNever
 	case "once":
 		cfg.Renegotiation = tls.RenegotiateOnceAsClient
