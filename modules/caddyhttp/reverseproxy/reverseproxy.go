@@ -716,38 +716,6 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	return nil
 }
 
-// replaceTLSServername checks TLS servername to see if it needs replacing
-// if it does need replacing, it creates a new cloned HTTPTransport object to avoid any races
-// and does the replacing of the TLS servername on that and returns the new object
-// if no replacement is necessary it returns the original
-func (h *Handler) replaceTLSServername(transport *HTTPTransport, repl *caddy.Replacer) *HTTPTransport {
-	// check whether we have TLS and need to replace the servername in the TLSClientConfig
-	if transport.TLSEnabled() && strings.Contains(transport.TLS.ServerName, "{") {
-		// make a new transport, "copy" the parts we don't need to touch, add a new *tls.Config and replace servername
-		newtransport := &HTTPTransport{
-			Resolver:              transport.Resolver,
-			TLS:                   transport.TLS,
-			KeepAlive:             transport.KeepAlive,
-			Compression:           transport.Compression,
-			MaxConnsPerHost:       transport.MaxConnsPerHost,
-			DialTimeout:           transport.DialTimeout,
-			FallbackDelay:         transport.FallbackDelay,
-			ResponseHeaderTimeout: transport.ResponseHeaderTimeout,
-			ExpectContinueTimeout: transport.ExpectContinueTimeout,
-			MaxResponseHeaderSize: transport.MaxResponseHeaderSize,
-			WriteBufferSize:       transport.WriteBufferSize,
-			ReadBufferSize:        transport.ReadBufferSize,
-			Versions:              transport.Versions,
-			Transport:             transport.Transport.Clone(),
-			h2cTransport:          transport.h2cTransport,
-		}
-		newtransport.Transport.TLSClientConfig.ServerName = repl.ReplaceAll(newtransport.Transport.TLSClientConfig.ServerName, "")
-		return newtransport
-	}
-
-	return transport
-}
-
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
@@ -762,18 +730,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
-	// Default to using the transport configured during provisioning stage
-	transport := h.Transport
-
-	// If we have a HTTP transport, try to replace the TLS servername
-	if tmpTransport, ok := transport.(*HTTPTransport); ok {
-		transport = h.replaceTLSServername(tmpTransport, repl)
-	}
-
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
 	start := time.Now()
-	res, err := transport.RoundTrip(req)
+	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
