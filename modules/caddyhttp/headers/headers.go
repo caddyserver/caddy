@@ -118,10 +118,16 @@ type HeaderOps struct {
 	// Sets HTTP headers; replaces existing header fields.
 	Set http.Header `json:"set,omitempty"`
 
-	// Names of HTTP header fields to delete.
+	// Names of HTTP header fields to delete. Basic wildcards are supported:
+	//
+	// - Start with `*` for all field names with the given suffix;
+	// - End with `*` for all field names with the given prefix;
+	// - Start and end with `*` for all field names containing a substring.
 	Delete []string `json:"delete,omitempty"`
 
-	// Performs substring replacements of HTTP headers in-situ.
+	// Performs in-situ substring replacements of HTTP headers.
+	// Keys are the field names on which to perform the associated replacements.
+	// If the field name is `*`, the replacements are performed on all header fields.
 	Replace map[string][]Replacement `json:"replace,omitempty"`
 }
 
@@ -208,7 +214,29 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 
 	// delete
 	for _, fieldName := range ops.Delete {
-		hdr.Del(repl.ReplaceAll(fieldName, ""))
+		fieldName = strings.ToLower(repl.ReplaceAll(fieldName, ""))
+		switch {
+		case strings.HasPrefix(fieldName, "*") && strings.HasSuffix(fieldName, "*"):
+			for existingField := range hdr {
+				if strings.Contains(strings.ToLower(existingField), fieldName[1:len(fieldName)-1]) {
+					delete(hdr, existingField)
+				}
+			}
+		case strings.HasPrefix(fieldName, "*"):
+			for existingField := range hdr {
+				if strings.HasSuffix(strings.ToLower(existingField), fieldName[1:]) {
+					delete(hdr, existingField)
+				}
+			}
+		case strings.HasSuffix(fieldName, "*"):
+			for existingField := range hdr {
+				if strings.HasPrefix(strings.ToLower(existingField), fieldName[:len(fieldName)-1]) {
+					delete(hdr, existingField)
+				}
+			}
+		default:
+			hdr.Del(fieldName)
+		}
 	}
 
 	// replace
