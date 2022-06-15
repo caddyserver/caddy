@@ -98,7 +98,7 @@ https://example.com {
 															"skip_tls_ports": [
 																"8181",
 																"8182"
-															],
+															]
 														},
 														"versions": [
 															"h2c",
