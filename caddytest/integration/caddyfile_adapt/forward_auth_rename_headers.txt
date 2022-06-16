@@ -1,0 +1,116 @@
+:8881
+
+forward_auth localhost:9000 {
+	uri /auth
+	copy_headers A>1 B C>3 {
+		D
+		E>5
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handle_response": [
+										{
+											"match": {
+												"status_code": [
+													2
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"1": [
+																		"{http.reverse_proxy.header.A}"
+																	],
+																	"3": [
+																		"{http.reverse_proxy.header.C}"
+																	],
+																	"5": [
+																		"{http.reverse_proxy.header.E}"
+																	],
+																	"B": [
+																		"{http.reverse_proxy.header.B}"
+																	],
+																	"D": [
+																		"{http.reverse_proxy.header.D}"
+																	]
+																}
+															}
+														}
+													]
+												}
+											]
+										},
+										{
+											"routes": [
+												{
+													"handle": [
+														{
+															"exclude": [
+																"Connection",
+																"Keep-Alive",
+																"Te",
+																"Trailers",
+																"Transfer-Encoding",
+																"Upgrade"
+															],
+															"handler": "copy_response_headers"
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "copy_response"
+														}
+													]
+												}
+											]
+										}
+									],
+									"handler": "reverse_proxy",
+									"headers": {
+										"request": {
+											"set": {
+												"X-Forwarded-Method": [
+													"{http.request.method}"
+												],
+												"X-Forwarded-Uri": [
+													"{http.request.uri}"
+												]
+											}
+										}
+									},
+									"rewrite": {
+										"method": "GET",
+										"uri": "/auth"
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
