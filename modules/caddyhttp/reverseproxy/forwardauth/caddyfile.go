@@ -17,6 +17,7 @@ package forwardauth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -115,7 +116,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	// collect the headers to copy from the auth response
 	// onto the original request, so they can get passed
 	// through to a backend app
-	headersToCopy := []string{}
+	headersToCopy := make(map[string]string)
 
 	// read the subdirectives for configuring the forward_auth shortcut
 	// NOTE: we delete the tokens as we go so that the reverse_proxy
@@ -141,10 +142,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 
 			case "copy_headers":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for _, headerField := range args {
+				hadBlock := false
+				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
+					hadBlock = true
+					args = append(args, dispenser.Val())
+				}
+
+				dispenser.Delete() // directive name
+				if hadBlock {
+					dispenser.Delete() // opening brace
+					dispenser.Delete() // closing brace
+				}
+				for range args {
 					dispenser.Delete()
-					headersToCopy = append(headersToCopy, headerField)
+				}
+
+				for _, headerField := range args {
+					if strings.Contains(headerField, ">") {
+						parts := strings.Split(headerField, ">")
+						headersToCopy[parts[0]] = parts[1]
+					} else {
+						headersToCopy[headerField] = headerField
+					}
 				}
 				if len(headersToCopy) == 0 {
 					return nil, dispenser.ArgErr()
@@ -180,9 +199,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			},
 		}
 
-		for _, headerField := range headersToCopy {
-			handler.Request.Set[headerField] = []string{
-				"{http.reverse_proxy.header." + headerField + "}",
+		for from, to := range headersToCopy {
+			handler.Request.Set[to] = []string{
+				"{http.reverse_proxy.header." + from + "}",
 			}
 		}
 
