@@ -386,7 +386,7 @@ type TLSConfig struct {
 	// return HTTP and HTTPS endpoints too.
 	// When specified, TLS will automatically be configured on the transport.
 	// The value can be a list of any valid tcp port numbers, default empty.
-	SkipTLSPorts []string `json:"skip_tls_ports,omitempty"`
+	ExceptPorts []string `json:"except_ports,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
