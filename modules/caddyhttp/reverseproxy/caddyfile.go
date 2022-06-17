@@ -1063,12 +1063,12 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.MaxConnsPerHost = num
 
-			case "skip_tls_ports":
+			case "exceptports":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
 				}
-				h.TLS.SkipTLSPorts = d.RemainingArgs()
-				if len(h.TLS.SkipTLSPorts) == 0 {
+				h.TLS.ExceptPorts = d.RemainingArgs()
+				if len(h.TLS.ExceptPorts) == 0 {
 					return d.ArgErr()
 				}
 
