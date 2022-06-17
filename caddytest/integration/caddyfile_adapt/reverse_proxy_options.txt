@@ -25,7 +25,7 @@ https://example.com {
 			keepalive_idle_conns_per_host 2
 			keepalive_interval 30s
 			renegotiation freely
-			exceptports 8181 8182
+			except_ports 8181 8182
 		}
 	}
 }
@@ -95,7 +95,7 @@ https://example.com {
 														"response_header_timeout": 8000000000,
 														"tls": {
 															"renegotiation": "freely",
-															"exceptports": [
+															"except_ports": [
 																"8181",
 																"8182"
 															]
