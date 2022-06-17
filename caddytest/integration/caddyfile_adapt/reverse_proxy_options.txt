@@ -94,11 +94,11 @@ https://example.com {
 														},
 														"response_header_timeout": 8000000000,
 														"tls": {
-															"renegotiation": "freely",
 															"except_ports": [
 																"8181",
 																"8182"
-															]
+															],
+															"renegotiation": "freely"
 														},
 														"versions": [
 															"h2c",
