@@ -12,9 +12,9 @@ require (
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.7.3
 	github.com/google/uuid v1.3.0
-	github.com/klauspost/compress v1.15.4
-	github.com/klauspost/cpuid/v2 v2.0.12
-	github.com/lucas-clemente/quic-go v0.27.1
+	github.com/klauspost/compress v1.15.6
+	github.com/klauspost/cpuid/v2 v2.0.13
+	github.com/lucas-clemente/quic-go v0.27.2
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.19.0
@@ -81,8 +81,8 @@ require (
 	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/marten-seemann/qpack v0.2.1 // indirect
 	github.com/marten-seemann/qtls-go1-16 v0.1.5 // indirect
-	github.com/marten-seemann/qtls-go1-17 v0.1.1 // indirect
-	github.com/marten-seemann/qtls-go1-18 v0.1.1 // indirect
+	github.com/marten-seemann/qtls-go1-17 v0.1.2 // indirect
+	github.com/marten-seemann/qtls-go1-18 v0.1.2 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
