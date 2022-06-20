@@ -296,9 +296,20 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // has the scheme set in its URL; the underlying
 // http.Transport requires a scheme to be set.
 func (h *HTTPTransport) SetScheme(req *http.Request) {
+	skipTLSport := false
+	if h.TLS.ExceptPorts != nil {
+		port := req.URL.Port()
+		for i := range h.TLS.ExceptPorts {
+			if h.TLS.ExceptPorts[i] == port {
+				skipTLSport = true
+				break
+			}
+		}
+	}
+
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
-		if h.TLS != nil {
+		if h.TLS != nil && !skipTLSport {
 			req.URL.Scheme = "https"
 		}
 	}
@@ -369,6 +380,13 @@ type TLSConfig struct {
 	//  - "once": allows a remote server to request renegotiation once per connection.
 	//  - "freely": allows a remote server to repeatedly request renegotiation.
 	Renegotiation string `json:"renegotiation,omitempty"`
+
+	// Skip TLS ports specifies a list of upstream ports on which TLS should not be
+	// attempted even if it is configured. Handy when using dynamic upstreams that
+	// return HTTP and HTTPS endpoints too.
+	// When specified, TLS will automatically be configured on the transport.
+	// The value can be a list of any valid tcp port numbers, default empty.
+	ExceptPorts []string `json:"except_ports,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
