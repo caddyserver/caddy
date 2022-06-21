@@ -297,7 +297,7 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // http.Transport requires a scheme to be set.
 func (h *HTTPTransport) SetScheme(req *http.Request) {
 	skipTLSport := false
-	if h.TLS.ExceptPorts != nil {
+	if h.TLS != nil && h.TLS.ExceptPorts != nil {
 		port := req.URL.Port()
 		for i := range h.TLS.ExceptPorts {
 			if h.TLS.ExceptPorts[i] == port {
