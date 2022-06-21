@@ -55,32 +55,6 @@ forward_auth localhost:9000 {
 													]
 												}
 											]
-										},
-										{
-											"routes": [
-												{
-													"handle": [
-														{
-															"exclude": [
-																"Connection",
-																"Keep-Alive",
-																"Te",
-																"Trailers",
-																"Transfer-Encoding",
-																"Upgrade"
-															],
-															"handler": "copy_response_headers"
-														}
-													]
-												},
-												{
-													"handle": [
-														{
-															"handler": "copy_response"
-														}
-													]
-												}
-											]
 										}
 									],
 									"handler": "reverse_proxy",
