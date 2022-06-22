@@ -281,7 +281,7 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	transport := h.replaceTLSServername(repl)
 
-	transport.SetScheme(req)
+	transport.setScheme(req)
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
@@ -292,27 +292,34 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return transport.Transport.RoundTrip(req)
 }
 
-// SetScheme ensures that the outbound request req
+// setScheme ensures that the outbound request req
 // has the scheme set in its URL; the underlying
 // http.Transport requires a scheme to be set.
-func (h *HTTPTransport) SetScheme(req *http.Request) {
-	skipTLSport := false
-	if h.TLS != nil && h.TLS.ExceptPorts != nil {
-		port := req.URL.Port()
-		for i := range h.TLS.ExceptPorts {
-			if h.TLS.ExceptPorts[i] == port {
-				skipTLSport = true
-				break
-			}
+func (h *HTTPTransport) setScheme(req *http.Request) {
+	if req.URL.Scheme != "" {
+		return
+	}
+	if h.shouldUseTLS(req) {
+		req.URL.Scheme = "https"
+	} else {
+		req.URL.Scheme = "http"
+	}
+}
+
+// shouldUseTLS returns true if TLS should be used for req.
+func (h *HTTPTransport) shouldUseTLS(req *http.Request) bool {
+	if h.TLS == nil {
+		return false
+	}
+
+	port := req.URL.Port()
+	for i := range h.TLS.ExceptPorts {
+		if h.TLS.ExceptPorts[i] == port {
+			return false
 		}
 	}
 
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "http"
-		if h.TLS != nil && !skipTLSport {
-			req.URL.Scheme = "https"
-		}
-	}
+	return true
 }
 
 // TLSEnabled returns true if TLS is enabled.
