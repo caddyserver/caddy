@@ -790,7 +790,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			continue
 		}
 
-		// if configured to only change the status code, do that then continue regular proxy response
+		// if configured to only change the status code,
+		// do that then continue regular proxy response
 		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 			if err != nil {
@@ -835,25 +836,28 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// pass the request through the response handler routes
 		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, origReq.WithContext(ctx))
 
-		// if the response handler routes already finalized the response,
-		// we can return early. It should be finalized if the routes executed
-		// included a copy_response handler. If a fresh response was written
-		// by the routes instead, then we still need to finalize the response
-		// without copying the body.
-		if routeErr == nil && hrc.isFinalized {
-			return nil
+		// close the response body afterwards, since we don't need it anymore;
+		// either a route had 'copy_response' which already consumed the body,
+		// or some other terminal handler ran which doesn't need the response
+		// body after that point (e.g. 'file_server' for X-Accel-Redirect flow),
+		// or we fell through to subsequent handlers past this proxy
+		// (e.g. forward auth's 2xx response flow).
+		if !hrc.isFinalized {
+			res.Body.Close()
 		}
 
-		// always close the response body afterwards, since it's expected
-		// that the response handler routes will have written to the
-		// response writer with a new body, if it wasn't already finalized.
-		res.Body.Close()
-
-		// wrap error in roundtripSucceeded so caller knows that
+		// wrap any route error in roundtripSucceeded so caller knows that
 		// the roundtrip was successful and to not retry
-		return roundtripSucceeded{routeErr}
+		if routeErr != nil {
+			return roundtripSucceeded{routeErr}
+		}
+
+		// we're done handling the response, and we don't want to
+		// fall through to the default finalize/copy behaviour
+		return nil
 	}
 
+	// copy the response body and headers back to the upstream client
 	return h.finalizeResponse(rw, req, res, repl, start, logger)
 }
 
