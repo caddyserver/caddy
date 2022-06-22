@@ -855,15 +855,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body.Close()
 		bodyClosed = true
 
-		if routeErr != nil {
-			// wrap error in roundtripSucceeded so caller knows that
-			// the roundtrip was successful and to not retry
-			return roundtripSucceeded{routeErr}
-		}
-
-		// we've already closed the body, so there's no use allowing
-		// another response handler to run as well
-		break
+		// wrap error in roundtripSucceeded so caller knows that
+		// the roundtrip was successful and to not retry
+		return roundtripSucceeded{routeErr}
 	}
 
 	return h.finalizeResponse(rw, req, res, repl, start, logger, bodyClosed)
