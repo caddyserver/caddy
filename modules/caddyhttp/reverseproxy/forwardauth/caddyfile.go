@@ -59,13 +59,6 @@ func init() {
 //                 Remote-Email {http.reverse_proxy.header.Remote-Email}
 //             }
 //         }
-//
-//         handle_response {
-//             copy_response_headers {
-//                 exclude Connection Keep-Alive Te Trailers Transfer-Encoding Upgrade
-//             }
-//             copy_response
-//         }
 //     }
 //
 func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
@@ -217,41 +210,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			},
 		)
 	}
-	rpHandler.HandleResponse = append(rpHandler.HandleResponse, goodResponseHandler)
 
-	// set up handler for denial responses; when a response
-	// has any other status than 2xx, then we copy the response
-	// back to the client, and terminate handling.
-	denialResponseHandler := caddyhttp.ResponseHandler{
-		Routes: []caddyhttp.Route{
-			{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					&reverseproxy.CopyResponseHeadersHandler{
-						Exclude: []string{
-							"Connection",
-							"Keep-Alive",
-							"Te",
-							"Trailers",
-							"Transfer-Encoding",
-							"Upgrade",
-						},
-					},
-					"handler",
-					"copy_response_headers",
-					nil,
-				)},
-			},
-			{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					&reverseproxy.CopyResponseHandler{},
-					"handler",
-					"copy_response",
-					nil,
-				)},
-			},
-		},
-	}
-	rpHandler.HandleResponse = append(rpHandler.HandleResponse, denialResponseHandler)
+	// note that when a response has any other status than 2xx, then we
+	// use the reverse proxy's default behaviour of copying the response
+	// back to the client, so we don't need to explicitly add a response
+	// handler specifically for that behaviour; we do need the 2xx handler
+	// though, to make handling fall through to handlers deeper in the chain.
+	rpHandler.HandleResponse = append(rpHandler.HandleResponse, goodResponseHandler)
 
 	// the rest of the config is specified by the user
 	// using the reverse_proxy directive syntax
