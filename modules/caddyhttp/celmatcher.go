@@ -173,7 +173,7 @@ func (m MatchExpression) Match(r *http.Request) bool {
 	celReq := celHTTPRequest{r}
 	out, _, err := m.prg.Eval(celReq)
 	if err != nil {
-        m.log.Error("evaluating expression", zap.Error(err))
+		m.log.Error("evaluating expression", zap.Error(err))
 		SetVar(r.Context(), MatcherErrorVarKey, err)
 		return false
 	}
