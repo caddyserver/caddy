@@ -424,7 +424,6 @@ func TestMatchExpressionMatch(t *testing.T) {
 			if tc.expression.Match(req) != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
 			}
-
 		})
 	}
 }

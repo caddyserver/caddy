@@ -543,16 +543,18 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 				}
 			}
 			for _, entry := range structExpr.GetEntries() {
-				if !(isCELStringLiteral(entry.GetMapKey()) ||
-					isCELCaddyPlaceholderCall(entry.GetMapKey())) {
+				isStringPlaceholder := isCELStringLiteral(entry.GetMapKey()) ||
+					isCELCaddyPlaceholderCall(entry.GetMapKey())
+				if !isStringPlaceholder {
 					return nil, &common.Error{
 						Location: eh.OffsetLocation(entry.GetId()),
 						Message:  "matcher map keys must be string literals",
 					}
 				}
-				if !(isCELStringLiteral(entry.GetValue()) ||
+				isStringListPlaceholder := isCELStringLiteral(entry.GetValue()) ||
 					isCELStringListLiteral(entry.GetValue()) ||
-					isCELCaddyPlaceholderCall(entry.GetValue())) {
+					isCELCaddyPlaceholderCall(entry.GetValue())
+				if !isStringListPlaceholder {
 					return nil, &common.Error{
 						Location: eh.OffsetLocation(entry.GetValue().GetId()),
 						Message:  "matcher map values must be string or list literals",
@@ -663,13 +665,13 @@ func isCELStringListType(t *exprpb.Type) bool {
 }
 
 // isCELStringListLiteral returns whether the expression resolves to a list literal
-// containing only string constants.
+// containing only string constants or a placeholder call.
 func isCELStringListLiteral(e *exprpb.Expr) bool {
 	switch e.GetExprKind().(type) {
 	case *exprpb.Expr_ListExpr:
 		list := e.GetListExpr()
 		for _, elem := range list.GetElements() {
-			if !isCELStringLiteral(elem) {
+			if !(isCELStringLiteral(elem) || isCELCaddyPlaceholderCall(elem)) {
 				return false
 			}
 		}

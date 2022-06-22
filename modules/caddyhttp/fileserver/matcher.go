@@ -26,6 +26,9 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/types/ref"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 func init() {
@@ -137,6 +140,45 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//    expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
+func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return caddyhttp.CelMatcherImpl(
+		"file",
+		"file_matcher_request_map",
+		[]*exprpb.Type{caddyhttp.CelTypeJson},
+		func(data ref.Val) (caddyhttp.RequestMatcher, error) {
+			values, err := caddyhttp.CelValueToMapStrList(data)
+			if err != nil {
+				return nil, err
+			}
+
+			var root string
+			if len(values["root"]) > 0 {
+				root = values["root"][0]
+			}
+
+			var try_policy string
+			if len(values["try_policy"]) > 0 {
+				root = values["try_policy"][0]
+			}
+
+			m := MatchFile{
+				Root:      root,
+				TryFiles:  values["try_files"],
+				TryPolicy: try_policy,
+				SplitPath: values["split_path"],
+			}
+
+			err = m.Provision(ctx)
+			return m, err
+		},
+	)
 }
 
 // Provision sets up m's defaults.
@@ -368,6 +410,7 @@ const (
 
 // Interface guards
 var (
-	_ caddy.Validator          = (*MatchFile)(nil)
-	_ caddyhttp.RequestMatcher = (*MatchFile)(nil)
+	_ caddy.Validator              = (*MatchFile)(nil)
+	_ caddyhttp.RequestMatcher     = (*MatchFile)(nil)
+	_ caddyhttp.CELLibraryProducer = (*MatchFile)(nil)
 )
