@@ -784,18 +784,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body = h.bufferedBody(res.Body)
 	}
 
-	// the response body may get closed by a response handler,
-	// and we need to keep track to make sure we don't try to copy
-	// the response if it was already closed
-	bodyClosed := false
-
 	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
 			continue
 		}
 
-		// if configured to only change the status code, do that then continue regular proxy response
+		// if configured to only change the status code,
+		// do that then continue regular proxy response
 		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 			if err != nil {
@@ -840,33 +836,29 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// pass the request through the response handler routes
 		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, origReq.WithContext(ctx))
 
-		// if the response handler routes already finalized the response,
-		// we can return early. It should be finalized if the routes executed
-		// included a copy_response handler. If a fresh response was written
-		// by the routes instead, then we still need to finalize the response
-		// without copying the body.
-		if routeErr == nil && hrc.isFinalized {
-			return nil
+		// close the response body afterwards, since we don't need it anymore;
+		// either a route had 'copy_response' which already consumed the body,
+		// or some other terminal handler ran which doesn't need the response
+		// body after that point (e.g. 'file_server' for X-Accel-Redirect flow),
+		// or we fell through to subsequent handlers past this proxy
+		// (e.g. forward auth's 2xx response flow).
+		if !hrc.isFinalized {
+			res.Body.Close()
 		}
 
-		// always close the response body afterwards, since it's expected
-		// that the response handler routes will have written to the
-		// response writer with a new body, if it wasn't already finalized.
-		res.Body.Close()
-		bodyClosed = true
-
+		// wrap any route error in roundtripSucceeded so caller knows that
+		// the roundtrip was successful and to not retry
 		if routeErr != nil {
-			// wrap error in roundtripSucceeded so caller knows that
-			// the roundtrip was successful and to not retry
 			return roundtripSucceeded{routeErr}
 		}
 
-		// we've already closed the body, so there's no use allowing
-		// another response handler to run as well
-		break
+		// we're done handling the response, and we don't want to
+		// fall through to the default finalize/copy behaviour
+		return nil
 	}
 
-	return h.finalizeResponse(rw, req, res, repl, start, logger, bodyClosed)
+	// copy the response body and headers back to the upstream client
+	return h.finalizeResponse(rw, req, res, repl, start, logger)
 }
 
 // finalizeResponse prepares and copies the response.
@@ -877,7 +869,6 @@ func (h Handler) finalizeResponse(
 	repl *caddy.Replacer,
 	start time.Time,
 	logger *zap.Logger,
-	bodyClosed bool,
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
@@ -889,13 +880,6 @@ func (h Handler) finalizeResponse(
 
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
-	}
-
-	// remove the content length if we're not going to be copying
-	// from the response, because otherwise there'll be a mismatch
-	// between bytes written and the advertised length
-	if bodyClosed {
-		res.Header.Del("Content-Length")
 	}
 
 	// apply any response header operations
@@ -920,17 +904,16 @@ func (h Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
-	if !bodyClosed {
-		err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-		res.Body.Close() // close now, instead of defer, to populate res.Trailer
-		if err != nil {
-			// we're streaming the response and we've already written headers, so
-			// there's nothing an error handler can do to recover at this point;
-			// the standard lib's proxy panics at this point, but we'll just log
-			// the error and abort the stream here
-			h.logger.Error("aborting with incomplete response", zap.Error(err))
-			return nil
-		}
+
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
+	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if err != nil {
+		// we're streaming the response and we've already written headers, so
+		// there's nothing an error handler can do to recover at this point;
+		// the standard lib's proxy panics at this point, but we'll just log
+		// the error and abort the stream here
+		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		return nil
 	}
 
 	if len(res.Trailer) > 0 {
