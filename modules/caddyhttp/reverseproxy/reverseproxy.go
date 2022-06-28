@@ -505,6 +505,8 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	var proxyProtocolInfo ProxyProtocolInfo
 	// using X-Forwarded-For header which is already filtered by trusted proxies
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// addForwardedHeaders ensures xff has at least remoteAddr
+		xff = strings.TrimSpace(strings.Split(xff, ",")[0])
 		ip := net.ParseIP(xff)
 		if ip != nil {
 			proxyProtocolInfo.IP = ip
