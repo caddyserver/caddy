@@ -185,31 +185,33 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 		},
 		Routes: []caddyhttp.Route{},
 	}
-	if len(headersToCopy) > 0 {
-		handler := &headers.Handler{
-			Request: &headers.HeaderOps{
-				Set: http.Header{},
-			},
-		}
 
-		for from, to := range headersToCopy {
-			handler.Request.Set[to] = []string{
-				"{http.reverse_proxy.header." + from + "}",
-			}
-		}
-
-		goodResponseHandler.Routes = append(
-			goodResponseHandler.Routes,
-			caddyhttp.Route{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					handler,
-					"handler",
-					"headers",
-					nil,
-				)},
-			},
-		)
+	handler := &headers.Handler{
+		Request: &headers.HeaderOps{
+			Set: http.Header{},
+		},
 	}
+
+	// the list of headers to copy may be empty, but that's okay; we
+	// need at least one handler in the routes for the response handling
+	// logic in reverse_proxy to not skip this entry as empty.
+	for from, to := range headersToCopy {
+		handler.Request.Set[to] = []string{
+			"{http.reverse_proxy.header." + from + "}",
+		}
+	}
+
+	goodResponseHandler.Routes = append(
+		goodResponseHandler.Routes,
+		caddyhttp.Route{
+			HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
+				handler,
+				"handler",
+				"headers",
+				nil,
+			)},
+		},
+	)
 
 	// note that when a response has any other status than 2xx, then we
 	// use the reverse proxy's default behaviour of copying the response
