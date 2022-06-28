@@ -259,3 +259,22 @@ var hosts = caddy.NewUsagePool()
 // dialInfoVarKey is the key used for the variable that holds
 // the dial info for the upstream connection.
 const dialInfoVarKey = "reverse_proxy.dial_info"
+
+// ProxyProtocolInfo contains information needed to write proxy protocol to a
+// connection to an upstream host.
+type ProxyProtocolInfo struct {
+	// assume network is tcp because golang http transport can only support tcp now
+	IP   net.IP
+	Port int
+}
+
+// GetProxyProtocolInfo gets the proxy protocol info out of the context,
+// and returns true if there was a valid value; false otherwise.
+func GetProxyProtocolInfo(ctx context.Context) (ProxyProtocolInfo, bool) {
+	proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
+	return proxyProtocolInfo, ok
+}
+
+// proxyProtocolInfoVarKey is the key used for the variable that holds
+// the proxy protocol info for the upstream connection.
+const proxyProtocolInfoVarKey = "reverse_proxy.proxy_protocol_info"

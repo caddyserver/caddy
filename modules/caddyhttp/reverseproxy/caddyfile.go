@@ -803,6 +803,7 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         read_buffer             <size>
 //         write_buffer            <size>
 //         max_response_header     <size>
+//         proxy_protocol_version  [off|v1|v2]
 //         dial_timeout            <duration>
 //         dial_fallback_delay     <duration>
 //         response_header_timeout <duration>
@@ -857,6 +858,21 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid max response header size '%s': %v", d.Val(), err)
 				}
 				h.MaxResponseHeaderSize = int64(size)
+
+			case "proxy_protocol_version":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch proxyProtocolVersion := d.Val(); proxyProtocolVersion {
+				case "off":
+					h.ProxyProtocolVersion = 0
+				case "v1":
+					h.ProxyProtocolVersion = 1
+				case "v2":
+					h.ProxyProtocolVersion = 2
+				default:
+					return d.Errf("invalid proxy protocol version '%s'", proxyProtocolVersion)
+				}
 
 			case "dial_timeout":
 				if !d.NextArg() {

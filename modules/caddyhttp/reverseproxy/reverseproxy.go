@@ -502,6 +502,31 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// or satisfactorily represented in a URL
 	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
+	var proxyProtocolInfo ProxyProtocolInfo
+	// using X-Forwarded-For header which is already filtered by trusted proxies
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ip := net.ParseIP(xff)
+		if ip != nil {
+			proxyProtocolInfo.IP = ip
+			// X-Forwarded-For is set by caddy, not by prefix matching because ipv6 remoteAddr starts with [
+			if strings.Contains(r.RemoteAddr, xff) {
+				// addForwardedHeaders already check this error
+				_, p, _ := net.SplitHostPort(r.RemoteAddr)
+
+				// however port is never checked
+				port, err := strconv.Atoi(p)
+				if err != nil {
+					return true, fmt.Errorf("making proxy protocol info: %v", err)
+				}
+				proxyProtocolInfo.Port = port
+			} else {
+				// set to zero for unknown
+				proxyProtocolInfo.Port = 0
+			}
+			caddyhttp.SetVar(r.Context(), proxyProtocolInfoVarKey, dialInfo)
+		}
+	}
+
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)

@@ -15,6 +15,7 @@ require (
 	github.com/klauspost/compress v1.15.6
 	github.com/klauspost/cpuid/v2 v2.0.13
 	github.com/lucas-clemente/quic-go v0.27.2
+	github.com/mastercactapus/proxyprotocol v0.0.3
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.19.0
