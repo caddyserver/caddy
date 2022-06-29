@@ -66,7 +66,7 @@ type HTTPTransport struct {
 
 	// Which version of proxy protocol to send when connecting to
 	// an upstream. Default: `don't send proxy protocol`.
-	ProxyProtocolVersion int `json:"proxy_protocol_version,omitempty"`
+	ProxyProtocol string `json:"proxy_protocol,omitempty"`
 
 	// How long to wait before timing out trying to connect to
 	// an upstream. Default: `3s`.
@@ -208,16 +208,16 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			}
 
 			if proxyProtocolInfo, ok := GetProxyProtocolInfo(ctx); ok {
-				switch h.ProxyProtocolVersion {
-				case 0:
+				switch h.ProxyProtocol {
+				case "":
 					return conn, nil
-				case 1:
+				case "v1":
 					var header proxyprotocol.HeaderV1
 					header.FromConn(conn, true)
 					header.SrcIP = proxyProtocolInfo.IP
 					header.SrcPort = proxyProtocolInfo.Port
 					_, err = header.WriteTo(conn)
-				case 2:
+				case "v2":
 					var header proxyprotocol.HeaderV2
 					header.FromConn(conn, true)
 					header.Src = &net.TCPAddr{
