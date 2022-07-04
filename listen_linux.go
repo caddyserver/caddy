@@ -4,13 +4,19 @@ import (
 	"context"
 	"net"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
 func Listen(network, addr string) (net.Listener, error) {
-	config := &net.ListenConfig{Control: reusePort}
+	// 0 timeout means Go picks the default
+	return ListenTimeout(network, addr, 0)
+}
+
+func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
+	config := &net.ListenConfig{Control: reusePort, KeepAlive: keepalivePeriod}
 	return config.Listen(context.Background(), network, addr)
 }
 
