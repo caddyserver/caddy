@@ -162,8 +162,8 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.
 func (iss *ZeroSSLIssuer) initialize() {
 	iss.mu.Lock()
 	defer iss.mu.Unlock()
-	if iss.template.NewAccountFunc == nil {
-		iss.template.NewAccountFunc = iss.newAccountCallback
+	if iss.ACMEIssuer.issuer.NewAccountFunc == nil {
+		iss.ACMEIssuer.issuer.NewAccountFunc = iss.newAccountCallback
 	}
 }
 
