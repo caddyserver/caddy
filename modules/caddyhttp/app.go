@@ -357,12 +357,10 @@ func (app *App) Start() error {
 							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
 						}
 						h3srv := &http3.Server{
-							Server: &http.Server{
-								Addr:      hostport,
-								Handler:   srv,
-								TLSConfig: tlsCfg,
-								ErrorLog:  serverLogger,
-							},
+							Addr:           hostport,
+							Handler:        srv,
+							TLSConfig:      tlsCfg,
+							MaxHeaderBytes: srv.MaxHeaderBytes,
 						}
 						//nolint:errcheck
 						go h3srv.ServeListener(h3ln)
