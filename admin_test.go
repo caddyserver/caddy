@@ -15,7 +15,9 @@
 package caddy
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"sync"
 	"testing"
@@ -139,8 +141,55 @@ func TestLoadConcurrent(t *testing.T) {
 			wg.Done()
 		}()
 	}
-
 	wg.Wait()
+}
+
+type fooModule struct {
+	IntField int
+	StrField string
+}
+
+func (fooModule) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID:  "foo",
+		New: func() Module { return new(fooModule) },
+	}
+}
+func (fooModule) Start() error { return nil }
+func (fooModule) Stop() error  { return nil }
+
+func TestETags(t *testing.T) {
+	RegisterModule(fooModule{})
+
+	if err := Load([]byte(`{"apps": {"foo": {"strField": "abc", "intField": 0}}}`), true); err != nil {
+		t.Fatalf("loading: %s", err)
+	}
+
+	const key = "/" + rawConfigKey + "/apps/foo"
+
+	// try update the config with the wrong etag
+	err := changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}}`), "/"+rawConfigKey+" not_an_etag", false)
+	if apiErr, ok := err.(APIError); !ok || apiErr.HTTPStatus != http.StatusPreconditionFailed {
+		t.Fatalf("expected precondition failed; got %v", err)
+	}
+
+	// get the etag
+	hash := etagHasher()
+	if err := readConfig(key, hash); err != nil {
+		t.Fatalf("reading: %s", err)
+	}
+
+	// do the same update with the correct key
+	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}`), key+" "+hex.EncodeToString(hash.Sum(nil)), false)
+	if err != nil {
+		t.Fatalf("expected update to work; got %v", err)
+	}
+
+	// now try another update. The hash should no longer match and we should get precondition failed
+	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 2}`), key+" "+hex.EncodeToString(hash.Sum(nil)), false)
+	if apiErr, ok := err.(APIError); !ok || apiErr.HTTPStatus != http.StatusPreconditionFailed {
+		t.Fatalf("expected precondition failed; got %v", err)
+	}
 }
 
 func BenchmarkLoad(b *testing.B) {
