@@ -21,10 +21,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"expvar"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
@@ -894,15 +897,29 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 	return false
 }
 
+// etagHasher returns a the hasher we used on the config to both
+// produce and verify ETags.
+func etagHasher() hash.Hash32 { return fnv.New32a() }
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
+		// Set the ETag as a trailer header.
+		// The alternative is to write the config to a buffer, and
+		// then hash that.
+		w.Header().Set("Trailer", "ETag")
 
-		err := readConfig(r.URL.Path, w)
+		hash := etagHasher()
+		configWriter := io.MultiWriter(w, hash)
+		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
 		}
+
+		// we could consider setting up a sync.Pool for the summed
+		// hashes to reduce GC pressure.
+		w.Header().Set("ETag", r.URL.Path+" "+hex.EncodeToString(hash.Sum(nil)))
 
 		return nil
 
@@ -937,7 +954,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
-		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
+		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil && !errors.Is(err, errSameConfig) {
 			return err
 		}
