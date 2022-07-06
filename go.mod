@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.15.6
 	github.com/klauspost/cpuid/v2 v2.0.13
-	github.com/lucas-clemente/quic-go v0.27.2
+	github.com/lucas-clemente/quic-go v0.28.0
 	github.com/mholt/acmez v1.0.2
 	github.com/prometheus/client_golang v1.12.1
 	github.com/smallstep/certificates v0.19.0
@@ -30,7 +30,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.4.0
 	go.uber.org/zap v1.21.0
 	golang.org/x/crypto v0.0.0-20220210151621-f4118a5b28e2
-	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
+	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21
 	google.golang.org/protobuf v1.28.0
@@ -83,6 +83,7 @@ require (
 	github.com/marten-seemann/qtls-go1-16 v0.1.5 // indirect
 	github.com/marten-seemann/qtls-go1-17 v0.1.2 // indirect
 	github.com/marten-seemann/qtls-go1-18 v0.1.2 // indirect
+	github.com/marten-seemann/qtls-go1-19 v0.1.0-beta.1 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
@@ -121,7 +122,7 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.8-0.20211004125949-5bd84dd9b33b // indirect
 	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
