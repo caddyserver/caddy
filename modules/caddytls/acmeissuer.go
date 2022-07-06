@@ -85,9 +85,11 @@ type ACMEIssuer struct {
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
-	template certmagic.ACMEIssuer
-	magic    *certmagic.Config
 	logger   *zap.Logger
+
+	template certmagic.ACMEIssuer  // set at Provision
+	magic    *certmagic.Config     // set at PreCheck
+	issuer   *certmagic.ACMEIssuer // set at PreCheck; result of template + magic
 }
 
 // CaddyModule returns the Caddy module information.
@@ -217,30 +219,27 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 // the ConfigSetter interface.
 func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 	iss.magic = cfg
+	iss.issuer = certmagic.NewACMEIssuer(cfg, iss.template)
 }
-
-// TODO: I kind of hate how each call to these methods needs to
-// make a new ACME manager to fill in defaults before using; can
-// we find the right place to do that just once and then re-use?
 
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return iss.issuer.PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Issue(ctx, csr)
+	return iss.issuer.Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).IssuerKey()
+	return iss.issuer.IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return iss.issuer.Revoke(ctx, cert, reason)
 }
 
 // GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because
