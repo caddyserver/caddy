@@ -43,7 +43,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2/notify"
 	"github.com/caddyserver/certmagic"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -209,53 +208,26 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admi
 		muxWrap.enforceOrigin = admin.EnforceOrigin
 	}
 
-	addRouteWithMetrics := func(pattern string, handlerLabel string, h http.Handler) {
-		labels := prometheus.Labels{"path": pattern, "handler": handlerLabel}
-		h = instrumentHandlerCounter(
-			adminMetrics.requestCount.MustCurryWith(labels),
-			h,
-		)
-		muxWrap.mux.Handle(pattern, h)
-	}
-	// addRoute just calls muxWrap.mux.Handle after
-	// wrapping the handler with error handling
-	addRoute := func(pattern string, handlerLabel string, h AdminHandler) {
-		wrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			err := h.ServeHTTP(w, r)
-			if err != nil {
-				labels := prometheus.Labels{
-					"path":    pattern,
-					"handler": handlerLabel,
-					"method":  strings.ToUpper(r.Method),
-				}
-				adminMetrics.requestErrors.With(labels).Inc()
-			}
-			muxWrap.handleError(w, r, err)
-		})
-		addRouteWithMetrics(pattern, handlerLabel, wrapper)
-	}
-
 	const handlerLabel = "admin"
-
 	// register standard config control endpoints
-	addRoute("/"+rawConfigKey+"/", handlerLabel, AdminHandlerFunc(handleConfig))
-	addRoute("/id/", handlerLabel, AdminHandlerFunc(handleConfigID))
-	addRoute("/stop", handlerLabel, AdminHandlerFunc(handleStop))
+	muxWrap.Handle("/"+rawConfigKey+"/", handlerLabel, AdminHandlerFunc(handleConfig))
+	muxWrap.Handle("/id/", handlerLabel, AdminHandlerFunc(handleConfigID))
+	muxWrap.Handle("/stop", handlerLabel, AdminHandlerFunc(handleStop))
 
 	// register debugging endpoints
-	addRouteWithMetrics("/debug/pprof/", handlerLabel, http.HandlerFunc(pprof.Index))
-	addRouteWithMetrics("/debug/pprof/cmdline", handlerLabel, http.HandlerFunc(pprof.Cmdline))
-	addRouteWithMetrics("/debug/pprof/profile", handlerLabel, http.HandlerFunc(pprof.Profile))
-	addRouteWithMetrics("/debug/pprof/symbol", handlerLabel, http.HandlerFunc(pprof.Symbol))
-	addRouteWithMetrics("/debug/pprof/trace", handlerLabel, http.HandlerFunc(pprof.Trace))
-	addRouteWithMetrics("/debug/vars", handlerLabel, expvar.Handler())
+	muxWrap.HandleStd("/debug/pprof/", handlerLabel, http.HandlerFunc(pprof.Index))
+	muxWrap.HandleStd("/debug/pprof/cmdline", handlerLabel, http.HandlerFunc(pprof.Cmdline))
+	muxWrap.HandleStd("/debug/pprof/profile", handlerLabel, http.HandlerFunc(pprof.Profile))
+	muxWrap.HandleStd("/debug/pprof/symbol", handlerLabel, http.HandlerFunc(pprof.Symbol))
+	muxWrap.HandleStd("/debug/pprof/trace", handlerLabel, http.HandlerFunc(pprof.Trace))
+	muxWrap.HandleStd("/debug/vars", handlerLabel, expvar.Handler())
 
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
 		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
-			addRoute(route.Pattern, handlerLabel, route.Handler)
+			muxWrap.Handle(route.Pattern, handlerLabel, route.Handler)
 		}
 		admin.routers = append(admin.routers, router)
 	}
@@ -710,6 +682,21 @@ type adminHandler struct {
 
 	// security for remote/encrypted endpoint
 	remoteControl *RemoteAdmin
+}
+
+// Handle registers an AdminHandler-type handler for the given pattern.
+func (h adminHandler) Handle(pattern, label string, handler AdminHandler) {
+	h.mux.Handle(pattern, instrumentAdminHandler(pattern, label, handler, h.handleError))
+}
+
+// HandleStd registers an http.Handler-type handler for the given pattern.
+func (h adminHandler) HandleStd(pattern, label string, handler http.Handler) {
+	h.Handle(pattern, label, AdminHandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) error {
+		handler.ServeHTTP(w, r)
+		return nil
+	}))
 }
 
 // ServeHTTP is the external entry point for API requests.
@@ -1294,7 +1281,7 @@ var (
 // will get deleted before the process gracefully exits.
 func PIDFile(filename string) error {
 	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	err := os.WriteFile(filename, pid, 0600)
+	err := os.WriteFile(filename, pid, 0o600)
 	if err != nil {
 		return err
 	}

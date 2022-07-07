@@ -3,7 +3,7 @@ package caddy
 import (
 	"net/http"
 
-	"github.com/caddyserver/caddy/v2/internal/metrics"
+	internal "github.com/caddyserver/caddy/v2/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -15,13 +15,13 @@ func init() {
 
 	const ns, sub = "caddy", "admin"
 
-	adminMetrics.requestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	adminMetrics.requests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "http_requests_total",
 		Help:      "Counter of requests made to the Admin API's HTTP endpoints.",
 	}, []string{"handler", "path", "code", "method"})
-	adminMetrics.requestErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+	adminMetrics.errors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "http_request_errors_total",
@@ -31,29 +31,33 @@ func init() {
 
 // adminMetrics is a collection of metrics that can be tracked for the admin API.
 var adminMetrics = struct {
-	requestCount  *prometheus.CounterVec
-	requestErrors *prometheus.CounterVec
+	requests *prometheus.CounterVec
+	errors   *prometheus.CounterVec
 }{}
 
-// Similar to promhttp.InstrumentHandlerCounter, but upper-cases method names
-// instead of lower-casing them.
-//
-// Unlike promhttp.InstrumentHandlerCounter, this assumes a "code" and "method"
-// label is present, and will panic otherwise.
-func instrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		d := newDelegator(w)
-		next.ServeHTTP(d, r)
-		counter.With(prometheus.Labels{
-			"code":   metrics.SanitizeCode(d.status),
-			"method": metrics.SanitizeMethod(r.Method),
-		}).Inc()
-	})
-}
+// instrumentAdminHandler wraps the handler with total and errored-out request count
+// in a manner similar to promhttp.InstrumentHandlerCounter. All errors are handled
+// using the passed error handler.
+func instrumentAdminHandler(pattern, handlerLabel string,
+	h AdminHandler, errorHandler func(http.ResponseWriter, *http.Request, error),
+) http.HandlerFunc {
+	labels := prometheus.Labels{"path": pattern, "handler": handlerLabel}
+	requests := adminMetrics.requests.MustCurryWith(labels)
+	errors := adminMetrics.errors.MustCurryWith(labels)
 
-func newDelegator(w http.ResponseWriter) *delegator {
-	return &delegator{
-		ResponseWriter: w,
+	return func(w http.ResponseWriter, r *http.Request) {
+		d := delegator{ResponseWriter: w}
+		labels := prometheus.Labels{
+			"method": internal.SanitizeMethod(r.Method),
+		}
+
+		if err := h.ServeHTTP(w, r); err != nil {
+			errors.With(labels).Inc()
+			errorHandler(w, r, err)
+		}
+
+		labels["code"] = internal.SanitizeCode(d.status)
+		requests.With(labels).Inc()
 	}
 }
 
