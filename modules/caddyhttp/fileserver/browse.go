@@ -67,9 +67,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
 			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
-			origReq.URL.Path += "/"
-			http.Redirect(w, r, origReq.URL.String(), http.StatusMovedPermanently)
-			return nil
+			return redirect(w, r, origReq.URL.Path+"/")
 		}
 	}
 
