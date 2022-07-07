@@ -443,6 +443,7 @@ func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
 // It can only be used inside a handle_response route.
 // EXPERIMENTAL: This API is subject to change or removal.
 func (c TemplateContext) ProxyResponse() (proxyResponse, error) {
+	//nolint:bodyclose
 	resp, err := reverseproxy.Response(c.Req)
 	if err != nil {
 		return proxyResponse{}, err
