@@ -32,6 +32,7 @@ import (
 	"github.com/alecthomas/chroma/formatters/html"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/dustin/go-humanize"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
@@ -72,18 +73,18 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 
 	// add our own library
 	c.tpl.Funcs(template.FuncMap{
-		"include":          c.funcInclude,
-		"import":           c.funcImport,
-		"httpInclude":      c.funcHTTPInclude,
-		"stripHTML":        c.funcStripHTML,
-		"markdown":         c.funcMarkdown,
-		"splitFrontMatter": c.funcSplitFrontMatter,
-		"listFiles":        c.funcListFiles,
 		"env":              c.funcEnv,
-		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
+		"httpInclude":      c.funcHTTPInclude,
 		"humanize":         c.funcHumanize,
+		"import":           c.funcImport,
+		"include":          c.funcInclude,
+		"listFiles":        c.funcListFiles,
+		"markdown":         c.funcMarkdown,
+		"placeholder":      c.funcPlaceholder,
+		"splitFrontMatter": c.funcSplitFrontMatter,
+		"stripHTML":        c.funcStripHTML,
 	})
 	return c.tpl
 }
@@ -436,6 +437,30 @@ func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no know function was given")
+}
+
+// ProxyResponse accesses the response from a reverse proxy.
+// It can only be used inside a handle_response route.
+// EXPERIMENTAL: This API is subject to change or removal.
+func (c TemplateContext) ProxyResponse() (proxyResponse, error) {
+	resp, err := reverseproxy.Response(c.Req)
+	if err != nil {
+		return proxyResponse{}, err
+	}
+	return proxyResponse{
+		resp: resp,
+		Body: func(maxSize int64) (string, error) {
+			body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
+			return string(body), err
+		},
+		Header: WrappedHeader{resp.Header},
+	}, nil
+}
+
+type proxyResponse struct {
+	resp   *http.Response
+	Body   func(maxSize int64) (string, error)
+	Header WrappedHeader
 }
 
 // WrappedHeader wraps niladic functions so that they

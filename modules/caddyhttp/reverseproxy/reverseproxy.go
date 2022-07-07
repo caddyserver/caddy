@@ -1296,6 +1296,18 @@ var bufPool = sync.Pool{
 	},
 }
 
+// Response returns the reverse proxy's HTTP response attached to the
+// request. It can only be used inside handle_response routes.
+// EXPERIMENTAL: This API is subject to change or removal.
+func Response(req *http.Request) (*http.Response, error) {
+	hrc, ok := req.Context().Value(proxyHandleResponseContextCtxKey).(*handleResponseContext)
+	if !ok {
+		return nil, caddyhttp.Error(http.StatusInternalServerError,
+			fmt.Errorf("cannot access backend response outside of reverse_proxy's handle_response route"))
+	}
+	return hrc.response, nil
+}
+
 // handleResponseContext carries some contextual information about the
 // the current proxy handling.
 type handleResponseContext struct {
