@@ -971,9 +971,9 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	id := parts[2]
 
 	// map the ID to the expanded path
-	currentCfgMu.RLock()
+	currentCtxMu.RLock()
 	expanded, ok := rawCfgIndex[id]
-	defer currentCfgMu.RUnlock()
+	defer currentCtxMu.RUnlock()
 	if !ok {
 		return APIError{
 			HTTPStatus: http.StatusNotFound,
@@ -1008,7 +1008,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 // the operation at path according to method, using body and out as
 // needed. This is a low-level, unsynchronized function; most callers
 // will want to use changeConfig or readConfig instead. This requires a
-// read or write lock on currentCfgMu, depending on method (GET needs
+// read or write lock on currentCtxMu, depending on method (GET needs
 // only a read lock; all others need a write lock).
 func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error {
 	var err error
