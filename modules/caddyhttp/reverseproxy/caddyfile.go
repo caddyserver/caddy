@@ -814,6 +814,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         tls_timeout <duration>
 //         tls_trusted_ca_certs <cert_files...>
 //         tls_server_name <sni>
+//         tls_renegotiation <level>
+//         tls_except_ports <ports...>
 //         keepalive [off|<duration>]
 //         keepalive_interval <interval>
 //         keepalive_idle_conns <max_count>
@@ -907,6 +909,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("must specify at least one resolver address")
 				}
 
+			case "tls":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
 			case "tls_client_auth":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
@@ -920,25 +927,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS.ClientCertificateKeyFile = args[1]
 				default:
 					return d.ArgErr()
-				}
-
-			case "renegotiation":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
-				}
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				switch renegotiation := d.Val(); renegotiation {
-				case "never", "once", "freely":
-					h.TLS.Renegotiation = renegotiation
-				default:
-					return d.ArgErr()
-				}
-
-			case "tls":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
 				}
 
 			case "tls_insecure_skip_verify":
@@ -981,6 +969,29 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.ServerName = d.Val()
+
+			case "tls_renegotiation":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch renegotiation := d.Val(); renegotiation {
+				case "never", "once", "freely":
+					h.TLS.Renegotiation = renegotiation
+				default:
+					return d.ArgErr()
+				}
+
+			case "tls_except_ports":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.ExceptPorts = d.RemainingArgs()
+				if len(h.TLS.ExceptPorts) == 0 {
+					return d.ArgErr()
+				}
 
 			case "keepalive":
 				if !d.NextArg() {
@@ -1062,15 +1073,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad integer value '%s': %v", d.Val(), err)
 				}
 				h.MaxConnsPerHost = num
-
-			case "except_ports":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
-				}
-				h.TLS.ExceptPorts = d.RemainingArgs()
-				if len(h.TLS.ExceptPorts) == 0 {
-					return d.ArgErr()
-				}
 
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
