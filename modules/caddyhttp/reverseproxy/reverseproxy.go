@@ -477,7 +477,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = fmt.Errorf("no upstreams available")
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("no upstreams available"))
 		}
 		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
 			return true, proxyErr
