@@ -46,12 +46,6 @@ func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Lis
 	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepalivePeriod: keepalivePeriod}, nil
 }
 
-// typically applies only to TCP, but using interface for future proofing
-type canSetKeepAlive interface {
-	SetKeepAlivePeriod(d time.Duration) error
-	SetKeepAlive(bool) error
-}
-
 // fakeCloseListener is a private wrapper over a listener that
 // is shared. The state of fakeCloseListener is not shared.
 // This allows one user of a socket to "close" the listener
@@ -66,6 +60,11 @@ type fakeCloseListener struct {
 	*sharedListener // embedded, so we also become a net.Listener
 }
 
+type canSetKeepAlive interface {
+	SetKeepAlivePeriod(d time.Duration) error
+	SetKeepAlive(bool) error
+}
+
 func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	// if the listener is already "closed", return error
 	if atomic.LoadInt32(&fcl.closed) == 1 {
@@ -76,6 +75,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	conn, err := fcl.sharedListener.Accept()
 	if err == nil {
 		// if 0, do nothing, Go's default is already set
+		// and if the connection allows setting KeepAlive, set it
 		if tconn, ok := conn.(canSetKeepAlive); ok && fcl.keepalivePeriod != 0 {
 			if fcl.keepalivePeriod > 0 {
 				tconn.SetKeepAlivePeriod(fcl.keepalivePeriod)
