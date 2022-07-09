@@ -78,10 +78,12 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		// and if the connection allows setting KeepAlive, set it
 		if tconn, ok := conn.(canSetKeepAlive); ok && fcl.keepalivePeriod != 0 {
 			if fcl.keepalivePeriod > 0 {
-				tconn.SetKeepAlivePeriod(fcl.keepalivePeriod)
+				err = tconn.SetKeepAlivePeriod(fcl.keepalivePeriod)
 			} else { // negative
-				tconn.SetKeepAlive(false)
+				err = tconn.SetKeepAlive(false)
 			}
+			// FIXME: how to deal with these errors, on one hand, this keepalive setting is not critical
+			// on the other, the user should be informed if theses some error
 		}
 		return conn, nil
 	}
