@@ -919,7 +919,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		// we could consider setting up a sync.Pool for the summed
 		// hashes to reduce GC pressure.
-		w.Header().Set("ETag", r.URL.Path+" "+hex.EncodeToString(hash.Sum(nil)))
+		w.Header().Set("ETag", "\""+r.URL.Path+" "+hex.EncodeToString(hash.Sum(nil))+"\"")
 
 		return nil
 
