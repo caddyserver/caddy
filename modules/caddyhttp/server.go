@@ -65,6 +65,11 @@ type Server struct {
 	// 5m is applied to help avoid resource exhaustion.
 	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 
+	// KeepAliveInterval is the interval at which TCP keepalive packets
+	// are sent to keep the connection alive at the TCP layer when no other
+	// data is being transmitted. The default is 15s.
+	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
+
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`

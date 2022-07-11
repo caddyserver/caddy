@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Listen is like net.Listen, except Caddy's listeners can overlap
@@ -20,10 +22,16 @@ import (
 // the socket have been finished. Always be sure to close listeners
 // when you are done with them, just like normal listeners.
 func Listen(network, addr string) (net.Listener, error) {
-	lnKey := network + "/" + addr
+	// a 0 timeout means Go uses its default
+	return ListenTimeout(network, addr, 0)
+}
+
+func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
+	lnKey := network + "/" + addr + "/"
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		ln, err := net.Listen(network, addr)
+
 		if err != nil {
 			// https://github.com/caddyserver/caddy/pull/4534
 			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {
@@ -37,7 +45,7 @@ func Listen(network, addr string) (net.Listener, error) {
 		return nil, err
 	}
 
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener)}, nil
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepalivePeriod: keepalivePeriod}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -50,7 +58,13 @@ func Listen(network, addr string) (net.Listener, error) {
 // is reused. This type is atomic and values must not be copied.
 type fakeCloseListener struct {
 	closed          int32 // accessed atomically; belongs to this struct only
-	*sharedListener       // embedded, so we also become a net.Listener
+	keepalivePeriod time.Duration
+	*sharedListener // embedded, so we also become a net.Listener
+}
+
+type canSetKeepAlive interface {
+	SetKeepAlivePeriod(d time.Duration) error
+	SetKeepAlive(bool) error
 }
 
 func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
@@ -62,6 +76,18 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	// call underlying accept
 	conn, err := fcl.sharedListener.Accept()
 	if err == nil {
+		// if 0, do nothing, Go's default is already set
+		// and if the connection allows setting KeepAlive, set it
+		if tconn, ok := conn.(canSetKeepAlive); ok && fcl.keepalivePeriod != 0 {
+			if fcl.keepalivePeriod > 0 {
+				err = tconn.SetKeepAlivePeriod(fcl.keepalivePeriod)
+			} else { // negative
+				err = tconn.SetKeepAlive(false)
+			}
+			if err != nil {
+				Log().With(zap.String("server", fcl.sharedListener.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
+			}
+		}
 		return conn, nil
 	}
 
