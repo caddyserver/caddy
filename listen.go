@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Listen is like net.Listen, except Caddy's listeners can overlap
@@ -82,8 +84,9 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 			} else { // negative
 				err = tconn.SetKeepAlive(false)
 			}
-			// FIXME: how to deal with these errors, on one hand, this keepalive setting is not critical
-			// on the other, the user should be informed if theses some error
+			if err != nil {
+				Log().With(zap.String("server", fcl.sharedListener.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
+			}
 		}
 		return conn, nil
 	}
