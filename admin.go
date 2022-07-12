@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"expvar"
@@ -901,6 +900,12 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 // produce and verify ETags.
 func etagHasher() hash.Hash32 { return fnv.New32a() }
 
+// makeEtag returns an Etag header value (including quotes) for
+// the given config path and hash of contents at that path.
+func makeEtag(path string, hash hash.Hash) string {
+	return fmt.Sprintf(`"%s %x"`, path, hash.Sum(nil))
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
@@ -919,7 +924,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		// we could consider setting up a sync.Pool for the summed
 		// hashes to reduce GC pressure.
-		w.Header().Set("ETag", "\""+r.URL.Path+" "+hex.EncodeToString(hash.Sum(nil))+"\"")
+		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
 
 		return nil
 
