@@ -15,8 +15,8 @@
 package caddy
 
 import (
-	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"sync"
@@ -168,7 +168,7 @@ func TestETags(t *testing.T) {
 	const key = "/" + rawConfigKey + "/apps/foo"
 
 	// try update the config with the wrong etag
-	err := changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}}`), "/"+rawConfigKey+" not_an_etag", false)
+	err := changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}}`), fmt.Sprintf(`"/%s not_an_etag"`, rawConfigKey), false)
 	if apiErr, ok := err.(APIError); !ok || apiErr.HTTPStatus != http.StatusPreconditionFailed {
 		t.Fatalf("expected precondition failed; got %v", err)
 	}
@@ -180,13 +180,13 @@ func TestETags(t *testing.T) {
 	}
 
 	// do the same update with the correct key
-	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}`), key+" "+hex.EncodeToString(hash.Sum(nil)), false)
+	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 1}`), makeEtag(key, hash), false)
 	if err != nil {
 		t.Fatalf("expected update to work; got %v", err)
 	}
 
 	// now try another update. The hash should no longer match and we should get precondition failed
-	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 2}`), key+" "+hex.EncodeToString(hash.Sum(nil)), false)
+	err = changeConfig(http.MethodPost, key, []byte(`{"strField": "abc", "intField": 2}`), makeEtag(key, hash), false)
 	if apiErr, ok := err.(APIError); !ok || apiErr.HTTPStatus != http.StatusPreconditionFailed {
 		t.Fatalf("expected precondition failed; got %v", err)
 	}
