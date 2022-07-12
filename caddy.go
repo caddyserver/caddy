@@ -145,8 +145,16 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 	defer currentCfgMu.Unlock()
 
 	if ifMatchHeader != "" {
+		// expect the first and last character to be quotes
+		if len(ifMatchHeader) < 2 || ifMatchHeader[0] != '"' || ifMatchHeader[len(ifMatchHeader)-1] != '"' {
+			return APIError{
+				HTTPStatus: http.StatusBadRequest,
+				Err:        fmt.Errorf("malformed If-Match header; expect quoted string"),
+			}
+		}
+
 		// read out the parts
-		parts := strings.Fields(ifMatchHeader)
+		parts := strings.Fields(ifMatchHeader[1 : len(ifMatchHeader)-1])
 		if len(parts) != 2 {
 			return APIError{
 				HTTPStatus: http.StatusBadRequest,
