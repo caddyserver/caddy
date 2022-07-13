@@ -281,7 +281,7 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	transport := h.replaceTLSServername(repl)
 
-	transport.setScheme(req)
+	transport.SetScheme(req)
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
@@ -292,10 +292,13 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return transport.Transport.RoundTrip(req)
 }
 
-// setScheme ensures that the outbound request req
+// SetScheme ensures that the outbound request req
 // has the scheme set in its URL; the underlying
 // http.Transport requires a scheme to be set.
-func (h *HTTPTransport) setScheme(req *http.Request) {
+//
+// This method may be used by other transport modules
+// that wrap/use this one.
+func (h *HTTPTransport) SetScheme(req *http.Request) {
 	if req.URL.Scheme != "" {
 		return
 	}
