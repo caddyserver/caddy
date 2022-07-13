@@ -103,6 +103,9 @@ type (
 	//	"query": ["*"]
 	// }
 	// ```
+	//
+	// Invalid query strings, including those with bad escapings or illegal characters
+	// like semicolons, will fail to parse and thus fail to match.
 	MatchQuery url.Values
 
 	// MatchHeader matches requests by header fields. The key is the field
@@ -625,9 +628,22 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	// parse query string just once, for efficiency
+	parsed, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		// Illegal query string. Likely bad escape sequence or syntax.
+		// Note that semicolons in query string have a controversial history. Summaries:
+		// - https://github.com/golang/go/issues/50034
+		// - https://github.com/golang/go/issues/25192
+		// W3C recommendations are flawed and ambiguous, and different servers handle semicolons differently.
+		// Filippo Valsorda rightly wrote: "Relying on parser alignment for security is doomed."
+		return false
+	}
+
 	for param, vals := range m {
 		param = repl.ReplaceAll(param, "")
-		paramVal, found := r.URL.Query()[param]
+		paramVal, found := parsed[param]
 		if found {
 			for _, v := range vals {
 				v = repl.ReplaceAll(v, "")
