@@ -1306,7 +1306,6 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
 	}
 
-	var decoded MatcherSet
 	for matcherName, tokens := range tokensByMatcherName {
 		mod, err := caddy.GetModule("http.matchers." + matcherName)
 		if err != nil {
@@ -1325,7 +1324,6 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 			return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 		}
 		matcherMap[matcherName] = rm
-		decoded = append(decoded, rm)
 	}
 
 	// we should now have a functional matcher, but we also
