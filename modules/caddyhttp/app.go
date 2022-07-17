@@ -421,7 +421,6 @@ func (app *App) Stop() error {
 			return err
 		}
 	}
-
 	for _, s := range app.h3servers {
 		// TODO: CloseGracefully, once implemented upstream
 		// (see https://github.com/lucas-clemente/quic-go/issues/2103)

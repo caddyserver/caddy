@@ -20,9 +20,11 @@ package reverseproxy
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -97,8 +99,26 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 		return
 	}
 
-	errc := make(chan error, 1)
+	// Ensure the hijacked client connection, and the new connection established
+	// with the backend, are both closed in the event of a server shutdown. This
+	// is done by registering them. We also try to gracefully close connections
+	// we recognize as websockets.
+	gracefulClose := func(conn io.ReadWriteCloser) func() error {
+		if isWebsocket(req) {
+			return func() error {
+				return writeCloseControl(conn)
+			}
+		}
+		return nil
+	}
+	deleteFrontConn := h.registerConnection(conn, gracefulClose(conn))
+	deleteBackConn := h.registerConnection(backConn, gracefulClose(backConn))
+	defer deleteFrontConn()
+	defer deleteBackConn()
+
 	spc := switchProtocolCopier{user: conn, backend: backConn}
+
+	errc := make(chan error, 1)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
 	<-errc
@@ -209,6 +229,56 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 	}
 }
 
+// registerConnection holds onto conn so it can be closed in the event
+// of a server shutdown. This is useful because hijacked connections or
+// connections dialed to backends don't close when server is shut down.
+// The caller should call the returned delete() function when the
+// connection is done to remove it from memory.
+func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (delete func()) {
+	h.connections.Store(conn, openConnection{conn, gracefulClose})
+	return func() {
+		h.connections.Delete(conn)
+	}
+}
+
+// writeCloseControl sends a best-effort Close control message to the given
+// WebSocket connection. Thanks to @pascaldekloe who provided inspiration
+// from his simple implementation of this I was able to learn from at:
+// github.com/pascaldekloe/websocket.
+func writeCloseControl(conn io.Writer) error {
+	// https://github.com/pascaldekloe/websocket/blob/32050af67a5d/websocket.go#L119
+
+	var reason string // max 123 bytes (control frame payload limit is 125; status code takes 2)
+	const goingAway uint16 = 1001
+
+	// TODO: we might need to ensure we are the exclusive writer by this point (io.Copy is stopped)?
+	var writeBuf [127]byte
+	const CloseMessage = 8
+	const finalBit = 1 << 7
+	writeBuf[0] = CloseMessage | finalBit
+	writeBuf[1] = byte(len(reason) + 2)
+	binary.BigEndian.PutUint16(writeBuf[2:4], goingAway)
+	copy(writeBuf[4:], reason)
+
+	// simply best-effort, but return error for logging purposes
+	_, err := conn.Write(writeBuf[:4+len(reason)])
+	return err
+}
+
+// isWebsocket returns true if r looks to be an upgrade request for WebSockets.
+// It is a fairly naive check.
+func isWebsocket(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") &&
+		strings.Contains(strings.ToLower(r.Header.Get("Upgrade")), "websocket")
+}
+
+// openConnection maps an open connection to
+// an optional function for graceful close.
+type openConnection struct {
+	conn          io.ReadWriteCloser
+	gracefulClose func() error
+}
+
 type writeFlusher interface {
 	io.Writer
 	http.Flusher
@@ -265,7 +335,7 @@ func (m *maxLatencyWriter) stop() {
 // switchProtocolCopier exists so goroutines proxying data back and
 // forth have nice names in stacks.
 type switchProtocolCopier struct {
-	user, backend io.ReadWriter
+	user, backend io.ReadWriteCloser
 }
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
