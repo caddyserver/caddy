@@ -253,9 +253,9 @@ func writeCloseControl(conn io.Writer) error {
 
 	// TODO: we might need to ensure we are the exclusive writer by this point (io.Copy is stopped)?
 	var writeBuf [127]byte
-	const CloseMessage = 8
+	const closeMessage = 8
 	const finalBit = 1 << 7
-	writeBuf[0] = CloseMessage | finalBit
+	writeBuf[0] = closeMessage | finalBit
 	writeBuf[1] = byte(len(reason) + 2)
 	binary.BigEndian.PutUint16(writeBuf[2:4], goingAway)
 	copy(writeBuf[4:], reason)
