@@ -24,11 +24,11 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http/httpguts"
 )
 
 func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
@@ -268,8 +268,8 @@ func writeCloseControl(conn io.Writer) error {
 // isWebsocket returns true if r looks to be an upgrade request for WebSockets.
 // It is a fairly naive check.
 func isWebsocket(r *http.Request) bool {
-	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") &&
-		strings.Contains(strings.ToLower(r.Header.Get("Upgrade")), "websocket")
+	return httpguts.HeaderValuesContainsToken(r.Header["Connection"], "upgrade") &&
+		httpguts.HeaderValuesContainsToken(r.Header["Upgrade"], "websocket")
 }
 
 // openConnection maps an open connection to
