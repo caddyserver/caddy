@@ -405,6 +405,10 @@ func (h *Handler) Cleanup() error {
 				err = gracefulErr
 			}
 		}
+		closeErr := oc.conn.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		}
 		return true
 	})
 
