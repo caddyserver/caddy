@@ -12,6 +12,7 @@ require (
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.11.4
 	github.com/google/uuid v1.3.0
+	github.com/improbable-eng/grpc-web v0.15.0
 	github.com/klauspost/compress v1.15.6
 	github.com/klauspost/cpuid/v2 v2.0.13
 	github.com/lucas-clemente/quic-go v0.28.0
@@ -51,6 +52,7 @@ require (
 	github.com/cheekybits/genny v1.0.0 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/dgraph-io/badger v1.6.2 // indirect
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
 	github.com/dgraph-io/ristretto v0.0.4-0.20200906165740-41ebdbffecfd // indirect
@@ -99,6 +101,7 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/rs/cors v1.7.0 // indirect
 	github.com/rs/xid v1.2.1 // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
@@ -130,4 +133,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	howett.net/plist v1.0.0 // indirect
+	nhooyr.io/websocket v1.8.6 // indirect
 )

@@ -36,6 +36,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
+	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 )
@@ -401,7 +402,22 @@ func (h *Handler) Cleanup() error {
 	return nil
 }
 
+func isGRPCWeb(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc-web")
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if isGRPCWeb(r) { // TODO: or if it's a GRPCWebSockets request... see https://github.com/improbable-eng/grpc-web/blob/c1971f71a28950d212b7ddc8df07b5563723031d/go/grpcweb/wrapper.go#L115-L133
+		var err error
+		grpcEnabled := grpcweb.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			err = h.ServeHTTP(w, r, next)
+		}))
+		grpcEnabled.ServeHTTP(w, r)
+		return err
+	}
+
+	/////////////
+
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// prepare the request for proxying; this is needed only once
