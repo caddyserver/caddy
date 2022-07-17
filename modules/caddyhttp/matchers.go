@@ -632,12 +632,15 @@ func (m MatchQuery) Match(r *http.Request) bool {
 	// parse query string just once, for efficiency
 	parsed, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		// Illegal query string. Likely bad escape sequence or syntax.
+		// Illegal query string. Likely bad escape sequence or unescaped literals.
 		// Note that semicolons in query string have a controversial history. Summaries:
 		// - https://github.com/golang/go/issues/50034
 		// - https://github.com/golang/go/issues/25192
-		// W3C recommendations are flawed and ambiguous, and different servers handle semicolons differently.
-		// Filippo Valsorda rightly wrote: "Relying on parser alignment for security is doomed."
+		// Despite the URL WHATWG spec mandating the use of & separators for query strings,
+		// every URL parser implementation is different, and Filippo Valsorda rightly wrote:
+		// "Relying on parser alignment for security is doomed." Overall conclusion is that
+		// splitting on & and rejecting ; in key=value pairs is safer than accepting raw ;.
+		// We regard the Go team's decision as sound and thus reject malformed query strings.
 		return false
 	}
 
