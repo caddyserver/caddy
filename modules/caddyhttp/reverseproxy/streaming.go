@@ -234,10 +234,14 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 // connections dialed to backends don't close when server is shut down.
 // The caller should call the returned delete() function when the
 // connection is done to remove it from memory.
-func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (delete func()) {
-	h.connections.Store(conn, openConnection{conn, gracefulClose})
+func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (del func()) {
+	h.connectionsMu.Lock()
+	h.connections[conn] = openConnection{conn, gracefulClose}
+	h.connectionsMu.Unlock()
 	return func() {
-		h.connections.Delete(conn)
+		h.connectionsMu.Lock()
+		delete(h.connections, conn)
+		h.connectionsMu.Unlock()
 	}
 }
 
