@@ -30,6 +30,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
 
@@ -210,6 +211,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 			}
 
 			// if read/write timeouts are configured and this is a TCP connection, enforce the timeouts
+			// by wrapping the connection with our own type
 			if tcpConn, ok := conn.(*net.TCPConn); ok && (h.ReadTimeout > 0 || h.WriteTimeout > 0) {
 				conn = &tcpRWTimeoutConn{
 					TCPConn:      tcpConn,
@@ -528,23 +530,32 @@ type KeepAlive struct {
 }
 
 // tcpRWTimeoutConn enforces read/write timeouts for a TCP connection.
+// If it fails to set deadlines, the error is logged but does not abort
+// the read/write attempt (ignoring the error is consistent with what
+// the standard library does: https://github.com/golang/go/blob/c5da4fb7ac5cb7434b41fc9a1df3bee66c7f1a4d/src/net/http/server.go#L981-L986)
 type tcpRWTimeoutConn struct {
 	*net.TCPConn
 	readTimeout, writeTimeout time.Duration
+	logger                    *zap.Logger
 }
 
 func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
-	err := c.TCPConn.SetDeadline(time.Now().Add(c.readTimeout))
-	if err != nil {
-		return 0, err
+	if c.readTimeout > 0 {
+		err := c.TCPConn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		if err != nil {
+			c.logger.Error("failed to set read deadline", zap.Error(err))
+			return 0, err
+		}
 	}
 	return c.TCPConn.Read(b)
 }
 
 func (c *tcpRWTimeoutConn) Write(b []byte) (int, error) {
-	err := c.TCPConn.SetDeadline(time.Now().Add(c.writeTimeout))
-	if err != nil {
-		return 0, err
+	if c.writeTimeout > 0 {
+		err := c.TCPConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		if err != nil {
+			c.logger.Error("failed to set write deadline", zap.Error(err))
+		}
 	}
 	return c.TCPConn.Write(b)
 }
