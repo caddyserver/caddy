@@ -252,6 +252,22 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			}
 		}
 
+		switch {
+		case key == "http.shutting_down":
+			server := req.Context().Value(ServerCtxKey).(*Server)
+			server.httpApp.shutdownAtMu.RLock()
+			defer server.httpApp.shutdownAtMu.RUnlock()
+			return !server.httpApp.shutdownAt.IsZero(), true
+		case key == "http.time_until_shutdown":
+			server := req.Context().Value(ServerCtxKey).(*Server)
+			server.httpApp.shutdownAtMu.RLock()
+			defer server.httpApp.shutdownAtMu.RUnlock()
+			if server.httpApp.shutdownAt.IsZero() {
+				return nil, true
+			}
+			return time.Until(server.httpApp.shutdownAt), true
+		}
+
 		return nil, false
 	}
 

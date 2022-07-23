@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -95,6 +96,8 @@ func init() {
 // `{http.request.uri}` | The full request URI
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
+// `{http.shutting_down}` | True if the HTTP app is shutting down
+// `{http.time_until_shutdown}` | Time until HTTP server shutdown, if scheduled
 type App struct {
 	// HTTPPort specifies the port to use for HTTP (as opposed to HTTPS),
 	// which is used when setting up HTTP->HTTPS redirects or ACME HTTP
@@ -107,9 +110,25 @@ type App struct {
 	HTTPSPort int `json:"https_port,omitempty"`
 
 	// GracePeriod is how long to wait for active connections when shutting
-	// down the server. Once the grace period is over, connections will
-	// be forcefully closed.
+	// down the servers. During the grace period, no new connections are
+	// accepted, idle connections are closed, and active connections will
+	// be given the full length of time to become idle and close.
+	// Once the grace period is over, connections will be forcefully closed.
+	// If zero, the grace period is eternal. Default: 0.
 	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
+
+	// ShutdownDelay is how long to wait before initiating the grace
+	// period. When this app is stopping (e.g. during a config reload or
+	// process exit), all servers will be shut down. Normally this immediately
+	// initiates the grace period. However, if this delay is configured, servers
+	// will not be shut down until the delay is over. During this time, servers
+	// continue to function normally and allow new connections. At the end, the
+	// grace period will begin. This can be useful to allow downstream load
+	// balancers time to move this instance out of the rotation without hiccups.
+	//
+	// When shutdown has been scheduled, placeholders {http.shutting_down} (bool)
+	// and {http.time_until_shutdown} (duration) may be useful for health checks.
+	ShutdownDelay caddy.Duration `json:"shutdown_delay,omitempty"`
 
 	// Servers is the list of servers, keyed by arbitrary names chosen
 	// at your discretion for your own convenience; the keys do not
@@ -118,6 +137,9 @@ type App struct {
 
 	servers   []*http.Server
 	h3servers []*http3.Server
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -145,6 +167,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
+	app.shutdownAtMu = new(sync.RWMutex)
 
 	repl := caddy.NewReplacer()
 
@@ -159,6 +182,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// prepare each server
 	for srvName, srv := range app.Servers {
 		srv.name = srvName
+		srv.httpApp = app
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
@@ -410,10 +434,26 @@ func (app *App) Start() error {
 // Stop gracefully shuts down the HTTP server.
 func (app *App) Stop() error {
 	ctx := context.Background()
+
+	// honor scheduled/delayed shutdown time
+	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
+	app.shutdownAtMu.Lock()
+	app.shutdownAt = scheduledTime
+	app.shutdownAtMu.Unlock()
+	if app.ShutdownDelay > 0 {
+		app.logger.Debug("shutdown scheduled",
+			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
+			zap.Time("time", scheduledTime))
+		time.Sleep(time.Duration(app.ShutdownDelay))
+	}
+
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
+		app.logger.Debug("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+	} else {
+		app.logger.Debug("servers shutting down with eternal grace period")
 	}
 	for _, s := range app.servers {
 		err := s.Shutdown(ctx)
