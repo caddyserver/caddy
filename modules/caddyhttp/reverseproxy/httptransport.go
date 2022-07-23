@@ -92,7 +92,7 @@ type HTTPTransport struct {
 	// The maximum time to wait for next read from backend. Default: no timeout.
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
-	// THe maximum time to wait for next write to backend. Default: no timeout.
+	// The maximum time to wait for next write to backend. Default: no timeout.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
 	// The versions of HTTP to support. As a special case, "h2c"
