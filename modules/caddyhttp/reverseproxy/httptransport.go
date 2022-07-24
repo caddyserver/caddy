@@ -154,7 +154,7 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 }
 
 // NewTransport builds a standard-lib-compatible http.Transport value from h.
-func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error) {
+func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
 		h.KeepAlive = &KeepAlive{
@@ -217,6 +217,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 					TCPConn:      tcpConn,
 					readTimeout:  time.Duration(h.ReadTimeout),
 					writeTimeout: time.Duration(h.WriteTimeout),
+					logger:       caddyCtx.Logger(h),
 				}
 			}
 
@@ -233,7 +234,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 	if h.TLS != nil {
 		rt.TLSHandshakeTimeout = time.Duration(h.TLS.HandshakeTimeout)
 		var err error
-		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(ctx)
+		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
 		if err != nil {
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
@@ -544,7 +545,6 @@ func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
 		err := c.TCPConn.SetReadDeadline(time.Now().Add(c.readTimeout))
 		if err != nil {
 			c.logger.Error("failed to set read deadline", zap.Error(err))
-			return 0, err
 		}
 	}
 	return c.TCPConn.Read(b)
