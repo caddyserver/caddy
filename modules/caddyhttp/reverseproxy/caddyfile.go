@@ -875,6 +875,26 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.WriteBufferSize = int(size)
 
+			case "read_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid read timeout duration '%s': %v", d.Val(), err)
+				}
+				h.ReadTimeout = caddy.Duration(timeout)
+
+			case "write_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid write timeout duration '%s': %v", d.Val(), err)
+				}
+				h.WriteTimeout = caddy.Duration(timeout)
+
 			case "max_response_header":
 				if !d.NextArg() {
 					return d.ArgErr()
