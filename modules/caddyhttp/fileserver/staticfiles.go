@@ -15,7 +15,11 @@
 package fileserver
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -39,10 +43,63 @@ func init() {
 	caddy.RegisterModule(FileServer{})
 }
 
-// FileServer implements a static file server responder for Caddy.
+// FileServer implements a handler that serves static files.
+//
+// The path of the file to serve is constructed by joining the site root
+// and the sanitized request path. Any and all files within the root and
+// links with targets outside the site root may therefore be accessed.
+// For example, with a site root of `/www`, requests to `/foo/bar.txt`
+// will serve the file at `/www/foo/bar.txt`.
+//
+// The request path is sanitized using the Go standard library's
+// path.Clean() function (https://pkg.go.dev/path#Clean) before being
+// joined to the root. Request paths must be valid and well-formed.
+//
+// For requests that access directories instead of regular files,
+// Caddy will attempt to serve an index file if present. For example,
+// a request to `/dir/` will attempt to serve `/dir/index.html` if
+// it exists. The index file names to try are configurable. If a
+// requested directory does not have an index file, Caddy writes a
+// 404 response. Alternatively, file browsing can be enabled with
+// the "browse" parameter which shows a list of files when directories
+// are requested if no index file is present.
+//
+// By default, this handler will canonicalize URIs so that requests to
+// directories end with a slash, but requests to regular files do not.
+// This is enforced with HTTP redirects automatically and can be disabled.
+// Canonicalization redirects are not issued, however, if a URI rewrite
+// modified the last component of the path (the filename).
+//
+// This handler sets the Etag and Last-Modified headers for static files.
+// It does not perform MIME sniffing to determine Content-Type based on
+// contents, but does use the extension (if known); see the Go docs for
+// details: https://pkg.go.dev/mime#TypeByExtension
+//
+// The file server properly handles requests with If-Match,
+// If-Unmodified-Since, If-Modified-Since, If-None-Match, Range, and
+// If-Range headers. It includes the file's modification time in the
+// Last-Modified header of the response.
 type FileServer struct {
+	// The file system implementation to use. By default, Caddy uses the local
+	// disk file system.
+	//
+	// File system modules used here must adhere to the following requirements:
+	// - Implement fs.StatFS interface.
+	// - Support seeking on opened files; i.e.returned fs.File values must
+	//   implement the io.Seeker interface. This is required for determining
+	//   Content-Length and satisfying Range requests.
+	// - fs.File values that represent directories must implement the
+	//   fs.ReadDirFile interface so that directory listings can be procured.
+	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
+	fileSystem    fs.StatFS
+
 	// The path to the root of the site. Default is `{http.vars.root}` if set,
-	// or current working directory otherwise.
+	// or current working directory otherwise. This should be a trusted value.
+	//
+	// Note that a site root is not a sandbox. Although the file server does
+	// sanitize the request URI to prevent directory traversal, files (including
+	// links) within the site root may be directly accessed based on the request
+	// path. Files and folders within the root should be secure and trustworthy.
 	Root string `json:"root,omitempty"`
 
 	// A list of files or folders to hide; the file server will pretend as if
@@ -63,6 +120,7 @@ type FileServer struct {
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
+	// Default: index.html, index.txt.
 	IndexNames []string `json:"index_names,omitempty"`
 
 	// Enables file listings if a directory was requested and no index
@@ -95,8 +153,7 @@ type FileServer struct {
 	// If no order specified here, the first encoding from the Accept-Encoding header
 	// that both client and server support is used
 	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
-
-	precompressors map[string]encode.Precompressed
+	precompressors     map[string]encode.Precompressed
 
 	logger *zap.Logger
 }
@@ -112,6 +169,18 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	fsrv.logger = ctx.Logger(fsrv)
+
+	// establish which file system (possibly a virtual one) we'll be using
+	if len(fsrv.FileSystemRaw) > 0 {
+		mod, err := ctx.LoadModule(fsrv, "FileSystemRaw")
+		if err != nil {
+			return fmt.Errorf("loading transport: %v", err)
+		}
+		fsrv.fileSystem = mod.(fs.StatFS)
+	}
+	if fsrv.fileSystem == nil {
+		fsrv.fileSystem = dirFS{}
+	}
 
 	if fsrv.Root == "" {
 		fsrv.Root = "{http.vars.root}"
@@ -131,6 +200,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// support precompressed sidecar files
 	mods, err := ctx.LoadModule(fsrv, "PrecompressedRaw")
 	if err != nil {
 		return fmt.Errorf("loading encoder modules: %v", err)
@@ -184,12 +254,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("result", filename))
 
 	// get information about the file
-	info, err := os.Stat(filename)
+	info, err := fsrv.fileSystem.Stat(filename)
 	if err != nil {
-		err = mapDirOpenError(err, filename)
-		if os.IsNotExist(err) {
+		err = fsrv.mapDirOpenError(err, filename)
+		if errors.Is(err, fs.ErrNotExist) {
 			return fsrv.notFound(w, r, next)
-		} else if os.IsPermission(err) {
+		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, err)
@@ -210,7 +280,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				continue
 			}
 
-			indexInfo, err := os.Stat(indexPath)
+			indexInfo, err := fsrv.fileSystem.Stat(indexPath)
 			if err != nil {
 				continue
 			}
@@ -280,7 +350,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
-	var file *os.File
+	var file fs.File
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -289,7 +359,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err := os.Stat(compressedFilename)
+		compressedInfo, err := fsrv.fileSystem.Stat(compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
 			continue
@@ -328,14 +398,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// set the ETag - note that a conditional If-None-Match request is handled
 	// by http.ServeContent below, which checks against this ETag value
-	w.Header().Set("ETag", calculateEtag(info))
+	w.Header().Set("Etag", calculateEtag(info))
 
 	if w.Header().Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
 		if mtyp == "" {
-			// do not allow Go to sniff the content-type; see
-			// https://www.youtube.com/watch?v=8t8JYpt0egE
-			// TODO: If we want a Content-Type, consider writing a default of application/octet-stream - this is secure but violates spec
+			// do not allow Go to sniff the content-type; see https://www.youtube.com/watch?v=8t8JYpt0egE
 			w.Header()["Content-Type"] = nil
 		} else {
 			w.Header().Set("Content-Type", mtyp)
@@ -375,7 +443,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// that errors generated by ServeContent are written immediately
 	// to the response, so we cannot handle them (but errors there
 	// are rare)
-	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
 
 	return nil
 }
@@ -384,10 +452,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 // the response is configured to inform the client how to best handle it
 // and a well-described handler error is returned (do not wrap the
 // returned error value).
-func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.File, error) {
-	file, err := os.Open(filename)
+func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (fs.File, error) {
+	file, err := fsrv.fileSystem.Open(filename)
 	if err != nil {
-		err = mapDirOpenError(err, filename)
+		err = fsrv.mapDirOpenError(err, filename)
 		if os.IsNotExist(err) {
 			fsrv.logger.Debug("file not found", zap.String("filename", filename), zap.Error(err))
 			return nil, caddyhttp.Error(http.StatusNotFound, err)
@@ -412,8 +480,8 @@ func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (*os.Fi
 // Adapted from the Go standard library; originally written by Nathaniel Caza.
 // https://go-review.googlesource.com/c/go/+/36635/
 // https://go-review.googlesource.com/c/go/+/36804/
-func mapDirOpenError(originalErr error, name string) error {
-	if os.IsNotExist(originalErr) || os.IsPermission(originalErr) {
+func (fsrv *FileServer) mapDirOpenError(originalErr error, name string) error {
+	if errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {
 		return originalErr
 	}
 
@@ -422,12 +490,12 @@ func mapDirOpenError(originalErr error, name string) error {
 		if parts[i] == "" {
 			continue
 		}
-		fi, err := os.Stat(strings.Join(parts[:i+1], separator))
+		fi, err := fsrv.fileSystem.Stat(strings.Join(parts[:i+1], separator))
 		if err != nil {
 			return originalErr
 		}
 		if !fi.IsDir() {
-			return os.ErrNotExist
+			return fs.ErrNotExist
 		}
 	}
 
@@ -544,6 +612,15 @@ type statusOverrideResponseWriter struct {
 func (wr statusOverrideResponseWriter) WriteHeader(int) {
 	wr.ResponseWriter.WriteHeader(wr.code)
 }
+
+// dirFS is a simple fs.StatFS implementation that uses the
+// local file system. (We do not use os.DirFS because we do
+// our own rooting or path prefixing, and the standard os.DirFS
+// implementation is problematic since roots can be dynamic.)
+type dirFS struct{}
+
+func (dir dirFS) Open(name string) (fs.File, error)     { return os.Open(name) }
+func (dir dirFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 
