@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //go:build !linux && !windows
-// +build !linux,!windows
 
 package notify
 

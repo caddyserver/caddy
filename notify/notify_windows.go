@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build windows
-// +build windows
-
 package notify
 
 import "golang.org/x/sys/windows/svc"

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build windows
-// +build windows
-
 package caddy
 
 import (
@@ -24,10 +21,7 @@ import (
 
 func init() {
 	isService, err := svc.IsWindowsService()
-	if err != nil {
-		return
-	}
-	if isService {
+	if err != nil || isService {
 		return
 	}
 	go func() {
