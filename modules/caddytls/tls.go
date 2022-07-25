@@ -336,7 +336,7 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	for _, iss := range ap.magic.Issuers {
 		if am, ok := iss.(acmeCapable); ok {
 			iss := am.GetACMEIssuer()
-			if certmagic.NewACMEIssuer(iss.magic, iss.template).HandleHTTPChallenge(w, r) {
+			if iss.issuer.HandleHTTPChallenge(w, r) {
 				return true
 			}
 		}

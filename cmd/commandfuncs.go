@@ -280,7 +280,7 @@ func cmdStop(fl Flags) (int, error) {
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, nil, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -310,7 +310,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, config, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -732,10 +732,11 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 
 // DetermineAdminAPIAddress determines which admin API endpoint address should
 // be used based on the inputs. By priority: if `address` is specified, then
-// it is returned; if `configFile` (and `configAdapter`) are specified, then that
-// config will be loaded to find the admin address; otherwise, the default
-// admin listen address will be returned.
-func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string, error) {
+// it is returned; if `config` is specified, then that config will be used for
+// finding the admin address; if `configFile` (and `configAdapter`) are specified,
+// then that config will be loaded to find the admin address; otherwise, the
+// default admin listen address will be returned.
+func DetermineAdminAPIAddress(address string, config []byte, configFile, configAdapter string) (string, error) {
 	// Prefer the address if specified and non-empty
 	if address != "" {
 		return address, nil
@@ -743,21 +744,29 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 
 	// Try to load the config from file if specified, with the given adapter name
 	if configFile != "" {
-		// get the config in caddy's native format
-		config, loadedConfigFile, err := LoadConfig(configFile, configAdapter)
-		if err != nil {
-			return "", err
-		}
-		if loadedConfigFile == "" {
-			return "", fmt.Errorf("no config file to load")
+		var loadedConfigFile string
+		var err error
+
+		// use the provided loaded config if non-empty
+		// otherwise, load it from the specified file/adapter
+		loadedConfig := config
+		if len(loadedConfig) == 0 {
+			// get the config in caddy's native format
+			loadedConfig, loadedConfigFile, err = LoadConfig(configFile, configAdapter)
+			if err != nil {
+				return "", err
+			}
+			if loadedConfigFile == "" {
+				return "", fmt.Errorf("no config file to load")
+			}
 		}
 
-		// get the address of the admin listener if set
-		if len(config) > 0 {
+		// get the address of the admin listener from the config
+		if len(loadedConfig) > 0 {
 			var tmpStruct struct {
 				Admin caddy.AdminConfig `json:"admin"`
 			}
-			err = json.Unmarshal(config, &tmpStruct)
+			err := json.Unmarshal(loadedConfig, &tmpStruct)
 			if err != nil {
 				return "", fmt.Errorf("unmarshaling admin listener address from config: %v", err)
 			}

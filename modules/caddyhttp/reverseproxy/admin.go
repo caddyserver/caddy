@@ -35,7 +35,6 @@ type adminUpstreams struct{}
 // upstreamResults holds the status of a particular upstream
 type upstreamStatus struct {
 	Address     string `json:"address"`
-	Healthy     bool   `json:"healthy"`
 	NumRequests int    `json:"num_requests"`
 	Fails       int    `json:"fails"`
 }

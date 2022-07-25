@@ -42,12 +42,16 @@ jobs:
           go env
           printf "\n\nSystem environment:\n\n"
           env
-          echo "::set-output name=go_cache::$(go env GOCACHE)"
 
       - name: Cache the build cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.vars.outputs.go_cache }}
+          # In order:
+          # * Module download cache
+          # * Build cache (Linux)
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: cross-build-go${{ matrix.go }}-${{ matrix.goos }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             cross-build-go${{ matrix.go }}-${{ matrix.goos }}

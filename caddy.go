@@ -17,6 +17,7 @@ package caddy
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,7 +112,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 		}
 	}()
 
-	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, forceReload)
+	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
 	if errors.Is(err, errSameConfig) {
 		err = nil // not really an error
 	}
@@ -125,7 +126,12 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // occur unless forceReload is true. If the config is unchanged and not
 // forcefully reloaded, then errConfigUnchanged This function is safe for
 // concurrent use.
-func changeConfig(method, path string, input []byte, forceReload bool) error {
+// The ifMatchHeader can optionally be given a string of the format:
+//    "<path> <hash>"
+// where <path> is the absolute path in the config and <hash> is the expected hash of
+// the config at that path. If the hash in the ifMatchHeader doesn't match
+// the hash of the config, then an APIError with status 412 will be returned.
+func changeConfig(method, path string, input []byte, ifMatchHeader string, forceReload bool) error {
 	switch method {
 	case http.MethodGet,
 		http.MethodHead,
@@ -137,6 +143,40 @@ func changeConfig(method, path string, input []byte, forceReload bool) error {
 
 	currentCfgMu.Lock()
 	defer currentCfgMu.Unlock()
+
+	if ifMatchHeader != "" {
+		// expect the first and last character to be quotes
+		if len(ifMatchHeader) < 2 || ifMatchHeader[0] != '"' || ifMatchHeader[len(ifMatchHeader)-1] != '"' {
+			return APIError{
+				HTTPStatus: http.StatusBadRequest,
+				Err:        fmt.Errorf("malformed If-Match header; expect quoted string"),
+			}
+		}
+
+		// read out the parts
+		parts := strings.Fields(ifMatchHeader[1 : len(ifMatchHeader)-1])
+		if len(parts) != 2 {
+			return APIError{
+				HTTPStatus: http.StatusBadRequest,
+				Err:        fmt.Errorf("malformed If-Match header; expect format \"<path> <hash>\""),
+			}
+		}
+
+		// get the current hash of the config
+		// at the given path
+		hash := etagHasher()
+		err := unsyncedConfigAccess(http.MethodGet, parts[0], nil, hash)
+		if err != nil {
+			return err
+		}
+
+		if hex.EncodeToString(hash.Sum(nil)) != parts[1] {
+			return APIError{
+				HTTPStatus: http.StatusPreconditionFailed,
+				Err:        fmt.Errorf("If-Match header did not match current config hash"),
+			}
+		}
+	}
 
 	err := unsyncedConfigAccess(method, path, input, nil)
 	if err != nil {
@@ -442,7 +482,7 @@ func run(newCfg *Config, start bool) error {
 
 	// Start
 	err = func() error {
-		var started []string
+		started := make([]string, 0, len(newCfg.apps))
 		for name, a := range newCfg.apps {
 			err := a.Start()
 			if err != nil {
@@ -500,7 +540,7 @@ func finishSettingUp(ctx Context, cfg *Config) error {
 
 		runLoadedConfig := func(config []byte) error {
 			logger.Info("applying dynamically-loaded config")
-			err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, false)
+			err := changeConfig(http.MethodPost, "/"+rawConfigKey, config, "", false)
 			if errors.Is(err, errSameConfig) {
 				return err
 			}

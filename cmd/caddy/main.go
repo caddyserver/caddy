@@ -24,6 +24,8 @@
 //   3. Run `go mod init caddy`
 //   4. Run `go install` or `go build` - you now have a custom binary!
 //
+// Or you can use xcaddy which does it all for you as a command:
+// https://github.com/caddyserver/xcaddy
 package main
 
 import (
