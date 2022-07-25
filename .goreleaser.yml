@@ -62,8 +62,14 @@ builds:
       goarm: "5"
   flags:
   - -trimpath
+  - -mod=readonly
   ldflags:
   - -s -w
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output=${signature}", "${artifact}"]
+    artifacts: all
 
 archives:
   - format_overrides:
