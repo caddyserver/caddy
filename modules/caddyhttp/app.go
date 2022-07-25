@@ -415,18 +415,20 @@ func (app *App) Stop() error {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
 	}
-	for _, s := range app.servers {
-		err := s.Shutdown(ctx)
-		if err != nil {
-			return err
+	for i, s := range app.servers {
+		if err := s.Shutdown(ctx); err != nil {
+			app.logger.Error("server shutdown",
+				zap.Error(err),
+				zap.Int("index", i))
 		}
 	}
-	for _, s := range app.h3servers {
+	for i, s := range app.h3servers {
 		// TODO: CloseGracefully, once implemented upstream
 		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-		err := s.Close()
-		if err != nil {
-			return err
+		if err := s.Close(); err != nil {
+			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Int("index", i))
 		}
 	}
 	return nil

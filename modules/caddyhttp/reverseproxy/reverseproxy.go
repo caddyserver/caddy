@@ -454,12 +454,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// and because we may retry some number of times, carry over the error
 	// from previous tries because of the nuances of load balancing & retries
 	var proxyErr error
+	var retries int
 	for {
 		var done bool
-		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, repl, reqHeader, reqHost, next)
+		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, next)
 		if done {
 			break
 		}
+		retries++
 	}
 
 	if proxyErr != nil {
@@ -473,7 +475,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // that has to be passed in, we brought this into its own method so that we could run defer more easily.
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
-func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
+func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time, retries int,
 	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
@@ -503,7 +505,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		if proxyErr == nil {
 			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("no upstreams available"))
 		}
-		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
 		}
 		return false, proxyErr
@@ -566,7 +568,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	h.countFailure(upstream)
 
 	// if we've tried long enough, break
-	if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 		return true, proxyErr
 	}
 
@@ -968,16 +970,26 @@ func (h Handler) finalizeResponse(
 	return nil
 }
 
-// tryAgain takes the time that the handler was initially invoked
-// as well as any error currently obtained, and the request being
-// tried, and returns true if another attempt should be made at
-// proxying the request. If true is returned, it has already blocked
-// long enough before the next retry (i.e. no more sleeping is
-// needed). If false is returned, the handler should stop trying to
-// proxy the request.
-func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr error, req *http.Request) bool {
+// tryAgain takes the time that the handler was initially invoked,
+// the amount of retries already performed, as well as any error
+// currently obtained, and the request being tried, and returns
+// true if another attempt should be made at proxying the request.
+// If true is returned, it has already blocked long enough before
+// the next retry (i.e. no more sleeping is needed). If false is
+// returned, the handler should stop trying to proxy the request.
+func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int, proxyErr error, req *http.Request) bool {
+	// no retries are configured
+	if lb.TryDuration == 0 && lb.Retries == 0 {
+		return false
+	}
+
 	// if we've tried long enough, break
-	if time.Since(start) >= time.Duration(lb.TryDuration) {
+	if lb.TryDuration > 0 && time.Since(start) >= time.Duration(lb.TryDuration) {
+		return false
+	}
+
+	// if we've reached the retry limit, break
+	if lb.Retries > 0 && retries >= lb.Retries {
 		return false
 	}
 
@@ -998,6 +1010,11 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 		if !lb.RetryMatch.AnyMatch(req) {
 			return false
 		}
+	}
+
+	// fast path; if the interval is zero, we don't need to wait
+	if lb.TryInterval == 0 {
+		return true
 	}
 
 	// otherwise, wait and try the next available host
@@ -1214,16 +1231,25 @@ type LoadBalancing struct {
 	// The default policy is random selection.
 	SelectionPolicyRaw json.RawMessage `json:"selection_policy,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
 
+	// How many times to retry selecting available backends for each
+	// request if the next available host is down. If try_duration is
+	// also configured, then retries may stop early if the duration
+	// is reached. By default, retries are disabled (zero).
+	Retries int `json:"retries,omitempty"`
+
 	// How long to try selecting available backends for each request
-	// if the next available host is down. By default, this retry is
-	// disabled. Clients will wait for up to this long while the load
-	// balancer tries to find an available upstream host.
+	// if the next available host is down. Clients will wait for up
+	// to this long while the load balancer tries to find an available
+	// upstream host. If retries is also configured, tries may stop
+	// early if the maximum retries is reached. By default, retries
+	// are disabled (zero duration).
 	TryDuration caddy.Duration `json:"try_duration,omitempty"`
 
-	// How long to wait between selecting the next host from the pool. Default
-	// is 250ms. Only relevant when a request to an upstream host fails. Be
-	// aware that setting this to 0 with a non-zero try_duration can cause the
-	// CPU to spin if all backends are down and latency is very low.
+	// How long to wait between selecting the next host from the pool.
+	// Default is 250ms if try_duration is enabled, otherwise zero. Only
+	// relevant when a request to an upstream host fails. Be aware that
+	// setting this to 0 with a non-zero try_duration can cause the CPU
+	// to spin if all backends are down and latency is very low.
 	TryInterval caddy.Duration `json:"try_interval,omitempty"`
 
 	// A list of matcher sets that restricts with which requests retries are

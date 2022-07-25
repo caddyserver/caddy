@@ -632,12 +632,15 @@ func (m MatchQuery) Match(r *http.Request) bool {
 	// parse query string just once, for efficiency
 	parsed, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		// Illegal query string. Likely bad escape sequence or syntax.
+		// Illegal query string. Likely bad escape sequence or unescaped literals.
 		// Note that semicolons in query string have a controversial history. Summaries:
 		// - https://github.com/golang/go/issues/50034
 		// - https://github.com/golang/go/issues/25192
-		// W3C recommendations are flawed and ambiguous, and different servers handle semicolons differently.
-		// Filippo Valsorda rightly wrote: "Relying on parser alignment for security is doomed."
+		// Despite the URL WHATWG spec mandating the use of & separators for query strings,
+		// every URL parser implementation is different, and Filippo Valsorda rightly wrote:
+		// "Relying on parser alignment for security is doomed." Overall conclusion is that
+		// splitting on & and rejecting ; in key=value pairs is safer than accepting raw ;.
+		// We regard the Go team's decision as sound and thus reject malformed query strings.
 		return false
 	}
 
@@ -1003,57 +1006,12 @@ func (MatchNot) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	// first, unmarshal each matcher in the set from its tokens
-	type matcherPair struct {
-		raw     caddy.ModuleMap
-		decoded MatcherSet
-	}
 	for d.Next() {
-		var mp matcherPair
-		matcherMap := make(map[string]RequestMatcher)
-
-		// in case there are multiple instances of the same matcher, concatenate
-		// their tokens (we expect that UnmarshalCaddyfile should be able to
-		// handle more than one segment); otherwise, we'd overwrite other
-		// instances of the matcher in this set
-		tokensByMatcherName := make(map[string][]caddyfile.Token)
-		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
-			matcherName := d.Val()
-			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+		if err != nil {
+			return err
 		}
-		for matcherName, tokens := range tokensByMatcherName {
-			mod, err := caddy.GetModule("http.matchers." + matcherName)
-			if err != nil {
-				return d.Errf("getting matcher module '%s': %v", matcherName, err)
-			}
-			unm, ok := mod.New().(caddyfile.Unmarshaler)
-			if !ok {
-				return d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
-			}
-			err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
-			if err != nil {
-				return err
-			}
-			rm, ok := unm.(RequestMatcher)
-			if !ok {
-				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
-			}
-			matcherMap[matcherName] = rm
-			mp.decoded = append(mp.decoded, rm)
-		}
-
-		// we should now have a functional 'not' matcher, but we also
-		// need to be able to marshal as JSON, otherwise config
-		// adaptation will be missing the matchers!
-		mp.raw = make(caddy.ModuleMap)
-		for name, matcher := range matcherMap {
-			jsonBytes, err := json.Marshal(matcher)
-			if err != nil {
-				return fmt.Errorf("marshaling %T matcher: %v", matcher, err)
-			}
-			mp.raw[name] = jsonBytes
-		}
-		m.MatcherSetsRaw = append(m.MatcherSetsRaw, mp.raw)
+		m.MatcherSetsRaw = append(m.MatcherSetsRaw, matcherSet)
 	}
 	return nil
 }
@@ -1350,6 +1308,56 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// ParseCaddyfileNestedMatcher parses the Caddyfile tokens for a nested
+// matcher set, and returns its raw module map value.
+func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
+	matcherMap := make(map[string]RequestMatcher)
+
+	// in case there are multiple instances of the same matcher, concatenate
+	// their tokens (we expect that UnmarshalCaddyfile should be able to
+	// handle more than one segment); otherwise, we'd overwrite other
+	// instances of the matcher in this set
+	tokensByMatcherName := make(map[string][]caddyfile.Token)
+	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+		matcherName := d.Val()
+		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+	}
+
+	for matcherName, tokens := range tokensByMatcherName {
+		mod, err := caddy.GetModule("http.matchers." + matcherName)
+		if err != nil {
+			return nil, d.Errf("getting matcher module '%s': %v", matcherName, err)
+		}
+		unm, ok := mod.New().(caddyfile.Unmarshaler)
+		if !ok {
+			return nil, d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+		}
+		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
+		if err != nil {
+			return nil, err
+		}
+		rm, ok := unm.(RequestMatcher)
+		if !ok {
+			return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+		}
+		matcherMap[matcherName] = rm
+	}
+
+	// we should now have a functional matcher, but we also
+	// need to be able to marshal as JSON, otherwise config
+	// adaptation will be missing the matchers!
+	matcherSet := make(caddy.ModuleMap)
+	for name, matcher := range matcherMap {
+		jsonBytes, err := json.Marshal(matcher)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+		}
+		matcherSet[name] = jsonBytes
+	}
+
+	return matcherSet, nil
 }
 
 var (

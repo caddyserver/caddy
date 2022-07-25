@@ -113,7 +113,7 @@ func cmdTrust(fl caddycmd.Flags) (int, error) {
 	}
 
 	// Determine where we're sending the request to get the CA info
-	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, nil, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -182,7 +182,7 @@ func cmdUntrust(fl caddycmd.Flags) (int, error) {
 	}
 
 	// Determine where we're sending the request to get the CA info
-	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := caddycmd.DetermineAdminAPIAddress(addrFlag, nil, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
