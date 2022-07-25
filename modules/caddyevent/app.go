@@ -146,7 +146,7 @@ func (app *EventApp) Dispatch(event Event) error {
 		// listeners may mark the event to stop subsequent
 		// listeners from running on this event.
 		if event.IsPropagationStopped() {
-			app.logger.Debug("propogation stopped", zap.String("event", event.ID().Name()))
+			app.logger.Debug("propagation stopped", zap.String("event", event.ID().Name()))
 			break
 		}
 
@@ -186,9 +186,7 @@ func (app *EventApp) optimizeListeners() {
 
 		// add all the listeners in order of priority
 		for _, k := range keys {
-			for _, listener := range priorities[Priority(k)] {
-				app.optimized[eventID] = append(app.optimized[eventID], listener)
-			}
+			app.optimized[eventID] = append(app.optimized[eventID], priorities[Priority(k)]...)
 		}
 	}
 
