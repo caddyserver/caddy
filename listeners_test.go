@@ -32,8 +32,23 @@ func TestSplitNetworkAddress(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			input:     "foo",
+			input:      "foo",
+			expectHost: "foo",
+		},
+		{
+			input: ":", // empty host & empty port
+		},
+		{
+			input:     "::",
 			expectErr: true,
+		},
+		{
+			input:      "[::]",
+			expectHost: "::",
+		},
+		{
+			input:      ":1234",
+			expectPort: "1234",
 		},
 		{
 			input:      "foo:1234",
@@ -80,10 +95,10 @@ func TestSplitNetworkAddress(t *testing.T) {
 	} {
 		actualNetwork, actualHost, actualPort, err := SplitNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
-			t.Errorf("Test %d: Expected error but got: %v", i, err)
+			t.Errorf("Test %d: Expected error but got %v", i, err)
 		}
 		if !tc.expectErr && err != nil {
-			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+			t.Errorf("Test %d: Expected no error but got %v", i, err)
 		}
 		if actualNetwork != tc.expectNetwork {
 			t.Errorf("Test %d: Expected network '%s' but got '%s'", i, tc.expectNetwork, actualNetwork)
@@ -169,8 +184,17 @@ func TestParseNetworkAddress(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			input:     ":",
-			expectErr: true,
+			input: ":",
+			expectAddr: NetworkAddress{
+				Network: "tcp",
+			},
+		},
+		{
+			input: "[::]",
+			expectAddr: NetworkAddress{
+				Network: "tcp",
+				Host:    "::",
+			},
 		},
 		{
 			input: ":1234",
