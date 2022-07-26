@@ -179,7 +179,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.fileSystem = mod.(fs.StatFS)
 	}
 	if fsrv.fileSystem == nil {
-		fsrv.fileSystem = dirFS{}
+		fsrv.fileSystem = osFS{}
 	}
 
 	if fsrv.Root == "" {
@@ -613,14 +613,15 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 	wr.ResponseWriter.WriteHeader(wr.code)
 }
 
-// dirFS is a simple fs.StatFS implementation that uses the
-// local file system. (We do not use os.DirFS because we do
-// our own rooting or path prefixing, and the standard os.DirFS
-// implementation is problematic since roots can be dynamic.)
-type dirFS struct{}
+// osFS is a simple fs.StatFS implementation that uses the local
+// file system. (We do not use os.DirFS because we do our own
+// rooting or path prefixing without being constrained to a single
+// root folder. The standard os.DirFS implementation is problematic
+// since roots can be dynamic in our application.)
+type osFS struct{}
 
-func (dirFS) Open(name string) (fs.File, error)     { return os.Open(name) }
-func (dirFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+func (osFS) Open(name string) (fs.File, error)     { return os.Open(name) }
+func (osFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 

@@ -269,7 +269,7 @@ func (m *MatchFile) Provision(ctx caddy.Context) error {
 		m.fileSystem = mod.(fs.StatFS)
 	}
 	if m.fileSystem == nil {
-		m.fileSystem = dirFS{}
+		m.fileSystem = osFS{}
 	}
 
 	if m.Root == "" {
