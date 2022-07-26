@@ -174,7 +174,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	if len(fsrv.FileSystemRaw) > 0 {
 		mod, err := ctx.LoadModule(fsrv, "FileSystemRaw")
 		if err != nil {
-			return fmt.Errorf("loading transport: %v", err)
+			return fmt.Errorf("loading file system module: %v", err)
 		}
 		fsrv.fileSystem = mod.(fs.StatFS)
 	}
@@ -619,8 +619,8 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 // implementation is problematic since roots can be dynamic.)
 type dirFS struct{}
 
-func (dir dirFS) Open(name string) (fs.File, error)     { return os.Open(name) }
-func (dir dirFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+func (dirFS) Open(name string) (fs.File, error)     { return os.Open(name) }
+func (dirFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 

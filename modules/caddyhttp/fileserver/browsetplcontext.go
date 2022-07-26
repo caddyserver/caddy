@@ -51,7 +51,7 @@ func (fsrv *FileServer) directoryListing(entries []fs.DirEntry, canGoUp bool, ro
 			continue
 		}
 
-		isDir := entry.IsDir() || isSymlinkTargetDir(info, root, urlPath)
+		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(info, root, urlPath)
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
@@ -65,7 +65,7 @@ func (fsrv *FileServer) directoryListing(entries []fs.DirEntry, canGoUp bool, ro
 		fileIsSymlink := isSymlink(info)
 		if fileIsSymlink {
 			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			fileInfo, err := os.Stat(path)
+			fileInfo, err := fsrv.fileSystem.Stat(path)
 			if err == nil {
 				size = fileInfo.Size()
 			}

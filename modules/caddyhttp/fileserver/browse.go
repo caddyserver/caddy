@@ -202,23 +202,23 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 	return tpl, nil
 }
 
-// isSymlink return true if f is a symbolic link
-func isSymlink(f fs.FileInfo) bool {
-	return f.Mode()&os.ModeSymlink != 0
-}
-
 // isSymlinkTargetDir returns true if f's symbolic link target
 // is a directory.
-func isSymlinkTargetDir(f fs.FileInfo, root, urlPath string) bool {
+func (fsrv *FileServer) isSymlinkTargetDir(f fs.FileInfo, root, urlPath string) bool {
 	if !isSymlink(f) {
 		return false
 	}
 	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := os.Stat(target)
+	targetInfo, err := fsrv.fileSystem.Stat(target)
 	if err != nil {
 		return false
 	}
 	return targetInfo.IsDir()
+}
+
+// isSymlink return true if f is a symbolic link.
+func isSymlink(f fs.FileInfo) bool {
+	return f.Mode()&os.ModeSymlink != 0
 }
 
 // templateContext powers the context used when evaluating the browse template.
