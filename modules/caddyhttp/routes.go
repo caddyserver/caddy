@@ -205,7 +205,7 @@ func wrapRoute(route Route) Middleware {
 				err, ok := GetVar(req.Context(), MatcherErrorVarKey).(error)
 				if ok {
 					// clear out the error from context, otherwise
-					// it will cascade to the error routes
+					// it will cascade to the error routes (#4916)
 					SetVar(req.Context(), MatcherErrorVarKey, nil)
 					// return the matcher's error
 					return err
