@@ -345,7 +345,6 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 		cel.Macros(macro),
 		cel.Function(funcName,
 			cel.Overload(funcName, append([]*cel.Type{requestType}, matcherDataTypes...), cel.BoolType),
-
 			cel.SingletonBinaryImpl(CELMatcherRuntimeFunction(funcName, fac))),
 	}
 	programOptions := []cel.ProgramOption{
