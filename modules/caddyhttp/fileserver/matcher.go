@@ -27,7 +27,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types/ref"
@@ -153,17 +152,10 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //    expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	requestType := decls.NewObjectType("http.Request")
+	requestType := cel.ObjectType("http.Request")
 	envOptions := []cel.EnvOption{
 		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
-		cel.Declarations(
-			decls.NewFunction("file",
-				decls.NewOverload("file_request_map",
-					[]*exprpb.Type{requestType, caddyhttp.CelTypeJson},
-					decls.Bool,
-				),
-			),
-		),
+		cel.Function("file", cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType)),
 	}
 
 	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcher, error) {
