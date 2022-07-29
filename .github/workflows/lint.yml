@@ -30,4 +30,4 @@ jobs:
         with:
           version: v1.47
           # Optional: show only new issues if it's a pull request. The default value is `false`.
-          only-new-issues: true
+          # only-new-issues: true
