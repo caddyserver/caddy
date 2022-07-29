@@ -172,8 +172,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// so the user-provided config can fill them in; then we will
 	// fill in a default config at the end if they are still unset
 	cfg := &tls.Config{
-		NextProtos:               p.ALPN,
-		PreferServerCipherSuites: true,
+		NextProtos: p.ALPN,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			// TODO: I don't love how this works: we pre-build certmagic configs
 			// so that handshakes are faster. Unfortunately, certmagic configs are
@@ -475,8 +474,6 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	if cfg.MaxVersion == 0 {
 		cfg.MaxVersion = tls.VersionTLS13
 	}
-
-	cfg.PreferServerCipherSuites = true
 }
 
 // LeafCertClientAuth verifies the client's leaf certificate.
