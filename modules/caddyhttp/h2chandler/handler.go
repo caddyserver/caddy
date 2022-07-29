@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -85,7 +85,7 @@ func isH2cUpgrade(r *http.Request) bool {
 // ServeHTTP records underlying connections that are likely to be h2c.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isH2cUpgrade(r) {
-		conn := r.Context().Value(caddyhttp.ConnCtxKey).(net.Conn)
+		conn := r.Context().Value(ConnCtxKey).(net.Conn)
 		h.registerConnection(conn)
 		defer h.unregisterConn(conn)
 	}
@@ -104,3 +104,8 @@ func (h *Handler) unregisterConn(conn net.Conn) {
 	delete(h.connections, conn)
 	h.connectionsMu.Unlock()
 }
+
+const (
+	// For retrieving request's underlying net.Conn only, do not write to or read from directly
+	ConnCtxKey caddy.CtxKey = "conn"
+)

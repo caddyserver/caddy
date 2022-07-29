@@ -332,7 +332,7 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, ConnCtxKey, c)
+				return context.WithValue(ctx, h2chandler.ConnCtxKey, c)
 			},
 		}
 
