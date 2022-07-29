@@ -331,6 +331,9 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
+			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+				return context.WithValue(ctx, ConnCtxKey, c)
+			},
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
@@ -361,7 +364,7 @@ func (app *App) Start() error {
 		// enable H2C if configured
 		if srv.protocol("h2c") {
 			h2server := &http2.Server{
-				IdleTimeout: time.Duration(srv.IdleTimeout),
+				NewWriteScheduler: func() http2.WriteScheduler { return http2.NewPriorityWriteScheduler(nil) },
 			}
 			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
@@ -501,6 +504,14 @@ func (app *App) Stop() error {
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
+	}
+	for i, s := range app.h2chandlers {
+		if err := s.Shutdown(ctx); err != nil {
+			app.logger.Error("h2c handler shutdown",
+				zap.Error(err),
+				zap.Int("index", i))
+		}
+	}
 
 		if server.h3server != nil {
 			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)

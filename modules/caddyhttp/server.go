@@ -725,4 +725,7 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// For retrieving request's underlying net.Conn only, do not write to or read from directly
+	ConnCtxKey caddy.CtxKey = "conn"
 )
