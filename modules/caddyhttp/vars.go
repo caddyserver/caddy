@@ -301,10 +301,20 @@ func GetVar(ctx context.Context, key string) interface{} {
 // SetVar sets a value in the context's variable table with
 // the given key. It overwrites any previous value with the
 // same key.
+//
+// If the value is nil (note: non-nil interface with nil
+// underlying value does not count) and the key exists in
+// the table, the key+value will be deleted from the table.
 func SetVar(ctx context.Context, key string, value interface{}) {
 	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
 	if !ok {
 		return
+	}
+	if value == nil {
+		if _, ok := varMap[key]; ok {
+			delete(varMap, key)
+			return
+		}
 	}
 	varMap[key] = value
 }

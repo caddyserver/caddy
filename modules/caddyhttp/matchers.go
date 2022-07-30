@@ -33,11 +33,9 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/zap"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type (
@@ -310,7 +308,7 @@ func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"host",
 		"host_match_request_list",
-		[]*exprpb.Type{CelTypeListString},
+		[]*cel.Type{cel.ListType(cel.StringType)},
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
@@ -441,7 +439,7 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// name of the function that the macro will be rewritten to call.
 		"path_match_request_list",
 		// internal data type of the MatchPath value.
-		[]*exprpb.Type{CelTypeListString},
+		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
@@ -509,7 +507,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
 		"path_regexp_request_string",
-		[]*exprpb.Type{decls.String},
+		[]*cel.Type{cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			pattern := data.(types.String)
 			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
@@ -523,7 +521,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	namedPattern, err := CELMatcherImpl(
 		"path_regexp",
 		"path_regexp_request_string_string",
-		[]*exprpb.Type{decls.String, decls.String},
+		[]*cel.Type{cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
@@ -582,7 +580,7 @@ func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"method",
 		"method_request_list",
-		[]*exprpb.Type{CelTypeListString},
+		[]*cel.Type{cel.ListType(cel.StringType)},
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
@@ -668,7 +666,7 @@ func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"query",
 		"query_matcher_request_map",
-		[]*exprpb.Type{CelTypeJson},
+		[]*cel.Type{CELTypeJSON},
 		func(data ref.Val) (RequestMatcher, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
@@ -744,7 +742,7 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"header",
 		"header_matcher_request_map",
-		[]*exprpb.Type{CelTypeJson},
+		[]*cel.Type{CELTypeJSON},
 		func(data ref.Val) (RequestMatcher, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
@@ -901,7 +899,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
 		"header_regexp_request_string_string",
-		[]*exprpb.Type{decls.String, decls.String},
+		[]*cel.Type{cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
@@ -921,7 +919,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	namedPattern, err := CELMatcherImpl(
 		"header_regexp",
 		"header_regexp_request_string_string_string",
-		[]*exprpb.Type{decls.String, decls.String, decls.String},
+		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
@@ -985,7 +983,7 @@ func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"protocol",
 		"protocol_request_string",
-		[]*exprpb.Type{decls.String},
+		[]*cel.Type{cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			protocolStr, ok := data.(types.String)
 			if !ok {
@@ -1107,7 +1105,7 @@ func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// name of the function that the macro will be rewritten to call.
 		"remote_ip_match_request_list",
 		// internal data type of the MatchPath value.
-		[]*exprpb.Type{CelTypeListString},
+		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
 		func(data ref.Val) (RequestMatcher, error) {
 			refStringList := reflect.TypeOf([]string{})

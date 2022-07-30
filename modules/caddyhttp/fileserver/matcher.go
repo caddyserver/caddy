@@ -29,11 +29,9 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/interpreter/functions"
 	"github.com/google/cel-go/parser"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -160,18 +158,7 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //    expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	requestType := decls.NewObjectType("http.Request")
-	envOptions := []cel.EnvOption{
-		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
-		cel.Declarations(
-			decls.NewFunction("file",
-				decls.NewOverload("file_request_map",
-					[]*exprpb.Type{requestType, caddyhttp.CelTypeJson},
-					decls.Bool,
-				),
-			),
-		),
-	}
+	requestType := cel.ObjectType("http.Request")
 
 	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcher, error) {
 		values, err := caddyhttp.CELValueToMapStrList(data)
@@ -200,14 +187,16 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		return m, err
 	}
 
+	envOptions := []cel.EnvOption{
+		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
+		cel.Function("file", cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType)),
+		cel.Function("file_request_map",
+			cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType),
+			cel.SingletonBinaryImpl(caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory))),
+	}
+
 	programOptions := []cel.ProgramOption{
 		cel.CustomDecorator(caddyhttp.CELMatcherDecorator("file_request_map", matcherFactory)),
-		cel.Functions(
-			&functions.Overload{
-				Operator: "file_request_map",
-				Binary:   caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory),
-			},
-		),
 	}
 
 	return caddyhttp.NewMatcherCELLibrary(envOptions, programOptions), nil

@@ -647,7 +647,7 @@ commands:
 	)
 
 	if help := flagHelp(subcommand.Flags); help != "" {
-		result += fmt.Sprintf("\nflags:\n%s", help)
+		result += fmt.Sprintf("\nflags: (NOTE: prefix flags with `--` instead of `-`)\n%s", help)
 	}
 
 	result += "\n" + fullDocs + "\n"
