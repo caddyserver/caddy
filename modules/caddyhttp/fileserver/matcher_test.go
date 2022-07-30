@@ -111,8 +111,9 @@ func TestFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			Root:     "./testdata",
-			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
+			fileSystem: osFS{},
+			Root:       "./testdata",
+			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
 		}
 
 		u, err := url.Parse(tc.path)
@@ -213,9 +214,10 @@ func TestPHPFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			Root:      "./testdata",
-			TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
-			SplitPath: []string{".php"},
+			fileSystem: osFS{},
+			Root:       "./testdata",
+			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
+			SplitPath:  []string{".php"},
 		}
 
 		u, err := url.Parse(tc.path)
