@@ -15,16 +15,71 @@
 package caddyhttp
 
 import (
+	"bytes"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
+	"text/template"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 )
 
 func init() {
 	caddy.RegisterModule(StaticResponse{})
+	caddycmd.RegisterCommand(caddycmd.Command{
+		Name:  "respond",
+		Func:  cmdRespond,
+		Usage: `[--status <code>] [--body <content>] [--listen <addr>] [--access-log] [--debug] [--header "Field: value"] <body|status>`,
+		Short: "Simple, hard-coded HTTP responses for development and testing",
+		Long: `
+Spins up a quick-and-clean HTTP server for development and testing purposes.
+
+With no options specified, this command listens on a random available port
+and answers HTTP requests with an empty 200 response. The listen address can
+be customized with the --listen flag and will always be printed to stdout.
+If the listen address includes a port range, multiple servers will be started.
+
+If a final, unnamed argument is given, it will be treated as a status code
+(same as the --status flag) if it is a 3-digit number. Otherwise, it is used
+as the response body (same as the --body flag). The --status and --body flags
+will always override this argument (for example, to write a body that
+literally says "404" but with a status code of 200, do '--status 200 404').
+
+A body may be given in 3 ways: a flag, a final (and unnamed) argument to
+the command, or piped to stdin (if flag and argument are unset). Limited
+template evaluation is supported on the body, with the following variables:
+
+	{{.N}}        The server number (useful if using a port range)
+	{{.Port}}     The listener port
+	{{.Address}}  The listener address
+
+(See the docs for the text/template package in the Go standard library for
+information about using templates: https://pkg.go.dev/text/template)
+
+Access/request logging and more verbose debug logging can also be enabled.
+
+Response headers may be added using the --header flag for each header field.
+`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("respond", flag.ExitOnError)
+			fs.String("listen", ":0", "The address to which to bind the listener")
+			fs.Int("status", http.StatusOK, "The response status code")
+			fs.String("body", "", "The body of the HTTP response")
+			fs.Bool("access-log", false, "Enable the access log")
+			fs.Bool("debug", false, "Enable more verbose debug-level logging")
+			fs.Var(&respondCmdHeaders, "header", "Set a header on the response (format: \"Field: value\"")
+			return fs
+		}(),
+	})
 }
 
 // StaticResponse implements a simple responder for static responses.
@@ -164,6 +219,192 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 
 	return nil
 }
+
+func cmdRespond(fl caddycmd.Flags) (int, error) {
+	caddy.TrapSignals()
+
+	// get flag values
+	listen := fl.String("listen")
+	statusCodeFl := fl.Int("status")
+	bodyFl := fl.String("body")
+	accessLog := fl.Bool("access-log")
+	debug := fl.Bool("debug")
+	arg := fl.Arg(0)
+
+	if fl.NArg() > 1 {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("too many unflagged arguments")
+	}
+
+	// prefer status and body from explicit flags
+	statusCode, body := statusCodeFl, bodyFl
+
+	// figure out if status code was explicitly specified; this lets
+	// us set a non-zero value as the default but is a little hacky
+	var statusCodeFlagSpecified bool
+	for _, fl := range os.Args {
+		if fl == "--status" {
+			statusCodeFlagSpecified = true
+			break
+		}
+	}
+
+	// try to determine what kind of parameter the unnamed argument is
+	if arg != "" {
+		// specifying body and status flags makes the argument redundant/unused
+		if bodyFl != "" && statusCodeFlagSpecified {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("unflagged argument \"%s\" is overridden by flags", arg)
+		}
+
+		// if a valid 3-digit number, treat as status code; otherwise body
+		if argInt, err := strconv.Atoi(arg); err == nil && !statusCodeFlagSpecified {
+			if argInt >= 100 && argInt <= 999 {
+				statusCode = argInt
+			}
+		} else if body == "" {
+			body = arg
+		}
+	}
+
+	// if we still need a body, see if stdin is being piped
+	if body == "" {
+		stdinInfo, err := os.Stdin.Stat()
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		if stdinInfo.Mode()&os.ModeNamedPipe != 0 {
+			bodyBytes, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+			body = string(bodyBytes)
+		}
+	}
+
+	// build headers map
+	hdr := make(http.Header)
+	for i, h := range respondCmdHeaders {
+		key, val, found := cut(h, ":") // TODO: use strings.Cut() once Go 1.18 is our minimum
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		if !found || key == "" || val == "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("header %d: invalid format \"%s\" (expecting \"Field: value\")", i, h)
+		}
+		hdr.Set(key, val)
+	}
+
+	// expand listen address, if more than one port
+	listenAddr, err := caddy.ParseNetworkAddress(listen)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+	listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
+	for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
+		listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))
+	}
+
+	// build each HTTP server
+	httpApp := App{Servers: make(map[string]*Server)}
+
+	for i, addr := range listenAddrs {
+		var handlers []json.RawMessage
+
+		// response body supports a basic template; evaluate it
+		tplCtx := struct {
+			N       int    // server number
+			Port    uint   // only the port
+			Address string // listener address
+		}{
+			N:       i,
+			Port:    listenAddr.StartPort + uint(i),
+			Address: addr,
+		}
+		tpl, err := template.New("body").Parse(body)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+		buf := new(bytes.Buffer)
+		err = tpl.Execute(buf, tplCtx)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+
+		// create route with handler
+		handler := StaticResponse{
+			StatusCode: WeakString(fmt.Sprintf("%d", statusCode)),
+			Headers:    hdr,
+			Body:       buf.String(),
+		}
+		handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "static_response", nil))
+		route := Route{HandlersRaw: handlers}
+
+		server := &Server{
+			Listen:            []string{addr},
+			ReadHeaderTimeout: caddy.Duration(10 * time.Second),
+			IdleTimeout:       caddy.Duration(30 * time.Second),
+			MaxHeaderBytes:    1024 * 10,
+			Routes:            RouteList{route},
+			AutoHTTPS:         &AutoHTTPSConfig{DisableRedir: true},
+		}
+		if accessLog {
+			server.Logs = new(ServerLogConfig)
+		}
+
+		// save server
+		httpApp.Servers[fmt.Sprintf("static%d", i)] = server
+	}
+
+	// finish building the config
+	var false bool
+	cfg := &caddy.Config{
+		Admin: &caddy.AdminConfig{
+			Disabled: true,
+			Config: &caddy.ConfigSettings{
+				Persist: &false,
+			},
+		},
+		AppsRaw: caddy.ModuleMap{
+			"http": caddyconfig.JSON(httpApp, nil),
+		},
+	}
+	if debug {
+		cfg.Logging = &caddy.Logging{
+			Logs: map[string]*caddy.CustomLog{
+				"default": {Level: "DEBUG"},
+			},
+		}
+	}
+
+	// run it!
+	err = caddy.Run(cfg)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// to print listener addresses, get the active HTTP app
+	loadedHTTPApp, err := caddy.ActiveContext().App("http")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
+	// print each listener address
+	for _, srv := range loadedHTTPApp.(*App).Servers {
+		for _, ln := range srv.listeners {
+			fmt.Printf("Server address: %s\n", ln.Addr())
+		}
+	}
+
+	select {}
+}
+
+// TODO: delete this and use strings.Cut() once Go 1.18 is our minimum
+func cut(s, sep string) (before, after string, found bool) {
+	if i := strings.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
+// respondCmdHeaders holds the parsed values from repeated use of the --header flag.
+var respondCmdHeaders caddycmd.StringSlice
 
 // Interface guards
 var (
