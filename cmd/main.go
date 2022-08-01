@@ -338,7 +338,6 @@ func flagHelp(fs *flag.FlagSet) string {
 
 	buf := new(bytes.Buffer)
 	fs.SetOutput(buf)
-	buf.Write([]byte("(NOTE: use -- instead of - for flags)\n\n"))
 	fs.PrintDefaults()
 	return buf.String()
 }
