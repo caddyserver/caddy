@@ -41,7 +41,7 @@ import (
 // the socket have been finished. Always be sure to close listeners
 // when you are done with them, just like normal listeners.
 func Listen(network, addr string) (net.Listener, error) {
-	lnKey := network + "/" + addr
+	lnKey := listenerKey(network, addr)
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		ln, err := net.Listen(network, addr)
@@ -65,7 +65,7 @@ func Listen(network, addr string) (net.Listener, error) {
 // It is like Listen except for PacketConns.
 // Always be sure to close the PacketConn when you are done.
 func ListenPacket(network, addr string) (net.PacketConn, error) {
-	lnKey := network + "/" + addr
+	lnKey := listenerKey(network, addr)
 
 	sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		pc, err := net.ListenPacket(network, addr)
@@ -89,7 +89,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
 func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
-	lnKey := "quic/" + addr
+	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
@@ -104,6 +104,16 @@ func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
 		sharedQuicListener: sharedEl.(*sharedQuicListener),
 		context:            ctx, contextCancel: cancel,
 	}, err
+}
+
+func listenerKey(network, addr string) string {
+	return network + "/" + addr
+}
+
+// ListenerUsage returns the current usage count of the given listener address.
+func ListenerUsage(network, addr string) int {
+	count, _ := listenerPool.References(listenerKey(network, addr))
+	return count
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -353,11 +363,25 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 	return net.JoinHostPort(na.Host, strconv.Itoa(int(na.StartPort+offset)))
 }
 
+func (na NetworkAddress) Expand() []NetworkAddress {
+	size := na.PortRangeSize()
+	addrs := make([]NetworkAddress, size)
+	for portOffset := uint(0); portOffset < size; portOffset++ {
+		na2 := na
+		na2.StartPort, na2.EndPort = na.StartPort+portOffset, na.StartPort+portOffset
+		addrs[portOffset] = na2
+	}
+	return addrs
+}
+
 // PortRangeSize returns how many ports are in
 // pa's port range. Port ranges are inclusive,
 // so the size is the difference of start and
 // end ports plus one.
 func (na NetworkAddress) PortRangeSize() uint {
+	if na.EndPort < na.StartPort {
+		return 0
+	}
 	return (na.EndPort - na.StartPort) + 1
 }
 

@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -133,13 +134,17 @@ type Server struct {
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
 
-	httpApp      *App
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
-	h3server *http3.Server
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -147,6 +152,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
 	if s.h3server != nil {
+		// TODO: known bug, see: https://github.com/lucas-clemente/quic-go/issues/3486
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
 			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))

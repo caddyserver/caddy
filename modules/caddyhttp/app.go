@@ -135,12 +135,6 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
-	servers   []*http.Server
-	h3servers []*http3.Server
-
-	shutdownAt   time.Time
-	shutdownAtMu *sync.RWMutex
-
 	ctx    caddy.Context
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
@@ -167,7 +161,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
-	app.shutdownAtMu = new(sync.RWMutex)
 
 	repl := caddy.NewReplacer()
 
@@ -182,10 +175,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// prepare each server
 	for srvName, srv := range app.Servers {
 		srv.name = srvName
-		srv.httpApp = app
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
+		srv.shutdownAtMu = new(sync.RWMutex)
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
@@ -322,7 +315,7 @@ func (app *App) Start() error {
 	}
 
 	for srvName, srv := range app.Servers {
-		s := &http.Server{
+		srv.server = &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
 			WriteTimeout:      time.Duration(srv.WriteTimeout),
@@ -331,13 +324,19 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 		}
+		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+		srv.h3server = &http3.Server{
+			Handler:        srv,
+			TLSConfig:      tlsCfg,
+			MaxHeaderBytes: srv.MaxHeaderBytes,
+		}
 
 		// enable h2c if configured
 		if srv.AllowH2C {
 			h2server := &http2.Server{
 				IdleTimeout: time.Duration(srv.IdleTimeout),
 			}
-			s.Handler = h2c.NewHandler(srv, h2server)
+			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
 		for _, lnAddr := range srv.Listen {
@@ -345,6 +344,8 @@ func (app *App) Start() error {
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
+			srv.addresses = append(srv.addresses, listenAddr)
+
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
@@ -367,10 +368,8 @@ func (app *App) Start() error {
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
 					// create TLS listener
-					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 					ln = tls.NewListener(ln, tlsCfg)
 
-					/////////
 					// TODO: HTTP/3 support is experimental for now
 					if srv.ExperimentalHTTP3 {
 						app.logger.Info("enabling experimental HTTP/3 listener",
@@ -380,18 +379,9 @@ func (app *App) Start() error {
 						if err != nil {
 							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
 						}
-						h3srv := &http3.Server{
-							Addr:           hostport,
-							Handler:        srv,
-							TLSConfig:      tlsCfg,
-							MaxHeaderBytes: srv.MaxHeaderBytes,
-						}
 						//nolint:errcheck
-						go h3srv.ServeListener(h3ln)
-						app.h3servers = append(app.h3servers, h3srv)
-						srv.h3server = h3srv
+						go srv.h3server.ServeListener(h3ln)
 					}
-					/////////
 				}
 
 				// finish wrapping listener where we left off before TLS
@@ -415,8 +405,7 @@ func (app *App) Start() error {
 				)
 
 				//nolint:errcheck
-				go s.Serve(ln)
-				app.servers = append(app.servers, s)
+				go srv.server.Serve(ln)
 			}
 		}
 	}
@@ -435,18 +424,37 @@ func (app *App) Start() error {
 func (app *App) Stop() error {
 	ctx := context.Background()
 
-	// honor scheduled/delayed shutdown time
+	// see if any listeners in our config will be closing or if they are continuing
+	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	var delay bool
 	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
-	app.shutdownAtMu.Lock()
-	app.shutdownAt = scheduledTime
-	app.shutdownAtMu.Unlock()
 	if app.ShutdownDelay > 0 {
+		for _, server := range app.Servers {
+			for _, na := range server.addresses {
+				for _, addr := range na.Expand() {
+					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
+						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
+						server.shutdownAtMu.Lock()
+						server.shutdownAt = scheduledTime
+						server.shutdownAtMu.Unlock()
+						delay = true
+					} else {
+						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
+					}
+				}
+			}
+		}
+	}
+
+	// honor scheduled/delayed shutdown time
+	if delay {
 		app.logger.Debug("shutdown scheduled",
 			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
 			zap.Time("time", scheduledTime))
 		time.Sleep(time.Duration(app.ShutdownDelay))
 	}
 
+	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
@@ -455,21 +463,21 @@ func (app *App) Stop() error {
 	} else {
 		app.logger.Debug("servers shutting down with eternal grace period")
 	}
-	for _, s := range app.servers {
-		err := s.Shutdown(ctx)
-		if err != nil {
+
+	// shut down servers
+	for _, server := range app.Servers {
+		if err := server.server.Shutdown(ctx); err != nil {
 			return err
+		}
+
+		if server.h3server != nil {
+			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+			if err := server.h3server.Close(); err != nil {
+				return err
+			}
 		}
 	}
 
-	for _, s := range app.h3servers {
-		// TODO: CloseGracefully, once implemented upstream
-		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-		err := s.Close()
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

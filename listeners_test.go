@@ -307,3 +307,85 @@ func TestJoinHostPort(t *testing.T) {
 		}
 	}
 }
+
+func TestExpand(t *testing.T) {
+	for i, tc := range []struct {
+		input  NetworkAddress
+		expect []NetworkAddress
+	}{
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2000,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2002,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2001,
+					EndPort:   2001,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2002,
+					EndPort:   2002,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   1999,
+			},
+			expect: []NetworkAddress{},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "unix",
+				Host:      "/foo/bar",
+				StartPort: 0,
+				EndPort:   0,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "unix",
+					Host:      "/foo/bar",
+					StartPort: 0,
+					EndPort:   0,
+				},
+			},
+		},
+	} {
+		actual := tc.input.Expand()
+		if !reflect.DeepEqual(actual, tc.expect) {
+			t.Errorf("Test %d: Expected %+v but got %+v", i, tc.expect, actual)
+		}
+	}
+}
