@@ -283,7 +283,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	// build headers map
 	hdr := make(http.Header)
 	for i, h := range respondCmdHeaders {
-		key, val, found := strings.Cut(h, ":")
+		key, val, found := cut(h, ":") // TODO: use strings.Cut() once Go 1.18 is our minimum
 		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
 		if !found || key == "" || val == "" {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("header %d: invalid format \"%s\" (expecting \"Field: value\")", i, h)
@@ -393,6 +393,14 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	}
 
 	select {}
+}
+
+// TODO: delete this and use strings.Cut() once Go 1.18 is our minimum
+func cut(s, sep string) (before, after string, found bool) {
+	if i := strings.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
 }
 
 // respondCmdHeaders holds the parsed values from repeated use of the --header flag.
