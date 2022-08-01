@@ -395,16 +395,8 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	select {}
 }
 
-type StringSlice []string
-
-func (ss StringSlice) String() string { return "[" + strings.Join(ss, ", ") + "]" }
-
-func (ss *StringSlice) Set(value string) error {
-	*ss = append(*ss, value)
-	return nil
-}
-
-var respondCmdHeaders StringSlice
+// respondCmdHeaders holds the parsed values from repeated use of the --header flag.
+var respondCmdHeaders caddycmd.StringSlice
 
 // Interface guards
 var (
