@@ -392,6 +392,8 @@ func (app *App) Start() error {
 
 				//nolint:errcheck
 				go s.Serve(ln)
+
+				srv.listeners = append(srv.listeners, ln)
 				app.servers = append(app.servers, s)
 			}
 		}
