@@ -217,7 +217,7 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 			// with what caddy is still running; we need to
 			// unmarshal it again because it's likely that
 			// pointers deep in our rawCfg map were modified
-			var oldCfg interface{}
+			var oldCfg any
 			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
 			if err2 != nil {
 				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
@@ -251,9 +251,9 @@ func readConfig(path string, out io.Writer) error {
 // "@id" and maps that ID value to the full configPath in the index.
 // This function is NOT safe for concurrent access; obtain a write lock
 // on currentCtxMu.
-func indexConfigObjects(ptr interface{}, configPath string, index map[string]string) error {
+func indexConfigObjects(ptr any, configPath string, index map[string]string) error {
 	switch val := ptr.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for k, v := range val {
 			if k == idKey {
 				switch idVal := v.(type) {
@@ -272,7 +272,7 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 				return err
 			}
 		}
-	case []interface{}:
+	case []any:
 		// traverse each element of the array recursively
 		for i := range val {
 			err := indexConfigObjects(val[i], path.Join(configPath, strconv.Itoa(i)), index)
@@ -848,7 +848,7 @@ var (
 	// to maintain parity with the API endpoint and to avoid
 	// the special case of having to access/mutate the variable
 	// directly without traversing into it.
-	rawCfg = map[string]interface{}{
+	rawCfg = map[string]any{
 		rawConfigKey: nil,
 	}
 

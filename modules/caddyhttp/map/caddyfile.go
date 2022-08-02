@@ -78,7 +78,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 			// every other line maps one input to one or more outputs
 			in := h.Val()
-			var outs []interface{}
+			var outs []any
 			for h.NextArg() {
 				val := h.ScalarVal()
 				if val == "-" {

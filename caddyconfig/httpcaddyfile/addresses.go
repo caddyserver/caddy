@@ -76,7 +76,7 @@ import (
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
 func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock,
-	options map[string]interface{}) (map[string][]serverBlock, error) {
+	options map[string]any) (map[string][]serverBlock, error) {
 	sbmap := make(map[string][]serverBlock)
 
 	for i, sblock := range originalServerBlocks {
@@ -186,7 +186,7 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 // listenerAddrsForServerBlockKey essentially converts the Caddyfile
 // site addresses to Caddy listener addresses for each server block.
 func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
-	options map[string]interface{}) ([]string, error) {
+	options map[string]any) ([]string, error) {
 	addr, err := ParseAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)

@@ -585,7 +585,7 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))

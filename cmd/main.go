@@ -173,7 +173,7 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 
 	// adapt config
 	if cfgAdapter != nil {
-		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]interface{}{
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]any{
 			"filename": configFile,
 		})
 		if err != nil {

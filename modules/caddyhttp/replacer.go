@@ -57,7 +57,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 	SetVar(req.Context(), "start_time", time.Now())
 	SetVar(req.Context(), "uuid", new(requestID))
 
-	httpVars := func(key string) (interface{}, bool) {
+	httpVars := func(key string) (any, bool) {
 		if req != nil {
 			// query string parameters
 			if strings.HasPrefix(key, reqURIQueryReplPrefix) {
@@ -233,7 +233,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// middleware variables
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
-				tbl := req.Context().Value(VarsCtxKey).(map[string]interface{})
+				tbl := req.Context().Value(VarsCtxKey).(map[string]any)
 				raw := tbl[varName]
 				// variables can be dynamic, so always return true
 				// even when it may not be set; treat as empty then
@@ -258,7 +258,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 	repl.Map(httpVars)
 }
 
-func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
+func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	if req == nil || req.TLS == nil {
 		return nil, false
 	}
@@ -279,7 +279,7 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 		if strings.HasPrefix(field, "client.san.") {
 			field = field[len("client.san."):]
 			var fieldName string
-			var fieldValue interface{}
+			var fieldValue any
 			switch {
 			case strings.HasPrefix(field, "dns_names"):
 				fieldName = "dns_names"
@@ -383,7 +383,7 @@ func getReqTLSReplacement(req *http.Request, key string) (interface{}, bool) {
 }
 
 // marshalPublicKey returns the byte encoding of pubKey.
-func marshalPublicKey(pubKey interface{}) ([]byte, error) {
+func marshalPublicKey(pubKey any) ([]byte, error) {
 	switch key := pubKey.(type) {
 	case *rsa.PublicKey:
 		return asn1.Marshal(key)

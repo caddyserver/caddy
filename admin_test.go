@@ -115,7 +115,7 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 		}
 
 		// decode the expected config so we can do a convenient DeepEqual
-		var expectedDecoded interface{}
+		var expectedDecoded any
 		err = json.Unmarshal([]byte(tc.expect), &expectedDecoded)
 		if err != nil {
 			t.Fatalf("Test %d: Unmarshaling expected config: %v", i, err)
