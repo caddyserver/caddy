@@ -119,7 +119,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// defer work until a variable is actually evaluated by using replacer's Map callback
-	repl.Map(func(key string) (interface{}, bool) {
+	repl.Map(func(key string) (any, bool) {
 		// return early if the variable is not even a configured destination
 		destIdx := h.destinationIndex(key)
 		if destIdx < 0 {
@@ -187,7 +187,7 @@ type Mapping struct {
 	// Upon a match with the input, each output is positionally correlated
 	// with each destination of the parent handler. An output that is null
 	// (nil) will be treated as if it was not mapped at all.
-	Outputs []interface{} `json:"outputs,omitempty"`
+	Outputs []any `json:"outputs,omitempty"`
 
 	re *regexp.Regexp
 }

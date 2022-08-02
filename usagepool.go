@@ -57,13 +57,13 @@ import (
 // NewUsagePool() to make a new one.
 type UsagePool struct {
 	sync.RWMutex
-	pool map[interface{}]*usagePoolVal
+	pool map[any]*usagePoolVal
 }
 
 // NewUsagePool returns a new usage pool that is ready to use.
 func NewUsagePool() *UsagePool {
 	return &UsagePool{
-		pool: make(map[interface{}]*usagePoolVal),
+		pool: make(map[any]*usagePoolVal),
 	}
 }
 
@@ -74,7 +74,7 @@ func NewUsagePool() *UsagePool {
 // or constructed value is returned. The loaded return value is true
 // if the value already existed and was loaded, or false if it was
 // newly constructed.
-func (up *UsagePool) LoadOrNew(key interface{}, construct Constructor) (value interface{}, loaded bool, err error) {
+func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loaded bool, err error) {
 	var upv *usagePoolVal
 	up.Lock()
 	upv, loaded = up.pool[key]
@@ -113,7 +113,7 @@ func (up *UsagePool) LoadOrNew(key interface{}, construct Constructor) (value in
 // already exists, or stores it if it does not exist. It returns the
 // value that was either loaded or stored, and true if the value already
 // existed and was
-func (up *UsagePool) LoadOrStore(key, val interface{}) (value interface{}, loaded bool) {
+func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 	var upv *usagePoolVal
 	up.Lock()
 	upv, loaded = up.pool[key]
@@ -144,7 +144,7 @@ func (up *UsagePool) LoadOrStore(key, val interface{}) (value interface{}, loade
 // This method is somewhat naive and acquires a read lock on the
 // entire pool during iteration, so do your best to make f() really
 // fast, m'kay?
-func (up *UsagePool) Range(f func(key, value interface{}) bool) {
+func (up *UsagePool) Range(f func(key, value any) bool) {
 	up.RLock()
 	defer up.RUnlock()
 	for key, upv := range up.pool {
@@ -166,7 +166,7 @@ func (up *UsagePool) Range(f func(key, value interface{}) bool) {
 // true if the usage count reached 0 and the value was deleted.
 // It panics if the usage count drops below 0; always call
 // Delete precisely as many times as LoadOrStore.
-func (up *UsagePool) Delete(key interface{}) (deleted bool, err error) {
+func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 	up.Lock()
 	upv, ok := up.pool[key]
 	if !ok {
@@ -206,7 +206,7 @@ type Destructor interface {
 
 type usagePoolVal struct {
 	refs  int32 // accessed atomically; must be 64-bit aligned for 32-bit systems
-	value interface{}
+	value any
 	err   error
 	sync.RWMutex
 }

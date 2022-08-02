@@ -231,7 +231,7 @@ type templateContext struct {
 
 // bufPool is used to increase the efficiency of file listings.
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

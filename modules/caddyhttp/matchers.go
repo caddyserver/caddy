@@ -1032,7 +1032,7 @@ func (m *MatchNot) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading matcher sets: %v", err)
 	}
-	for _, modMap := range matcherSets.([]map[string]interface{}) {
+	for _, modMap := range matcherSets.([]map[string]any) {
 		var ms MatcherSet
 		for _, modIface := range modMap {
 			ms = append(ms, modIface.(RequestMatcher))

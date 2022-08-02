@@ -46,7 +46,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading handshake matchers: %v", err)
 		}
-		for _, modIface := range mods.(map[string]interface{}) {
+		for _, modIface := range mods.(map[string]any) {
 			cp[i].matchers = append(cp[i].matchers, modIface.(ConnectionMatcher))
 		}
 
@@ -66,7 +66,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("loading client cert verifiers: %v", err)
 			}
-			for _, validator := range clientCertValidations.([]interface{}) {
+			for _, validator := range clientCertValidations.([]any) {
 				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
 			}
 		}

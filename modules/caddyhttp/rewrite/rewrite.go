@@ -283,7 +283,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 
 		// consume the component and write the result
 		comp := qs[:end]
-		comp, _ = repl.ReplaceFunc(comp, func(name string, val interface{}) (interface{}, error) {
+		comp, _ = repl.ReplaceFunc(comp, func(name string, val any) (any, error) {
 			if name == "http.request.uri.query" && wroteVal {
 				return val, nil // already escaped
 			}
