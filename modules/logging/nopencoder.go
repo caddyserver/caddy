@@ -95,7 +95,7 @@ func (nopEncoder) AddUint8(key string, value uint8) {}
 func (nopEncoder) AddUintptr(key string, value uintptr) {}
 
 // AddReflected is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddReflected(key string, value interface{}) error { return nil }
+func (nopEncoder) AddReflected(key string, value any) error { return nil }
 
 // OpenNamespace is part of the zapcore.ObjectEncoder interface.
 func (nopEncoder) OpenNamespace(key string) {}

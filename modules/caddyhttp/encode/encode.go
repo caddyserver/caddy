@@ -71,7 +71,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading encoder modules: %v", err)
 	}
-	for modName, modIface := range mods.(map[string]interface{}) {
+	for modName, modIface := range mods.(map[string]any) {
 		err = enc.addEncoding(modIface.(Encoding))
 		if err != nil {
 			return fmt.Errorf("adding encoding %s: %v", modName, err)
@@ -142,7 +142,7 @@ func (enc *Encode) addEncoding(e Encoding) error {
 		enc.writerPools = make(map[string]*sync.Pool)
 	}
 	enc.writerPools[ae] = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return e.NewEncoder()
 		},
 	}
@@ -418,7 +418,7 @@ type Precompressed interface {
 }
 
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

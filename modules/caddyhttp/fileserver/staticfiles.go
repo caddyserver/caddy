@@ -205,7 +205,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading encoder modules: %v", err)
 	}
-	for modName, modIface := range mods.(map[string]interface{}) {
+	for modName, modIface := range mods.(map[string]any) {
 		p, ok := modIface.(encode.Precompressed)
 		if !ok {
 			return fmt.Errorf("module %s is not precompressor", modName)

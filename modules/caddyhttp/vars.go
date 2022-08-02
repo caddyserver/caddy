@@ -37,7 +37,7 @@ func init() {
 //
 // The key is the variable name, and the value is the value of the
 // variable. Both the name and value may use or contain placeholders.
-type VarsMiddleware map[string]interface{}
+type VarsMiddleware map[string]any
 
 // CaddyModule returns the Caddy module information.
 func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
@@ -48,7 +48,7 @@ func (VarsMiddleware) CaddyModule() caddy.ModuleInfo {
 }
 
 func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
-	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
+	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, v := range m {
 		keyExpanded := repl.ReplaceAll(k, "")
@@ -156,7 +156,7 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 		return true
 	}
 
-	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
+	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for key, vals := range m {
@@ -250,7 +250,7 @@ func (m MatchVarsRE) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchVarsRE) Match(r *http.Request) bool {
-	vars := r.Context().Value(VarsCtxKey).(map[string]interface{})
+	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, rm := range m {
 		var varStr string
@@ -290,8 +290,8 @@ func (m MatchVarsRE) Validate() error {
 
 // GetVar gets a value out of the context's variable table by key.
 // If the key does not exist, the return value will be nil.
-func GetVar(ctx context.Context, key string) interface{} {
-	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
+func GetVar(ctx context.Context, key string) any {
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]any)
 	if !ok {
 		return nil
 	}
@@ -305,8 +305,8 @@ func GetVar(ctx context.Context, key string) interface{} {
 // If the value is nil (note: non-nil interface with nil
 // underlying value does not count) and the key exists in
 // the table, the key+value will be deleted from the table.
-func SetVar(ctx context.Context, key string, value interface{}) {
-	varMap, ok := ctx.Value(VarsCtxKey).(map[string]interface{})
+func SetVar(ctx context.Context, key string, value any) {
+	varMap, ok := ctx.Value(VarsCtxKey).(map[string]any)
 	if !ok {
 		return
 	}

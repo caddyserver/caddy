@@ -218,7 +218,7 @@ var httpRequestCELType = types.NewTypeValue("http.Request", traits.ReceiverType)
 // drops allocation costs for CEL expression evaluations by roughly half.
 type celHTTPRequest struct{ *http.Request }
 
-func (cr celHTTPRequest) ResolveName(name string) (interface{}, bool) {
+func (cr celHTTPRequest) ResolveName(name string) (any, bool) {
 	if name == "request" {
 		return cr, true
 	}
@@ -229,7 +229,7 @@ func (cr celHTTPRequest) Parent() interpreter.Activation {
 	return nil
 }
 
-func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return cr.Request, nil
 }
 func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
@@ -241,8 +241,8 @@ func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
 	}
 	return types.ValOrErr(other, "%v is not comparable type", other)
 }
-func (celHTTPRequest) Type() ref.Type        { return httpRequestCELType }
-func (cr celHTTPRequest) Value() interface{} { return cr }
+func (celHTTPRequest) Type() ref.Type { return httpRequestCELType }
+func (cr celHTTPRequest) Value() any  { return cr }
 
 var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 
@@ -250,7 +250,7 @@ var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
-func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return pn.Name, nil
 }
 func (celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
@@ -262,13 +262,13 @@ func (pn celPkixName) Equal(other ref.Val) ref.Val {
 	}
 	return types.ValOrErr(other, "%v is not comparable type", other)
 }
-func (celPkixName) Type() ref.Type        { return pkixNameCELType }
-func (pn celPkixName) Value() interface{} { return pn }
+func (celPkixName) Type() ref.Type { return pkixNameCELType }
+func (pn celPkixName) Value() any  { return pn }
 
 // celTypeAdapter can adapt our custom types to a CEL value.
 type celTypeAdapter struct{}
 
-func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
+func (celTypeAdapter) NativeToValue(value any) ref.Val {
 	switch v := value.(type) {
 	case celHTTPRequest:
 		return v
@@ -545,17 +545,17 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 // CELValueToMapStrList converts a CEL value to a map[string][]string
 //
 // Earlier validation stages should guarantee that the value has this type
-// at compile time, and that the runtime value type is map[string]interface{}.
+// at compile time, and that the runtime value type is map[string]any.
 // The reason for the slight difference in value type is that CEL allows for
 // map literals containing heterogeneous values, in this case string and list
 // of string.
 func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
-	mapStrType := reflect.TypeOf(map[string]interface{}{})
+	mapStrType := reflect.TypeOf(map[string]any{})
 	mapStrRaw, err := data.ConvertToNative(mapStrType)
 	if err != nil {
 		return nil, err
 	}
-	mapStrIface := mapStrRaw.(map[string]interface{})
+	mapStrIface := mapStrRaw.(map[string]any)
 	mapStrListStr := make(map[string][]string, len(mapStrIface))
 	for k, v := range mapStrIface {
 		switch val := v.(type) {

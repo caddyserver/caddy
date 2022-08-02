@@ -1317,7 +1317,7 @@ func (brc bodyReadCloser) Close() error {
 
 // bufPool is used for buffering requests and responses.
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

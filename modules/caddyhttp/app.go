@@ -202,7 +202,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("loading listener wrapper modules: %v", err)
 			}
 			var hasTLSPlaceholder bool
-			for i, val := range vals.([]interface{}) {
+			for i, val := range vals.([]any) {
 				if _, ok := val.(*tlsPlaceholderWrapper); ok {
 					if i == 0 {
 						// putting the tls placeholder wrapper first is nonsensical because

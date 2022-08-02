@@ -194,7 +194,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// can use reflection but we need a non-pointer value (I'm
 		// not sure why), and since New() should return a pointer
 		// value, we need to dereference it first
-		iface := interface{}(modInfo.New())
+		iface := any(modInfo.New())
 		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
 			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
 		}
