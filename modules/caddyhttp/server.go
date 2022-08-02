@@ -133,6 +133,7 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
+	listeners           []net.Listener
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger

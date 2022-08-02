@@ -183,6 +183,8 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 	return sbaddrs
 }
 
+// listenerAddrsForServerBlockKey essentially converts the Caddyfile
+// site addresses to Caddy listener addresses for each server block.
 func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
 	options map[string]interface{}) ([]string, error) {
 	addr, err := ParseAddress(key)
@@ -232,12 +234,14 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	// use a map to prevent duplication
 	listeners := make(map[string]struct{})
 	for _, host := range lnHosts {
-		addr, err := caddy.ParseNetworkAddress(host)
-		if err == nil && addr.IsUnixNetwork() {
-			listeners[host] = struct{}{}
-		} else {
-			listeners[host+":"+lnPort] = struct{}{}
+		// host can have network + host (e.g. "tcp6/localhost") but
+		// will/should not have port information because this usually
+		// comes from the bind directive, so we append the port
+		addr, err := caddy.ParseNetworkAddress(host + ":" + lnPort)
+		if err != nil {
+			return nil, fmt.Errorf("parsing network address: %v", err)
 		}
+		listeners[addr.String()] = struct{}{}
 	}
 
 	// now turn map into list

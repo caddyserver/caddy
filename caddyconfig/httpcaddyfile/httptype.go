@@ -58,22 +58,13 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	gc := counter{new(int)}
 	state := make(map[string]interface{})
 
-	// load all the server blocks and associate them with a "pile"
-	// of config values; also prohibit duplicate keys because they
-	// can make a config confusing if more than one server block is
-	// chosen to handle a request - we actually will make each
-	// server block's route terminal so that only one will run
-	sbKeys := make(map[string]struct{})
+	// load all the server blocks and associate them with a "pile" of config values
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
-	for i, sblock := range inputServerBlocks {
+	for _, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
 			if j == 0 && strings.HasPrefix(k, "@") {
 				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
 			}
-			if _, ok := sbKeys[k]; ok {
-				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
-			}
-			sbKeys[k] = struct{}{}
 		}
 		originalServerBlocks = append(originalServerBlocks, serverBlock{
 			block: sblock,
@@ -421,6 +412,23 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	for i, p := range pairings {
+		// detect ambiguous site definitions: server blocks which
+		// have the same host bound to the same interface (listener
+		// address), otherwise their routes will improperly be added
+		// to the same server (see issue #4635)
+		for j, sblock1 := range p.serverBlocks {
+			for _, key := range sblock1.block.Keys {
+				for k, sblock2 := range p.serverBlocks {
+					if k == j {
+						continue
+					}
+					if sliceContains(sblock2.block.Keys, key) {
+						return nil, fmt.Errorf("ambiguous site definition: %s", key)
+					}
+				}
+			}
+		}
+
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
 		}

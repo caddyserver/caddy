@@ -415,10 +415,13 @@ func (na NetworkAddress) port() string {
 	return fmt.Sprintf("%d-%d", na.StartPort, na.EndPort)
 }
 
-// String reconstructs the address string to the form expected
-// by ParseNetworkAddress(). If the address is a unix socket,
-// any non-zero port will be dropped.
+// String reconstructs the address string for human display.
+// The output can be parsed by ParseNetworkAddress(). If the
+// address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
+	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+		na.Network = "" // omit default network value for brevity
+	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
@@ -451,11 +454,11 @@ func isListenBindAddressAlreadyInUseError(err error) bool {
 func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
-	if network == "" {
-		network = "tcp"
-	}
 	if err != nil {
 		return NetworkAddress{}, err
+	}
+	if network == "" {
+		network = "tcp"
 	}
 	if isUnixNetwork(network) {
 		return NetworkAddress{
@@ -463,24 +466,26 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 			Host:    host,
 		}, nil
 	}
-	ports := strings.SplitN(port, "-", 2)
-	if len(ports) == 1 {
-		ports = append(ports, ports[0])
-	}
 	var start, end uint64
-	start, err = strconv.ParseUint(ports[0], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
-	}
-	end, err = strconv.ParseUint(ports[1], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
-	}
-	if end < start {
-		return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
-	}
-	if (end - start) > maxPortSpan {
-		return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+	if port != "" {
+		ports := strings.SplitN(port, "-", 2)
+		if len(ports) == 1 {
+			ports = append(ports, ports[0])
+		}
+		start, err = strconv.ParseUint(ports[0], 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
+		}
+		end, err = strconv.ParseUint(ports[1], 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
+		}
+		if end < start {
+			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
+		}
+		if (end - start) > maxPortSpan {
+			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+		}
 	}
 	return NetworkAddress{
 		Network:   network,
@@ -502,6 +507,19 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		return
 	}
 	host, port, err = net.SplitHostPort(a)
+	if err == nil || a == "" {
+		return
+	}
+	// in general, if there was an error, it was likely "missing port",
+	// so try adding a bogus port to take advantage of standard library's
+	// robust parser, then strip the artificial port before returning
+	// (don't overwrite original error though; might still be relevant)
+	var err2 error
+	host, port, err2 = net.SplitHostPort(a + ":0")
+	if err2 == nil {
+		err = nil
+		port = ""
+	}
 	return
 }
 

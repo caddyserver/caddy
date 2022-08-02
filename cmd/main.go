@@ -480,3 +480,16 @@ func CaddyVersion() string {
 	}
 	return ver
 }
+
+// StringSlice is a flag.Value that enables repeated use of a string flag.
+type StringSlice []string
+
+func (ss StringSlice) String() string { return "[" + strings.Join(ss, ", ") + "]" }
+
+func (ss *StringSlice) Set(value string) error {
+	*ss = append(*ss, value)
+	return nil
+}
+
+// Interface guard
+var _ flag.Value = (*StringSlice)(nil)

@@ -403,6 +403,8 @@ func (app *App) Start() error {
 					zap.Bool("http3", srv.ExperimentalHTTP3),
 					zap.Bool("tls", useTLS),
 				)
+        
+        srv.listeners = append(srv.listeners, ln)
 
 				//nolint:errcheck
 				go srv.server.Serve(ln)
@@ -467,13 +469,17 @@ func (app *App) Stop() error {
 	// shut down servers
 	for _, server := range app.Servers {
 		if err := server.server.Shutdown(ctx); err != nil {
-			return err
+			app.logger.Error("server shutdown",
+				zap.Error(err),
+				zap.Int("index", i))
 		}
-
+		
 		if server.h3server != nil {
 			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
 			if err := server.h3server.Close(); err != nil {
-				return err
+				app.logger.Error("HTTP/3 server shutdown",
+					zap.Error(err),
+					zap.Int("index", i))
 			}
 		}
 	}

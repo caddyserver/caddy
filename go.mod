@@ -3,37 +3,36 @@ module github.com/caddyserver/caddy/v2
 go 1.17
 
 require (
-	github.com/BurntSushi/toml v1.1.0
+	github.com/BurntSushi/toml v1.2.0
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
 	github.com/caddyserver/certmagic v0.16.1
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-chi/chi v4.1.2+incompatible
-	github.com/google/cel-go v0.11.4
+	github.com/google/cel-go v0.12.4
 	github.com/google/uuid v1.3.0
-	github.com/klauspost/compress v1.15.6
-	github.com/klauspost/cpuid/v2 v2.0.13
-	github.com/lucas-clemente/quic-go v0.28.0
-	github.com/mholt/acmez v1.0.2
-	github.com/prometheus/client_golang v1.12.1
-	github.com/smallstep/certificates v0.19.0
-	github.com/smallstep/cli v0.18.0
+	github.com/klauspost/compress v1.15.9
+	github.com/klauspost/cpuid/v2 v2.1.0
+	github.com/lucas-clemente/quic-go v0.28.1
+	github.com/mholt/acmez v1.0.3
+	github.com/prometheus/client_golang v1.12.2
+	github.com/smallstep/certificates v0.21.0
+	github.com/smallstep/cli v0.21.0
 	github.com/smallstep/nosql v0.4.0
 	github.com/smallstep/truststore v0.11.0
 	github.com/tailscale/tscert v0.0.0-20220316030059-54bbcb9f74e2
-	github.com/yuin/goldmark v1.4.12
+	github.com/yuin/goldmark v1.4.13
 	github.com/yuin/goldmark-highlighting v0.0.0-20220208100518-594be1970594
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.29.0
 	go.opentelemetry.io/otel v1.4.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.4.0
 	go.opentelemetry.io/otel/sdk v1.4.0
 	go.uber.org/zap v1.21.0
-	golang.org/x/crypto v0.0.0-20220210151621-f4118a5b28e2
-	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
+	golang.org/x/crypto v0.0.0-20220331220935-ae2d96664a29
+	golang.org/x/net v0.0.0-20220630215102-69896b714898
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21
-	google.golang.org/protobuf v1.28.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -116,17 +115,18 @@ require (
 	go.opentelemetry.io/otel/metric v0.27.0 // indirect
 	go.opentelemetry.io/otel/trace v1.4.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
-	go.step.sm/cli-utils v0.7.0 // indirect
-	go.step.sm/crypto v0.16.1 // indirect
-	go.step.sm/linkedca v0.15.0 // indirect
+	go.step.sm/cli-utils v0.7.3 // indirect
+	go.step.sm/crypto v0.16.2 // indirect
+	go.step.sm/linkedca v0.16.1 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
+	golang.org/x/sys v0.0.0-20220704084225-05e143d24a9e
 	golang.org/x/text v0.3.8-0.20211004125949-5bd84dd9b33b // indirect
 	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/grpc v1.46.0 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	howett.net/plist v1.0.0 // indirect
