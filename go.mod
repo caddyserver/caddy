@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/alecthomas/chroma v0.10.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.16.1
+	github.com/caddyserver/certmagic v0.16.2
 	github.com/dustin/go-humanize v1.0.1-0.20200219035652-afde56e7acac
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.12.4
@@ -15,7 +15,7 @@ require (
 	github.com/klauspost/compress v1.15.9
 	github.com/klauspost/cpuid/v2 v2.1.0
 	github.com/lucas-clemente/quic-go v0.28.1
-	github.com/mholt/acmez v1.0.3
+	github.com/mholt/acmez v1.0.4
 	github.com/prometheus/client_golang v1.12.2
 	github.com/smallstep/certificates v0.21.0
 	github.com/smallstep/cli v0.21.0
