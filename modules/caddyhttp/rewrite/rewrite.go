@@ -106,7 +106,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 	)
 
-	changed := rewr.rewrite(r, repl, logger)
+	changed := rewr.Rewrite(r, repl)
 
 	if changed {
 		logger.Debug("rewrote request",
@@ -121,7 +121,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which should
 // have been obtained from r, but is passed in for efficiency.
 // It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -135,13 +135,20 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
 		pathEnd, qsEnd := -1, -1
+	loop:
 		for i, ch := range uri {
 			switch {
 			case ch == '?' && qsStart < 0:
 				pathEnd, qsStart = i, i+1
-			case ch == '#' && fragStart < 0:
-				qsEnd, fragStart = i, i+1
-			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+			case ch == '#' && fragStart < 0: // everything after fragment is fragment (very clear in RFC 3986 section 4.2)
+				if qsStart < 0 {
+					pathEnd = i
+				} else {
+					qsEnd = i
+				}
+				fragStart = i + 1
+				break loop
+			case pathStart < 0 && qsStart < 0:
 				pathStart = i
 			}
 		}
@@ -276,7 +283,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 
 		// consume the component and write the result
 		comp := qs[:end]
-		comp, _ = repl.ReplaceFunc(comp, func(name string, val interface{}) (interface{}, error) {
+		comp, _ = repl.ReplaceFunc(comp, func(name string, val any) (any, error) {
 			if name == "http.request.uri.query" && wroteVal {
 				return val, nil // already escaped
 			}

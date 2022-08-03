@@ -85,9 +85,11 @@ type ACMEIssuer struct {
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
-	template certmagic.ACMEIssuer
-	magic    *certmagic.Config
 	logger   *zap.Logger
+
+	template certmagic.ACMEIssuer  // set at Provision
+	magic    *certmagic.Config     // set at PreCheck
+	issuer   *certmagic.ACMEIssuer // set at PreCheck; result of template + magic
 }
 
 // CaddyModule returns the Caddy module information.
@@ -142,6 +144,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 				DNSProvider:        val.(certmagic.ACMEDNSProvider),
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
+				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
@@ -216,30 +219,27 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 // the ConfigSetter interface.
 func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 	iss.magic = cfg
+	iss.issuer = certmagic.NewACMEIssuer(cfg, iss.template)
 }
-
-// TODO: I kind of hate how each call to these methods needs to
-// make a new ACME manager to fill in defaults before using; can
-// we find the right place to do that just once and then re-use?
 
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return iss.issuer.PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Issue(ctx, csr)
+	return iss.issuer.Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).IssuerKey()
+	return iss.issuer.IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return iss.issuer.Revoke(ctx, cert, reason)
 }
 
 // GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because
@@ -262,10 +262,13 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //         eab <key_id> <mac_key>
 //         trusted_roots <pem_files...>
 //         dns <provider_name> [<options>]
+//         propagation_delay <duration>
+//         propagation_timeout <duration>
 //         resolvers <dns_servers...>
+//         dns_challenge_override_domain <domain>
 //         preferred_chains [smallest] {
-//           root_common_name <common_names...>
-//           any_common_name  <common_names...>
+//             root_common_name <common_names...>
+//             any_common_name  <common_names...>
 //         }
 //     }
 //
@@ -389,14 +392,38 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return err
 				}
 				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+
+			case "propagation_delay":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				delayStr := d.Val()
+				delay, err := caddy.ParseDuration(delayStr)
+				if err != nil {
+					return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
+
 			case "propagation_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
 				timeoutStr := d.Val()
-				timeout, err := caddy.ParseDuration(timeoutStr)
-				if err != nil {
-					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				var timeout time.Duration
+				if timeoutStr == "-1" {
+					timeout = time.Duration(-1)
+				} else {
+					var err error
+					timeout, err = caddy.ParseDuration(timeoutStr)
+					if err != nil {
+						return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+					}
 				}
 				if iss.Challenges == nil {
 					iss.Challenges = new(ChallengesConfig)

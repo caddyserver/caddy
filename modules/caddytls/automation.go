@@ -198,7 +198,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
 		}
-		for _, getCertVal := range vals.([]interface{}) {
+		for _, getCertVal := range vals.([]any) {
 			ap.Managers = append(ap.Managers, getCertVal.(certmagic.Manager))
 		}
 	}
@@ -209,7 +209,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		for _, issVal := range val.([]interface{}) {
+		for _, issVal := range val.([]any) {
 			ap.Issuers = append(ap.Issuers, issVal.(certmagic.Issuer))
 		}
 	}
@@ -363,7 +363,13 @@ type DNSChallengeConfig struct {
 	// The TTL of the TXT record used for the DNS challenge.
 	TTL caddy.Duration `json:"ttl,omitempty"`
 
-	// How long to wait for DNS record to propagate.
+	// How long to wait before starting propagation checks.
+	// Default: 0 (no wait).
+	PropagationDelay caddy.Duration `json:"propagation_delay,omitempty"`
+
+	// Maximum time to wait for temporary DNS record to appear.
+	// Set to -1 to disable propagation checks.
+	// Default: 2 minutes.
 	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
 
 	// Custom DNS resolvers to prefer over system/built-in defaults.

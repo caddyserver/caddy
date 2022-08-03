@@ -26,11 +26,13 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/alecthomas/chroma/formatters/html"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/dustin/go-humanize"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
 	"github.com/yuin/goldmark/extension"
@@ -40,10 +42,11 @@ import (
 
 // TemplateContext is the TemplateContext with which HTTP templates are executed.
 type TemplateContext struct {
-	Root       http.FileSystem
-	Req        *http.Request
-	Args       []interface{} // defined by arguments to funcInclude
-	RespHeader WrappedHeader
+	Root        http.FileSystem
+	Req         *http.Request
+	Args        []any // defined by arguments to funcInclude
+	RespHeader  WrappedHeader
+	CustomFuncs []template.FuncMap // functions added by plugins
 
 	config *Templates
 	tpl    *template.Template
@@ -62,6 +65,11 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 	// add sprig library
 	c.tpl.Funcs(sprigFuncMap)
 
+	// add all custom functions
+	for _, funcMap := range c.CustomFuncs {
+		c.tpl.Funcs(funcMap)
+	}
+
 	// add our own library
 	c.tpl.Funcs(template.FuncMap{
 		"include":          c.funcInclude,
@@ -75,6 +83,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
+		"humanize":         c.funcHumanize,
 	})
 	return c.tpl
 }
@@ -90,7 +99,7 @@ func (c TemplateContext) OriginalReq() http.Request {
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
-func (c TemplateContext) funcInclude(filename string, args ...interface{}) (string, error) {
+func (c TemplateContext) funcInclude(filename string, args ...any) (string, error) {
 
 	bodyBuf := bufPool.Get().(*bytes.Buffer)
 	bodyBuf.Reset()
@@ -295,7 +304,7 @@ func (TemplateContext) funcStripHTML(s string) string {
 
 // funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
-func (TemplateContext) funcMarkdown(input interface{}) (string, error) {
+func (TemplateContext) funcMarkdown(input any) (string, error) {
 	inputStr := toString(input)
 
 	md := goldmark.New(
@@ -331,7 +340,7 @@ func (TemplateContext) funcMarkdown(input interface{}) (string, error) {
 // splitFrontMatter parses front matter out from the beginning of input,
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
-func (TemplateContext) funcSplitFrontMatter(input interface{}) (parsedMarkdownDoc, error) {
+func (TemplateContext) funcSplitFrontMatter(input any) (parsedMarkdownDoc, error) {
 	meta, body, err := extractFrontMatter(toString(input))
 	if err != nil {
 		return parsedMarkdownDoc{}, err
@@ -392,6 +401,43 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
+// funcHumanize transforms size and time inputs to a human readable format.
+//
+// Size inputs are expected to be integers, and are formatted as a
+// byte size, such as "83 MB".
+//
+// Time inputs are parsed using the given layout (default layout is RFC1123Z)
+// and are formatted as a relative time, such as "2 weeks ago".
+// See https://pkg.go.dev/time#pkg-constants for time layout docs.
+func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
+	// The format type can optionally be followed
+	// by a colon to provide arguments for the format
+	parts := strings.Split(formatType, ":")
+
+	switch parts[0] {
+	case "size":
+		dataint, dataerr := strconv.ParseUint(data, 10, 64)
+		if dataerr != nil {
+			return "", fmt.Errorf("humanize: size cannot be parsed: %s", dataerr.Error())
+		}
+		return humanize.Bytes(dataint), nil
+
+	case "time":
+		timelayout := time.RFC1123Z
+		if len(parts) > 1 {
+			timelayout = parts[1]
+		}
+
+		dataint, dataerr := time.Parse(timelayout, data)
+		if dataerr != nil {
+			return "", fmt.Errorf("humanize: time cannot be parsed: %s", dataerr.Error())
+		}
+		return humanize.Time(dataint), nil
+	}
+
+	return "", fmt.Errorf("no know function was given")
+}
+
 // WrappedHeader wraps niladic functions so that they
 // can be used in templates. (Template functions must
 // return a value.)
@@ -419,7 +465,7 @@ func (h WrappedHeader) Del(field string) string {
 	return ""
 }
 
-func toString(input interface{}) string {
+func toString(input any) string {
 	switch v := input.(type) {
 	case string:
 		return v
@@ -433,7 +479,7 @@ func toString(input interface{}) string {
 }
 
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

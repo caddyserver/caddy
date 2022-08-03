@@ -29,12 +29,12 @@ type Adapter struct {
 }
 
 // Adapt converts the Caddyfile config in body to Caddy JSON.
-func (a Adapter) Adapt(body []byte, options map[string]interface{}) ([]byte, []caddyconfig.Warning, error) {
+func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconfig.Warning, error) {
 	if a.ServerType == nil {
 		return nil, nil, fmt.Errorf("no server type")
 	}
 	if options == nil {
-		options = make(map[string]interface{})
+		options = make(map[string]any)
 	}
 
 	filename, _ := options["filename"].(string)
@@ -116,7 +116,7 @@ type ServerType interface {
 	// (e.g. CLI flags) and creates a Caddy
 	// config, along with any warnings or
 	// an error.
-	Setup([]ServerBlock, map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error)
+	Setup([]ServerBlock, map[string]any) (*caddy.Config, []caddyconfig.Warning, error)
 }
 
 // UnmarshalModule instantiates a module with the given ID and invokes

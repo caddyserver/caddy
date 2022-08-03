@@ -1,0 +1,111 @@
+app.example.com {
+	forward_auth authelia:9091 {
+		uri /api/verify?rd=https://authelia.example.com
+		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+	}
+
+	reverse_proxy backend:8080
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"app.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handle_response": [
+														{
+															"match": {
+																"status_code": [
+																	2
+																]
+															},
+															"routes": [
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"set": {
+																					"Remote-Email": [
+																						"{http.reverse_proxy.header.Remote-Email}"
+																					],
+																					"Remote-Groups": [
+																						"{http.reverse_proxy.header.Remote-Groups}"
+																					],
+																					"Remote-Name": [
+																						"{http.reverse_proxy.header.Remote-Name}"
+																					],
+																					"Remote-User": [
+																						"{http.reverse_proxy.header.Remote-User}"
+																					]
+																				}
+																			}
+																		}
+																	]
+																}
+															]
+														}
+													],
+													"handler": "reverse_proxy",
+													"headers": {
+														"request": {
+															"set": {
+																"X-Forwarded-Method": [
+																	"{http.request.method}"
+																],
+																"X-Forwarded-Uri": [
+																	"{http.request.uri}"
+																]
+															}
+														}
+													},
+													"rewrite": {
+														"method": "GET",
+														"uri": "/api/verify?rd=https://authelia.example.com"
+													},
+													"upstreams": [
+														{
+															"dial": "authelia:9091"
+														}
+													]
+												},
+												{
+													"handler": "reverse_proxy",
+													"upstreams": [
+														{
+															"dial": "backend:8080"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

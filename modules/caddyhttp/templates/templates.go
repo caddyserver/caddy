@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -35,6 +36,8 @@ func init() {
 // [text/template package](https://golang.org/pkg/text/template/).
 //
 // ⚠️ Template functions/actions are still experimental, so they are subject to change.
+//
+// Custom template functions can be registered by creating a plugin module under the `http.handlers.templates.functions.*` namespace that implements the `CustomFunctions` interface.
 //
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
 //
@@ -100,10 +103,11 @@ func init() {
 // {{ define "main" }}
 // content
 // {{ end }}
+// ```
 //
 // **index.html**
 // ```
-// {{ import "/path/to/file.html" }}
+// {{ import "/path/to/filename.html" }}
 // {{ template "main" }}
 // ```
 //
@@ -234,6 +238,29 @@ func init() {
 // {{stripHTML "Shows <b>only</b> text content"}}
 // ```
 //
+// ##### `humanize`
+//
+// Transforms size and time inputs to a human readable format.
+// This uses the [go-humanize](https://github.com/dustin/go-humanize) library.
+//
+// The first argument must be a format type, and the last argument
+// is the input, or the input can be piped in. The supported format
+// types are:
+// - **size** which turns an integer amount of bytes into a string like `2.3 MB`
+// - **time** which turns a time string into a relative time string like `2 weeks ago`
+//
+// For the `time` format, the layout for parsing the input can be configured
+// by appending a colon `:` followed by the desired time layout. You can
+// find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
+// The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
+//
+// ```
+// {{humanize "size" "2048000"}}
+// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
+// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// {{humanize "time:2006-Jan-02" "2022-May-05"}}
+// ```
+
 type Templates struct {
 	// The root path from which to load files. Required if template functions
 	// accessing the file system are used (such as include). Default is
@@ -248,6 +275,14 @@ type Templates struct {
 	// The template action delimiters. If set, must be precisely two elements:
 	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
+
+	customFuncs []template.FuncMap
+}
+
+// Customfunctions is the interface for registering custom template functions.
+type CustomFunctions interface {
+	// CustomTemplateFunctions should return the mapping from custom function names to implementations.
+	CustomTemplateFunctions() template.FuncMap
 }
 
 // CaddyModule returns the Caddy module information.
@@ -260,6 +295,18 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
+	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
+	customFuncs := make([]template.FuncMap, len(fnModInfos), 0)
+	for _, modInfo := range fnModInfos {
+		mod := modInfo.New()
+		fnMod, ok := mod.(CustomFunctions)
+		if !ok {
+			return fmt.Errorf("module %q does not satisfy the CustomFunctions interface", modInfo.ID)
+		}
+		customFuncs = append(customFuncs, fnMod.CustomTemplateFunctions())
+	}
+	t.customFuncs = customFuncs
+
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
 	}
@@ -330,10 +377,11 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 	}
 
 	ctx := &TemplateContext{
-		Root:       fs,
-		Req:        r,
-		RespHeader: WrappedHeader{rr.Header()},
-		config:     t,
+		Root:        fs,
+		Req:         r,
+		RespHeader:  WrappedHeader{rr.Header()},
+		config:      t,
+		CustomFuncs: t.customFuncs,
 	}
 
 	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())

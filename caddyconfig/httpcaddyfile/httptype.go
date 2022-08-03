@@ -17,7 +17,6 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"regexp"
 	"sort"
@@ -30,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -53,27 +53,18 @@ type ServerType struct {
 
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
-	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
+	options map[string]any) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
-	state := make(map[string]interface{})
+	state := make(map[string]any)
 
-	// load all the server blocks and associate them with a "pile"
-	// of config values; also prohibit duplicate keys because they
-	// can make a config confusing if more than one server block is
-	// chosen to handle a request - we actually will make each
-	// server block's route terminal so that only one will run
-	sbKeys := make(map[string]struct{})
+	// load all the server blocks and associate them with a "pile" of config values
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
-	for i, sblock := range inputServerBlocks {
+	for _, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
 			if j == 0 && strings.HasPrefix(k, "@") {
 				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
 			}
-			if _, ok := sbKeys[k]; ok {
-				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
-			}
-			sbKeys[k] = struct{}{}
 		}
 		originalServerBlocks = append(originalServerBlocks, serverBlock{
 			block: sblock,
@@ -88,34 +79,10 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		return nil, warnings, err
 	}
 
-	// replace shorthand placeholders (which are
-	// convenient when writing a Caddyfile) with
-	// their actual placeholder identifiers or
-	// variable names
-	replacer := strings.NewReplacer(
-		"{dir}", "{http.request.uri.path.dir}",
-		"{file}", "{http.request.uri.path.file}",
-		"{host}", "{http.request.host}",
-		"{hostport}", "{http.request.hostport}",
-		"{port}", "{http.request.port}",
-		"{method}", "{http.request.method}",
-		"{path}", "{http.request.uri.path}",
-		"{query}", "{http.request.uri.query}",
-		"{remote}", "{http.request.remote}",
-		"{remote_host}", "{http.request.remote.host}",
-		"{remote_port}", "{http.request.remote.port}",
-		"{scheme}", "{http.request.scheme}",
-		"{uri}", "{http.request.uri}",
-		"{tls_cipher}", "{http.request.tls.cipher_suite}",
-		"{tls_version}", "{http.request.tls.version}",
-		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
-		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
-		"{tls_client_serial}", "{http.request.tls.client.serial}",
-		"{tls_client_subject}", "{http.request.tls.client.subject}",
-		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
-		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
-		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
-	)
+	// replace shorthand placeholders (which are convenient
+	// when writing a Caddyfile) with their actual placeholder
+	// identifiers or variable names
+	replacer := strings.NewReplacer(placeholderShorthands()...)
 
 	// these are placeholders that allow a user-defined final
 	// parameters, but we still want to provide a shorthand
@@ -129,6 +96,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		{regexp.MustCompile(`{header\.([\w-]*)}`), "{http.request.header.$1}"},
 		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
 		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
+		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
+		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
+		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
 	}
 
 	for _, sb := range originalServerBlocks {
@@ -220,10 +190,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:    tryInt(options["http_port"], &warnings),
-		HTTPSPort:   tryInt(options["https_port"], &warnings),
-		GracePeriod: tryDuration(options["grace_period"], &warnings),
-		Servers:     servers,
+		HTTPPort:      tryInt(options["http_port"], &warnings),
+		HTTPSPort:     tryInt(options["https_port"], &warnings),
+		GracePeriod:   tryDuration(options["grace_period"], &warnings),
+		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
+		Servers:       servers,
 	}
 
 	// then make the TLS app
@@ -253,18 +224,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		}
 		customLogs = append(customLogs, ncl)
 	}
+
 	// Apply global log options, when set
 	if options["log"] != nil {
 		for _, logValue := range options["log"].([]ConfigValue) {
 			addCustomLog(logValue.Value.(namedCustomLog))
-		}
-	}
-	// Apply server-specific log options
-	for _, p := range pairings {
-		for _, sb := range p.serverBlocks {
-			for _, clVal := range sb.pile["custom_log"] {
-				addCustomLog(clVal.Value.(namedCustomLog))
-			}
 		}
 	}
 
@@ -276,6 +240,15 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 				name: "default",
 				log:  &caddy.CustomLog{Level: "DEBUG"},
 			})
+		}
+	}
+
+	// Apply server-specific log options
+	for _, p := range pairings {
+		for _, sb := range p.serverBlocks {
+			for _, clVal := range sb.pile["custom_log"] {
+				addCustomLog(clVal.Value.(namedCustomLog))
+			}
 		}
 	}
 
@@ -341,14 +314,14 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 // which is expected to be the first server block if it has zero
 // keys. It returns the updated list of server blocks with the
 // global options block removed, and updates options accordingly.
-func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]interface{}) ([]serverBlock, error) {
+func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]any) ([]serverBlock, error) {
 	if len(serverBlocks) == 0 || len(serverBlocks[0].block.Keys) > 0 {
 		return serverBlocks, nil
 	}
 
 	for _, segment := range serverBlocks[0].block.Segments {
 		opt := segment.Directive()
-		var val interface{}
+		var val any
 		var err error
 		disp := caddyfile.NewDispenser(segment)
 
@@ -418,7 +391,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 // to server blocks. Each pairing is essentially a server definition.
 func (st *ServerType) serversFromPairings(
 	pairings []sbAddrAssociation,
-	options map[string]interface{},
+	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 	groupCounter counter,
 ) (map[string]*caddyhttp.Server, error) {
@@ -439,6 +412,23 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	for i, p := range pairings {
+		// detect ambiguous site definitions: server blocks which
+		// have the same host bound to the same interface (listener
+		// address), otherwise their routes will improperly be added
+		// to the same server (see issue #4635)
+		for j, sblock1 := range p.serverBlocks {
+			for _, key := range sblock1.block.Keys {
+				for k, sblock2 := range p.serverBlocks {
+					if k == j {
+						continue
+					}
+					if sliceContains(sblock2.block.Keys, key) {
+						return nil, fmt.Errorf("ambiguous site definition: %s", key)
+					}
+				}
+			}
+		}
+
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
 		}
@@ -455,6 +445,17 @@ func (st *ServerType) serversFromPairings(
 				srv.AutoHTTPS.DisableCerts = true
 			case "ignore_loaded_certs":
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
+			}
+		}
+
+		// Using paths in site addresses is deprecated
+		// See ParseAddress() where parsing should later reject paths
+		// See https://github.com/caddyserver/caddy/pull/4728 for a full explanation
+		for _, sblock := range p.serverBlocks {
+			for _, addr := range sblock.keys {
+				if addr.Path != "" {
+					caddy.Log().Named("caddyfile").Warn("Using a path in a site address is deprecated; please use the 'handle' directive instead", zap.String("address", addr.String()))
+				}
 			}
 		}
 
@@ -545,7 +546,7 @@ func (st *ServerType) serversFromPairings(
 			// emit warnings if user put unspecified IP addresses; they probably want the bind directive
 			for _, h := range hosts {
 				if h == "0.0.0.0" || h == "::" {
-					log.Printf("[WARNING] Site block has unspecified IP address %s which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", h)
+					caddy.Log().Named("caddyfile").Warn("Site block has an unspecified IP address which only matches requests having that Host header; you probably want the 'bind' directive to configure the socket", zap.String("address", h))
 				}
 			}
 
@@ -725,7 +726,7 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
-func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]interface{}) error {
+func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]any) error {
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
@@ -1250,9 +1251,61 @@ func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.Modul
 	return msEncoded, nil
 }
 
+// placeholderShorthands returns a slice of old-new string pairs,
+// where the left of the pair is a placeholder shorthand that may
+// be used in the Caddyfile, and the right is the replacement.
+func placeholderShorthands() []string {
+	return []string{
+		"{dir}", "{http.request.uri.path.dir}",
+		"{file}", "{http.request.uri.path.file}",
+		"{host}", "{http.request.host}",
+		"{hostport}", "{http.request.hostport}",
+		"{port}", "{http.request.port}",
+		"{method}", "{http.request.method}",
+		"{path}", "{http.request.uri.path}",
+		"{query}", "{http.request.uri.query}",
+		"{remote}", "{http.request.remote}",
+		"{remote_host}", "{http.request.remote.host}",
+		"{remote_port}", "{http.request.remote.port}",
+		"{scheme}", "{http.request.scheme}",
+		"{uri}", "{http.request.uri}",
+		"{tls_cipher}", "{http.request.tls.cipher_suite}",
+		"{tls_version}", "{http.request.tls.version}",
+		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
+		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
+		"{tls_client_serial}", "{http.request.tls.client.serial}",
+		"{tls_client_subject}", "{http.request.tls.client.subject}",
+		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
+		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
+		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
+	}
+}
+
+// WasReplacedPlaceholderShorthand checks if a token string was
+// likely a replaced shorthand of the known Caddyfile placeholder
+// replacement outputs. Useful to prevent some user-defined map
+// output destinations from overlapping with one of the
+// predefined shorthands.
+func WasReplacedPlaceholderShorthand(token string) string {
+	prev := ""
+	for i, item := range placeholderShorthands() {
+		// only look at every 2nd item, which is the replacement
+		if i%2 == 0 {
+			prev = item
+			continue
+		}
+		if strings.Trim(token, "{}") == strings.Trim(item, "{}") {
+			// we return the original shorthand so it
+			// can be used for an error message
+			return prev
+		}
+	}
+	return ""
+}
+
 // tryInt tries to convert val to an integer. If it fails,
 // it downgrades the error to a warning and returns 0.
-func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
+func tryInt(val any, warnings *[]caddyconfig.Warning) int {
 	intVal, ok := val.(int)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
@@ -1260,7 +1313,7 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 	return intVal
 }
 
-func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
+func tryString(val any, warnings *[]caddyconfig.Warning) string {
 	stringVal, ok := val.(string)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a string type"})
@@ -1268,7 +1321,7 @@ func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
 	return stringVal
 }
 
-func tryDuration(val interface{}, warnings *[]caddyconfig.Warning) caddy.Duration {
+func tryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
 	durationVal, ok := val.(caddy.Duration)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a duration type"})

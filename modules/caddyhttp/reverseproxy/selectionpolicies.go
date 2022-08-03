@@ -132,7 +132,7 @@ func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.Intn(i + 1)
+		j := weakrand.Intn(i + 1) //nolint:gosec
 		if j < k {
 			choices[j] = upstream
 		}
@@ -181,7 +181,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if (weakrand.Int() % count) == 0 {
+			if (weakrand.Int() % count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}
@@ -475,7 +475,7 @@ func selectRandomHost(pool []*Upstream) *Upstream {
 		// upstream will always be chosen if there is at
 		// least one available
 		count++
-		if (weakrand.Int() % count) == 0 {
+		if (weakrand.Int() % count) == 0 { //nolint:gosec
 			randomHost = upstream
 		}
 	}
@@ -511,24 +511,29 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	if len(best) == 0 {
 		return nil
 	}
-	return best[weakrand.Intn(len(best))]
+	return best[weakrand.Intn(len(best))] //nolint:gosec
 }
 
-// hostByHashing returns an available host
-// from pool based on a hashable string s.
+// hostByHashing returns an available host from pool based on a hashable string s.
 func hostByHashing(pool []*Upstream, s string) *Upstream {
-	poolLen := uint32(len(pool))
-	if poolLen == 0 {
-		return nil
-	}
-	index := hash(s) % poolLen
-	for i := uint32(0); i < poolLen; i++ {
-		upstream := pool[(index+i)%poolLen]
-		if upstream.Available() {
-			return upstream
+	// Highest Random Weight (HRW, or "Rendezvous") hashing,
+	// guarantees stability when the list of upstreams changes;
+	// see https://medium.com/i0exception/rendezvous-hashing-8c00e2fb58b0,
+	// https://randorithms.com/2020/12/26/rendezvous-hashing.html,
+	// and https://en.wikipedia.org/wiki/Rendezvous_hashing.
+	var highestHash uint32
+	var upstream *Upstream
+	for _, up := range pool {
+		if !up.Available() {
+			continue
+		}
+		h := hash(s + up.String()) // important to hash key and server together
+		if h > highestHash {
+			highestHash = h
+			upstream = up
 		}
 	}
-	return nil
+	return upstream
 }
 
 // hash calculates a fast hash based on s.

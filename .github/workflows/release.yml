@@ -11,13 +11,13 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go: [ '1.18' ]
+        go: [ '1.19' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.18'
-          GO_SEMVER: '~1.18.1'
+        - go: '1.19'
+          GO_SEMVER: '~1.19.0'
 
     runs-on: ${{ matrix.os }}
 
@@ -56,7 +56,6 @@ jobs:
         env
         echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
-        echo "::set-output name=go_cache::$(go env GOCACHE)"
 
         # Add "pip install" CLI tools to PATH
         echo ~/.local/bin >> $GITHUB_PATH
@@ -91,7 +90,12 @@ jobs:
     - name: Cache the build cache
       uses: actions/cache@v2
       with:
-        path: ${{ steps.vars.outputs.go_cache }}
+        # In order:
+        # * Module download cache
+        # * Build cache (Linux)
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
         key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go${{ matrix.go }}-release

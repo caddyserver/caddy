@@ -15,7 +15,6 @@
 package reverseproxy
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"reflect"
@@ -28,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/dustin/go-humanize"
 )
 
@@ -59,8 +59,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //         # load balancing
 //         lb_policy <name> [<options...>]
+//         lb_retries <retries>
 //         lb_try_duration <duration>
 //         lb_try_interval <interval>
+//         lb_retry_match <request-matcher>
 //
 //         # active health checking
 //         health_uri      <uri>
@@ -86,10 +88,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //         buffer_responses
 //         max_buffer_size <size>
 //
-//         # header manipulation
+//         # request manipulation
 //         trusted_proxies [private_ranges] <ranges...>
 //         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
 //         header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//         method <method>
+//         rewrite <to>
 //
 //         # round trip
 //         transport <name> {
@@ -245,6 +249,19 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
 
+			case "lb_retries":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tries, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.Retries = tries
+
 			case "lb_try_duration":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -270,6 +287,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
 				h.LoadBalancing.TryInterval = caddy.Duration(dur)
+
+			case "lb_retry_match":
+				matcherSet, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
+				if err != nil {
+					return d.Errf("failed to parse lb_retry_match: %v", err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, matcherSet)
 
 			case "health_uri":
 				if !d.NextArg() {
@@ -552,16 +579,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				case 2:
 					// some lint checks, I guess
 					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						log.Printf("[WARNING] Unnecessary header_up ('Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-For' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Proto' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						log.Printf("[WARNING] Unnecessary header_up ('X-Forwarded-Host' field): the reverse proxy's default behavior is to pass headers to the upstream")
+						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
 					}
 					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
 				case 3:
@@ -601,6 +628,30 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err(err.Error())
 				}
 
+			case "method":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.Method = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "rewrite":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.URI = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
 			case "transport":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -628,22 +679,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "replace_status":
 				args := d.RemainingArgs()
-				if len(args) != 2 {
-					return d.Errf("must have two arguments: a response matcher and a status code")
+				if len(args) != 1 && len(args) != 2 {
+					return d.Errf("must have one or two arguments: an optional response matcher, and a status code")
 				}
 
-				if !strings.HasPrefix(args[0], matcherPrefix) {
-					return d.Errf("must use a named response matcher, starting with '@'")
-				}
+				responseHandler := caddyhttp.ResponseHandler{}
 
-				foundMatcher, ok := h.responseMatchers[args[0]]
-				if !ok {
-					return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
-				}
-
-				_, err := strconv.Atoi(args[1])
-				if err != nil {
-					return d.Errf("bad integer value '%s': %v", args[1], err)
+				if len(args) == 2 {
+					if !strings.HasPrefix(args[0], matcherPrefix) {
+						return d.Errf("must use a named response matcher, starting with '@'")
+					}
+					foundMatcher, ok := h.responseMatchers[args[0]]
+					if !ok {
+						return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+					}
+					responseHandler.Match = &foundMatcher
+					responseHandler.StatusCode = caddyhttp.WeakString(args[1])
+				} else if len(args) == 1 {
+					responseHandler.StatusCode = caddyhttp.WeakString(args[0])
 				}
 
 				// make sure there's no block, cause it doesn't make sense
@@ -653,10 +706,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				h.HandleResponse = append(
 					h.HandleResponse,
-					caddyhttp.ResponseHandler{
-						Match:      &foundMatcher,
-						StatusCode: caddyhttp.WeakString(args[1]),
-					},
+					responseHandler,
 				)
 
 			default:
@@ -789,6 +839,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         tls_timeout <duration>
 //         tls_trusted_ca_certs <cert_files...>
 //         tls_server_name <sni>
+//         tls_renegotiation <level>
+//         tls_except_ports <ports...>
 //         keepalive [off|<duration>]
 //         keepalive_interval <interval>
 //         keepalive_idle_conns <max_count>
@@ -822,6 +874,26 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid write buffer size '%s': %v", d.Val(), err)
 				}
 				h.WriteBufferSize = int(size)
+
+			case "read_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid read timeout duration '%s': %v", d.Val(), err)
+				}
+				h.ReadTimeout = caddy.Duration(timeout)
+
+			case "write_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid write timeout duration '%s': %v", d.Val(), err)
+				}
+				h.WriteTimeout = caddy.Duration(timeout)
 
 			case "max_response_header":
 				if !d.NextArg() {
@@ -882,6 +954,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("must specify at least one resolver address")
 				}
 
+			case "tls":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
 			case "tls_client_auth":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
@@ -895,11 +972,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS.ClientCertificateKeyFile = args[1]
 				default:
 					return d.ArgErr()
-				}
-
-			case "tls":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
 				}
 
 			case "tls_insecure_skip_verify":
@@ -942,6 +1014,29 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.ServerName = d.Val()
+
+			case "tls_renegotiation":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch renegotiation := d.Val(); renegotiation {
+				case "never", "once", "freely":
+					h.TLS.Renegotiation = renegotiation
+				default:
+					return d.ArgErr()
+				}
+
+			case "tls_except_ports":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.ExceptPorts = d.RemainingArgs()
+				if len(h.TLS.ExceptPorts) == 0 {
+					return d.ArgErr()
+				}
 
 			case "keepalive":
 				if !d.NextArg() {
