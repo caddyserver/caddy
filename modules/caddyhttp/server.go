@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -139,7 +140,12 @@ type Server struct {
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
-	h3server *http3.Server
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
