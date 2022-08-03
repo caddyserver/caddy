@@ -3,29 +3,24 @@ package h2chandler
 import (
 	"context"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/textproto"
-	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/net/http/httpguts"
 )
 
-// Handler is a Handler which records net.Conn from possible h2c upgrade request, net.Conn is retrieved from ConnCtxKey
+// Handler is a Handler which counts possible h2c upgrade requests
 type Handler struct {
-	Handler       http.Handler
-	connections   map[net.Conn]struct{}
-	connectionsMu *sync.Mutex
+	cnt     uint64
+	Handler http.Handler
 }
 
 // NewHandler returns an http.Handler that tracks possible h2c upgrade requests.
 func NewHandler(h http.Handler) *Handler {
 	return &Handler{
-		Handler:       h,
-		connections:   make(map[net.Conn]struct{}),
-		connectionsMu: new(sync.Mutex),
+		Handler: h,
 	}
 }
 
@@ -48,7 +43,7 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 	timer := time.NewTimer(nextPollInterval())
 	defer timer.Stop()
 	for {
-		if h.getRemainingConns() == 0 {
+		if atomic.LoadUint64(&h.cnt) == 0 {
 			return nil
 		}
 		select {
@@ -58,14 +53,6 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 			timer.Reset(nextPollInterval())
 		}
 	}
-}
-
-func (h *Handler) getRemainingConns() int {
-	var cnt int
-	h.connectionsMu.Lock()
-	cnt = len(h.connections)
-	h.connectionsMu.Unlock()
-	return cnt
 }
 
 // isH2cUpgrade check whether request is h2c upgrade request, copied from golang.org/x/net/http2/h2c
@@ -85,27 +72,9 @@ func isH2cUpgrade(r *http.Request) bool {
 // ServeHTTP records underlying connections that are likely to be h2c.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isH2cUpgrade(r) {
-		conn := r.Context().Value(ConnCtxKey).(net.Conn)
-		h.registerConnection(conn)
-		defer h.unregisterConn(conn)
+		atomic.AddUint64(&h.cnt, 1)
+		defer atomic.AddUint64(&h.cnt, ^uint64(0))
 	}
 	h.Handler.ServeHTTP(w, r)
 	return
 }
-
-func (h *Handler) registerConnection(conn net.Conn) {
-	h.connectionsMu.Lock()
-	h.connections[conn] = struct{}{}
-	h.connectionsMu.Unlock()
-}
-
-func (h *Handler) unregisterConn(conn net.Conn) {
-	h.connectionsMu.Lock()
-	delete(h.connections, conn)
-	h.connectionsMu.Unlock()
-}
-
-const (
-	// For retrieving request's underlying net.Conn only, do not write to or read from directly
-	ConnCtxKey caddy.CtxKey = "conn"
-)

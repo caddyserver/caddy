@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -331,9 +332,6 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
-			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, h2chandler.ConnCtxKey, c)
-			},
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
