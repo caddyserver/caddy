@@ -325,11 +325,6 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 		}
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
-		srv.h3server = &http3.Server{
-			Handler:        srv,
-			TLSConfig:      tlsCfg,
-			MaxHeaderBytes: srv.MaxHeaderBytes,
-		}
 
 		// enable h2c if configured
 		if srv.AllowH2C {
@@ -372,13 +367,20 @@ func (app *App) Start() error {
 
 					// TODO: HTTP/3 support is experimental for now
 					if srv.ExperimentalHTTP3 {
-						app.logger.Info("enabling experimental HTTP/3 listener",
-							zap.String("addr", hostport),
-						)
+						if srv.h3server == nil {
+							srv.h3server = &http3.Server{
+								Handler:        srv,
+								TLSConfig:      tlsCfg,
+								MaxHeaderBytes: srv.MaxHeaderBytes,
+							}
+						}
+
+						app.logger.Info("enabling experimental HTTP/3 listener", zap.String("addr", hostport))
 						h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
 						if err != nil {
 							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
 						}
+
 						//nolint:errcheck
 						go srv.h3server.ServeListener(h3ln)
 					}

@@ -153,7 +153,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
 	if s.h3server != nil {
-		// TODO: known bug, see: https://github.com/lucas-clemente/quic-go/issues/3486
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
 			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
