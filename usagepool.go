@@ -194,6 +194,21 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 	return
 }
 
+// References returns the number of references (count of usages) to a
+// key in the pool, and true if the key exists, or false otherwise.
+func (up *UsagePool) References(key interface{}) (int, bool) {
+	up.RLock()
+	upv, loaded := up.pool[key]
+	up.RUnlock()
+	if loaded {
+		// I wonder if it'd be safer to read this value during
+		// our lock on the UsagePool... guess we'll see...
+		refs := atomic.LoadInt32(&upv.refs)
+		return int(refs), true
+	}
+	return 0, false
+}
+
 // Constructor is a function that returns a new value
 // that can destruct itself when it is no longer needed.
 type Constructor func() (Destructor, error)
