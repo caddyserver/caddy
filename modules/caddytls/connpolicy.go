@@ -112,7 +112,7 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 						continue policyLoop
 					}
 				}
-				return pol.stdTLSConfig, nil
+				return pol.TLSConfig, nil
 			}
 
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
@@ -156,8 +156,15 @@ type ConnectionPolicy struct {
 	// is no policy configured for the empty SNI value.
 	DefaultSNI string `json:"default_sni,omitempty"`
 
-	matchers     []ConnectionMatcher
-	stdTLSConfig *tls.Config
+	// TLSConfig is the fully-formed, standard lib TLS config
+	// used to serve TLS connections. Provision all
+	// ConnectionPolicies to populate this. It is exported only
+	// so it can be minimally adjusted after provisioning
+	// if necessary (like to adjust NextProtos to disable HTTP/2),
+	// and may be unexported in the future.
+	TLSConfig *tls.Config `json:"-"`
+
+	matchers []ConnectionMatcher
 }
 
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
@@ -275,7 +282,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	setDefaultTLSParams(cfg)
 
-	p.stdTLSConfig = cfg
+	p.TLSConfig = cfg
 
 	return nil
 }

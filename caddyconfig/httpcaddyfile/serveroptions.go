@@ -39,7 +39,7 @@ type serverOptions struct {
 	WriteTimeout         caddy.Duration
 	IdleTimeout          caddy.Duration
 	MaxHeaderBytes       int
-	AllowH2C             bool
+	Protocols            []string
 	StrictSNIHost        *bool
 	ShouldLogCredentials bool
 }
@@ -140,20 +140,51 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				}
 				serverOpts.ShouldLogCredentials = true
 
+			case "protocols":
+				protos := d.RemainingArgs()
+				for _, proto := range protos {
+					if proto != "h1" && proto != "h2" && proto != "h2c" && proto != "h3" {
+						return nil, d.Errf("unknown protocol '%s': expected h1, h2, h2c, or h3", proto)
+					}
+					if sliceContains(serverOpts.Protocols, proto) {
+						return nil, d.Errf("protocol %s specified more than once", proto)
+					}
+					serverOpts.Protocols = append(serverOpts.Protocols, proto)
+				}
+				if d.NextBlock(0) {
+					return nil, d.ArgErr()
+				}
+
+			case "strict_sni_host":
+				if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
+					return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
+				}
+				boolVal := true
+				if d.Val() == "insecure_off" {
+					boolVal = false
+				}
+				serverOpts.StrictSNIHost = &boolVal
+
+			// TODO: DEPRECATED. (August 2022)
 			case "protocol":
+				caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol sub-option will be removed soon")
+
 				for nesting := d.Nesting(); d.NextBlock(nesting); {
 					switch d.Val() {
 					case "allow_h2c":
+						caddy.Log().Named("caddyfile").Warn("DEPRECATED: allow_h2c will be removed soon; use protocols option instead")
+
 						if d.NextArg() {
 							return nil, d.ArgErr()
 						}
-						serverOpts.AllowH2C = true
-
-					// TODO: deprecated - remove soon!
-					case "experimental_http3":
-						caddy.Log().Named("caddyfile").Warn("the experimental_http3 option is deprecated and will be removed soon as HTTP/3 is now enabled by default and is no longer experimental")
+						if sliceContains(serverOpts.Protocols, "h2c") {
+							return nil, d.Errf("protocol h2c already specified")
+						}
+						serverOpts.Protocols = append(serverOpts.Protocols, "h2c")
 
 					case "strict_sni_host":
+						caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol > strict_sni_host in this position will be removed soon; move up to the servers block instead")
+
 						if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
 							return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
 						}
@@ -215,7 +246,7 @@ func applyServerOptions(
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
-		server.AllowH2C = opts.AllowH2C
+		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {

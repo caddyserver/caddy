@@ -184,6 +184,17 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.accessLogger = app.logger.Named("log.access")
 		}
 
+		// the Go standard library does not let us serve only HTTP/2 using
+		// http.Server; we would probably need to write our own server
+		if !srv.protocol("h1") && (srv.protocol("h2") || srv.protocol("h2c")) {
+			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
+		}
+
+		// if no protocols configured explicitly, enable all except h2c
+		if len(srv.Protocols) == 0 {
+			srv.Protocols = []string{"h1", "h2", "h3"}
+		}
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI
@@ -195,8 +206,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// based on hostname
 		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
 			app.logger.Warn("enabling strict SNI-Host enforcement because TLS client auth is configured",
-				zap.String("server_id", srvName),
-			)
+				zap.String("server_id", srvName))
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
 		}
@@ -205,8 +215,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
 			if err != nil {
-				return fmt.Errorf("server %s, listener %d: %v",
-					srvName, i, err)
+				return fmt.Errorf("server %s, listener %d: %v", srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
 		}
@@ -323,10 +332,34 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 		}
+
+		// disable HTTP/2, which we enabled by default during provisioning
+		if !srv.protocol("h2") {
+			srv.server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+			for _, cp := range srv.TLSConnPolicies {
+				// the TLSConfig was already provisioned, so... manually remove it
+				for i, np := range cp.TLSConfig.NextProtos {
+					if np == "h2" {
+						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+						break
+					}
+				}
+				// remove it from the parent connection policy too, just to keep things tidy
+				for i, alpn := range cp.ALPN {
+					if alpn == "h2" {
+						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		// this TLS config is used by the std lib to choose the actual TLS config for connections
+		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 
-		// enable h2c if configured
-		if srv.AllowH2C {
+		// enable H2C if configured
+		if srv.protocol("h2c") {
 			h2server := &http2.Server{
 				IdleTimeout: time.Duration(srv.IdleTimeout),
 			}
@@ -364,10 +397,12 @@ func (app *App) Start() error {
 					// create TLS listener - this enables and terminates TLS
 					ln = tls.NewListener(ln, tlsCfg)
 
-					// enable HTTP/3
-					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-					if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
-						return err
+					// enable HTTP/3 if configured
+					if srv.protocol("h3") {
+						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
+							return err
+						}
 					}
 				}
 
@@ -392,10 +427,17 @@ func (app *App) Start() error {
 
 				srv.listeners = append(srv.listeners, ln)
 
-				//nolint:errcheck
-				go srv.server.Serve(ln)
+				// enable HTTP/1 if configured
+				if srv.protocol("h1") {
+					//nolint:errcheck
+					go srv.server.Serve(ln)
+				}
 			}
 		}
+
+		srv.logger.Info("server running",
+			zap.String("name", srvName),
+			zap.Strings("protocols", srv.Protocols))
 	}
 
 	// finish automatic HTTPS by finally beginning

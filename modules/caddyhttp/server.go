@@ -116,21 +116,35 @@ type Server struct {
 	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
-	// DEPRECATED: WILL BE REMOVED SOON. HTTP/3 is enabled by default
-	// when possible. Please remove this from your configs.
-	// TODO: remove
-	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
-
-	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
-	// which will serve HTTP/2 over plaintext TCP connections if
-	// the client supports it. Because this is not implemented by the
-	// Go standard library, using H2C is incompatible with most
-	// of the other options for this server. Do not enable this
+	// Protocols specifies which HTTP protocols to enable.
+	// Supported values are:
+	//
+	// - `h1` (HTTP/1.1)
+	// - `h2` (HTTP/2)
+	// - `h2c` (cleartext HTTP/2)
+	// - `h3` (HTTP/3)
+	//
+	// If enabling `h2` or `h2c`, `h1` must also be enabled;
+	// this is due to current limitations in the Go standard
+	// library.
+	//
+	// HTTP/2 operates only over TLS (HTTPS). HTTP/3 opens
+	// a UDP socket to serve QUIC connections.
+	//
+	// H2C operates over plain TCP if the client supports it;
+	// however, because this is not implemented by the Go
+	// standard library, other server options are not compatible
+	// and will not be applied to H2C requests. Do not enable this
 	// only to achieve maximum client compatibility. In practice,
 	// very few clients implement H2C, and even fewer require it.
-	// This setting applies only to unencrypted HTTP listeners.
-	// ⚠️ Experimental feature; subject to change or removal.
-	AllowH2C bool `json:"allow_h2c,omitempty"`
+	// Enabling H2C can be useful for serving/proxying gRPC
+	// if encryption is not possible or desired.
+	//
+	// We recommend for most users to simply let Caddy use the
+	// default settings.
+	//
+	// Default: `[h1 h2 h3]`
+	Protocols []string `json:"protocols,omitempty"`
 
 	name string
 
@@ -156,6 +170,7 @@ type Server struct {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
+	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
 		// keep track of active requests for QUIC transport purposes (See AcceptToken callback in quic.Config)
 		atomic.AddInt64(&s.activeRequests, 1)
@@ -539,6 +554,16 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+// protocol returns true if the protocol proto is configured/enabled.
+func (s *Server) protocol(proto string) bool {
+	for _, p := range s.Protocols {
+		if p == proto {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerLogConfig describes a server's logging configuration. If
