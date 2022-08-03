@@ -331,6 +331,9 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
+			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+				return context.WithValue(ctx, ConnCtxKey, c)
+			},
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
@@ -409,6 +412,17 @@ func (app *App) Start() error {
 				// finish wrapping listener where we left off before TLS
 				for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
 					ln = srv.listenerWrappers[i].WrapListener(ln)
+				}
+
+				// handle http2 if use tls listener wrapper
+				if useTLS {
+					http2lnWrapper := &http2Listener{
+						Listener: ln,
+						server:   s,
+						h2server: h2server,
+					}
+					app.http2listeners = append(app.http2listeners, http2lnWrapper)
+					ln = http2lnWrapper
 				}
 
 				// if binding to port 0, the OS chooses a port for us;
@@ -512,6 +526,14 @@ func (app *App) Stop() error {
 		}
 	}
 
+
+	for i, s := range app.http2listeners {
+		if err := s.Shutdown(ctx); err != nil {
+			app.logger.Error("http2 listener shutdown",
+				zap.Error(err),
+				zap.Int("index", i))
+		}
+	}
 	return nil
 }
 

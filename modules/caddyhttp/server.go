@@ -168,6 +168,14 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.TLS == nil {
+		conn := r.Context().Value(ConnCtxKey).(net.Conn)
+		if csc, ok := conn.(connectionStateConn); ok {
+			r.TLS = new(tls.ConnectionState)
+			*r.TLS = csc.ConnectionState()
+		}
+	}
+
 	w.Header().Set("Server", "Caddy")
 
 	// advertise HTTP/3, if enabled
@@ -725,4 +733,7 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// For referencing underlying net.Conn
+	ConnCtxKey caddy.CtxKey = "conn"
 )
