@@ -189,12 +189,11 @@ func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, err
 	}
 
 	// adapter name should be suffix of MIME type
-	slashIdx := strings.Index(ct, "/")
-	if slashIdx < 0 {
+	_, adapterName, slashFound := strings.Cut(ct, "/")
+	if !slashFound {
 		return nil, nil, fmt.Errorf("malformed Content-Type")
 	}
 
-	adapterName := ct[slashIdx+1:]
 	cfgAdapter := GetAdapter(adapterName)
 	if cfgAdapter == nil {
 		return nil, nil, fmt.Errorf("unrecognized config adapter '%s'", adapterName)
