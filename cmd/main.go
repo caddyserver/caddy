@@ -387,11 +387,11 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// split line into key and value
-		fields := strings.SplitN(line, "=", 2)
-		if len(fields) != 2 {
+		before, after, isCut := strings.Cut(line, "=")
+		if !isCut {
 			return nil, fmt.Errorf("can't parse line %d; line should be in KEY=VALUE format", lineNumber)
 		}
-		key, val := fields[0], fields[1]
+		key, val := before, after
 
 		// sometimes keys are prefixed by "export " so file can be sourced in bash; ignore it here
 		key = strings.TrimPrefix(key, "export ")

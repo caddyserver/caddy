@@ -468,15 +468,15 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	}
 	var start, end uint64
 	if port != "" {
-		ports := strings.SplitN(port, "-", 2)
-		if len(ports) == 1 {
-			ports = append(ports, ports[0])
+		before, after, found := strings.Cut(port, "-")
+		if !found {
+			after = before
 		}
-		start, err = strconv.ParseUint(ports[0], 10, 16)
+		start, err = strconv.ParseUint(before, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
 		}
-		end, err = strconv.ParseUint(ports[1], 10, 16)
+		end, err = strconv.ParseUint(after, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
 		}
@@ -498,9 +498,10 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 // SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
-	if idx := strings.Index(a, "/"); idx >= 0 {
-		network = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+1:]
+	beforeSlash, afterSlash, slashFound := strings.Cut(a, "/")
+	if slashFound {
+		network = strings.ToLower(strings.TrimSpace(beforeSlash))
+		a = afterSlash
 	}
 	if isUnixNetwork(network) {
 		host = a
