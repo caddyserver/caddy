@@ -11,7 +11,6 @@ import (
 )
 
 func Listen(network, addr string) (net.Listener, error) {
-	// 0 timeout means Go picks the default
 	return ListenTimeout(network, addr, 0)
 }
 
