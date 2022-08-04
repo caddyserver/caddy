@@ -24,6 +24,9 @@ https://example.com {
 			max_conns_per_host 5
 			keepalive_idle_conns_per_host 2
 			keepalive_interval 30s
+			
+			tls_renegotiation freely
+			tls_except_ports 8181 8182
 		}
 	}
 }
@@ -91,7 +94,13 @@ https://example.com {
 															]
 														},
 														"response_header_timeout": 8000000000,
-														"tls": {},
+														"tls": {
+															"except_ports": [
+																"8181",
+																"8182"
+															],
+															"renegotiation": "freely"
+														},
 														"versions": [
 															"h2c",
 															"2"

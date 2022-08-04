@@ -186,7 +186,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		expectedBytes, _, _ = adapter.Adapt([]byte(rawConfig), nil)
 	}
 
-	var expected interface{}
+	var expected any
 	err := json.Unmarshal(expectedBytes, &expected)
 	if err != nil {
 		return err
@@ -196,7 +196,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		Timeout: Default.LoadRequestTimeout,
 	}
 
-	fetchConfig := func(client *http.Client) interface{} {
+	fetchConfig := func(client *http.Client) any {
 		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 		if err != nil {
 			return nil
@@ -206,7 +206,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		if err != nil {
 			return nil
 		}
-		var actual interface{}
+		var actual any
 		err = json.Unmarshal(actualBytes, &actual)
 		if err != nil {
 			return nil
@@ -371,7 +371,7 @@ func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, 
 		return false
 	}
 
-	options := make(map[string]interface{})
+	options := make(map[string]any)
 
 	result, warnings, err := cfgAdapter.Adapt([]byte(rawConfig), options)
 	if err != nil {

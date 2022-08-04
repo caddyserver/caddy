@@ -430,12 +430,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// and because we may retry some number of times, carry over the error
 	// from previous tries because of the nuances of load balancing & retries
 	var proxyErr error
+	var retries int
 	for {
 		var done bool
-		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, repl, reqHeader, reqHost, next)
+		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, next)
 		if done {
 			break
 		}
+		retries++
 	}
 
 	if proxyErr != nil {
@@ -449,7 +451,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // that has to be passed in, we brought this into its own method so that we could run defer more easily.
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
-func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time,
+func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time, retries int,
 	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
@@ -477,9 +479,9 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = fmt.Errorf("no upstreams available")
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("no upstreams available"))
 		}
-		if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
 		}
 		return false, proxyErr
@@ -524,7 +526,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
-	if proxyErr == nil || proxyErr == context.Canceled {
+	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
 		// context.Canceled happens when the downstream client
 		// cancels the request, which is not our failure
 		return true, nil
@@ -542,7 +544,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	h.countFailure(upstream)
 
 	// if we've tried long enough, break
-	if !h.LoadBalancing.tryAgain(h.ctx, start, proxyErr, r) {
+	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 		return true, proxyErr
 	}
 
@@ -784,18 +786,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body = h.bufferedBody(res.Body)
 	}
 
-	// the response body may get closed by a response handler,
-	// and we need to keep track to make sure we don't try to copy
-	// the response if it was already closed
-	bodyClosed := false
-
 	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
 			continue
 		}
 
-		// if configured to only change the status code, do that then continue regular proxy response
+		// if configured to only change the status code,
+		// do that then continue regular proxy response
 		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 			if err != nil {
@@ -840,33 +838,29 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// pass the request through the response handler routes
 		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, origReq.WithContext(ctx))
 
-		// if the response handler routes already finalized the response,
-		// we can return early. It should be finalized if the routes executed
-		// included a copy_response handler. If a fresh response was written
-		// by the routes instead, then we still need to finalize the response
-		// without copying the body.
-		if routeErr == nil && hrc.isFinalized {
-			return nil
+		// close the response body afterwards, since we don't need it anymore;
+		// either a route had 'copy_response' which already consumed the body,
+		// or some other terminal handler ran which doesn't need the response
+		// body after that point (e.g. 'file_server' for X-Accel-Redirect flow),
+		// or we fell through to subsequent handlers past this proxy
+		// (e.g. forward auth's 2xx response flow).
+		if !hrc.isFinalized {
+			res.Body.Close()
 		}
 
-		// always close the response body afterwards, since it's expected
-		// that the response handler routes will have written to the
-		// response writer with a new body, if it wasn't already finalized.
-		res.Body.Close()
-		bodyClosed = true
-
+		// wrap any route error in roundtripSucceeded so caller knows that
+		// the roundtrip was successful and to not retry
 		if routeErr != nil {
-			// wrap error in roundtripSucceeded so caller knows that
-			// the roundtrip was successful and to not retry
 			return roundtripSucceeded{routeErr}
 		}
 
-		// we've already closed the body, so there's no use allowing
-		// another response handler to run as well
-		break
+		// we're done handling the response, and we don't want to
+		// fall through to the default finalize/copy behaviour
+		return nil
 	}
 
-	return h.finalizeResponse(rw, req, res, repl, start, logger, bodyClosed)
+	// copy the response body and headers back to the upstream client
+	return h.finalizeResponse(rw, req, res, repl, start, logger)
 }
 
 // finalizeResponse prepares and copies the response.
@@ -877,7 +871,6 @@ func (h Handler) finalizeResponse(
 	repl *caddy.Replacer,
 	start time.Time,
 	logger *zap.Logger,
-	bodyClosed bool,
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
@@ -889,13 +882,6 @@ func (h Handler) finalizeResponse(
 
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
-	}
-
-	// remove the content length if we're not going to be copying
-	// from the response, because otherwise there'll be a mismatch
-	// between bytes written and the advertised length
-	if bodyClosed {
-		res.Header.Del("Content-Length")
 	}
 
 	// apply any response header operations
@@ -920,17 +906,16 @@ func (h Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
-	if !bodyClosed {
-		err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-		res.Body.Close() // close now, instead of defer, to populate res.Trailer
-		if err != nil {
-			// we're streaming the response and we've already written headers, so
-			// there's nothing an error handler can do to recover at this point;
-			// the standard lib's proxy panics at this point, but we'll just log
-			// the error and abort the stream here
-			h.logger.Error("aborting with incomplete response", zap.Error(err))
-			return nil
-		}
+
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
+	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if err != nil {
+		// we're streaming the response and we've already written headers, so
+		// there's nothing an error handler can do to recover at this point;
+		// the standard lib's proxy panics at this point, but we'll just log
+		// the error and abort the stream here
+		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		return nil
 	}
 
 	if len(res.Trailer) > 0 {
@@ -961,16 +946,26 @@ func (h Handler) finalizeResponse(
 	return nil
 }
 
-// tryAgain takes the time that the handler was initially invoked
-// as well as any error currently obtained, and the request being
-// tried, and returns true if another attempt should be made at
-// proxying the request. If true is returned, it has already blocked
-// long enough before the next retry (i.e. no more sleeping is
-// needed). If false is returned, the handler should stop trying to
-// proxy the request.
-func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr error, req *http.Request) bool {
+// tryAgain takes the time that the handler was initially invoked,
+// the amount of retries already performed, as well as any error
+// currently obtained, and the request being tried, and returns
+// true if another attempt should be made at proxying the request.
+// If true is returned, it has already blocked long enough before
+// the next retry (i.e. no more sleeping is needed). If false is
+// returned, the handler should stop trying to proxy the request.
+func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int, proxyErr error, req *http.Request) bool {
+	// no retries are configured
+	if lb.TryDuration == 0 && lb.Retries == 0 {
+		return false
+	}
+
 	// if we've tried long enough, break
-	if time.Since(start) >= time.Duration(lb.TryDuration) {
+	if lb.TryDuration > 0 && time.Since(start) >= time.Duration(lb.TryDuration) {
+		return false
+	}
+
+	// if we've reached the retry limit, break
+	if lb.Retries > 0 && retries >= lb.Retries {
 		return false
 	}
 
@@ -991,6 +986,11 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, proxyErr er
 		if !lb.RetryMatch.AnyMatch(req) {
 			return false
 		}
+	}
+
+	// fast path; if the interval is zero, we don't need to wait
+	if lb.TryInterval == 0 {
+		return true
 	}
 
 	// otherwise, wait and try the next available host
@@ -1180,6 +1180,11 @@ func statusError(err error) error {
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
 
+	// timeout errors have a standard status code (see issue #4823)
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		statusCode = http.StatusGatewayTimeout
+	}
+
 	// if the client canceled the request (usually this means they closed
 	// the connection, so they won't see any response), we can report it
 	// as a client error (4xx) and not a server error (5xx); unfortunately
@@ -1202,16 +1207,25 @@ type LoadBalancing struct {
 	// The default policy is random selection.
 	SelectionPolicyRaw json.RawMessage `json:"selection_policy,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
 
+	// How many times to retry selecting available backends for each
+	// request if the next available host is down. If try_duration is
+	// also configured, then retries may stop early if the duration
+	// is reached. By default, retries are disabled (zero).
+	Retries int `json:"retries,omitempty"`
+
 	// How long to try selecting available backends for each request
-	// if the next available host is down. By default, this retry is
-	// disabled. Clients will wait for up to this long while the load
-	// balancer tries to find an available upstream host.
+	// if the next available host is down. Clients will wait for up
+	// to this long while the load balancer tries to find an available
+	// upstream host. If retries is also configured, tries may stop
+	// early if the maximum retries is reached. By default, retries
+	// are disabled (zero duration).
 	TryDuration caddy.Duration `json:"try_duration,omitempty"`
 
-	// How long to wait between selecting the next host from the pool. Default
-	// is 250ms. Only relevant when a request to an upstream host fails. Be
-	// aware that setting this to 0 with a non-zero try_duration can cause the
-	// CPU to spin if all backends are down and latency is very low.
+	// How long to wait between selecting the next host from the pool.
+	// Default is 250ms if try_duration is enabled, otherwise zero. Only
+	// relevant when a request to an upstream host fails. Be aware that
+	// setting this to 0 with a non-zero try_duration can cause the CPU
+	// to spin if all backends are down and latency is very low.
 	TryInterval caddy.Duration `json:"try_interval,omitempty"`
 
 	// A list of matcher sets that restricts with which requests retries are
@@ -1303,7 +1317,7 @@ func (brc bodyReadCloser) Close() error {
 
 // bufPool is used for buffering requests and responses.
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

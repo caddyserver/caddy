@@ -17,6 +17,7 @@ package forwardauth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -57,13 +58,6 @@ func init() {
 //                 Remote-User {http.reverse_proxy.header.Remote-User}
 //                 Remote-Email {http.reverse_proxy.header.Remote-Email}
 //             }
-//         }
-//
-//         handle_response {
-//             copy_response_headers {
-//                 exclude Connection Keep-Alive Te Trailers Transfer-Encoding Upgrade
-//             }
-//             copy_response
 //         }
 //     }
 //
@@ -115,7 +109,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	// collect the headers to copy from the auth response
 	// onto the original request, so they can get passed
 	// through to a backend app
-	headersToCopy := []string{}
+	headersToCopy := make(map[string]string)
 
 	// read the subdirectives for configuring the forward_auth shortcut
 	// NOTE: we delete the tokens as we go so that the reverse_proxy
@@ -141,10 +135,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 
 			case "copy_headers":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for _, headerField := range args {
+				hadBlock := false
+				for nesting := dispenser.Nesting(); dispenser.NextBlock(nesting); {
+					hadBlock = true
+					args = append(args, dispenser.Val())
+				}
+
+				dispenser.Delete() // directive name
+				if hadBlock {
+					dispenser.Delete() // opening brace
+					dispenser.Delete() // closing brace
+				}
+				for range args {
 					dispenser.Delete()
-					headersToCopy = append(headersToCopy, headerField)
+				}
+
+				for _, headerField := range args {
+					if strings.Contains(headerField, ">") {
+						parts := strings.Split(headerField, ">")
+						headersToCopy[parts[0]] = parts[1]
+					} else {
+						headersToCopy[headerField] = headerField
+					}
 				}
 				if len(headersToCopy) == 0 {
 					return nil, dispenser.ArgErr()
@@ -173,66 +185,40 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 		},
 		Routes: []caddyhttp.Route{},
 	}
-	if len(headersToCopy) > 0 {
-		handler := &headers.Handler{
-			Request: &headers.HeaderOps{
-				Set: http.Header{},
-			},
-		}
 
-		for _, headerField := range headersToCopy {
-			handler.Request.Set[headerField] = []string{
-				"{http.reverse_proxy.header." + headerField + "}",
-			}
-		}
-
-		goodResponseHandler.Routes = append(
-			goodResponseHandler.Routes,
-			caddyhttp.Route{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					handler,
-					"handler",
-					"headers",
-					nil,
-				)},
-			},
-		)
-	}
-	rpHandler.HandleResponse = append(rpHandler.HandleResponse, goodResponseHandler)
-
-	// set up handler for denial responses; when a response
-	// has any other status than 2xx, then we copy the response
-	// back to the client, and terminate handling.
-	denialResponseHandler := caddyhttp.ResponseHandler{
-		Routes: []caddyhttp.Route{
-			{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					&reverseproxy.CopyResponseHeadersHandler{
-						Exclude: []string{
-							"Connection",
-							"Keep-Alive",
-							"Te",
-							"Trailers",
-							"Transfer-Encoding",
-							"Upgrade",
-						},
-					},
-					"handler",
-					"copy_response_headers",
-					nil,
-				)},
-			},
-			{
-				HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
-					&reverseproxy.CopyResponseHandler{},
-					"handler",
-					"copy_response",
-					nil,
-				)},
-			},
+	handler := &headers.Handler{
+		Request: &headers.HeaderOps{
+			Set: http.Header{},
 		},
 	}
-	rpHandler.HandleResponse = append(rpHandler.HandleResponse, denialResponseHandler)
+
+	// the list of headers to copy may be empty, but that's okay; we
+	// need at least one handler in the routes for the response handling
+	// logic in reverse_proxy to not skip this entry as empty.
+	for from, to := range headersToCopy {
+		handler.Request.Set[to] = []string{
+			"{http.reverse_proxy.header." + from + "}",
+		}
+	}
+
+	goodResponseHandler.Routes = append(
+		goodResponseHandler.Routes,
+		caddyhttp.Route{
+			HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
+				handler,
+				"handler",
+				"headers",
+				nil,
+			)},
+		},
+	)
+
+	// note that when a response has any other status than 2xx, then we
+	// use the reverse proxy's default behaviour of copying the response
+	// back to the client, so we don't need to explicitly add a response
+	// handler specifically for that behaviour; we do need the 2xx handler
+	// though, to make handling fall through to handlers deeper in the chain.
+	rpHandler.HandleResponse = append(rpHandler.HandleResponse, goodResponseHandler)
 
 	// the rest of the config is specified by the user
 	// using the reverse_proxy directive syntax

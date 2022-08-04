@@ -53,27 +53,18 @@ type ServerType struct {
 
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
-	options map[string]interface{}) (*caddy.Config, []caddyconfig.Warning, error) {
+	options map[string]any) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
-	state := make(map[string]interface{})
+	state := make(map[string]any)
 
-	// load all the server blocks and associate them with a "pile"
-	// of config values; also prohibit duplicate keys because they
-	// can make a config confusing if more than one server block is
-	// chosen to handle a request - we actually will make each
-	// server block's route terminal so that only one will run
-	sbKeys := make(map[string]struct{})
+	// load all the server blocks and associate them with a "pile" of config values
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
-	for i, sblock := range inputServerBlocks {
+	for _, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
 			if j == 0 && strings.HasPrefix(k, "@") {
 				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
 			}
-			if _, ok := sbKeys[k]; ok {
-				return nil, warnings, fmt.Errorf("duplicate site address not allowed: '%s' in %v (site block %d, key %d)", k, sblock.Keys, i, j)
-			}
-			sbKeys[k] = struct{}{}
 		}
 		originalServerBlocks = append(originalServerBlocks, serverBlock{
 			block: sblock,
@@ -107,6 +98,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
 		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
 		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
+		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
 	}
 
 	for _, sb := range originalServerBlocks {
@@ -198,10 +190,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
-		HTTPPort:    tryInt(options["http_port"], &warnings),
-		HTTPSPort:   tryInt(options["https_port"], &warnings),
-		GracePeriod: tryDuration(options["grace_period"], &warnings),
-		Servers:     servers,
+		HTTPPort:      tryInt(options["http_port"], &warnings),
+		HTTPSPort:     tryInt(options["https_port"], &warnings),
+		GracePeriod:   tryDuration(options["grace_period"], &warnings),
+		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
+		Servers:       servers,
 	}
 
 	// then make the TLS app
@@ -321,14 +314,14 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 // which is expected to be the first server block if it has zero
 // keys. It returns the updated list of server blocks with the
 // global options block removed, and updates options accordingly.
-func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]interface{}) ([]serverBlock, error) {
+func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]any) ([]serverBlock, error) {
 	if len(serverBlocks) == 0 || len(serverBlocks[0].block.Keys) > 0 {
 		return serverBlocks, nil
 	}
 
 	for _, segment := range serverBlocks[0].block.Segments {
 		opt := segment.Directive()
-		var val interface{}
+		var val any
 		var err error
 		disp := caddyfile.NewDispenser(segment)
 
@@ -398,7 +391,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 // to server blocks. Each pairing is essentially a server definition.
 func (st *ServerType) serversFromPairings(
 	pairings []sbAddrAssociation,
-	options map[string]interface{},
+	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 	groupCounter counter,
 ) (map[string]*caddyhttp.Server, error) {
@@ -419,6 +412,23 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	for i, p := range pairings {
+		// detect ambiguous site definitions: server blocks which
+		// have the same host bound to the same interface (listener
+		// address), otherwise their routes will improperly be added
+		// to the same server (see issue #4635)
+		for j, sblock1 := range p.serverBlocks {
+			for _, key := range sblock1.block.Keys {
+				for k, sblock2 := range p.serverBlocks {
+					if k == j {
+						continue
+					}
+					if sliceContains(sblock2.block.Keys, key) {
+						return nil, fmt.Errorf("ambiguous site definition: %s", key)
+					}
+				}
+			}
+		}
+
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
 		}
@@ -716,7 +726,7 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
-func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]interface{}) error {
+func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]any) error {
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
@@ -1295,7 +1305,7 @@ func WasReplacedPlaceholderShorthand(token string) string {
 
 // tryInt tries to convert val to an integer. If it fails,
 // it downgrades the error to a warning and returns 0.
-func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
+func tryInt(val any, warnings *[]caddyconfig.Warning) int {
 	intVal, ok := val.(int)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
@@ -1303,7 +1313,7 @@ func tryInt(val interface{}, warnings *[]caddyconfig.Warning) int {
 	return intVal
 }
 
-func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
+func tryString(val any, warnings *[]caddyconfig.Warning) string {
 	stringVal, ok := val.(string)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a string type"})
@@ -1311,7 +1321,7 @@ func tryString(val interface{}, warnings *[]caddyconfig.Warning) string {
 	return stringVal
 }
 
-func tryDuration(val interface{}, warnings *[]caddyconfig.Warning) caddy.Duration {
+func tryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
 	durationVal, ok := val.(caddy.Duration)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a duration type"})

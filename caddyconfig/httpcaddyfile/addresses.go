@@ -76,7 +76,7 @@ import (
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
 func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBlock,
-	options map[string]interface{}) (map[string][]serverBlock, error) {
+	options map[string]any) (map[string][]serverBlock, error) {
 	sbmap := make(map[string][]serverBlock)
 
 	for i, sblock := range originalServerBlocks {
@@ -102,12 +102,20 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 			}
 		}
 
+		// make a slice of the map keys so we can iterate in sorted order
+		addrs := make([]string, 0, len(addrToKeys))
+		for k := range addrToKeys {
+			addrs = append(addrs, k)
+		}
+		sort.Strings(addrs)
+
 		// now that we know which addresses serve which keys of this
 		// server block, we iterate that mapping and create a list of
 		// new server blocks for each address where the keys of the
 		// server block are only the ones which use the address; but
 		// the contents (tokens) are of course the same
-		for addr, keys := range addrToKeys {
+		for _, addr := range addrs {
+			keys := addrToKeys[addr]
 			// parse keys so that we only have to do it once
 			parsedKeys := make([]Address, 0, len(keys))
 			for _, key := range keys {
@@ -161,6 +169,7 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 				delete(addrToServerBlocks, otherAddr)
 			}
 		}
+		sort.Strings(a.addresses)
 
 		sbaddrs = append(sbaddrs, a)
 	}
@@ -174,8 +183,10 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 	return sbaddrs
 }
 
+// listenerAddrsForServerBlockKey essentially converts the Caddyfile
+// site addresses to Caddy listener addresses for each server block.
 func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
-	options map[string]interface{}) ([]string, error) {
+	options map[string]any) ([]string, error) {
 	addr, err := ParseAddress(key)
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)
@@ -208,13 +219,13 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 
 	// the bind directive specifies hosts, but is optional
-	lnHosts := make([]string, 0, len(sblock.pile))
+	lnHosts := make([]string, 0, len(sblock.pile["bind"]))
 	for _, cfgVal := range sblock.pile["bind"] {
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
 	}
 	if len(lnHosts) == 0 {
-		if defaultBind, ok := options["default_bind"].(string); ok {
-			lnHosts = []string{defaultBind}
+		if defaultBind, ok := options["default_bind"].([]string); ok {
+			lnHosts = defaultBind
 		} else {
 			lnHosts = []string{""}
 		}
@@ -223,12 +234,14 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	// use a map to prevent duplication
 	listeners := make(map[string]struct{})
 	for _, host := range lnHosts {
-		addr, err := caddy.ParseNetworkAddress(host)
-		if err == nil && addr.IsUnixNetwork() {
-			listeners[host] = struct{}{}
-		} else {
-			listeners[host+":"+lnPort] = struct{}{}
+		// host can have network + host (e.g. "tcp6/localhost") but
+		// will/should not have port information because this usually
+		// comes from the bind directive, so we append the port
+		addr, err := caddy.ParseNetworkAddress(host + ":" + lnPort)
+		if err != nil {
+			return nil, fmt.Errorf("parsing network address: %v", err)
 		}
+		listeners[addr.String()] = struct{}{}
 	}
 
 	// now turn map into list
@@ -236,6 +249,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	for lnStr := range listeners {
 		listenersList = append(listenersList, lnStr)
 	}
+	sort.Strings(listenersList)
 
 	return listenersList, nil
 }

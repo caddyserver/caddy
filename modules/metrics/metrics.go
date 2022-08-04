@@ -56,7 +56,7 @@ type zapLogger struct {
 	zl *zap.Logger
 }
 
-func (l *zapLogger) Println(v ...interface{}) {
+func (l *zapLogger) Println(v ...any) {
 	l.zl.Sugar().Error(v...)
 }
 

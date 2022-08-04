@@ -23,8 +23,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
@@ -34,7 +36,7 @@ import (
 // It is like Listen except for PacketConns.
 // Always be sure to close the PacketConn when you are done.
 func ListenPacket(network, addr string) (net.PacketConn, error) {
-	lnKey := network + "/" + addr
+	lnKey := listenerKey(network, addr)
 
 	sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		pc, err := net.ListenPacket(network, addr)
@@ -58,7 +60,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
 func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
-	lnKey := "quic/" + addr
+	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
@@ -75,6 +77,131 @@ func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
 	}, err
 }
 
+func listenerKey(network, addr string) string {
+	return network + "/" + addr
+}
+
+// ListenerUsage returns the current usage count of the given listener address.
+func ListenerUsage(network, addr string) int {
+	count, _ := listenerPool.References(listenerKey(network, addr))
+	return count
+}
+
+// fakeCloseListener is a private wrapper over a listener that
+// is shared. The state of fakeCloseListener is not shared.
+// This allows one user of a socket to "close" the listener
+// while in reality the socket stays open for other users of
+// the listener. In this way, servers become hot-swappable
+// while the listener remains running. Listeners should be
+// re-wrapped in a new fakeCloseListener each time the listener
+// is reused. This type is atomic and values must not be copied.
+type fakeCloseListener struct {
+	closed          int32 // accessed atomically; belongs to this struct only
+	*sharedListener       // embedded, so we also become a net.Listener
+}
+
+func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
+	// if the listener is already "closed", return error
+	if atomic.LoadInt32(&fcl.closed) == 1 {
+		return nil, fakeClosedErr(fcl)
+	}
+
+	// call underlying accept
+	conn, err := fcl.sharedListener.Accept()
+	if err == nil {
+		return conn, nil
+	}
+
+	// since Accept() returned an error, it may be because our reference to
+	// the listener (this fakeCloseListener) may have been closed, i.e. the
+	// server is shutting down; in that case, we need to clear the deadline
+	// that we set when Close() was called, and return a non-temporary and
+	// non-timeout error value to the caller, masking the "true" error, so
+	// that server loops / goroutines won't retry, linger, and leak
+	if atomic.LoadInt32(&fcl.closed) == 1 {
+		// we dereference the sharedListener explicitly even though it's embedded
+		// so that it's clear in the code that side-effects are shared with other
+		// users of this listener, not just our own reference to it; we also don't
+		// do anything with the error because all we could do is log it, but we
+		// expliclty assign it to nothing so we don't forget it's there if needed
+		_ = fcl.sharedListener.clearDeadline()
+
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil, fakeClosedErr(fcl)
+		}
+	}
+
+	return nil, err
+}
+
+// Close stops accepting new connections without closing the
+// underlying listener. The underlying listener is only closed
+// if the caller is the last known user of the socket.
+func (fcl *fakeCloseListener) Close() error {
+	if atomic.CompareAndSwapInt32(&fcl.closed, 0, 1) {
+		// There are two ways I know of to get an Accept()
+		// function to return to the server loop that called
+		// it: close the listener, or set a deadline in the
+		// past. Obviously, we can't close the socket yet
+		// since others may be using it (hence this whole
+		// file). But we can set the deadline in the past,
+		// and this is kind of cheating, but it works, and
+		// it apparently even works on Windows.
+		_ = fcl.sharedListener.setDeadline()
+		_, _ = listenerPool.Delete(fcl.sharedListener.key)
+	}
+	return nil
+}
+
+// sharedListener is a wrapper over an underlying listener. The listener
+// and the other fields on the struct are shared state that is synchronized,
+// so sharedListener structs must never be copied (always use a pointer).
+type sharedListener struct {
+	net.Listener
+	key        string // uniquely identifies this listener
+	deadline   bool   // whether a deadline is currently set
+	deadlineMu sync.Mutex
+}
+
+func (sl *sharedListener) clearDeadline() error {
+	var err error
+	sl.deadlineMu.Lock()
+	if sl.deadline {
+		switch ln := sl.Listener.(type) {
+		case *net.TCPListener:
+			err = ln.SetDeadline(time.Time{})
+		case *net.UnixListener:
+			err = ln.SetDeadline(time.Time{})
+		}
+		sl.deadline = false
+	}
+	sl.deadlineMu.Unlock()
+	return err
+}
+
+func (sl *sharedListener) setDeadline() error {
+	timeInPast := time.Now().Add(-1 * time.Minute)
+	var err error
+	sl.deadlineMu.Lock()
+	if !sl.deadline {
+		switch ln := sl.Listener.(type) {
+		case *net.TCPListener:
+			err = ln.SetDeadline(timeInPast)
+		case *net.UnixListener:
+			err = ln.SetDeadline(timeInPast)
+		}
+		sl.deadline = true
+	}
+	sl.deadlineMu.Unlock()
+	return err
+}
+
+// Destruct is called by the UsagePool when the listener is
+// finally not being used anymore. It closes the socket.
+func (sl *sharedListener) Destruct() error {
+	return sl.Listener.Close()
+}
+
 type fakeCloseQuicListener struct {
 	closed              int32 // accessed atomically; belongs to this struct only
 	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
@@ -87,7 +214,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlySession, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil
@@ -207,11 +334,25 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 	return net.JoinHostPort(na.Host, strconv.Itoa(int(na.StartPort+offset)))
 }
 
+func (na NetworkAddress) Expand() []NetworkAddress {
+	size := na.PortRangeSize()
+	addrs := make([]NetworkAddress, size)
+	for portOffset := uint(0); portOffset < size; portOffset++ {
+		na2 := na
+		na2.StartPort, na2.EndPort = na.StartPort+portOffset, na.StartPort+portOffset
+		addrs[portOffset] = na2
+	}
+	return addrs
+}
+
 // PortRangeSize returns how many ports are in
 // pa's port range. Port ranges are inclusive,
 // so the size is the difference of start and
 // end ports plus one.
 func (na NetworkAddress) PortRangeSize() uint {
+	if na.EndPort < na.StartPort {
+		return 0
+	}
 	return (na.EndPort - na.StartPort) + 1
 }
 
@@ -245,10 +386,13 @@ func (na NetworkAddress) port() string {
 	return fmt.Sprintf("%d-%d", na.StartPort, na.EndPort)
 }
 
-// String reconstructs the address string to the form expected
-// by ParseNetworkAddress(). If the address is a unix socket,
-// any non-zero port will be dropped.
+// String reconstructs the address string for human display.
+// The output can be parsed by ParseNetworkAddress(). If the
+// address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
+	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+		na.Network = "" // omit default network value for brevity
+	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
@@ -281,11 +425,11 @@ func isListenBindAddressAlreadyInUseError(err error) bool {
 func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
-	if network == "" {
-		network = "tcp"
-	}
 	if err != nil {
 		return NetworkAddress{}, err
+	}
+	if network == "" {
+		network = "tcp"
 	}
 	if isUnixNetwork(network) {
 		return NetworkAddress{
@@ -293,24 +437,26 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 			Host:    host,
 		}, nil
 	}
-	ports := strings.SplitN(port, "-", 2)
-	if len(ports) == 1 {
-		ports = append(ports, ports[0])
-	}
 	var start, end uint64
-	start, err = strconv.ParseUint(ports[0], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
-	}
-	end, err = strconv.ParseUint(ports[1], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
-	}
-	if end < start {
-		return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
-	}
-	if (end - start) > maxPortSpan {
-		return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+	if port != "" {
+		before, after, found := strings.Cut(port, "-")
+		if !found {
+			after = before
+		}
+		start, err = strconv.ParseUint(before, 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
+		}
+		end, err = strconv.ParseUint(after, 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
+		}
+		if end < start {
+			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
+		}
+		if (end - start) > maxPortSpan {
+			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+		}
 	}
 	return NetworkAddress{
 		Network:   network,
@@ -323,15 +469,29 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 // SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
-	if idx := strings.Index(a, "/"); idx >= 0 {
-		network = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+1:]
+	beforeSlash, afterSlash, slashFound := strings.Cut(a, "/")
+	if slashFound {
+		network = strings.ToLower(strings.TrimSpace(beforeSlash))
+		a = afterSlash
 	}
 	if isUnixNetwork(network) {
 		host = a
 		return
 	}
 	host, port, err = net.SplitHostPort(a)
+	if err == nil || a == "" {
+		return
+	}
+	// in general, if there was an error, it was likely "missing port",
+	// so try adding a bogus port to take advantage of standard library's
+	// robust parser, then strip the artificial port before returning
+	// (don't overwrite original error though; might still be relevant)
+	var err2 error
+	host, port, err2 = net.SplitHostPort(a + ":0")
+	if err2 == nil {
+		err = nil
+		port = ""
+	}
 	return
 }
 

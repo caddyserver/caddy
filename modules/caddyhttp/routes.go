@@ -151,7 +151,7 @@ func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("route %d: loading handler modules: %v", i, err)
 		}
-		for _, handler := range handlersIface.([]interface{}) {
+		for _, handler := range handlersIface.([]any) {
 			routes[i].Handlers = append(routes[i].Handlers, handler.(MiddlewareHandler))
 		}
 
@@ -204,6 +204,10 @@ func wrapRoute(route Route) Middleware {
 				// the request and trigger the error handling chain
 				err, ok := GetVar(req.Context(), MatcherErrorVarKey).(error)
 				if ok {
+					// clear out the error from context, otherwise
+					// it will cascade to the error routes (#4916)
+					SetVar(req.Context(), MatcherErrorVarKey, nil)
+					// return the matcher's error
 					return err
 				}
 
@@ -311,9 +315,9 @@ func (ms MatcherSets) AnyMatch(req *http.Request) bool {
 	return len(ms) == 0
 }
 
-// FromInterface fills ms from an interface{} value obtained from LoadModule.
-func (ms *MatcherSets) FromInterface(matcherSets interface{}) error {
-	for _, matcherSetIfaces := range matcherSets.([]map[string]interface{}) {
+// FromInterface fills ms from an 'any' value obtained from LoadModule.
+func (ms *MatcherSets) FromInterface(matcherSets any) error {
+	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
 		var matcherSet MatcherSet
 		for _, matcher := range matcherSetIfaces {
 			reqMatcher, ok := matcher.(RequestMatcher)

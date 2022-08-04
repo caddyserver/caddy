@@ -38,8 +38,8 @@ import (
 
 func init() {
 	// set a fitting User-Agent for ACME requests
-	goModule := caddy.GoModule()
-	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
+	version, _ := caddy.Version()
+	cleanModVersion := strings.TrimPrefix(version, "v")
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
 	// by using Caddy, user indicates agreement to CA terms
@@ -173,7 +173,7 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 
 	// adapt config
 	if cfgAdapter != nil {
-		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]interface{}{
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]any{
 			"filename": configFile,
 		})
 		if err != nil {
@@ -387,11 +387,11 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// split line into key and value
-		fields := strings.SplitN(line, "=", 2)
-		if len(fields) != 2 {
+		before, after, isCut := strings.Cut(line, "=")
+		if !isCut {
 			return nil, fmt.Errorf("can't parse line %d; line should be in KEY=VALUE format", lineNumber)
 		}
-		key, val := fields[0], fields[1]
+		key, val := before, after
 
 		// sometimes keys are prefixed by "export " so file can be sourced in bash; ignore it here
 		key = strings.TrimPrefix(key, "export ")
@@ -441,11 +441,12 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 }
 
 func printEnvironment() {
+	_, version := caddy.Version()
 	fmt.Printf("caddy.HomeDir=%s\n", caddy.HomeDir())
 	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
 	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
 	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
-	fmt.Printf("caddy.Version=%s\n", CaddyVersion())
+	fmt.Printf("caddy.Version=%s\n", version)
 	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
 	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
 	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
@@ -462,21 +463,15 @@ func printEnvironment() {
 	}
 }
 
-// CaddyVersion returns a detailed version string, if available.
-func CaddyVersion() string {
-	goModule := caddy.GoModule()
-	ver := goModule.Version
-	if goModule.Sum != "" {
-		ver += " " + goModule.Sum
-	}
-	if goModule.Replace != nil {
-		ver += " => " + goModule.Replace.Path
-		if goModule.Replace.Version != "" {
-			ver += "@" + goModule.Replace.Version
-		}
-		if goModule.Replace.Sum != "" {
-			ver += " " + goModule.Replace.Sum
-		}
-	}
-	return ver
+// StringSlice is a flag.Value that enables repeated use of a string flag.
+type StringSlice []string
+
+func (ss StringSlice) String() string { return "[" + strings.Join(ss, ", ") + "]" }
+
+func (ss *StringSlice) Set(value string) error {
+	*ss = append(*ss, value)
+	return nil
 }
+
+// Interface guard
+var _ flag.Value = (*StringSlice)(nil)

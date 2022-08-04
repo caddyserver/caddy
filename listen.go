@@ -1,5 +1,4 @@
 //go:build !linux
-// +build !linux
 
 package caddy
 
@@ -27,11 +26,10 @@ func Listen(network, addr string) (net.Listener, error) {
 }
 
 func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
-	lnKey := network + "/" + addr + "/"
+	lnKey := listenerKey(network, addr)
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		ln, err := net.Listen(network, addr)
-
 		if err != nil {
 			// https://github.com/caddyserver/caddy/pull/4534
 			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {

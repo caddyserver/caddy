@@ -46,7 +46,7 @@ type serverOptions struct {
 	ShouldLogCredentials bool
 }
 
-func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error) {
+func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 	serverOpts := serverOptions{}
 	for d.Next() {
 		if d.NextArg() {
@@ -192,7 +192,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (interface{}, error
 // applyServerOptions sets the server options on the appropriate servers
 func applyServerOptions(
 	servers map[string]*caddyhttp.Server,
-	options map[string]interface{},
+	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 ) error {
 	// If experimental HTTP/3 is enabled, enable it on each server.

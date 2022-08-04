@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -137,13 +138,19 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
+	listeners           []net.Listener
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
-	h3server *http3.Server
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -589,7 +596,7 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))

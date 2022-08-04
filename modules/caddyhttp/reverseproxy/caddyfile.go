@@ -59,8 +59,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //         # load balancing
 //         lb_policy <name> [<options...>]
+//         lb_retries <retries>
 //         lb_try_duration <duration>
 //         lb_try_interval <interval>
+//         lb_retry_match <request-matcher>
 //
 //         # active health checking
 //         health_uri      <uri>
@@ -247,6 +249,19 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
 
+			case "lb_retries":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tries, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.Retries = tries
+
 			case "lb_try_duration":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -272,6 +287,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
 				h.LoadBalancing.TryInterval = caddy.Duration(dur)
+
+			case "lb_retry_match":
+				matcherSet, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
+				if err != nil {
+					return d.Errf("failed to parse lb_retry_match: %v", err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, matcherSet)
 
 			case "health_uri":
 				if !d.NextArg() {
@@ -814,6 +839,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //         tls_timeout <duration>
 //         tls_trusted_ca_certs <cert_files...>
 //         tls_server_name <sni>
+//         tls_renegotiation <level>
+//         tls_except_ports <ports...>
 //         keepalive [off|<duration>]
 //         keepalive_interval <interval>
 //         keepalive_idle_conns <max_count>
@@ -847,6 +874,26 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid write buffer size '%s': %v", d.Val(), err)
 				}
 				h.WriteBufferSize = int(size)
+
+			case "read_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid read timeout duration '%s': %v", d.Val(), err)
+				}
+				h.ReadTimeout = caddy.Duration(timeout)
+
+			case "write_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid write timeout duration '%s': %v", d.Val(), err)
+				}
+				h.WriteTimeout = caddy.Duration(timeout)
 
 			case "max_response_header":
 				if !d.NextArg() {
@@ -907,6 +954,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("must specify at least one resolver address")
 				}
 
+			case "tls":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
 			case "tls_client_auth":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
@@ -920,11 +972,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS.ClientCertificateKeyFile = args[1]
 				default:
 					return d.ArgErr()
-				}
-
-			case "tls":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
 				}
 
 			case "tls_insecure_skip_verify":
@@ -967,6 +1014,29 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.ServerName = d.Val()
+
+			case "tls_renegotiation":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch renegotiation := d.Val(); renegotiation {
+				case "never", "once", "freely":
+					h.TLS.Renegotiation = renegotiation
+				default:
+					return d.ArgErr()
+				}
+
+			case "tls_except_ports":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.ExceptPorts = d.RemainingArgs()
+				if len(h.TLS.ExceptPorts) == 0 {
+					return d.ArgErr()
+				}
 
 			case "keepalive":
 				if !d.NextArg() {

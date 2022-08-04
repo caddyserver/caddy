@@ -45,8 +45,7 @@ func init() {
 //     }
 //
 // When the CA ID is unspecified, 'local' is assumed.
-//
-func parsePKIApp(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error) {
+func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 	pki := &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}
 
 	for d.Next() {
@@ -160,7 +159,7 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, 
 
 func (st ServerType) buildPKIApp(
 	pairings []sbAddrAssociation,
-	options map[string]interface{},
+	options map[string]any,
 	warnings []caddyconfig.Warning,
 ) (*caddypki.PKI, []caddyconfig.Warning, error) {
 

@@ -19,16 +19,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go: [ '1.17', '1.18' ]
+        go: [ '1.18', '1.19' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.17'
-          GO_SEMVER: '~1.17.9'
-
         - go: '1.18'
-          GO_SEMVER: '~1.18.1'
+          GO_SEMVER: '~1.18.4'
+
+        - go: '1.19'
+          GO_SEMVER: '~1.19.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
@@ -78,12 +78,20 @@ jobs:
         printf "Git version: $(git version)\n\n"
         # Calculate the short SHA1 hash of the git commit
         echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
-        echo "::set-output name=go_cache::$(go env GOCACHE)"
 
     - name: Cache the build cache
       uses: actions/cache@v2
       with:
-        path: ${{ steps.vars.outputs.go_cache }}
+        # In order:
+        # * Module download cache
+        # * Build cache (Linux)
+        # * Build cache (Mac)
+        # * Build cache (Windows)
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+          ~/Library/Caches/go-build
+          ~\AppData\Local\go-build
         key: ${{ runner.os }}-${{ matrix.go }}-go-ci-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.go }}-go-ci

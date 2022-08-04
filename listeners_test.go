@@ -32,8 +32,23 @@ func TestSplitNetworkAddress(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			input:     "foo",
+			input:      "foo",
+			expectHost: "foo",
+		},
+		{
+			input: ":", // empty host & empty port
+		},
+		{
+			input:     "::",
 			expectErr: true,
+		},
+		{
+			input:      "[::]",
+			expectHost: "::",
+		},
+		{
+			input:      ":1234",
+			expectPort: "1234",
 		},
 		{
 			input:      "foo:1234",
@@ -80,10 +95,10 @@ func TestSplitNetworkAddress(t *testing.T) {
 	} {
 		actualNetwork, actualHost, actualPort, err := SplitNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
-			t.Errorf("Test %d: Expected error but got: %v", i, err)
+			t.Errorf("Test %d: Expected error but got %v", i, err)
 		}
 		if !tc.expectErr && err != nil {
-			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+			t.Errorf("Test %d: Expected no error but got %v", i, err)
 		}
 		if actualNetwork != tc.expectNetwork {
 			t.Errorf("Test %d: Expected network '%s' but got '%s'", i, tc.expectNetwork, actualNetwork)
@@ -169,8 +184,17 @@ func TestParseNetworkAddress(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			input:     ":",
-			expectErr: true,
+			input: ":",
+			expectAddr: NetworkAddress{
+				Network: "tcp",
+			},
+		},
+		{
+			input: "[::]",
+			expectAddr: NetworkAddress{
+				Network: "tcp",
+				Host:    "::",
+			},
 		},
 		{
 			input: ":1234",
@@ -304,6 +328,88 @@ func TestJoinHostPort(t *testing.T) {
 		actual := tc.pa.JoinHostPort(tc.offset)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
+		}
+	}
+}
+
+func TestExpand(t *testing.T) {
+	for i, tc := range []struct {
+		input  NetworkAddress
+		expect []NetworkAddress
+	}{
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2000,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2002,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2001,
+					EndPort:   2001,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2002,
+					EndPort:   2002,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   1999,
+			},
+			expect: []NetworkAddress{},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "unix",
+				Host:      "/foo/bar",
+				StartPort: 0,
+				EndPort:   0,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "unix",
+					Host:      "/foo/bar",
+					StartPort: 0,
+					EndPort:   0,
+				},
+			},
+		},
+	} {
+		actual := tc.input.Expand()
+		if !reflect.DeepEqual(actual, tc.expect) {
+			t.Errorf("Test %d: Expected %+v but got %+v", i, tc.expect, actual)
 		}
 	}
 }
