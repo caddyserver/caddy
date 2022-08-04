@@ -127,7 +127,9 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // forcefully reloaded, then errConfigUnchanged This function is safe for
 // concurrent use.
 // The ifMatchHeader can optionally be given a string of the format:
-//    "<path> <hash>"
+//
+//	"<path> <hash>"
+//
 // where <path> is the absolute path in the config and <hash> is the expected hash of
 // the config at that path. If the hash in the ifMatchHeader doesn't match
 // the hash of the config, then an APIError with status 412 will be returned.
@@ -791,37 +793,117 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
-// GoModule returns the build info of this Caddy
-// build from debug.BuildInfo (requires Go modules).
-// If no version information is available, a non-nil
-// value will still be returned, but with an
-// unknown version.
-func GoModule() *debug.Module {
-	var mod debug.Module
-	return goModule(&mod)
-}
-
-// goModule holds the actual implementation of GoModule.
-// Allocating debug.Module in GoModule() and passing a
-// reference to goModule enables mid-stack inlining.
-func goModule(mod *debug.Module) *debug.Module {
-	mod.Version = "unknown"
+// Version returns the Caddy version in a simple/short form, and
+// a full version string. The short form will not have spaces and
+// is intended for User-Agent strings and similar, but may be
+// omitting valuable information. Note that Caddy must be compiled
+// in a special way to properly embed complete version information.
+// First this function tries to get the version from the embedded
+// build info provided by go.mod dependencies; then it tries to
+// get info from embedded VCS information, which requires having
+// built Caddy from a git repository. If no version is available,
+// this function returns "(devel)" becaise Go uses that, but for
+// the simple form we change it to "unknown".
+//
+// See relevant Go issues: https://github.com/golang/go/issues/29228
+// and https://github.com/golang/go/issues/50603.
+//
+// This function is experimental and subject to change or removal.
+func Version() (simple, full string) {
+	// the currently-recommended way to build Caddy involves
+	// building it as a dependency so we can extract version
+	// information from go.mod tooling; once the upstream
+	// Go issues are fixed, we should just be able to use
+	// bi.Main... hopefully.
+	var module *debug.Module
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
-		mod.Path = bi.Main.Path
-		// The recommended way to build Caddy involves
-		// creating a separate main module, which
-		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
-		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
+		// find the Caddy module in the dependency list
 		for _, dep := range bi.Deps {
 			if dep.Path == ImportPath {
-				return dep
+				module = dep
+				break
 			}
 		}
-		return &bi.Main
 	}
-	return mod
+	if module != nil {
+		simple, full = module.Version, module.Version
+		if module.Sum != "" {
+			full += " " + module.Sum
+		}
+		if module.Replace != nil {
+			full += " => " + module.Replace.Path
+			if module.Replace.Version != "" {
+				simple = module.Replace.Version + "_custom"
+				full += "@" + module.Replace.Version
+			}
+			if module.Replace.Sum != "" {
+				full += " " + module.Replace.Sum
+			}
+		}
+	}
+
+	if full == "" {
+		var vcsRevision string
+		var vcsTime time.Time
+		var vcsModified bool
+		for _, setting := range bi.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				vcsRevision = setting.Value
+			case "vcs.time":
+				vcsTime, _ = time.Parse(time.RFC3339, setting.Value)
+			case "vcs.modified":
+				vcsModified, _ = strconv.ParseBool(setting.Value)
+			}
+		}
+
+		if vcsRevision != "" {
+			var modified string
+			if vcsModified {
+				modified = "+modified"
+			}
+			full = fmt.Sprintf("%s%s (%s)", vcsRevision, modified, vcsTime.Format(time.RFC822))
+			simple = vcsRevision
+
+			// use short checksum for simple, if hex-only
+			if _, err := hex.DecodeString(simple); err == nil {
+				simple = simple[:8]
+			}
+
+			// append date to simple since it can be convenient
+			// to know the commit date as part of the version
+			if !vcsTime.IsZero() {
+				simple += "-" + vcsTime.Format("20060102")
+			}
+		}
+	}
+
+	if simple == "" || simple == "(devel)" {
+		simple = "unknown"
+	}
+
+	return
 }
+
+// func goModule(mod *debug.Module) *debug.Module {
+// 	mod.Version = "unknown"
+// 	bi, ok := debug.ReadBuildInfo()
+// 	if ok {
+// 		mod.Path = bi.Main.Path
+// 		// The recommended way to build Caddy involves
+// 		// creating a separate main module, which
+// 		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
+// 		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
+// 		for _, dep := range bi.Deps {
+// 			if dep.Path == ImportPath {
+// 				return dep
+// 			}
+// 		}
+// 		return &bi.Main
+// 	}
+// 	return mod
+// }
 
 func ActiveContext() Context {
 	currentCtxMu.RLock()
@@ -867,4 +949,5 @@ var (
 var errSameConfig = errors.New("config is unchanged")
 
 // ImportPath is the package import path for Caddy core.
+// This identifier may be removed in the future.
 const ImportPath = "github.com/caddyserver/caddy/v2"

@@ -38,8 +38,8 @@ import (
 
 func init() {
 	// set a fitting User-Agent for ACME requests
-	goModule := caddy.GoModule()
-	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
+	version, _ := caddy.Version()
+	cleanModVersion := strings.TrimPrefix(version, "v")
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
 	// by using Caddy, user indicates agreement to CA terms
@@ -441,11 +441,12 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 }
 
 func printEnvironment() {
+	_, version := caddy.Version()
 	fmt.Printf("caddy.HomeDir=%s\n", caddy.HomeDir())
 	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
 	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
 	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
-	fmt.Printf("caddy.Version=%s\n", CaddyVersion())
+	fmt.Printf("caddy.Version=%s\n", version)
 	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
 	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
 	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
@@ -460,25 +461,6 @@ func printEnvironment() {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
-}
-
-// CaddyVersion returns a detailed version string, if available.
-func CaddyVersion() string {
-	goModule := caddy.GoModule()
-	ver := goModule.Version
-	if goModule.Sum != "" {
-		ver += " " + goModule.Sum
-	}
-	if goModule.Replace != nil {
-		ver += " => " + goModule.Replace.Path
-		if goModule.Replace.Version != "" {
-			ver += "@" + goModule.Replace.Version
-		}
-		if goModule.Replace.Sum != "" {
-			ver += " " + goModule.Replace.Sum
-		}
-	}
-	return ver
 }
 
 // StringSlice is a flag.Value that enables repeated use of a string flag.
