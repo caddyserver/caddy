@@ -610,11 +610,11 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if query == "" {
 				continue
 			}
-			parts := strings.SplitN(query, "=", 2)
-			if len(parts) != 2 {
+			before, after, found := strings.Cut(query, "=")
+			if !found {
 				return d.Errf("malformed query matcher token: %s; must be in param=val format", d.Val())
 			}
-			url.Values(*m).Add(parts[0], parts[1])
+			url.Values(*m).Add(before, after)
 		}
 		if d.NextBlock(0) {
 			return d.Err("malformed query matcher: blocks are not supported")

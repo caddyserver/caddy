@@ -468,15 +468,15 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	}
 	var start, end uint64
 	if port != "" {
-		ports := strings.SplitN(port, "-", 2)
-		if len(ports) == 1 {
-			ports = append(ports, ports[0])
+		before, after, found := strings.Cut(port, "-")
+		if !found {
+			after = before
 		}
-		start, err = strconv.ParseUint(ports[0], 10, 16)
+		start, err = strconv.ParseUint(before, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
 		}
-		end, err = strconv.ParseUint(ports[1], 10, 16)
+		end, err = strconv.ParseUint(after, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
 		}
