@@ -45,7 +45,10 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 
 func (h *http2Listener) serveHttp2(csc connectionStateConn) {
 	atomic.AddUint64(&h.cnt, 1)
-	defer atomic.AddUint64(&h.cnt, ^uint64(0))
+	defer func() {
+		csc.Close()
+		atomic.AddUint64(&h.cnt, ^uint64(0))
+	}()
 	h.h2server.ServeConn(csc, &http2.ServeConnOpts{
 		Context:    h.server.ConnContext(context.Background(), csc),
 		BaseConfig: h.server,
