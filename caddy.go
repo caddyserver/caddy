@@ -886,25 +886,9 @@ func Version() (simple, full string) {
 	return
 }
 
-// func goModule(mod *debug.Module) *debug.Module {
-// 	mod.Version = "unknown"
-// 	bi, ok := debug.ReadBuildInfo()
-// 	if ok {
-// 		mod.Path = bi.Main.Path
-// 		// The recommended way to build Caddy involves
-// 		// creating a separate main module, which
-// 		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
-// 		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
-// 		for _, dep := range bi.Deps {
-// 			if dep.Path == ImportPath {
-// 				return dep
-// 			}
-// 		}
-// 		return &bi.Main
-// 	}
-// 	return mod
-// }
-
+// ActiveContext returns the currently-active context.
+// This function is experimental and might be changed
+// or removed in the future.
 func ActiveContext() Context {
 	currentCtxMu.RLock()
 	defer currentCtxMu.RUnlock()
