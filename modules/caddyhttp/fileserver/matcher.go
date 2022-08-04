@@ -15,7 +15,9 @@
 package fileserver
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
@@ -27,11 +29,9 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/interpreter/functions"
 	"github.com/google/cel-go/parser"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -56,6 +56,11 @@ func init() {
 // - `{http.matchers.file.remainder}` Set to the remainder
 // of the path if the path was split by `split_path`.
 type MatchFile struct {
+	// The file system implementation to use. By default, the
+	// local disk file system will be used.
+	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
+	fileSystem    fs.StatFS
+
 	// The root directory, used for creating absolute
 	// file paths, and required when working with
 	// relative paths; if not specified, `{http.vars.root}`
@@ -153,18 +158,7 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //    expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	requestType := decls.NewObjectType("http.Request")
-	envOptions := []cel.EnvOption{
-		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
-		cel.Declarations(
-			decls.NewFunction("file",
-				decls.NewOverload("file_request_map",
-					[]*exprpb.Type{requestType, caddyhttp.CelTypeJson},
-					decls.Bool,
-				),
-			),
-		),
-	}
+	requestType := cel.ObjectType("http.Request")
 
 	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcher, error) {
 		values, err := caddyhttp.CELValueToMapStrList(data)
@@ -193,14 +187,16 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		return m, err
 	}
 
+	envOptions := []cel.EnvOption{
+		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
+		cel.Function("file", cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType)),
+		cel.Function("file_request_map",
+			cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType),
+			cel.SingletonBinaryImpl(caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory))),
+	}
+
 	programOptions := []cel.ProgramOption{
 		cel.CustomDecorator(caddyhttp.CELMatcherDecorator("file_request_map", matcherFactory)),
-		cel.Functions(
-			&functions.Overload{
-				Operator: "file_request_map",
-				Binary:   caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory),
-			},
-		),
 	}
 
 	return caddyhttp.NewMatcherCELLibrary(envOptions, programOptions), nil
@@ -252,10 +248,23 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 }
 
 // Provision sets up m's defaults.
-func (m *MatchFile) Provision(_ caddy.Context) error {
+func (m *MatchFile) Provision(ctx caddy.Context) error {
+	// establish the file system to use
+	if len(m.FileSystemRaw) > 0 {
+		mod, err := ctx.LoadModule(m, "FileSystemRaw")
+		if err != nil {
+			return fmt.Errorf("loading file system module: %v", err)
+		}
+		m.fileSystem = mod.(fs.StatFS)
+	}
+	if m.fileSystem == nil {
+		m.fileSystem = osFS{}
+	}
+
 	if m.Root == "" {
 		m.Root = "{http.vars.root}"
 	}
+
 	// if list of files to try was omitted entirely, assume URL path
 	// (use placeholder instead of r.URL.Path; see issue #4146)
 	if m.TryFiles == nil {
@@ -327,7 +336,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 				return
 			}
 			suffix, fullpath, remainder := prepareFilePath(f)
-			if info, exists := strictFileExists(fullpath); exists {
+			if info, exists := m.strictFileExists(fullpath); exists {
 				setPlaceholders(info, suffix, fullpath, remainder)
 				return true
 			}
@@ -341,7 +350,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
 			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := os.Stat(fullpath)
+			info, err := m.fileSystem.Stat(fullpath)
 			if err == nil && info.Size() > largestSize {
 				largestSize = info.Size()
 				largestFilename = fullpath
@@ -360,7 +369,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
 			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := os.Stat(fullpath)
+			info, err := m.fileSystem.Stat(fullpath)
 			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
 				smallestSize = info.Size()
 				smallestFilename = fullpath
@@ -379,7 +388,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		var info os.FileInfo
 		for _, f := range m.TryFiles {
 			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := os.Stat(fullpath)
+			info, err := m.fileSystem.Stat(fullpath)
 			if err == nil &&
 				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
 				recentDate = info.ModTime()
@@ -415,8 +424,8 @@ func parseErrorCode(input string) error {
 // the file must also be a directory; if it does
 // NOT end in a forward slash, the file must NOT
 // be a directory.
-func strictFileExists(file string) (os.FileInfo, bool) {
-	stat, err := os.Stat(file)
+func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
+	stat, err := m.fileSystem.Stat(file)
 	if err != nil {
 		// in reality, this can be any error
 		// such as permission or even obscure

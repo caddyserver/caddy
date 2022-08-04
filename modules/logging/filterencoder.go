@@ -89,7 +89,7 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading log filter modules: %v", err)
 	}
-	for fieldName, modIface := range vals.(map[string]interface{}) {
+	for fieldName, modIface := range vals.(map[string]any) {
 		fe.Fields[fieldName] = modIface.(LogFieldFilter)
 	}
 
@@ -326,7 +326,7 @@ func (fe FilterEncoder) AddUintptr(key string, value uintptr) {
 }
 
 // AddReflected is part of the zapcore.ObjectEncoder interface.
-func (fe FilterEncoder) AddReflected(key string, value interface{}) error {
+func (fe FilterEncoder) AddReflected(key string, value any) error {
 	if !fe.filtered(key, value) {
 		return fe.wrapped.AddReflected(key, value)
 	}
@@ -367,7 +367,7 @@ func (fe FilterEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (
 // added to the underlying encoder (so do not do
 // that again). If false was returned, the field has
 // not yet been added to the underlying encoder.
-func (fe FilterEncoder) filtered(key string, value interface{}) bool {
+func (fe FilterEncoder) filtered(key string, value any) bool {
 	filter, ok := fe.Fields[fe.keyPrefix+key]
 	if !ok {
 		return false

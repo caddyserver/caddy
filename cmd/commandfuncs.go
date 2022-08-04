@@ -471,7 +471,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]interface{}{"filename": adaptCmdInputFlag}
+	opts := map[string]any{"filename": adaptCmdInputFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
@@ -647,7 +647,7 @@ commands:
 	)
 
 	if help := flagHelp(subcommand.Flags); help != "" {
-		result += fmt.Sprintf("\nflags:\n%s", help)
+		result += fmt.Sprintf("\nflags: (NOTE: prefix flags with `--` instead of `-`)\n%s", help)
 	}
 
 	result += "\n" + fullDocs + "\n"

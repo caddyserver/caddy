@@ -31,6 +31,7 @@ func init() {
 	RegisterGlobalOption("https_port", parseOptHTTPSPort)
 	RegisterGlobalOption("default_bind", parseOptStringList)
 	RegisterGlobalOption("grace_period", parseOptDuration)
+	RegisterGlobalOption("shutdown_delay", parseOptDuration)
 	RegisterGlobalOption("default_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
@@ -54,9 +55,9 @@ func init() {
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 }
 
-func parseOptTrue(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) { return true, nil }
+func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
-func parseOptHTTPPort(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptHTTPPort(d *caddyfile.Dispenser, _ any) (any, error) {
 	var httpPort int
 	for d.Next() {
 		var httpPortStr string
@@ -72,7 +73,7 @@ func parseOptHTTPPort(d *caddyfile.Dispenser, _ interface{}) (interface{}, error
 	return httpPort, nil
 }
 
-func parseOptHTTPSPort(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptHTTPSPort(d *caddyfile.Dispenser, _ any) (any, error) {
 	var httpsPort int
 	for d.Next() {
 		var httpsPortStr string
@@ -88,7 +89,7 @@ func parseOptHTTPSPort(d *caddyfile.Dispenser, _ interface{}) (interface{}, erro
 	return httpsPort, nil
 }
 
-func parseOptOrder(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 	newOrder := directiveOrder
 
 	for d.Next() {
@@ -164,7 +165,7 @@ func parseOptOrder(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
 	return newOrder, nil
 }
 
-func parseOptStorage(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptStorage(d *caddyfile.Dispenser, _ any) (any, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
@@ -183,7 +184,7 @@ func parseOptStorage(d *caddyfile.Dispenser, _ interface{}) (interface{}, error)
 	return storage, nil
 }
 
-func parseOptDuration(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptDuration(d *caddyfile.Dispenser, _ any) (any, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
@@ -197,7 +198,7 @@ func parseOptDuration(d *caddyfile.Dispenser, _ interface{}) (interface{}, error
 	return caddy.Duration(dur), nil
 }
 
-func parseOptACMEDNS(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptACMEDNS(d *caddyfile.Dispenser, _ any) (any, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
 	}
@@ -216,7 +217,7 @@ func parseOptACMEDNS(d *caddyfile.Dispenser, _ interface{}) (interface{}, error)
 	return prov, nil
 }
 
-func parseOptACMEEAB(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptACMEEAB(d *caddyfile.Dispenser, _ any) (any, error) {
 	eab := new(acme.EAB)
 	for d.Next() {
 		if d.NextArg() {
@@ -244,7 +245,7 @@ func parseOptACMEEAB(d *caddyfile.Dispenser, _ interface{}) (interface{}, error)
 	return eab, nil
 }
 
-func parseOptCertIssuer(d *caddyfile.Dispenser, existing interface{}) (interface{}, error) {
+func parseOptCertIssuer(d *caddyfile.Dispenser, existing any) (any, error) {
 	var issuers []certmagic.Issuer
 	if existing != nil {
 		issuers = existing.([]certmagic.Issuer)
@@ -267,7 +268,7 @@ func parseOptCertIssuer(d *caddyfile.Dispenser, existing interface{}) (interface
 	return issuers, nil
 }
 
-func parseOptSingleString(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume parameter name
 	if !d.Next() {
 		return "", d.ArgErr()
@@ -279,7 +280,7 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ interface{}) (interface{}, e
 	return val, nil
 }
 
-func parseOptStringList(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptStringList(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume parameter name
 	val := d.RemainingArgs()
 	if len(val) == 0 {
@@ -288,7 +289,7 @@ func parseOptStringList(d *caddyfile.Dispenser, _ interface{}) (interface{}, err
 	return val, nil
 }
 
-func parseOptAdmin(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
 	adminCfg := new(caddy.AdminConfig)
 	for d.Next() {
 		if d.NextArg() {
@@ -324,7 +325,7 @@ func parseOptAdmin(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
 	return adminCfg, nil
 }
 
-func parseOptOnDemand(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 	var ond *caddytls.OnDemandConfig
 	for d.Next() {
 		if d.NextArg() {
@@ -384,7 +385,7 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ interface{}) (interface{}, error
 	return ond, nil
 }
 
-func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume parameter name
 	if !d.Next() {
 		return "", d.ArgErr()
@@ -399,11 +400,11 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ interface{}) (interface{}, erro
 	return val, nil
 }
 
-func parseServerOptions(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseServerOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 	return unmarshalCaddyfileServerOptions(d)
 }
 
-func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
 	var val string
 	if !d.AllArgs(&val) {
@@ -429,8 +430,7 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ interface{}) (interface{
 //
 // When the name argument is unspecified, this directive modifies the default
 // logger.
-//
-func parseLogOptions(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error) {
+func parseLogOptions(d *caddyfile.Dispenser, existingVal any) (any, error) {
 	currentNames := make(map[string]struct{})
 	if existingVal != nil {
 		innerVals, ok := existingVal.([]ConfigValue)
@@ -465,7 +465,7 @@ func parseLogOptions(d *caddyfile.Dispenser, existingVal interface{}) (interface
 	return configValues, nil
 }
 
-func parseOptPreferredChains(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseOptPreferredChains(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next()
 	return caddytls.ParseCaddyfilePreferredChainsOptions(d)
 }

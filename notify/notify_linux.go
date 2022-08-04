@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package notify provides facilities for notifying process managers
+// of state changes, mainly for when running as a system service.
 package notify
 
 import (

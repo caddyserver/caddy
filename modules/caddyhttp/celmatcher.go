@@ -28,7 +28,6 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types"
@@ -40,7 +39,6 @@ import (
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
-	"google.golang.org/protobuf/proto"
 )
 
 func init() {
@@ -126,13 +124,12 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// create the CEL environment
 	env, err := cel.NewEnv(
-		cel.Declarations(
-			decls.NewVar("request", httpRequestObjectType),
-			decls.NewFunction(placeholderFuncName,
-				decls.NewOverload(placeholderFuncName+"_httpRequest_string",
-					[]*exprpb.Type{httpRequestObjectType, decls.String},
-					decls.Any)),
-		),
+		cel.Function(placeholderFuncName, cel.SingletonBinaryImpl(m.caddyPlaceholderFunc), cel.Overload(
+			placeholderFuncName+"_httpRequest_string",
+			[]*cel.Type{httpRequestObjectType, cel.StringType},
+			cel.AnyType,
+		)),
+		cel.Variable("request", httpRequestObjectType),
 		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
 		matcherLib,
@@ -149,20 +146,12 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// request matching is a boolean operation, so we don't really know
 	// what to do if the expression returns a non-boolean type
-	if !proto.Equal(checked.ResultType(), decls.Bool) {
-		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.ResultType())
+	if checked.OutputType() != cel.BoolType {
+		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.OutputType())
 	}
 
 	// compile the "program"
-	m.prg, err = env.Program(checked,
-		cel.EvalOptions(cel.OptOptimize),
-		cel.Functions(
-			&functions.Overload{
-				Operator: placeholderFuncName,
-				Binary:   m.caddyPlaceholderFunc,
-			},
-		),
-	)
+	m.prg, err = env.Program(checked, cel.EvalOptions(cel.OptOptimize))
 	if err != nil {
 		return fmt.Errorf("compiling CEL program: %s", err)
 	}
@@ -229,7 +218,7 @@ var httpRequestCELType = types.NewTypeValue("http.Request", traits.ReceiverType)
 // drops allocation costs for CEL expression evaluations by roughly half.
 type celHTTPRequest struct{ *http.Request }
 
-func (cr celHTTPRequest) ResolveName(name string) (interface{}, bool) {
+func (cr celHTTPRequest) ResolveName(name string) (any, bool) {
 	if name == "request" {
 		return cr, true
 	}
@@ -240,7 +229,7 @@ func (cr celHTTPRequest) Parent() interpreter.Activation {
 	return nil
 }
 
-func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return cr.Request, nil
 }
 func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
@@ -252,8 +241,8 @@ func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
 	}
 	return types.ValOrErr(other, "%v is not comparable type", other)
 }
-func (celHTTPRequest) Type() ref.Type        { return httpRequestCELType }
-func (cr celHTTPRequest) Value() interface{} { return cr }
+func (celHTTPRequest) Type() ref.Type { return httpRequestCELType }
+func (cr celHTTPRequest) Value() any  { return cr }
 
 var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 
@@ -261,7 +250,7 @@ var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
-func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (interface{}, error) {
+func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return pn.Name, nil
 }
 func (celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
@@ -273,13 +262,13 @@ func (pn celPkixName) Equal(other ref.Val) ref.Val {
 	}
 	return types.ValOrErr(other, "%v is not comparable type", other)
 }
-func (celPkixName) Type() ref.Type        { return pkixNameCELType }
-func (pn celPkixName) Value() interface{} { return pn }
+func (celPkixName) Type() ref.Type { return pkixNameCELType }
+func (pn celPkixName) Value() any  { return pn }
 
 // celTypeAdapter can adapt our custom types to a CEL value.
 type celTypeAdapter struct{}
 
-func (celTypeAdapter) NativeToValue(value interface{}) ref.Val {
+func (celTypeAdapter) NativeToValue(value any) ref.Val {
 	switch v := value.(type) {
 	case celHTTPRequest:
 		return v
@@ -321,62 +310,45 @@ type CELLibraryProducer interface {
 // limited set of function signatures. For strong type validation you may need
 // to provide a custom macro which does a more detailed analysis of the CEL
 // literal provided to the macro as an argument.
-func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*exprpb.Type, fac CELMatcherFactory) (cel.Library, error) {
-	requestType := decls.NewObjectType("http.Request")
+func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fac CELMatcherFactory) (cel.Library, error) {
+	requestType := cel.ObjectType("http.Request")
 	var macro parser.Macro
 	switch len(matcherDataTypes) {
 	case 1:
 		matcherDataType := matcherDataTypes[0]
-		if isCELStringListType(matcherDataType) {
+		switch matcherDataType.String() {
+		case "list(string)":
 			macro = parser.NewGlobalVarArgMacro(macroName, celMatcherStringListMacroExpander(funcName))
-		} else if isCELStringType(matcherDataType) {
+		case cel.StringType.String():
 			macro = parser.NewGlobalMacro(macroName, 1, celMatcherStringMacroExpander(funcName))
-		} else if isCELJSONType(matcherDataType) {
+		case CELTypeJSON.String():
 			macro = parser.NewGlobalMacro(macroName, 1, celMatcherJSONMacroExpander(funcName))
-		} else {
-			return nil, fmt.Errorf("unsupported matcher data type: %s", cel.FormatType(matcherDataType))
+		default:
+			return nil, fmt.Errorf("unsupported matcher data type: %s", matcherDataType)
 		}
 	case 2:
-		if isCELStringType(matcherDataTypes[0]) && isCELStringType(matcherDataTypes[1]) {
+		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType {
 			macro = parser.NewGlobalMacro(macroName, 2, celMatcherStringListMacroExpander(funcName))
-			matcherDataTypes = []*exprpb.Type{CelTypeListString}
+			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
-			return nil, fmt.Errorf(
-				"unsupported matcher data type: %s, %s",
-				cel.FormatType(matcherDataTypes[0]), cel.FormatType(matcherDataTypes[1]),
-			)
+			return nil, fmt.Errorf("unsupported matcher data type: %s, %s", matcherDataTypes[0], matcherDataTypes[1])
 		}
 	case 3:
-		if isCELStringType(matcherDataTypes[0]) && isCELStringType(matcherDataTypes[1]) && isCELStringType(matcherDataTypes[2]) {
+		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType && matcherDataTypes[2] == cel.StringType {
 			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
-			matcherDataTypes = []*exprpb.Type{CelTypeListString}
+			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
-			return nil, fmt.Errorf(
-				"unsupported matcher data type: %s, %s, %s",
-				cel.FormatType(matcherDataTypes[0]), cel.FormatType(matcherDataTypes[1]), cel.FormatType(matcherDataTypes[2]),
-			)
+			return nil, fmt.Errorf("unsupported matcher data type: %s, %s, %s", matcherDataTypes[0], matcherDataTypes[1], matcherDataTypes[2])
 		}
 	}
 	envOptions := []cel.EnvOption{
 		cel.Macros(macro),
-		cel.Declarations(
-			decls.NewFunction(funcName,
-				decls.NewOverload(
-					funcName,
-					append([]*exprpb.Type{requestType}, matcherDataTypes...),
-					decls.Bool,
-				),
-			),
-		),
+		cel.Function(funcName,
+			cel.Overload(funcName, append([]*cel.Type{requestType}, matcherDataTypes...), cel.BoolType),
+			cel.SingletonBinaryImpl(CELMatcherRuntimeFunction(funcName, fac))),
 	}
 	programOptions := []cel.ProgramOption{
 		cel.CustomDecorator(CELMatcherDecorator(funcName, fac)),
-		cel.Functions(
-			&functions.Overload{
-				Operator: funcName,
-				Binary:   CELMatcherRuntimeFunction(funcName, fac),
-			},
-		),
 	}
 	return NewMatcherCELLibrary(envOptions, programOptions), nil
 }
@@ -573,17 +545,17 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 // CELValueToMapStrList converts a CEL value to a map[string][]string
 //
 // Earlier validation stages should guarantee that the value has this type
-// at compile time, and that the runtime value type is map[string]interface{}.
+// at compile time, and that the runtime value type is map[string]any.
 // The reason for the slight difference in value type is that CEL allows for
 // map literals containing heterogeneous values, in this case string and list
 // of string.
 func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
-	mapStrType := reflect.TypeOf(map[string]interface{}{})
+	mapStrType := reflect.TypeOf(map[string]any{})
 	mapStrRaw, err := data.ConvertToNative(mapStrType)
 	if err != nil {
 		return nil, err
 	}
-	mapStrIface := mapStrRaw.(map[string]interface{})
+	mapStrIface := mapStrRaw.(map[string]any)
 	mapStrListStr := make(map[string][]string, len(mapStrIface))
 	for k, v := range mapStrIface {
 		switch val := v.(type) {
@@ -608,25 +580,6 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 		}
 	}
 	return mapStrListStr, nil
-}
-
-// isCELJSONType returns whether the type corresponds to JSON input.
-func isCELJSONType(t *exprpb.Type) bool {
-	switch t.GetTypeKind().(type) {
-	case *exprpb.Type_MapType_:
-		mapType := t.GetMapType()
-		return isCELStringType(mapType.GetKeyType()) && mapType.GetValueType().GetDyn() != nil
-	}
-	return false
-}
-
-// isCELStringType returns whether the type corresponds to a string.
-func isCELStringType(t *exprpb.Type) bool {
-	switch t.GetTypeKind().(type) {
-	case *exprpb.Type_Primitive:
-		return t.GetPrimitive() == exprpb.Type_STRING
-	}
-	return false
 }
 
 // isCELStringExpr indicates whether the expression is a supported string expression
@@ -681,15 +634,6 @@ func isCELConcatCall(e *exprpb.Expr) bool {
 	return false
 }
 
-// isCELStringListType returns whether the type corresponds to a list of strings.
-func isCELStringListType(t *exprpb.Type) bool {
-	switch t.GetTypeKind().(type) {
-	case *exprpb.Type_ListType_:
-		return isCELStringType(t.GetListType().GetElemType())
-	}
-	return false
-}
-
 // isCELStringListLiteral returns whether the expression resolves to a list literal
 // containing only string constants or a placeholder call.
 func isCELStringListLiteral(e *exprpb.Expr) bool {
@@ -713,11 +657,10 @@ var (
 	placeholderRegexp    = regexp.MustCompile(`{([a-zA-Z][\w.-]+)}`)
 	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
 
-	CelTypeListString = decls.NewListType(decls.String)
-	CelTypeJson       = decls.NewMapType(decls.String, decls.Dyn)
+	CELTypeJSON = cel.MapType(cel.StringType, cel.DynType)
 )
 
-var httpRequestObjectType = decls.NewObjectType("http.Request")
+var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
 const placeholderFuncName = "caddyPlaceholder"

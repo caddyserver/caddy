@@ -198,7 +198,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
 		}
-		for _, getCertVal := range vals.([]interface{}) {
+		for _, getCertVal := range vals.([]any) {
 			ap.Managers = append(ap.Managers, getCertVal.(certmagic.Manager))
 		}
 	}
@@ -209,7 +209,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		for _, issVal := range val.([]interface{}) {
+		for _, issVal := range val.([]any) {
 			ap.Issuers = append(ap.Issuers, issVal.(certmagic.Issuer))
 		}
 	}

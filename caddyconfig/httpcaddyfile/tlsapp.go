@@ -33,7 +33,7 @@ import (
 
 func (st ServerType) buildTLSApp(
 	pairings []sbAddrAssociation,
-	options map[string]interface{},
+	options map[string]any,
 	warnings []caddyconfig.Warning,
 ) (*caddytls.TLS, []caddyconfig.Warning, error) {
 
@@ -420,7 +420,7 @@ func (st ServerType) buildTLSApp(
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
 
-func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interface{}) error {
+func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) error {
 	acmeWrapper, ok := issuer.(acmeCapable)
 	if !ok {
 		return nil
@@ -467,7 +467,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]interf
 // for any other automation policies. A nil policy (and no error) will be
 // returned if there are no default/global options. However, if always is
 // true, a non-nil value will always be returned (unless there is an error).
-func newBaseAutomationPolicy(options map[string]interface{}, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
+func newBaseAutomationPolicy(options map[string]any, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
 	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
