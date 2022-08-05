@@ -465,6 +465,17 @@ func (app *App) Start() error {
 					ln = http2lnWrapper
 				}
 
+				// handle http2 if use tls listener wrapper
+				if useTLS {
+					http2lnWrapper := &http2Listener{
+						Listener: ln,
+						server:   srv.server,
+						h2server: h2server,
+					}
+					srv.http2listeners = append(srv.http2listeners, http2lnWrapper)
+					ln = http2lnWrapper
+				}
+
 				// if binding to port 0, the OS chooses a port for us;
 				// but the user won't know the port unless we print it
 				if !listenAddr.IsUnixNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
@@ -615,8 +626,14 @@ func (app *App) Stop() error {
 	// may deplete resources)
 	if caddy.Exiting() {
 		finishedShutdown.Wait()
+		for i, s := range server.http2listeners {
+			if err := s.Shutdown(ctx); err != nil {
+				app.logger.Error("http2 listener shutdown",
+					zap.Error(err),
+					zap.Int("index", i))
+			}
+		}
 	}
-
 
 	for i, s := range app.http2listeners {
 		if err := s.Shutdown(ctx); err != nil {
