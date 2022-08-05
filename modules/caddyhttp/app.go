@@ -173,7 +173,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 	}
 
 	// prepare each server
+	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
+		ctx.Context = context.WithValue(oldContext, ServerCtxKey, srv)
 		srv.name = srvName
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
@@ -277,7 +279,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.IdleTimeout = defaultIdleTimeout
 		}
 	}
-
+	ctx.Context = oldContext
 	return nil
 }
 
@@ -325,6 +327,7 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 		}
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+		srv.ConfigureServer(srv.server)
 
 		// enable h2c if configured
 		if srv.AllowH2C {

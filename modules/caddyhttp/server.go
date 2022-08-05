@@ -146,6 +146,56 @@ type Server struct {
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
+
+	// configuring http.Server
+	connStates   []func(net.Conn, http.ConnState)
+	connContexts []func(ctx context.Context, c net.Conn) context.Context
+	onShutdowns  []func()
+}
+
+// register ConnState callbacks
+func (s *Server) RegisterConnState(f func(net.Conn, http.ConnState)) {
+	s.connStates = append(s.connStates, f)
+}
+
+// register ConnContext callbacks
+func (s *Server) RegisterConnContext(f func(ctx context.Context, c net.Conn) context.Context) {
+	s.connContexts = append(s.connContexts, f)
+}
+
+// register OnShutdown callbacks
+func (s *Server) RegisterOnShutdown(f func()) {
+	s.onShutdowns = append(s.onShutdowns, f)
+}
+
+// apply callbacks to server
+func (s *Server) ConfigureServer(server *http.Server) {
+	for _, f := range s.connStates {
+		if server.ConnState != nil {
+			oldF := server.ConnState
+			server.ConnState = func(conn net.Conn, state http.ConnState) {
+				oldF(conn, state)
+				f(conn, state)
+			}
+		} else {
+			server.ConnState = f
+		}
+	}
+
+	for _, f := range s.connContexts {
+		if server.ConnContext != nil {
+			oldF := server.ConnContext
+			server.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+				return f(oldF(ctx, c), c)
+			}
+		} else {
+			server.ConnContext = f
+		}
+	}
+
+	for _, f := range s.onShutdowns {
+		server.RegisterOnShutdown(f)
+	}
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
