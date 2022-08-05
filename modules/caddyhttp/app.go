@@ -425,6 +425,17 @@ func (app *App) Start() error {
 					ln = http2lnWrapper
 				}
 
+				// handle http2 if use tls listener wrapper
+				if useTLS {
+					http2lnWrapper := &http2Listener{
+						Listener: ln,
+						server:   srv.server,
+						h2server: h2server,
+					}
+					srv.http2listeners = append(srv.http2listeners, http2lnWrapper)
+					ln = http2lnWrapper
+				}
+
 				// if binding to port 0, the OS chooses a port for us;
 				// but the user won't know the port unless we print it
 				if listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
@@ -522,6 +533,14 @@ func (app *App) Stop() error {
 				app.logger.Error("HTTP/3 server shutdown",
 					zap.Error(err),
 					zap.Strings("addresses", server.Listen))
+			}
+		}
+
+		for i, s := range server.http2listeners {
+			if err := s.Shutdown(ctx); err != nil {
+				app.logger.Error("http2 listener shutdown",
+					zap.Error(err),
+					zap.Int("index", i))
 			}
 		}
 	}

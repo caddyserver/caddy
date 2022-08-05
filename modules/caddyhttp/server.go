@@ -158,9 +158,10 @@ type Server struct {
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
-	server    *http.Server
-	h3server  *http3.Server
-	addresses []caddy.NetworkAddress
+	server         *http.Server
+	h3server       *http3.Server
+	http2listeners []*http2Listener
+	addresses      []caddy.NetworkAddress
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
