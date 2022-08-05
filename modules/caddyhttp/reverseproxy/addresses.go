@@ -80,9 +80,9 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		scheme, host, port = toURL.Scheme, toURL.Hostname(), toURL.Port()
 	} else {
 		// extract network manually, since caddy.ParseNetworkAddress() will always add one
-		if idx := strings.Index(upstreamAddr, "/"); idx >= 0 {
-			network = strings.ToLower(strings.TrimSpace(upstreamAddr[:idx]))
-			upstreamAddr = upstreamAddr[idx+1:]
+		if before, after, found := strings.Cut(upstreamAddr, "/"); found {
+			network = strings.ToLower(strings.TrimSpace(before))
+			upstreamAddr = after
 		}
 		var err error
 		host, port, err = net.SplitHostPort(upstreamAddr)
