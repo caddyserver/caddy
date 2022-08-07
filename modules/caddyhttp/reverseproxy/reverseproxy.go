@@ -658,8 +658,8 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 
 	// Client IP may contain a zone if IPv6, so we need
 	// to pull that out before parsing the IP
-	if idx := strings.IndexByte(clientIP, '%'); idx >= 0 {
-		clientIP = clientIP[:idx]
+	if before, _, found := strings.Cut(clientIP, "%"); found {
+		clientIP = before
 	}
 	ip := net.ParseIP(clientIP)
 	if ip == nil {
