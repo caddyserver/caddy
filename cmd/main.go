@@ -408,11 +408,8 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// remove any trailing comment after value
-		if commentStart := strings.Index(val, "#"); commentStart > 0 {
-			before := val[commentStart-1]
-			if before == '\t' || before == ' ' {
-				val = strings.TrimRight(val[:commentStart], " \t")
-			}
+		if commentStart, _, found := strings.Cut(val, "#"); found {
+			val = strings.TrimRight(commentStart, " \t")
 		}
 
 		// quoted value: support newlines
