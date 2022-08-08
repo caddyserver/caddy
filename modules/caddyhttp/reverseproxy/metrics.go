@@ -13,9 +13,7 @@ import (
 var reverseProxyMetrics = struct {
 	init             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
-}{
-	init: sync.Once{},
-}
+}{}
 
 func initReverseProxyMetrics() {
 	const ns, sub = "caddy", "reverseproxy"
