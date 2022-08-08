@@ -374,6 +374,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
+		info = compressedInfo
 		w.Header().Set("Content-Encoding", ae)
 		w.Header().Del("Accept-Ranges")
 		w.Header().Add("Vary", "Accept-Encoding")
