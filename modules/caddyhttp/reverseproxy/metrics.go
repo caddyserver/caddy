@@ -17,7 +17,7 @@ var reverseProxyMetrics = struct {
 }{}
 
 func initReverseProxyMetrics(handler *Handler) {
-	const ns, sub = "caddy", "reverseproxy"
+	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
 	reverseProxyMetrics.upstreamsHealthy = promauto.NewGaugeVec(prometheus.GaugeOpts{
