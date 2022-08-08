@@ -38,6 +38,8 @@ func init() {
 // they modify existing files but do not explicitly specify what the
 // result will be. It is atypical to combine the use of setters and
 // modifiers in a single rewrite.
+//
+// Rewriting is performed in the URL-decoded (unescaped) space.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
@@ -227,12 +229,9 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
-		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
-		if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
-			r.URL.Path = p
-		} else {
-			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
-		}
+		changePath(r, func(pathOrRawPath string) string {
+			return strings.TrimPrefix(pathOrRawPath, prefix)
+		})
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")

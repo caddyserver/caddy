@@ -64,12 +64,23 @@ type (
 	MatchHost []string
 
 	// MatchPath matches requests by the URI's path (case-insensitive). Path
-	// matches are exact, but wildcards may be used:
+	// matching is exact, not prefix-based, giving you more control and clarity
+	// over matching. Wildcards (`*`) may be used:
 	//
 	// - At the end, for a prefix match (`/prefix/*`)
 	// - At the beginning, for a suffix match (`*.suffix`)
 	// - On both sides, for a substring match (`*/contains/*`)
 	// - In the middle, for a globular match (`/accounts/*/info`)
+	//
+	// Slashes are significant; i.e. `/foo*` matches `/foo`, `/foo/`, `/foo/bar`,
+	// and `/foobar`; but `/foo/*` does not match `/foo` or `/foobar`. Valid
+	// paths start with a slash `/`.
+	//
+	// Because there are, in general, multiple possible escaped forms of any
+	// path, path matchers operate in unescaped space; that is, path matchers
+	// should be written in their unescaped form to prevent ambiguities and
+	// possible security issues, as all request paths will be normalized to
+	// their unescaped forms before matcher evaluation.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -77,6 +88,7 @@ type (
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.
+	// Path matching is performed in the unescaped (decoded) form of the path.
 	//
 	// Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
 	// where `name` is the regular expression's name, and `capture_group` is either
@@ -303,7 +315,8 @@ outer:
 // expression matchers.
 //
 // Example:
-//    expression host('localhost')
+//
+//	expression host('localhost')
 func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"host",
@@ -349,15 +362,7 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
-	// PathUnescape returns an error if the escapes aren't
-	// well-formed, meaning the count % matches the RFC.
-	// Return early if the escape is improper.
-	unescapedPath, err := url.PathUnescape(r.URL.Path)
-	if err != nil {
-		return false
-	}
-
-	lowerPath := strings.ToLower(unescapedPath)
+	lowerPath := strings.ToLower(r.URL.Path)
 
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
@@ -431,7 +436,8 @@ func (m MatchPath) Match(r *http.Request) bool {
 // expression matchers.
 //
 // Example:
-//    expression path('*substring*', '*suffix')
+//
+//	expression path('*substring*', '*suffix')
 func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		// name of the macro, this is the function name that users see when writing expressions.
@@ -477,18 +483,10 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 func (m MatchPathRE) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// PathUnescape returns an error if the escapes aren't
-	// well-formed, meaning the count % matches the RFC.
-	// Return early if the escape is improper.
-	unescapedPath, err := url.PathUnescape(r.URL.Path)
-	if err != nil {
-		return false
-	}
-
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
 	// the path matcher. See #4407
-	cleanedPath := path.Clean(unescapedPath)
+	cleanedPath := path.Clean(r.URL.Path)
 
 	// Cleaning may remove the trailing slash, but we want to keep it
 	if cleanedPath != "/" && strings.HasSuffix(r.URL.Path, "/") {
@@ -502,7 +500,8 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 // expression matchers.
 //
 // Example:
-//    expression path_regexp('^/bar')
+//
+//	expression path_regexp('^/bar')
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
@@ -575,7 +574,8 @@ func (m MatchMethod) Match(r *http.Request) bool {
 // expression matchers.
 //
 // Example:
-//    expression method('PUT', 'POST')
+//
+//	expression method('PUT', 'POST')
 func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"method",
@@ -661,7 +661,8 @@ func (m MatchQuery) Match(r *http.Request) bool {
 // expression matchers.
 //
 // Example:
-//    expression query({'sort': 'asc'}) || query({'foo': ['*bar*', 'baz']})
+//
+//	expression query({'sort': 'asc'}) || query({'foo': ['*bar*', 'baz']})
 func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"query",
@@ -736,8 +737,9 @@ func (m MatchHeader) Match(r *http.Request) bool {
 // expression matchers.
 //
 // Example:
-//    expression header({'content-type': 'image/png'})
-//    expression header({'foo': ['bar', 'baz']}) // match bar or baz
+//
+//	expression header({'content-type': 'image/png'})
+//	expression header({'foo': ['bar', 'baz']}) // match bar or baz
 func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"header",
@@ -894,7 +896,8 @@ func (m MatchHeaderRE) Validate() error {
 // expression matchers.
 //
 // Example:
-//    expression header_regexp('foo', 'Field', 'fo+')
+//
+//	expression header_regexp('foo', 'Field', 'fo+')
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
@@ -978,7 +981,8 @@ func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // expression matchers.
 //
 // Example:
-//    expression protocol('https')
+//
+//	expression protocol('https')
 func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"protocol",
@@ -1097,7 +1101,8 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // expression matchers.
 //
 // Example:
-//    expression remote_ip('forwarded', '192.168.0.0/16', '172.16.0.0/12', '10.0.0.0/8')
+//
+//	expression remote_ip('forwarded', '192.168.0.0/16', '172.16.0.0/12', '10.0.0.0/8')
 func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		// name of the macro, this is the function name that users see when writing expressions.

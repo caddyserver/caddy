@@ -158,9 +158,10 @@ func TestHostMatcher(t *testing.T) {
 
 func TestPathMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match  MatchPath
-		input  string
-		expect bool
+		match        MatchPath // not URI-encoded because not parsing from a URI
+		input        string    // should be valid URI encoding (escaped) since it will become part of a request
+		expect       bool
+		provisionErr bool
 	}{
 		{
 			match:  MatchPath{},
@@ -292,8 +293,44 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/foo/bar",
 			expect: true,
 		},
+		// notice these next two test cases are the same path but have different escaped forms
+		{
+			match:  MatchPath{"/%@.txt"},
+			input:  "/%25@.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%@.txt"},
+			input:  "/%25%40.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%25@.txt"},
+			input:  "/%25@.txt",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/%25%40.txt"},
+			input:  "/%25%40.txt",
+			expect: false,
+		},
 	} {
-		req := &http.Request{URL: &url.URL{Path: tc.input}}
+		err := tc.match.Provision(caddy.Context{})
+		if err == nil && tc.provisionErr {
+			t.Errorf("Test %d %v: Expected error provisioning, but there was no error", i, tc.match)
+		}
+		if err != nil && !tc.provisionErr {
+			t.Errorf("Test %d %v: Expected no error provisioning, but there was an error: %v", i, tc.match, err)
+		}
+		if tc.provisionErr {
+			continue // if it's not supposed to provision properly, pointless to test it
+		}
+
+		u, err := url.ParseRequestURI(tc.input)
+		if err != nil {
+			t.Fatalf("Test %d (%v): Invalid request URI (should be rejected by Go's HTTP server): %v", i, tc.input, err)
+		}
+		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
@@ -387,6 +424,16 @@ func TestPathREMatcher(t *testing.T) {
 			expect:     true,
 			expectRepl: map[string]string{"name.myparam": "bar"},
 		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/%@.txt"}},
+			input:  "/%25@.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/%25@.txt"}},
+			input:  "/%25@.txt",
+			expect: false,
+		},
 	} {
 		// compile the regexp and validate its name
 		err := tc.match.Provision(caddy.Context{})
@@ -401,7 +448,11 @@ func TestPathREMatcher(t *testing.T) {
 		}
 
 		// set up the fake request and its Replacer
-		req := &http.Request{URL: &url.URL{Path: tc.input}}
+		u, err := url.ParseRequestURI(tc.input)
+		if err != nil {
+			t.Fatalf("Test %d: Bad input URI: %v", i, err)
+		}
+		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
