@@ -13,9 +13,10 @@ import (
 var reverseProxyMetrics = struct {
 	init             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
+	logger           *zap.Logger
 }{}
 
-func initReverseProxyMetrics() {
+func initReverseProxyMetrics(handler *Handler) {
 	const ns, sub = "caddy", "reverseproxy"
 
 	upstreamsLabels := []string{"upstream"}
@@ -25,6 +26,8 @@ func initReverseProxyMetrics() {
 		Name:      "upstreams_healthy",
 		Help:      "Health status of reverse proxy upstreams.",
 	}, upstreamsLabels)
+
+	reverseProxyMetrics.logger = handler.logger.Named("reverse_proxy.metrics")
 }
 
 type metricsUpstreamsHealthyUpdater struct {
@@ -33,7 +36,7 @@ type metricsUpstreamsHealthyUpdater struct {
 
 func newMetricsUpstreamsHealthyUpdater(handler *Handler) *metricsUpstreamsHealthyUpdater {
 	reverseProxyMetrics.init.Do(func() {
-		initReverseProxyMetrics()
+		initReverseProxyMetrics(handler)
 	})
 
 	return &metricsUpstreamsHealthyUpdater{handler}
@@ -43,7 +46,7 @@ func (m *metricsUpstreamsHealthyUpdater) Init() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				m.handler.HealthChecks.Active.logger.Error("upstreams healthy metrics updater panicked",
+				reverseProxyMetrics.logger.Error("upstreams healthy metrics updater panicked",
 					zap.Any("error", err),
 					zap.ByteString("stack", debug.Stack()))
 			}
