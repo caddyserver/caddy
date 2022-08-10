@@ -293,34 +293,26 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/foo/bar",
 			expect: true,
 		},
-		// notice these next two test cases are the same path but have different escaped forms
-		{
-			match:  MatchPath{"/%@.txt"},
-			input:  "/%25@.txt",
-			expect: true,
-		},
-		{
-			match:  MatchPath{"/%@.txt"},
-			input:  "/%25%40.txt",
-			expect: true,
-		},
-		// these next two tests may be unintuitive, but path matching
-		// takes place in normalized (unescaped) space, so the pattern
-		// should be written in that space
+		// notice these next three test cases are the same normalized path but are written differently
 		{
 			match:  MatchPath{"/%25@.txt"},
 			input:  "/%25@.txt",
-			expect: false,
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%25@.txt"},
+			input:  "/%25%40.txt",
+			expect: true,
 		},
 		{
 			match:  MatchPath{"/%25%40.txt"},
 			input:  "/%25%40.txt",
-			expect: false,
+			expect: true,
 		},
 		{
 			match:  MatchPath{"/bands/*/*"},
 			input:  "/bands/AC%2FDC/T.N.T",
-			expect: false,
+			expect: false, // because * operates in normalized space
 		},
 		{
 			match:  MatchPath{"/bands/%*/%*"},
@@ -340,6 +332,21 @@ func TestPathMatcher(t *testing.T) {
 		{
 			match:  MatchPath{"/bands/%*"},
 			input:  "/bands/AC%2FDC",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo%2fbar/baz"},
+			input:  "/foo%2Fbar/baz",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo%2fbar/baz"},
+			input:  "/foo/bar/baz",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo/bar/baz"},
+			input:  "/foo%2fbar/baz",
 			expect: true,
 		},
 	} {

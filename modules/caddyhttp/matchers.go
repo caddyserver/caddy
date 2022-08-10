@@ -63,7 +63,7 @@ type (
 	// Duplicate entries will return an error.
 	MatchHost []string
 
-	// MatchPath matches requests by the URI's path (case-insensitive). Path
+	// MatchPath case-insensitively matches requests by the URI's path. Path
 	// matching is exact, not prefix-based, giving you more control and clarity
 	// over matching. Wildcards (`*`) may be used:
 	//
@@ -82,6 +82,18 @@ type (
 	// possible security issues, as all request paths will be normalized to
 	// their unescaped forms before matcher evaluation.
 	//
+	// However, escape sequences in a match pattern are supported; they are
+	// compared with the request's raw/escaped path for those bytes only.
+	// In other words, a matcher of `/foo%2Fbar` will match a request path
+	// of precisely `/foo%2Fbar`, but not `/foo/bar`. It follows that matching
+	// the literal percent sign (%) in normalized space can be done using the
+	// escaped form, `%25`.
+	//
+	// Even though wildcards (`*`) operate in the normalized space, the special
+	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
+	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
+	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
+	//
 	// Even though path matching is done in normalized space, the special
 	// wildcard `%*` may be used in place of a span that should NOT be decoded;
 	// that is, `/bands/%*` will match `/bands/AC%2fDC` whereas `/bands/*`
@@ -89,7 +101,9 @@ type (
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
-	// path_regexp matcher.
+	// path_regexp matcher. (Note that due to the special treatment of
+	// escape sequences in matcher patterns, they may perform slightly slower
+	// in high-traffic environments.)
 	MatchPath []string
 
 	// MatchPathRE matches requests by a regular expression on the URI's path.
@@ -398,7 +412,6 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-outer:
 	for _, matchPath := range m {
 		matchPath = repl.ReplaceAll(matchPath, "")
 
@@ -408,72 +421,11 @@ outer:
 			return true
 		}
 
-		// if special wildcard "%*" is used, the span it represents is
-		// compared in the escaped space instead of normalized space;
-		// we have to do this ourselves, since only part of the path
-		// should be URI-decoded in this case; we iterate the pattern
-		// and escaped path in lock-step, decoding the escaped path
-		// as we go, but not decoding it in spans represented by %*.
-		if strings.Contains(matchPath, "%*") {
-			escapedPath := r.URL.EscapedPath()
-			var sb strings.Builder
-
-			var iPattern, iPath int
-			for {
-				if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
-					break
-				}
-
-				pathCh := string(escapedPath[iPath])
-
-				// normalize/decode escape sequence
-				if pathCh == "%" {
-					var err error
-					pathCh, err = url.PathUnescape(escapedPath[iPath : iPath+2])
-					if err != nil {
-						// should be impossible unless EscapedPath() is giving us an invalid sequence!
-						continue outer
-					}
-					iPath += 2
-				}
-
-				normalize := true
-
-				switch matchPath[iPattern] {
-				case '%':
-					normalize = false
-					iPattern++
-					fallthrough
-				case '*':
-					remaining := escapedPath[iPath:]
-					until := len(escapedPath) - iPath // go until end of string...
-					if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
-						nextCh := matchPath[iPattern+1]
-						until = strings.IndexByte(remaining, nextCh)
-					}
-					next := remaining[:until]
-					if normalize {
-						var err error
-						next, err = url.PathUnescape(next)
-						if err != nil {
-							continue outer // should be impossible anyway
-						}
-					}
-					sb.WriteString(next)
-					iPath += until
-				default:
-					sb.WriteString(pathCh)
-					iPath++
-				}
-
-				iPattern++
-			}
-
-			// we can now treat rawpath globs (%*) as regular globs (*)
-			matchPath = strings.ReplaceAll(matchPath, "%*", "*")
-
-			matches, _ := filepath.Match(matchPath, sb.String())
-			if matches {
+		// if '%' appears in the match pattern, we interpret that to mean
+		// the intent is to compare that part of the path in raw/escaped
+		// space; i.e. "%40" == "%40" and not "@"
+		if strings.Contains(matchPath, "%") {
+			if m.matchPatternWithEscapeSequence(r, matchPath) {
 				return true
 			}
 
@@ -528,6 +480,109 @@ outer:
 		}
 	}
 	return false
+}
+
+func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath string) bool {
+	escapedPath := r.URL.EscapedPath()
+
+	// We would just compare the pattern against r.URL.Path,
+	// but the pattern contains %, indicating that we should
+	// compare at least some part of the path in raw/escaped
+	// space, not normalized space; so we build the string we
+	// will compare against by defaulting to normalized parts
+	// of the path, then switching to the escaped parts where
+	// the pattern indicates with %.
+	var sb strings.Builder
+
+	// iterate the pattern and escaped path in lock-step
+	var iPattern, iPath int
+	for {
+		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
+			break
+		}
+
+		// get the next character from the request path
+
+		pathCh := string(escapedPath[iPath])
+		var escapedPathCh string
+
+		// normalize (decode) escape sequences
+		if pathCh == "%" && len(escapedPath) >= iPath+3 {
+			// hold onto this in case we find out the intent is to match in escaped space here;
+			// we lowercase it even though technically the spec says: "For consistency, URI
+			// producers and normalizers should use uppercase hexadecimal digits for all percent-
+			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern earlier in
+			// provisioning so we do the same here to gain case-insensitivity in equivalence;
+			// besides, this string is never shown visibly
+			escapedPathCh = strings.ToLower(escapedPath[iPath : iPath+3])
+
+			var err error
+			pathCh, err = url.PathUnescape(escapedPathCh)
+			if err != nil {
+				// should be impossible unless EscapedPath() is giving us an invalid sequence!
+				return false
+			}
+			iPath += 2 // escape sequence is 2 bytes longer than normal char
+		}
+		iPath++
+
+		// now get the next character from the pattern
+
+		normalize := true
+		switch matchPath[iPattern] {
+		case '%':
+			// escape sequence
+
+			// if not a wildcard ("%*"), compare literally; consume next two bytes of pattern
+			if len(matchPath) >= iPattern+3 && matchPath[iPattern+1] != '*' {
+				sb.WriteString(escapedPathCh)
+
+				// // escape sequences are case-insensitive,
+				// esc := matchPath[iPattern : iPattern+3]
+				// if esc != strings.ToUpper(esc) {
+				// 	// TODO: This could probably be done in provisioning
+				// 	matchPath = matchPath[:iPattern] + strings.ToUpper(esc) + matchPath[iPattern+3:]
+				// }
+
+				iPattern += 2
+				break
+			}
+
+			// escaped wildcard sequence; consume next byte only ('*')
+			normalize = false
+			iPattern++
+			fallthrough
+		case '*':
+			// wildcard, so consume until next matching character
+			remaining := escapedPath[iPath:]
+			until := len(escapedPath) - iPath // go until end of string...
+			if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
+				nextCh := matchPath[iPattern+1]
+				until = strings.IndexByte(remaining, nextCh)
+			}
+			next := remaining[:until]
+			iPath += until
+			if normalize {
+				var err error
+				next, err = url.PathUnescape(next)
+				if err != nil {
+					return false // should be impossible anyway
+				}
+			}
+			sb.WriteString(next)
+		default:
+			sb.WriteString(pathCh)
+		}
+
+		iPattern++
+	}
+
+	// we can now treat rawpath globs (%*) as regular globs (*)
+	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
+
+	// TODO: filepath.FromSlash?
+	matches, _ := filepath.Match(matchPath, sb.String())
+	return matches
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
