@@ -67,9 +67,9 @@ type (
 	// matching is exact, not prefix-based, giving you more control and clarity
 	// over matching. Wildcards (`*`) may be used:
 	//
-	// - At the end, for a prefix match (`/prefix/*`)
-	// - At the beginning, for a suffix match (`*.suffix`)
-	// - On both sides, for a substring match (`*/contains/*`)
+	// - At the end only, for a prefix match (`/prefix/*`)
+	// - At the beginning only, for a suffix match (`*.suffix`)
+	// - On both sides only, for a substring match (`*/contains/*`)
 	// - In the middle, for a globular match (`/accounts/*/info`)
 	//
 	// Slashes are significant; i.e. `/foo*` matches `/foo`, `/foo/`, `/foo/bar`,
@@ -81,6 +81,11 @@ type (
 	// should be written in their unescaped form to prevent ambiguities and
 	// possible security issues, as all request paths will be normalized to
 	// their unescaped forms before matcher evaluation.
+	//
+	// Even though path matching is done in normalized space, the special
+	// wildcard `%*` may be used in place of a span that should NOT be decoded;
+	// that is, `/bands/%*` will match `/bands/AC%2fDC` whereas `/bands/*`
+	// will not.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -355,6 +360,7 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 // Provision lower-cases the paths in m to ensure case-insensitive matching.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
+		// TODO: if m[i] == "*", put it first and delete all others (will always match)
 		m[i] = strings.ToLower(m[i])
 	}
 	return nil
@@ -362,27 +368,37 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
+	// Even though RFC 9110 says that path matching is case-sensitive
+	// (https://www.rfc-editor.org/rfc/rfc9110.html#section-4.2.3),
+	// we do case in-sensitive matching to mitigate security issues
+	// related to differences between operating systems, applications,
+	// etc; if case-sensitive matching is needed, the regex matcher
+	// can be used instead.
 	lowerPath := strings.ToLower(r.URL.Path)
 
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407
+	// the path matcher. See #4407. Good security posture
+	// suggests that we should do all we can to reduce any
+	// funny-looking paths into "normalized" forms such that
+	// weird variants can't sneak by.
 	lowerPath = path.Clean(lowerPath)
 
-	// see #2917; Windows ignores trailing dots and spaces
+	// See #2917; Windows ignores trailing dots and spaces
 	// when accessing files (sigh), potentially causing a
 	// security risk (cry) if PHP files end up being served
 	// as static files, exposing the source code, instead of
-	// being matched by *.php to be treated as PHP scripts
+	// being matched by *.php to be treated as PHP scripts.
 	lowerPath = strings.TrimRight(lowerPath, ". ")
 
-	// Cleaning may remove the trailing slash, but we want to keep it
+	// Cleaning may remove the trailing slash, but we want to keep it.
 	if lowerPath != "/" && strings.HasSuffix(r.URL.Path, "/") {
 		lowerPath = lowerPath + "/"
 	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+outer:
 	for _, matchPath := range m {
 		matchPath = repl.ReplaceAll(matchPath, "")
 
@@ -392,38 +408,120 @@ func (m MatchPath) Match(r *http.Request) bool {
 			return true
 		}
 
+		// if special wildcard "%*" is used, the span it represents is
+		// compared in the escaped space instead of normalized space;
+		// we have to do this ourselves, since only part of the path
+		// should be URI-decoded in this case; we iterate the pattern
+		// and escaped path in lock-step, decoding the escaped path
+		// as we go, but not decoding it in spans represented by %*.
+		if strings.Contains(matchPath, "%*") {
+			escapedPath := r.URL.EscapedPath()
+			var sb strings.Builder
+
+			var iPattern, iPath int
+			for {
+				if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
+					break
+				}
+
+				pathCh := string(escapedPath[iPath])
+
+				// normalize/decode escape sequence
+				if pathCh == "%" {
+					var err error
+					pathCh, err = url.PathUnescape(escapedPath[iPath : iPath+2])
+					if err != nil {
+						// should be impossible unless EscapedPath() is giving us an invalid sequence!
+						continue outer
+					}
+					iPath += 2
+				}
+
+				normalize := true
+
+				switch matchPath[iPattern] {
+				case '%':
+					normalize = false
+					iPattern++
+					fallthrough
+				case '*':
+					remaining := escapedPath[iPath:]
+					until := len(escapedPath) - iPath // go until end of string...
+					if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
+						nextCh := matchPath[iPattern+1]
+						until = strings.IndexByte(remaining, nextCh)
+					}
+					next := remaining[:until]
+					if normalize {
+						var err error
+						next, err = url.PathUnescape(next)
+						if err != nil {
+							continue outer // should be impossible anyway
+						}
+					}
+					sb.WriteString(next)
+					iPath += until
+				default:
+					sb.WriteString(pathCh)
+					iPath++
+				}
+
+				iPattern++
+			}
+
+			// we can now treat rawpath globs (%*) as regular globs (*)
+			matchPath = strings.ReplaceAll(matchPath, "%*", "*")
+
+			matches, _ := filepath.Match(matchPath, sb.String())
+			if matches {
+				return true
+			}
+
+			// doing prefix/suffix/substring matches doesn't make sense
+			continue
+		}
+
+		// for substring, prefix, and suffix matching, only perform those
+		// special, fast matches if they are the only wildcards in the pattern;
+		// otherwise we assume a globular match if any * appears in the middle
+
 		// special case: first and last characters are wildcard,
 		// treat it as a fast substring match
-		if len(matchPath) > 1 &&
+		if strings.Count(matchPath, "*") == 2 &&
 			strings.HasPrefix(matchPath, "*") &&
-			strings.HasSuffix(matchPath, "*") {
+			strings.HasSuffix(matchPath, "*") &&
+			strings.Count(matchPath, "*") == 2 {
 			if strings.Contains(lowerPath, matchPath[1:len(matchPath)-1]) {
 				return true
 			}
 			continue
 		}
 
-		// special case: first character is a wildcard,
-		// treat it as a fast suffix match
-		if strings.HasPrefix(matchPath, "*") {
-			if strings.HasSuffix(lowerPath, matchPath[1:]) {
-				return true
+		// only perform prefix/suffix match if it is the only wildcard...
+		// I think that is more correct most of the time
+		if strings.Count(matchPath, "*") == 1 {
+			// special case: first character is a wildcard,
+			// treat it as a fast suffix match
+			if strings.HasPrefix(matchPath, "*") {
+				if strings.HasSuffix(lowerPath, matchPath[1:]) {
+					return true
+				}
+				continue
 			}
-			continue
+
+			// special case: last character is a wildcard,
+			// treat it as a fast prefix match
+			if strings.HasSuffix(matchPath, "*") {
+				if strings.HasPrefix(lowerPath, matchPath[:len(matchPath)-1]) {
+					return true
+				}
+				continue
+			}
 		}
 
-		// special case: last character is a wildcard,
-		// treat it as a fast prefix match
-		if strings.HasSuffix(matchPath, "*") {
-			if strings.HasPrefix(lowerPath, matchPath[:len(matchPath)-1]) {
-				return true
-			}
-			continue
-		}
-
-		// for everything else, try globular matching, which also
-		// is exact matching if there are no glob/wildcard chars;
-		// can ignore error here because we can't handle it anyway
+		// at last, use globular matching, which also is exact matching
+		// if there are no glob/wildcard chars; we ignore the error here
+		// because we can't handle it anyway
 		matches, _ := filepath.Match(matchPath, lowerPath)
 		if matches {
 			return true

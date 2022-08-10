@@ -304,6 +304,9 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/%25%40.txt",
 			expect: true,
 		},
+		// these next two tests may be unintuitive, but path matching
+		// takes place in normalized (unescaped) space, so the pattern
+		// should be written in that space
 		{
 			match:  MatchPath{"/%25@.txt"},
 			input:  "/%25@.txt",
@@ -313,6 +316,31 @@ func TestPathMatcher(t *testing.T) {
 			match:  MatchPath{"/%25%40.txt"},
 			input:  "/%25%40.txt",
 			expect: false,
+		},
+		{
+			match:  MatchPath{"/bands/*/*"},
+			input:  "/bands/AC%2FDC/T.N.T",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/bands/%*/%*"},
+			input:  "/bands/AC%2FDC/T.N.T",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*/%*"},
+			input:  "/bands/AC/DC/T.N.T",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/bands/%*"},
+			input:  "/bands/AC/DC",
+			expect: false, // not a suffix match
+		},
+		{
+			match:  MatchPath{"/bands/%*"},
+			input:  "/bands/AC%2FDC",
+			expect: true,
 		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
