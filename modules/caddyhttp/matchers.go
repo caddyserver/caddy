@@ -23,7 +23,6 @@ import (
 	"net/textproto"
 	"net/url"
 	"path"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -474,7 +473,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// at last, use globular matching, which also is exact matching
 		// if there are no glob/wildcard chars; we ignore the error here
 		// because we can't handle it anyway
-		matches, _ := filepath.Match(matchPath, lowerPath)
+		matches, _ := path.Match(matchPath, lowerPath)
 		if matches {
 			return true
 		}
@@ -580,7 +579,8 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
-	matches, _ := filepath.Match(filepath.FromSlash(matchPath), filepath.FromSlash(sb.String()))
+	// ignore error here because we can't handle it anyway
+	matches, _ := path.Match(matchPath, sb.String())
 	return matches
 }
 
