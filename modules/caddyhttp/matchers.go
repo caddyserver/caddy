@@ -580,8 +580,7 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
-	// TODO: filepath.FromSlash?
-	matches, _ := filepath.Match(matchPath, sb.String())
+	matches, _ := filepath.Match(matchPath, filepath.FromSlash(sb.String()))
 	return matches
 }
 
