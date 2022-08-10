@@ -724,6 +724,13 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	return nil
 }
 
+type myctx struct {
+	context.Context
+	done <-chan struct{}
+}
+
+func (c myctx) Done() <-chan struct{} { return c.done }
+
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
@@ -755,6 +762,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			},
 		}
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	}
+
+	// TODO: very spikey and experimental (issue #4922)
+	if h.FlushInterval == -1 {
+		req = req.WithContext(myctx{req.Context(), h.ctx.Done()})
 	}
 
 	// do the round-trip; emit debug log with values we know are
