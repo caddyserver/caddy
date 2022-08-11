@@ -54,7 +54,7 @@ func (m *metricsUpstreamsHealthyUpdater) Init() {
 
 		m.update()
 
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		for {
 			select {
 			case <-ticker.C:
