@@ -424,13 +424,13 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// iterations; it's just that the way we clean depends on
 		// the kind of pattern.
 
-		patternHasDoubleSlashes := strings.Contains(matchPattern, "//")
+		mergeSlashes := !strings.Contains(matchPattern, "//")
 
 		// if '%' appears in the match pattern, we interpret that to mean
 		// the intent is to compare that part of the path in raw/escaped
 		// space; i.e. "%40"=="%40", not "@", and "%2F"=="%2F", not "/"
 		if strings.Contains(matchPattern, "%") {
-			reqPathForPattern := m.cleanPath(r.URL.EscapedPath(), !patternHasDoubleSlashes)
+			reqPathForPattern := CleanPath(r.URL.EscapedPath(), mergeSlashes)
 			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
 				return true
 			}
@@ -439,7 +439,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 			continue
 		}
 
-		reqPathForPattern := m.cleanPath(reqPath, !patternHasDoubleSlashes)
+		reqPathForPattern := CleanPath(reqPath, mergeSlashes)
 
 		// for substring, prefix, and suffix matching, only perform those
 		// special, fast matches if they are the only wildcards in the pattern;
@@ -594,29 +594,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// ignore error here because we can't handle it anyway=
 	matches, _ := path.Match(matchPath, sb.String())
 	return matches
-}
-
-// cleanPath cleans path p with or without merging slashes.
-func (m MatchPath) cleanPath(p string, collapseSlashes bool) string {
-	if collapseSlashes {
-		return CleanPath(p)
-	}
-
-	// replace repeated slashes with an invalid/impossible URI character
-	// to avoid collisions, clean the path, then replace them back
-	const tmpSlash = 0xff
-	var sb strings.Builder
-	for i, ch := range p {
-		if ch == '/' && i > 0 && (p[i-1] == '/' || p[i-1] == tmpSlash) {
-			sb.WriteByte(tmpSlash)
-			continue
-		}
-		sb.WriteRune(ch)
-	}
-	halfCleaned := CleanPath(sb.String())
-	halfCleaned = strings.ReplaceAll(halfCleaned, string([]byte{tmpSlash}), "/")
-
-	return halfCleaned
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL

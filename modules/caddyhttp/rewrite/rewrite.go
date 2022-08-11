@@ -233,14 +233,16 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+		mergeSlashes := !strings.Contains(prefix, "//")
 		changePath(r, func(pathOrRawPath string) string {
-			return strings.TrimPrefix(caddyhttp.CleanPath(pathOrRawPath), prefix)
+			return strings.TrimPrefix(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), prefix)
 		})
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
+		mergeSlashes := !strings.Contains(suffix, "//")
 		changePath(r, func(pathOrRawPath string) string {
-			return strings.TrimSuffix(caddyhttp.CleanPath(pathOrRawPath), suffix)
+			return strings.TrimSuffix(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), suffix)
 		})
 	}
 
@@ -354,8 +356,10 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	find := repl.ReplaceAll(rep.Find, "")
 	replace := repl.ReplaceAll(rep.Replace, "")
 
+	mergeSlashes := !strings.Contains(rep.Find, "//")
+
 	changePath(r, func(pathOrRawPath string) string {
-		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath), find, replace, lim)
+		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
 	})
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)

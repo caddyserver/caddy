@@ -235,6 +235,17 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/prefix/bar"),
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
+		{
+			rule: Rewrite{StripPathPrefix: "//prefix"},
+			// scheme and host needed for URL parser to succeed in setting up test
+			input:  newRequest(t, "GET", "http://host//prefix/foo/bar"),
+			expect: newRequest(t, "GET", "http://host/foo/bar"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "//prefix"},
+			input:  newRequest(t, "GET", "/prefix/foo/bar"),
+			expect: newRequest(t, "GET", "/prefix/foo/bar"),
+		},
 
 		{
 			rule:   Rewrite{StripPathSuffix: "/suffix"},
