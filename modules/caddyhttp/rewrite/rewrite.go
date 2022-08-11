@@ -31,7 +31,7 @@ func init() {
 	caddy.RegisterModule(Rewrite{})
 }
 
-// Rewrite is a middleware which can rewrite HTTP requests.
+// Rewrite is a middleware which can rewrite/mutate HTTP requests.
 //
 // The Method and URI properties are "setters" (the request URI
 // will be overwritten with the given values). Other properties are
@@ -43,7 +43,10 @@ func init() {
 // URL-decoded (unescaped, normalized) space. For modifiers, the
 // paths are cleaned before being modified so that multiple,
 // consecutive slashes are collapsed into a single slash, and dot
-// components are resolved and removed.
+// components are resolved and removed. In the special case of a
+// prefix, suffix, or substring containing "//" (repeated slashes),
+// then slashes will not be merged while cleaning the path so that
+// the rewrite can be interpreted literally.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
