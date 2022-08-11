@@ -36,12 +36,20 @@ func init() {
 	caddy.RegisterModule(new(ZeroSSLIssuer))
 }
 
-// ZeroSSLIssuer makes an ACME manager
-// for managing certificates using ACME.
+// ZeroSSLIssuer makes an ACME issuer for getting certificates
+// from ZeroSSL by automatically generating EAB credentials.
+// Please be sure to set a valid email address in your config
+// so you can access/manage your domains in your ZeroSSL account.
+//
+// This issuer is only needed for automatic generation of EAB
+// credentials. If manually configuring/reusing EAB credentials,
+// the standard ACMEIssuer may be used if desired.
 type ZeroSSLIssuer struct {
 	*ACMEIssuer
 
 	// The API key (or "access key") for using the ZeroSSL API.
+	// This is optional, but can be used if you have an API key
+	// already and don't want to supply your email address.
 	APIKey string `json:"api_key,omitempty"`
 
 	mu     sync.Mutex
@@ -193,9 +201,9 @@ func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.Certificate
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//     ... zerossl [<api_key>] {
-//         ...
-//     }
+//	... zerossl [<api_key>] {
+//	    ...
+//	}
 //
 // Any of the subdirectives for the ACME issuer can be used in the block.
 func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {

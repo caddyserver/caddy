@@ -23,9 +23,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/textproto"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,7 +42,11 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
+var supports1xx bool
+
 func init() {
+	supports1xx = !regexp.MustCompile(`^go1\.1(?:7|8)\.`).Match([]byte(runtime.Version()))
+
 	caddy.RegisterModule(Handler{})
 }
 
@@ -734,6 +740,25 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
+
+	if supports1xx {
+		// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				h := rw.Header()
+				copyHeader(h, http.Header(header))
+				rw.WriteHeader(code)
+
+				// Clear headers, it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses
+				for k := range h {
+					delete(h, k)
+				}
+
+				return nil
+			},
+		}
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	}
 
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
