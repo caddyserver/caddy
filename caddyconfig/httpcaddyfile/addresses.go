@@ -36,12 +36,12 @@ import (
 // server block that share the same address stay grouped together so the config
 // isn't repeated unnecessarily. For example, this Caddyfile:
 //
-// 	example.com {
-// 		bind 127.0.0.1
-// 	}
-// 	www.example.com, example.net/path, localhost:9999 {
-// 		bind 127.0.0.1 1.2.3.4
-// 	}
+//	example.com {
+//		bind 127.0.0.1
+//	}
+//	www.example.com, example.net/path, localhost:9999 {
+//		bind 127.0.0.1 1.2.3.4
+//	}
 //
 // has two server blocks to start with. But expressed in this Caddyfile are
 // actually 4 listener addresses: 127.0.0.1:443, 1.2.3.4:443, 127.0.0.1:9999,
@@ -235,10 +235,21 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	// use a map to prevent duplication
 	listeners := make(map[string]struct{})
 	for _, host := range lnHosts {
-		// host can have network + host (e.g. "tcp6/localhost") but
-		// will/should not have port information because this usually
-		// comes from the bind directive, so we append the port
-		addr, err := caddy.ParseNetworkAddress(host + ":" + lnPort)
+		var a string
+		if host != "" {
+			// host can have network + host (e.g. "tcp6/localhost") but
+			// will/should not have port information because this usually
+			// comes from the bind directive, so we append the port
+			network, rest, err := caddy.SplitNetwork(host)
+			if err != nil {
+				return nil, fmt.Errorf("splitting network address %q: %v", host, err)
+			}
+			rest = strings.Trim(rest, "[]")
+			a = caddy.JoinNetworkAddress(network, rest, lnPort)
+		} else {
+			a = ":" + lnPort
+		}
+		addr, err := caddy.ParseNetworkAddress(a)
 		if err != nil {
 			return nil, fmt.Errorf("parsing network address: %v", err)
 		}
