@@ -22,6 +22,7 @@
 	}
 	storage_clean_interval 7d
 	renew_interval 1d
+	ocsp_interval 2d
 
 	key_type ed25519
 }
@@ -83,6 +84,7 @@
 					},
 					"ask": "https://example.com"
 				},
+				"ocsp_interval": 172800000000000,
 				"renew_interval": 86400000000000,
 				"storage_clean_interval": 604800000000000
 			}
