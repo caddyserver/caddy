@@ -95,7 +95,7 @@ type (
 	//
 	// Even though path matching is done in normalized space, the special
 	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*` will match `/bands/AC%2fDC` whereas `/bands/*`
+	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
 	// will not.
 	//
 	// This matcher is fast, so it does not support regular expressions or
@@ -383,48 +383,55 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 func (m MatchPath) Match(r *http.Request) bool {
 	// Even though RFC 9110 says that path matching is case-sensitive
 	// (https://www.rfc-editor.org/rfc/rfc9110.html#section-4.2.3),
-	// we do case in-sensitive matching to mitigate security issues
+	// we do case-insensitive matching to mitigate security issues
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	lowerPath := strings.ToLower(r.URL.Path)
-
-	// Clean the path, merges doubled slashes, etc.
-	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407. Good security posture
-	// suggests that we should do all we can to reduce any
-	// funny-looking paths into "normalized" forms such that
-	// weird variants can't sneak by.
-	lowerPath = path.Clean(lowerPath)
+	reqPath := strings.ToLower(r.URL.Path)
 
 	// See #2917; Windows ignores trailing dots and spaces
 	// when accessing files (sigh), potentially causing a
 	// security risk (cry) if PHP files end up being served
 	// as static files, exposing the source code, instead of
 	// being matched by *.php to be treated as PHP scripts.
-	lowerPath = strings.TrimRight(lowerPath, ". ")
-
-	// Cleaning may remove the trailing slash, but we want to keep it.
-	if lowerPath != "/" && strings.HasSuffix(r.URL.Path, "/") {
-		lowerPath = lowerPath + "/"
-	}
+	reqPath = strings.TrimRight(reqPath, ". ")
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	for _, matchPath := range m {
-		matchPath = repl.ReplaceAll(matchPath, "")
+	for _, matchPattern := range m {
+		matchPattern = repl.ReplaceAll(matchPattern, "")
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
-		if matchPath == "*" {
+		if matchPattern == "*" {
 			return true
 		}
 
+		// Clean the path, merge doubled slashes, etc.
+		// This ensures maliciously crafted requests can't bypass
+		// the path matcher. See #4407. Good security posture
+		// requires that we should do all we can to reduce any
+		// funny-looking paths into "normalized" forms such that
+		// weird variants can't sneak by.
+		//
+		// How we clean the path depends on the kind of pattern:
+		// we either merge slashes or we don't. If the pattern
+		// has double slashes, we preserve them in the path.
+		//
+		// TODO: Despite the fact that the *vast* majority of path
+		// matchers have only 1 pattern, a possible optimization is
+		// to remember the cleaned form of the path for future
+		// iterations; it's just that the way we clean depends on
+		// the kind of pattern.
+
+		patternHasDoubleSlashes := strings.Contains(matchPattern, "//")
+
 		// if '%' appears in the match pattern, we interpret that to mean
 		// the intent is to compare that part of the path in raw/escaped
-		// space; i.e. "%40" == "%40" and not "@"
-		if strings.Contains(matchPath, "%") {
-			if m.matchPatternWithEscapeSequence(r, matchPath) {
+		// space; i.e. "%40"=="%40", not "@", and "%2F"=="%2F", not "/"
+		if strings.Contains(matchPattern, "%") {
+			reqPathForPattern := m.cleanPath(r.URL.EscapedPath(), !patternHasDoubleSlashes)
+			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
 				return true
 			}
 
@@ -432,17 +439,19 @@ func (m MatchPath) Match(r *http.Request) bool {
 			continue
 		}
 
+		reqPathForPattern := m.cleanPath(reqPath, !patternHasDoubleSlashes)
+
 		// for substring, prefix, and suffix matching, only perform those
 		// special, fast matches if they are the only wildcards in the pattern;
 		// otherwise we assume a globular match if any * appears in the middle
 
 		// special case: first and last characters are wildcard,
 		// treat it as a fast substring match
-		if strings.Count(matchPath, "*") == 2 &&
-			strings.HasPrefix(matchPath, "*") &&
-			strings.HasSuffix(matchPath, "*") &&
-			strings.Count(matchPath, "*") == 2 {
-			if strings.Contains(lowerPath, matchPath[1:len(matchPath)-1]) {
+		if strings.Count(matchPattern, "*") == 2 &&
+			strings.HasPrefix(matchPattern, "*") &&
+			strings.HasSuffix(matchPattern, "*") &&
+			strings.Count(matchPattern, "*") == 2 {
+			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
 				return true
 			}
 			continue
@@ -450,11 +459,11 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 		// only perform prefix/suffix match if it is the only wildcard...
 		// I think that is more correct most of the time
-		if strings.Count(matchPath, "*") == 1 {
+		if strings.Count(matchPattern, "*") == 1 {
 			// special case: first character is a wildcard,
 			// treat it as a fast suffix match
-			if strings.HasPrefix(matchPath, "*") {
-				if strings.HasSuffix(lowerPath, matchPath[1:]) {
+			if strings.HasPrefix(matchPattern, "*") {
+				if strings.HasSuffix(reqPathForPattern, matchPattern[1:]) {
 					return true
 				}
 				continue
@@ -462,8 +471,8 @@ func (m MatchPath) Match(r *http.Request) bool {
 
 			// special case: last character is a wildcard,
 			// treat it as a fast prefix match
-			if strings.HasSuffix(matchPath, "*") {
-				if strings.HasPrefix(lowerPath, matchPath[:len(matchPath)-1]) {
+			if strings.HasSuffix(matchPattern, "*") {
+				if strings.HasPrefix(reqPathForPattern, matchPattern[:len(matchPattern)-1]) {
 					return true
 				}
 				continue
@@ -473,7 +482,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// at last, use globular matching, which also is exact matching
 		// if there are no glob/wildcard chars; we ignore the error here
 		// because we can't handle it anyway
-		matches, _ := path.Match(matchPath, lowerPath)
+		matches, _ := path.Match(matchPattern, reqPathForPattern)
 		if matches {
 			return true
 		}
@@ -481,19 +490,20 @@ func (m MatchPath) Match(r *http.Request) bool {
 	return false
 }
 
-func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath string) bool {
-	escapedPath := r.URL.EscapedPath()
-
+func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
 	// We would just compare the pattern against r.URL.Path,
 	// but the pattern contains %, indicating that we should
 	// compare at least some part of the path in raw/escaped
 	// space, not normalized space; so we build the string we
-	// will compare against by defaulting to normalized parts
+	// will compare against by adding the normalized parts
 	// of the path, then switching to the escaped parts where
-	// the pattern indicates with %.
+	// the pattern hints to us wherever % is present.
 	var sb strings.Builder
 
-	// iterate the pattern and escaped path in lock-step
+	// iterate the pattern and escaped path in lock-step;
+	// increment iPattern every time we consume a char from the pattern,
+	// increment iPath every time we consume a char from the path;
+	// iPattern and iPath are our cursors/iterator positions for each string
 	var iPattern, iPath int
 	for {
 		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
@@ -523,7 +533,6 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 			}
 			iPath += 2 // escape sequence is 2 bytes longer than normal char
 		}
-		iPath++
 
 		// now get the next character from the pattern
 
@@ -535,21 +544,15 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 			// if not a wildcard ("%*"), compare literally; consume next two bytes of pattern
 			if len(matchPath) >= iPattern+3 && matchPath[iPattern+1] != '*' {
 				sb.WriteString(escapedPathCh)
-
-				// // escape sequences are case-insensitive,
-				// esc := matchPath[iPattern : iPattern+3]
-				// if esc != strings.ToUpper(esc) {
-				// 	// TODO: This could probably be done in provisioning
-				// 	matchPath = matchPath[:iPattern] + strings.ToUpper(esc) + matchPath[iPattern+3:]
-				// }
-
+				iPath++
 				iPattern += 2
 				break
 			}
 
 			// escaped wildcard sequence; consume next byte only ('*')
-			normalize = false
 			iPattern++
+			normalize = false
+
 			fallthrough
 		case '*':
 			// wildcard, so consume until next matching character
@@ -558,9 +561,16 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 			if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
 				nextCh := matchPath[iPattern+1]
 				until = strings.IndexByte(remaining, nextCh)
+				if until == -1 {
+					// terminating char of wildcard span not found, so definitely no match
+					return false
+				}
+			}
+			if until == 0 {
+				// empty span; nothing to add on this iteration
+				break
 			}
 			next := remaining[:until]
-			iPath += until
 			if normalize {
 				var err error
 				next, err = url.PathUnescape(next)
@@ -569,8 +579,10 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 				}
 			}
 			sb.WriteString(next)
+			iPath += until
 		default:
 			sb.WriteString(pathCh)
+			iPath++
 		}
 
 		iPattern++
@@ -579,9 +591,32 @@ func (MatchPath) matchPatternWithEscapeSequence(r *http.Request, matchPath strin
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
-	// ignore error here because we can't handle it anyway
+	// ignore error here because we can't handle it anyway=
 	matches, _ := path.Match(matchPath, sb.String())
 	return matches
+}
+
+// cleanPath cleans path p with or without merging slashes.
+func (m MatchPath) cleanPath(p string, collapseSlashes bool) string {
+	if collapseSlashes {
+		return CleanPath(p)
+	}
+
+	// replace repeated slashes with an invalid/impossible URI character
+	// to avoid collisions, clean the path, then replace them back
+	const tmpSlash = 0xff
+	var sb strings.Builder
+	for i, ch := range p {
+		if ch == '/' && i > 0 && (p[i-1] == '/' || p[i-1] == tmpSlash) {
+			sb.WriteByte(tmpSlash)
+			continue
+		}
+		sb.WriteRune(ch)
+	}
+	halfCleaned := CleanPath(sb.String())
+	halfCleaned = strings.ReplaceAll(halfCleaned, string([]byte{tmpSlash}), "/")
+
+	return halfCleaned
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL

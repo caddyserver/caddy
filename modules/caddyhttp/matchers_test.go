@@ -254,6 +254,11 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			match:  MatchPath{"*.php"},
+			input:  "/foo/index.php. .",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"/foo/bar.txt"},
 			input:  "/foo/BAR.txt",
 			expect: true,
@@ -264,8 +269,58 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			match:  MatchPath{"/foo*"},
+			match:  MatchPath{"/foo"},
 			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"//foo"},
+			input:  "/foo",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"//foo"},
+			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo//*"},
+			input:  "/foo//bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo//*"},
+			input:  "/foo/%2Fbar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%2F*"},
+			input:  "/foo/%2Fbar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%2F*"},
+			input:  "/foo//bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo//bar"},
+			input:  "/foo//bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/*//bar"},
+			input:  "/foo///bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%*//bar"},
+			input:  "/foo///bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%*//bar"},
+			input:  "/foo//%2Fbar",
 			expect: true,
 		},
 		{

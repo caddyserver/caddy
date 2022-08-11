@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -242,6 +243,17 @@ func SanitizedPathJoin(root, reqPath string) string {
 	}
 
 	return path
+}
+
+// CleanPath cleans path p according to path.Clean() except that
+// it preserves trailing slashes, since those are significant
+// in our application.
+func CleanPath(p string) string {
+	cleaned := path.Clean(p)
+	if cleaned != "/" && strings.HasSuffix(p, "/") {
+		cleaned = cleaned + "/"
+	}
+	return cleaned
 }
 
 // tlsPlaceholderWrapper is a no-op listener wrapper that marks
