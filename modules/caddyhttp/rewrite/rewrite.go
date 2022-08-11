@@ -33,13 +33,17 @@ func init() {
 
 // Rewrite is a middleware which can rewrite HTTP requests.
 //
-// The Method and URI properties are "setters": the request URI
-// will be set to the given values. Other properties are "modifiers":
-// they modify existing files but do not explicitly specify what the
-// result will be. It is atypical to combine the use of setters and
+// The Method and URI properties are "setters" (the request URI
+// will be overwritten with the given values). Other properties are
+// "modifiers" (they modify existing values in a differentiable
+// way). It is atypical to combine the use of setters and
 // modifiers in a single rewrite.
 //
-// Rewriting is performed in the URL-decoded (unescaped) space.
+// To ensure consistent behavior, rewriting is performed in the
+// URL-decoded (unescaped, normalized) space. For modifiers, the
+// paths are cleaned before being modified so that multiple,
+// consecutive slashes are collapsed into a single slash, and dot
+// components are resolved and removed.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
@@ -230,13 +234,13 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
 		changePath(r, func(pathOrRawPath string) string {
-			return strings.TrimPrefix(pathOrRawPath, prefix)
+			return strings.TrimPrefix(caddyhttp.CleanPath(pathOrRawPath), prefix)
 		})
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
 		changePath(r, func(pathOrRawPath string) string {
-			return strings.TrimSuffix(pathOrRawPath, suffix)
+			return strings.TrimSuffix(caddyhttp.CleanPath(pathOrRawPath), suffix)
 		})
 	}
 
@@ -351,7 +355,7 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	replace := repl.ReplaceAll(rep.Replace, "")
 
 	changePath(r, func(pathOrRawPath string) string {
-		return strings.Replace(pathOrRawPath, find, replace, lim)
+		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath), find, replace, lim)
 	})
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
@@ -379,15 +383,16 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	})
 }
 
-// changePath updates the path on the request URL. It first executes newVal on
-// req.URL.RawPath, and if the result is a valid escaping, it will be copied
-// into req.URL.Path; otherwise newVal is evaluated only on req.URL.Path.
 func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
-	req.URL.RawPath = newVal(req.URL.RawPath)
+	req.URL.RawPath = newVal(req.URL.EscapedPath())
 	if p, err := url.PathUnescape(req.URL.RawPath); err == nil && p != "" {
 		req.URL.Path = p
 	} else {
 		req.URL.Path = newVal(req.URL.Path)
+	}
+	// RawPath is only set if it's different from the normalized Path (std lib)
+	if req.URL.RawPath == req.URL.Path {
+		req.URL.RawPath = ""
 	}
 }
 
