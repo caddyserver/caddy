@@ -39,9 +39,12 @@ func init() {
 // way). It is atypical to combine the use of setters and
 // modifiers in a single rewrite.
 //
-// To ensure consistent behavior, rewriting is performed in the
-// URL-decoded (unescaped, normalized) space by default. For
-// modifiers, the paths are cleaned before being modified so that
+// To ensure consistent behavior, prefix and suffix stripping is
+// performed in the URL-decoded (unescaped, normalized) space by
+// default except for the specific bytes where an escape sequence
+// is used in the prefix or suffix pattern.
+//
+// For all modifiers, paths are cleaned before being modified so that
 // multiple, consecutive slashes are collapsed into a single slash,
 // and dot elements are resolved and removed. In the special case
 // of a prefix, suffix, or substring containing "//" (repeated slashes),
