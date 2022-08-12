@@ -246,6 +246,31 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/prefix/foo/bar"),
 			expect: newRequest(t, "GET", "/prefix/foo/bar"),
 		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a%2Fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a%2fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a/b/c"},
+			input:  newRequest(t, "GET", "/a%2Fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a/b/c/d"),
+			expect: newRequest(t, "GET", "/a/b/c/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "//a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a/b/c/d"),
+			expect: newRequest(t, "GET", "/a/b/c/d"),
+		},
 
 		{
 			rule:   Rewrite{StripPathSuffix: "/suffix"},
@@ -261,6 +286,11 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathSuffix: "suffix"},
 			input:  newRequest(t, "GET", "/foo%2Fbar/suffix"),
 			expect: newRequest(t, "GET", "/foo%2Fbar/"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2fsuffix"},
+			input:  newRequest(t, "GET", "/foo%2Fbar%2fsuffix"),
+			expect: newRequest(t, "GET", "/foo%2Fbar"),
 		},
 		{
 			rule:   Rewrite{StripPathSuffix: "/suffix"},

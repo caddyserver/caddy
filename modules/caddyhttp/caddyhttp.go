@@ -270,6 +270,7 @@ func CleanPath(p string, collapseSlashes bool) string {
 	return halfCleaned
 }
 
+// cleanPath does path.Clean(p) but preserves any trailing slash.
 func cleanPath(p string) string {
 	cleaned := path.Clean(p)
 	if cleaned != "/" && strings.HasSuffix(p, "/") {

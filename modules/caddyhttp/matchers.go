@@ -650,12 +650,7 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
 	// the path matcher. See #4407
-	cleanedPath := path.Clean(r.URL.Path)
-
-	// Cleaning may remove the trailing slash, but we want to keep it
-	if cleanedPath != "/" && strings.HasSuffix(r.URL.Path, "/") {
-		cleanedPath = cleanedPath + "/"
-	}
+	cleanedPath := cleanPath(r.URL.Path)
 
 	return m.MatchRegexp.Match(cleanedPath, repl)
 }
