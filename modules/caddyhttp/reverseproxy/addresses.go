@@ -96,6 +96,12 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		}
 	}
 
+	// special case network to support both unix and h2c at the same time
+	if network == "unix+h2c" {
+		network = "unix"
+		scheme = "h2c"
+	}
+
 	// for simplest possible config, we only need to include
 	// the network portion if the user specified one
 	if network != "" {
