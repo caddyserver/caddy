@@ -258,7 +258,7 @@ func CleanPath(p string, collapseSlashes bool) string {
 	const tmpSlash = 0xff
 	var sb strings.Builder
 	for i, ch := range p {
-		if ch == '/' && i > 0 && (p[i-1] == '/' || p[i-1] == tmpSlash) {
+		if ch == '/' && i > 0 && p[i-1] == '/' {
 			sb.WriteByte(tmpSlash)
 			continue
 		}
