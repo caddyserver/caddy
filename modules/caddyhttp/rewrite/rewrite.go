@@ -194,10 +194,10 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
-		if quPos := strings.Index(newPath, "?"); quPos > -1 {
+		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
-			newPath, injectedQuery = newPath[:quPos], newPath[quPos+1:]
+			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
 				query = injectedQuery
