@@ -94,6 +94,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	fsrv.browseApplyQueryParams(w, r, &listing)
 
 	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
 	defer bufPool.Put(buf)
 
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
