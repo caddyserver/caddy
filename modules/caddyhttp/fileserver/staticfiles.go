@@ -23,7 +23,6 @@ import (
 	weakrand "math/rand"
 	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -236,16 +235,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	// PathUnescape returns an error if the escapes aren't well-formed,
-	// meaning the count % matches the RFC. Return early if the escape is
-	// improper.
-	if _, err := url.PathUnescape(r.URL.Path); err != nil {
-		fsrv.logger.Debug("improper path escape",
-			zap.String("site_root", root),
-			zap.String("request_path", r.URL.Path),
-			zap.Error(err))
-		return err
-	}
+
 	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
 
 	fsrv.logger.Debug("sanitized path join",
