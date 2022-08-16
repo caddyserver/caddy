@@ -253,19 +253,19 @@ func CleanPath(p string, collapseSlashes bool) string {
 		return cleanPath(p)
 	}
 
-	// replace repeated slashes with an invalid/impossible URI character
-	// to avoid collisions; then clean the path, then replace them back
-	var tmpSlash = string("\xff/")
+	// insert an invalid/impossible URI character into each two consecutive
+	// slashes to expand empty path segments; then clean the path as usual,
+	// and then remove the remaining temporary characters.
+	const tmpCh = 0xff
 	var sb strings.Builder
 	for i, ch := range p {
 		if ch == '/' && i > 0 && p[i-1] == '/' {
-			sb.WriteString(tmpSlash)
-			continue
+			sb.WriteByte(tmpCh)
 		}
 		sb.WriteRune(ch)
 	}
 	halfCleaned := cleanPath(sb.String())
-	halfCleaned = strings.ReplaceAll(halfCleaned, "/\xff", "/")
+	halfCleaned = strings.ReplaceAll(halfCleaned, string([]byte{tmpCh}), "")
 
 	return halfCleaned
 }
