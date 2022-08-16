@@ -424,13 +424,13 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.Header = http.Header(mimeHeader)
 
 	if resp.Header.Get("Status") != "" {
-		statusParts := strings.SplitN(resp.Header.Get("Status"), " ", 2)
-		resp.StatusCode, err = strconv.Atoi(statusParts[0])
+		statusNumber, statusInfo, statusIsCut := strings.Cut(resp.Header.Get("Status"), " ")
+		resp.StatusCode, err = strconv.Atoi(statusNumber)
 		if err != nil {
 			return
 		}
-		if len(statusParts) > 1 {
-			resp.Status = statusParts[1]
+		if statusIsCut {
+			resp.Status = statusInfo
 		}
 
 	} else {

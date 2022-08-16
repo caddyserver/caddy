@@ -324,11 +324,11 @@ func ParseStructTag(tag string) (map[string]string, error) {
 		if pair == "" {
 			continue
 		}
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) != 2 {
+		before, after, isCut := strings.Cut(pair, "=")
+		if !isCut {
 			return nil, fmt.Errorf("missing key in '%s' (pair %d)", pair, i)
 		}
-		results[parts[0]] = parts[1]
+		results[before] = after
 	}
 	return results, nil
 }

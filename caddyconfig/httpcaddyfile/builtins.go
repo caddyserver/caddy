@@ -540,8 +540,13 @@ func parseVars(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 // parseRedir parses the redir directive. Syntax:
 //
-//     redir [<matcher>] <to> [<code>]
+//	redir [<matcher>] <to> [<code>]
 //
+// <code> can be "permanent" for 301, "temporary" for 302 (default),
+// a placeholder, or any number in the 3xx range or 401. The special
+// code "html" can be used to redirect only browser clients (will
+// respond with HTTP 200 and no Location header; redirect is performed
+// with JS and a meta tag).
 func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -558,6 +563,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	}
 
 	var body string
+	var hdr http.Header
 	switch code {
 	case "permanent":
 		code = "301"
@@ -578,7 +584,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
-		code = "302"
+		code = "200" // don't redirect non-browser clients
 	default:
 		// Allow placeholders for the code
 		if strings.HasPrefix(code, "{") {
@@ -601,9 +607,14 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 
+	// don't redirect non-browser clients
+	if code != "200" {
+		hdr = http.Header{"Location": []string{to}}
+	}
+
 	return caddyhttp.StaticResponse{
 		StatusCode: caddyhttp.WeakString(code),
-		Headers:    http.Header{"Location": []string{to}},
+		Headers:    hdr,
 		Body:       body,
 	}, nil
 }

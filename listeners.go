@@ -89,11 +89,19 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
-func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
+func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
 	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
+		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
+				}
+				return highLoad
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -469,15 +477,15 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	}
 	var start, end uint64
 	if port != "" {
-		ports := strings.SplitN(port, "-", 2)
-		if len(ports) == 1 {
-			ports = append(ports, ports[0])
+		before, after, found := strings.Cut(port, "-")
+		if !found {
+			after = before
 		}
-		start, err = strconv.ParseUint(ports[0], 10, 16)
+		start, err = strconv.ParseUint(before, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
 		}
-		end, err = strconv.ParseUint(ports[1], 10, 16)
+		end, err = strconv.ParseUint(after, 10, 16)
 		if err != nil {
 			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
 		}
@@ -499,9 +507,10 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 // SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
-	if idx := strings.Index(a, "/"); idx >= 0 {
-		network = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+1:]
+	beforeSlash, afterSlash, slashFound := strings.Cut(a, "/")
+	if slashFound {
+		network = strings.ToLower(strings.TrimSpace(beforeSlash))
+		a = afterSlash
 	}
 	if isUnixNetwork(network) {
 		host = a
