@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -392,7 +393,7 @@ func (na NetworkAddress) isLoopback() bool {
 	if na.Host == "localhost" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsLoopback()
 	}
 	return false
@@ -402,7 +403,7 @@ func (na NetworkAddress) isWildcardInterface() bool {
 	if na.Host == "" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsUnspecified()
 	}
 	return false

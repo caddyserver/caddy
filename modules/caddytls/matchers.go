@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -65,8 +66,8 @@ type MatchRemoteIP struct {
 	// The IPs or CIDR ranges to *NOT* match.
 	NotRanges []string `json:"not_ranges,omitempty"`
 
-	cidrs    []*net.IPNet
-	notCidrs []*net.IPNet
+	cidrs    []*netip.Prefix
+	notCidrs []*netip.Prefix
 	logger   *zap.Logger
 }
 
@@ -105,38 +106,35 @@ func (m MatchRemoteIP) Match(hello *tls.ClientHelloInfo) bool {
 	if err != nil {
 		ipStr = remoteAddr // weird; maybe no port?
 	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+	ipAddr, err := netip.ParseAddr(ipStr)
+	if err != nil {
 		m.logger.Error("invalid client IP addresss", zap.String("ip", ipStr))
 		return false
 	}
-	return (len(m.cidrs) == 0 || m.matches(ip, m.cidrs)) &&
-		(len(m.notCidrs) == 0 || !m.matches(ip, m.notCidrs))
+	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs)) &&
+		(len(m.notCidrs) == 0 || !m.matches(ipAddr, m.notCidrs))
 }
 
-func (MatchRemoteIP) parseIPRange(str string) ([]*net.IPNet, error) {
-	var cidrs []*net.IPNet
+func (MatchRemoteIP) parseIPRange(str string) ([]*netip.Prefix, error) {
+	var cidrs []*netip.Prefix
 	if strings.Contains(str, "/") {
-		_, ipNet, err := net.ParseCIDR(str)
+		ipNet, err := netip.ParsePrefix(str)
 		if err != nil {
-			return nil, fmt.Errorf("parsing CIDR expression: %v", err)
+			return nil, fmt.Errorf("parsing Prefix expression: %v", err)
 		}
-		cidrs = append(cidrs, ipNet)
+		cidrs = append(cidrs, &ipNet)
 	} else {
-		ip := net.ParseIP(str)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid IP address: %s", str)
+		ipAddr, err := netip.ParseAddr(str)
+		if err != nil {
+			return nil, fmt.Errorf("invalid IP address: '%s': %v", str, err)
 		}
-		mask := len(ip) * 8
-		cidrs = append(cidrs, &net.IPNet{
-			IP:   ip,
-			Mask: net.CIDRMask(mask, mask),
-		})
+		ip := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
+		cidrs = append(cidrs, &ip)
 	}
 	return cidrs, nil
 }
 
-func (MatchRemoteIP) matches(ip net.IP, ranges []*net.IPNet) bool {
+func (MatchRemoteIP) matches(ip netip.Addr, ranges []*netip.Prefix) bool {
 	for _, ipRange := range ranges {
 		if ipRange.Contains(ip) {
 			return true

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"path"
@@ -141,7 +142,7 @@ type (
 
 		// cidrs and zones vars should aligned always in the same
 		// length and indexes for matching later
-		cidrs  []*net.IPNet
+		cidrs  []*netip.Prefix
 		zones  []string
 		logger *zap.Logger
 	}
@@ -1147,27 +1148,24 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 			m.zones = append(m.zones, "")
 		}
 		if strings.Contains(str, "/") {
-			_, ipNet, err := net.ParseCIDR(str)
+			ipNet, err := netip.ParsePrefix(str)
 			if err != nil {
-				return fmt.Errorf("parsing CIDR expression '%s': %v", str, err)
+				return fmt.Errorf("parsing Prefix expression '%s': %v", str, err)
 			}
-			m.cidrs = append(m.cidrs, ipNet)
+			m.cidrs = append(m.cidrs, &ipNet)
 		} else {
-			ip := net.ParseIP(str)
-			if ip == nil {
-				return fmt.Errorf("invalid IP address: %s", str)
+			ipAddr, err := netip.ParseAddr(str)
+			if err != nil {
+				return fmt.Errorf("invalid IP address: '%s': %v", str, err)
 			}
-			mask := len(ip) * 8
-			m.cidrs = append(m.cidrs, &net.IPNet{
-				IP:   ip,
-				Mask: net.CIDRMask(mask, mask),
-			})
+			ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
+			m.cidrs = append(m.cidrs, &ipNew)
 		}
 	}
 	return nil
 }
 
-func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
+func (m MatchRemoteIP) getClientIP(r *http.Request) (netip.Addr, string, error) {
 	remote := r.RemoteAddr
 	zoneID := ""
 	if m.Forwarded {
@@ -1186,11 +1184,11 @@ func (m MatchRemoteIP) getClientIP(r *http.Request) (net.IP, string, error) {
 		ipStr = split[0]
 		zoneID = split[1]
 	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return nil, zoneID, fmt.Errorf("invalid client IP address: %s", ipStr)
+	ipAddr, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return netip.IPv4Unspecified(), "", err
 	}
-	return ip, zoneID, nil
+	return ipAddr, zoneID, nil
 }
 
 // Match returns true if r matches m.

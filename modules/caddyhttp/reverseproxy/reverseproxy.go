@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"regexp"
@@ -169,7 +170,7 @@ type Handler struct {
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
 	// Holds the parsed CIDR ranges from TrustedProxies
-	trustedProxies []*net.IPNet
+	trustedProxies []*netip.Prefix
 
 	// Holds the named response matchers from the Caddyfile while adapting
 	responseMatchers map[string]caddyhttp.ResponseMatcher
@@ -240,24 +241,18 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// parse trusted proxy CIDRs ahead of time
 	for _, str := range h.TrustedProxies {
 		if strings.Contains(str, "/") {
-			_, ipNet, err := net.ParseCIDR(str)
+			ipNet, err := netip.ParsePrefix(str)
 			if err != nil {
-				return fmt.Errorf("parsing CIDR expression: %v", err)
+				return fmt.Errorf("parsing Prefix expression '%s': %v", str, err)
 			}
-			h.trustedProxies = append(h.trustedProxies, ipNet)
+			h.trustedProxies = append(h.trustedProxies, &ipNet)
 		} else {
-			ip := net.ParseIP(str)
-			if ip == nil {
-				return fmt.Errorf("invalid IP address: %s", str)
+			ipAddr, err := netip.ParseAddr(str)
+			if err != nil {
+				return fmt.Errorf("invalid IP address: '%s': %v", str, err)
 			}
-			if ipv4 := ip.To4(); ipv4 != nil {
-				ip = ipv4
-			}
-			mask := len(ip) * 8
-			h.trustedProxies = append(h.trustedProxies, &net.IPNet{
-				IP:   ip,
-				Mask: net.CIDRMask(mask, mask),
-			})
+			ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
+			h.trustedProxies = append(h.trustedProxies, &ipNew)
 		}
 	}
 
@@ -661,15 +656,15 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	if idx := strings.IndexByte(clientIP, '%'); idx >= 0 {
 		clientIP = clientIP[:idx]
 	}
-	ip := net.ParseIP(clientIP)
-	if ip == nil {
-		return fmt.Errorf("invalid client IP address: %s", clientIP)
+	ipAddr, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return fmt.Errorf("invalid IP address: '%s': %v", clientIP, err)
 	}
 
 	// Check if the client is a trusted proxy
 	trusted := false
 	for _, ipRange := range h.trustedProxies {
-		if ipRange.Contains(ip) {
+		if ipRange.Contains(ipAddr) {
 			trusted = true
 			break
 		}
