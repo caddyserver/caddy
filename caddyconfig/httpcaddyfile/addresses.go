@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"sort"
 	"strconv"
@@ -354,9 +355,9 @@ func (a Address) Normalize() Address {
 
 	// ensure host is normalized if it's an IP address
 	host := strings.TrimSpace(a.Host)
-	if ip := net.ParseIP(host); ip != nil {
-		if ipv6 := ip.To16(); ipv6 != nil && ipv6.DefaultMask() == nil {
-			host = ipv6.String()
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.Is6() && !ip.Is4() && !ip.Is4In6() {
+			host = ip.String()
 		}
 	}
 
