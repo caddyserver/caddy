@@ -181,7 +181,7 @@ type Handler struct {
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
 	// Holds the parsed CIDR ranges from TrustedProxies
-	trustedProxies []*netip.Prefix
+	trustedProxies []netip.Prefix
 
 	// Holds the named response matchers from the Caddyfile while adapting
 	responseMatchers map[string]caddyhttp.ResponseMatcher
@@ -256,14 +256,14 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("parsing CIDR expression: '%s': %v", str, err)
 			}
-			h.trustedProxies = append(h.trustedProxies, &ipNet)
+			h.trustedProxies = append(h.trustedProxies, ipNet)
 		} else {
 			ipAddr, err := netip.ParseAddr(str)
 			if err != nil {
 				return fmt.Errorf("invalid IP address: '%s': %v", str, err)
 			}
 			ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
-			h.trustedProxies = append(h.trustedProxies, &ipNew)
+			h.trustedProxies = append(h.trustedProxies, ipNew)
 		}
 	}
 
