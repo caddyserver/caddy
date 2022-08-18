@@ -356,6 +356,11 @@ func (app *App) Start() error {
 				return context.WithValue(ctx, ConnCtxKey, c)
 			},
 		}
+		h2server := &http2.Server{
+			NewWriteScheduler: func() http2.WriteScheduler {
+				return http2.NewPriorityWriteScheduler(nil)
+			},
+		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
@@ -376,6 +381,9 @@ func (app *App) Start() error {
 					}
 				}
 			}
+		} else {
+			//nolint:errcheck
+			http2.ConfigureServer(srv.server, h2server)
 		}
 
 		// this TLS config is used by the std lib to choose the actual TLS config for connections
@@ -385,9 +393,6 @@ func (app *App) Start() error {
 
 		// enable H2C if configured
 		if srv.protocol("h2c") {
-			h2server := &http2.Server{
-				IdleTimeout: time.Duration(srv.IdleTimeout),
-			}
 			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
@@ -452,17 +457,6 @@ func (app *App) Start() error {
 				// finish wrapping listener where we left off before TLS
 				for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
 					ln = srv.listenerWrappers[i].WrapListener(ln)
-				}
-
-				// handle http2 if use tls listener wrapper
-				if useTLS {
-					http2lnWrapper := &http2Listener{
-						Listener: ln,
-						server:   s,
-						h2server: h2server,
-					}
-					app.http2listeners = append(app.http2listeners, http2lnWrapper)
-					ln = http2lnWrapper
 				}
 
 				// handle http2 if use tls listener wrapper
