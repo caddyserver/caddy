@@ -1,4 +1,4 @@
-package h2chandler
+package caddyhttp
 
 import (
 	"context"
@@ -11,15 +11,15 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// Handler is a Handler which counts possible h2c upgrade requests
-type Handler struct {
+// h2chandler is a Handler which counts possible h2c upgrade requests
+type h2chandler struct {
 	cnt     uint64
 	Handler http.Handler
 }
 
-// NewHandler returns an http.Handler that tracks possible h2c upgrade requests.
-func NewHandler(h http.Handler) *Handler {
-	return &Handler{
+// NewH2cHandler returns an http.Handler that tracks possible h2c upgrade requests.
+func newH2cHandler(h http.Handler) *h2chandler {
+	return &h2chandler{
 		Handler: h,
 	}
 }
@@ -27,7 +27,7 @@ func NewHandler(h http.Handler) *Handler {
 const shutdownPollIntervalMax = 500 * time.Millisecond
 
 // Shutdown mirrors stdlib http.Server Shutdown behavior, because h2 connections are always marked active, there is no closing to be done.
-func (h *Handler) Shutdown(ctx context.Context) error {
+func (h *h2chandler) Shutdown(ctx context.Context) error {
 	pollIntervalBase := time.Millisecond
 	nextPollInterval := func() time.Duration {
 		// Add 10% jitter.
@@ -70,7 +70,7 @@ func isH2cUpgrade(r *http.Request) bool {
 }
 
 // ServeHTTP records underlying connections that are likely to be h2c.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *h2chandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isH2cUpgrade(r) {
 		atomic.AddUint64(&h.cnt, 1)
 		defer atomic.AddUint64(&h.cnt, ^uint64(0))

@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -364,7 +363,11 @@ func (app *App) Start() error {
 			h2server := &http2.Server{
 				NewWriteScheduler: func() http2.WriteScheduler { return http2.NewPriorityWriteScheduler(nil) },
 			}
-			srv.server.Handler = h2c.NewHandler(srv, h2server)
+			//nolint:errcheck
+			http2.ConfigureServer(srv.server, h2server)
+			h2chandler := newH2cHandler(h2c.NewHandler(srv, h2server))
+			srv.server.Handler = h2chandler
+			srv.h2chandler = h2chandler
 		}
 
 		for _, lnAddr := range srv.Listen {
@@ -502,19 +505,19 @@ func (app *App) Stop() error {
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
-	}
-	for i, s := range app.h2chandlers {
-		if err := s.Shutdown(ctx); err != nil {
-			app.logger.Error("h2c handler shutdown",
-				zap.Error(err),
-				zap.Int("index", i))
-		}
-	}
 
 		if server.h3server != nil {
 			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
 			if err := server.h3server.Close(); err != nil {
 				app.logger.Error("HTTP/3 server shutdown",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+
+		if server.h2chandler != nil {
+			if err := server.h2chandler.Shutdown(ctx); err != nil {
+				app.logger.Error("h2c handler shutdown",
 					zap.Error(err),
 					zap.Strings("addresses", server.Listen))
 			}

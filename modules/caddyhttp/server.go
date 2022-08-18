@@ -162,6 +162,8 @@ type Server struct {
 	h3server  *http3.Server
 	addresses []caddy.NetworkAddress
 
+	h2chandler *h2chandler
+
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
 }
