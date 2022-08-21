@@ -189,15 +189,15 @@ func init() {
 // {{.RespHeader.Set "Field-Name" "val"}}
 // ```
 //
-//##### `httpError`
+// ##### `httpError`
 //
-//This function takes status code as input and returns a structured HTTP handler error
-//
-//Example usage: 
-//
-//```
-//{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}
-//```
+// This function takes status code as input and returns a structured HTTP handler error
+// 
+// Example usage: 
+// 
+// ```
+// {{if not (fileExists $includeFile)}}{{httpError 404}}{{end}
+// ```
 //
 // ##### `splitFrontMatter`
 //
