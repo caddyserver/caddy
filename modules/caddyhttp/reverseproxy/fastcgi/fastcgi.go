@@ -15,7 +15,6 @@
 package fastcgi
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -129,13 +128,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("building environment: %v", err)
 	}
 
-	// TODO: doesn't dialer have a Timeout field?
 	ctx := r.Context()
-	if t.DialTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.DialTimeout))
-		defer cancel()
-	}
 
 	// extract dial information from request (should have been embedded by the reverse proxy)
 	network, address := "tcp", r.URL.Host
@@ -156,7 +149,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		zap.Object("env", loggableEnv),
 	)
 
-	fcgiBackend, err := DialContext(ctx, network, address)
+	fcgiBackend, err := DialContext(ctx, network, address, time.Duration(t.DialTimeout))
 	if err != nil {
 		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
@@ -172,10 +165,10 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// fcgiBackend gets closed when response body is closed (see clientCloser)
 
 	// read/write timeouts
-	if err := fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
+	if err = fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
 		return nil, fmt.Errorf("setting read timeout: %v", err)
 	}
-	if err := fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
+	if err = fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
 		return nil, fmt.Errorf("setting write timeout: %v", err)
 	}
 

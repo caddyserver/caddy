@@ -28,7 +28,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"io"
 	"mime/multipart"
 	"net"
@@ -122,63 +121,16 @@ const (
 	maxPad   = 255
 )
 
-type header struct {
-	Version       uint8
-	Type          uint8
-	ID            uint16
-	ContentLength uint16
-	PaddingLength uint8
-	Reserved      uint8
-}
-
 // for padding so we don't have to allocate all the time
 // not synchronized because we don't care what the contents are
 var pad [maxPad]byte
-
-func (h *header) init(recType uint8, reqID uint16, contentLength int) {
-	h.Version = 1
-	h.Type = recType
-	h.ID = reqID
-	h.ContentLength = uint16(contentLength)
-	h.PaddingLength = uint8(-contentLength & 7)
-}
-
-type record struct {
-	h    header
-	rbuf []byte
-}
-
-func (rec *record) read(r io.Reader) (buf []byte, err error) {
-	if err = binary.Read(r, binary.BigEndian, &rec.h); err != nil {
-		return
-	}
-	if rec.h.Version != 1 {
-		err = errors.New("fcgi: invalid header version")
-		return
-	}
-	if rec.h.Type == EndRequest {
-		err = io.EOF
-		return
-	}
-	n := int(rec.h.ContentLength) + int(rec.h.PaddingLength)
-	if len(rec.rbuf) < n {
-		rec.rbuf = make([]byte, n)
-	}
-	if _, err = io.ReadFull(r, rec.rbuf[:n]); err != nil {
-		return
-	}
-	buf = rec.rbuf[:int(rec.h.ContentLength)]
-
-	return
-}
 
 // FCGIClient implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type FCGIClient struct {
 	mutex     sync.Mutex
-	rwc       io.ReadWriteCloser
+	rwc       net.Conn
 	h         header
-	buf       bytes.Buffer
 	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
@@ -205,15 +157,14 @@ func DialWithDialerContext(ctx context.Context, network, address string, dialer 
 }
 
 // DialContext is like Dial but passes ctx to dialer.Dial.
-func DialContext(ctx context.Context, network, address string) (fcgi *FCGIClient, err error) {
-	// TODO: why not set timeout here?
-	return DialWithDialerContext(ctx, network, address, net.Dialer{})
+func DialContext(ctx context.Context, network, address string, timeout time.Duration) (fcgi *FCGIClient, err error) {
+	return DialWithDialerContext(ctx, network, address, net.Dialer{Timeout: timeout})
 }
 
 // Dial connects to the fcgi responder at the specified network address, using default net.Dialer.
 // See func net.Dial for a description of the network and address parameters.
 func Dial(network, address string) (fcgi *FCGIClient, err error) {
-	return DialContext(context.Background(), network, address)
+	return DialContext(context.Background(), network, address, 0)
 }
 
 // Close closes fcgi connection
@@ -224,18 +175,16 @@ func (c *FCGIClient) Close() {
 func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.buf.Reset()
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
 	c.h.init(recType, c.reqID, len(content))
-	if err := binary.Write(&c.buf, binary.BigEndian, c.h); err != nil {
+	if err = binary.Write(buf, binary.BigEndian, c.h); err != nil {
 		return err
 	}
-	if _, err := c.buf.Write(content); err != nil {
-		return err
-	}
-	if _, err := c.buf.Write(pad[:c.h.PaddingLength]); err != nil {
-		return err
-	}
-	_, err = c.rwc.Write(c.buf.Bytes())
+	buf.Write(content)
+	buf.Write(pad[:c.h.PaddingLength])
+	_, err = buf.WriteTo(c.rwc)
 	return err
 }
 
@@ -246,6 +195,7 @@ func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
 
 func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
 	w := newWriter(c, recType)
+	defer w.recycle()
 	b := make([]byte, 8)
 	nn := 0
 	for k, v := range pairs {
@@ -259,7 +209,9 @@ func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
 		n += encodeSize(b[n:], uint32(len(v)))
 		m = n + len(k) + len(v)
 		if (nn + m) > maxWrite {
-			w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
 			nn = 0
 		}
 		nn += m
@@ -273,18 +225,7 @@ func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
 			return err
 		}
 	}
-	w.Close()
-	return nil
-}
-
-func encodeSize(b []byte, size uint32) int {
-	if size > 127 {
-		size |= 1 << 31
-		binary.BigEndian.PutUint32(b, size)
-		return 4
-	}
-	b[0] = byte(size)
-	return 1
+	return w.Close()
 }
 
 // bufWriter encapsulates bufio.Writer but also closes the underlying stream when
@@ -306,13 +247,6 @@ func newWriter(c *FCGIClient, recType uint8) *bufWriter {
 	s := &streamWriter{c: c, recType: recType}
 	w := bufio.NewWriterSize(s, maxWrite)
 	return &bufWriter{s, w}
-}
-
-// streamWriter abstracts out the separation of a stream into discrete records.
-// It only writes maxWrite bytes at a time.
-type streamWriter struct {
-	c       *FCGIClient
-	recType uint8
 }
 
 func (w *streamWriter) Write(p []byte) (int, error) {
@@ -342,6 +276,7 @@ type streamReader struct {
 }
 
 func (w *streamReader) Read(p []byte) (n int, err error) {
+
 	if len(p) > 0 {
 		if len(w.buf) == 0 {
 
@@ -388,10 +323,17 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 	}
 
 	body := newWriter(c, Stdin)
+	defer body.recycle()
 	if req != nil {
-		_, _ = io.Copy(body, req)
+		_, err = io.Copy(body, req)
+		if err != nil {
+			return nil, err
+		}
 	}
-	body.Close()
+	err = body.Close()
+	if err != nil {
+		return nil, err
+	}
 
 	r = &streamReader{c: c}
 	return
@@ -578,8 +520,8 @@ func (c *FCGIClient) PostFile(p map[string]string, data url.Values, file map[str
 // SetReadTimeout sets the read timeout for future calls that read from the
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
-	if conn, ok := c.rwc.(net.Conn); ok && t != 0 {
-		return conn.SetReadDeadline(time.Now().Add(t))
+	if t != 0 {
+		return c.rwc.SetReadDeadline(time.Now().Add(t))
 	}
 	return nil
 }
@@ -587,8 +529,8 @@ func (c *FCGIClient) SetReadTimeout(t time.Duration) error {
 // SetWriteTimeout sets the write timeout for future calls that send data to
 // the fcgi responder. A zero value for t means no timeout will be set.
 func (c *FCGIClient) SetWriteTimeout(t time.Duration) error {
-	if conn, ok := c.rwc.(net.Conn); ok && t != 0 {
-		return conn.SetWriteDeadline(time.Now().Add(t))
+	if t != 0 {
+		return c.rwc.SetWriteDeadline(time.Now().Add(t))
 	}
 	return nil
 }
