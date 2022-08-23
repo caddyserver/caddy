@@ -526,8 +526,9 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	if handlerErr, ok := err.(HandlerError); ok {
 		repl.Set("http.error.status_code", handlerErr.StatusCode)
 		repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
-		repl.Set("http.error.trace", handlerErr.Trace)
 		repl.Set("http.error.id", handlerErr.ID)
+		repl.Set("http.error.trace", handlerErr.Trace)
+		repl.Set("http.error.message", handlerErr.Err.Error())
 	}
 
 	return r
