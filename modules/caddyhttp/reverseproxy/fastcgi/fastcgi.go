@@ -166,9 +166,11 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	// read/write timeouts
 	if err = fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
+		fcgiBackend.Close()
 		return nil, fmt.Errorf("setting read timeout: %v", err)
 	}
 	if err = fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
+		fcgiBackend.Close()
 		return nil, fmt.Errorf("setting write timeout: %v", err)
 	}
 
@@ -189,6 +191,9 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 	}
 
+	if err != nil {
+		fcgiBackend.Close()
+	}
 	return resp, err
 }
 
