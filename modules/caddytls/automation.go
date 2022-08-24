@@ -16,6 +16,7 @@ package caddytls
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
+	"go.uber.org/zap"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.
@@ -174,6 +176,13 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 					tlsApp.Automation.OnDemand.Ask != "" {
 					err := onDemandAskRequest(tlsApp.Automation.OnDemand.Ask, name)
 					if err != nil {
+						// distinguish true errors from denials, because it's important to log actual errors
+						if !errors.Is(err, errAskDenied) {
+							tlsApp.logger.Error("request to 'ask' endpoint failed",
+								zap.Error(err),
+								zap.String("endpoint", tlsApp.Automation.OnDemand.Ask),
+								zap.String("domain", name))
+						}
 						return err
 					}
 				}
