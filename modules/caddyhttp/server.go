@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
 	"github.com/lucas-clemente/quic-go/http3"
@@ -134,15 +135,20 @@ type Server struct {
 	listenerWrappers    []caddy.ListenerWrapper
 
 	tlsApp       *caddytls.TLS
+	events       *caddyevents.App
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
+	ctx          caddy.Context
 
 	h3server *http3.Server
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: consider emitting this asynchronously
+	s.events.Emit(s.ctx, "request", map[string]interface{}{"request": r})
+
 	w.Header().Set("Server", "Caddy")
 
 	if s.h3server != nil {
