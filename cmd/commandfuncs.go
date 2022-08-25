@@ -331,30 +331,17 @@ func cmdReload(fl Flags) (int, error) {
 }
 
 func cmdVersion(_ Flags) (int, error) {
-	fmt.Println(CaddyVersion())
+	_, full := caddy.Version()
+	fmt.Println(full)
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdBuildInfo(fl Flags) (int, error) {
+func cmdBuildInfo(_ Flags) (int, error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no build information")
 	}
-
-	fmt.Printf("go_version: %s\n", runtime.Version())
-	fmt.Printf("go_os:      %s\n", runtime.GOOS)
-	fmt.Printf("go_arch:    %s\n", runtime.GOARCH)
-	fmt.Printf("path:       %s\n", bi.Path)
-	fmt.Printf("main:       %s %s %s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
-	fmt.Println("dependencies:")
-
-	for _, goMod := range bi.Deps {
-		fmt.Printf("%s %s %s", goMod.Path, goMod.Version, goMod.Sum)
-		if goMod.Replace != nil {
-			fmt.Printf(" => %s %s %s", goMod.Replace.Path, goMod.Replace.Version, goMod.Replace.Sum)
-		}
-		fmt.Println()
-	}
+	fmt.Println(bi)
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -471,7 +458,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]interface{}{"filename": adaptCmdInputFlag}
+	opts := map[string]any{"filename": adaptCmdInputFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
@@ -647,7 +634,7 @@ commands:
 	)
 
 	if help := flagHelp(subcommand.Flags); help != "" {
-		result += fmt.Sprintf("\nflags:\n%s", help)
+		result += fmt.Sprintf("\nflags: (NOTE: prefix flags with `--` instead of `-`)\n%s", help)
 	}
 
 	result += "\n" + fullDocs + "\n"

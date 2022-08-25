@@ -73,7 +73,7 @@ type CA struct {
 
 	storage     certmagic.Storage
 	root, inter *x509.Certificate
-	interKey    interface{} // TODO: should we just store these as crypto.Signer?
+	interKey    any // TODO: should we just store these as crypto.Signer?
 	mu          *sync.RWMutex
 
 	rootCertPath string // mainly used for logging purposes if trusting
@@ -121,7 +121,7 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 
 	// load the certs and key that will be used for signing
 	var rootCert, interCert *x509.Certificate
-	var rootKey, interKey interface{}
+	var rootKey, interKey any
 	var err error
 	if ca.Root != nil {
 		if ca.Root.Format == "" || ca.Root.Format == "pem_file" {
@@ -161,7 +161,7 @@ func (ca CA) RootCertificate() *x509.Certificate {
 // RootKey returns the CA's root private key. Since the root key is
 // not cached in memory long-term, it needs to be loaded from storage,
 // which could yield an error.
-func (ca CA) RootKey() (interface{}, error) {
+func (ca CA) RootKey() (any, error) {
 	_, rootKey, err := ca.loadOrGenRoot()
 	return rootKey, err
 }
@@ -175,7 +175,7 @@ func (ca CA) IntermediateCertificate() *x509.Certificate {
 }
 
 // IntermediateKey returns the CA's intermediate private key.
-func (ca CA) IntermediateKey() interface{} {
+func (ca CA) IntermediateKey() any {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.interKey
@@ -196,7 +196,7 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 		// cert/key directly, since it's unlikely to expire
 		// while Caddy is running (long lifetime)
 		var issuerCert *x509.Certificate
-		var issuerKey interface{}
+		var issuerKey any
 		issuerCert = rootCert
 		var err error
 		issuerKey, err = ca.RootKey()
@@ -239,7 +239,7 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 	return auth, nil
 }
 
-func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, err error) {
+func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey any, err error) {
 	rootCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootCert())
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -273,7 +273,7 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey interface{}, e
 	return rootCert, rootKey, nil
 }
 
-func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey interface{}, err error) {
+func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey any, err error) {
 	repl := ca.newReplacer()
 
 	rootCert, rootKey, err = generateRoot(repl.ReplaceAll(ca.RootCommonName, ""))

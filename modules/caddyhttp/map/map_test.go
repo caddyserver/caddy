@@ -15,7 +15,7 @@ func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
 		handler Handler
 		reqURI  string
-		expect  map[string]interface{}
+		expect  map[string]any
 	}{
 		{
 			reqURI: "/foo",
@@ -25,11 +25,11 @@ func TestHandler(t *testing.T) {
 				Mappings: []Mapping{
 					{
 						Input:   "/foo",
-						Outputs: []interface{}{"FOO"},
+						Outputs: []any{"FOO"},
 					},
 				},
 			},
-			expect: map[string]interface{}{
+			expect: map[string]any{
 				"output": "FOO",
 			},
 		},
@@ -41,11 +41,11 @@ func TestHandler(t *testing.T) {
 				Mappings: []Mapping{
 					{
 						InputRegexp: "(/abc)",
-						Outputs:     []interface{}{"ABC"},
+						Outputs:     []any{"ABC"},
 					},
 				},
 			},
-			expect: map[string]interface{}{
+			expect: map[string]any{
 				"output": "ABC",
 			},
 		},
@@ -57,11 +57,11 @@ func TestHandler(t *testing.T) {
 				Mappings: []Mapping{
 					{
 						InputRegexp: "(xyz)",
-						Outputs:     []interface{}{"...${1}..."},
+						Outputs:     []any{"...${1}..."},
 					},
 				},
 			},
-			expect: map[string]interface{}{
+			expect: map[string]any{
 				"output": "...xyz...",
 			},
 		},
@@ -74,11 +74,11 @@ func TestHandler(t *testing.T) {
 				Mappings: []Mapping{
 					{
 						InputRegexp: "(?i)(\\^|`|<|>|%|\\\\|\\{|\\}|\\|)",
-						Outputs:     []interface{}{"3"},
+						Outputs:     []any{"3"},
 					},
 				},
 			},
-			expect: map[string]interface{}{
+			expect: map[string]any{
 				"output": "3",
 			},
 		},
@@ -90,11 +90,11 @@ func TestHandler(t *testing.T) {
 				Mappings: []Mapping{
 					{
 						Input:   "/foo",
-						Outputs: []interface{}{"{testvar}"},
+						Outputs: []any{"{testvar}"},
 					},
 				},
 			},
-			expect: map[string]interface{}{
+			expect: map[string]any{
 				"output": "testing",
 			},
 		},

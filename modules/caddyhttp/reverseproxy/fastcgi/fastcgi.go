@@ -94,10 +94,8 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 		t.Root = "{http.vars.root}"
 	}
 
-	t.serverSoftware = "Caddy"
-	if mod := caddy.GoModule(); mod.Version != "" {
-		t.serverSoftware += "/" + mod.Version
-	}
+	version, _ := caddy.Version()
+	t.serverSoftware = "Caddy/" + version
 
 	// Set a relatively short default dial timeout.
 	// This is helpful to make load-balancer retries more speedy.

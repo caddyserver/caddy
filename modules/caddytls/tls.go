@@ -120,7 +120,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading certificate loader modules: %s", err)
 	}
-	for modName, modIface := range val.(map[string]interface{}) {
+	for modName, modIface := range val.(map[string]any) {
 		if modName == "automate" {
 			// special case; these will be loaded in later using our automation facilities,
 			// which we want to avoid doing during provisioning

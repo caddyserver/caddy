@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -242,6 +243,40 @@ func SanitizedPathJoin(root, reqPath string) string {
 	}
 
 	return path
+}
+
+// CleanPath cleans path p according to path.Clean(), but only
+// merges repeated slashes if collapseSlashes is true, and always
+// preserves trailing slashes.
+func CleanPath(p string, collapseSlashes bool) string {
+	if collapseSlashes {
+		return cleanPath(p)
+	}
+
+	// insert an invalid/impossible URI character into each two consecutive
+	// slashes to expand empty path segments; then clean the path as usual,
+	// and then remove the remaining temporary characters.
+	const tmpCh = 0xff
+	var sb strings.Builder
+	for i, ch := range p {
+		if ch == '/' && i > 0 && p[i-1] == '/' {
+			sb.WriteByte(tmpCh)
+		}
+		sb.WriteRune(ch)
+	}
+	halfCleaned := cleanPath(sb.String())
+	halfCleaned = strings.ReplaceAll(halfCleaned, string([]byte{tmpCh}), "")
+
+	return halfCleaned
+}
+
+// cleanPath does path.Clean(p) but preserves any trailing slash.
+func cleanPath(p string) string {
+	cleaned := path.Clean(p)
+	if cleaned != "/" && strings.HasSuffix(p, "/") {
+		cleaned = cleaned + "/"
+	}
+	return cleaned
 }
 
 // tlsPlaceholderWrapper is a no-op listener wrapper that marks

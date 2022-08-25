@@ -22,7 +22,7 @@ import (
 	"github.com/smallstep/cli/crypto/x509util"
 )
 
-func generateRoot(commonName string) (rootCrt *x509.Certificate, privateKey interface{}, err error) {
+func generateRoot(commonName string) (rootCrt *x509.Certificate, privateKey any, err error) {
 	rootProfile, err := x509util.NewRootProfile(commonName)
 	if err != nil {
 		return
