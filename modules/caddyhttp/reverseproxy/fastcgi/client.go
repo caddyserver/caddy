@@ -131,6 +131,7 @@ type FCGIClient struct {
 	mutex     sync.Mutex
 	rwc       net.Conn
 	h         header
+	buf       *bytes.Buffer
 	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
@@ -157,14 +158,14 @@ func DialWithDialerContext(ctx context.Context, network, address string, dialer 
 }
 
 // DialContext is like Dial but passes ctx to dialer.Dial.
-func DialContext(ctx context.Context, network, address string, timeout time.Duration) (fcgi *FCGIClient, err error) {
-	return DialWithDialerContext(ctx, network, address, net.Dialer{Timeout: timeout})
+func DialContext(ctx context.Context, network, address string) (fcgi *FCGIClient, err error) {
+	return DialWithDialerContext(ctx, network, address, net.Dialer{})
 }
 
 // Dial connects to the fcgi responder at the specified network address, using default net.Dialer.
 // See func net.Dial for a description of the network and address parameters.
 func Dial(network, address string) (fcgi *FCGIClient, err error) {
-	return DialContext(context.Background(), network, address, 0)
+	return DialContext(context.Background(), network, address)
 }
 
 // Close closes fcgi connection
@@ -175,16 +176,13 @@ func (c *FCGIClient) Close() {
 func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufPool.Put(buf)
 	c.h.init(recType, c.reqID, len(content))
-	if err = binary.Write(buf, binary.BigEndian, c.h); err != nil {
+	if err = binary.Write(c.buf, binary.BigEndian, c.h); err != nil {
 		return err
 	}
-	buf.Write(content)
-	buf.Write(pad[:c.h.PaddingLength])
-	_, err = buf.WriteTo(c.rwc)
+	c.buf.Write(content)
+	c.buf.Write(pad[:c.h.PaddingLength])
+	_, err = c.buf.WriteTo(c.rwc)
 	return err
 }
 
@@ -312,25 +310,32 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
+	c.buf = bufPool.Get().(*bytes.Buffer)
+	c.buf.Reset()
+	defer bufPool.Put(c.buf)
+
+	writer := newWriter(c)
+	defer writer.recycle()
+
 	err = c.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
 		return
 	}
 
-	err = c.writePairs(Params, p)
+	writer.sw.recType = Params
+	err = writer.writePairs(p)
 	if err != nil {
 		return
 	}
 
-	body := newWriter(c, Stdin)
-	defer body.recycle()
+	writer.sw.recType = Stdin
 	if req != nil {
-		_, err = io.Copy(body, req)
+		_, err = io.Copy(writer, req)
 		if err != nil {
 			return nil, err
 		}
 	}
-	err = body.Close()
+	err = writer.endStream()
 	if err != nil {
 		return nil, err
 	}

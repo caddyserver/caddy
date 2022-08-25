@@ -149,7 +149,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		zap.Object("env", loggableEnv),
 	)
 
-	fcgiBackend, err := DialContext(ctx, network, address, time.Duration(t.DialTimeout))
+	fcgiBackend, err := DialWithDialerContext(ctx, network, address, net.Dialer{Timeout: time.Duration(t.DialTimeout)})
 	if err != nil {
 		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
