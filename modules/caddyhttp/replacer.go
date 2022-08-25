@@ -169,7 +169,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				req.Body = io.NopCloser(buf)  // replace real body with buffered data
 				return buf.String(), true
 
-				// original request, before any internal changes
+			// original request, before any internal changes
 			case "http.request.orig_method":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.Method, true
