@@ -311,7 +311,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	if modInfo.New == nil {
 		return nil, fmt.Errorf("module '%s' has no constructor", modInfo.ID)
 	}
-  
+
 	val := modInfo.New()
 
 	// value must be a pointer for unmarshaling into concrete type, even if
