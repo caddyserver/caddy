@@ -146,9 +146,6 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO: consider emitting this asynchronously
-	s.events.Emit(s.ctx, "request", map[string]interface{}{"request": r})
-
 	w.Header().Set("Server", "Caddy")
 
 	if s.h3server != nil {
