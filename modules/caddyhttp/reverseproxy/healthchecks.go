@@ -287,7 +287,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	markUnhealthy := func() {
 		// dispatch an event that the host newly became unhealthy
 		if upstream.setHealthy(false) {
-			h.event.AsyncDispatch(NewActiveUnhealthyEvent(hostAddr))
+			h.events.Emit(h.ctx, "unhealthy", map[string]interface{}{"host": hostAddr})
 		}
 	}
 
@@ -353,7 +353,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	// passed health check parameters, so mark as healthy
 	if upstream.setHealthy(true) {
 		h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
-		h.event.AsyncDispatch(NewActiveHealthyEvent(hostAddr))
+		h.events.Emit(h.ctx, "healthy", map[string]interface{}{"host": hostAddr})
 	}
 
 	return nil
