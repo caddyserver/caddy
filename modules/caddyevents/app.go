@@ -222,22 +222,33 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]interf
 	}
 	repl.Set("event", e)
 	repl.Set("event.id", e.id)
-	repl.Set("event.timestamp", e.ts)
-	repl.Set("event.name", eventName)
+	repl.Set("event.name", e.name)
 	repl.Set("event.module", e.origin.CaddyModule().ID)
 	repl.Set("event.data", e.data)
 	repl.Map(func(key string) (interface{}, bool) {
-		if !strings.HasPrefix(key, "event.data.") {
-			return nil, false
+		switch key {
+		case "event.time":
+			return e.ts, true
+		case "event.time_unix":
+			return e.ts.UnixMilli(), true
 		}
-		key = strings.TrimPrefix(key, "event.data.")
-		if val, ok := data[key]; ok {
-			return val, true
+
+		if strings.HasPrefix(key, "event.data.") {
+			key = strings.TrimPrefix(key, "event.data.")
+			if val, ok := data[key]; ok {
+				return val, true
+			}
 		}
+
 		return nil, false
 	})
 
-	// TODO: log that event was emitted... hm, maybe disable our logger by default? or only emit logs if any subscriptions are configured? or maybe debug level? hmm
+	app.logger.Debug("event",
+		zap.String("name", e.name),
+		zap.String("id", e.id.String()),
+		zap.String("origin", e.origin.CaddyModule().String()),
+		zap.Any("data", e.data),
+	)
 
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
@@ -298,6 +309,35 @@ type Event struct {
 	// may choose to use this as a signal to adjust their
 	// code path appropriately.
 	Aborted error
+}
+
+// CloudEvent exports event e as a structure that, when
+// serialized as JSON, is compatible with the
+// CloudEvents spec.
+func (e Event) CloudEvent() CloudEvent {
+	dataJSON, _ := json.Marshal(e.data)
+	return CloudEvent{
+		ID:              e.id.String(),
+		Source:          e.origin.CaddyModule().String(),
+		SpecVersion:     "1.0",
+		Type:            e.name,
+		Time:            e.ts,
+		DataContentType: "application/json",
+		Data:            dataJSON,
+	}
+}
+
+// CloudEvent is a JSON-serializable structure that
+// is compatible with the CloudEvents specification.
+// See https://cloudevents.io.
+type CloudEvent struct {
+	ID              string          `json:"id"`
+	Source          string          `json:"source"`
+	SpecVersion     string          `json:"specversion"`
+	Type            string          `json:"type"`
+	Time            time.Time       `json:"time"`
+	DataContentType string          `json:"datacontenttype,omitempty"`
+	Data            json.RawMessage `json:"data,omitempty"`
 }
 
 // ErrAborted cancels an event.
