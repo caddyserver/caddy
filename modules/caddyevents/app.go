@@ -124,7 +124,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("loading event subscriber modules: %v", err)
 			}
-			for _, h := range handlersIface.([]interface{}) {
+			for _, h := range handlersIface.([]any) {
 				sub.Handlers = append(sub.Handlers, h.(Handler))
 			}
 			if len(sub.Handlers) == 0 {
@@ -197,7 +197,7 @@ func (app *App) On(eventName string, handler Handler) error {
 // Emit creates and dispatches an event named eventName to all relevant handlers with
 // the metadata data. Events are emitted and propagated synchronously. The returned Event
 // value will have any additional information from the invoked handlers.
-func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]interface{}) Event {
+func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) Event {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		app.logger.Error("failed generating new event ID", zap.Error(err))
@@ -225,7 +225,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]interf
 	repl.Set("event.name", e.name)
 	repl.Set("event.module", e.origin.CaddyModule().ID)
 	repl.Set("event.data", e.data)
-	repl.Map(func(key string) (interface{}, bool) {
+	repl.Map(func(key string) (any, bool) {
 		switch key {
 		case "event.time":
 			return e.ts, true
@@ -301,7 +301,7 @@ type Event struct {
 	ts     time.Time
 	name   string
 	origin caddy.Module
-	data   map[string]interface{}
+	data   map[string]any
 
 	// If non-nil, the event has been aborted, meaning
 	// propagation has stopped to other handlers and

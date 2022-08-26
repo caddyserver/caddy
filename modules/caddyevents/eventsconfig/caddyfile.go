@@ -39,7 +39,7 @@ func init() {
 //	}
 //
 // If <event> is *, then it will bind to all events.
-func parseApp(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
+func parseApp(d *caddyfile.Dispenser, _ any) (any, error) {
 	app := new(caddyevents.App)
 
 	// consume the option name

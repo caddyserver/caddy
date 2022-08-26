@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -523,20 +524,9 @@ func (t *TLS) storageCleanInterval() time.Duration {
 }
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.
-// TODO: enhance CertMagic's event features to better accommodate our needs
-func (t *TLS) onEvent(eventName string, data interface{}) {
-	evtData := make(map[string]interface{})
-	switch d := data.(type) {
-	case certmagic.CertificateEventData:
-		evtData["name"] = d.Name
-		evtData["issuer_key"] = d.IssuerKey
-		evtData["storage_key"] = d.StorageKey
-	case *tls.ClientHelloInfo:
-		evtData["client_hello"] = d
-	case []string:
-		evtData["subject_names"] = d
-	}
-	t.events.Emit(t.ctx, eventName, evtData)
+func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+	evt := t.events.Emit(t.ctx, eventName, data)
+	return evt.Aborted
 }
 
 // CertificateLoader is a type that can load certificates.
