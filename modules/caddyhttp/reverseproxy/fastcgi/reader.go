@@ -1,10 +1,14 @@
 package fastcgi
 
-import "io"
+import (
+	"bytes"
+	"io"
+)
 
 type streamReader struct {
-	c   *FCGIClient
-	rec record
+	c      *FCGIClient
+	rec    record
+	stderr bytes.Buffer
 }
 
 func (w *streamReader) Read(p []byte) (n int, err error) {
@@ -16,7 +20,7 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 
 		// standard error output
 		if w.rec.h.Type == Stderr {
-			if _, err = io.Copy(&w.c.stderr, &w.rec); err != nil {
+			if _, err = io.Copy(&w.stderr, &w.rec); err != nil {
 				return 0, err
 			}
 		}

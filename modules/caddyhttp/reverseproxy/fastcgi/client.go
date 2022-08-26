@@ -27,7 +27,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"io"
 	"mime/multipart"
 	"net"
@@ -39,7 +38,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -128,11 +126,7 @@ var pad [maxPad]byte
 // FCGIClient implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type FCGIClient struct {
-	mutex     sync.Mutex
 	rwc       net.Conn
-	h         header
-	buf       *bytes.Buffer
-	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
 	logger    *zap.Logger
@@ -173,169 +167,33 @@ func (c *FCGIClient) Close() {
 	c.rwc.Close()
 }
 
-func (c *FCGIClient) writeRecord(recType uint8, content []byte) (err error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.h.init(recType, c.reqID, len(content))
-	if err = binary.Write(c.buf, binary.BigEndian, c.h); err != nil {
-		return err
-	}
-	c.buf.Write(content)
-	c.buf.Write(pad[:c.h.PaddingLength])
-	_, err = c.buf.WriteTo(c.rwc)
-	return err
-}
-
-func (c *FCGIClient) writeBeginRequest(role uint16, flags uint8) error {
-	b := [8]byte{byte(role >> 8), byte(role), flags}
-	return c.writeRecord(BeginRequest, b[:])
-}
-
-func (c *FCGIClient) writePairs(recType uint8, pairs map[string]string) error {
-	w := newWriter(c, recType)
-	defer w.recycle()
-	b := make([]byte, 8)
-	nn := 0
-	for k, v := range pairs {
-		m := 8 + len(k) + len(v)
-		if m > maxWrite {
-			// param data size exceed 65535 bytes"
-			vl := maxWrite - 8 - len(k)
-			v = v[:vl]
-		}
-		n := encodeSize(b, uint32(len(k)))
-		n += encodeSize(b[n:], uint32(len(v)))
-		m = n + len(k) + len(v)
-		if (nn + m) > maxWrite {
-			if err := w.Flush(); err != nil {
-				return err
-			}
-			nn = 0
-		}
-		nn += m
-		if _, err := w.Write(b[:n]); err != nil {
-			return err
-		}
-		if _, err := w.WriteString(k); err != nil {
-			return err
-		}
-		if _, err := w.WriteString(v); err != nil {
-			return err
-		}
-	}
-	return w.Close()
-}
-
-// bufWriter encapsulates bufio.Writer but also closes the underlying stream when
-// Closed.
-type bufWriter struct {
-	closer io.Closer
-	*bufio.Writer
-}
-
-func (w *bufWriter) Close() error {
-	if err := w.Writer.Flush(); err != nil {
-		w.closer.Close()
-		return err
-	}
-	return w.closer.Close()
-}
-
-func newWriter(c *FCGIClient, recType uint8) *bufWriter {
-	s := &streamWriter{c: c, recType: recType}
-	w := bufio.NewWriterSize(s, maxWrite)
-	return &bufWriter{s, w}
-}
-
-func (w *streamWriter) Write(p []byte) (int, error) {
-	nn := 0
-	for len(p) > 0 {
-		n := len(p)
-		if n > maxWrite {
-			n = maxWrite
-		}
-		if err := w.c.writeRecord(w.recType, p[:n]); err != nil {
-			return nn, err
-		}
-		nn += n
-		p = p[n:]
-	}
-	return nn, nil
-}
-
-func (w *streamWriter) Close() error {
-	// send empty record to close the stream
-	return w.c.writeRecord(w.recType, nil)
-}
-
-type streamReader struct {
-	c   *FCGIClient
-	buf []byte
-}
-
-func (w *streamReader) Read(p []byte) (n int, err error) {
-
-	if len(p) > 0 {
-		if len(w.buf) == 0 {
-
-			// filter outputs for error log
-			for {
-				rec := &record{}
-				var buf []byte
-				buf, err = rec.read(w.c.rwc)
-				if err != nil {
-					return
-				}
-				// standard error output
-				if rec.h.Type == Stderr {
-					w.c.stderr.Write(buf)
-					continue
-				}
-				w.buf = buf
-				break
-			}
-		}
-
-		n = len(p)
-		if n > len(w.buf) {
-			n = len(w.buf)
-		}
-		copy(p, w.buf[:n])
-		w.buf = w.buf[n:]
-	}
-
-	return
-}
-
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
-	c.buf = bufPool.Get().(*bytes.Buffer)
-	c.buf.Reset()
-	defer bufPool.Put(c.buf)
+	writer := &streamWriter{c: c}
+	writer.buf = bufPool.Get().(*bytes.Buffer)
+	writer.buf.Reset()
+	defer bufPool.Put(writer.buf)
 
-	writer := newWriter(c)
-	defer writer.recycle()
-
-	err = c.writeBeginRequest(uint16(Responder), 0)
+	err = writer.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
 		return
 	}
 
-	writer.sw.recType = Params
+	writer.recType = Params
 	err = writer.writePairs(p)
 	if err != nil {
 		return
 	}
 
-	writer.sw.recType = Stdin
+	writer.recType = Stdin
 	if req != nil {
 		_, err = io.Copy(writer, req)
 		if err != nil {
 			return nil, err
 		}
 	}
-	err = writer.endStream()
+	err = writer.FlushStream()
 	if err != nil {
 		return nil, err
 	}
