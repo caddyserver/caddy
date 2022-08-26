@@ -340,17 +340,19 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
 func replaceLocalAdminServer(cfg *Config) error {
-	// always be sure to close down the old admin endpoint
+	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
 	// (old) admin endpoint since it will be different
 	// when the function returns
+	// (* except if the new one fails to start)
 	oldAdminServer := localAdminServer
+	var err error
 	defer func() {
 		// do the shutdown asynchronously so that any
 		// current API request gets a response; this
 		// goroutine may last a few seconds
-		if oldAdminServer != nil {
+		if oldAdminServer != nil && err == nil {
 			go func(oldAdminServer *http.Server) {
 				err := stopAdminServer(oldAdminServer)
 				if err != nil {
