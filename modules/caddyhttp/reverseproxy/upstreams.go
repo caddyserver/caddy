@@ -137,7 +137,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	_, records, err := su.resolver.LookupSRV(r.Context(), service, proto, name)
 	if err != nil {
 		// From LookupSRV docs: "If the response contains invalid names, those records are filtered
-		// out and an error will be returned alongside the the remaining results, if any." Thus, we
+		// out and an error will be returned alongside the remaining results, if any." Thus, we
 		// only return an error if no records were also returned.
 		if len(records) == 0 {
 			return nil, err
