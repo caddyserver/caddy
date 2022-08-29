@@ -67,6 +67,9 @@ func init() {
 // event handlers are invoked in an arbitrary order.
 // Event handlers should not rely on the logic of other
 // handlers to succeed.
+//
+// The entirety of this app module is EXPERIMENTAL and
+// subject to change. Pay attention to release notes.
 type App struct {
 	// Subscriptions bind handlers to one or more events
 	// either globally or scoped to specific modules or module
