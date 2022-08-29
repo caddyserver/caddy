@@ -663,6 +663,19 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	return slc.DefaultLoggerName
 }
 
+func (slc *ServerLogConfig) clone() *ServerLogConfig {
+	clone := &ServerLogConfig{}
+	clone.DefaultLoggerName = slc.DefaultLoggerName
+	clone.LoggerNames = make(map[string]string)
+	for k, v := range slc.LoggerNames {
+		clone.LoggerNames[k] = v
+	}
+	clone.SkipHosts = append(clone.SkipHosts, slc.SkipHosts...)
+	clone.SkipUnmappedHosts = slc.SkipUnmappedHosts
+	clone.ShouldLogCredentials = slc.ShouldLogCredentials
+	return clone
+}
+
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
