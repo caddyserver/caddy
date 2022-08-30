@@ -16,7 +16,13 @@ package caddycmd
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"regexp"
+	"strings"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/spf13/cobra/doc"
 )
 
 // Command represents a subcommand. Name, Func,
@@ -70,13 +76,6 @@ func Commands() map[string]Command {
 var commands = make(map[string]Command)
 
 func init() {
-	RegisterCommand(Command{
-		Name:  "help",
-		Func:  cmdHelp,
-		Usage: "<command>",
-		Short: "Shows help for a Caddy subcommand",
-	})
-
 	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
@@ -346,16 +345,50 @@ EXPERIMENTAL: May be changed or removed.
 		}(),
 	})
 
+	RegisterCommand(Command{
+		Name: "manpage",
+		Func: func(fl Flags) (int, error) {
+			dir := strings.TrimSpace(fl.String("directory"))
+			if dir == "" {
+				return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+			}
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+				Title:   "Caddy",
+				Section: "8",
+			}, dir); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			return caddy.ExitCodeSuccess, nil
+		},
+		Usage: "--directory <directory path>",
+		Short: "Generates the manual pages of Caddy commands",
+		Long: `
+Generates the manual pages of Caddy commands into the designated directory tagged into the specified section.
+
+The manual page files are generated into the directory specified by the argument of --directory. If the directory does not exist, it will be created.
+
+The manual pages are sorted into the section specified by the argument of --section.
+`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
+			fs.String("directory", "", "The output directory where the manpages are generated")
+			fs.String("section", "", "The section number of the generated manual pages")
+			return fs
+		}(),
+	})
 }
 
 // RegisterCommand registers the command cmd.
 // cmd.Name must be unique and conform to the
 // following format:
 //
-//    - lowercase
-//    - alphanumeric and hyphen characters only
-//    - cannot start or end with a hyphen
-//    - hyphen cannot be adjacent to another hyphen
+//   - lowercase
+//   - alphanumeric and hyphen characters only
+//   - cannot start or end with a hyphen
+//   - hyphen cannot be adjacent to another hyphen
 //
 // This function panics if the name is already registered,
 // if the name does not meet the described format, or if
@@ -378,7 +411,7 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	commands[cmd.Name] = cmd
+	rootCmd.AddCommand(caddyCmdToCoral(cmd))
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)
