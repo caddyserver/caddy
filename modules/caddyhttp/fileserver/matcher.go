@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -367,6 +368,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// for each glob result, combine all the forms of the path
 		var candidates []matchCandidate
 		for _, result := range globResults {
+			result = filepath.ToSlash(result)
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
 				relative:       strings.TrimPrefix(result, root),
