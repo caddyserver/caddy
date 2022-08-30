@@ -362,10 +362,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// globbed path relative to site root, all combined
 		var candidates []matchCandidate
 		for _, result := range globResults {
-			beforeSplit, afterSplit := m.firstSplit(result)
 			if strings.HasSuffix(file, "/") {
-				beforeSplit += "/"
+				result += "/"
 			}
+			beforeSplit, afterSplit := m.firstSplit(result)
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
 				relative:       strings.TrimPrefix(beforeSplit, root),

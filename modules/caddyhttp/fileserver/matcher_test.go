@@ -86,25 +86,25 @@ func TestFileMatcher(t *testing.T) {
 		},
 		{
 			path:         "ملف.txt", // the path file name is not escaped
-			expectedPath: "ملف.txt",
+			expectedPath: "/ملف.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         url.PathEscape("ملف.txt"), // singly-escaped path
-			expectedPath: "ملف.txt",
+			expectedPath: "/ملف.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         url.PathEscape(url.PathEscape("ملف.txt")), // doubly-escaped path
-			expectedPath: "%D9%85%D9%84%D9%81.txt",
+			expectedPath: "/%D9%85%D9%84%D9%81.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         "./with:in-name.txt", // browsers send the request with the path as such
-			expectedPath: "with:in-name.txt",
+			expectedPath: "/with:in-name.txt",
 			expectedType: "file",
 			matched:      !isWindows,
 		},
