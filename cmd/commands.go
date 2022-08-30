@@ -349,8 +349,7 @@ EXPERIMENTAL: May be changed or removed.
 		Name: "manpage",
 		Func: func(fl Flags) (int, error) {
 			dir := strings.TrimSpace(fl.String("directory"))
-			section := strings.TrimSpace(fl.String("section"))
-			if dir == "" || section == "" {
+			if dir == "" {
 				return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
 			}
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -358,13 +357,13 @@ EXPERIMENTAL: May be changed or removed.
 			}
 			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
 				Title:   "Caddy",
-				Section: section,
+				Section: "8",
 			}, dir); err != nil {
 				return caddy.ExitCodeFailedQuit, err
 			}
 			return caddy.ExitCodeSuccess, nil
 		},
-		Usage: "--directory <directory path> --section <section number>",
+		Usage: "--directory <directory path>",
 		Short: "Generates the manual pages of Caddy commands",
 		Long: `
 Generates the manual pages of Caddy commands into the designated directory tagged into the specified section.
@@ -386,10 +385,10 @@ The manual pages are sorted into the section specified by the argument of --sect
 // cmd.Name must be unique and conform to the
 // following format:
 //
-//    - lowercase
-//    - alphanumeric and hyphen characters only
-//    - cannot start or end with a hyphen
-//    - hyphen cannot be adjacent to another hyphen
+//   - lowercase
+//   - alphanumeric and hyphen characters only
+//   - cannot start or end with a hyphen
+//   - hyphen cannot be adjacent to another hyphen
 //
 // This function panics if the name is already registered,
 // if the name does not meet the described format, or if
