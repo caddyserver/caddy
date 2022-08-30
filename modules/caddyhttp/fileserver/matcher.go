@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/parser"
+	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -101,6 +103,8 @@ type MatchFile struct {
 	// Each delimiter must appear at the end of a URI path
 	// component in order to be used as a split delimiter.
 	SplitPath []string `json:"split_path,omitempty"`
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -113,12 +117,11 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the matcher from Caddyfile tokens. Syntax:
 //
-//     file <files...> {
-//         root <path>
-//         try_files <files...>
-//         try_policy first_exist|smallest_size|largest_size|most_recently_modified
-//     }
-//
+//	file <files...> {
+//	    root      <path>
+//	    try_files <files...>
+//	    try_policy first_exist|smallest_size|largest_size|most_recently_modified
+//	}
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		m.TryFiles = append(m.TryFiles, d.RemainingArgs()...)
@@ -156,7 +159,8 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // expression matchers.
 //
 // Example:
-//    expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
+//
+//	expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
 
@@ -249,6 +253,8 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 
 // Provision sets up m's defaults.
 func (m *MatchFile) Provision(ctx caddy.Context) error {
+	m.logger = ctx.Logger(m)
+
 	// establish the file system to use
 	if len(m.FileSystemRaw) > 0 {
 		mod, err := ctx.LoadModule(m, "FileSystemRaw")
@@ -290,10 +296,10 @@ func (m MatchFile) Validate() error {
 // Match returns true if r matches m. Returns true
 // if a file was matched. If so, four placeholders
 // will be available:
-//    - http.matchers.file.relative
-//    - http.matchers.file.absolute
-//    - http.matchers.file.type
-//    - http.matchers.file.remainder
+//   - http.matchers.file.relative: Path to file relative to site root
+//   - http.matchers.file.absolute: Path to file including site root
+//   - http.matchers.file.type: file or directory
+//   - http.matchers.file.remainder: Portion remaining after splitting file path (if configured)
 func (m MatchFile) Match(r *http.Request) bool {
 	return m.selectFile(r)
 }
@@ -303,23 +309,78 @@ func (m MatchFile) Match(r *http.Request) bool {
 func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	root := repl.ReplaceAll(m.Root, ".")
+	root := path.Clean(repl.ReplaceAll(m.Root, "."))
 
-	// common preparation of the file into parts
-	prepareFilePath := func(file string) (suffix, fullpath, remainder string) {
-		suffix, remainder = m.firstSplit(path.Clean(repl.ReplaceAll(file, "")))
-		if strings.HasSuffix(file, "/") {
-			suffix += "/"
-		}
-		fullpath = caddyhttp.SanitizedPathJoin(root, suffix)
-		return
+	type matchCandidate struct {
+		fullpath, relative, splitRemainder string
 	}
 
-	// sets up the placeholders for the matched file
-	setPlaceholders := func(info os.FileInfo, rel string, abs string, remainder string) {
-		repl.Set("http.matchers.file.relative", rel)
-		repl.Set("http.matchers.file.absolute", abs)
-		repl.Set("http.matchers.file.remainder", remainder)
+	// makeCandidates evaluates placeholders in file and expands any glob expressions
+	// to build a list of file candidates. Special glob characters are escaped in
+	// placeholder replacements so globs cannot be expanded from placeholders, and
+	// globs are not evaluated on Windows because of its path separator character:
+	// escaping is not supported so we can't safely glob on Windows, or we can't
+	// support placeholders on Windows (pick one). (Actually, evaluating untrusted
+	// globs is not the end of the world since the file server will still hide any
+	// hidden files, it just might lead to unexpected behavior.)
+	makeCandidates := func(file string) []matchCandidate {
+		// first, evaluate placeholders in the file pattern
+		expandedFile, err := repl.ReplaceFunc(file, func(variable string, val any) (any, error) {
+			if runtime.GOOS == "windows" {
+				return val, nil
+			}
+			switch v := val.(type) {
+			case string:
+				return globSafeRepl.Replace(v), nil
+			case fmt.Stringer:
+				return globSafeRepl.Replace(v.String()), nil
+			}
+			return val, nil
+		})
+		if err != nil {
+			m.logger.Error("evaluating placeholders", zap.Error(err))
+			expandedFile = file // "oh well," I guess?
+		}
+
+		// then create the full path to the file by prepending the site root
+		fullPattern := caddyhttp.SanitizedPathJoin(root, path.Clean(expandedFile))
+
+		// expand glob expressions if not on Windows (exclude Windows because
+		// Glob() doesn't support escaping on Windows due to path separator)
+		var globResults []string
+		if runtime.GOOS == "windows" {
+			globResults = []string{fullPattern}
+		} else {
+			globResults, err = fs.Glob(m.fileSystem, fullPattern)
+			if err != nil {
+				m.logger.Error("expanding glob", zap.Error(err))
+			}
+		}
+
+		// for each glob result, build the candidate info: apply path
+		// split if configured, restore trailing slash, and create
+		// globbed path relative to site root, all combined
+		var candidates []matchCandidate
+		for _, result := range globResults {
+			beforeSplit, afterSplit := m.firstSplit(result)
+			if strings.HasSuffix(file, "/") {
+				beforeSplit += "/"
+			}
+			candidates = append(candidates, matchCandidate{
+				fullpath:       result,
+				relative:       strings.TrimPrefix(beforeSplit, root),
+				splitRemainder: afterSplit,
+			})
+		}
+
+		return candidates
+	}
+
+	// setPlaceholders creates the placeholders for the matched file
+	setPlaceholders := func(candidate matchCandidate, info fs.FileInfo) {
+		repl.Set("http.matchers.file.relative", candidate.relative)
+		repl.Set("http.matchers.file.absolute", candidate.fullpath)
+		repl.Set("http.matchers.file.remainder", candidate.splitRemainder)
 
 		fileType := "file"
 		if info.IsDir() {
@@ -328,76 +389,76 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		repl.Set("http.matchers.file.type", fileType)
 	}
 
+	// match file according to the configured policy
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
-		for _, f := range m.TryFiles {
-			if err := parseErrorCode(f); err != nil {
+		for _, pattern := range m.TryFiles {
+			if err := parseErrorCode(pattern); err != nil {
 				caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
 				return
 			}
-			suffix, fullpath, remainder := prepareFilePath(f)
-			if info, exists := m.strictFileExists(fullpath); exists {
-				setPlaceholders(info, suffix, fullpath, remainder)
-				return true
+			candidates := makeCandidates(pattern)
+			for _, c := range candidates {
+				if info, exists := m.strictFileExists(c.fullpath); exists {
+					setPlaceholders(c, info)
+					return true
+				}
 			}
 		}
 
 	case tryPolicyLargestSize:
 		var largestSize int64
-		var largestFilename string
-		var largestSuffix string
-		var remainder string
-		var info os.FileInfo
-		for _, f := range m.TryFiles {
-			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := m.fileSystem.Stat(fullpath)
-			if err == nil && info.Size() > largestSize {
-				largestSize = info.Size()
-				largestFilename = fullpath
-				largestSuffix = suffix
-				remainder = splitRemainder
+		var largest matchCandidate
+		var largestInfo os.FileInfo
+		for _, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern)
+			for _, c := range candidates {
+				info, err := m.fileSystem.Stat(c.fullpath)
+				if err == nil && info.Size() > largestSize {
+					largestSize = info.Size()
+					largest = c
+					largestInfo = info
+				}
 			}
 		}
-		setPlaceholders(info, largestSuffix, largestFilename, remainder)
+		setPlaceholders(largest, largestInfo)
 		return true
 
 	case tryPolicySmallestSize:
 		var smallestSize int64
-		var smallestFilename string
-		var smallestSuffix string
-		var remainder string
-		var info os.FileInfo
-		for _, f := range m.TryFiles {
-			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := m.fileSystem.Stat(fullpath)
-			if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
-				smallestSize = info.Size()
-				smallestFilename = fullpath
-				smallestSuffix = suffix
-				remainder = splitRemainder
+		var smallest matchCandidate
+		var smallestInfo os.FileInfo
+		for _, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern)
+			for _, c := range candidates {
+				info, err := m.fileSystem.Stat(c.fullpath)
+				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+					smallestSize = info.Size()
+					smallest = c
+					smallestInfo = info
+				}
 			}
 		}
-		setPlaceholders(info, smallestSuffix, smallestFilename, remainder)
+		setPlaceholders(smallest, smallestInfo)
 		return true
 
 	case tryPolicyMostRecentlyMod:
 		var recentDate time.Time
-		var recentFilename string
-		var recentSuffix string
-		var remainder string
-		var info os.FileInfo
-		for _, f := range m.TryFiles {
-			suffix, fullpath, splitRemainder := prepareFilePath(f)
-			info, err := m.fileSystem.Stat(fullpath)
-			if err == nil &&
-				(recentDate.IsZero() || info.ModTime().After(recentDate)) {
-				recentDate = info.ModTime()
-				recentFilename = fullpath
-				recentSuffix = suffix
-				remainder = splitRemainder
+		var recent matchCandidate
+		var recentInfo os.FileInfo
+		for _, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern)
+			for _, c := range candidates {
+				info, err := m.fileSystem.Stat(c.fullpath)
+				if err == nil &&
+					(recentDate.IsZero() || info.ModTime().After(recentDate)) {
+					recentDate = info.ModTime()
+					recent = c
+					recentInfo = info
+				}
 			}
 		}
-		setPlaceholders(info, recentSuffix, recentFilename, remainder)
+		setPlaceholders(recent, recentInfo)
 		return true
 	}
 
@@ -580,6 +641,15 @@ func isCELStringListLiteral(e *exprpb.Expr) bool {
 	}
 	return false
 }
+
+// globSafeRepl replaces special glob characters with escaped
+// equivalents. Note that the filepath godoc states that
+// escaping is not done on Windows because of the separator.
+var globSafeRepl = strings.NewReplacer(
+	"*", "\\*",
+	"[", "\\[",
+	"?", "\\?",
+)
 
 const (
 	tryPolicyFirstExist      = "first_exist"
