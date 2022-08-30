@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -368,7 +369,8 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// for each glob result, combine all the forms of the path
 		var candidates []matchCandidate
 		for _, result := range globResults {
-			result = filepath.ToSlash(result)
+			log.Println("ADDING:", fullPattern, result, root, beforeSplit, expandedFile)
+			result = filepath.ToSlash(result) // precious Windows
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
 				relative:       strings.TrimPrefix(result, root),
