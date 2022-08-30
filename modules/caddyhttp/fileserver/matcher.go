@@ -24,7 +24,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -342,8 +341,16 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			expandedFile = file // "oh well," I guess?
 		}
 
-		// then create the full path to the file by prepending the site root
-		fullPattern := caddyhttp.SanitizedPathJoin(root, path.Clean(expandedFile))
+		// clean the path and split, if configured -- we must split before
+		// globbing so that the file system doesn't include the remainder
+		// ("afterSplit") in the filename; be sure to restore trailing slash
+		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
+		if strings.HasSuffix(file, "/") {
+			beforeSplit += "/"
+		}
+
+		// create the full path to the file by prepending the site root
+		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 
 		// expand glob expressions if not on Windows (exclude Windows because
 		// Glob() doesn't support escaping on Windows due to path separator)
@@ -357,18 +364,12 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			}
 		}
 
-		// for each glob result, build the candidate info: apply path
-		// split if configured, restore trailing slash, and create
-		// globbed path relative to site root, all combined
+		// for each glob result, combine all the forms of the path
 		var candidates []matchCandidate
 		for _, result := range globResults {
-			if strings.HasSuffix(file, "/") {
-				result += "/"
-			}
-			beforeSplit, afterSplit := m.firstSplit(result)
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
-				relative:       strings.TrimPrefix(beforeSplit, root),
+				relative:       strings.TrimPrefix(result, root),
 				splitRemainder: afterSplit,
 			})
 		}
@@ -421,6 +422,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 				}
 			}
 		}
+		if largestInfo == nil {
+			return false
+		}
 		setPlaceholders(largest, largestInfo)
 		return true
 
@@ -439,11 +443,13 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 				}
 			}
 		}
+		if smallestInfo == nil {
+			return false
+		}
 		setPlaceholders(smallest, smallestInfo)
 		return true
 
 	case tryPolicyMostRecentlyMod:
-		var recentDate time.Time
 		var recent matchCandidate
 		var recentInfo os.FileInfo
 		for _, pattern := range m.TryFiles {
@@ -451,12 +457,14 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			for _, c := range candidates {
 				info, err := m.fileSystem.Stat(c.fullpath)
 				if err == nil &&
-					(recentDate.IsZero() || info.ModTime().After(recentDate)) {
-					recentDate = info.ModTime()
+					(recentInfo == nil || info.ModTime().After(recentInfo.ModTime())) {
 					recent = c
 					recentInfo = info
 				}
 			}
+		}
+		if recentInfo == nil {
+			return false
 		}
 		setPlaceholders(recent, recentInfo)
 		return true
