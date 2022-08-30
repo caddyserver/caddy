@@ -358,7 +358,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// support escaping on Windows due to path separator)
 		var globResults []string
 		if runtime.GOOS == "windows" {
-			globResults = []string{filepath.ToSlash(fullPattern)} // precious Windows
+			globResults = []string{fullPattern} // precious Windows
 		} else {
 			globResults, err = fs.Glob(m.fileSystem, fullPattern)
 			if err != nil {
@@ -497,8 +497,9 @@ func parseErrorCode(input string) error {
 // NOT end in a forward slash, the file must NOT
 // be a directory.
 func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
-	stat, err := m.fileSystem.Stat(file)
+	info, err := m.fileSystem.Stat(file)
 	if err != nil {
+		log.Println("STAT ERR:", file, err)
 		// in reality, this can be any error
 		// such as permission or even obscure
 		// ones like "is not a directory" (when
@@ -509,14 +510,15 @@ func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
 		// https://stackoverflow.com/a/12518877/1048862
 		return nil, false
 	}
+	log.Println("STAT:", file, info.IsDir(), strings.HasSuffix(file, separator))
 	if strings.HasSuffix(file, separator) {
 		// by convention, file paths ending
 		// in a path separator must be a directory
-		return stat, stat.IsDir()
+		return info, info.IsDir()
 	}
 	// by convention, file paths NOT ending
 	// in a path separator must NOT be a directory
-	return stat, !stat.IsDir()
+	return info, !info.IsDir()
 }
 
 // firstSplit returns the first result where the path
