@@ -372,7 +372,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			log.Println("ADDING:", fullPattern, result, root, beforeSplit, expandedFile, strings.TrimPrefix(result, root))
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
-				relative:       strings.TrimPrefix(result, root),
+				relative:       filepath.ToSlash(strings.TrimPrefix(result, root)),
 				splitRemainder: afterSplit,
 			})
 		}
