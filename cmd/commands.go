@@ -136,8 +136,8 @@ The --resume flag will override the --config flag if there is a config auto-
 save file. It is not an error if --resume is used and no autosave file exists.
 
 If --watch is specified, the config file will be loaded automatically after
-changes. ⚠️ This is dangerous in production! Only use this option in a local
-development environment.`,
+changes. ⚠️ This can make unintentional config changes easier; only use this
+option in a local development environment.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")

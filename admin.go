@@ -25,6 +25,8 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
@@ -338,17 +340,19 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
 func replaceLocalAdminServer(cfg *Config) error {
-	// always be sure to close down the old admin endpoint
+	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
 	// (old) admin endpoint since it will be different
 	// when the function returns
+	// (* except if the new one fails to start)
 	oldAdminServer := localAdminServer
+	var err error
 	defer func() {
 		// do the shutdown asynchronously so that any
 		// current API request gets a response; this
 		// goroutine may last a few seconds
-		if oldAdminServer != nil {
+		if oldAdminServer != nil && err == nil {
 			go func(oldAdminServer *http.Server) {
 				err := stopAdminServer(oldAdminServer)
 				if err != nil {
@@ -439,7 +443,7 @@ func manageIdentity(ctx Context, cfg *Config) error {
 		if err != nil {
 			return fmt.Errorf("loading identity issuer modules: %s", err)
 		}
-		for _, issVal := range val.([]interface{}) {
+		for _, issVal := range val.([]any) {
 			cfg.Admin.Identity.issuers = append(cfg.Admin.Identity.issuers, issVal.(certmagic.Issuer))
 		}
 	}
@@ -894,15 +898,35 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 	return false
 }
 
+// etagHasher returns a the hasher we used on the config to both
+// produce and verify ETags.
+func etagHasher() hash.Hash32 { return fnv.New32a() }
+
+// makeEtag returns an Etag header value (including quotes) for
+// the given config path and hash of contents at that path.
+func makeEtag(path string, hash hash.Hash) string {
+	return fmt.Sprintf(`"%s %x"`, path, hash.Sum(nil))
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
+		// Set the ETag as a trailer header.
+		// The alternative is to write the config to a buffer, and
+		// then hash that.
+		w.Header().Set("Trailer", "ETag")
 
-		err := readConfig(r.URL.Path, w)
+		hash := etagHasher()
+		configWriter := io.MultiWriter(w, hash)
+		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
 		}
+
+		// we could consider setting up a sync.Pool for the summed
+		// hashes to reduce GC pressure.
+		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
 
 		return nil
 
@@ -937,7 +961,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
 
-		err := changeConfig(r.Method, r.URL.Path, body, forceReload)
+		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil && !errors.Is(err, errSameConfig) {
 			return err
 		}
@@ -971,9 +995,9 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	id := parts[2]
 
 	// map the ID to the expanded path
-	currentCfgMu.RLock()
+	currentCtxMu.RLock()
 	expanded, ok := rawCfgIndex[id]
-	defer currentCfgMu.RUnlock()
+	defer currentCtxMu.RUnlock()
 	if !ok {
 		return APIError{
 			HTTPStatus: http.StatusNotFound,
@@ -1008,11 +1032,11 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 // the operation at path according to method, using body and out as
 // needed. This is a low-level, unsynchronized function; most callers
 // will want to use changeConfig or readConfig instead. This requires a
-// read or write lock on currentCfgMu, depending on method (GET needs
+// read or write lock on currentCtxMu, depending on method (GET needs
 // only a read lock; all others need a write lock).
 func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error {
 	var err error
-	var val interface{}
+	var val any
 
 	// if there is a request body, decode it into the
 	// variable that will be set in the config according
@@ -1049,16 +1073,16 @@ func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error
 		parts = parts[:len(parts)-1]
 	}
 
-	var ptr interface{} = rawCfg
+	var ptr any = rawCfg
 
 traverseLoop:
 	for i, part := range parts {
 		switch v := ptr.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			// if the next part enters a slice, and the slice is our destination,
 			// handle it specially (because appending to the slice copies the slice
 			// header, which does not replace the original one like we want)
-			if arr, ok := v[part].([]interface{}); ok && i == len(parts)-2 {
+			if arr, ok := v[part].([]any); ok && i == len(parts)-2 {
 				var idx int
 				if method != http.MethodPost {
 					idxStr := parts[len(parts)-1]
@@ -1080,7 +1104,7 @@ traverseLoop:
 					}
 				case http.MethodPost:
 					if ellipses {
-						valArray, ok := val.([]interface{})
+						valArray, ok := val.([]any)
 						if !ok {
 							return fmt.Errorf("final element is not an array")
 						}
@@ -1115,9 +1139,9 @@ traverseLoop:
 				case http.MethodPost:
 					// if the part is an existing list, POST appends to
 					// it, otherwise it just sets or creates the value
-					if arr, ok := v[part].([]interface{}); ok {
+					if arr, ok := v[part].([]any); ok {
 						if ellipses {
-							valArray, ok := val.([]interface{})
+							valArray, ok := val.([]any)
 							if !ok {
 								return fmt.Errorf("final element is not an array")
 							}
@@ -1148,12 +1172,12 @@ traverseLoop:
 				// might not exist yet; that's OK but we need to make them as
 				// we go, while we still have a pointer from the level above
 				if v[part] == nil && method == http.MethodPut {
-					v[part] = make(map[string]interface{})
+					v[part] = make(map[string]any)
 				}
 				ptr = v[part]
 			}
 
-		case []interface{}:
+		case []any:
 			partInt, err := strconv.Atoi(part)
 			if err != nil {
 				return fmt.Errorf("[/%s] invalid array index '%s': %v",
@@ -1175,7 +1199,7 @@ traverseLoop:
 
 // RemoveMetaFields removes meta fields like "@id" from a JSON message
 // by using a simple regular expression. (An alternate way to do this
-// would be to delete them from the raw, map[string]interface{}
+// would be to delete them from the raw, map[string]any
 // representation as they are indexed, then iterate the index we made
 // and add them back after encoding as JSON, but this is simpler.)
 func RemoveMetaFields(rawJSON []byte) []byte {
@@ -1307,7 +1331,7 @@ const (
 )
 
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

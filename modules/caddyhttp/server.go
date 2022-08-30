@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,8 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -36,6 +39,8 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
+	activeRequests int64 // accessed atomically
+
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges. Listener addresses must
@@ -111,41 +116,66 @@ type Server struct {
 	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
-	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
-	// finished standard and has extremely limited client support.
-	// This field is not subject to compatibility promises.
-	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
-
-	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
-	// which will serve HTTP/2 over plaintext TCP connections if
-	// the client supports it. Because this is not implemented by the
-	// Go standard library, using H2C is incompatible with most
-	// of the other options for this server. Do not enable this
+	// Protocols specifies which HTTP protocols to enable.
+	// Supported values are:
+	//
+	// - `h1` (HTTP/1.1)
+	// - `h2` (HTTP/2)
+	// - `h2c` (cleartext HTTP/2)
+	// - `h3` (HTTP/3)
+	//
+	// If enabling `h2` or `h2c`, `h1` must also be enabled;
+	// this is due to current limitations in the Go standard
+	// library.
+	//
+	// HTTP/2 operates only over TLS (HTTPS). HTTP/3 opens
+	// a UDP socket to serve QUIC connections.
+	//
+	// H2C operates over plain TCP if the client supports it;
+	// however, because this is not implemented by the Go
+	// standard library, other server options are not compatible
+	// and will not be applied to H2C requests. Do not enable this
 	// only to achieve maximum client compatibility. In practice,
 	// very few clients implement H2C, and even fewer require it.
-	// This setting applies only to unencrypted HTTP listeners.
-	// ⚠️ Experimental feature; subject to change or removal.
-	AllowH2C bool `json:"allow_h2c,omitempty"`
+	// Enabling H2C can be useful for serving/proxying gRPC
+	// if encryption is not possible or desired.
+	//
+	// We recommend for most users to simply let Caddy use the
+	// default settings.
+	//
+	// Default: `[h1 h2 h3]`
+	Protocols []string `json:"protocols,omitempty"`
 
 	name string
 
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
+	listeners           []net.Listener
 
 	tlsApp       *caddytls.TLS
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
 
-	h3server *http3.Server
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
+	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
+		// keep track of active requests for QUIC transport purposes (See AcceptToken callback in quic.Config)
+		atomic.AddInt64(&s.activeRequests, 1)
+		defer atomic.AddInt64(&s.activeRequests, -1)
+
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
 			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
@@ -438,6 +468,30 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
+// serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
+// not already done, and then uses that server to serve HTTP/3 over
+// the listener, with Server s as the handler.
+func (s *Server) serveHTTP3(hostport string, tlsCfg *tls.Config) error {
+	h3ln, err := caddy.ListenQUIC(hostport, tlsCfg, &s.activeRequests)
+	if err != nil {
+		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
+	}
+
+	// create HTTP/3 server if not done already
+	if s.h3server == nil {
+		s.h3server = &http3.Server{
+			Handler:        s,
+			TLSConfig:      tlsCfg,
+			MaxHeaderBytes: s.MaxHeaderBytes,
+		}
+	}
+
+	//nolint:errcheck
+	go s.h3server.ServeListener(h3ln)
+
+	return nil
+}
+
 // HTTPErrorConfig determines how to handle errors
 // from the HTTP handlers.
 type HTTPErrorConfig struct {
@@ -472,8 +526,13 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	if handlerErr, ok := err.(HandlerError); ok {
 		repl.Set("http.error.status_code", handlerErr.StatusCode)
 		repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
-		repl.Set("http.error.trace", handlerErr.Trace)
 		repl.Set("http.error.id", handlerErr.ID)
+		repl.Set("http.error.trace", handlerErr.Trace)
+		if handlerErr.Err != nil {
+			repl.Set("http.error.message", handlerErr.Err.Error())
+		} else {
+			repl.Set("http.error.message", http.StatusText(handlerErr.StatusCode))
+		}
 	}
 
 	return r
@@ -500,6 +559,16 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+// protocol returns true if the protocol proto is configured/enabled.
+func (s *Server) protocol(proto string) bool {
+	for _, p := range s.Protocols {
+		if p == proto {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerLogConfig describes a server's logging configuration. If
@@ -584,7 +653,7 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))

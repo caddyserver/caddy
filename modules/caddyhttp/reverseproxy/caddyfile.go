@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/dustin/go-humanize"
 )
 
@@ -51,69 +52,73 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     reverse_proxy [<matcher>] [<upstreams...>] {
-//         # backends
-//         to      <upstreams...>
-//         dynamic <name> [...]
+//	reverse_proxy [<matcher>] [<upstreams...>] {
+//	    # backends
+//	    to      <upstreams...>
+//	    dynamic <name> [...]
 //
-//         # load balancing
-//         lb_policy <name> [<options...>]
-//         lb_try_duration <duration>
-//         lb_try_interval <interval>
+//	    # load balancing
+//	    lb_policy <name> [<options...>]
+//	    lb_retries <retries>
+//	    lb_try_duration <duration>
+//	    lb_try_interval <interval>
+//	    lb_retry_match <request-matcher>
 //
-//         # active health checking
-//         health_uri      <uri>
-//         health_port     <port>
-//         health_interval <interval>
-//         health_timeout  <duration>
-//         health_status   <status>
-//         health_body     <regexp>
-//         health_headers {
-//             <field> [<values...>]
-//         }
+//	    # active health checking
+//	    health_uri      <uri>
+//	    health_port     <port>
+//	    health_interval <interval>
+//	    health_timeout  <duration>
+//	    health_status   <status>
+//	    health_body     <regexp>
+//	    health_headers {
+//	        <field> [<values...>]
+//	    }
 //
-//         # passive health checking
-//         fail_duration     <duration>
-//         max_fails         <num>
-//         unhealthy_status  <status>
-//         unhealthy_latency <duration>
-//         unhealthy_request_count <num>
+//	    # passive health checking
+//	    fail_duration     <duration>
+//	    max_fails         <num>
+//	    unhealthy_status  <status>
+//	    unhealthy_latency <duration>
+//	    unhealthy_request_count <num>
 //
-//         # streaming
-//         flush_interval <duration>
-//         buffer_requests
-//         buffer_responses
-//         max_buffer_size <size>
+//	    # streaming
+//	    flush_interval <duration>
+//	    buffer_requests
+//	    buffer_responses
+//	    max_buffer_size <size>
 //
-//         # header manipulation
-//         trusted_proxies [private_ranges] <ranges...>
-//         header_up   [+|-]<field> [<value|regexp> [<replacement>]]
-//         header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//	    # request manipulation
+//	    trusted_proxies [private_ranges] <ranges...>
+//	    header_up   [+|-]<field> [<value|regexp> [<replacement>]]
+//	    header_down [+|-]<field> [<value|regexp> [<replacement>]]
+//	    method <method>
+//	    rewrite <to>
 //
-//         # round trip
-//         transport <name> {
-//             ...
-//         }
+//	    # round trip
+//	    transport <name> {
+//	        ...
+//	    }
 //
-//         # optionally intercept responses from upstream
-//         @name {
-//             status <code...>
-//             header <field> [<value>]
-//         }
-//         replace_status [<matcher>] <status_code>
-//         handle_response [<matcher>] {
-//             <directives...>
+//	    # optionally intercept responses from upstream
+//	    @name {
+//	        status <code...>
+//	        header <field> [<value>]
+//	    }
+//	    replace_status [<matcher>] <status_code>
+//	    handle_response [<matcher>] {
+//	        <directives...>
 //
-//             # special directives only available in handle_response
-//             copy_response [<matcher>] [<status>] {
-//                 status <status>
-//             }
-//             copy_response_headers [<matcher>] {
-//                 include <fields...>
-//                 exclude <fields...>
-//             }
-//         }
-//     }
+//	        # special directives only available in handle_response
+//	        copy_response [<matcher>] [<status>] {
+//	            status <status>
+//	        }
+//	        copy_response_headers [<matcher>] {
+//	            include <fields...>
+//	            exclude <fields...>
+//	        }
+//	    }
+//	}
 //
 // Proxy upstream addresses should be network dial addresses such
 // as `host:port`, or a URL such as `scheme://host:port`. Scheme
@@ -244,6 +249,19 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
 
+			case "lb_retries":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tries, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.Retries = tries
+
 			case "lb_try_duration":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -269,6 +287,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad interval value '%s': %v", d.Val(), err)
 				}
 				h.LoadBalancing.TryInterval = caddy.Duration(dur)
+
+			case "lb_retry_match":
+				matcherSet, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
+				if err != nil {
+					return d.Errf("failed to parse lb_retry_match: %v", err)
+				}
+				if h.LoadBalancing == nil {
+					h.LoadBalancing = new(LoadBalancing)
+				}
+				h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, matcherSet)
 
 			case "health_uri":
 				if !d.NextArg() {
@@ -600,6 +628,30 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Err(err.Error())
 				}
 
+			case "method":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.Method = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
+			case "rewrite":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.Rewrite == nil {
+					h.Rewrite = &rewrite.Rewrite{}
+				}
+				h.Rewrite.URI = d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+
 			case "transport":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -772,31 +824,32 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
 //
-//     transport http {
-//         read_buffer             <size>
-//         write_buffer            <size>
-//         max_response_header     <size>
-//         dial_timeout            <duration>
-//         dial_fallback_delay     <duration>
-//         response_header_timeout <duration>
-//         expect_continue_timeout <duration>
-//         resolvers               <resolvers...>
-//         tls
-//         tls_client_auth <automate_name> | <cert_file> <key_file>
-//         tls_insecure_skip_verify
-//         tls_timeout <duration>
-//         tls_trusted_ca_certs <cert_files...>
-//         tls_server_name <sni>
-//         keepalive [off|<duration>]
-//         keepalive_interval <interval>
-//         keepalive_idle_conns <max_count>
-//         keepalive_idle_conns_per_host <count>
-//         versions <versions...>
-//         compression off
-//         max_conns_per_host <count>
-//         max_idle_conns_per_host <count>
-//     }
-//
+//	transport http {
+//	    read_buffer             <size>
+//	    write_buffer            <size>
+//	    max_response_header     <size>
+//	    dial_timeout            <duration>
+//	    dial_fallback_delay     <duration>
+//	    response_header_timeout <duration>
+//	    expect_continue_timeout <duration>
+//	    resolvers               <resolvers...>
+//	    tls
+//	    tls_client_auth <automate_name> | <cert_file> <key_file>
+//	    tls_insecure_skip_verify
+//	    tls_timeout <duration>
+//	    tls_trusted_ca_certs <cert_files...>
+//	    tls_server_name <sni>
+//	    tls_renegotiation <level>
+//	    tls_except_ports <ports...>
+//	    keepalive [off|<duration>]
+//	    keepalive_interval <interval>
+//	    keepalive_idle_conns <max_count>
+//	    keepalive_idle_conns_per_host <count>
+//	    versions <versions...>
+//	    compression off
+//	    max_conns_per_host <count>
+//	    max_idle_conns_per_host <count>
+//	}
 func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
@@ -820,6 +873,26 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid write buffer size '%s': %v", d.Val(), err)
 				}
 				h.WriteBufferSize = int(size)
+
+			case "read_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid read timeout duration '%s': %v", d.Val(), err)
+				}
+				h.ReadTimeout = caddy.Duration(timeout)
+
+			case "write_timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				timeout, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid write timeout duration '%s': %v", d.Val(), err)
+				}
+				h.WriteTimeout = caddy.Duration(timeout)
 
 			case "max_response_header":
 				if !d.NextArg() {
@@ -880,6 +953,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("must specify at least one resolver address")
 				}
 
+			case "tls":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+
 			case "tls_client_auth":
 				if h.TLS == nil {
 					h.TLS = new(TLSConfig)
@@ -893,11 +971,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS.ClientCertificateKeyFile = args[1]
 				default:
 					return d.ArgErr()
-				}
-
-			case "tls":
-				if h.TLS == nil {
-					h.TLS = new(TLSConfig)
 				}
 
 			case "tls_insecure_skip_verify":
@@ -940,6 +1013,29 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.TLS = new(TLSConfig)
 				}
 				h.TLS.ServerName = d.Val()
+
+			case "tls_renegotiation":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch renegotiation := d.Val(); renegotiation {
+				case "never", "once", "freely":
+					h.TLS.Renegotiation = renegotiation
+				default:
+					return d.ArgErr()
+				}
+
+			case "tls_except_ports":
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.ExceptPorts = d.RemainingArgs()
+				if len(h.TLS.ExceptPorts) == 0 {
+					return d.ArgErr()
+				}
 
 			case "keepalive":
 				if !d.NextArg() {
@@ -1041,10 +1137,9 @@ func parseCopyResponseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHan
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//    copy_response [<matcher>] [<status>] {
-//        status <status>
-//    }
-//
+//	copy_response [<matcher>] [<status>] {
+//	    status <status>
+//	}
 func (h *CopyResponseHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		args := d.RemainingArgs()
@@ -1081,11 +1176,10 @@ func parseCopyResponseHeadersCaddyfile(h httpcaddyfile.Helper) (caddyhttp.Middle
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//    copy_response_headers [<matcher>] {
-//        include <fields...>
-//        exclude <fields...>
-//    }
-//
+//	copy_response_headers [<matcher>] {
+//	    include <fields...>
+//	    exclude <fields...>
+//	}
 func (h *CopyResponseHeadersHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		args := d.RemainingArgs()
@@ -1111,16 +1205,15 @@ func (h *CopyResponseHeadersHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) 
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
 //
-//     dynamic srv [<name>] {
-//         service             <service>
-//         proto               <proto>
-//         name                <name>
-//         refresh             <interval>
-//         resolvers           <resolvers...>
-//         dial_timeout        <timeout>
-//         dial_fallback_delay <timeout>
-//     }
-//
+//	dynamic srv [<name>] {
+//	    service             <service>
+//	    proto               <proto>
+//	    name                <name>
+//	    refresh             <interval>
+//	    resolvers           <resolvers...>
+//	    dial_timeout        <timeout>
+//	    dial_fallback_delay <timeout>
+//	}
 func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		args := d.RemainingArgs()
@@ -1210,15 +1303,14 @@ func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
 //
-//     dynamic a [<name> <port] {
-//         name                <name>
-//         port                <port>
-//         refresh             <interval>
-//         resolvers           <resolvers...>
-//         dial_timeout        <timeout>
-//         dial_fallback_delay <timeout>
-//     }
-//
+//	dynamic a [<name> <port] {
+//	    name                <name>
+//	    port                <port>
+//	    refresh             <interval>
+//	    resolvers           <resolvers...>
+//	    dial_timeout        <timeout>
+//	    dial_fallback_delay <timeout>
+//	}
 func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		args := d.RemainingArgs()
@@ -1227,7 +1319,9 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 		if len(args) > 0 {
 			u.Name = args[0]
-			u.Port = args[1]
+			if len(args) == 2 {
+				u.Port = args[1]
+			}
 		}
 
 		for d.NextBlock(0) {
@@ -1298,6 +1392,35 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// UnmarshalCaddyfile deserializes Caddyfile tokens into h.
+//
+//	dynamic multi {
+//	    <source> [...]
+//	}
+func (u *MultiUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
+			dynModule := d.Val()
+			modID := "http.reverse_proxy.upstreams." + dynModule
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			source, ok := unm.(UpstreamSource)
+			if !ok {
+				return d.Errf("module %s (%T) is not an UpstreamSource", modID, unm)
+			}
+			u.SourcesRaw = append(u.SourcesRaw, caddyconfig.JSONModuleObject(source, "source", dynModule, nil))
+		}
+	}
+
+	return nil
+}
+
 const matcherPrefix = "@"
 
 // Interface guards
@@ -1306,4 +1429,5 @@ var (
 	_ caddyfile.Unmarshaler = (*HTTPTransport)(nil)
 	_ caddyfile.Unmarshaler = (*SRVUpstreams)(nil)
 	_ caddyfile.Unmarshaler = (*AUpstreams)(nil)
+	_ caddyfile.Unmarshaler = (*MultiUpstreams)(nil)
 )

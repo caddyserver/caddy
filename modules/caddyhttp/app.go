@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -95,6 +95,8 @@ func init() {
 // `{http.request.uri}` | The full request URI
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
+// `{http.shutting_down}` | True if the HTTP app is shutting down
+// `{http.time_until_shutdown}` | Time until HTTP server shutdown, if scheduled
 type App struct {
 	// HTTPPort specifies the port to use for HTTP (as opposed to HTTPS),
 	// which is used when setting up HTTP->HTTPS redirects or ACME HTTP
@@ -107,17 +109,30 @@ type App struct {
 	HTTPSPort int `json:"https_port,omitempty"`
 
 	// GracePeriod is how long to wait for active connections when shutting
-	// down the server. Once the grace period is over, connections will
-	// be forcefully closed.
+	// down the servers. During the grace period, no new connections are
+	// accepted, idle connections are closed, and active connections will
+	// be given the full length of time to become idle and close.
+	// Once the grace period is over, connections will be forcefully closed.
+	// If zero, the grace period is eternal. Default: 0.
 	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
+
+	// ShutdownDelay is how long to wait before initiating the grace
+	// period. When this app is stopping (e.g. during a config reload or
+	// process exit), all servers will be shut down. Normally this immediately
+	// initiates the grace period. However, if this delay is configured, servers
+	// will not be shut down until the delay is over. During this time, servers
+	// continue to function normally and allow new connections. At the end, the
+	// grace period will begin. This can be useful to allow downstream load
+	// balancers time to move this instance out of the rotation without hiccups.
+	//
+	// When shutdown has been scheduled, placeholders {http.shutting_down} (bool)
+	// and {http.time_until_shutdown} (duration) may be useful for health checks.
+	ShutdownDelay caddy.Duration `json:"shutdown_delay,omitempty"`
 
 	// Servers is the list of servers, keyed by arbitrary names chosen
 	// at your discretion for your own convenience; the keys do not
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
-
-	servers   []*http.Server
-	h3servers []*http3.Server
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -162,10 +177,22 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.tlsApp = app.tlsApp
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
+		srv.shutdownAtMu = new(sync.RWMutex)
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
 			srv.accessLogger = app.logger.Named("log.access")
+		}
+
+		// the Go standard library does not let us serve only HTTP/2 using
+		// http.Server; we would probably need to write our own server
+		if !srv.protocol("h1") && (srv.protocol("h2") || srv.protocol("h2c")) {
+			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
+		}
+
+		// if no protocols configured explicitly, enable all except h2c
+		if len(srv.Protocols) == 0 {
+			srv.Protocols = []string{"h1", "h2", "h3"}
 		}
 
 		// if not explicitly configured by the user, disallow TLS
@@ -179,8 +206,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// based on hostname
 		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
 			app.logger.Warn("enabling strict SNI-Host enforcement because TLS client auth is configured",
-				zap.String("server_id", srvName),
-			)
+				zap.String("server_id", srvName))
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
 		}
@@ -189,8 +215,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
 			if err != nil {
-				return fmt.Errorf("server %s, listener %d: %v",
-					srvName, i, err)
+				return fmt.Errorf("server %s, listener %d: %v", srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
 		}
@@ -202,7 +227,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("loading listener wrapper modules: %v", err)
 			}
 			var hasTLSPlaceholder bool
-			for i, val := range vals.([]interface{}) {
+			for i, val := range vals.([]any) {
 				if _, ok := val.(*tlsPlaceholderWrapper); ok {
 					if i == 0 {
 						// putting the tls placeholder wrapper first is nonsensical because
@@ -298,7 +323,7 @@ func (app *App) Start() error {
 	}
 
 	for srvName, srv := range app.Servers {
-		s := &http.Server{
+		srv.server = &http.Server{
 			ReadTimeout:       time.Duration(srv.ReadTimeout),
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
 			WriteTimeout:      time.Duration(srv.WriteTimeout),
@@ -308,12 +333,37 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 		}
 
-		// enable h2c if configured
-		if srv.AllowH2C {
+		// disable HTTP/2, which we enabled by default during provisioning
+		if !srv.protocol("h2") {
+			srv.server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+			for _, cp := range srv.TLSConnPolicies {
+				// the TLSConfig was already provisioned, so... manually remove it
+				for i, np := range cp.TLSConfig.NextProtos {
+					if np == "h2" {
+						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+						break
+					}
+				}
+				// remove it from the parent connection policy too, just to keep things tidy
+				for i, alpn := range cp.ALPN {
+					if alpn == "h2" {
+						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		// this TLS config is used by the std lib to choose the actual TLS config for connections
+		// by looking through the connection policies to find the first one that matches
+		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+
+		// enable H2C if configured
+		if srv.protocol("h2c") {
 			h2server := &http2.Server{
 				IdleTimeout: time.Duration(srv.IdleTimeout),
 			}
-			s.Handler = h2c.NewHandler(srv, h2server)
+			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
 		for _, lnAddr := range srv.Listen {
@@ -321,6 +371,8 @@ func (app *App) Start() error {
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
+			srv.addresses = append(srv.addresses, listenAddr)
+
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
@@ -342,34 +394,16 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
-					// create TLS listener
-					tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+					// create TLS listener - this enables and terminates TLS
 					ln = tls.NewListener(ln, tlsCfg)
 
-					/////////
-					// TODO: HTTP/3 support is experimental for now
-					if srv.ExperimentalHTTP3 {
-						app.logger.Info("enabling experimental HTTP/3 listener",
-							zap.String("addr", hostport),
-						)
-						h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
-						if err != nil {
-							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
+					// enable HTTP/3 if configured
+					if srv.protocol("h3") {
+						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
+							return err
 						}
-						h3srv := &http3.Server{
-							Server: &http.Server{
-								Addr:      hostport,
-								Handler:   srv,
-								TLSConfig: tlsCfg,
-								ErrorLog:  serverLogger,
-							},
-						}
-						//nolint:errcheck
-						go h3srv.ServeListener(h3ln)
-						app.h3servers = append(app.h3servers, h3srv)
-						srv.h3server = h3srv
 					}
-					/////////
 				}
 
 				// finish wrapping listener where we left off before TLS
@@ -388,15 +422,22 @@ func (app *App) Start() error {
 
 				app.logger.Debug("starting server loop",
 					zap.String("address", ln.Addr().String()),
-					zap.Bool("http3", srv.ExperimentalHTTP3),
 					zap.Bool("tls", useTLS),
-				)
+					zap.Bool("http3", srv.h3server != nil))
 
-				//nolint:errcheck
-				go s.Serve(ln)
-				app.servers = append(app.servers, s)
+				srv.listeners = append(srv.listeners, ln)
+
+				// enable HTTP/1 if configured
+				if srv.protocol("h1") {
+					//nolint:errcheck
+					go srv.server.Serve(ln)
+				}
 			}
 		}
+
+		srv.logger.Info("server running",
+			zap.String("name", srvName),
+			zap.Strings("protocols", srv.Protocols))
 	}
 
 	// finish automatic HTTPS by finally beginning
@@ -412,26 +453,65 @@ func (app *App) Start() error {
 // Stop gracefully shuts down the HTTP server.
 func (app *App) Stop() error {
 	ctx := context.Background()
+
+	// see if any listeners in our config will be closing or if they are continuing
+	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	var delay bool
+	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
+	if app.ShutdownDelay > 0 {
+		for _, server := range app.Servers {
+			for _, na := range server.addresses {
+				for _, addr := range na.Expand() {
+					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
+						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
+						server.shutdownAtMu.Lock()
+						server.shutdownAt = scheduledTime
+						server.shutdownAtMu.Unlock()
+						delay = true
+					} else {
+						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
+					}
+				}
+			}
+		}
+	}
+
+	// honor scheduled/delayed shutdown time
+	if delay {
+		app.logger.Debug("shutdown scheduled",
+			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
+			zap.Time("time", scheduledTime))
+		time.Sleep(time.Duration(app.ShutdownDelay))
+	}
+
+	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
+		app.logger.Debug("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+	} else {
+		app.logger.Debug("servers shutting down with eternal grace period")
 	}
-	for _, s := range app.servers {
-		err := s.Shutdown(ctx)
-		if err != nil {
-			return err
+
+	// shut down servers
+	for _, server := range app.Servers {
+		if err := server.server.Shutdown(ctx); err != nil {
+			app.logger.Error("server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+
+		if server.h3server != nil {
+			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+			if err := server.h3server.Close(); err != nil {
+				app.logger.Error("HTTP/3 server shutdown",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
 		}
 	}
 
-	for _, s := range app.h3servers {
-		// TODO: CloseGracefully, once implemented upstream
-		// (see https://github.com/lucas-clemente/quic-go/issues/2103)
-		err := s.Close()
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

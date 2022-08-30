@@ -68,7 +68,7 @@ func TestDuplicateHosts(t *testing.T) {
     }
     `,
 		"caddyfile",
-		"duplicate site address not allowed")
+		"ambiguous site definition")
 }
 
 func TestReadCookie(t *testing.T) {

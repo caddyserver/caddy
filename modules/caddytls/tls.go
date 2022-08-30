@@ -113,7 +113,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading certificate loader modules: %s", err)
 	}
-	for modName, modIface := range val.(map[string]interface{}) {
+	for modName, modIface := range val.(map[string]any) {
 		if modName == "automate" {
 			// special case; these will be loaded in later using our automation facilities,
 			// which we want to avoid doing during provisioning
@@ -336,7 +336,7 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	for _, iss := range ap.magic.Issuers {
 		if am, ok := iss.(acmeCapable); ok {
 			iss := am.GetACMEIssuer()
-			if certmagic.NewACMEIssuer(iss.magic, iss.template).HandleHTTPChallenge(w, r) {
+			if iss.issuer.HandleHTTPChallenge(w, r) {
 				return true
 			}
 		}

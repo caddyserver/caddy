@@ -21,7 +21,7 @@ func TestMetricsUnmarshalCaddyfile(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if m.DisableOpenMetrics != false {
+	if m.DisableOpenMetrics {
 		t.Errorf("DisableOpenMetrics should've been false: %v", m.DisableOpenMetrics)
 	}
 
@@ -32,7 +32,7 @@ func TestMetricsUnmarshalCaddyfile(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if m.DisableOpenMetrics != true {
+	if !m.DisableOpenMetrics {
 		t.Errorf("DisableOpenMetrics should've been true: %v", m.DisableOpenMetrics)
 	}
 

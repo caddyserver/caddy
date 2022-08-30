@@ -82,6 +82,26 @@ func TestHandler(t *testing.T) {
 		{
 			handler: Handler{
 				Request: &HeaderOps{
+					Delete: []string{
+						"*-suffix",
+						"prefix-*",
+						"*_*",
+					},
+				},
+			},
+			reqHeader: http.Header{
+				"Header-Suffix": []string{"lalala"},
+				"Prefix-Test":   []string{"asdf"},
+				"Host_Header":   []string{"silly django... sigh"}, // see issue #4830
+				"Keep-Me":       []string{"foofoofoo"},
+			},
+			expectedReqHeader: http.Header{
+				"Keep-Me": []string{"foofoofoo"},
+			},
+		},
+		{
+			handler: Handler{
+				Request: &HeaderOps{
 					Replace: map[string][]Replacement{
 						"Best-Server": {
 							Replacement{

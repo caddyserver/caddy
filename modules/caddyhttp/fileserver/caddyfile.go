@@ -15,11 +15,13 @@
 package fileserver
 
 import (
+	"io/fs"
 	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
@@ -35,6 +37,7 @@ func init() {
 // server and configures it with this syntax:
 //
 //    file_server [<matcher>] [browse] {
+//        fs            <backend...>
 //        root          <path>
 //        hide          <files...>
 //        index         <files...>
@@ -62,6 +65,25 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "fs":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				if fsrv.FileSystemRaw != nil {
+					return nil, h.Err("file system module already specified")
+				}
+				name := h.Val()
+				modID := "caddy.fs." + name
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				statFS, ok := unm.(fs.StatFS)
+				if !ok {
+					return nil, h.Errf("module %s (%T) is not a supported file system implementation (requires fs.StatFS)", modID, unm)
+				}
+				fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(statFS, "backend", name, nil)
+
 			case "hide":
 				fsrv.Hide = h.RemainingArgs()
 				if len(fsrv.Hide) == 0 {

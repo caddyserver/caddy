@@ -57,6 +57,7 @@ var directiveOrder = []string{
 
 	// middleware handlers; some wrap responses
 	"basicauth",
+	"forward_auth",
 	"request_header",
 	"encode",
 	"push",
@@ -141,8 +142,8 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 type Helper struct {
 	*caddyfile.Dispenser
 	// State stores intermediate variables during caddyfile adaptation.
-	State        map[string]interface{}
-	options      map[string]interface{}
+	State        map[string]any
+	options      map[string]any
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
 	parentBlock  caddyfile.ServerBlock
@@ -150,7 +151,7 @@ type Helper struct {
 }
 
 // Option gets the option keyed by name.
-func (h Helper) Option(name string) interface{} {
+func (h Helper) Option(name string) any {
 	return h.options[name]
 }
 
@@ -174,7 +175,7 @@ func (h Helper) Caddyfiles() []string {
 }
 
 // JSON converts val into JSON. Any errors are added to warnings.
-func (h Helper) JSON(val interface{}) json.RawMessage {
+func (h Helper) JSON(val any) json.RawMessage {
 	return caddyconfig.JSON(val, h.warnings)
 }
 
@@ -374,7 +375,7 @@ type ConfigValue struct {
 	// The value to be used when building the config.
 	// Generally its type is associated with the
 	// name of the Class.
-	Value interface{}
+	Value any
 
 	directive string
 }
@@ -566,7 +567,7 @@ type (
 	// tokens from a global option. It is passed the tokens to parse and
 	// existing value from the previous instance of this global option
 	// (if any). It returns the value to associate with this global option.
-	UnmarshalGlobalFunc func(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error)
+	UnmarshalGlobalFunc func(d *caddyfile.Dispenser, existingVal any) (any, error)
 )
 
 var registeredDirectives = make(map[string]UnmarshalFunc)

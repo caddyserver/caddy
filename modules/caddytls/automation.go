@@ -16,6 +16,7 @@ package caddytls
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
+	"go.uber.org/zap"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.
@@ -174,6 +176,13 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 					tlsApp.Automation.OnDemand.Ask != "" {
 					err := onDemandAskRequest(tlsApp.Automation.OnDemand.Ask, name)
 					if err != nil {
+						// distinguish true errors from denials, because it's important to log actual errors
+						if !errors.Is(err, errAskDenied) {
+							tlsApp.logger.Error("request to 'ask' endpoint failed",
+								zap.Error(err),
+								zap.String("endpoint", tlsApp.Automation.OnDemand.Ask),
+								zap.String("domain", name))
+						}
 						return err
 					}
 				}
@@ -198,7 +207,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
 		}
-		for _, getCertVal := range vals.([]interface{}) {
+		for _, getCertVal := range vals.([]any) {
 			ap.Managers = append(ap.Managers, getCertVal.(certmagic.Manager))
 		}
 	}
@@ -209,7 +218,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		for _, issVal := range val.([]interface{}) {
+		for _, issVal := range val.([]any) {
 			ap.Issuers = append(ap.Issuers, issVal.(certmagic.Issuer))
 		}
 	}

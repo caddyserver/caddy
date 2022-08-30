@@ -217,7 +217,7 @@ func (d *Dispenser) ValRaw() string {
 
 // ScalarVal gets value of the current token, converted to the closest
 // scalar type. If there is no token loaded, it returns nil.
-func (d *Dispenser) ScalarVal() interface{} {
+func (d *Dispenser) ScalarVal() any {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return nil
 	}
@@ -412,7 +412,7 @@ func (d *Dispenser) Err(msg string) error {
 }
 
 // Errf is like Err, but for formatted error messages
-func (d *Dispenser) Errf(format string, args ...interface{}) error {
+func (d *Dispenser) Errf(format string, args ...any) error {
 	return d.WrapErr(fmt.Errorf(format, args...))
 }
 

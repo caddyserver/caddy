@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ import (
 // the socket have been finished. Always be sure to close listeners
 // when you are done with them, just like normal listeners.
 func Listen(network, addr string) (net.Listener, error) {
-	lnKey := network + "/" + addr
+	lnKey := listenerKey(network, addr)
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		ln, err := net.Listen(network, addr)
@@ -65,7 +66,7 @@ func Listen(network, addr string) (net.Listener, error) {
 // It is like Listen except for PacketConns.
 // Always be sure to close the PacketConn when you are done.
 func ListenPacket(network, addr string) (net.PacketConn, error) {
-	lnKey := network + "/" + addr
+	lnKey := listenerKey(network, addr)
 
 	sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		pc, err := net.ListenPacket(network, addr)
@@ -88,11 +89,19 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
-func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
-	lnKey := "quic/" + addr
+func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
+	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
+		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
+				}
+				return highLoad
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -104,6 +113,16 @@ func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
 		sharedQuicListener: sharedEl.(*sharedQuicListener),
 		context:            ctx, contextCancel: cancel,
 	}, err
+}
+
+func listenerKey(network, addr string) string {
+	return network + "/" + addr
+}
+
+// ListenerUsage returns the current usage count of the given listener address.
+func ListenerUsage(network, addr string) int {
+	count, _ := listenerPool.References(listenerKey(network, addr))
+	return count
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -184,7 +203,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlySession, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil
@@ -353,11 +372,25 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 	return net.JoinHostPort(na.Host, strconv.Itoa(int(na.StartPort+offset)))
 }
 
+func (na NetworkAddress) Expand() []NetworkAddress {
+	size := na.PortRangeSize()
+	addrs := make([]NetworkAddress, size)
+	for portOffset := uint(0); portOffset < size; portOffset++ {
+		na2 := na
+		na2.StartPort, na2.EndPort = na.StartPort+portOffset, na.StartPort+portOffset
+		addrs[portOffset] = na2
+	}
+	return addrs
+}
+
 // PortRangeSize returns how many ports are in
 // pa's port range. Port ranges are inclusive,
 // so the size is the difference of start and
 // end ports plus one.
 func (na NetworkAddress) PortRangeSize() uint {
+	if na.EndPort < na.StartPort {
+		return 0
+	}
 	return (na.EndPort - na.StartPort) + 1
 }
 
@@ -368,7 +401,7 @@ func (na NetworkAddress) isLoopback() bool {
 	if na.Host == "localhost" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsLoopback()
 	}
 	return false
@@ -378,7 +411,7 @@ func (na NetworkAddress) isWildcardInterface() bool {
 	if na.Host == "" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsUnspecified()
 	}
 	return false
@@ -391,10 +424,13 @@ func (na NetworkAddress) port() string {
 	return fmt.Sprintf("%d-%d", na.StartPort, na.EndPort)
 }
 
-// String reconstructs the address string to the form expected
-// by ParseNetworkAddress(). If the address is a unix socket,
-// any non-zero port will be dropped.
+// String reconstructs the address string for human display.
+// The output can be parsed by ParseNetworkAddress(). If the
+// address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
+	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+		na.Network = "" // omit default network value for brevity
+	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
@@ -427,11 +463,11 @@ func isListenBindAddressAlreadyInUseError(err error) bool {
 func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
-	if network == "" {
-		network = "tcp"
-	}
 	if err != nil {
 		return NetworkAddress{}, err
+	}
+	if network == "" {
+		network = "tcp"
 	}
 	if isUnixNetwork(network) {
 		return NetworkAddress{
@@ -439,24 +475,26 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 			Host:    host,
 		}, nil
 	}
-	ports := strings.SplitN(port, "-", 2)
-	if len(ports) == 1 {
-		ports = append(ports, ports[0])
-	}
 	var start, end uint64
-	start, err = strconv.ParseUint(ports[0], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
-	}
-	end, err = strconv.ParseUint(ports[1], 10, 16)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
-	}
-	if end < start {
-		return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
-	}
-	if (end - start) > maxPortSpan {
-		return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+	if port != "" {
+		before, after, found := strings.Cut(port, "-")
+		if !found {
+			after = before
+		}
+		start, err = strconv.ParseUint(before, 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
+		}
+		end, err = strconv.ParseUint(after, 10, 16)
+		if err != nil {
+			return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
+		}
+		if end < start {
+			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
+		}
+		if (end - start) > maxPortSpan {
+			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+		}
 	}
 	return NetworkAddress{
 		Network:   network,
@@ -469,15 +507,29 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 // SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
-	if idx := strings.Index(a, "/"); idx >= 0 {
-		network = strings.ToLower(strings.TrimSpace(a[:idx]))
-		a = a[idx+1:]
+	beforeSlash, afterSlash, slashFound := strings.Cut(a, "/")
+	if slashFound {
+		network = strings.ToLower(strings.TrimSpace(beforeSlash))
+		a = afterSlash
 	}
 	if isUnixNetwork(network) {
 		host = a
 		return
 	}
 	host, port, err = net.SplitHostPort(a)
+	if err == nil || a == "" {
+		return
+	}
+	// in general, if there was an error, it was likely "missing port",
+	// so try adding a bogus port to take advantage of standard library's
+	// robust parser, then strip the artificial port before returning
+	// (don't overwrite original error though; might still be relevant)
+	var err2 error
+	host, port, err2 = net.SplitHostPort(a + ":0")
+	if err2 == nil {
+		err = nil
+		port = ""
+	}
 	return
 }
 

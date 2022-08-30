@@ -540,8 +540,13 @@ func parseVars(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 // parseRedir parses the redir directive. Syntax:
 //
-//     redir [<matcher>] <to> [<code>]
+//	redir [<matcher>] <to> [<code>]
 //
+// <code> can be "permanent" for 301, "temporary" for 302 (default),
+// a placeholder, or any number in the 3xx range or 401. The special
+// code "html" can be used to redirect only browser clients (will
+// respond with HTTP 200 and no Location header; redirect is performed
+// with JS and a meta tag).
 func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -558,6 +563,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	}
 
 	var body string
+	var hdr http.Header
 	switch code {
 	case "permanent":
 		code = "301"
@@ -578,20 +584,37 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
-		code = "302"
+		code = "200" // don't redirect non-browser clients
 	default:
+		// Allow placeholders for the code
+		if strings.HasPrefix(code, "{") {
+			break
+		}
+		// Try to validate as an integer otherwise
 		codeInt, err := strconv.Atoi(code)
 		if err != nil {
 			return nil, h.Errf("Not a supported redir code type or not valid integer: '%s'", code)
 		}
-		if codeInt < 300 || codeInt > 399 {
-			return nil, h.Errf("Redir code not in the 3xx range: '%v'", codeInt)
+		// Sometimes, a 401 with Location header is desirable because
+		// requests made with XHR will "eat" the 3xx redirect; so if
+		// the intent was to redirect to an auth page, a 3xx won't
+		// work. Responding with 401 allows JS code to read the
+		// Location header and do a window.location redirect manually.
+		// see https://stackoverflow.com/a/2573589/846934
+		// see https://github.com/oauth2-proxy/oauth2-proxy/issues/1522
+		if codeInt < 300 || (codeInt > 399 && codeInt != 401) {
+			return nil, h.Errf("Redir code not in the 3xx range or 401: '%v'", codeInt)
 		}
+	}
+
+	// don't redirect non-browser clients
+	if code != "200" {
+		hdr = http.Header{"Location": []string{to}}
 	}
 
 	return caddyhttp.StaticResponse{
 		StatusCode: caddyhttp.WeakString(code),
-		Headers:    http.Header{"Location": []string{to}},
+		Headers:    hdr,
 		Body:       body,
 	}, nil
 }

@@ -158,9 +158,10 @@ func TestHostMatcher(t *testing.T) {
 
 func TestPathMatcher(t *testing.T) {
 	for i, tc := range []struct {
-		match  MatchPath
-		input  string
-		expect bool
+		match        MatchPath // not URI-encoded because not parsing from a URI
+		input        string    // should be valid URI encoding (escaped) since it will become part of a request
+		expect       bool
+		provisionErr bool
 	}{
 		{
 			match:  MatchPath{},
@@ -253,6 +254,11 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			match:  MatchPath{"*.php"},
+			input:  "/foo/index.php. .",
+			expect: true,
+		},
+		{
 			match:  MatchPath{"/foo/bar.txt"},
 			input:  "/foo/BAR.txt",
 			expect: true,
@@ -263,8 +269,58 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			match:  MatchPath{"/foo*"},
+			match:  MatchPath{"/foo"},
 			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"//foo"},
+			input:  "/foo",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"//foo"},
+			input:  "//foo",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo//*"},
+			input:  "/foo//bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo//*"},
+			input:  "/foo/%2Fbar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%2F*"},
+			input:  "/foo/%2Fbar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%2F*"},
+			input:  "/foo//bar",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo//bar"},
+			input:  "/foo//bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/*//bar"},
+			input:  "/foo///bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%*//bar"},
+			input:  "/foo///bar",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo/%*//bar"},
+			input:  "/foo//%2Fbar",
 			expect: true,
 		},
 		{
@@ -292,8 +348,79 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/foo/bar",
 			expect: true,
 		},
+		// notice these next three test cases are the same normalized path but are written differently
+		{
+			match:  MatchPath{"/%25@.txt"},
+			input:  "/%25@.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%25@.txt"},
+			input:  "/%25%40.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%25%40.txt"},
+			input:  "/%25%40.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/*/*"},
+			input:  "/bands/AC%2FDC/T.N.T",
+			expect: false, // because * operates in normalized space
+		},
+		{
+			match:  MatchPath{"/bands/%*/%*"},
+			input:  "/bands/AC%2FDC/T.N.T",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*/%*"},
+			input:  "/bands/AC/DC/T.N.T",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/bands/%*"},
+			input:  "/bands/AC/DC",
+			expect: false, // not a suffix match
+		},
+		{
+			match:  MatchPath{"/bands/%*"},
+			input:  "/bands/AC%2FDC",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo%2fbar/baz"},
+			input:  "/foo%2Fbar/baz",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/foo%2fbar/baz"},
+			input:  "/foo/bar/baz",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/foo/bar/baz"},
+			input:  "/foo%2fbar/baz",
+			expect: true,
+		},
 	} {
-		req := &http.Request{URL: &url.URL{Path: tc.input}}
+		err := tc.match.Provision(caddy.Context{})
+		if err == nil && tc.provisionErr {
+			t.Errorf("Test %d %v: Expected error provisioning, but there was no error", i, tc.match)
+		}
+		if err != nil && !tc.provisionErr {
+			t.Errorf("Test %d %v: Expected no error provisioning, but there was an error: %v", i, tc.match, err)
+		}
+		if tc.provisionErr {
+			continue // if it's not supposed to provision properly, pointless to test it
+		}
+
+		u, err := url.ParseRequestURI(tc.input)
+		if err != nil {
+			t.Fatalf("Test %d (%v): Invalid request URI (should be rejected by Go's HTTP server): %v", i, tc.input, err)
+		}
+		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
@@ -387,6 +514,16 @@ func TestPathREMatcher(t *testing.T) {
 			expect:     true,
 			expectRepl: map[string]string{"name.myparam": "bar"},
 		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/%@.txt"}},
+			input:  "/%25@.txt",
+			expect: true,
+		},
+		{
+			match:  MatchPathRE{MatchRegexp{Pattern: "^/%25@.txt"}},
+			input:  "/%25@.txt",
+			expect: false,
+		},
 	} {
 		// compile the regexp and validate its name
 		err := tc.match.Provision(caddy.Context{})
@@ -401,7 +538,11 @@ func TestPathREMatcher(t *testing.T) {
 		}
 
 		// set up the fake request and its Replacer
-		req := &http.Request{URL: &url.URL{Path: tc.input}}
+		u, err := url.ParseRequestURI(tc.input)
+		if err != nil {
+			t.Fatalf("Test %d: Bad input URI: %v", i, err)
+		}
+		req := &http.Request{URL: u}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
@@ -807,7 +948,7 @@ func TestVarREMatcher(t *testing.T) {
 			req := &http.Request{URL: new(url.URL), Method: http.MethodGet}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-			ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+			ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
 			req = req.WithContext(ctx)
 
 			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
