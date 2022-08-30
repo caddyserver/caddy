@@ -8,13 +8,13 @@ var rootCmd = &cobra.Command{
 	Use: "caddy",
 }
 
-const docsHeader = `Caddy is an extensible server platform.`
+const docsHeader = "{{if not .HasParent}} Caddy is an extensible server platform.\n\n{{end}}"
 const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line
 `
 
 func init() {
-	rootCmd.SetHelpTemplate(docsHeader + "\n\n" + rootCmd.HelpTemplate() + "\n" + fullDocsFooter)
+	rootCmd.SetHelpTemplate(docsHeader + rootCmd.HelpTemplate() + "\n" + fullDocsFooter)
 }
 
 func caddyCmdToCoral(caddyCmd Command) *cobra.Command {
