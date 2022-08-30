@@ -310,7 +310,7 @@ func (m MatchFile) Match(r *http.Request) bool {
 func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	root := path.Clean(repl.ReplaceAll(m.Root, "."))
+	root := filepath.Clean(repl.ReplaceAll(m.Root, "."))
 
 	type matchCandidate struct {
 		fullpath, relative, splitRemainder string
@@ -354,11 +354,11 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// create the full path to the file by prepending the site root
 		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 
-		// expand glob expressions if not on Windows (exclude Windows because
-		// Glob() doesn't support escaping on Windows due to path separator)
+		// expand glob expressions, but not on Windows because Glob() doesn't
+		// support escaping on Windows due to path separator)
 		var globResults []string
 		if runtime.GOOS == "windows" {
-			globResults = []string{fullPattern}
+			globResults = []string{filepath.ToSlash(fullPattern)} // precious Windows
 		} else {
 			globResults, err = fs.Glob(m.fileSystem, fullPattern)
 			if err != nil {
@@ -369,8 +369,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// for each glob result, combine all the forms of the path
 		var candidates []matchCandidate
 		for _, result := range globResults {
-			log.Println("ADDING:", fullPattern, result, root, beforeSplit, expandedFile)
-			result = filepath.ToSlash(result) // precious Windows
+			log.Println("ADDING:", fullPattern, result, root, beforeSplit, expandedFile, strings.TrimPrefix(result, root))
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
 				relative:       strings.TrimPrefix(result, root),
