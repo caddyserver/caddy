@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -58,6 +57,9 @@ func init() {
 // the matched file is a directory, "file" otherwise.
 // - `{http.matchers.file.remainder}` Set to the remainder
 // of the path if the path was split by `split_path`.
+//
+// Even though file matching may depend on the OS path
+// separator, the placeholder values always use /.
 type MatchFile struct {
 	// The file system implementation to use. By default, the
 	// local disk file system will be used.
@@ -369,10 +371,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		// for each glob result, combine all the forms of the path
 		var candidates []matchCandidate
 		for _, result := range globResults {
-			log.Println("ADDING:", fullPattern, result, root, beforeSplit, expandedFile, strings.TrimPrefix(result, root))
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,
-				relative:       filepath.ToSlash(strings.TrimPrefix(result, root)),
+				relative:       strings.TrimPrefix(result, root),
 				splitRemainder: afterSplit,
 			})
 		}
@@ -382,9 +383,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 
 	// setPlaceholders creates the placeholders for the matched file
 	setPlaceholders := func(candidate matchCandidate, info fs.FileInfo) {
-		repl.Set("http.matchers.file.relative", candidate.relative)
-		repl.Set("http.matchers.file.absolute", candidate.fullpath)
-		repl.Set("http.matchers.file.remainder", candidate.splitRemainder)
+		repl.Set("http.matchers.file.relative", filepath.ToSlash(candidate.relative))
+		repl.Set("http.matchers.file.absolute", filepath.ToSlash(candidate.fullpath))
+		repl.Set("http.matchers.file.remainder", filepath.ToSlash(candidate.splitRemainder))
 
 		fileType := "file"
 		if info.IsDir() {
@@ -499,7 +500,6 @@ func parseErrorCode(input string) error {
 func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
 	info, err := m.fileSystem.Stat(file)
 	if err != nil {
-		log.Println("STAT ERR:", file, err)
 		// in reality, this can be any error
 		// such as permission or even obscure
 		// ones like "is not a directory" (when
@@ -510,7 +510,6 @@ func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
 		// https://stackoverflow.com/a/12518877/1048862
 		return nil, false
 	}
-	log.Println("STAT:", file, info.IsDir(), strings.HasSuffix(file, separator))
 	if strings.HasSuffix(file, separator) {
 		// by convention, file paths ending
 		// in a path separator must be a directory
