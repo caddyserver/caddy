@@ -17,6 +17,7 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -427,6 +428,10 @@ func (ss *StringSlice) Set(value string) error {
 	*ss = append(*ss, value)
 	return nil
 }
+
+// TODO: should it implement either of those?
+// var _ pflag.Value = (*StringSlice)(nil)
+// var _ pflag.SliceValue = (*StringSlice)(nil)
 
 // Interface guard
 var _ flag.Value = (*StringSlice)(nil)
