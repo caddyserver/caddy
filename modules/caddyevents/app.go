@@ -91,6 +91,7 @@ type Subscription struct {
 
 	// The ID or namespace of the module(s) from which events
 	// originate to listen to for events. Default: all modules.
+	//
 	// Events propagate up, so events emitted by module "a.b.c"
 	// will also trigger the event for "a.b" and "a". Thus, to
 	// receive all events from "a.b.c" and "a.b.d", for example,
@@ -203,12 +204,13 @@ func (app *App) On(eventName string, handler Handler) error {
 func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) Event {
 	id, err := uuid.NewRandom()
 	if err != nil {
-		app.logger.Error("failed generating new event ID", zap.Error(err))
+		app.logger.Error("failed generating new event ID",
+			zap.Error(err),
+			zap.String("event", eventName))
 	}
 
 	eventName = strings.ToLower(eventName)
 
-	// TODO: make pointer?
 	e := Event{
 		id:     id,
 		ts:     time.Now(),
@@ -223,17 +225,22 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		repl = caddy.NewReplacer()
 		ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, repl)
 	}
-	repl.Set("event", e)
-	repl.Set("event.id", e.id)
-	repl.Set("event.name", e.name)
-	repl.Set("event.module", e.origin.CaddyModule().ID)
-	repl.Set("event.data", e.data)
 	repl.Map(func(key string) (any, bool) {
 		switch key {
+		case "event":
+			return e, true
+		case "event.id":
+			return e.id, true
+		case "event.name":
+			return e.name, true
 		case "event.time":
 			return e.ts, true
 		case "event.time_unix":
 			return e.ts.UnixMilli(), true
+		case "event.module":
+			return e.origin.CaddyModule().ID, true
+		case "event.data":
+			return e.data, true
 		}
 
 		if strings.HasPrefix(key, "event.data.") {
@@ -265,15 +272,17 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 			}
 
 			for _, handler := range app.subscriptions[eventName][moduleID] {
-				// TODO: maybe log handler invocations instead of all event emissions?
-				err := handler.Handle(ctx, e)
-				if errors.Is(err, ErrAborted) {
-					// TODO: Figure out proper way to implement this
-					e.Aborted = err
-					return e
-				}
-				if err != nil {
-					app.logger.Error("handler error", zap.Error(err))
+				if handler.Handle(ctx, e); err != nil {
+					aborted := errors.Is(err, ErrAborted)
+
+					app.logger.Error("handler error",
+						zap.Error(err),
+						zap.Bool("aborted", aborted))
+
+					if aborted {
+						e.Aborted = err
+						return e
+					}
 				}
 			}
 
@@ -350,9 +359,6 @@ var ErrAborted = errors.New("event aborted")
 type Handler interface {
 	Handle(context.Context, Event) error
 }
-
-// // HandlerFunc
-// type HandlerFunc func(context.Context, Event) error
 
 // Interface guards
 var (
