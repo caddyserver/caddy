@@ -92,13 +92,14 @@ type StaticResponse struct {
 	// header fields of the same names after normalization.
 	Headers http.Header `json:"headers,omitempty"`
 
-	// The response body. If non-empty, the Content-Type header
-	// will be added automatically if it is not explicitly configured
-	// nor already set on the response; the default value is
-	// "text/plain" unless the body is a valid JSON object or array,
-	// in which case the value will be "application/json". Other
-	// than those common special cases, MIME sniffing is disabled
-	// for safety, so the header should be configured explicitly.
+	// The response body. If non-empty, the Content-Type header may
+	// be added automatically if it is not explicitly configured nor
+	// already set on the response; the default value is
+	// "text/plain; charset=utf-8" unless the body is a valid JSON object
+	// or array, in which case the value will be "application/json".
+	// Other than those common special cases the Content-Type header
+	// should be set explicitly if it is desired because MIME sniffing
+	// is disabled for safety.
 	Body string `json:"body,omitempty"`
 
 	// If true, the server will close the client's connection
@@ -194,17 +195,18 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 	}
 
 	// implicitly set Content-Type header if we can do so safely
-	// (this allows templates handler to eval templates successfully)
+	// (this allows templates handler to eval templates successfully
+	// or for clients to render JSON properly which is very common)
 	body := repl.ReplaceKnown(s.Body, "")
 	if body != "" && w.Header().Get("Content-Type") == "" {
-		body := strings.TrimSpace(s.Body)
-		if len(body) > 2 &&
-			(body[0] == '{' && body[len(body)-1] == '}' ||
-				(body[0] == '[' && body[len(body)-1] == ']')) &&
-			json.Valid([]byte(body)) {
+		content := strings.TrimSpace(s.Body)
+		if len(content) > 2 &&
+			(content[0] == '{' && content[len(content)-1] == '}' ||
+				(content[0] == '[' && content[len(content)-1] == ']')) &&
+			json.Valid([]byte(content)) {
 			w.Header().Set("Content-Type", "application/json")
 		} else {
-			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		}
 	}
 
