@@ -36,6 +36,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
@@ -193,6 +194,7 @@ type Handler struct {
 
 	ctx    caddy.Context
 	logger *zap.Logger
+	events *caddyevents.App
 }
 
 // CaddyModule returns the Caddy module information.
@@ -205,6 +207,11 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	eventAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
 

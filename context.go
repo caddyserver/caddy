@@ -37,9 +37,10 @@ import (
 // not actually need to do this).
 type Context struct {
 	context.Context
-	moduleInstances map[string][]any
+	moduleInstances map[string][]Module
 	cfg             *Config
 	cleanupFuncs    []func()
+	ancestry        []Module
 }
 
 // NewContext provides a new context derived from the given
@@ -51,7 +52,7 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]any), cfg: ctx.cfg}
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -90,15 +91,15 @@ func (ctx *Context) OnCancel(f func()) {
 // ModuleMap may be used in place of map[string]json.RawMessage. The return value's
 // underlying type mirrors the input field's type:
 //
-//    json.RawMessage              => any
-//    []json.RawMessage            => []any
-//    [][]json.RawMessage          => [][]any
-//    map[string]json.RawMessage   => map[string]any
-//    []map[string]json.RawMessage => []map[string]any
+//	json.RawMessage              => any
+//	[]json.RawMessage            => []any
+//	[][]json.RawMessage          => [][]any
+//	map[string]json.RawMessage   => map[string]any
+//	[]map[string]json.RawMessage => []map[string]any
 //
 // The field must have a "caddy" struct tag in this format:
 //
-//    caddy:"key1=val1 key2=val2"
+//	caddy:"key1=val1 key2=val2"
 //
 // To load modules, a "namespace" key is required. For example, to load modules
 // in the "http.handlers" namespace, you'd put: `namespace=http.handlers` in the
@@ -115,7 +116,7 @@ func (ctx *Context) OnCancel(f func()) {
 // meaning the key containing the module's name that is defined inline with the module
 // itself. You must specify the inline key in a struct tag, along with the namespace:
 //
-//    caddy:"namespace=http.handlers inline_key=handler"
+//	caddy:"namespace=http.handlers inline_key=handler"
 //
 // This will look for a key/value pair like `"handler": "..."` in the json.RawMessage
 // in order to know the module name.
@@ -301,17 +302,17 @@ func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[strin
 // like from embedded scripts, etc.
 func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error) {
 	modulesMu.RLock()
-	mod, ok := modules[id]
+	modInfo, ok := modules[id]
 	modulesMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("unknown module: %s", id)
 	}
 
-	if mod.New == nil {
-		return nil, fmt.Errorf("module '%s' has no constructor", mod.ID)
+	if modInfo.New == nil {
+		return nil, fmt.Errorf("module '%s' has no constructor", modInfo.ID)
 	}
 
-	val := mod.New().(any)
+	val := modInfo.New()
 
 	// value must be a pointer for unmarshaling into concrete type, even if
 	// the module's concrete type is a slice or map; New() *should* return
@@ -327,7 +328,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	if len(rawMsg) > 0 {
 		err := strictUnmarshalJSON(rawMsg, &val)
 		if err != nil {
-			return nil, fmt.Errorf("decoding module config: %s: %v", mod, err)
+			return nil, fmt.Errorf("decoding module config: %s: %v", modInfo, err)
 		}
 	}
 
@@ -340,6 +341,8 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		return nil, fmt.Errorf("module value cannot be null")
 	}
 
+	ctx.ancestry = append(ctx.ancestry, val)
+
 	if prov, ok := val.(Provisioner); ok {
 		err := prov.Provision(ctx)
 		if err != nil {
@@ -351,7 +354,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
-			return nil, fmt.Errorf("provision %s: %v", mod, err)
+			return nil, fmt.Errorf("provision %s: %v", modInfo, err)
 		}
 	}
 
@@ -365,7 +368,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
-			return nil, fmt.Errorf("%s: invalid configuration: %v", mod, err)
+			return nil, fmt.Errorf("%s: invalid configuration: %v", modInfo, err)
 		}
 	}
 
@@ -439,8 +442,10 @@ func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage
 }
 
+// TODO: aw man, can I please change this?
 // Logger returns a logger that can be used by mod.
 func (ctx Context) Logger(mod Module) *zap.Logger {
+	// TODO: if mod is nil, use ctx.Module() instead...
 	if ctx.cfg == nil {
 		// often the case in tests; just use a dev logger
 		l, err := zap.NewDevelopment()
@@ -450,4 +455,35 @@ func (ctx Context) Logger(mod Module) *zap.Logger {
 		return l
 	}
 	return ctx.cfg.Logging.Logger(mod)
+}
+
+// TODO: use this
+// // Logger returns a logger that can be used by the current module.
+// func (ctx Context) Log() *zap.Logger {
+// 	if ctx.cfg == nil {
+// 		// often the case in tests; just use a dev logger
+// 		l, err := zap.NewDevelopment()
+// 		if err != nil {
+// 			panic("config missing, unable to create dev logger: " + err.Error())
+// 		}
+// 		return l
+// 	}
+// 	return ctx.cfg.Logging.Logger(ctx.Module())
+// }
+
+// Modules returns the lineage of modules that this context provisioned,
+// with the most recent/current module being last in the list.
+func (ctx Context) Modules() []Module {
+	mods := make([]Module, len(ctx.ancestry))
+	copy(mods, ctx.ancestry)
+	return mods
+}
+
+// Module returns the current module, or the most recent one
+// provisioned by the context.
+func (ctx Context) Module() Module {
+	if len(ctx.ancestry) == 0 {
+		return nil
+	}
+	return ctx.ancestry[len(ctx.ancestry)-1]
 }

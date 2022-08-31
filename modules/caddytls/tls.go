@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -73,6 +75,7 @@ type TLS struct {
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
 	logger             *zap.Logger
+	events             *caddyevents.App
 }
 
 // CaddyModule returns the Caddy module information.
@@ -85,6 +88,11 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision(ctx caddy.Context) error {
+	eventsAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+	t.events = eventsAppIface.(*caddyevents.App)
 	t.ctx = ctx
 	t.logger = ctx.Logger(t)
 	repl := caddy.NewReplacer()
@@ -189,6 +197,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
+		OnEvent: t.onEvent,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
@@ -512,6 +521,12 @@ func (t *TLS) storageCleanInterval() time.Duration {
 		return time.Duration(t.Automation.StorageCleanInterval)
 	}
 	return defaultStorageCleanInterval
+}
+
+// onEvent translates CertMagic events into Caddy events then dispatches them.
+func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+	evt := t.events.Emit(t.ctx, eventName, data)
+	return evt.Aborted
 }
 
 // CertificateLoader is a type that can load certificates.
