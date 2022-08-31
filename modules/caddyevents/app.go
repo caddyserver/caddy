@@ -41,8 +41,8 @@ func init() {
 // control program flow in some cases.
 //
 // Events are propagated in a DOM-like fashion. An event
-// event emitted from module `a.b.c` (the "origin") will
-// first invoke handlers listening to `a.b.c`, then `a.b`,
+// emitted from module `a.b.c` (the "origin") will first
+// invoke handlers listening to `a.b.c`, then `a.b`,
 // then `a`, then those listening regardless of origin.
 // If a handler returns the special error Aborted, then
 // propagation immediately stops and the event is marked
@@ -272,7 +272,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 			}
 
 			for _, handler := range app.subscriptions[eventName][moduleID] {
-				if handler.Handle(ctx, e); err != nil {
+				if err := handler.Handle(ctx, e); err != nil {
 					aborted := errors.Is(err, ErrAborted)
 
 					app.logger.Error("handler error",
