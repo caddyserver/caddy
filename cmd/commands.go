@@ -358,25 +358,22 @@ EXPERIMENTAL: May be changed or removed.
 			}
 			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
 				Title:   "Caddy",
-				Section: "8",
+				Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
 			}, dir); err != nil {
 				return caddy.ExitCodeFailedQuit, err
 			}
 			return caddy.ExitCodeSuccess, nil
 		},
-		Usage: "--directory <directory path>",
-		Short: "Generates the manual pages of Caddy commands",
+		Usage: "--directory <path>",
+		Short: "Generates the manual pages for Caddy commands",
 		Long: `
-Generates the manual pages of Caddy commands into the designated directory tagged into the specified section.
+Generates the manual pages for Caddy commands into the designated directory tagged into section 8 (System Administration).
 
 The manual page files are generated into the directory specified by the argument of --directory. If the directory does not exist, it will be created.
-
-The manual pages are sorted into the section specified by the argument of --section.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
 			fs.String("directory", "", "The output directory where the manpages are generated")
-			fs.String("section", "", "The section number of the generated manual pages")
 			return fs
 		}(),
 	})
