@@ -108,6 +108,17 @@ type App struct {
 	// but no specific port number is given. Default: 443.
 	HTTPSPort int `json:"https_port,omitempty"`
 
+	// HTTP3Port specifies the port to use in the Alt-Svc header to
+	// advertise to clients which port to use to connect using HTTP/3.
+	//
+	// By default, the HTTP/3 server will use the port from its listener
+	// address. Configuring this option is likely only necessary if your
+	// server is listening on a non-standard port to get around permissions
+	// issues with binding to low ports, or some other internal networking
+	// reason, but you still wish to have clients connect using the standard
+	// HTTPS port 443.
+	HTTP3Port int `json:"http3_port,omitempty"`
+
 	// GracePeriod is how long to wait for active connections when shutting
 	// down the servers. During the grace period, no new connections are
 	// accepted, idle connections are closed, and active connections will
@@ -399,8 +410,10 @@ func (app *App) Start() error {
 
 					// enable HTTP/3 if configured
 					if srv.protocol("h3") {
-						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
+						app.logger.Info("enabling HTTP/3 listener",
+							zap.String("addr", hostport),
+							zap.Int("port", app.HTTP3Port))
+						if err := srv.serveHTTP3(hostport, app.HTTP3Port, tlsCfg); err != nil {
 							return err
 						}
 					}

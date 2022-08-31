@@ -27,8 +27,9 @@ import (
 
 func init() {
 	RegisterGlobalOption("debug", parseOptTrue)
-	RegisterGlobalOption("http_port", parseOptHTTPPort)
-	RegisterGlobalOption("https_port", parseOptHTTPSPort)
+	RegisterGlobalOption("http_port", parseOptPort)
+	RegisterGlobalOption("https_port", parseOptPort)
+	RegisterGlobalOption("http3_port", parseOptPort)
 	RegisterGlobalOption("default_bind", parseOptStringList)
 	RegisterGlobalOption("grace_period", parseOptDuration)
 	RegisterGlobalOption("shutdown_delay", parseOptDuration)
@@ -58,36 +59,20 @@ func init() {
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
-func parseOptHTTPPort(d *caddyfile.Dispenser, _ any) (any, error) {
-	var httpPort int
+func parseOptPort(d *caddyfile.Dispenser, _ any) (any, error) {
+	var port int
 	for d.Next() {
-		var httpPortStr string
-		if !d.AllArgs(&httpPortStr) {
+		var portStr string
+		if !d.AllArgs(&portStr) {
 			return 0, d.ArgErr()
 		}
 		var err error
-		httpPort, err = strconv.Atoi(httpPortStr)
+		port, err = strconv.Atoi(portStr)
 		if err != nil {
-			return 0, d.Errf("converting port '%s' to integer value: %v", httpPortStr, err)
+			return 0, d.Errf("converting port '%s' to integer value: %v", portStr, err)
 		}
 	}
-	return httpPort, nil
-}
-
-func parseOptHTTPSPort(d *caddyfile.Dispenser, _ any) (any, error) {
-	var httpsPort int
-	for d.Next() {
-		var httpsPortStr string
-		if !d.AllArgs(&httpsPortStr) {
-			return 0, d.ArgErr()
-		}
-		var err error
-		httpsPort, err = strconv.Atoi(httpsPortStr)
-		if err != nil {
-			return 0, d.Errf("converting port '%s' to integer value: %v", httpsPortStr, err)
-		}
-	}
-	return httpsPort, nil
+	return port, nil
 }
 
 func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
@@ -421,13 +406,13 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 
 // parseLogOptions parses the global log option. Syntax:
 //
-//     log [name] {
-//         output  <writer_module> ...
-//         format  <encoder_module> ...
-//         level   <level>
-//         include <namespaces...>
-//         exclude <namespaces...>
-//     }
+//	log [name] {
+//	    output  <writer_module> ...
+//	    format  <encoder_module> ...
+//	    level   <level>
+//	    include <namespaces...>
+//	    exclude <namespaces...>
+//	}
 //
 // When the name argument is unspecified, this directive modifies the default
 // logger.

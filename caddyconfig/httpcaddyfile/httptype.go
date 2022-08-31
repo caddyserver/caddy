@@ -192,6 +192,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	httpApp := caddyhttp.App{
 		HTTPPort:      tryInt(options["http_port"], &warnings),
 		HTTPSPort:     tryInt(options["https_port"], &warnings),
+		HTTP3Port:     tryInt(options["http3_port"], &warnings),
 		GracePeriod:   tryDuration(options["grace_period"], &warnings),
 		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
 		Servers:       servers,
