@@ -284,6 +284,13 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		}
 	}
 
+	markUnhealthy := func() {
+		// dispatch an event that the host newly became unhealthy
+		if upstream.setHealthy(false) {
+			h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+		}
+	}
+
 	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req)
 	if err != nil {
@@ -291,7 +298,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 			zap.String("host", hostAddr),
 			zap.Error(err),
 		)
-		upstream.setHealthy(false)
+		markUnhealthy()
 		return nil
 	}
 	var body io.Reader = resp.Body
@@ -311,7 +318,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 				zap.Int("status_code", resp.StatusCode),
 				zap.String("host", hostAddr),
 			)
-			upstream.setHealthy(false)
+			markUnhealthy()
 			return nil
 		}
 	} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
@@ -319,7 +326,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("host", hostAddr),
 		)
-		upstream.setHealthy(false)
+		markUnhealthy()
 		return nil
 	}
 
@@ -331,14 +338,14 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 				zap.String("host", hostAddr),
 				zap.Error(err),
 			)
-			upstream.setHealthy(false)
+			markUnhealthy()
 			return nil
 		}
 		if !h.HealthChecks.Active.bodyRegexp.Match(bodyBytes) {
 			h.HealthChecks.Active.logger.Info("response body failed expectations",
 				zap.String("host", hostAddr),
 			)
-			upstream.setHealthy(false)
+			markUnhealthy()
 			return nil
 		}
 	}
@@ -346,6 +353,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	// passed health check parameters, so mark as healthy
 	if upstream.setHealthy(true) {
 		h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
+		h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
 	}
 
 	return nil

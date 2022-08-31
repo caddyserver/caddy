@@ -256,6 +256,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		MustStaple:         ap.MustStaple,
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
+		OnEvent:            tlsApp.onEvent,
 		OnDemand:           ond,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling:    ap.DisableOCSPStapling,
