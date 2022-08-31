@@ -31,6 +31,7 @@ import (
 
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
+	"go.uber.org/zap"
 )
 
 // Listen is like net.Listen, except Caddy's listeners can overlap
@@ -42,6 +43,14 @@ import (
 // the socket have been finished. Always be sure to close listeners
 // when you are done with them, just like normal listeners.
 func Listen(network, addr string) (net.Listener, error) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	// get listener from plugin if network type is registered
+	if getListener, ok := networkTypes[network]; ok {
+		Log().Debug("getting listener from plugin", zap.String("network", network))
+		return getListener(network, addr)
+	}
+
 	lnKey := listenerKey(network, addr)
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -550,6 +559,35 @@ func JoinNetworkAddress(network, host, port string) string {
 	}
 	return a
 }
+
+// RegisterNetwork registers a network type with Caddy so that if a listener is
+// created for that network type, getListener will be invoked to get the listener.
+// This should be called during init() and will panic if the network type is standard
+// or reserved, or if it is already registered. EXPERIMENTAL and subject to change.
+func RegisterNetwork(network string, getListener ListenerFunc) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
+		network == "udp" || network == "udp4" || network == "udp6" ||
+		network == "unix" || network == "unixpacket" || network == "unixgram" ||
+		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) {
+		panic("network type " + network + " is reserved")
+	}
+
+	if _, ok := networkTypes[strings.ToLower(network)]; ok {
+		panic("network type " + network + " is already registered")
+	}
+
+	networkTypes[network] = getListener
+}
+
+// ListenerFunc is a function that can return a listener given a network and address.
+// The listeners must be capable of overlapping: with Caddy, new configs are loaded
+// before old ones are unloaded, so listeners may overlap briefly if the configs
+// both need the same listener. EXPERIMENTAL and subject to change.
+type ListenerFunc func(network, addr string) (net.Listener, error)
+
+var networkTypes = map[string]ListenerFunc{}
 
 // ListenerWrapper is a type that wraps a listener
 // so it can modify the input listener's methods.
