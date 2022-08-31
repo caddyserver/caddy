@@ -16,7 +16,14 @@ package caddycmd
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"regexp"
+	"strings"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/spf13/cobra"
+	"github.com/spf13/cobra/doc"
 )
 
 // Command represents a subcommand. Name, Func,
@@ -70,13 +77,6 @@ func Commands() map[string]Command {
 var commands = make(map[string]Command)
 
 func init() {
-	RegisterCommand(Command{
-		Name:  "help",
-		Func:  cmdHelp,
-		Usage: "<command>",
-		Short: "Shows help for a Caddy subcommand",
-	})
-
 	RegisterCommand(Command{
 		Name:  "start",
 		Func:  cmdStart,
@@ -346,16 +346,109 @@ EXPERIMENTAL: May be changed or removed.
 		}(),
 	})
 
+	RegisterCommand(Command{
+		Name: "manpage",
+		Func: func(fl Flags) (int, error) {
+			dir := strings.TrimSpace(fl.String("directory"))
+			if dir == "" {
+				return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+			}
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+				Title:   "Caddy",
+				Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
+			}, dir); err != nil {
+				return caddy.ExitCodeFailedQuit, err
+			}
+			return caddy.ExitCodeSuccess, nil
+		},
+		Usage: "--directory <path>",
+		Short: "Generates the manual pages for Caddy commands",
+		Long: `
+Generates the manual pages for Caddy commands into the designated directory tagged into section 8 (System Administration).
+
+The manual page files are generated into the directory specified by the argument of --directory. If the directory does not exist, it will be created.
+`,
+		Flags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
+			fs.String("directory", "", "The output directory where the manpages are generated")
+			return fs
+		}(),
+	})
+
+	// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "completion [bash|zsh|fish|powershell]",
+		Short: "Generate completion script",
+		Long: fmt.Sprintf(`To load completions:
+	
+	Bash:
+	
+	  $ source <(%[1]s completion bash)
+	
+	  # To load completions for each session, execute once:
+	  # Linux:
+	  $ %[1]s completion bash > /etc/bash_completion.d/%[1]s
+	  # macOS:
+	  $ %[1]s completion bash > $(brew --prefix)/etc/bash_completion.d/%[1]s
+	
+	Zsh:
+	
+	  # If shell completion is not already enabled in your environment,
+	  # you will need to enable it.  You can execute the following once:
+	
+	  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
+	
+	  # To load completions for each session, execute once:
+	  $ %[1]s completion zsh > "${fpath[1]}/_%[1]s"
+	
+	  # You will need to start a new shell for this setup to take effect.
+	
+	fish:
+	
+	  $ %[1]s completion fish | source
+	
+	  # To load completions for each session, execute once:
+	  $ %[1]s completion fish > ~/.config/fish/completions/%[1]s.fish
+	
+	PowerShell:
+	
+	  PS> %[1]s completion powershell | Out-String | Invoke-Expression
+	
+	  # To load completions for every new session, run:
+	  PS> %[1]s completion powershell > %[1]s.ps1
+	  # and source this file from your PowerShell profile.
+	`, rootCmd.Root().Name()),
+		DisableFlagsInUseLine: true,
+		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+		Args:                  cobra.ExactValidArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				return cmd.Root().GenBashCompletion(os.Stdout)
+			case "zsh":
+				return cmd.Root().GenZshCompletion(os.Stdout)
+			case "fish":
+				return cmd.Root().GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+			default:
+				return fmt.Errorf("unrecognized shell: %s", args[0])
+			}
+		},
+	})
 }
 
 // RegisterCommand registers the command cmd.
 // cmd.Name must be unique and conform to the
 // following format:
 //
-//    - lowercase
-//    - alphanumeric and hyphen characters only
-//    - cannot start or end with a hyphen
-//    - hyphen cannot be adjacent to another hyphen
+//   - lowercase
+//   - alphanumeric and hyphen characters only
+//   - cannot start or end with a hyphen
+//   - hyphen cannot be adjacent to another hyphen
 //
 // This function panics if the name is already registered,
 // if the name does not meet the described format, or if
@@ -378,7 +471,7 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	commands[cmd.Name] = cmd
+	rootCmd.AddCommand(caddyCmdToCoral(cmd))
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)

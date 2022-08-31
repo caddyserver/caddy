@@ -47,7 +47,9 @@ import (
 var supports1xx bool
 
 func init() {
-	supports1xx = !regexp.MustCompile(`^go1\.1(?:7|8)\.`).Match([]byte(runtime.Version()))
+	// Caddy requires at least Go 1.18, but Early Hints requires Go 1.19; thus we can simply check for 1.18 in version string
+	// TODO: remove this once our minimum Go version is 1.19
+	supports1xx = !strings.Contains(runtime.Version(), "go1.18")
 
 	caddy.RegisterModule(Handler{})
 }
@@ -398,6 +400,9 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("provisioning response handler %d: %v", i, err)
 		}
 	}
+
+	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h)
+	upstreamHealthyUpdater.Init()
 
 	return nil
 }
@@ -1364,7 +1369,7 @@ var bufPool = sync.Pool{
 }
 
 // handleResponseContext carries some contextual information about the
-// the current proxy handling.
+// current proxy handling.
 type handleResponseContext struct {
 	// handler is the active proxy handler instance, so that
 	// routes like copy_response may inherit some config
