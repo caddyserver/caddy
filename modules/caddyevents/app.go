@@ -202,11 +202,11 @@ func (app *App) On(eventName string, handler Handler) error {
 // the metadata data. Events are emitted and propagated synchronously. The returned Event
 // value will have any additional information from the invoked handlers.
 func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) Event {
+	logger := app.logger.With(zap.String("name", eventName))
+
 	id, err := uuid.NewRandom()
 	if err != nil {
-		app.logger.Error("failed generating new event ID",
-			zap.Error(err),
-			zap.String("event", eventName))
+		logger.Error("failed generating new event ID", zap.Error(err))
 	}
 
 	eventName = strings.ToLower(eventName)
@@ -218,6 +218,10 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		origin: ctx.Module(),
 		data:   data,
 	}
+
+	logger = logger.With(
+		zap.String("id", e.id.String()),
+		zap.String("origin", e.origin.CaddyModule().String()))
 
 	// add event info to replacer, make sure it's in the context
 	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -253,12 +257,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	app.logger.Debug("event",
-		zap.String("name", e.name),
-		zap.String("id", e.id.String()),
-		zap.String("origin", e.origin.CaddyModule().String()),
-		zap.Any("data", e.data),
-	)
+	logger.Debug("event", zap.Any("data", e.data))
 
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
@@ -272,10 +271,17 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 			}
 
 			for _, handler := range app.subscriptions[eventName][moduleID] {
+				select {
+				case <-ctx.Done():
+					logger.Error("context canceled; event handling stopped")
+					return e
+				default:
+				}
+
 				if err := handler.Handle(ctx, e); err != nil {
 					aborted := errors.Is(err, ErrAborted)
 
-					app.logger.Error("handler error",
+					logger.Error("handler error",
 						zap.Error(err),
 						zap.Bool("aborted", aborted))
 
