@@ -421,7 +421,7 @@ var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
 
 // Interface guards
 var (
-	_ zapcore.ObjectMarshaler = loggableEnv{}
+	_ zapcore.ObjectMarshaler = (*loggableEnv)(nil)
 
 	_ caddy.Provisioner = (*Transport)(nil)
 	_ http.RoundTripper = (*Transport)(nil)

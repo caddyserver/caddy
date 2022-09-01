@@ -309,6 +309,14 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				fcgiTransport.WriteTimeout = caddy.Duration(dur)
 				dispenser.Delete()
 				dispenser.Delete()
+
+			case "capture_stderr":
+				args := dispenser.RemainingArgs()
+				dispenser.Delete()
+				for range args {
+					dispenser.Delete()
+				}
+				fcgiTransport.CaptureStderr = true
 			}
 		}
 	}
