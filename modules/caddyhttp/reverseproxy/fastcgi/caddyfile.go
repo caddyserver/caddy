@@ -35,16 +35,16 @@ func init() {
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
 //
-//     transport fastcgi {
-//         root <path>
-//         split <at>
-//         env <key> <value>
-//         resolve_root_symlink
-//         dial_timeout <duration>
-//         read_timeout <duration>
-//         write_timeout <duration>
-//     }
-//
+//	transport fastcgi {
+//	    root <path>
+//	    split <at>
+//	    env <key> <value>
+//	    resolve_root_symlink
+//	    dial_timeout <duration>
+//	    read_timeout <duration>
+//	    write_timeout <duration>
+//	    capture_stderr
+//	}
 func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
@@ -107,6 +107,12 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				t.WriteTimeout = caddy.Duration(dur)
 
+			case "capture_stderr":
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				t.CaptureStderr = true
+
 			default:
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
@@ -120,31 +126,31 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Unmarshaler is invoked by this function) but the resulting proxy is specially
 // configured for most™️ PHP apps over FastCGI. A line such as this:
 //
-//     php_fastcgi localhost:7777
+//	php_fastcgi localhost:7777
 //
 // is equivalent to a route consisting of:
 //
-//     # Add trailing slash for directory requests
-//     @canonicalPath {
-//         file {path}/index.php
-//         not path */
-//     }
-//     redir @canonicalPath {path}/ 308
+//	# Add trailing slash for directory requests
+//	@canonicalPath {
+//	    file {path}/index.php
+//	    not path */
+//	}
+//	redir @canonicalPath {path}/ 308
 //
-//     # If the requested file does not exist, try index files
-//     @indexFiles file {
-//         try_files {path} {path}/index.php index.php
-//         split_path .php
-//     }
-//     rewrite @indexFiles {http.matchers.file.relative}
+//	# If the requested file does not exist, try index files
+//	@indexFiles file {
+//	    try_files {path} {path}/index.php index.php
+//	    split_path .php
+//	}
+//	rewrite @indexFiles {http.matchers.file.relative}
 //
-//     # Proxy PHP files to the FastCGI responder
-//     @phpFiles path *.php
-//     reverse_proxy @phpFiles localhost:7777 {
-//         transport fastcgi {
-//             split .php
-//         }
-//     }
+//	# Proxy PHP files to the FastCGI responder
+//	@phpFiles path *.php
+//	reverse_proxy @phpFiles localhost:7777 {
+//	    transport fastcgi {
+//	        split .php
+//	    }
+//	}
 //
 // Thus, this directive produces multiple handlers, each with a different
 // matcher because multiple consecutive handlers are necessary to support
@@ -154,7 +160,7 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // If a matcher is specified by the user, for example:
 //
-//     php_fastcgi /subpath localhost:7777
+//	php_fastcgi /subpath localhost:7777
 //
 // then the resulting handlers are wrapped in a subroute that uses the
 // user's matcher as a prerequisite to enter the subroute. In other

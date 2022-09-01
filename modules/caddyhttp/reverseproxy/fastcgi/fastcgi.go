@@ -34,6 +34,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+var noopLogger = zap.NewNop()
+
 func init() {
 	caddy.RegisterModule(Transport{})
 }
@@ -74,6 +76,11 @@ type Transport struct {
 	// The duration used to set a deadline when sending to the FastCGI server.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
+	// Capture and log any messages sent by the upstream on stderr. Logs at WARN
+	// level by default. If the response has a 4xx or 5xx status ERROR level will
+	// be used instead.
+	CaptureStderr bool `json:"capture_stderr,omitempty"`
+
 	serverSoftware string
 	logger         *zap.Logger
 }
@@ -108,6 +115,8 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
+	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
+
 	// Disallow null bytes in the request path, because
 	// PHP upstreams may do bad things, like execute a
 	// non-PHP file as PHP code. See #4574
@@ -135,16 +144,30 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		address = dialInfo.Address
 	}
 
+	logCreds := server.Logs != nil && server.Logs.ShouldLogCredentials
+	loggableReq := caddyhttp.LoggableHTTPRequest{
+		Request:              r,
+		ShouldLogCredentials: logCreds,
+	}
+	loggableEnv := loggableEnv{vars: env, logCredentials: logCreds}
 	t.logger.Debug("roundtrip",
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
+		zap.Object("request", loggableReq),
 		zap.String("dial", address),
-		zap.Object("env", env),
+		zap.Object("env", loggableEnv),
 	)
 
 	fcgiBackend, err := DialContext(ctx, network, address)
 	if err != nil {
 		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
+	}
+	if t.CaptureStderr {
+		fcgiBackend.logger = t.logger.With(
+			zap.Object("request", loggableReq),
+			zap.Object("env", loggableEnv),
+		)
+	} else {
+		fcgiBackend.logger = noopLogger
 	}
 	// fcgiBackend gets closed when response body is closed (see clientCloser)
 
@@ -364,11 +387,22 @@ func (t Transport) splitPos(path string) int {
 	return -1
 }
 
-// envVars is a simple type to allow for speeding up zap log encoding.
 type envVars map[string]string
 
-func (env envVars) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	for k, v := range env {
+// loggableEnv is a simple type to allow for speeding up zap log encoding.
+type loggableEnv struct {
+	vars           envVars
+	logCredentials bool
+}
+
+func (env loggableEnv) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	for k, v := range env.vars {
+		if !env.logCredentials {
+			switch strings.ToLower(k) {
+			case "http_cookie", "http_set_cookie", "http_authorization", "http_proxy_authorization":
+				v = ""
+			}
+		}
 		enc.AddString(k, v)
 	}
 	return nil
@@ -387,7 +421,7 @@ var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
 
 // Interface guards
 var (
-	_ zapcore.ObjectMarshaler = (*envVars)(nil)
+	_ zapcore.ObjectMarshaler = loggableEnv{}
 
 	_ caddy.Provisioner = (*Transport)(nil)
 	_ http.RoundTripper = (*Transport)(nil)
