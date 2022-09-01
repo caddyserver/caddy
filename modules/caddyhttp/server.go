@@ -579,6 +579,14 @@ func (s *Server) protocol(proto string) bool {
 	return false
 }
 
+// Listeners returns the server's listeners. These are active listeners,
+// so calling Accept() or Close() on them will probably break things.
+// They are made available here for read-only purposes (e.g. Addr())
+// and for type-asserting for purposes where you know what you're doing.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) Listeners() []net.Listener { return s.listeners }
+
 // ServerLogConfig describes a server's logging configuration. If
 // enabled without customization, all requests to this server are
 // logged to the default logger; logger destinations may be
