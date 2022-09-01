@@ -238,6 +238,8 @@ func toString(val any) string {
 		return v
 	case fmt.Stringer:
 		return v.String()
+	case error:
+		return v.Error()
 	case byte:
 		return string(v)
 	case []byte:
