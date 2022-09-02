@@ -192,6 +192,10 @@ type Handler struct {
 	// Holds the handle_response Caddyfile tokens while adapting
 	handleResponseSegments []*caddyfile.Dispenser
 
+	// Stores upgraded requests (hijacked connections) for proper cleanup
+	connections   map[io.ReadWriteCloser]openConnection
+	connectionsMu *sync.Mutex
+
 	ctx    caddy.Context
 	logger *zap.Logger
 	events *caddyevents.App
@@ -214,6 +218,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
+	h.connections = make(map[io.ReadWriteCloser]openConnection)
+	h.connectionsMu = new(sync.Mutex)
 
 	// verify SRV compatibility - TODO: LookupSRV deprecated; will be removed
 	for i, v := range h.Upstreams {
@@ -407,16 +413,34 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Cleanup cleans up the resources made by h during provisioning.
+// Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	// TODO: Close keepalive connections on reload? https://github.com/caddyserver/caddy/pull/2507/files#diff-70219fd88fe3f36834f474ce6537ed26R762
+	// close hijacked connections (both to client and backend)
+	var err error
+	h.connectionsMu.Lock()
+	for _, oc := range h.connections {
+		if oc.gracefulClose != nil {
+			// this is potentially blocking while we have the lock on the connections
+			// map, but that should be OK since the server has in theory shut down
+			// and we are no longer using the connections map
+			gracefulErr := oc.gracefulClose()
+			if gracefulErr != nil && err == nil {
+				err = gracefulErr
+			}
+		}
+		closeErr := oc.conn.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	h.connectionsMu.Unlock()
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
 		_, _ = hosts.Delete(upstream.String())
 	}
 
-	return nil
+	return err
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
