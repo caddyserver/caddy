@@ -6,7 +6,7 @@ import (
 )
 
 type streamReader struct {
-	c      *FCGIClient
+	c      *client
 	rec    record
 	stderr bytes.Buffer
 }

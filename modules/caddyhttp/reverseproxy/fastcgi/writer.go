@@ -8,7 +8,7 @@ import (
 // streamWriter abstracts out the separation of a stream into discrete records.
 // It only writes maxWrite bytes at a time.
 type streamWriter struct {
-	c       *FCGIClient
+	c       *client
 	h       header
 	buf     *bytes.Buffer
 	recType uint8

@@ -143,26 +143,40 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		ShouldLogCredentials: logCreds,
 	}
 	loggableEnv := loggableEnv{vars: env, logCredentials: logCreds}
-	t.logger.Debug("roundtrip",
+
+	logger := t.logger.With(
 		zap.Object("request", loggableReq),
-		zap.String("dial", address),
 		zap.Object("env", loggableEnv),
 	)
+	logger.Debug("roundtrip",
+		zap.String("dial", address),
+		zap.Object("env", loggableEnv),
+		zap.Object("request", loggableReq))
 
-	fcgiBackend, err := DialWithDialerContext(ctx, network, address, net.Dialer{Timeout: time.Duration(t.DialTimeout)})
+	// connect to the backend
+	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
+	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
-	// fcgiBackend gets closed when response body is closed (see clientCloser)
+	defer func() {
+		if err != nil {
+			conn.Close()
+		}
+	}()
+
+	// create the client that will facilitate the protocol
+	client := client{
+		rwc:    conn,
+		reqID:  1,
+		logger: logger,
+	}
 
 	// read/write timeouts
-	if err = fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
-		fcgiBackend.Close()
+	if err = client.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
 		return nil, fmt.Errorf("setting read timeout: %v", err)
 	}
-	if err = fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
-		fcgiBackend.Close()
+	if err = client.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
 		return nil, fmt.Errorf("setting write timeout: %v", err)
 	}
 
@@ -174,27 +188,18 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	switch r.Method {
 	case http.MethodHead:
-		resp, err = fcgiBackend.Head(env)
+		resp, err = client.Head(env)
 	case http.MethodGet:
-		resp, err = fcgiBackend.Get(env, r.Body, contentLength)
+		resp, err = client.Get(env, r.Body, contentLength)
 	case http.MethodOptions:
-		resp, err = fcgiBackend.Options(env)
+		resp, err = client.Options(env)
 	default:
-		resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
+		resp, err = client.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
 	}
-
 	if err != nil {
-		fcgiBackend.Close()
 		return nil, err
 	}
-	if t.CaptureStderr {
-		resp.Body.(*clientCloser).logger = t.logger.With(
-			zap.Object("request", loggableReq),
-			zap.Object("env", loggableEnv),
-		)
-	} else {
-		resp.Body.(*clientCloser).logger = noopLogger
-	}
+
 	return resp, nil
 }
 
