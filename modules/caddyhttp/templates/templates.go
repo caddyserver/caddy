@@ -191,12 +191,10 @@ func init() {
 //
 // ##### `httpError`
 //
-// This function takes status code as input and returns a structured HTTP handler error
-// 
-// Example usage: 
+// Returns an error with the given status code to the HTTP handler chain.
 // 
 // ```
-// {{if not (fileExists $includeFile)}}{{httpError 404}}{{end}
+// {{if not (fileExists $includedFile)}}{{httpError 404}}{{end}}
 // ```
 //
 // ##### `splitFrontMatter`
