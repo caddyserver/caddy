@@ -1201,6 +1201,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 
 func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.ModuleMap) error {
 	for d.Next() {
+		// this is the "name" for "named matchers"
 		definitionName := d.Val()
 
 		if _, ok := matchers[definitionName]; ok {
@@ -1208,16 +1209,9 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		}
 		matchers[definitionName] = make(caddy.ModuleMap)
 
-		// in case there are multiple instances of the same matcher, concatenate
-		// their tokens (we expect that UnmarshalCaddyfile should be able to
-		// handle more than one segment); otherwise, we'd overwrite other
-		// instances of the matcher in this set
-		tokensByMatcherName := make(map[string][]caddyfile.Token)
-		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
-			matcherName := d.Val()
-			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
-		}
-		for matcherName, tokens := range tokensByMatcherName {
+		// given a matcher name and the tokens following it, parse
+		// the tokens as a matcher module and record it
+		makeMatcher := func(matcherName string, tokens []caddyfile.Token) error {
 			mod, err := caddy.GetModule("http.matchers." + matcherName)
 			if err != nil {
 				return fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
@@ -1235,6 +1229,39 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 				return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 			}
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
+		}
+
+		// if the next token is quoted, we can assume it's not a matcher name
+		// and that it's probably an 'expression' matcher
+		if d.NextArg() {
+			if d.Token().Quoted() {
+				err := makeMatcher("expression", []caddyfile.Token{d.Token()})
+				if err != nil {
+					return err
+				}
+				continue
+			}
+
+			// if it wasn't quoted, then we need to rewind after calling
+			// d.NextArg() so the below properly grabs the matcher name
+			d.Prev()
+		}
+
+		// in case there are multiple instances of the same matcher, concatenate
+		// their tokens (we expect that UnmarshalCaddyfile should be able to
+		// handle more than one segment); otherwise, we'd overwrite other
+		// instances of the matcher in this set
+		tokensByMatcherName := make(map[string][]caddyfile.Token)
+		for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+			matcherName := d.Val()
+			tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+		}
+		for matcherName, tokens := range tokensByMatcherName {
+			err := makeMatcher(matcherName, tokens)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
