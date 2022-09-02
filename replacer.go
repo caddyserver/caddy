@@ -78,11 +78,11 @@ func (r *Replacer) Get(variable string) (any, bool) {
 	return nil, false
 }
 
-// GetString  is the same as Get, but coerces the value to a
-// string representation.
+// GetString is the same as Get, but coerces the value to a
+// string representation as efficiently as possible.
 func (r *Replacer) GetString(variable string) (string, bool) {
 	s, found := r.Get(variable)
-	return toString(s), found
+	return ToString(s), found
 }
 
 // Delete removes a variable with a static value
@@ -204,7 +204,7 @@ scan:
 		}
 
 		// convert val to a string as efficiently as possible
-		valStr := toString(val)
+		valStr := ToString(val)
 
 		// write the value; if it's empty, either return
 		// an error or write a default value
@@ -230,7 +230,9 @@ scan:
 	return sb.String(), nil
 }
 
-func toString(val any) string {
+// ToString returns val as a string, as efficiently as possible.
+// EXPERIMENTAL: may be changed or removed later.
+func ToString(val any) string {
 	switch v := val.(type) {
 	case nil:
 		return ""
