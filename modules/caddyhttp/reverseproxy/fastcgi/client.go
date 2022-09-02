@@ -129,7 +129,6 @@ type FCGIClient struct {
 	rwc       net.Conn
 	keepAlive bool
 	reqID     uint16
-	logger    *zap.Logger
 }
 
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
@@ -205,7 +204,8 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 // clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
 // that closes FCGIClient connection.
 type clientCloser struct {
-	*FCGIClient
+	rwc net.Conn
+	r   *streamReader
 	io.Reader
 
 	status int
@@ -213,9 +213,9 @@ type clientCloser struct {
 }
 
 func (f clientCloser) Close() error {
-	stderr := f.FCGIClient.stderr.Bytes()
+	stderr := f.r.stderr.Bytes()
 	if len(stderr) == 0 {
-		return f.FCGIClient.rwc.Close()
+		return f.rwc.Close()
 	}
 
 	if f.status >= 400 {
@@ -223,7 +223,7 @@ func (f clientCloser) Close() error {
 	} else {
 		f.logger.Warn("stderr", zap.ByteString("body", stderr))
 	}
-	return f.FCGIClient.rwc.Close()
+	return f.rwc.Close()
 }
 
 // Request returns a HTTP Response with Header and Body
@@ -265,17 +265,17 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 
 	if chunked(resp.TransferEncoding) {
 		resp.Body = clientCloser{
-			FCGIClient: c,
-			Reader:     httputil.NewChunkedReader(rb),
-			status:     resp.StatusCode,
-			logger:     c.logger,
+			rwc:    c.rwc,
+			r:      r.(*streamReader),
+			Reader: httputil.NewChunkedReader(rb),
+			status: resp.StatusCode,
 		}
 	} else {
 		resp.Body = clientCloser{
-			FCGIClient: c,
-			Reader:     rb,
-			status:     resp.StatusCode,
-			logger:     c.logger,
+			rwc:    c.rwc,
+			r:      r.(*streamReader),
+			Reader: rb,
+			status: resp.StatusCode,
 		}
 	}
 	return

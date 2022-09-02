@@ -154,14 +154,6 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
-	if t.CaptureStderr {
-		fcgiBackend.logger = t.logger.With(
-			zap.Object("request", loggableReq),
-			zap.Object("env", loggableEnv),
-		)
-	} else {
-		fcgiBackend.logger = noopLogger
-	}
 	// fcgiBackend gets closed when response body is closed (see clientCloser)
 
 	// read/write timeouts
@@ -193,6 +185,14 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	if err != nil {
 		fcgiBackend.Close()
+	}
+	if t.CaptureStderr {
+		resp.Body.(*clientCloser).logger = t.logger.With(
+			zap.Object("request", loggableReq),
+			zap.Object("env", loggableEnv),
+		)
+	} else {
+		resp.Body.(*clientCloser).logger = noopLogger
 	}
 	return resp, err
 }
