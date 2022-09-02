@@ -664,15 +664,16 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 }
 
 func (slc *ServerLogConfig) clone() *ServerLogConfig {
-	clone := &ServerLogConfig{}
-	clone.DefaultLoggerName = slc.DefaultLoggerName
-	clone.LoggerNames = make(map[string]string)
+	clone := &ServerLogConfig{
+		DefaultLoggerName:    slc.DefaultLoggerName,
+		LoggerNames:          make(map[string]string),
+		SkipHosts:            append([]string{}, slc.SkipHosts...),
+		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
+		ShouldLogCredentials: slc.ShouldLogCredentials,
+	}
 	for k, v := range slc.LoggerNames {
 		clone.LoggerNames[k] = v
 	}
-	clone.SkipHosts = append(clone.SkipHosts, slc.SkipHosts...)
-	clone.SkipUnmappedHosts = slc.SkipUnmappedHosts
-	clone.ShouldLogCredentials = slc.ShouldLogCredentials
 	return clone
 }
 
