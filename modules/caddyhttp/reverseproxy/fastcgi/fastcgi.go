@@ -185,6 +185,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	if err != nil {
 		fcgiBackend.Close()
+		return nil, err
 	}
 	if t.CaptureStderr {
 		resp.Body.(*clientCloser).logger = t.logger.With(
@@ -194,7 +195,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	} else {
 		resp.Body.(*clientCloser).logger = noopLogger
 	}
-	return resp, err
+	return resp, nil
 }
 
 // buildEnv returns a set of CGI environment variables for the request.
