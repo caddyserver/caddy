@@ -113,7 +113,7 @@ func Load(cfgJSON []byte, forceReload bool) error {
 		if err != nil {
 			if notifyErr := notify.Error(err, 0); notifyErr != nil {
 				Log().Error("unable to notify to service manager of reload error",
-					zap.Error(err),
+					zap.Error(notifyErr),
 					zap.String("reload_err", err.Error()))
 			}
 			return
