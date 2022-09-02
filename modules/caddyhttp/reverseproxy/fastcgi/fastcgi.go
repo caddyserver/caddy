@@ -15,7 +15,6 @@
 package fastcgi
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -129,13 +128,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("building environment: %v", err)
 	}
 
-	// TODO: doesn't dialer have a Timeout field?
 	ctx := r.Context()
-	if t.DialTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.DialTimeout))
-		defer cancel()
-	}
 
 	// extract dial information from request (should have been embedded by the reverse proxy)
 	network, address := "tcp", r.URL.Host
@@ -150,32 +143,41 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		ShouldLogCredentials: logCreds,
 	}
 	loggableEnv := loggableEnv{vars: env, logCredentials: logCreds}
-	t.logger.Debug("roundtrip",
+
+	logger := t.logger.With(
 		zap.Object("request", loggableReq),
-		zap.String("dial", address),
 		zap.Object("env", loggableEnv),
 	)
+	logger.Debug("roundtrip",
+		zap.String("dial", address),
+		zap.Object("env", loggableEnv),
+		zap.Object("request", loggableReq))
 
-	fcgiBackend, err := DialContext(ctx, network, address)
+	// connect to the backend
+	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
+	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		// TODO: wrap in a special error type if the dial failed, so retries can happen if enabled
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
-	if t.CaptureStderr {
-		fcgiBackend.logger = t.logger.With(
-			zap.Object("request", loggableReq),
-			zap.Object("env", loggableEnv),
-		)
-	} else {
-		fcgiBackend.logger = noopLogger
+	defer func() {
+		// conn will be closed with the response body unless there's an error
+		if err != nil {
+			conn.Close()
+		}
+	}()
+
+	// create the client that will facilitate the protocol
+	client := client{
+		rwc:    conn,
+		reqID:  1,
+		logger: logger,
 	}
-	// fcgiBackend gets closed when response body is closed (see clientCloser)
 
 	// read/write timeouts
-	if err := fcgiBackend.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
+	if err = client.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {
 		return nil, fmt.Errorf("setting read timeout: %v", err)
 	}
-	if err := fcgiBackend.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
+	if err = client.SetWriteTimeout(time.Duration(t.WriteTimeout)); err != nil {
 		return nil, fmt.Errorf("setting write timeout: %v", err)
 	}
 
@@ -187,16 +189,19 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	switch r.Method {
 	case http.MethodHead:
-		resp, err = fcgiBackend.Head(env)
+		resp, err = client.Head(env)
 	case http.MethodGet:
-		resp, err = fcgiBackend.Get(env, r.Body, contentLength)
+		resp, err = client.Get(env, r.Body, contentLength)
 	case http.MethodOptions:
-		resp, err = fcgiBackend.Options(env)
+		resp, err = client.Options(env)
 	default:
-		resp, err = fcgiBackend.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
+		resp, err = client.Post(env, r.Method, r.Header.Get("Content-Type"), r.Body, contentLength)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return resp, err
+	return resp, nil
 }
 
 // buildEnv returns a set of CGI environment variables for the request.
