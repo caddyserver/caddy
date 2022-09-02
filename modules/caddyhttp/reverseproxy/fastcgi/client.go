@@ -168,7 +168,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 }
 
 // clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
-// that closes FCGIClient connection.
+// that closes the client connection.
 type clientCloser struct {
 	rwc net.Conn
 	r   *streamReader
@@ -189,6 +189,7 @@ func (f clientCloser) Close() error {
 	} else {
 		f.logger.Warn("stderr", zap.ByteString("body", stderr))
 	}
+
 	return f.rwc.Close()
 }
 

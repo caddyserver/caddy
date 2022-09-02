@@ -160,6 +160,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("dialing backend: %v", err)
 	}
 	defer func() {
+		// conn will be closed with the response body unless there's an error
 		if err != nil {
 			conn.Close()
 		}
