@@ -263,21 +263,18 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.TransferEncoding = resp.Header["Transfer-Encoding"]
 	resp.ContentLength, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
-	if chunked(resp.TransferEncoding) {
-		resp.Body = clientCloser{
-			rwc:    c.rwc,
-			r:      r.(*streamReader),
-			Reader: httputil.NewChunkedReader(rb),
-			status: resp.StatusCode,
-		}
-	} else {
-		resp.Body = clientCloser{
-			rwc:    c.rwc,
-			r:      r.(*streamReader),
-			Reader: rb,
-			status: resp.StatusCode,
-		}
+	// TODO: this allocation could be avoided if we can set the logger here
+	closer := &clientCloser{
+		rwc:    c.rwc,
+		r:      r.(*streamReader),
+		Reader: rb,
+		status: resp.StatusCode,
 	}
+	if chunked(resp.TransferEncoding) {
+		closer.Reader = httputil.NewChunkedReader(rb)
+	}
+	resp.Body = closer
+
 	return
 }
 
