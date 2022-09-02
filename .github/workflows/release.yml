@@ -103,6 +103,10 @@ jobs:
       uses: sigstore/cosign-installer@main
     - name: Cosign version
       run: cosign version
+    - name: Install Syft
+      uses: anchore/sbom-action/download-syft@main
+    - name: Syft version
+      run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v2

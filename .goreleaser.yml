@@ -70,7 +70,10 @@ signs:
     signature: "${artifact}.sig"
     args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output=${signature}", "${artifact}"]
     artifacts: all
-
+sboms:
+  - artifacts: binary
+    cmd: syft
+    args: ["$artifact", "--file", "$sbom", "--output", "cyclonedx-json"]
 archives:
   - format_overrides:
       - goos: windows
