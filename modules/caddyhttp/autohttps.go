@@ -93,6 +93,9 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// https://github.com/caddyserver/caddy/issues/3443)
 	redirDomains := make(map[string][]caddy.NetworkAddress)
 
+	// the configured logger for an HTTPS enabled server
+	var logger *ServerLogConfig
+
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
 		// required for all routes on all servers, and must be
@@ -170,6 +173,11 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		// redirects, which we set up below; hence these two conditions
 		if len(serverDomainSet) == 0 && len(srv.TLSConnPolicies) == 0 {
 			continue
+		}
+
+		// clone the logger so we can apply it to the HTTP server
+		if srv.Logs != nil {
+			logger = srv.Logs.clone()
 		}
 
 		// for all the hostnames we found, filter them so we have
@@ -400,6 +408,7 @@ redirServersLoop:
 		app.Servers["remaining_auto_https_redirects"] = &Server{
 			Listen: redirServerAddrsList,
 			Routes: appendCatchAll(redirRoutes),
+			Logs:   logger,
 		}
 	}
 
