@@ -384,7 +384,7 @@ func (app *App) Start() error {
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
-				ln, err := caddy.Listen(listenAddr.Network, hostport)
+				ln, err := caddy.ListenTimeout(listenAddr.Network, hostport, time.Duration(srv.KeepAliveInterval))
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}
