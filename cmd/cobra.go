@@ -91,6 +91,10 @@ https://caddyserver.com/docs/running
   $ caddy run --config caddy.json
   $ caddy reload --config caddy.json
   $ caddy stop`,
+
+	// kind of annoying to have all the help text printed out if
+	// caddy has an error provisioning its modules, for instance...
+	SilenceUsage: true,
 }
 
 const fullDocsFooter = `Full documentation is available at:
