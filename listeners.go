@@ -32,6 +32,34 @@ import (
 	"go.uber.org/zap"
 )
 
+// Listen is like net.Listen, except Caddy's listeners can overlap
+// each other: multiple listeners may be created on the same socket
+// at the same time. This is useful because during config changes,
+// the new config is started while the old config is still running.
+// When Caddy listeners are closed, the closing logic is virtualized
+// so the underlying socket isn't actually closed until all uses of
+// the socket have been finished. Always be sure to close listeners
+// when you are done with them, just like normal listeners.
+func Listen(network, addr string) (net.Listener, error) {
+	// a 0 timeout means Go uses its default
+	return ListenTimeout(network, addr, 0)
+}
+
+// getListenerFromPlugin returns a listener on the given network and address
+// if a plugin has registered the network name. It may return (nil, nil) if
+// no plugin can provide a listener.
+func getListenerFromPlugin(network, addr string) (net.Listener, error) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	// get listener from plugin if network type is registered
+	if getListener, ok := networkTypes[network]; ok {
+		Log().Debug("getting listener from plugin", zap.String("network", network))
+		return getListener(network, addr)
+	}
+
+	return nil, nil
+}
+
 // ListenPacket returns a net.PacketConn suitable for use in a Caddy module.
 // It is like Listen except for PacketConns.
 // Always be sure to close the PacketConn when you are done.

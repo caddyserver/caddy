@@ -10,11 +10,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Listen(network, addr string) (net.Listener, error) {
-	return ListenTimeout(network, addr, 0)
-}
-
+// ListenTimeout is the same as Listen, but with a configurable keep-alive timeout duration.
 func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
+	// check to see if plugin provides listener
+	if ln, err := getListenerFromPlugin(network, addr); err != nil || ln != nil {
+		return ln, err
+	}
+
 	config := &net.ListenConfig{Control: reusePort, KeepAlive: keepalivePeriod}
 	return config.Listen(context.Background(), network, addr)
 }
