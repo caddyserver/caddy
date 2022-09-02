@@ -27,6 +27,14 @@ func Listen(network, addr string) (net.Listener, error) {
 
 // ListenTimeout is the same as Listen, but with a configurable keep-alive timeout duration.
 func ListenTimeout(network, addr string, keepAlivePeriod time.Duration) (net.Listener, error) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	// get listener from plugin if network type is registered
+	if getListener, ok := networkTypes[network]; ok {
+		Log().Debug("getting listener from plugin", zap.String("network", network))
+		return getListener(network, addr)
+	}
+
 	lnKey := listenerKey(network, addr)
 
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
