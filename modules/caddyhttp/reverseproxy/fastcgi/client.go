@@ -125,11 +125,11 @@ var pad [maxPad]byte
 // client implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type client struct {
-	rwc       net.Conn
-	keepAlive bool // TODO: not used yet
-	reqID     uint16
-	stderr    bool
-	logger    *zap.Logger
+	rwc net.Conn
+	// keepAlive bool // TODO: implement
+	reqID  uint16
+	stderr bool
+	logger *zap.Logger
 }
 
 // Do made the request and returns a io.Reader that translates the data read
