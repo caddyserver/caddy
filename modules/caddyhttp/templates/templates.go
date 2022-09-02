@@ -192,7 +192,7 @@ func init() {
 // ##### `httpError`
 //
 // Returns an error with the given status code to the HTTP handler chain.
-// 
+//
 // ```
 // {{if not (fileExists $includedFile)}}{{httpError 404}}{{end}}
 // ```
