@@ -57,19 +57,19 @@
 	- Multi-issuer fallback
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **Production-ready** after serving trillions of requests and managing millions of TLS certificates
-- **Scales to tens of thousands of sites** ... and probably more
-- **HTTP/1.1, HTTP/2, and experimental HTTP/3** support
+- **Scales to hundreds of thousands of sites** as proven in production
+- **HTTP/1.1, HTTP/2, and HTTP/3** supported all by default
 - **Highly extensible** [modular architecture](https://caddyserver.com/docs/architecture) lets Caddy do anything without bloat
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
 - Actually **fun to use**
-- So, so much more to [discover](https://caddyserver.com/v2)
+- So much more to [discover](https://caddyserver.com/v2)
 
 ## Install
 
-The simplest, cross-platform way is to download from [GitHub Releases](https://github.com/caddyserver/caddy/releases) and place the executable file in your PATH.
+The simplest, cross-platform way to get started is to download Caddy from [GitHub Releases](https://github.com/caddyserver/caddy/releases) and place the executable file in your PATH.
 
-For other install options, see https://caddyserver.com/docs/install.
+See [our online documentation](https://caddyserver.com/docs/install) for other install instructions.
 
 ## Build from source
 
@@ -164,9 +164,9 @@ The docs are also open source. You can contribute to them here: https://github.c
 
 ## Getting help
 
-- We **strongly recommend** that all professionals or companies using Caddy get a support contract through [Ardan Labs](https://www.ardanlabs.com/my/contact-us?dd=caddy) before help is needed.
+- We advise companies using Caddy to secure a support contract through [Ardan Labs](https://www.ardanlabs.com/my/contact-us?dd=caddy) before help is needed.
 
-- A [sponsorship](https://github.com/sponsors/mholt) goes a long way! If Caddy is benefitting your company, please consider a sponsorship! This not only helps fund full-time work to ensure the longevity of the project, it's also a great look for your company to your customers and potential customers!
+- A [sponsorship](https://github.com/sponsors/mholt) goes a long way! We can offer private help to sponsors. If Caddy is benefitting your company, please consider a sponsorship. This not only helps fund full-time work to ensure the longevity of the project, it provides your company the resources, support, and discounts you need; along with being a great look for your company to your customers and potential customers!
 
 - Individuals can exchange help for free on our community forum at https://caddy.community. Remember that people give help out of their spare time and good will. The best way to get help is to give it first!
 

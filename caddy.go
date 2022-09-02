@@ -102,20 +102,32 @@ func Run(cfg *Config) error {
 // if it is different from the current config or
 // forceReload is true.
 func Load(cfgJSON []byte, forceReload bool) error {
-	if err := notify.NotifyReloading(); err != nil {
-		Log().Error("unable to notify reloading to service manager", zap.Error(err))
+	if err := notify.Reloading(); err != nil {
+		Log().Error("unable to notify service manager of reloading state", zap.Error(err))
 	}
 
+	// after reload, notify system of success or, if
+	// failure, update with status (error message)
+	var err error
 	defer func() {
-		if err := notify.NotifyReadiness(); err != nil {
-			Log().Error("unable to notify readiness to service manager", zap.Error(err))
+		if err != nil {
+			if notifyErr := notify.Error(err, 0); notifyErr != nil {
+				Log().Error("unable to notify to service manager of reload error",
+					zap.Error(notifyErr),
+					zap.String("reload_err", err.Error()))
+			}
+			return
+		}
+		if err := notify.Ready(); err != nil {
+			Log().Error("unable to notify to service manager of ready state", zap.Error(err))
 		}
 	}()
 
-	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
+	err = changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
 	if errors.Is(err, errSameConfig) {
 		err = nil // not really an error
 	}
+
 	return err
 }
 
@@ -664,6 +676,10 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
+	if err := notify.Stopping(); err != nil {
+		Log().Error("unable to notify service manager of stopping state", zap.Error(err))
+	}
+
 	if logger == nil {
 		logger = Log()
 	}

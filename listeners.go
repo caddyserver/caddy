@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
+	"go.uber.org/zap"
 )
 
 // ListenPacket returns a net.PacketConn suitable for use in a Caddy module.
@@ -57,11 +59,19 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
-func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
+func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
 	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
+		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
+				}
+				return highLoad
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +256,7 @@ func (na NetworkAddress) isLoopback() bool {
 	if na.Host == "localhost" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsLoopback()
 	}
 	return false
@@ -256,7 +266,7 @@ func (na NetworkAddress) isWildcardInterface() bool {
 	if na.Host == "" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsUnspecified()
 	}
 	return false
@@ -395,6 +405,35 @@ func JoinNetworkAddress(network, host, port string) string {
 	}
 	return a
 }
+
+// RegisterNetwork registers a network type with Caddy so that if a listener is
+// created for that network type, getListener will be invoked to get the listener.
+// This should be called during init() and will panic if the network type is standard
+// or reserved, or if it is already registered. EXPERIMENTAL and subject to change.
+func RegisterNetwork(network string, getListener ListenerFunc) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
+		network == "udp" || network == "udp4" || network == "udp6" ||
+		network == "unix" || network == "unixpacket" || network == "unixgram" ||
+		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) {
+		panic("network type " + network + " is reserved")
+	}
+
+	if _, ok := networkTypes[strings.ToLower(network)]; ok {
+		panic("network type " + network + " is already registered")
+	}
+
+	networkTypes[network] = getListener
+}
+
+// ListenerFunc is a function that can return a listener given a network and address.
+// The listeners must be capable of overlapping: with Caddy, new configs are loaded
+// before old ones are unloaded, so listeners may overlap briefly if the configs
+// both need the same listener. EXPERIMENTAL and subject to change.
+type ListenerFunc func(network, addr string) (net.Listener, error)
+
+var networkTypes = map[string]ListenerFunc{}
 
 // ListenerWrapper is a type that wraps a listener
 // so it can modify the input listener's methods.

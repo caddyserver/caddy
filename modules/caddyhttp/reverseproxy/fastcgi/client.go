@@ -42,6 +42,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -180,6 +182,7 @@ type FCGIClient struct {
 	stderr    bytes.Buffer
 	keepAlive bool
 	reqID     uint16
+	logger    *zap.Logger
 }
 
 // DialWithDialerContext connects to the fcgi responder at the specified network address, using custom net.Dialer
@@ -339,7 +342,6 @@ type streamReader struct {
 }
 
 func (w *streamReader) Read(p []byte) (n int, err error) {
-
 	if len(p) > 0 {
 		if len(w.buf) == 0 {
 
@@ -400,9 +402,24 @@ func (c *FCGIClient) Do(p map[string]string, req io.Reader) (r io.Reader, err er
 type clientCloser struct {
 	*FCGIClient
 	io.Reader
+
+	status int
+	logger *zap.Logger
 }
 
-func (f clientCloser) Close() error { return f.rwc.Close() }
+func (f clientCloser) Close() error {
+	stderr := f.FCGIClient.stderr.Bytes()
+	if len(stderr) == 0 {
+		return f.FCGIClient.rwc.Close()
+	}
+
+	if f.status >= 400 {
+		f.logger.Error("stderr", zap.ByteString("body", stderr))
+	} else {
+		f.logger.Warn("stderr", zap.ByteString("body", stderr))
+	}
+	return f.FCGIClient.rwc.Close()
+}
 
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
@@ -442,9 +459,19 @@ func (c *FCGIClient) Request(p map[string]string, req io.Reader) (resp *http.Res
 	resp.ContentLength, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
 	if chunked(resp.TransferEncoding) {
-		resp.Body = clientCloser{c, httputil.NewChunkedReader(rb)}
+		resp.Body = clientCloser{
+			FCGIClient: c,
+			Reader:     httputil.NewChunkedReader(rb),
+			status:     resp.StatusCode,
+			logger:     c.logger,
+		}
 	} else {
-		resp.Body = clientCloser{c, io.NopCloser(rb)}
+		resp.Body = clientCloser{
+			FCGIClient: c,
+			Reader:     rb,
+			status:     resp.StatusCode,
+			logger:     c.logger,
+		}
 	}
 	return
 }

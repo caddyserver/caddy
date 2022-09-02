@@ -23,7 +23,6 @@ import (
 	weakrand "math/rand"
 	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -236,16 +235,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	// PathUnescape returns an error if the escapes aren't well-formed,
-	// meaning the count % matches the RFC. Return early if the escape is
-	// improper.
-	if _, err := url.PathUnescape(r.URL.Path); err != nil {
-		fsrv.logger.Debug("improper path escape",
-			zap.String("site_root", root),
-			zap.String("request_path", r.URL.Path),
-			zap.Error(err))
-		return err
-	}
+
 	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
 
 	fsrv.logger.Debug("sanitized path join",
@@ -351,6 +341,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	var etag string
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -371,12 +362,19 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
 				return err
 			}
+			file = nil
 			continue
 		}
 		defer file.Close()
 		w.Header().Set("Content-Encoding", ae)
 		w.Header().Del("Accept-Ranges")
 		w.Header().Add("Vary", "Accept-Encoding")
+
+		// don't assign info = compressedInfo because sidecars are kind
+		// of transparent; however we do need to set the Etag:
+		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
+		etag = calculateEtag(compressedInfo)
+
 		break
 	}
 
@@ -394,11 +392,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return err // error is already structured
 		}
 		defer file.Close()
+
+		etag = calculateEtag(info)
 	}
 
-	// set the ETag - note that a conditional If-None-Match request is handled
-	// by http.ServeContent below, which checks against this ETag value
-	w.Header().Set("Etag", calculateEtag(info))
+	// set the Etag - note that a conditional If-None-Match request is handled
+	// by http.ServeContent below, which checks against this Etag value
+	w.Header().Set("Etag", etag)
 
 	if w.Header().Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
