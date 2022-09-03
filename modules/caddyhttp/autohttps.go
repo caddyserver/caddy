@@ -93,8 +93,8 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// https://github.com/caddyserver/caddy/issues/3443)
 	redirDomains := make(map[string][]caddy.NetworkAddress)
 
-	// the configured logger for an HTTPS enabled server
-	var logger *ServerLogConfig
+	// the log configuration for an HTTPS enabled server
+	var logCfg *ServerLogConfig
 
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
@@ -176,8 +176,10 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 
 		// clone the logger so we can apply it to the HTTP server
+		// (not sure if necessary to clone it; but probably safer)
+		// (we choose one log cfg arbitrarily; not sure which is best)
 		if srv.Logs != nil {
-			logger = srv.Logs.clone()
+			logCfg = srv.Logs.clone()
 		}
 
 		// for all the hostnames we found, filter them so we have
@@ -408,7 +410,7 @@ redirServersLoop:
 		app.Servers["remaining_auto_https_redirects"] = &Server{
 			Listen: redirServerAddrsList,
 			Routes: appendCatchAll(redirRoutes),
-			Logs:   logger,
+			Logs:   logCfg,
 		}
 	}
 

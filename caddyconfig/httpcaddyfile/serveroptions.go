@@ -38,6 +38,7 @@ type serverOptions struct {
 	ReadHeaderTimeout    caddy.Duration
 	WriteTimeout         caddy.Duration
 	IdleTimeout          caddy.Duration
+	KeepAliveInterval    caddy.Duration
 	MaxHeaderBytes       int
 	Protocols            []string
 	StrictSNIHost        *bool
@@ -122,6 +123,15 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 					}
 				}
+			case "keepalive_interval":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return nil, d.Errf("parsing keepalive interval duration: %v", err)
+				}
+				serverOpts.KeepAliveInterval = caddy.Duration(dur)
 
 			case "max_header_size":
 				var sizeStr string
@@ -245,6 +255,7 @@ func applyServerOptions(
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
+		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost

@@ -40,7 +40,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/notify"
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -1018,10 +1017,6 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 			HTTPStatus: http.StatusMethodNotAllowed,
 			Err:        fmt.Errorf("method not allowed"),
 		}
-	}
-
-	if err := notify.NotifyStopping(); err != nil {
-		Log().Error("unable to notify stopping to service manager", zap.Error(err))
 	}
 
 	exitProcess(context.Background(), Log().Named("admin.api"))
