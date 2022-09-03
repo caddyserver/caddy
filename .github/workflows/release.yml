@@ -99,7 +99,14 @@ jobs:
         key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go${{ matrix.go }}-release
-
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@main
+    - name: Cosign version
+      run: cosign version
+    - name: Install Syft
+      uses: anchore/sbom-action/download-syft@main
+    - name: Syft version
+      run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v2
@@ -109,6 +116,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
+        COSIGN_EXPERIMENTAL: 1
 
     # Only publish on non-special tags (e.g. non-beta)
     # We will continue to push to Gemfury for the foreseeable future, although
