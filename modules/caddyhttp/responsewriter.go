@@ -111,15 +111,15 @@ type responseRecorder struct {
 //
 // Proper usage of a recorder looks like this:
 //
-//     rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
-//     err := next.ServeHTTP(rec, req)
-//     if err != nil {
-//         return err
-//     }
-//     if !rec.Buffered() {
-//         return nil
-//     }
-//     // process the buffered response here
+//	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
+//	err := next.ServeHTTP(rec, req)
+//	if err != nil {
+//	    return err
+//	}
+//	if !rec.Buffered() {
+//	    return nil
+//	}
+//	// process the buffered response here
 //
 // The header map is not buffered; i.e. the ResponseRecorder's Header()
 // method returns the same header map of the underlying ResponseWriter.
@@ -129,7 +129,7 @@ type responseRecorder struct {
 // Once you are ready to write the response, there are two ways you can
 // do it. The easier way is to have the recorder do it:
 //
-//     rec.WriteResponse()
+//	rec.WriteResponse()
 //
 // This writes the recorded response headers as well as the buffered body.
 // Or, you may wish to do it yourself, especially if you manipulated the
@@ -138,9 +138,12 @@ type responseRecorder struct {
 // recorder's body buffer, but you might have your own body to write
 // instead):
 //
-//     w.WriteHeader(rec.Status())
-//     io.Copy(w, rec.Buffer())
+//	w.WriteHeader(rec.Status())
+//	io.Copy(w, rec.Buffer())
 //
+// As a special case, 1xx responses are not buffered nor recorded
+// because they are not the final response; they are passed through
+// directly to the underlying ResponseWriter.
 func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
 	return &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
@@ -149,22 +152,29 @@ func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer 
 	}
 }
 
+// WriteHeader writes the headers with statusCode to the wrapped
+// ResponseWriter unless the response is to be buffered instead.
+// 1xx responses are never buffered.
 func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.wroteHeader {
 		return
 	}
-	rr.statusCode = statusCode
-	rr.wroteHeader = true
 
-	// decide whether we should buffer the response
-	if rr.shouldBuffer == nil {
-		rr.stream = true
-	} else {
-		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+	// 1xx responses aren't final; just informational
+	if statusCode < 100 || statusCode > 199 {
+		rr.statusCode = statusCode
+		rr.wroteHeader = true
+
+		// decide whether we should buffer the response
+		if rr.shouldBuffer == nil {
+			rr.stream = true
+		} else {
+			rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+		}
 	}
 
-	// if not buffered, immediately write header
-	if rr.stream {
+	// if informational or not buffered, immediately write header
+	if rr.stream || (100 <= statusCode && statusCode <= 199) {
 		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	}
 }

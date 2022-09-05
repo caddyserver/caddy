@@ -86,6 +86,12 @@ Response headers may be added using the --header flag for each header field.
 type StaticResponse struct {
 	// The HTTP status code to respond with. Can be an integer or,
 	// if needing to use a placeholder, a string.
+	//
+	// If the status code is 103 (Early Hints), the response headers
+	// will be written to the client immediately, the body will be
+	// ignored, and the next handler will be invoked. This behavior
+	// is EXPERIMENTAL while RFC 8297 is a draft, and may be changed
+	// or removed.
 	StatusCode WeakString `json:"status_code,omitempty"`
 
 	// Header fields to set on the response; overwrites any existing
@@ -170,7 +176,7 @@ func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler) error {
+func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
 	// close the connection immediately
 	if s.Abort {
 		panic(http.ErrAbortHandler)
@@ -237,8 +243,13 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 	w.WriteHeader(statusCode)
 
 	// write response body
-	if body != "" {
+	if statusCode != http.StatusEarlyHints && body != "" {
 		fmt.Fprint(w, body)
+	}
+
+	// continue handling after Early Hints as they are not the final response
+	if statusCode == http.StatusEarlyHints {
+		return next.ServeHTTP(w, r)
 	}
 
 	return nil
