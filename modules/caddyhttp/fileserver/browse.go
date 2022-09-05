@@ -210,7 +210,7 @@ func (fsrv *FileServer) isSymlinkTargetDir(f fs.FileInfo, root, urlPath string) 
 		return false
 	}
 	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := fsrv.fileSystem.Stat(target)
+	targetInfo, err := fs.Stat(fsrv.fileSystem, target)
 	if err != nil {
 		return false
 	}

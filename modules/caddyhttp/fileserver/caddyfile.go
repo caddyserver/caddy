@@ -77,11 +77,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if err != nil {
 					return nil, err
 				}
-				statFS, ok := unm.(fs.StatFS)
+				fsys, ok := unm.(fs.FS)
 				if !ok {
-					return nil, h.Errf("module %s (%T) is not a supported file system implementation (requires fs.StatFS)", modID, unm)
+					return nil, h.Errf("module %s (%T) is not a supported file system implementation (requires fs.FS)", modID, unm)
 				}
-				fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(statFS, "backend", name, nil)
+				fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(fsys, "backend", name, nil)
 
 			case "hide":
 				fsrv.Hide = h.RemainingArgs()
