@@ -618,10 +618,15 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 // rooting or path prefixing without being constrained to a single
 // root folder. The standard os.DirFS implementation is problematic
 // since roots can be dynamic in our application.)
+//
+// osFS also implements fs.GlobFS, fs.ReadDirFS, and fs.ReadFileFS.
 type osFS struct{}
 
-func (osFS) Open(name string) (fs.File, error)     { return os.Open(name) }
-func (osFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+func (osFS) Open(name string) (fs.File, error)          { return os.Open(name) }
+func (osFS) Stat(name string) (fs.FileInfo, error)      { return os.Stat(name) }
+func (osFS) Glob(pattern string) ([]string, error)      { return filepath.Glob(pattern) }
+func (osFS) ReadDir(name string) ([]fs.DirEntry, error) { return os.ReadDir(name) }
+func (osFS) ReadFile(name string) ([]byte, error)       { return os.ReadFile(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 
@@ -634,4 +639,8 @@ const (
 var (
 	_ caddy.Provisioner           = (*FileServer)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FileServer)(nil)
+
+	_ fs.GlobFS     = (*osFS)(nil)
+	_ fs.ReadDirFS  = (*osFS)(nil)
+	_ fs.ReadFileFS = (*osFS)(nil)
 )
