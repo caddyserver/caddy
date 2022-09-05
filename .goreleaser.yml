@@ -68,7 +68,7 @@ builds:
 signs:
   - cmd: cosign
     signature: "${artifact}.sig"
-    args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output=${signature}", "${artifact}"]
+    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${signature}.pem", "${artifact}"]
     artifacts: all
 sboms:
   - artifacts: binary
