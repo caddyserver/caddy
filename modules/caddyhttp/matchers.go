@@ -1121,6 +1121,22 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 		return r.TLS != nil
 	case "http":
 		return r.TLS == nil
+	case "http/1.0":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 0
+	case "http/1.0+":
+		return r.ProtoAtLeast(1, 0)
+	case "http/1.1":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 1
+	case "http/1.1+":
+		return r.ProtoAtLeast(1, 1)
+	case "http/2":
+		return r.ProtoMajor == 2
+	case "http/2+":
+		return r.ProtoAtLeast(2, 0)
+	case "http/3":
+		return r.ProtoMajor == 3
+	case "http/3+":
+		return r.ProtoAtLeast(3, 0)
 	}
 	return false
 }
