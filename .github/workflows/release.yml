@@ -25,7 +25,8 @@ jobs:
     permissions:
       id-token: write
       # https://docs.github.com/en/rest/overview/permissions-required-for-github-apps#permission-on-contents
-      contents: read
+      # "Releases" is part of `contents`, so it needs the `write`
+      contents: write
 
     steps:
     - name: Install Go
