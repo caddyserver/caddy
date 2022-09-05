@@ -96,9 +96,6 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	// if supported, generate a fake password we can compare against if needed
 	if hasher, ok := hba.Hash.(Hasher); ok {
 		hba.fakePassword = hasher.FakeHash()
-		if err != nil {
-			return fmt.Errorf("generating anti-timing password hash: %v", err)
-		}
 	}
 
 	repl := caddy.NewReplacer()
