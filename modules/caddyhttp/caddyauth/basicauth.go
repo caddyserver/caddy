@@ -118,6 +118,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("account %d: username and password are required", i)
 		}
 
+		// TODO: Remove support for redundantly-encoded b64-encoded hashes
 		// Passwords starting with '$' are likely in Modular Crypt Format,
 		// so we don't need to base64 decode them. But historically, we
 		// required redundant base64, so we try to decode it otherwise.
