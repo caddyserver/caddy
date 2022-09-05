@@ -21,6 +21,7 @@ import (
 	"fmt"
 	weakrand "math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,7 +95,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 	// if supported, generate a fake password we can compare against if needed
 	if hasher, ok := hba.Hash.(Hasher); ok {
-		hba.fakePassword, err = hasher.Hash([]byte("antitiming"), []byte("fakesalt"))
+		hba.fakePassword = hasher.FakeHash()
 		if err != nil {
 			return fmt.Errorf("generating anti-timing password hash: %v", err)
 		}
@@ -117,10 +118,19 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("account %d: username and password are required", i)
 		}
 
-		acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
-		if err != nil {
-			return fmt.Errorf("base64-decoding password: %v", err)
+		// TODO: Remove support for redundantly-encoded b64-encoded hashes
+		// Passwords starting with '$' are likely in Modular Crypt Format,
+		// so we don't need to base64 decode them. But historically, we
+		// required redundant base64, so we try to decode it otherwise.
+		if strings.HasPrefix(acct.Password, "$") {
+			acct.password = []byte(acct.Password)
+		} else {
+			acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
+			if err != nil {
+				return fmt.Errorf("base64-decoding password: %v", err)
+			}
 		}
+
 		if acct.Salt != "" {
 			acct.salt, err = base64.StdEncoding.DecodeString(acct.Salt)
 			if err != nil {
@@ -271,9 +281,11 @@ type Comparer interface {
 // that require a salt). Hashing modules which implement
 // this interface can be used with the hash-password
 // subcommand as well as benefitting from anti-timing
-// features.
+// features. A hasher also returns a fake hash which
+// can be used for timing side-channel mitigation.
 type Hasher interface {
 	Hash(plaintext, salt []byte) ([]byte, error)
+	FakeHash() []byte
 }
 
 // Account contains a username, password, and salt (if applicable).
