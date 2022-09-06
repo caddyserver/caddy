@@ -200,6 +200,19 @@ config file; otherwise the default is assumed.`,
 		Name:  "version",
 		Func:  cmdVersion,
 		Short: "Prints the version",
+		Long: `
+Prints the version of this Caddy binary.
+
+Version information must be embedded into the binary at compile-time in
+order for Caddy to display anything useful with this command. If Caddy
+is built from within a version control repository, the Go command will
+embed the revision hash if available. However, if Caddy is built in the
+way specified by our online documentation (or by using xcaddy), more
+detailed version information is printed as given by Go modules.
+
+For more details about the full version string, see the Go module
+documentation: https://go.dev/doc/modules/version-numbers
+`,
 	})
 
 	RegisterCommand(Command{
@@ -226,6 +239,24 @@ config file; otherwise the default is assumed.`,
 		Name:  "environ",
 		Func:  cmdEnviron,
 		Short: "Prints the environment",
+		Long: `
+Prints the environment as seen by this Caddy process.
+
+The environment includes variables set in the system. If your Caddy
+configuration uses environment variables (e.g. "{env.VARIABLE}") then
+this command can be useful for verifying that the variables will have
+the values you expect in your config.
+
+Note that environments may be different depending on how you run Caddy.
+Environments for Caddy instances started by service managers such as
+systemd are often different than the environment inherited from your
+shell or terminal.
+
+You can also print the environment the same time you use "caddy run"
+by adding the "--environ" flag.
+
+Environments may contain sensitive data.
+`,
 	})
 
 	RegisterCommand(Command{
@@ -367,9 +398,11 @@ EXPERIMENTAL: May be changed or removed.
 		Usage: "--directory <path>",
 		Short: "Generates the manual pages for Caddy commands",
 		Long: `
-Generates the manual pages for Caddy commands into the designated directory tagged into section 8 (System Administration).
+Generates the manual pages for Caddy commands into the designated directory
+tagged into section 8 (System Administration).
 
-The manual page files are generated into the directory specified by the argument of --directory. If the directory does not exist, it will be created.
+The manual page files are generated into the directory specified by the
+argument of --directory. If the directory does not exist, it will be created.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
