@@ -95,11 +95,13 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		{regexp.MustCompile(`{cookie\.([\w-]*)}`), "{http.request.cookie.$1}"},
 		{regexp.MustCompile(`{labels\.([\w-]*)}`), "{http.request.host.labels.$1}"},
 		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
+		{regexp.MustCompile(`{file\.([\w-]*)}`), "{http.request.uri.path.file.$1}"},
 		{regexp.MustCompile(`{query\.([\w-]*)}`), "{http.request.uri.query.$1}"},
 		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
 		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
 		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
 		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
+		{regexp.MustCompile(`{file_match\.([\w-]*)}`), "{http.matchers.file.$1}"},
 	}
 
 	for _, sb := range originalServerBlocks {
