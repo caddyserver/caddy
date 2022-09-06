@@ -62,6 +62,16 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
+// ReadFrom implements io.ReaderFrom. It simply calls the underlying
+// ResponseWriter's ReadFrom method if there is one, otherwise it defaults
+// to io.Copy.
+func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(rww.ResponseWriter, r)
+}
+
 // HTTPInterfaces mix all the interfaces that middleware ResponseWriters need to support.
 type HTTPInterfaces interface {
 	http.ResponseWriter
@@ -188,9 +198,26 @@ func (rr *responseRecorder) Write(data []byte) (int, error) {
 	} else {
 		n, err = rr.buf.Write(data)
 	}
-	if err == nil {
-		rr.size += n
+
+	rr.size += n
+	return n, err
+}
+
+func (rr *responseRecorder) ReadFrom(r io.Reader) (int64, error) {
+	rr.WriteHeader(http.StatusOK)
+	var n int64
+	var err error
+	if rr.stream {
+		if rf, ok := rr.ResponseWriter.(io.ReaderFrom); ok {
+			n, err = rf.ReadFrom(r)
+		} else {
+			n, err = io.Copy(rr.ResponseWriter, r)
+		}
+	} else {
+		n, err = rr.buf.ReadFrom(r)
 	}
+
+	rr.size += int(n)
 	return n, err
 }
 
