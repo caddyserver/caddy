@@ -64,7 +64,7 @@ type MatchFile struct {
 	// The file system implementation to use. By default, the
 	// local disk file system will be used.
 	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
-	fileSystem    fs.StatFS
+	fileSystem    fs.FS
 
 	// The root directory, used for creating absolute
 	// file paths, and required when working with
@@ -264,7 +264,7 @@ func (m *MatchFile) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading file system module: %v", err)
 		}
-		m.fileSystem = mod.(fs.StatFS)
+		m.fileSystem = mod.(fs.FS)
 	}
 	if m.fileSystem == nil {
 		m.fileSystem = osFS{}
@@ -418,7 +418,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		for _, pattern := range m.TryFiles {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
-				info, err := m.fileSystem.Stat(c.fullpath)
+				info, err := fs.Stat(m.fileSystem, c.fullpath)
 				if err == nil && info.Size() > largestSize {
 					largestSize = info.Size()
 					largest = c
@@ -439,7 +439,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		for _, pattern := range m.TryFiles {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
-				info, err := m.fileSystem.Stat(c.fullpath)
+				info, err := fs.Stat(m.fileSystem, c.fullpath)
 				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
 					smallestSize = info.Size()
 					smallest = c
@@ -459,7 +459,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		for _, pattern := range m.TryFiles {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
-				info, err := m.fileSystem.Stat(c.fullpath)
+				info, err := fs.Stat(m.fileSystem, c.fullpath)
 				if err == nil &&
 					(recentInfo == nil || info.ModTime().After(recentInfo.ModTime())) {
 					recent = c
@@ -498,7 +498,7 @@ func parseErrorCode(input string) error {
 // NOT end in a forward slash, the file must NOT
 // be a directory.
 func (m MatchFile) strictFileExists(file string) (os.FileInfo, bool) {
-	info, err := m.fileSystem.Stat(file)
+	info, err := fs.Stat(m.fileSystem, file)
 	if err != nil {
 		// in reality, this can be any error
 		// such as permission or even obscure
