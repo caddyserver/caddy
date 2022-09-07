@@ -278,4 +278,10 @@ type ShouldBufferFunc func(status int, header http.Header) bool
 var (
 	_ HTTPInterfaces   = (*ResponseWriterWrapper)(nil)
 	_ ResponseRecorder = (*responseRecorder)(nil)
+
+	// Implementing ReaderFrom can be such a significant
+	// optimization that it should probably be required!
+	// see PR #5022 (25%-50% speedup)
+	_ io.ReaderFrom = (*ResponseWriterWrapper)(nil)
+	_ io.ReaderFrom = (*responseRecorder)(nil)
 )
