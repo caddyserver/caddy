@@ -87,6 +87,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
+// This API is EXPERIMENTAL and may change.
 func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
 	lnKey := listenerKey("udp", addr)
 
@@ -112,8 +113,9 @@ func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.E
 	ctx, cancel := context.WithCancel(context.Background())
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sharedEl.(*sharedQuicListener),
-		context:            ctx, contextCancel: cancel,
-	}, err
+		context:            ctx,
+		contextCancel:      cancel,
+	}, nil
 }
 
 // ListenerUsage returns the current usage count of the given listener address.
