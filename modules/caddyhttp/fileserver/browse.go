@@ -19,6 +19,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -137,7 +138,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 
 func (fsrv *FileServer) loadDirectoryContents(dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return browseTemplateContext{}, err
 	}
 
