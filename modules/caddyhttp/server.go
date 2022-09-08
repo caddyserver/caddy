@@ -181,7 +181,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
-		// keep track of active requests for QUIC transport purposes (See AcceptToken callback in quic.Config)
+		// keep track of active requests for QUIC transport purposes
 		atomic.AddInt64(&s.activeRequests, 1)
 		defer atomic.AddInt64(&s.activeRequests, -1)
 
