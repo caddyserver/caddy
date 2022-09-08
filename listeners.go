@@ -105,6 +105,9 @@ func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.E
 		}
 		return &sharedQuicListener{EarlyListener: el, key: lnKey}, nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &fakeCloseQuicListener{
