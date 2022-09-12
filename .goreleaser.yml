@@ -68,12 +68,16 @@ builds:
 signs:
   - cmd: cosign
     signature: "${artifact}.sig"
-    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${signature}.pem", "${artifact}"]
+    certificate: '{{ trimsuffix .Env.artifact ".tar.gz" }}.pem'
+    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${certificate}", "${artifact}"]
     artifacts: all
 sboms:
   - artifacts: binary
+    # defaults to
+    # documents:
+    # - "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}.sbom"
     cmd: syft
-    args: ["$artifact", "--file", "$sbom", "--output", "cyclonedx-json"]
+    args: ["$artifact", "--file", "${document}", "--output", "cyclonedx-json"]
 archives:
   - format_overrides:
       - goos: windows
