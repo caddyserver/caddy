@@ -20,7 +20,7 @@ require (
 	github.com/smallstep/certificates v0.21.0
 	github.com/smallstep/cli v0.21.0
 	github.com/smallstep/nosql v0.4.0
-	github.com/smallstep/truststore v0.11.0
+	github.com/smallstep/truststore v0.12.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	github.com/tailscale/tscert v0.0.0-20220316030059-54bbcb9f74e2
