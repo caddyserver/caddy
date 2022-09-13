@@ -100,7 +100,7 @@ func (tc *Tester) InitServer(rawConfig string, configType string) {
 		tc.t.Fail()
 	}
 	if err := tc.ensureConfigRunning(rawConfig, configType); err != nil {
-		tc.t.Logf("failed ensurng config is running: %s", err)
+		tc.t.Logf("failed ensuring config is running: %s", err)
 		tc.t.Fail()
 	}
 }
