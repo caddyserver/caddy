@@ -185,9 +185,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		onDemandRateLimiter.SetWindow(0)
 	}
 
-	// run replacer on ask URL (for environment variables)
+	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
-		t.Automation.OnDemand.Ask = repl.ReplaceAll(t.Automation.OnDemand.Ask, "")
+		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
+		if err != nil {
+			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		}
 	}
 
 	// load manual/static (unmanaged) certificates - we do this in
