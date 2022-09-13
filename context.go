@@ -37,9 +37,10 @@ import (
 // not actually need to do this).
 type Context struct {
 	context.Context
-	moduleInstances map[string][]interface{}
+	moduleInstances map[string][]Module
 	cfg             *Config
 	cleanupFuncs    []func()
+	ancestry        []Module
 }
 
 // NewContext provides a new context derived from the given
@@ -51,7 +52,7 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]interface{}), cfg: ctx.cfg}
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -90,15 +91,15 @@ func (ctx *Context) OnCancel(f func()) {
 // ModuleMap may be used in place of map[string]json.RawMessage. The return value's
 // underlying type mirrors the input field's type:
 //
-//    json.RawMessage              => interface{}
-//    []json.RawMessage            => []interface{}
-//    [][]json.RawMessage          => [][]interface{}
-//    map[string]json.RawMessage   => map[string]interface{}
-//    []map[string]json.RawMessage => []map[string]interface{}
+//	json.RawMessage              => any
+//	[]json.RawMessage            => []any
+//	[][]json.RawMessage          => [][]any
+//	map[string]json.RawMessage   => map[string]any
+//	[]map[string]json.RawMessage => []map[string]any
 //
 // The field must have a "caddy" struct tag in this format:
 //
-//    caddy:"key1=val1 key2=val2"
+//	caddy:"key1=val1 key2=val2"
 //
 // To load modules, a "namespace" key is required. For example, to load modules
 // in the "http.handlers" namespace, you'd put: `namespace=http.handlers` in the
@@ -115,20 +116,20 @@ func (ctx *Context) OnCancel(f func()) {
 // meaning the key containing the module's name that is defined inline with the module
 // itself. You must specify the inline key in a struct tag, along with the namespace:
 //
-//    caddy:"namespace=http.handlers inline_key=handler"
+//	caddy:"namespace=http.handlers inline_key=handler"
 //
 // This will look for a key/value pair like `"handler": "..."` in the json.RawMessage
 // in order to know the module name.
 //
 // To make use of the loaded module(s) (the return value), you will probably want
-// to type-assert each interface{} value(s) to the types that are useful to you
+// to type-assert each 'any' value(s) to the types that are useful to you
 // and store them on the same struct. Storing them on the same struct makes for
 // easy garbage collection when your host module is no longer needed.
 //
 // Loaded modules have already been provisioned and validated. Upon returning
 // successfully, this method clears the json.RawMessage(s) in the field since
 // the raw JSON is no longer needed, and this allows the GC to free up memory.
-func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (interface{}, error) {
+func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) {
 	val := reflect.ValueOf(structPointer).Elem().FieldByName(fieldName)
 	typ := val.Type()
 
@@ -148,7 +149,7 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 	}
 	inlineModuleKey := opts["inline_key"]
 
-	var result interface{}
+	var result any
 
 	switch val.Kind() {
 	case reflect.Slice:
@@ -170,7 +171,7 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 			if inlineModuleKey == "" {
 				panic("unable to determine module name without inline_key because type is not a ModuleMap")
 			}
-			var all []interface{}
+			var all []any
 			for i := 0; i < val.Len(); i++ {
 				val, err := ctx.loadModuleInline(inlineModuleKey, moduleNamespace, val.Index(i).Interface().(json.RawMessage))
 				if err != nil {
@@ -186,10 +187,10 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 			if inlineModuleKey == "" {
 				panic("unable to determine module name without inline_key because type is not a ModuleMap")
 			}
-			var all [][]interface{}
+			var all [][]any
 			for i := 0; i < val.Len(); i++ {
 				innerVal := val.Index(i)
-				var allInner []interface{}
+				var allInner []any
 				for j := 0; j < innerVal.Len(); j++ {
 					innerInnerVal, err := ctx.loadModuleInline(inlineModuleKey, moduleNamespace, innerVal.Index(j).Interface().(json.RawMessage))
 					if err != nil {
@@ -204,7 +205,7 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 		} else if isModuleMapType(typ.Elem()) {
 			// val is `[]map[string]json.RawMessage`
 
-			var all []map[string]interface{}
+			var all []map[string]any
 			for i := 0; i < val.Len(); i++ {
 				thisSet, err := ctx.loadModulesFromSomeMap(moduleNamespace, inlineModuleKey, val.Index(i))
 				if err != nil {
@@ -232,10 +233,10 @@ func (ctx Context) LoadModule(structPointer interface{}, fieldName string) (inte
 	return result, nil
 }
 
-// loadModulesFromSomeMap loads modules from val, which must be a type of map[string]interface{}.
+// loadModulesFromSomeMap loads modules from val, which must be a type of map[string]any.
 // Depending on inlineModuleKey, it will be interpreted as either a ModuleMap (key is the module
 // name) or as a regular map (key is not the module name, and module name is defined inline).
-func (ctx Context) loadModulesFromSomeMap(namespace, inlineModuleKey string, val reflect.Value) (map[string]interface{}, error) {
+func (ctx Context) loadModulesFromSomeMap(namespace, inlineModuleKey string, val reflect.Value) (map[string]any, error) {
 	// if no inline_key is specified, then val must be a ModuleMap,
 	// where the key is the module name
 	if inlineModuleKey == "" {
@@ -253,8 +254,8 @@ func (ctx Context) loadModulesFromSomeMap(namespace, inlineModuleKey string, val
 // loadModulesFromRegularMap loads modules from val, where val is a map[string]json.RawMessage.
 // Map keys are NOT interpreted as module names, so module names are still expected to appear
 // inline with the objects.
-func (ctx Context) loadModulesFromRegularMap(namespace, inlineModuleKey string, val reflect.Value) (map[string]interface{}, error) {
-	mods := make(map[string]interface{})
+func (ctx Context) loadModulesFromRegularMap(namespace, inlineModuleKey string, val reflect.Value) (map[string]any, error) {
+	mods := make(map[string]any)
 	iter := val.MapRange()
 	for iter.Next() {
 		k := iter.Key()
@@ -268,10 +269,10 @@ func (ctx Context) loadModulesFromRegularMap(namespace, inlineModuleKey string, 
 	return mods, nil
 }
 
-// loadModuleMap loads modules from a ModuleMap, i.e. map[string]interface{}, where the key is the
+// loadModuleMap loads modules from a ModuleMap, i.e. map[string]any, where the key is the
 // module name. With a module map, module names do not need to be defined inline with their values.
-func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[string]interface{}, error) {
-	all := make(map[string]interface{})
+func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[string]any, error) {
+	all := make(map[string]any)
 	iter := val.MapRange()
 	for iter.Next() {
 		k := iter.Key().Interface().(string)
@@ -299,19 +300,19 @@ func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[strin
 // directly by most modules. However, this method is useful when
 // dynamically loading/unloading modules in their own context,
 // like from embedded scripts, etc.
-func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{}, error) {
+func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error) {
 	modulesMu.RLock()
-	mod, ok := modules[id]
+	modInfo, ok := modules[id]
 	modulesMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("unknown module: %s", id)
 	}
 
-	if mod.New == nil {
-		return nil, fmt.Errorf("module '%s' has no constructor", mod.ID)
+	if modInfo.New == nil {
+		return nil, fmt.Errorf("module '%s' has no constructor", modInfo.ID)
 	}
 
-	val := mod.New().(interface{})
+	val := modInfo.New()
 
 	// value must be a pointer for unmarshaling into concrete type, even if
 	// the module's concrete type is a slice or map; New() *should* return
@@ -327,7 +328,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 	if len(rawMsg) > 0 {
 		err := strictUnmarshalJSON(rawMsg, &val)
 		if err != nil {
-			return nil, fmt.Errorf("decoding module config: %s: %v", mod, err)
+			return nil, fmt.Errorf("decoding module config: %s: %v", modInfo, err)
 		}
 	}
 
@@ -340,6 +341,8 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 		return nil, fmt.Errorf("module value cannot be null")
 	}
 
+	ctx.ancestry = append(ctx.ancestry, val)
+
 	if prov, ok := val.(Provisioner); ok {
 		err := prov.Provision(ctx)
 		if err != nil {
@@ -351,7 +354,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
-			return nil, fmt.Errorf("provision %s: %v", mod, err)
+			return nil, fmt.Errorf("provision %s: %v", modInfo, err)
 		}
 	}
 
@@ -365,7 +368,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
-			return nil, fmt.Errorf("%s: invalid configuration: %v", mod, err)
+			return nil, fmt.Errorf("%s: invalid configuration: %v", modInfo, err)
 		}
 	}
 
@@ -375,7 +378,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 }
 
 // loadModuleInline loads a module from a JSON raw message which decodes to
-// a map[string]interface{}, where one of the object keys is moduleNameKey
+// a map[string]any, where one of the object keys is moduleNameKey
 // and the corresponding value is the module name (as a string) which can
 // be found in the given scope. In other words, the module name is declared
 // in-line with the module itself.
@@ -385,7 +388,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (interface{
 // multiple instances in the map or it appears in an array (where there are
 // no custom keys). In other words, the key containing the module name is
 // treated special/separate from all the other keys in the object.
-func (ctx Context) loadModuleInline(moduleNameKey, moduleScope string, raw json.RawMessage) (interface{}, error) {
+func (ctx Context) loadModuleInline(moduleNameKey, moduleScope string, raw json.RawMessage) (any, error) {
 	moduleName, raw, err := getModuleNameInline(moduleNameKey, raw)
 	if err != nil {
 		return nil, err
@@ -407,7 +410,7 @@ func (ctx Context) loadModuleInline(moduleNameKey, moduleScope string, raw json.
 // called during the Provision/Validate phase to reference a
 // module's own host app (since the parent app module is still
 // in the process of being provisioned, it is not yet ready).
-func (ctx Context) App(name string) (interface{}, error) {
+func (ctx Context) App(name string) (any, error) {
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
 	}
@@ -439,8 +442,10 @@ func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage
 }
 
+// TODO: aw man, can I please change this?
 // Logger returns a logger that can be used by mod.
 func (ctx Context) Logger(mod Module) *zap.Logger {
+	// TODO: if mod is nil, use ctx.Module() instead...
 	if ctx.cfg == nil {
 		// often the case in tests; just use a dev logger
 		l, err := zap.NewDevelopment()
@@ -450,4 +455,35 @@ func (ctx Context) Logger(mod Module) *zap.Logger {
 		return l
 	}
 	return ctx.cfg.Logging.Logger(mod)
+}
+
+// TODO: use this
+// // Logger returns a logger that can be used by the current module.
+// func (ctx Context) Log() *zap.Logger {
+// 	if ctx.cfg == nil {
+// 		// often the case in tests; just use a dev logger
+// 		l, err := zap.NewDevelopment()
+// 		if err != nil {
+// 			panic("config missing, unable to create dev logger: " + err.Error())
+// 		}
+// 		return l
+// 	}
+// 	return ctx.cfg.Logging.Logger(ctx.Module())
+// }
+
+// Modules returns the lineage of modules that this context provisioned,
+// with the most recent/current module being last in the list.
+func (ctx Context) Modules() []Module {
+	mods := make([]Module, len(ctx.ancestry))
+	copy(mods, ctx.ancestry)
+	return mods
+}
+
+// Module returns the current module, or the most recent one
+// provisioned by the context.
+func (ctx Context) Module() Module {
+	if len(ctx.ancestry) == 0 {
+		return nil
+	}
+	return ctx.ancestry[len(ctx.ancestry)-1]
 }

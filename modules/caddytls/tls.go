@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -73,6 +75,7 @@ type TLS struct {
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
 	logger             *zap.Logger
+	events             *caddyevents.App
 }
 
 // CaddyModule returns the Caddy module information.
@@ -85,6 +88,11 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision(ctx caddy.Context) error {
+	eventsAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+	t.events = eventsAppIface.(*caddyevents.App)
 	t.ctx = ctx
 	t.logger = ctx.Logger(t)
 	repl := caddy.NewReplacer()
@@ -113,7 +121,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading certificate loader modules: %s", err)
 	}
-	for modName, modIface := range val.(map[string]interface{}) {
+	for modName, modIface := range val.(map[string]any) {
 		if modName == "automate" {
 			// special case; these will be loaded in later using our automation facilities,
 			// which we want to avoid doing during provisioning
@@ -177,9 +185,12 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		onDemandRateLimiter.SetWindow(0)
 	}
 
-	// run replacer on ask URL (for environment variables)
+	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
-		t.Automation.OnDemand.Ask = repl.ReplaceAll(t.Automation.OnDemand.Ask, "")
+		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
+		if err != nil {
+			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		}
 	}
 
 	// load manual/static (unmanaged) certificates - we do this in
@@ -189,6 +200,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	magic := certmagic.New(t.certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
+		OnEvent: t.onEvent,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
@@ -512,6 +524,12 @@ func (t *TLS) storageCleanInterval() time.Duration {
 		return time.Duration(t.Automation.StorageCleanInterval)
 	}
 	return defaultStorageCleanInterval
+}
+
+// onEvent translates CertMagic events into Caddy events then dispatches them.
+func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+	evt := t.events.Emit(t.ctx, eventName, data)
+	return evt.Aborted
 }
 
 // CertificateLoader is a type that can load certificates.

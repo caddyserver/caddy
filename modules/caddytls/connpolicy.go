@@ -46,7 +46,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading handshake matchers: %v", err)
 		}
-		for _, modIface := range mods.(map[string]interface{}) {
+		for _, modIface := range mods.(map[string]any) {
 			cp[i].matchers = append(cp[i].matchers, modIface.(ConnectionMatcher))
 		}
 
@@ -66,7 +66,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("loading client cert verifiers: %v", err)
 			}
-			for _, validator := range clientCertValidations.([]interface{}) {
+			for _, validator := range clientCertValidations.([]any) {
 				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
 			}
 		}
@@ -112,7 +112,7 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 						continue policyLoop
 					}
 				}
-				return pol.stdTLSConfig, nil
+				return pol.TLSConfig, nil
 			}
 
 			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
@@ -156,8 +156,15 @@ type ConnectionPolicy struct {
 	// is no policy configured for the empty SNI value.
 	DefaultSNI string `json:"default_sni,omitempty"`
 
-	matchers     []ConnectionMatcher
-	stdTLSConfig *tls.Config
+	// TLSConfig is the fully-formed, standard lib TLS config
+	// used to serve TLS connections. Provision all
+	// ConnectionPolicies to populate this. It is exported only
+	// so it can be minimally adjusted after provisioning
+	// if necessary (like to adjust NextProtos to disable HTTP/2),
+	// and may be unexported in the future.
+	TLSConfig *tls.Config `json:"-"`
+
+	matchers []ConnectionMatcher
 }
 
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
@@ -172,8 +179,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// so the user-provided config can fill them in; then we will
 	// fill in a default config at the end if they are still unset
 	cfg := &tls.Config{
-		NextProtos:               p.ALPN,
-		PreferServerCipherSuites: true,
+		NextProtos: p.ALPN,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			// TODO: I don't love how this works: we pre-build certmagic configs
 			// so that handshakes are faster. Unfortunately, certmagic configs are
@@ -276,7 +282,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	setDefaultTLSParams(cfg)
 
-	p.stdTLSConfig = cfg
+	p.TLSConfig = cfg
 
 	return nil
 }
@@ -475,8 +481,6 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	if cfg.MaxVersion == 0 {
 		cfg.MaxVersion = tls.VersionTLS13
 	}
-
-	cfg.PreferServerCipherSuites = true
 }
 
 // LeafCertClientAuth verifies the client's leaf certificate.

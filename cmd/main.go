@@ -33,13 +33,14 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/certmagic"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 )
 
 func init() {
 	// set a fitting User-Agent for ACME requests
-	goModule := caddy.GoModule()
-	cleanModVersion := strings.TrimPrefix(goModule.Version, "v")
+	version, _ := caddy.Version()
+	cleanModVersion := strings.TrimPrefix(version, "v")
 	certmagic.UserAgent = "Caddy/" + cleanModVersion
 
 	// by using Caddy, user indicates agreement to CA terms
@@ -50,43 +51,14 @@ func init() {
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() of your program.
 func Main() {
-	switch len(os.Args) {
-	case 0:
+	if len(os.Args) == 0 {
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
-	case 1:
-		os.Args = append(os.Args, "help")
 	}
 
-	subcommandName := os.Args[1]
-	subcommand, ok := commands[subcommandName]
-	if !ok {
-		if strings.HasPrefix(os.Args[1], "-") {
-			// user probably forgot to type the subcommand
-			fmt.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
-		} else {
-			fmt.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'\n", os.Args[1])
-		}
-		os.Exit(caddy.ExitCodeFailedStartup)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
-
-	fs := subcommand.Flags
-	if fs == nil {
-		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
-	}
-
-	err := fs.Parse(os.Args[2:])
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(caddy.ExitCodeFailedStartup)
-	}
-
-	exitCode, err := subcommand.Func(Flags{fs})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
-	}
-
-	os.Exit(exitCode)
 }
 
 // handlePingbackConn reads from conn and ensures it matches
@@ -173,7 +145,7 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 
 	// adapt config
 	if cfgAdapter != nil {
-		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]interface{}{
+		adaptedConfig, warnings, err := cfgAdapter.Adapt(config, map[string]any{
 			"filename": configFile,
 		})
 		if err != nil {
@@ -280,7 +252,7 @@ func watchConfigFile(filename, adapterName string) {
 // Flags wraps a FlagSet so that typed values
 // from flags can be easily retrieved.
 type Flags struct {
-	*flag.FlagSet
+	*pflag.FlagSet
 }
 
 // String returns the string representation of the
@@ -324,22 +296,6 @@ func (f Flags) Float64(name string) float64 {
 func (f Flags) Duration(name string) time.Duration {
 	val, _ := caddy.ParseDuration(f.String(name))
 	return val
-}
-
-// flagHelp returns the help text for fs.
-func flagHelp(fs *flag.FlagSet) string {
-	if fs == nil {
-		return ""
-	}
-
-	// temporarily redirect output
-	out := fs.Output()
-	defer fs.SetOutput(out)
-
-	buf := new(bytes.Buffer)
-	fs.SetOutput(buf)
-	fs.PrintDefaults()
-	return buf.String()
 }
 
 func loadEnvFromFile(envFile string) error {
@@ -387,11 +343,11 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// split line into key and value
-		fields := strings.SplitN(line, "=", 2)
-		if len(fields) != 2 {
+		before, after, isCut := strings.Cut(line, "=")
+		if !isCut {
 			return nil, fmt.Errorf("can't parse line %d; line should be in KEY=VALUE format", lineNumber)
 		}
-		key, val := fields[0], fields[1]
+		key, val := before, after
 
 		// sometimes keys are prefixed by "export " so file can be sourced in bash; ignore it here
 		key = strings.TrimPrefix(key, "export ")
@@ -408,11 +364,8 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// remove any trailing comment after value
-		if commentStart := strings.Index(val, "#"); commentStart > 0 {
-			before := val[commentStart-1]
-			if before == '\t' || before == ' ' {
-				val = strings.TrimRight(val[:commentStart], " \t")
-			}
+		if commentStart, _, found := strings.Cut(val, "#"); found {
+			val = strings.TrimRight(commentStart, " \t")
 		}
 
 		// quoted value: support newlines
@@ -441,11 +394,12 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 }
 
 func printEnvironment() {
+	_, version := caddy.Version()
 	fmt.Printf("caddy.HomeDir=%s\n", caddy.HomeDir())
 	fmt.Printf("caddy.AppDataDir=%s\n", caddy.AppDataDir())
 	fmt.Printf("caddy.AppConfigDir=%s\n", caddy.AppConfigDir())
 	fmt.Printf("caddy.ConfigAutosavePath=%s\n", caddy.ConfigAutosavePath)
-	fmt.Printf("caddy.Version=%s\n", CaddyVersion())
+	fmt.Printf("caddy.Version=%s\n", version)
 	fmt.Printf("runtime.GOOS=%s\n", runtime.GOOS)
 	fmt.Printf("runtime.GOARCH=%s\n", runtime.GOARCH)
 	fmt.Printf("runtime.Compiler=%s\n", runtime.Compiler)
@@ -462,21 +416,15 @@ func printEnvironment() {
 	}
 }
 
-// CaddyVersion returns a detailed version string, if available.
-func CaddyVersion() string {
-	goModule := caddy.GoModule()
-	ver := goModule.Version
-	if goModule.Sum != "" {
-		ver += " " + goModule.Sum
-	}
-	if goModule.Replace != nil {
-		ver += " => " + goModule.Replace.Path
-		if goModule.Replace.Version != "" {
-			ver += "@" + goModule.Replace.Version
-		}
-		if goModule.Replace.Sum != "" {
-			ver += " " + goModule.Replace.Sum
-		}
-	}
-	return ver
+// StringSlice is a flag.Value that enables repeated use of a string flag.
+type StringSlice []string
+
+func (ss StringSlice) String() string { return "[" + strings.Join(ss, ", ") + "]" }
+
+func (ss *StringSlice) Set(value string) error {
+	*ss = append(*ss, value)
+	return nil
 }
+
+// Interface guard
+var _ flag.Value = (*StringSlice)(nil)

@@ -11,15 +11,22 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go: [ '1.18' ]
+        go: [ '1.19' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.18'
-          GO_SEMVER: '~1.18.1'
+        - go: '1.19'
+          GO_SEMVER: '~1.19.0'
 
     runs-on: ${{ matrix.os }}
+    # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
+    # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings
+    permissions:
+      id-token: write
+      # https://docs.github.com/en/rest/overview/permissions-required-for-github-apps#permission-on-contents
+      # "Releases" is part of `contents`, so it needs the `write`
+      contents: write
 
     steps:
     - name: Install Go
@@ -99,7 +106,14 @@ jobs:
         key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go${{ matrix.go }}-release
-
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@main
+    - name: Cosign version
+      run: cosign version
+    - name: Install Syft
+      uses: anchore/sbom-action/download-syft@main
+    - name: Syft version
+      run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v2
@@ -109,6 +123,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
+        COSIGN_EXPERIMENTAL: 1
 
     # Only publish on non-special tags (e.g. non-beta)
     # We will continue to push to Gemfury for the foreseeable future, although

@@ -102,20 +102,32 @@ func Run(cfg *Config) error {
 // if it is different from the current config or
 // forceReload is true.
 func Load(cfgJSON []byte, forceReload bool) error {
-	if err := notify.NotifyReloading(); err != nil {
-		Log().Error("unable to notify reloading to service manager", zap.Error(err))
+	if err := notify.Reloading(); err != nil {
+		Log().Error("unable to notify service manager of reloading state", zap.Error(err))
 	}
 
+	// after reload, notify system of success or, if
+	// failure, update with status (error message)
+	var err error
 	defer func() {
-		if err := notify.NotifyReadiness(); err != nil {
-			Log().Error("unable to notify readiness to service manager", zap.Error(err))
+		if err != nil {
+			if notifyErr := notify.Error(err, 0); notifyErr != nil {
+				Log().Error("unable to notify to service manager of reload error",
+					zap.Error(notifyErr),
+					zap.String("reload_err", err.Error()))
+			}
+			return
+		}
+		if err := notify.Ready(); err != nil {
+			Log().Error("unable to notify to service manager of ready state", zap.Error(err))
 		}
 	}()
 
-	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
+	err = changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
 	if errors.Is(err, errSameConfig) {
 		err = nil // not really an error
 	}
+
 	return err
 }
 
@@ -127,7 +139,9 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // forcefully reloaded, then errConfigUnchanged This function is safe for
 // concurrent use.
 // The ifMatchHeader can optionally be given a string of the format:
-//    "<path> <hash>"
+//
+//	"<path> <hash>"
+//
 // where <path> is the absolute path in the config and <hash> is the expected hash of
 // the config at that path. If the hash in the ifMatchHeader doesn't match
 // the hash of the config, then an APIError with status 412 will be returned.
@@ -141,12 +155,20 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 		return fmt.Errorf("method not allowed")
 	}
 
-	currentCfgMu.Lock()
-	defer currentCfgMu.Unlock()
+	currentCtxMu.Lock()
+	defer currentCtxMu.Unlock()
 
 	if ifMatchHeader != "" {
+		// expect the first and last character to be quotes
+		if len(ifMatchHeader) < 2 || ifMatchHeader[0] != '"' || ifMatchHeader[len(ifMatchHeader)-1] != '"' {
+			return APIError{
+				HTTPStatus: http.StatusBadRequest,
+				Err:        fmt.Errorf("malformed If-Match header; expect quoted string"),
+			}
+		}
+
 		// read out the parts
-		parts := strings.Fields(ifMatchHeader)
+		parts := strings.Fields(ifMatchHeader[1 : len(ifMatchHeader)-1])
 		if len(parts) != 2 {
 			return APIError{
 				HTTPStatus: http.StatusBadRequest,
@@ -209,7 +231,7 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 			// with what caddy is still running; we need to
 			// unmarshal it again because it's likely that
 			// pointers deep in our rawCfg map were modified
-			var oldCfg interface{}
+			var oldCfg any
 			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
 			if err2 != nil {
 				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
@@ -234,18 +256,18 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 // readConfig traverses the current config to path
 // and writes its JSON encoding to out.
 func readConfig(path string, out io.Writer) error {
-	currentCfgMu.RLock()
-	defer currentCfgMu.RUnlock()
+	currentCtxMu.RLock()
+	defer currentCtxMu.RUnlock()
 	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
 }
 
 // indexConfigObjects recursively searches ptr for object fields named
 // "@id" and maps that ID value to the full configPath in the index.
 // This function is NOT safe for concurrent access; obtain a write lock
-// on currentCfgMu.
-func indexConfigObjects(ptr interface{}, configPath string, index map[string]string) error {
+// on currentCtxMu.
+func indexConfigObjects(ptr any, configPath string, index map[string]string) error {
 	switch val := ptr.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for k, v := range val {
 			if k == idKey {
 				switch idVal := v.(type) {
@@ -264,7 +286,7 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 				return err
 			}
 		}
-	case []interface{}:
+	case []any:
 		// traverse each element of the array recursively
 		for i := range val {
 			err := indexConfigObjects(val[i], path.Join(configPath, strconv.Itoa(i)), index)
@@ -282,7 +304,7 @@ func indexConfigObjects(ptr interface{}, configPath string, index map[string]str
 // it as the new config, replacing any other current config.
 // It does NOT update the raw config state, as this is a
 // lower-level function; most callers will want to use Load
-// instead. A write lock on currentCfgMu is required! If
+// instead. A write lock on currentCtxMu is required! If
 // allowPersist is false, it will not be persisted to disk,
 // even if it is configured to.
 func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
@@ -311,17 +333,17 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 	}
 
 	// run the new config and start all its apps
-	err = run(newCfg, true)
+	ctx, err := run(newCfg, true)
 	if err != nil {
 		return err
 	}
 
-	// swap old config with the new one
-	oldCfg := currentCfg
-	currentCfg = newCfg
+	// swap old context (including its config) with the new one
+	oldCtx := currentCtx
+	currentCtx = ctx
 
 	// Stop, Cleanup each old app
-	unsyncedStop(oldCfg)
+	unsyncedStop(oldCtx)
 
 	// autosave a non-nil config, if not disabled
 	if allowPersist &&
@@ -365,7 +387,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 // This is a low-level function; most callers
 // will want to use Run instead, which also
 // updates the config's raw state.
-func run(newCfg *Config, start bool) error {
+func run(newCfg *Config, start bool) (Context, error) {
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
@@ -396,8 +418,8 @@ func run(newCfg *Config, start bool) error {
 			cancel()
 
 			// also undo any other state changes we made
-			if currentCfg != nil {
-				certmagic.Default.Storage = currentCfg.storage
+			if currentCtx.cfg != nil {
+				certmagic.Default.Storage = currentCtx.cfg.storage
 			}
 		}
 	}()
@@ -409,14 +431,14 @@ func run(newCfg *Config, start bool) error {
 	}
 	err = newCfg.Logging.openLogs(ctx)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	// start the admin endpoint (and stop any prior one)
 	if start {
 		err = replaceLocalAdminServer(newCfg)
 		if err != nil {
-			return fmt.Errorf("starting caddy administration endpoint: %v", err)
+			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
 		}
 	}
 
@@ -445,7 +467,7 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}()
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	// Load and Provision each app and their submodules
@@ -458,18 +480,18 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}()
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	if !start {
-		return nil
+		return ctx, nil
 	}
 
 	// Provision any admin routers which may need to access
 	// some of the other apps at runtime
 	err = newCfg.Admin.provisionAdminRouters(ctx)
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	// Start
@@ -494,12 +516,12 @@ func run(newCfg *Config, start bool) error {
 		return nil
 	}()
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
-	return finishSettingUp(ctx, newCfg)
+	return ctx, finishSettingUp(ctx, newCfg)
 }
 
 // finishSettingUp should be run after all apps have successfully started.
@@ -604,10 +626,10 @@ type ConfigLoader interface {
 // stop the others. Stop should only be called
 // if not replacing with a new config.
 func Stop() error {
-	currentCfgMu.Lock()
-	defer currentCfgMu.Unlock()
-	unsyncedStop(currentCfg)
-	currentCfg = nil
+	currentCtxMu.Lock()
+	defer currentCtxMu.Unlock()
+	unsyncedStop(currentCtx)
+	currentCtx = Context{}
 	rawCfgJSON = nil
 	rawCfgIndex = nil
 	rawCfg[rawConfigKey] = nil
@@ -620,13 +642,13 @@ func Stop() error {
 // it is logged and the function continues stopping
 // the next app. This function assumes all apps in
 // cfg were successfully started first.
-func unsyncedStop(cfg *Config) {
-	if cfg == nil {
+func unsyncedStop(ctx Context) {
+	if ctx.cfg == nil {
 		return
 	}
 
 	// stop each app
-	for name, a := range cfg.apps {
+	for name, a := range ctx.cfg.apps {
 		err := a.Stop()
 		if err != nil {
 			log.Printf("[ERROR] stop %s: %v", name, err)
@@ -634,13 +656,13 @@ func unsyncedStop(cfg *Config) {
 	}
 
 	// clean up all modules
-	cfg.cancelFunc()
+	ctx.cfg.cancelFunc()
 }
 
 // Validate loads, provisions, and validates
 // cfg, but does not start running it.
 func Validate(cfg *Config) error {
-	err := run(cfg, false)
+	_, err := run(cfg, false)
 	if err == nil {
 		cfg.cancelFunc() // call Cleanup on all modules
 	}
@@ -654,6 +676,10 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
+	if err := notify.Stopping(); err != nil {
+		Log().Error("unable to notify service manager of stopping state", zap.Error(err))
+	}
+
 	if logger == nil {
 		logger = Log()
 	}
@@ -783,36 +809,106 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
-// GoModule returns the build info of this Caddy
-// build from debug.BuildInfo (requires Go modules).
-// If no version information is available, a non-nil
-// value will still be returned, but with an
-// unknown version.
-func GoModule() *debug.Module {
-	var mod debug.Module
-	return goModule(&mod)
-}
-
-// goModule holds the actual implementation of GoModule.
-// Allocating debug.Module in GoModule() and passing a
-// reference to goModule enables mid-stack inlining.
-func goModule(mod *debug.Module) *debug.Module {
-	mod.Version = "unknown"
+// Version returns the Caddy version in a simple/short form, and
+// a full version string. The short form will not have spaces and
+// is intended for User-Agent strings and similar, but may be
+// omitting valuable information. Note that Caddy must be compiled
+// in a special way to properly embed complete version information.
+// First this function tries to get the version from the embedded
+// build info provided by go.mod dependencies; then it tries to
+// get info from embedded VCS information, which requires having
+// built Caddy from a git repository. If no version is available,
+// this function returns "(devel)" becaise Go uses that, but for
+// the simple form we change it to "unknown".
+//
+// See relevant Go issues: https://github.com/golang/go/issues/29228
+// and https://github.com/golang/go/issues/50603.
+//
+// This function is experimental and subject to change or removal.
+func Version() (simple, full string) {
+	// the currently-recommended way to build Caddy involves
+	// building it as a dependency so we can extract version
+	// information from go.mod tooling; once the upstream
+	// Go issues are fixed, we should just be able to use
+	// bi.Main... hopefully.
+	var module *debug.Module
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
-		mod.Path = bi.Main.Path
-		// The recommended way to build Caddy involves
-		// creating a separate main module, which
-		// TODO: track related Go issue: https://github.com/golang/go/issues/29228
-		// once that issue is fixed, we should just be able to use bi.Main... hopefully.
+		// find the Caddy module in the dependency list
 		for _, dep := range bi.Deps {
 			if dep.Path == ImportPath {
-				return dep
+				module = dep
+				break
 			}
 		}
-		return &bi.Main
 	}
-	return mod
+	if module != nil {
+		simple, full = module.Version, module.Version
+		if module.Sum != "" {
+			full += " " + module.Sum
+		}
+		if module.Replace != nil {
+			full += " => " + module.Replace.Path
+			if module.Replace.Version != "" {
+				simple = module.Replace.Version + "_custom"
+				full += "@" + module.Replace.Version
+			}
+			if module.Replace.Sum != "" {
+				full += " " + module.Replace.Sum
+			}
+		}
+	}
+
+	if full == "" {
+		var vcsRevision string
+		var vcsTime time.Time
+		var vcsModified bool
+		for _, setting := range bi.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				vcsRevision = setting.Value
+			case "vcs.time":
+				vcsTime, _ = time.Parse(time.RFC3339, setting.Value)
+			case "vcs.modified":
+				vcsModified, _ = strconv.ParseBool(setting.Value)
+			}
+		}
+
+		if vcsRevision != "" {
+			var modified string
+			if vcsModified {
+				modified = "+modified"
+			}
+			full = fmt.Sprintf("%s%s (%s)", vcsRevision, modified, vcsTime.Format(time.RFC822))
+			simple = vcsRevision
+
+			// use short checksum for simple, if hex-only
+			if _, err := hex.DecodeString(simple); err == nil {
+				simple = simple[:8]
+			}
+
+			// append date to simple since it can be convenient
+			// to know the commit date as part of the version
+			if !vcsTime.IsZero() {
+				simple += "-" + vcsTime.Format("20060102")
+			}
+		}
+	}
+
+	if simple == "" || simple == "(devel)" {
+		simple = "unknown"
+	}
+
+	return
+}
+
+// ActiveContext returns the currently-active context.
+// This function is experimental and might be changed
+// or removed in the future.
+func ActiveContext() Context {
+	currentCtxMu.RLock()
+	defer currentCtxMu.RUnlock()
+	return currentCtx
 }
 
 // CtxKey is a value type for use with context.WithValue.
@@ -820,18 +916,21 @@ type CtxKey string
 
 // This group of variables pertains to the current configuration.
 var (
-	// currentCfgMu protects everything in this var block.
-	currentCfgMu sync.RWMutex
+	// currentCtxMu protects everything in this var block.
+	currentCtxMu sync.RWMutex
 
-	// currentCfg is the currently-running configuration.
-	currentCfg *Config
+	// currentCtx is the root context for the currently-running
+	// configuration, which can be accessed through this value.
+	// If the Config contained in this value is not nil, then
+	// a config is currently active/running.
+	currentCtx Context
 
 	// rawCfg is the current, generic-decoded configuration;
 	// we initialize it as a map with one field ("config")
 	// to maintain parity with the API endpoint and to avoid
 	// the special case of having to access/mutate the variable
 	// directly without traversing into it.
-	rawCfg = map[string]interface{}{
+	rawCfg = map[string]any{
 		rawConfigKey: nil,
 	}
 
@@ -850,4 +949,5 @@ var (
 var errSameConfig = errors.New("config is unchanged")
 
 // ImportPath is the package import path for Caddy core.
+// This identifier may be removed in the future.
 const ImportPath = "github.com/caddyserver/caddy/v2"

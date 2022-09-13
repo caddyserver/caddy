@@ -62,7 +62,7 @@ func (a *Authentication) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading authentication providers: %v", err)
 	}
-	for modName, modIface := range mods.(map[string]interface{}) {
+	for modName, modIface := range mods.(map[string]any) {
 		a.Providers[modName] = modIface.(Authenticator)
 	}
 	return nil

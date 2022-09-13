@@ -19,27 +19,30 @@
 	@matcher6 vars_regexp "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
 	respond @matcher6 "from vars_regexp matcher without name"
 
-	@matcher7 {
+	@matcher7 `path('/foo*') && method('GET')`
+	respond @matcher7 "inline expression matcher shortcut"
+
+	@matcher8 {
 		header Foo bar
 		header Foo foobar
 		header Bar foo
 	}
-	respond @matcher7 "header matcher merging values of the same field"
+	respond @matcher8 "header matcher merging values of the same field"
 
-	@matcher8 {
+	@matcher9 {
 		query foo=bar foo=baz bar=foo
 		query bar=baz
 	}
-	respond @matcher8 "query matcher merging pairs with the same keys"
+	respond @matcher9 "query matcher merging pairs with the same keys"
 
-	@matcher9 {
+	@matcher10 {
 		header !Foo
 		header Bar foo
 	}
-	respond @matcher9 "header matcher with null field matcher"
+	respond @matcher10 "header matcher with null field matcher"
 
-	@matcher10 remote_ip private_ranges
-	respond @matcher10 "remote_ip matcher with private ranges"
+	@matcher11 remote_ip private_ranges
+	respond @matcher11 "remote_ip matcher with private ranges"
 }
 ----------
 {
@@ -148,6 +151,19 @@
 							"handle": [
 								{
 									"body": "from vars_regexp matcher without name",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"expression": "path('/foo*') \u0026\u0026 method('GET')"
+								}
+							],
+							"handle": [
+								{
+									"body": "inline expression matcher shortcut",
 									"handler": "static_response"
 								}
 							]

@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"io/fs"
 	"net/url"
 	"os"
 	"path"
@@ -26,22 +27,31 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
+	"go.uber.org/zap"
 )
 
-func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
+func (fsrv *FileServer) directoryListing(entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
 	fileInfos := []fileInfo{}
 
-	for _, f := range files {
-		name := f.Name()
+	for _, entry := range entries {
+		name := entry.Name()
 
 		if fileHidden(name, filesToHide) {
 			continue
 		}
 
-		isDir := f.IsDir() || isSymlinkTargetDir(f, root, urlPath)
+		info, err := entry.Info()
+		if err != nil {
+			fsrv.logger.Error("could not get info about directory entry",
+				zap.String("name", entry.Name()),
+				zap.String("root", root))
+			continue
+		}
+
+		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(info, root, urlPath)
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
@@ -51,11 +61,11 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			fileCount++
 		}
 
-		size := f.Size()
-		fileIsSymlink := isSymlink(f)
+		size := info.Size()
+		fileIsSymlink := isSymlink(info)
 		if fileIsSymlink {
-			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-			fileInfo, err := os.Stat(path)
+			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
+			fileInfo, err := fs.Stat(fsrv.fileSystem, path)
 			if err == nil {
 				size = fileInfo.Size()
 			}
@@ -73,8 +83,8 @@ func (fsrv *FileServer) directoryListing(files []os.FileInfo, canGoUp bool, root
 			Name:      name,
 			Size:      size,
 			URL:       u.String(),
-			ModTime:   f.ModTime().UTC(),
-			Mode:      f.Mode(),
+			ModTime:   info.ModTime().UTC(),
+			Mode:      info.Mode(),
 		})
 	}
 	name, _ := url.PathUnescape(urlPath)
