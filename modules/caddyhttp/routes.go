@@ -109,6 +109,17 @@ func (r Route) Empty() bool {
 		r.Group == ""
 }
 
+func (r Route) String() string {
+	handlersRaw := "["
+	for _, hr := range r.HandlersRaw {
+		handlersRaw += " " + string(hr)
+	}
+	handlersRaw += "]"
+
+	return fmt.Sprintf(`{Group:"%s" MatcherSetsRaw:%s HandlersRaw:%s Terminal:%t}`,
+		r.Group, r.MatcherSetsRaw, handlersRaw, r.Terminal)
+}
+
 // RouteList is a list of server routes that can
 // create a middleware chain.
 type RouteList []Route
@@ -329,6 +340,17 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 		*ms = append(*ms, matcherSet)
 	}
 	return nil
+}
+
+// TODO: Is this used?
+func (ms MatcherSets) String() string {
+	result := "["
+	for _, matcherSet := range ms {
+		for _, matcher := range matcherSet {
+			result += fmt.Sprintf(" %#v", matcher)
+		}
+	}
+	return result + " ]"
 }
 
 var routeGroupCtxKey = caddy.CtxKey("route_group")

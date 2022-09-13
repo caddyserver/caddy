@@ -955,7 +955,7 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
 	for _, val := range routes {
 		if !directiveIsOrdered(val.directive) {
-			return nil, fmt.Errorf("directive '%s' is not ordered, so it cannot be used here", val.directive)
+			return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
 		}
 	}
 
