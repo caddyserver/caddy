@@ -374,7 +374,11 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 // Provision lower-cases the paths in m to ensure case-insensitive matching.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
-		// TODO: if m[i] == "*", put it first and delete all others (will always match)
+		if m[i] == "*" && i > 0 {
+			// will always match, so just put it first
+			m[0] = m[i]
+			break
+		}
 		m[i] = strings.ToLower(m[i])
 	}
 	return nil
