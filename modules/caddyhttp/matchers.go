@@ -1479,7 +1479,7 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// then there's more than one path_regexp matcher
 		// and we would end up overwriting the old one
 		if mre.Pattern != "" {
-			return d.Err("path_regexp matcher can only be used once per named matcher")
+			return d.Err("regular expression can only be used once per named matcher")
 		}
 
 		args := d.RemainingArgs()
