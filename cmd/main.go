@@ -41,10 +41,15 @@ func init() {
 	// set a fitting User-Agent for ACME requests
 	version, _ := caddy.Version()
 	cleanModVersion := strings.TrimPrefix(version, "v")
-	certmagic.UserAgent = "Caddy/" + cleanModVersion
+	ua := "Caddy/" + cleanModVersion
+	if uaEnv, ok := os.LookupEnv("USERAGENT"); ok {
+		ua = uaEnv + " " + ua
+	}
+	certmagic.UserAgent = ua
 
 	// by using Caddy, user indicates agreement to CA terms
-	// (very important, or ACME account creation will fail!)
+	// (very important, as Caddy is often non-interactive
+	// and thus ACME account creation will fail!)
 	certmagic.DefaultACME.Agreed = true
 }
 
