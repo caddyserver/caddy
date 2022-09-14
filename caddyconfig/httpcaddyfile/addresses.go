@@ -219,7 +219,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		return nil, fmt.Errorf("[%s] scheme and port violate convention", key)
 	}
 
-	// the bind directive specifies hosts, but is optional
+	// the bind directive specifies hosts (and potentially network), but is optional
 	lnHosts := make([]string, 0, len(sblock.pile["bind"]))
 	for _, cfgVal := range sblock.pile["bind"] {
 		lnHosts = append(lnHosts, cfgVal.Value.([]string)...)
@@ -234,22 +234,22 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 
 	// use a map to prevent duplication
 	listeners := make(map[string]struct{})
-	for _, host := range lnHosts {
-		var a string
-		if host != "" {
-			// host can have network + host (e.g. "tcp6/localhost") but
-			// will/should not have port information because this usually
-			// comes from the bind directive, so we append the port
-			network, rest, err := caddy.SplitNetwork(host)
-			if err != nil {
-				return nil, fmt.Errorf("splitting network address %q: %v", host, err)
-			}
-			rest = strings.Trim(rest, "[]")
-			a = caddy.JoinNetworkAddress(network, rest, lnPort)
-		} else {
-			a = ":" + lnPort
+	for _, lnHost := range lnHosts {
+		// normally we would simply append the port,
+		// but if lnHost is IPv6, we need to ensure it
+		// is enclosed in [ ]; net.JoinHostPort does
+		// this for us, but lnHost might also have a
+		// network type in front (e.g. "tcp/") leading
+		// to "[tcp/::1]" which causes parsing failures
+		// later; what we need is "tcp/[::1]", so we have
+		// to split the network and host, then re-combine
+		network, host, ok := strings.Cut(lnHost, "/")
+		if !ok {
+			host = network
 		}
-		addr, err := caddy.ParseNetworkAddress(a)
+		host = strings.Trim(host, "[]") // IPv6
+		networkAddr := caddy.JoinNetworkAddress(network, host, lnPort)
+		addr, err := caddy.ParseNetworkAddress(networkAddr)
 		if err != nil {
 			return nil, fmt.Errorf("parsing network address: %v", err)
 		}

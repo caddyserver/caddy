@@ -387,21 +387,6 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	}, nil
 }
 
-// SplitNetwork splits a into a network, if any, and rest.
-func SplitNetwork(a string) (network, rest string, err error) {
-	beforeSlash, afterSlash, slashFound := strings.Cut(a, "/")
-	if slashFound {
-		network = strings.ToLower(strings.TrimSpace(beforeSlash))
-		a = afterSlash
-	}
-	if isUnixNetwork(network) {
-		rest = a
-		return
-	}
-	rest = a
-	return
-}
-
 // SplitNetworkAddress splits a into its network, host, and port components.
 // Note that port may be a port range (:X-Y), or omitted for unix sockets.
 func SplitNetworkAddress(a string) (network, host, port string, err error) {
