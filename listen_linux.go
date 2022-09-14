@@ -14,11 +14,12 @@ import (
 func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
 	// check to see if plugin provides listener
 	if ln, err := getListenerFromPlugin(network, addr); err != nil || ln != nil {
-		return ln, err
+		return pipeable(ln), err
 	}
 
 	config := &net.ListenConfig{Control: reusePort, KeepAlive: keepalivePeriod}
-	return config.Listen(context.Background(), network, addr)
+	ln, err := config.Listen(context.Background(), network, addr)
+	return pipeable(ln), err
 }
 
 func reusePort(network, address string, conn syscall.RawConn) error {

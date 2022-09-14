@@ -45,6 +45,68 @@ func Listen(network, addr string) (net.Listener, error) {
 	return ListenTimeout(network, addr, 0)
 }
 
+// pipeableListener wraps an underlying listener so
+// that connections can be given to a server that is
+// calling Accept().
+type pipeableListener struct {
+	net.Listener
+	bridge chan connAccept
+	done   chan struct{}
+	closed *int32 // accessed atomically
+}
+
+func (pln pipeableListener) Accept() (net.Conn, error) {
+	accept := <-pln.bridge
+	return accept.conn, accept.err
+}
+
+func (pln pipeableListener) Close() error {
+	if atomic.CompareAndSwapInt32(pln.closed, 0, 1) {
+		close(pln.done)
+	}
+	return pln.Listener.Close()
+}
+
+// pump pipes real connections from the underlying listener's
+// Accept() up to the callers of our own Accept().
+func (pln pipeableListener) pump() {
+	for {
+		select {
+		case <-pln.done:
+			return
+		default:
+			pln.Pipe(pln.Listener.Accept())
+		}
+	}
+}
+
+// Pipe gives a connection (or an error) to an active Accept() call
+// on this listener.
+func (pln pipeableListener) Pipe(conn net.Conn, err error) {
+	pln.bridge <- connAccept{conn, err}
+}
+
+// pipeable wraps listener so that it can be given connections
+// for its caller/server to Accept() and use.
+func pipeable(listener net.Listener) net.Listener {
+	if listener == nil {
+		return listener // don't start a goroutine
+	}
+	pln := pipeableListener{
+		Listener: listener,
+		bridge:   make(chan connAccept),
+		done:     make(chan struct{}),
+		closed:   new(int32),
+	}
+	go pln.pump()
+	return pln
+}
+
+type connAccept struct {
+	conn net.Conn
+	err  error
+}
+
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
 // no plugin can provide a listener.
