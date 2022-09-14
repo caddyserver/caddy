@@ -246,6 +246,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		network, host, ok := strings.Cut(lnHost, "/")
 		if !ok {
 			host = network
+			network = ""
 		}
 		host = strings.Trim(host, "[]") // IPv6
 		networkAddr := caddy.JoinNetworkAddress(network, host, lnPort)
