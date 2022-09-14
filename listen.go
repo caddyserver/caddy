@@ -15,7 +15,7 @@ import (
 func ListenTimeout(network, addr string, keepAlivePeriod time.Duration) (net.Listener, error) {
 	// check to see if plugin provides listener
 	if ln, err := getListenerFromPlugin(network, addr); err != nil || ln != nil {
-		return acceptPipe(ln), err
+		return pipeable(ln), err
 	}
 
 	lnKey := listenerKey(network, addr)
@@ -29,7 +29,7 @@ func ListenTimeout(network, addr string, keepAlivePeriod time.Duration) (net.Lis
 			}
 			return nil, err
 		}
-		return &sharedListener{Listener: acceptPipe(ln), key: lnKey}, nil
+		return &sharedListener{Listener: pipeable(ln), key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
