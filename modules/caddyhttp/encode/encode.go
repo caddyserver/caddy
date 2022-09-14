@@ -217,8 +217,14 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 
 	// sniff content-type and determine content-length
 	if !rw.wroteHeader && rw.config.MinLength > 0 {
-		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
-		if (err == nil && cl > rw.config.MinLength) || len(p) > rw.config.MinLength {
+		var gtMinLength bool
+		if len(p) > rw.config.MinLength {
+			gtMinLength = true
+		} else if cl, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil && cl > rw.config.MinLength {
+			gtMinLength = true
+		}
+
+		if gtMinLength {
 			if rw.Header().Get("Content-Type") == "" {
 				rw.Header().Set("Content-Type", http.DetectContentType(p))
 			}
@@ -257,6 +263,13 @@ func (rw *responseWriter) Close() error {
 		if err == nil && cl > rw.config.MinLength {
 			rw.init()
 		}
+
+		if rw.statusCode != 0 {
+			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+		} else {
+			rw.HTTPInterfaces.WriteHeader(http.StatusOK)
+		}
+		rw.wroteHeader = true
 	}
 
 	var err error
