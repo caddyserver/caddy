@@ -83,14 +83,14 @@ type FileServer struct {
 	// disk file system.
 	//
 	// File system modules used here must adhere to the following requirements:
-	// - Implement fs.StatFS interface.
+	// - Implement fs.FS interface.
 	// - Support seeking on opened files; i.e.returned fs.File values must
 	//   implement the io.Seeker interface. This is required for determining
 	//   Content-Length and satisfying Range requests.
 	// - fs.File values that represent directories must implement the
 	//   fs.ReadDirFile interface so that directory listings can be procured.
 	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
-	fileSystem    fs.StatFS
+	fileSystem    fs.FS
 
 	// The path to the root of the site. Default is `{http.vars.root}` if set,
 	// or current working directory otherwise. This should be a trusted value.
@@ -175,7 +175,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading file system module: %v", err)
 		}
-		fsrv.fileSystem = mod.(fs.StatFS)
+		fsrv.fileSystem = mod.(fs.FS)
 	}
 	if fsrv.fileSystem == nil {
 		fsrv.fileSystem = osFS{}
@@ -244,7 +244,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("result", filename))
 
 	// get information about the file
-	info, err := fsrv.fileSystem.Stat(filename)
+	info, err := fs.Stat(fsrv.fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -270,7 +270,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				continue
 			}
 
-			indexInfo, err := fsrv.fileSystem.Stat(indexPath)
+			indexInfo, err := fs.Stat(fsrv.fileSystem, indexPath)
 			if err != nil {
 				continue
 			}
@@ -350,7 +350,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err := fsrv.fileSystem.Stat(compressedFilename)
+		compressedInfo, err := fs.Stat(fsrv.fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
 			continue
@@ -490,7 +490,7 @@ func (fsrv *FileServer) mapDirOpenError(originalErr error, name string) error {
 		if parts[i] == "" {
 			continue
 		}
-		fi, err := fsrv.fileSystem.Stat(strings.Join(parts[:i+1], separator))
+		fi, err := fs.Stat(fsrv.fileSystem, strings.Join(parts[:i+1], separator))
 		if err != nil {
 			return originalErr
 		}
@@ -613,15 +613,20 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 	wr.ResponseWriter.WriteHeader(wr.code)
 }
 
-// osFS is a simple fs.StatFS implementation that uses the local
+// osFS is a simple fs.FS implementation that uses the local
 // file system. (We do not use os.DirFS because we do our own
 // rooting or path prefixing without being constrained to a single
 // root folder. The standard os.DirFS implementation is problematic
 // since roots can be dynamic in our application.)
+//
+// osFS also implements fs.StatFS, fs.GlobFS, fs.ReadDirFS, and fs.ReadFileFS.
 type osFS struct{}
 
-func (osFS) Open(name string) (fs.File, error)     { return os.Open(name) }
-func (osFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+func (osFS) Open(name string) (fs.File, error)          { return os.Open(name) }
+func (osFS) Stat(name string) (fs.FileInfo, error)      { return os.Stat(name) }
+func (osFS) Glob(pattern string) ([]string, error)      { return filepath.Glob(pattern) }
+func (osFS) ReadDir(name string) ([]fs.DirEntry, error) { return os.ReadDir(name) }
+func (osFS) ReadFile(name string) ([]byte, error)       { return os.ReadFile(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 
@@ -634,4 +639,9 @@ const (
 var (
 	_ caddy.Provisioner           = (*FileServer)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FileServer)(nil)
+
+	_ fs.StatFS     = (*osFS)(nil)
+	_ fs.GlobFS     = (*osFS)(nil)
+	_ fs.ReadDirFS  = (*osFS)(nil)
+	_ fs.ReadFileFS = (*osFS)(nil)
 )

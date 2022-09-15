@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
@@ -161,6 +162,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
 
+	eventsAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+
 	repl := caddy.NewReplacer()
 
 	// this provisions the matchers for each route,
@@ -175,6 +181,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 	for srvName, srv := range app.Servers {
 		srv.name = srvName
 		srv.tlsApp = app.tlsApp
+		srv.events = eventsAppIface.(*caddyevents.App)
+		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
@@ -376,7 +384,7 @@ func (app *App) Start() error {
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
-				ln, err := caddy.Listen(listenAddr.Network, hostport)
+				ln, err := caddy.ListenTimeout(listenAddr.Network, hostport, time.Duration(srv.KeepAliveInterval))
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}

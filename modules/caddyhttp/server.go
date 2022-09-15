@@ -29,8 +29,10 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -68,6 +70,11 @@ type Server struct {
 	// when keep-alives are enabled. If zero, a default timeout of
 	// 5m is applied to help avoid resource exhaustion.
 	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
+
+	// KeepAliveInterval is the interval at which TCP keepalive packets
+	// are sent to keep the connection alive at the TCP layer when no other
+	// data is being transmitted. The default is 15s.
+	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
@@ -153,9 +160,11 @@ type Server struct {
 	listeners           []net.Listener
 
 	tlsApp       *caddytls.TLS
+	events       *caddyevents.App
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
+	ctx          caddy.Context
 
 	server    *http.Server
 	h3server  *http3.Server
@@ -171,7 +180,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
-		// keep track of active requests for QUIC transport purposes (See AcceptToken callback in quic.Config)
+		// keep track of active requests for QUIC transport purposes
 		atomic.AddInt64(&s.activeRequests, 1)
 		defer atomic.AddInt64(&s.activeRequests, -1)
 
@@ -489,6 +498,10 @@ func (s *Server) serveHTTP3(hostport string, tlsCfg *tls.Config) error {
 			Handler:        s,
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
+			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
+			QuicConfig: &quic.Config{
+				Versions: []quic.VersionNumber{quic.Version1, quic.Version2},
+			},
 		}
 	}
 
@@ -534,7 +547,11 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 		repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
 		repl.Set("http.error.id", handlerErr.ID)
 		repl.Set("http.error.trace", handlerErr.Trace)
-		repl.Set("http.error.message", handlerErr.Err.Error())
+		if handlerErr.Err != nil {
+			repl.Set("http.error.message", handlerErr.Err.Error())
+		} else {
+			repl.Set("http.error.message", http.StatusText(handlerErr.StatusCode))
+		}
 	}
 
 	return r
@@ -571,6 +588,104 @@ func (s *Server) protocol(proto string) bool {
 		}
 	}
 	return false
+}
+
+// Listeners returns the server's listeners. These are active listeners,
+// so calling Accept() or Close() on them will probably break things.
+// They are made available here for read-only purposes (e.g. Addr())
+// and for type-asserting for purposes where you know what you're doing.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) Listeners() []net.Listener { return s.listeners }
+
+// ServerLogConfig describes a server's logging configuration. If
+// enabled without customization, all requests to this server are
+// logged to the default logger; logger destinations may be
+// customized per-request-host.
+type ServerLogConfig struct {
+	// The default logger name for all logs emitted by this server for
+	// hostnames that are not in the LoggerNames (logger_names) map.
+	DefaultLoggerName string `json:"default_logger_name,omitempty"`
+
+	// LoggerNames maps request hostnames to a custom logger name.
+	// For example, a mapping of "example.com" to "example" would
+	// cause access logs from requests with a Host of example.com
+	// to be emitted by a logger named "http.log.access.example".
+	LoggerNames map[string]string `json:"logger_names,omitempty"`
+
+	// By default, all requests to this server will be logged if
+	// access logging is enabled. This field lists the request
+	// hosts for which access logging should be disabled.
+	SkipHosts []string `json:"skip_hosts,omitempty"`
+
+	// If true, requests to any host not appearing in the
+	// LoggerNames (logger_names) map will not be logged.
+	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
+
+	// If true, credentials that are otherwise omitted, will be logged.
+	// The definition of credentials is defined by https://fetch.spec.whatwg.org/#credentials,
+	// and this includes some request and response headers, i.e `Cookie`,
+	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
+	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
+}
+
+// wrapLogger wraps logger in a logger named according to user preferences for the given host.
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
+	if loggerName := slc.getLoggerName(host); loggerName != "" {
+		return logger.Named(loggerName)
+	}
+	return logger
+}
+
+func (slc ServerLogConfig) getLoggerName(host string) string {
+	tryHost := func(key string) (string, bool) {
+		// first try exact match
+		if loggerName, ok := slc.LoggerNames[key]; ok {
+			return loggerName, ok
+		}
+		// strip port and try again (i.e. Host header of "example.com:1234" should
+		// match "example.com" if there is no "example.com:1234" in the map)
+		hostOnly, _, err := net.SplitHostPort(key)
+		if err != nil {
+			return "", false
+		}
+		loggerName, ok := slc.LoggerNames[hostOnly]
+		return loggerName, ok
+	}
+
+	// try the exact hostname first
+	if loggerName, ok := tryHost(host); ok {
+		return loggerName
+	}
+
+	// try matching wildcard domains if other non-specific loggers exist
+	labels := strings.Split(host, ".")
+	for i := range labels {
+		if labels[i] == "" {
+			continue
+		}
+		labels[i] = "*"
+		wildcardHost := strings.Join(labels, ".")
+		if loggerName, ok := tryHost(wildcardHost); ok {
+			return loggerName
+		}
+	}
+
+	return slc.DefaultLoggerName
+}
+
+func (slc *ServerLogConfig) clone() *ServerLogConfig {
+	clone := &ServerLogConfig{
+		DefaultLoggerName:    slc.DefaultLoggerName,
+		LoggerNames:          make(map[string]string),
+		SkipHosts:            append([]string{}, slc.SkipHosts...),
+		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
+		ShouldLogCredentials: slc.ShouldLogCredentials,
+	}
+	for k, v := range slc.LoggerNames {
+		clone.LoggerNames[k] = v
+	}
+	return clone
 }
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can

@@ -19,6 +19,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -137,7 +138,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 
 func (fsrv *FileServer) loadDirectoryContents(dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return browseTemplateContext{}, err
 	}
 
@@ -210,7 +211,7 @@ func (fsrv *FileServer) isSymlinkTargetDir(f fs.FileInfo, root, urlPath string) 
 		return false
 	}
 	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := fsrv.fileSystem.Stat(target)
+	targetInfo, err := fs.Stat(fsrv.fileSystem, target)
 	if err != nil {
 		return false
 	}

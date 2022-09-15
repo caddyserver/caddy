@@ -12,12 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux && !windows
+package fastcgi
 
-package notify
+type header struct {
+	Version       uint8
+	Type          uint8
+	ID            uint16
+	ContentLength uint16
+	PaddingLength uint8
+	Reserved      uint8
+}
 
-func Ready() error               { return nil }
-func Reloading() error           { return nil }
-func Stopping() error            { return nil }
-func Status(_ string) error      { return nil }
-func Error(_ error, _ int) error { return nil }
+func (h *header) init(recType uint8, reqID uint16, contentLength int) {
+	h.Version = 1
+	h.Type = recType
+	h.ID = reqID
+	h.ContentLength = uint16(contentLength)
+	h.PaddingLength = uint8(-contentLength & 7)
+}

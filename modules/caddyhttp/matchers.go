@@ -374,7 +374,11 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 // Provision lower-cases the paths in m to ensure case-insensitive matching.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
-		// TODO: if m[i] == "*", put it first and delete all others (will always match)
+		if m[i] == "*" && i > 0 {
+			// will always match, so just put it first
+			m[0] = m[i]
+			break
+		}
 		m[i] = strings.ToLower(m[i])
 	}
 	return nil
@@ -1001,6 +1005,12 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val = second
 		}
 
+		// If there's already a pattern for this field
+		// then we would end up overwriting the old one
+		if (*m)[field] != nil {
+			return d.Errf("header_regexp matcher can only be used once per named matcher, per header field: %s", field)
+		}
+
 		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
 
 		if d.NextBlock(0) {
@@ -1121,6 +1131,22 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 		return r.TLS != nil
 	case "http":
 		return r.TLS == nil
+	case "http/1.0":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 0
+	case "http/1.0+":
+		return r.ProtoAtLeast(1, 0)
+	case "http/1.1":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 1
+	case "http/1.1+":
+		return r.ProtoAtLeast(1, 1)
+	case "http/2":
+		return r.ProtoMajor == 2
+	case "http/2+":
+		return r.ProtoAtLeast(2, 0)
+	case "http/3":
+		return r.ProtoMajor == 3
+	case "http/3+":
+		return r.ProtoAtLeast(3, 0)
 	}
 	return false
 }
@@ -1453,6 +1479,13 @@ func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
+		// If this is the second iteration of the loop
+		// then there's more than one path_regexp matcher
+		// and we would end up overwriting the old one
+		if mre.Pattern != "" {
+			return d.Err("regular expression can only be used once per named matcher")
+		}
+
 		args := d.RemainingArgs()
 		switch len(args) {
 		case 1:
