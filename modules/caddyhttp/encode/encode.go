@@ -20,7 +20,6 @@
 package encode
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -160,13 +159,12 @@ func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter
 // initResponseWriter initializes the responseWriter instance
 // allocated in openResponseWriter, enabling mid-stack inlining.
 func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-
-	// The allocation of ResponseWriterWrapper might be optimized as well.
-	rw.ResponseWriterWrapper = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	if httpInterfaces, ok := wrappedRW.(caddyhttp.HTTPInterfaces); ok {
+		rw.HTTPInterfaces = httpInterfaces
+	} else {
+		rw.HTTPInterfaces = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	}
 	rw.encodingName = encodingName
-	rw.buf = buf
 	rw.config = enc
 
 	return rw
@@ -176,10 +174,9 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 // using the encoding represented by encodingName and
 // configured by config.
 type responseWriter struct {
-	*caddyhttp.ResponseWriterWrapper
+	caddyhttp.HTTPInterfaces
 	encodingName string
 	w            Encoder
-	buf          *bytes.Buffer
 	config       *Encode
 	statusCode   int
 	wroteHeader  bool
@@ -206,28 +203,33 @@ func (rw *responseWriter) Flush() {
 		// to rw.Write (see bug in #4314)
 		return
 	}
-	rw.ResponseWriterWrapper.Flush()
+	rw.HTTPInterfaces.Flush()
 }
 
 // Write writes to the response. If the response qualifies,
 // it is encoded using the encoder, which is initialized
 // if not done so already.
 func (rw *responseWriter) Write(p []byte) (int, error) {
-	var n, written int
-	var err error
+	// ignore zero data writes, probably head request
+	if len(p) == 0 {
+		return 0, nil
+	}
 
-	if rw.buf != nil && rw.config.MinLength > 0 {
-		written = rw.buf.Len()
-		_, err := rw.buf.Write(p)
-		if err != nil {
-			return 0, err
+	// sniff content-type and determine content-length
+	if !rw.wroteHeader && rw.config.MinLength > 0 {
+		var gtMinLength bool
+		if len(p) > rw.config.MinLength {
+			gtMinLength = true
+		} else if cl, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil && cl > rw.config.MinLength {
+			gtMinLength = true
 		}
-		rw.init()
-		p = rw.buf.Bytes()
-		defer func() {
-			bufPool.Put(rw.buf)
-			rw.buf = nil
-		}()
+
+		if gtMinLength {
+			if rw.Header().Get("Content-Type") == "" {
+				rw.Header().Set("Content-Type", http.DetectContentType(p))
+			}
+			rw.init()
+		}
 	}
 
 	// before we write to the response, we need to make
@@ -236,63 +238,44 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	// and if so, that means we haven't written the
 	// header OR the default status code will be written
 	// by the standard library
-	if rw.statusCode > 0 {
-		rw.ResponseWriter.WriteHeader(rw.statusCode)
-		rw.statusCode = 0
+	if !rw.wroteHeader {
+		if rw.statusCode != 0 {
+			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+		} else {
+			rw.HTTPInterfaces.WriteHeader(http.StatusOK)
+		}
 		rw.wroteHeader = true
 	}
 
-	switch {
-	case rw.w != nil:
-		n, err = rw.w.Write(p)
-	default:
-		n, err = rw.ResponseWriter.Write(p)
+	if rw.w != nil {
+		return rw.w.Write(p)
+	} else {
+		return rw.HTTPInterfaces.Write(p)
 	}
-	n -= written
-	if n < 0 {
-		n = 0
-	}
-	return n, err
 }
 
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
-	var err error
-	// only attempt to write the remaining buffered response
-	// if there are any bytes left to write; otherwise, if
-	// the handler above us returned an error without writing
-	// anything, we'd write to the response when we instead
-	// should simply let the error propagate back down; this
-	// is why the check for rw.buf.Len() > 0 is crucial
-	if rw.buf != nil && rw.buf.Len() > 0 {
-		rw.init()
-		p := rw.buf.Bytes()
-		defer func() {
-			bufPool.Put(rw.buf)
-			rw.buf = nil
-		}()
-		switch {
-		case rw.w != nil:
-			_, err = rw.w.Write(p)
-		default:
-			_, err = rw.ResponseWriter.Write(p)
+	// didn't write, probably head request
+	if !rw.wroteHeader {
+		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
+		if err == nil && cl > rw.config.MinLength {
+			rw.init()
 		}
-	} else if rw.statusCode != 0 {
-		// it is possible that a body was not written, and
-		// a header was not even written yet, even though
-		// we are closing; ensure the proper status code is
-		// written exactly once, or we risk breaking requests
-		// that rely on If-None-Match, for example
-		rw.ResponseWriter.WriteHeader(rw.statusCode)
-		rw.statusCode = 0
+
+		if rw.statusCode != 0 {
+			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+		} else {
+			rw.HTTPInterfaces.WriteHeader(http.StatusOK)
+		}
 		rw.wroteHeader = true
 	}
+
+	var err error
 	if rw.w != nil {
-		err2 := rw.w.Close()
-		if err2 != nil && err == nil {
-			err = err2
-		}
+		err = rw.w.Close()
+		rw.w.Reset(nil)
 		rw.config.writerPools[rw.encodingName].Put(rw.w)
 		rw.w = nil
 	}
@@ -302,16 +285,15 @@ func (rw *responseWriter) Close() error {
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
 	if rw.Header().Get("Content-Encoding") == "" &&
-		rw.buf.Len() >= rw.config.MinLength &&
 		rw.config.Match(rw) {
 
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
-		rw.w.Reset(rw.ResponseWriter)
+		rw.w.Reset(rw.HTTPInterfaces)
 		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
 		rw.Header().Set("Content-Encoding", rw.encodingName)
 		rw.Header().Add("Vary", "Accept-Encoding")
+		rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 	}
-	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 }
 
 // AcceptedEncodings returns the list of encodings that the
@@ -415,12 +397,6 @@ type Encoding interface {
 type Precompressed interface {
 	AcceptEncoding() string
 	Suffix() string
-}
-
-var bufPool = sync.Pool{
-	New: func() any {
-		return new(bytes.Buffer)
-	},
 }
 
 // defaultMinLength is the minimum length at which to compress content.
