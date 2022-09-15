@@ -144,9 +144,11 @@ func (r *Replacer) replace(input, empty string,
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
 
+	// fail fast if too many placeholders are unclosed
+	var unclosedCount int
+
 scan:
 	for i := 0; i < len(input); i++ {
-
 		// check for escaped braces
 		if i > 0 && input[i-1] == phEscape && (input[i] == phClose || input[i] == phOpen) {
 			sb.WriteString(input[lastWriteCursor : i-1])
@@ -158,9 +160,17 @@ scan:
 			continue
 		}
 
+		// our iterator is now on an unescaped open brace (start of placeholder)
+
+		// too many unclosed placeholders in absolutely ridiculous input can be extremely slow (issue #4170)
+		if unclosedCount > 100 {
+			return "", fmt.Errorf("too many unclosed placeholders")
+		}
+
 		// find the end of the placeholder
 		end := strings.Index(input[i:], string(phClose)) + i
 		if end < i {
+			unclosedCount++
 			continue
 		}
 
@@ -168,6 +178,7 @@ scan:
 		for end > 0 && end < len(input)-1 && input[end-1] == phEscape {
 			nextEnd := strings.Index(input[end+1:], string(phClose))
 			if nextEnd < 0 {
+				unclosedCount++
 				continue scan
 			}
 			end += nextEnd + 1
