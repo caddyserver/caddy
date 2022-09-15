@@ -16,67 +16,13 @@ package caddyhttp
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-func init() {
-	caddy.RegisterModule(SkipLog{})
-}
-
-// SkipLog causes access logging to be skipped for requests
-// that match one of the configured matchers. Note that the
-// matcher should be configured _within_ the handler, not
-// as a sibling to the handler (within the route) because
-// this handler needs to run the matchers itself to get the
-// result and act appropriately.
-type SkipLog struct {
-	// The matcher sets which will be used to qualify this
-	// route for a request (essentially the "if" statement
-	// of this route). Each matcher set is OR'ed, but matchers
-	// within a set are AND'ed together.
-	MatcherSetsRaw RawMatcherSets `json:"match,omitempty" caddy:"namespace=http.matchers"`
-
-	// decoded values
-	matcherSets MatcherSets `json:"-"`
-}
-
-// CaddyModule returns the Caddy module information.
-func (SkipLog) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  "http.handlers.skip_log",
-		New: func() caddy.Module { return new(SkipLog) },
-	}
-}
-
-// Provision sets up the matchers.
-func (s *SkipLog) Provision(ctx caddy.Context) error {
-	// matchers
-	matchersIface, err := ctx.LoadModule(s, "MatcherSetsRaw")
-	if err != nil {
-		return fmt.Errorf("skip_log: loading matcher modules: %v", err)
-	}
-	err = s.matcherSets.FromInterface(matchersIface)
-	if err != nil {
-		return fmt.Errorf("skip_log: %v", err)
-	}
-	return nil
-}
-
-func (s *SkipLog) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
-	// if there's any match, we skip logging
-	if s.matcherSets.AnyMatch(r) {
-		SetVar(r.Context(), SkipLogVarKey, true)
-	}
-
-	return next.ServeHTTP(w, r)
-}
 
 // ServerLogConfig describes a server's logging configuration. If
 // enabled without customization, all requests to this server are
@@ -154,6 +100,20 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 	return slc.DefaultLoggerName
 }
 
+func (slc *ServerLogConfig) clone() *ServerLogConfig {
+	clone := &ServerLogConfig{
+		DefaultLoggerName:    slc.DefaultLoggerName,
+		LoggerNames:          make(map[string]string),
+		SkipHosts:            append([]string{}, slc.SkipHosts...),
+		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
+		ShouldLogCredentials: slc.ShouldLogCredentials,
+	}
+	for k, v := range slc.LoggerNames {
+		clone.LoggerNames[k] = v
+	}
+	return clone
+}
+
 // errLogValues inspects err and returns the status code
 // to use, the error log message, and any extra fields.
 // If err is a HandlerError, the returned values will
@@ -178,3 +138,7 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 	msg = err.Error()
 	return
 }
+
+// Variable name used to indicate that this request
+// should be omitted from the access logs
+const SkipLogVar = "skip_log"

@@ -33,25 +33,35 @@ http://localhost:2020 {
 										{
 											"handle": [
 												{
-													"handler": "skip_log",
-													"match": [
-														{
-															"path": [
-																"/first-hidden*"
-															]
-														}
-													]
-												},
+													"handler": "vars",
+													"skip_log": true
+												}
+											],
+											"match": [
 												{
-													"handler": "skip_log",
-													"match": [
-														{
-															"path": [
-																"/second-hidden*"
-															]
-														}
+													"path": [
+														"/second-hidden*"
 													]
-												},
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"skip_log": true
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/first-hidden*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
 												{
 													"handler": "static_response",
 													"status_code": 200
