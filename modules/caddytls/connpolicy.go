@@ -20,11 +20,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/mholt/acmez"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -156,6 +159,16 @@ type ConnectionPolicy struct {
 	// is no policy configured for the empty SNI value.
 	DefaultSNI string `json:"default_sni,omitempty"`
 
+	// Also known as "SSLKEYLOGFILE", TLS secrets will be written to
+	// this file in NSS key log format which can then be parsed by
+	// Wireshark and other tools. This is INSECURE as it allows other
+	// programs or tools to decrypt TLS connections. This capability
+	// can be useful for debugging and troubleshooting, however.
+	// **ENABLING THIS LOG COMPROMISES SECURITY!**
+	//
+	// This feature is EXPERIMENTAL and subject to change or removal.
+	InsecureSecretsLog string `json:"insecure_private_key_log,omitempty"`
+
 	// TLSConfig is the fully-formed, standard lib TLS config
 	// used to serve TLS connections. Provision all
 	// ConnectionPolicies to populate this. It is exported only
@@ -280,8 +293,31 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		}
 	}
 
+	if p.InsecureSecretsLog != "" {
+		filename, err := caddy.NewReplacer().ReplaceOrErr(p.InsecureSecretsLog, true, true)
+		if err != nil {
+			return err
+		}
+		filename, err = filepath.Abs(filename)
+		if err != nil {
+			return err
+		}
+		logFile, _, err := secretsLogPool.LoadOrNew(filename, func() (caddy.Destructor, error) {
+			w, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+			return destructorFunc(func() error { return w.Close() }), err
+		})
+		if err != nil {
+			return err
+		}
+		ctx.OnCancel(func() { secretsLogPool.Delete(filename) })
+
+		cfg.KeyLogWriter = logFile.(io.Writer)
+
+		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
+			zap.String("log_filename", filename))
+	}
+
 	setDefaultTLSParams(cfg)
-	setSSLKeylog(cfg)
 
 	p.TLSConfig = cfg
 
@@ -516,16 +552,6 @@ func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x5
 	return fmt.Errorf("client leaf certificate failed validation")
 }
 
-// SSLKEYLOGFILE
-func setSSLKeylog(cfg *tls.Config) {
-	// TODO: Take sslkeylogfile as the file to write.
-	w, err := os.OpenFile("tls-secrets.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		return
-	}
-	cfg.KeyLogWriter = w
-}
-
 // PublicKeyAlgorithm is a JSON-unmarshalable wrapper type.
 type PublicKeyAlgorithm x509.PublicKeyAlgorithm
 
@@ -553,3 +579,9 @@ type ClientCertificateVerifier interface {
 }
 
 var defaultALPN = []string{"h2", "http/1.1"}
+
+type destructorFunc func() error
+
+func (d destructorFunc) Destruct() error { return d() }
+
+var secretsLogPool = caddy.NewUsagePool()
