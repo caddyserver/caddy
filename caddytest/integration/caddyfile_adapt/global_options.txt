@@ -3,6 +3,7 @@
 	http_port 8080
 	https_port 8443
 	grace_period 5s
+	shutdown_delay 10s
 	default_sni localhost
 	order root first
 	storage file_system {
@@ -45,6 +46,7 @@
 			"http_port": 8080,
 			"https_port": 8443,
 			"grace_period": 5000000000,
+			"shutdown_delay": 10000000000,
 			"servers": {
 				"srv0": {
 					"listen": [

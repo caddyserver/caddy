@@ -16,6 +16,7 @@ package caddytls
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
+	"go.uber.org/zap"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.
@@ -174,6 +176,13 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 					tlsApp.Automation.OnDemand.Ask != "" {
 					err := onDemandAskRequest(tlsApp.Automation.OnDemand.Ask, name)
 					if err != nil {
+						// distinguish true errors from denials, because it's important to log actual errors
+						if !errors.Is(err, errAskDenied) {
+							tlsApp.logger.Error("request to 'ask' endpoint failed",
+								zap.Error(err),
+								zap.String("endpoint", tlsApp.Automation.OnDemand.Ask),
+								zap.String("domain", name))
+						}
 						return err
 					}
 				}
@@ -198,7 +207,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
 		}
-		for _, getCertVal := range vals.([]interface{}) {
+		for _, getCertVal := range vals.([]any) {
 			ap.Managers = append(ap.Managers, getCertVal.(certmagic.Manager))
 		}
 	}
@@ -209,7 +218,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if err != nil {
 			return fmt.Errorf("loading TLS automation management module: %s", err)
 		}
-		for _, issVal := range val.([]interface{}) {
+		for _, issVal := range val.([]any) {
 			ap.Issuers = append(ap.Issuers, issVal.(certmagic.Issuer))
 		}
 	}
@@ -247,6 +256,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		MustStaple:         ap.MustStaple,
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
+		OnEvent:            tlsApp.onEvent,
 		OnDemand:           ond,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling:    ap.DisableOCSPStapling,
@@ -363,7 +373,13 @@ type DNSChallengeConfig struct {
 	// The TTL of the TXT record used for the DNS challenge.
 	TTL caddy.Duration `json:"ttl,omitempty"`
 
-	// How long to wait for DNS record to propagate.
+	// How long to wait before starting propagation checks.
+	// Default: 0 (no wait).
+	PropagationDelay caddy.Duration `json:"propagation_delay,omitempty"`
+
+	// Maximum time to wait for temporary DNS record to appear.
+	// Set to -1 to disable propagation checks.
+	// Default: 2 minutes.
 	PropagationTimeout caddy.Duration `json:"propagation_timeout,omitempty"`
 
 	// Custom DNS resolvers to prefer over system/built-in defaults.

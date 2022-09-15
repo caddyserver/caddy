@@ -16,14 +16,22 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go: [ '1.18' ]
+        go: [ '1.19' ]
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.19'
+          GO_SEMVER: '~1.19.0'
+
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Install Go
         uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go }}
+          go-version: ${{ matrix.GO_SEMVER }}
+          check-latest: true
 
       - name: Print Go version and environment
         id: vars
@@ -34,12 +42,16 @@ jobs:
           go env
           printf "\n\nSystem environment:\n\n"
           env
-          echo "::set-output name=go_cache::$(go env GOCACHE)"
 
       - name: Cache the build cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.vars.outputs.go_cache }}
+          # In order:
+          # * Module download cache
+          # * Build cache (Linux)
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: cross-build-go${{ matrix.go }}-${{ matrix.goos }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             cross-build-go${{ matrix.go }}-${{ matrix.goos }}

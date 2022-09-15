@@ -26,17 +26,19 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap/zapcore"
 )
 
 func init() {
 	caddy.RegisterModule(DeleteFilter{})
+	caddy.RegisterModule(HashFilter{})
 	caddy.RegisterModule(ReplaceFilter{})
 	caddy.RegisterModule(IPMaskFilter{})
 	caddy.RegisterModule(QueryFilter{})
 	caddy.RegisterModule(CookieFilter{})
 	caddy.RegisterModule(RegexpFilter{})
-	caddy.RegisterModule(HashFilter{})
+	caddy.RegisterModule(RenameFilter{})
 }
 
 // LogFieldFilter can filter (or manipulate)
@@ -455,7 +457,13 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
-	originRequest := http.Request{Header: http.Header{"Cookie": []string{in.String}}}
+	cookiesSlice, ok := in.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		return in
+	}
+
+	// using a dummy Request to make use of the Cookies() function to parse it
+	originRequest := http.Request{Header: http.Header{"Cookie": cookiesSlice}}
 	cookies := originRequest.Cookies()
 	transformedRequest := http.Request{Header: make(http.Header)}
 
@@ -485,7 +493,7 @@ OUTER:
 		transformedRequest.AddCookie(c)
 	}
 
-	in.String = transformedRequest.Header.Get("Cookie")
+	in.Interface = caddyhttp.LoggableStringArray(transformedRequest.Header["Cookie"])
 
 	return in
 }
@@ -542,21 +550,56 @@ func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
 	return in
 }
 
+// RenameFilter is a Caddy log field filter that
+// renames the field's key with the indicated name.
+type RenameFilter struct {
+	Name string `json:"name,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (RenameFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.rename",
+		New: func() caddy.Module { return new(RenameFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (f *RenameFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			f.Name = d.Val()
+		}
+	}
+	return nil
+}
+
+// Filter renames the input field with the replacement name.
+func (f *RenameFilter) Filter(in zapcore.Field) zapcore.Field {
+	in.Type = zapcore.StringType
+	in.Key = f.Name
+	return in
+}
+
 // Interface guards
 var (
 	_ LogFieldFilter = (*DeleteFilter)(nil)
+	_ LogFieldFilter = (*HashFilter)(nil)
 	_ LogFieldFilter = (*ReplaceFilter)(nil)
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 	_ LogFieldFilter = (*QueryFilter)(nil)
 	_ LogFieldFilter = (*CookieFilter)(nil)
 	_ LogFieldFilter = (*RegexpFilter)(nil)
+	_ LogFieldFilter = (*RenameFilter)(nil)
 
 	_ caddyfile.Unmarshaler = (*DeleteFilter)(nil)
+	_ caddyfile.Unmarshaler = (*HashFilter)(nil)
 	_ caddyfile.Unmarshaler = (*ReplaceFilter)(nil)
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
 	_ caddyfile.Unmarshaler = (*RegexpFilter)(nil)
+	_ caddyfile.Unmarshaler = (*RenameFilter)(nil)
 
 	_ caddy.Provisioner = (*IPMaskFilter)(nil)
 	_ caddy.Provisioner = (*RegexpFilter)(nil)

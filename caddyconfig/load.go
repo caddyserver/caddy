@@ -58,6 +58,10 @@ func (al adminLoad) Routes() []caddy.AdminRoute {
 			Pattern: "/load",
 			Handler: caddy.AdminHandlerFunc(al.handleLoad),
 		},
+		{
+			Pattern: "/adapt",
+			Handler: caddy.AdminHandlerFunc(al.handleAdapt),
+		},
 	}
 }
 
@@ -122,7 +126,48 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// adaptByContentType adapts body to Caddy JSON using the adapter specified by contenType.
+// handleAdapt adapts the given Caddy config to JSON and responds with the result.
+func (adminLoad) handleAdapt(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		return caddy.APIError{
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
+		}
+	}
+
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	_, err := io.Copy(buf, r.Body)
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("reading request body: %v", err),
+		}
+	}
+
+	result, warnings, err := adaptByContentType(r.Header.Get("Content-Type"), buf.Bytes())
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        err,
+		}
+	}
+
+	out := struct {
+		Warnings []Warning       `json:"warnings,omitempty"`
+		Result   json.RawMessage `json:"result"`
+	}{
+		Warnings: warnings,
+		Result:   result,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(out)
+}
+
+// adaptByContentType adapts body to Caddy JSON using the adapter specified by contentType.
 // If contentType is empty or ends with "/json", the input will be returned, as a no-op.
 func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, error) {
 	// assume JSON as the default
@@ -144,12 +189,11 @@ func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, err
 	}
 
 	// adapter name should be suffix of MIME type
-	slashIdx := strings.Index(ct, "/")
-	if slashIdx < 0 {
+	_, adapterName, slashFound := strings.Cut(ct, "/")
+	if !slashFound {
 		return nil, nil, fmt.Errorf("malformed Content-Type")
 	}
 
-	adapterName := ct[slashIdx+1:]
 	cfgAdapter := GetAdapter(adapterName)
 	if cfgAdapter == nil {
 		return nil, nil, fmt.Errorf("unrecognized config adapter '%s'", adapterName)
@@ -164,7 +208,7 @@ func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, err
 }
 
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

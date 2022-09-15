@@ -12,11 +12,8 @@
 		}
 		max_header_size 100MB
 		log_credentials
-		protocol {
-			allow_h2c
-			experimental_http3
-			strict_sni_host
-		}
+		strict_sni_host
+		protocols h1 h2 h2c h3
 	}
 }
 
@@ -61,8 +58,12 @@ foo.com {
 					"logs": {
 						"should_log_credentials": true
 					},
-					"experimental_http3": true,
-					"allow_h2c": true
+					"protocols": [
+						"h1",
+						"h2",
+						"h2c",
+						"h3"
+					]
 				}
 			}
 		}

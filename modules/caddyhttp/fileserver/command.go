@@ -117,8 +117,14 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		Servers: map[string]*caddyhttp.Server{"static": server},
 	}
 
+	var false bool
 	cfg := &caddy.Config{
-		Admin: &caddy.AdminConfig{Disabled: true},
+		Admin: &caddy.AdminConfig{
+			Disabled: true,
+			Config: &caddy.ConfigSettings{
+				Persist: &false,
+			},
+		},
 		AppsRaw: caddy.ModuleMap{
 			"http": caddyconfig.JSON(httpApp, nil),
 		},
@@ -129,7 +135,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	log.Printf("Caddy 2 serving static files on %s", listen)
+	log.Printf("Caddy serving static files on %s", listen)
 
 	select {}
 }

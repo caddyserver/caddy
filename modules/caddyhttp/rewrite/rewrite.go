@@ -31,13 +31,25 @@ func init() {
 	caddy.RegisterModule(Rewrite{})
 }
 
-// Rewrite is a middleware which can rewrite HTTP requests.
+// Rewrite is a middleware which can rewrite/mutate HTTP requests.
 //
-// The Method and URI properties are "setters": the request URI
-// will be set to the given values. Other properties are "modifiers":
-// they modify existing files but do not explicitly specify what the
-// result will be. It is atypical to combine the use of setters and
+// The Method and URI properties are "setters" (the request URI
+// will be overwritten with the given values). Other properties are
+// "modifiers" (they modify existing values in a differentiable
+// way). It is atypical to combine the use of setters and
 // modifiers in a single rewrite.
+//
+// To ensure consistent behavior, prefix and suffix stripping is
+// performed in the URL-decoded (unescaped, normalized) space by
+// default except for the specific bytes where an escape sequence
+// is used in the prefix or suffix pattern.
+//
+// For all modifiers, paths are cleaned before being modified so that
+// multiple, consecutive slashes are collapsed into a single slash,
+// and dot elements are resolved and removed. In the special case
+// of a prefix, suffix, or substring containing "//" (repeated slashes),
+// slashes will not be merged while cleaning the path so that
+// the rewrite can be interpreted literally.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
@@ -59,9 +71,15 @@ type Rewrite struct {
 	URI string `json:"uri,omitempty"`
 
 	// Strips the given prefix from the beginning of the URI path.
+	// The prefix should be written in normalized (unescaped) form,
+	// but if an escaping (`%xx`) is used, the path will be required
+	// to have that same escape at that position in order to match.
 	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
 
 	// Strips the given suffix from the end of the URI path.
+	// The suffix should be written in normalized (unescaped) form,
+	// but if an escaping (`%xx`) is used, the path will be required
+	// to have that same escape at that position in order to match.
 	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
 	// Performs substring replacements on the URI.
@@ -106,7 +124,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 	)
 
-	changed := rewr.rewrite(r, repl, logger)
+	changed := rewr.Rewrite(r, repl)
 
 	if changed {
 		logger.Debug("rewrote request",
@@ -121,7 +139,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which should
 // have been obtained from r, but is passed in for efficiency.
 // It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -135,13 +153,20 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
 		pathEnd, qsEnd := -1, -1
+	loop:
 		for i, ch := range uri {
 			switch {
 			case ch == '?' && qsStart < 0:
 				pathEnd, qsStart = i, i+1
-			case ch == '#' && fragStart < 0:
-				qsEnd, fragStart = i, i+1
-			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+			case ch == '#' && fragStart < 0: // everything after fragment is fragment (very clear in RFC 3986 section 4.2)
+				if qsStart < 0 {
+					pathEnd = i
+				} else {
+					qsEnd = i
+				}
+				fragStart = i + 1
+				break loop
+			case pathStart < 0 && qsStart < 0:
 				pathStart = i
 			}
 		}
@@ -187,10 +212,10 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
-		if quPos := strings.Index(newPath, "?"); quPos > -1 {
+		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
-			newPath, injectedQuery = newPath[:quPos], newPath[quPos+1:]
+			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
 				query = injectedQuery
@@ -220,17 +245,18 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
-		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
-		if p, err := url.PathUnescape(r.URL.RawPath); err == nil && p != "" {
-			r.URL.Path = p
-		} else {
-			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
-		}
+		mergeSlashes := !strings.Contains(prefix, "//")
+		changePath(r, func(escapedPath string) string {
+			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
+			return trimPathPrefix(escapedPath, prefix)
+		})
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
-		changePath(r, func(pathOrRawPath string) string {
-			return strings.TrimSuffix(pathOrRawPath, suffix)
+		mergeSlashes := !strings.Contains(suffix, "//")
+		changePath(r, func(escapedPath string) string {
+			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
+			return reverse(trimPathPrefix(reverse(escapedPath), reverse(suffix)))
 		})
 	}
 
@@ -276,7 +302,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 
 		// consume the component and write the result
 		comp := qs[:end]
-		comp, _ = repl.ReplaceFunc(comp, func(name string, val interface{}) (interface{}, error) {
+		comp, _ = repl.ReplaceFunc(comp, func(name string, val any) (any, error) {
 			if name == "http.request.uri.query" && wroteVal {
 				return val, nil // already escaped
 			}
@@ -317,6 +343,58 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 	return sb.String()
 }
 
+// trimPathPrefix is like strings.TrimPrefix, but customized for advanced URI
+// path prefix matching. The string prefix will be trimmed from the beginning
+// of escapedPath if escapedPath starts with prefix. Rather than a naive 1:1
+// comparison of each byte to determine if escapedPath starts with prefix,
+// both strings are iterated in lock-step, and if prefix has a '%' encoding
+// at a particular position, escapedPath must also have the same encoding
+// representation for that character. In other words, if the prefix string
+// uses the escaped form for a character, escapedPath must literally use the
+// same escape at that position. Otherwise, all character comparisons are
+// performed in normalized/unescaped space.
+func trimPathPrefix(escapedPath, prefix string) string {
+	var iPath, iPrefix int
+	for {
+		if iPath >= len(escapedPath) || iPrefix >= len(prefix) {
+			break
+		}
+
+		prefixCh := prefix[iPrefix]
+		ch := string(escapedPath[iPath])
+
+		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
+			var err error
+			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
+			if err != nil {
+				// should be impossible unless EscapedPath() is returning invalid values!
+				return escapedPath
+			}
+			iPath += 2
+		}
+
+		// prefix comparisons are case-insensitive to consistency with
+		// path matcher, which is case-insensitive for good reasons
+		if !strings.EqualFold(ch, string(prefixCh)) {
+			return escapedPath
+		}
+
+		iPath++
+		iPrefix++
+	}
+
+	// found matching prefix, trim it
+	return escapedPath[iPath:]
+}
+
+func reverse(s string) string {
+	r := []rune(s)
+	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return string(r)
+}
+
 // substrReplacer describes either a simple and fast substring replacement.
 type substrReplacer struct {
 	// A substring to find. Supports placeholders.
@@ -344,8 +422,10 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	find := repl.ReplaceAll(rep.Find, "")
 	replace := repl.ReplaceAll(rep.Replace, "")
 
+	mergeSlashes := !strings.Contains(rep.Find, "//")
+
 	changePath(r, func(pathOrRawPath string) string {
-		return strings.Replace(pathOrRawPath, find, replace, lim)
+		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
 	})
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
@@ -373,15 +453,16 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	})
 }
 
-// changePath updates the path on the request URL. It first executes newVal on
-// req.URL.RawPath, and if the result is a valid escaping, it will be copied
-// into req.URL.Path; otherwise newVal is evaluated only on req.URL.Path.
 func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
-	req.URL.RawPath = newVal(req.URL.RawPath)
+	req.URL.RawPath = newVal(req.URL.EscapedPath())
 	if p, err := url.PathUnescape(req.URL.RawPath); err == nil && p != "" {
 		req.URL.Path = p
 	} else {
 		req.URL.Path = newVal(req.URL.Path)
+	}
+	// RawPath is only set if it's different from the normalized Path (std lib)
+	if req.URL.RawPath == req.URL.Path {
+		req.URL.RawPath = ""
 	}
 }
 

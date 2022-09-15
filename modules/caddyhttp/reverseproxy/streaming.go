@@ -20,6 +20,7 @@ package reverseproxy
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"mime"
 	"net/http"
@@ -27,15 +28,21 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http/httpguts"
 )
 
 func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
-	// TODO: Update to use "net/http/internal/ascii" once we bumped
-	// the minimum Go version to 1.17.
-	// See https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
-	if reqUpType != resUpType {
+
+	// Taken from https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
+	// We know reqUpType is ASCII, it's checked by the caller.
+	if !asciiIsPrint(resUpType) {
+		h.logger.Debug("backend tried to switch to invalid protocol",
+			zap.String("backend_upgrade", resUpType))
+		return
+	}
+	if !asciiEqualFold(reqUpType, resUpType) {
 		h.logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
 			zap.String("backend_upgrade", resUpType),
 			zap.String("requested_upgrade", reqUpType))
@@ -92,8 +99,26 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 		return
 	}
 
-	errc := make(chan error, 1)
+	// Ensure the hijacked client connection, and the new connection established
+	// with the backend, are both closed in the event of a server shutdown. This
+	// is done by registering them. We also try to gracefully close connections
+	// we recognize as websockets.
+	gracefulClose := func(conn io.ReadWriteCloser) func() error {
+		if isWebsocket(req) {
+			return func() error {
+				return writeCloseControl(conn)
+			}
+		}
+		return nil
+	}
+	deleteFrontConn := h.registerConnection(conn, gracefulClose(conn))
+	deleteBackConn := h.registerConnection(backConn, gracefulClose(backConn))
+	defer deleteFrontConn()
+	defer deleteBackConn()
+
 	spc := switchProtocolCopier{user: conn, backend: backConn}
+
+	errc := make(chan error, 1)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
 	<-errc
@@ -204,6 +229,60 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 	}
 }
 
+// registerConnection holds onto conn so it can be closed in the event
+// of a server shutdown. This is useful because hijacked connections or
+// connections dialed to backends don't close when server is shut down.
+// The caller should call the returned delete() function when the
+// connection is done to remove it from memory.
+func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (del func()) {
+	h.connectionsMu.Lock()
+	h.connections[conn] = openConnection{conn, gracefulClose}
+	h.connectionsMu.Unlock()
+	return func() {
+		h.connectionsMu.Lock()
+		delete(h.connections, conn)
+		h.connectionsMu.Unlock()
+	}
+}
+
+// writeCloseControl sends a best-effort Close control message to the given
+// WebSocket connection. Thanks to @pascaldekloe who provided inspiration
+// from his simple implementation of this I was able to learn from at:
+// github.com/pascaldekloe/websocket.
+func writeCloseControl(conn io.Writer) error {
+	// https://github.com/pascaldekloe/websocket/blob/32050af67a5d/websocket.go#L119
+
+	var reason string // max 123 bytes (control frame payload limit is 125; status code takes 2)
+	const goingAway uint16 = 1001
+
+	// TODO: we might need to ensure we are the exclusive writer by this point (io.Copy is stopped)?
+	var writeBuf [127]byte
+	const closeMessage = 8
+	const finalBit = 1 << 7
+	writeBuf[0] = closeMessage | finalBit
+	writeBuf[1] = byte(len(reason) + 2)
+	binary.BigEndian.PutUint16(writeBuf[2:4], goingAway)
+	copy(writeBuf[4:], reason)
+
+	// simply best-effort, but return error for logging purposes
+	_, err := conn.Write(writeBuf[:4+len(reason)])
+	return err
+}
+
+// isWebsocket returns true if r looks to be an upgrade request for WebSockets.
+// It is a fairly naive check.
+func isWebsocket(r *http.Request) bool {
+	return httpguts.HeaderValuesContainsToken(r.Header["Connection"], "upgrade") &&
+		httpguts.HeaderValuesContainsToken(r.Header["Upgrade"], "websocket")
+}
+
+// openConnection maps an open connection to
+// an optional function for graceful close.
+type openConnection struct {
+	conn          io.ReadWriteCloser
+	gracefulClose func() error
+}
+
 type writeFlusher interface {
 	io.Writer
 	http.Flusher
@@ -260,7 +339,7 @@ func (m *maxLatencyWriter) stop() {
 // switchProtocolCopier exists so goroutines proxying data back and
 // forth have nice names in stacks.
 type switchProtocolCopier struct {
-	user, backend io.ReadWriter
+	user, backend io.ReadWriteCloser
 }
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
@@ -274,7 +353,7 @@ func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 }
 
 var streamingBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// The Pool's New function should generally only return pointer
 		// types, since a pointer can be put into the return interface
 		// value without an allocation

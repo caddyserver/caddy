@@ -6,11 +6,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/naoina/toml"
-	"gopkg.in/yaml.v2"
+	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 )
 
-func extractFrontMatter(input string) (map[string]interface{}, string, error) {
+func extractFrontMatter(input string) (map[string]any, string, error) {
 	// get the bounds of the first non-empty line
 	var firstLineStart, firstLineEnd int
 	lineEmpty := true
@@ -35,7 +35,7 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 
 	// see what kind of front matter there is, if any
 	var closingFence []string
-	var fmParser func([]byte) (map[string]interface{}, error)
+	var fmParser func([]byte) (map[string]any, error)
 	for _, fmType := range supportedFrontMatterTypes {
 		if firstLine == fmType.FenceOpen {
 			closingFence = fmType.FenceClose
@@ -77,35 +77,35 @@ func extractFrontMatter(input string) (map[string]interface{}, string, error) {
 	return fm, body, nil
 }
 
-func yamlFrontMatter(input []byte) (map[string]interface{}, error) {
-	m := make(map[string]interface{})
+func yamlFrontMatter(input []byte) (map[string]any, error) {
+	m := make(map[string]any)
 	err := yaml.Unmarshal(input, &m)
 	return m, err
 }
 
-func tomlFrontMatter(input []byte) (map[string]interface{}, error) {
-	m := make(map[string]interface{})
+func tomlFrontMatter(input []byte) (map[string]any, error) {
+	m := make(map[string]any)
 	err := toml.Unmarshal(input, &m)
 	return m, err
 }
 
-func jsonFrontMatter(input []byte) (map[string]interface{}, error) {
+func jsonFrontMatter(input []byte) (map[string]any, error) {
 	input = append([]byte{'{'}, input...)
 	input = append(input, '}')
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	err := json.Unmarshal(input, &m)
 	return m, err
 }
 
 type parsedMarkdownDoc struct {
-	Meta map[string]interface{} `json:"meta,omitempty"`
-	Body string                 `json:"body,omitempty"`
+	Meta map[string]any `json:"meta,omitempty"`
+	Body string         `json:"body,omitempty"`
 }
 
 type frontMatterType struct {
 	FenceOpen  string
 	FenceClose []string
-	ParseFunc  func(input []byte) (map[string]interface{}, error)
+	ParseFunc  func(input []byte) (map[string]any, error)
 }
 
 var supportedFrontMatterTypes = []frontMatterType{

@@ -22,9 +22,9 @@ import (
 
 func testPool() UpstreamPool {
 	return UpstreamPool{
-		{Host: new(Host)},
-		{Host: new(Host)},
-		{Host: new(Host)},
+		{Host: new(Host), Dial: "0.0.0.1"},
+		{Host: new(Host), Dial: "0.0.0.2"},
+		{Host: new(Host), Dial: "0.0.0.3"},
 	}
 }
 
@@ -95,13 +95,13 @@ func TestIPHashPolicy(t *testing.T) {
 	// We should be able to predict where every request is routed.
 	req.RemoteAddr = "172.0.0.1:80"
 	h := ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.2:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.3:80"
 	h = ipHash.Select(pool, req, nil)
@@ -117,13 +117,13 @@ func TestIPHashPolicy(t *testing.T) {
 	// we should get the same results without a port
 	req.RemoteAddr = "172.0.0.1"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.2"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.3"
 	h = ipHash.Select(pool, req, nil)
@@ -138,7 +138,7 @@ func TestIPHashPolicy(t *testing.T) {
 
 	// we should get a healthy host if the original host is unhealthy and a
 	// healthy host is available
-	req.RemoteAddr = "172.0.0.1"
+	req.RemoteAddr = "172.0.0.4"
 	pool[1].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
 	if h != pool[2] {
@@ -147,16 +147,16 @@ func TestIPHashPolicy(t *testing.T) {
 
 	req.RemoteAddr = "172.0.0.2"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[2] {
-		t.Error("Expected ip hash policy host to be the third host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	pool[1].setHealthy(true)
 
 	req.RemoteAddr = "172.0.0.3"
 	pool[2].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.4"
 	h = ipHash.Select(pool, req, nil)
@@ -167,28 +167,28 @@ func TestIPHashPolicy(t *testing.T) {
 	// We should be able to resize the host pool and still be able to predict
 	// where a req will be routed with the same IP's used above
 	pool = UpstreamPool{
-		{Host: new(Host)},
-		{Host: new(Host)},
+		{Host: new(Host), Dial: "0.0.0.2"},
+		{Host: new(Host), Dial: "0.0.0.3"},
 	}
 	req.RemoteAddr = "172.0.0.1:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.2:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
-	}
-	req.RemoteAddr = "172.0.0.3:80"
-	h = ipHash.Select(pool, req, nil)
 	if h != pool[0] {
 		t.Error("Expected ip hash policy host to be the first host.")
 	}
-	req.RemoteAddr = "172.0.0.4:80"
+	req.RemoteAddr = "172.0.0.3:80"
 	h = ipHash.Select(pool, req, nil)
 	if h != pool[1] {
 		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	req.RemoteAddr = "172.0.0.4:80"
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 
 	// We should get nil when there are no healthy hosts
@@ -252,14 +252,14 @@ func TestURIHashPolicy(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	h := uriPolicy.Select(pool, request, nil)
-	if h != pool[0] {
-		t.Error("Expected uri policy host to be the first host.")
+	if h != pool[2] {
+		t.Error("Expected uri policy host to be the third host.")
 	}
 
-	pool[0].setHealthy(false)
+	pool[2].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != pool[1] {
-		t.Error("Expected uri policy host to be the first host.")
+		t.Error("Expected uri policy host to be the second host.")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/test_2", nil)

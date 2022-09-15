@@ -16,19 +16,23 @@ package caddyhttp
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -36,6 +40,8 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
+	activeRequests int64 // accessed atomically
+
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges. Listener addresses must
@@ -64,6 +70,11 @@ type Server struct {
 	// when keep-alives are enabled. If zero, a default timeout of
 	// 5m is applied to help avoid resource exhaustion.
 	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
+
+	// KeepAliveInterval is the interval at which TCP keepalive packets
+	// are sent to keep the connection alive at the TCP layer when no other
+	// data is being transmitted. The default is 15s.
+	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
@@ -111,41 +122,68 @@ type Server struct {
 	// to a non-null, empty struct.
 	Logs *ServerLogConfig `json:"logs,omitempty"`
 
-	// Enable experimental HTTP/3 support. Note that HTTP/3 is not a
-	// finished standard and has extremely limited client support.
-	// This field is not subject to compatibility promises.
-	ExperimentalHTTP3 bool `json:"experimental_http3,omitempty"`
-
-	// Enables H2C ("Cleartext HTTP/2" or "H2 over TCP") support,
-	// which will serve HTTP/2 over plaintext TCP connections if
-	// the client supports it. Because this is not implemented by the
-	// Go standard library, using H2C is incompatible with most
-	// of the other options for this server. Do not enable this
+	// Protocols specifies which HTTP protocols to enable.
+	// Supported values are:
+	//
+	// - `h1` (HTTP/1.1)
+	// - `h2` (HTTP/2)
+	// - `h2c` (cleartext HTTP/2)
+	// - `h3` (HTTP/3)
+	//
+	// If enabling `h2` or `h2c`, `h1` must also be enabled;
+	// this is due to current limitations in the Go standard
+	// library.
+	//
+	// HTTP/2 operates only over TLS (HTTPS). HTTP/3 opens
+	// a UDP socket to serve QUIC connections.
+	//
+	// H2C operates over plain TCP if the client supports it;
+	// however, because this is not implemented by the Go
+	// standard library, other server options are not compatible
+	// and will not be applied to H2C requests. Do not enable this
 	// only to achieve maximum client compatibility. In practice,
 	// very few clients implement H2C, and even fewer require it.
-	// This setting applies only to unencrypted HTTP listeners.
-	// ⚠️ Experimental feature; subject to change or removal.
-	AllowH2C bool `json:"allow_h2c,omitempty"`
+	// Enabling H2C can be useful for serving/proxying gRPC
+	// if encryption is not possible or desired.
+	//
+	// We recommend for most users to simply let Caddy use the
+	// default settings.
+	//
+	// Default: `[h1 h2 h3]`
+	Protocols []string `json:"protocols,omitempty"`
 
 	name string
 
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
+	listeners           []net.Listener
 
 	tlsApp       *caddytls.TLS
+	events       *caddyevents.App
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
+	ctx          caddy.Context
 
-	h3server *http3.Server
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
+
+	shutdownAt   time.Time
+	shutdownAtMu *sync.RWMutex
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "Caddy")
 
+	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
+		// keep track of active requests for QUIC transport purposes
+		atomic.AddInt64(&s.activeRequests, 1)
+		defer atomic.AddInt64(&s.activeRequests, -1)
+
 		err := s.h3server.SetQuicHeaders(w.Header())
 		if err != nil {
 			s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
@@ -187,9 +225,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		accLog := s.accessLogger.With(loggableReq)
 
 		defer func() {
+			// this request may be flagged as omitted from the logs
+			if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
+				return
+			}
+
 			repl.Set("http.response.status", wrec.Status())
 			repl.Set("http.response.size", wrec.Size())
 			repl.Set("http.response.duration", duration)
+			repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
 
 			logger := accLog
 			if s.Logs != nil {
@@ -437,6 +481,34 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
+// serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
+// not already done, and then uses that server to serve HTTP/3 over
+// the listener, with Server s as the handler.
+func (s *Server) serveHTTP3(hostport string, tlsCfg *tls.Config) error {
+	h3ln, err := caddy.ListenQUIC(hostport, tlsCfg, &s.activeRequests)
+	if err != nil {
+		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
+	}
+
+	// create HTTP/3 server if not done already
+	if s.h3server == nil {
+		s.h3server = &http3.Server{
+			Handler:        s,
+			TLSConfig:      tlsCfg,
+			MaxHeaderBytes: s.MaxHeaderBytes,
+			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
+			QuicConfig: &quic.Config{
+				Versions: []quic.VersionNumber{quic.Version1, quic.Version2},
+			},
+		}
+	}
+
+	//nolint:errcheck
+	go s.h3server.ServeListener(h3ln)
+
+	return nil
+}
+
 // HTTPErrorConfig determines how to handle errors
 // from the HTTP handlers.
 type HTTPErrorConfig struct {
@@ -471,8 +543,13 @@ func (*HTTPErrorConfig) WithError(r *http.Request, err error) *http.Request {
 	if handlerErr, ok := err.(HandlerError); ok {
 		repl.Set("http.error.status_code", handlerErr.StatusCode)
 		repl.Set("http.error.status_text", http.StatusText(handlerErr.StatusCode))
-		repl.Set("http.error.trace", handlerErr.Trace)
 		repl.Set("http.error.id", handlerErr.ID)
+		repl.Set("http.error.trace", handlerErr.Trace)
+		if handlerErr.Err != nil {
+			repl.Set("http.error.message", handlerErr.Err.Error())
+		} else {
+			repl.Set("http.error.message", http.StatusText(handlerErr.StatusCode))
+		}
 	}
 
 	return r
@@ -501,81 +578,23 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	return true
 }
 
-// ServerLogConfig describes a server's logging configuration. If
-// enabled without customization, all requests to this server are
-// logged to the default logger; logger destinations may be
-// customized per-request-host.
-type ServerLogConfig struct {
-	// The default logger name for all logs emitted by this server for
-	// hostnames that are not in the LoggerNames (logger_names) map.
-	DefaultLoggerName string `json:"default_logger_name,omitempty"`
-
-	// LoggerNames maps request hostnames to a custom logger name.
-	// For example, a mapping of "example.com" to "example" would
-	// cause access logs from requests with a Host of example.com
-	// to be emitted by a logger named "http.log.access.example".
-	LoggerNames map[string]string `json:"logger_names,omitempty"`
-
-	// By default, all requests to this server will be logged if
-	// access logging is enabled. This field lists the request
-	// hosts for which access logging should be disabled.
-	SkipHosts []string `json:"skip_hosts,omitempty"`
-
-	// If true, requests to any host not appearing in the
-	// LoggerNames (logger_names) map will not be logged.
-	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
-
-	// If true, credentials that are otherwise omitted, will be logged.
-	// The definition of credentials is defined by https://fetch.spec.whatwg.org/#credentials,
-	// and this includes some request and response headers, i.e `Cookie`,
-	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
-	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
+// protocol returns true if the protocol proto is configured/enabled.
+func (s *Server) protocol(proto string) bool {
+	for _, p := range s.Protocols {
+		if p == proto {
+			return true
+		}
+	}
+	return false
 }
 
-// wrapLogger wraps logger in a logger named according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
-	if loggerName := slc.getLoggerName(host); loggerName != "" {
-		return logger.Named(loggerName)
-	}
-	return logger
-}
-
-func (slc ServerLogConfig) getLoggerName(host string) string {
-	tryHost := func(key string) (string, bool) {
-		// first try exact match
-		if loggerName, ok := slc.LoggerNames[key]; ok {
-			return loggerName, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err := net.SplitHostPort(key)
-		if err != nil {
-			return "", false
-		}
-		loggerName, ok := slc.LoggerNames[hostOnly]
-		return loggerName, ok
-	}
-
-	// try the exact hostname first
-	if loggerName, ok := tryHost(host); ok {
-		return loggerName
-	}
-
-	// try matching wildcard domains if other non-specific loggers exist
-	labels := strings.Split(host, ".")
-	for i := range labels {
-		if labels[i] == "" {
-			continue
-		}
-		labels[i] = "*"
-		wildcardHost := strings.Join(labels, ".")
-		if loggerName, ok := tryHost(wildcardHost); ok {
-			return loggerName
-		}
-	}
-
-	return slc.DefaultLoggerName
-}
+// Listeners returns the server's listeners. These are active listeners,
+// so calling Accept() or Close() on them will probably break things.
+// They are made available here for read-only purposes (e.g. Addr())
+// and for type-asserting for purposes where you know what you're doing.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) Listeners() []net.Listener { return s.listeners }
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
@@ -583,7 +602,7 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]interface{}))
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
@@ -594,31 +613,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	addHTTPVarsToReplacer(repl, r, w)
 
 	return r
-}
-
-// errLogValues inspects err and returns the status code
-// to use, the error log message, and any extra fields.
-// If err is a HandlerError, the returned values will
-// have richer information.
-func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
-	var handlerErr HandlerError
-	if errors.As(err, &handlerErr) {
-		status = handlerErr.StatusCode
-		if handlerErr.Err == nil {
-			msg = err.Error()
-		} else {
-			msg = handlerErr.Err.Error()
-		}
-		fields = []zapcore.Field{
-			zap.Int("status", handlerErr.StatusCode),
-			zap.String("err_id", handlerErr.ID),
-			zap.String("err_trace", handlerErr.Trace),
-		}
-		return
-	}
-	status = http.StatusInternalServerError
-	msg = err.Error()
-	return
 }
 
 // originalRequest returns a partial, shallow copy of

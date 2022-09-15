@@ -42,6 +42,7 @@ var directiveOrder = []string{
 	"map",
 	"vars",
 	"root",
+	"skip_log",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
@@ -57,6 +58,7 @@ var directiveOrder = []string{
 
 	// middleware handlers; some wrap responses
 	"basicauth",
+	"forward_auth",
 	"request_header",
 	"encode",
 	"push",
@@ -141,8 +143,8 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 type Helper struct {
 	*caddyfile.Dispenser
 	// State stores intermediate variables during caddyfile adaptation.
-	State        map[string]interface{}
-	options      map[string]interface{}
+	State        map[string]any
+	options      map[string]any
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
 	parentBlock  caddyfile.ServerBlock
@@ -150,7 +152,7 @@ type Helper struct {
 }
 
 // Option gets the option keyed by name.
-func (h Helper) Option(name string) interface{} {
+func (h Helper) Option(name string) any {
 	return h.options[name]
 }
 
@@ -174,7 +176,7 @@ func (h Helper) Caddyfiles() []string {
 }
 
 // JSON converts val into JSON. Any errors are added to warnings.
-func (h Helper) JSON(val interface{}) json.RawMessage {
+func (h Helper) JSON(val any) json.RawMessage {
 	return caddyconfig.JSON(val, h.warnings)
 }
 
@@ -374,7 +376,7 @@ type ConfigValue struct {
 	// The value to be used when building the config.
 	// Generally its type is associated with the
 	// name of the Class.
-	Value interface{}
+	Value any
 
 	directive string
 }
@@ -405,7 +407,7 @@ func sortRoutes(routes []ConfigValue) {
 			return false
 		}
 
-		// decode the path matchers, if there is just one of them
+		// decode the path matchers if there is just one matcher set
 		var iPM, jPM caddyhttp.MatchPath
 		if len(iRoute.MatcherSetsRaw) == 1 {
 			_ = json.Unmarshal(iRoute.MatcherSetsRaw[0]["path"], &iPM)
@@ -414,24 +416,46 @@ func sortRoutes(routes []ConfigValue) {
 			_ = json.Unmarshal(jRoute.MatcherSetsRaw[0]["path"], &jPM)
 		}
 
-		// sort by longer path (more specific) first; missing path
-		// matchers or multi-matchers are treated as zero-length paths
+		// if there is only one path in the path matcher, sort by longer path
+		// (more specific) first; missing path matchers or multi-matchers are
+		// treated as zero-length paths
 		var iPathLen, jPathLen int
-		if len(iPM) > 0 {
+		if len(iPM) == 1 {
 			iPathLen = len(iPM[0])
 		}
-		if len(jPM) > 0 {
+		if len(jPM) == 1 {
 			jPathLen = len(jPM[0])
 		}
 
-		// if both directives have no path matcher, use whichever one
-		// has any kind of matcher defined first.
-		if iPathLen == 0 && jPathLen == 0 {
+		// some directives involve setting values which can overwrite
+		// each other, so it makes most sense to reverse the order so
+		// that the lease specific matcher is first; everything else
+		// has most-specific matcher first
+		if iDir == "vars" {
+			// we can only confidently compare path lengths if both
+			// directives have a single path to match (issue #5037)
+			if iPathLen > 0 && jPathLen > 0 {
+				// sort least-specific (shortest) path first
+				return iPathLen < jPathLen
+			}
+
+			// if both directives don't have a single path to compare,
+			// sort whichever one has no matcher first; if both have
+			// no matcher, sort equally (stable sort preserves order)
+			return len(iRoute.MatcherSetsRaw) == 0 && len(jRoute.MatcherSetsRaw) > 0
+		} else {
+			// we can only confidently compare path lengths if both
+			// directives have a single path to match (issue #5037)
+			if iPathLen > 0 && jPathLen > 0 {
+				// sort most-specific (longest) path first
+				return iPathLen > jPathLen
+			}
+
+			// if both directives don't have a single path to compare,
+			// sort whichever one has a matcher first; if both have
+			// a matcher, sort equally (stable sort preserves order)
 			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
 		}
-
-		// sort with the most-specific (longest) path first
-		return iPathLen > jPathLen
 	})
 }
 
@@ -551,7 +575,7 @@ type (
 	// tokens from a global option. It is passed the tokens to parse and
 	// existing value from the previous instance of this global option
 	// (if any). It returns the value to associate with this global option.
-	UnmarshalGlobalFunc func(d *caddyfile.Dispenser, existingVal interface{}) (interface{}, error)
+	UnmarshalGlobalFunc func(d *caddyfile.Dispenser, existingVal any) (any, error)
 )
 
 var registeredDirectives = make(map[string]UnmarshalFunc)
