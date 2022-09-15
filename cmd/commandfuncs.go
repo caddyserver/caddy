@@ -679,7 +679,7 @@ func DetermineAdminAPIAddress(address string, config []byte, configFile, configA
 				return "", err
 			}
 			if loadedConfigFile == "" {
-				return "", fmt.Errorf("no config file to load")
+				return "", fmt.Errorf("no config file to load; either use --config flag or ensure Caddyfile exists in current directory")
 			}
 		}
 
