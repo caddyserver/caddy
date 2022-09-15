@@ -304,7 +304,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		}
 		logFile, _, err := secretsLogPool.LoadOrNew(filename, func() (caddy.Destructor, error) {
 			w, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-			return destructorFunc(func() error { return w.Close() }), err
+			return destructableWriter{w}, err
 		})
 		if err != nil {
 			return err
@@ -334,7 +334,8 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.ProtocolMin == "" &&
 		p.ProtocolMax == "" &&
 		p.ClientAuthentication == nil &&
-		p.DefaultSNI == ""
+		p.DefaultSNI == "" &&
+		p.InsecureSecretsLog == ""
 }
 
 // ClientAuthentication configures TLS client auth.
@@ -580,8 +581,8 @@ type ClientCertificateVerifier interface {
 
 var defaultALPN = []string{"h2", "http/1.1"}
 
-type destructorFunc func() error
+type destructableWriter struct{ *os.File }
 
-func (d destructorFunc) Destruct() error { return d() }
+func (d destructableWriter) Destruct() error { return d.Close() }
 
 var secretsLogPool = caddy.NewUsagePool()
