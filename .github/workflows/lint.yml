@@ -14,17 +14,22 @@ jobs:
   # From https://github.com/golangci/golangci-lint-action
   golangci:
     name: lint
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: '~1.17.9'
+          go-version: '~1.18.4'
           check-latest: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.44
+          version: v1.47
+          # Windows times out frequently after about 5m50s if we don't set a longer timeout.
+          args: --timeout 10m
           # Optional: show only new issues if it's a pull request. The default value is `false`.
           # only-new-issues: true

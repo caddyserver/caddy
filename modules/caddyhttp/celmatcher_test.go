@@ -19,11 +19,461 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+var (
+	clientCert = []byte(`-----BEGIN CERTIFICATE-----
+MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
+eSBUZXN0IENBMB4XDTE4MDcyNDIxMzUwNVoXDTI4MDcyMTIxMzUwNVowHTEbMBkG
+A1UEAwwSY2xpZW50LmxvY2FsZG9tYWluMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCB
+iQKBgQDFDEpzF0ew68teT3xDzcUxVFaTII+jXH1ftHXxxP4BEYBU4q90qzeKFneF
+z83I0nC0WAQ45ZwHfhLMYHFzHPdxr6+jkvKPASf0J2v2HDJuTM1bHBbik5Ls5eq+
+fVZDP8o/VHKSBKxNs8Goc2NTsr5b07QTIpkRStQK+RJALk4x9QIDAQABo0swSTAJ
+BgNVHRMEAjAAMAsGA1UdDwQEAwIHgDAaBgNVHREEEzARgglsb2NhbGhvc3SHBH8A
+AAEwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADgYEANSjz2Sk+
+eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
+3Q9fgDkiUod+uIK0IynzIKvw+Cjg+3nx6NQ0IM0zo8c7v398RzB4apbXKZyeeqUH
+9fNwfEi+OoXR6s+upSKobCmLGLGi9Na5s5g=
+-----END CERTIFICATE-----`)
+
+	matcherTests = []struct {
+		name              string
+		expression        *MatchExpression
+		urlTarget         string
+		httpMethod        string
+		httpHeader        *http.Header
+		wantErr           bool
+		wantResult        bool
+		clientCertificate []byte
+	}{
+		{
+			name: "boolean matches succeed for placeholder http.request.tls.client.subject",
+			expression: &MatchExpression{
+				Expr: "{http.request.tls.client.subject} == 'CN=client.localdomain'",
+			},
+			clientCertificate: clientCert,
+			urlTarget:         "https://example.com/foo",
+			wantResult:        true,
+		},
+		{
+			name: "header matches (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': 'foo'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: true,
+		},
+		{
+			name: "header error (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header('foo')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantErr:    true,
+		},
+		{
+			name: "header_regexp matches (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('Field', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: true,
+		},
+		{
+			name: "header_regexp matches with name (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo', 'Field', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: true,
+		},
+		{
+			name: "header_regexp does not match (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo', 'Nope', 'fo{2}')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantResult: false,
+		},
+		{
+			name: "header_regexp error (MatchHeaderRE)",
+			expression: &MatchExpression{
+				Expr: `header_regexp('foo')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
+			wantErr:    true,
+		},
+		{
+			name: "host matches localhost (MatchHost)",
+			expression: &MatchExpression{
+				Expr: `host('localhost')`,
+			},
+			urlTarget:  "http://localhost",
+			wantResult: true,
+		},
+		{
+			name: "host matches (MatchHost)",
+			expression: &MatchExpression{
+				Expr: `host('*.example.com')`,
+			},
+			urlTarget:  "https://foo.example.com",
+			wantResult: true,
+		},
+		{
+			name: "host does not match (MatchHost)",
+			expression: &MatchExpression{
+				Expr: `host('example.net', '*.example.com')`,
+			},
+			urlTarget:  "https://foo.example.org",
+			wantResult: false,
+		},
+		{
+			name: "host error (MatchHost)",
+			expression: &MatchExpression{
+				Expr: `host(80)`,
+			},
+			urlTarget: "http://localhost:80",
+			wantErr:   true,
+		},
+		{
+			name: "method does not match (MatchMethod)",
+			expression: &MatchExpression{
+				Expr: `method('PUT')`,
+			},
+			urlTarget:  "https://foo.example.com",
+			httpMethod: "GET",
+			wantResult: false,
+		},
+		{
+			name: "method matches (MatchMethod)",
+			expression: &MatchExpression{
+				Expr: `method('DELETE', 'PUT', 'POST')`,
+			},
+			urlTarget:  "https://foo.example.com",
+			httpMethod: "PUT",
+			wantResult: true,
+		},
+		{
+			name: "method error not enough arguments (MatchMethod)",
+			expression: &MatchExpression{
+				Expr: `method()`,
+			},
+			urlTarget:  "https://foo.example.com",
+			httpMethod: "PUT",
+			wantErr:    true,
+		},
+		{
+			name: "path matches substring (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('*substring*')`,
+			},
+			urlTarget:  "https://example.com/foo/substring/bar.txt",
+			wantResult: true,
+		},
+		{
+			name: "path does not match (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('/foo')`,
+			},
+			urlTarget:  "https://example.com/foo/bar",
+			wantResult: false,
+		},
+		{
+			name: "path matches end url fragment (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('/foo')`,
+			},
+			urlTarget:  "https://example.com/FOO",
+			wantResult: true,
+		},
+		{
+			name: "path matches end fragment with substring prefix (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('/foo*')`,
+			},
+			urlTarget:  "https://example.com/FOOOOO",
+			wantResult: true,
+		},
+		{
+			name: "path matches one of multiple (MatchPath)",
+			expression: &MatchExpression{
+				Expr: `path('/foo', '/foo/*', '/bar', '/bar/*', '/baz', '/baz*')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "path_regexp with empty regex matches empty path (MatchPathRE)",
+			expression: &MatchExpression{
+				Expr: `path_regexp('')`,
+			},
+			urlTarget:  "https://example.com/",
+			wantResult: true,
+		},
+		{
+			name: "path_regexp with slash regex matches empty path (MatchPathRE)",
+			expression: &MatchExpression{
+				Expr: `path_regexp('/')`,
+			},
+			urlTarget:  "https://example.com/",
+			wantResult: true,
+		},
+		{
+			name: "path_regexp matches end url fragment (MatchPathRE)",
+			expression: &MatchExpression{
+				Expr: `path_regexp('^/foo')`,
+			},
+			urlTarget:  "https://example.com/foo/",
+			wantResult: true,
+		},
+		{
+			name: "path_regexp does not match fragment at end (MatchPathRE)",
+			expression: &MatchExpression{
+				Expr: `path_regexp('bar_at_start', '^/bar')`,
+			},
+			urlTarget:  "https://example.com/foo/bar",
+			wantResult: false,
+		},
+		{
+			name: "protocol matches (MatchProtocol)",
+			expression: &MatchExpression{
+				Expr: `protocol('HTTPs')`,
+			},
+			urlTarget:  "https://example.com",
+			wantResult: true,
+		},
+		{
+			name: "protocol does not match (MatchProtocol)",
+			expression: &MatchExpression{
+				Expr: `protocol('grpc')`,
+			},
+			urlTarget:  "https://example.com",
+			wantResult: false,
+		},
+		{
+			name: "protocol invocation error no args (MatchProtocol)",
+			expression: &MatchExpression{
+				Expr: `protocol()`,
+			},
+			urlTarget: "https://example.com",
+			wantErr:   true,
+		},
+		{
+			name: "protocol invocation error too many args (MatchProtocol)",
+			expression: &MatchExpression{
+				Expr: `protocol('grpc', 'https')`,
+			},
+			urlTarget: "https://example.com",
+			wantErr:   true,
+		},
+		{
+			name: "protocol invocation error wrong arg type (MatchProtocol)",
+			expression: &MatchExpression{
+				Expr: `protocol(true)`,
+			},
+			urlTarget: "https://example.com",
+			wantErr:   true,
+		},
+		{
+			name: "query does not match against a specific value (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": "1"})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: false,
+		},
+		{
+			name: "query matches against a specific value (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": "1"})`,
+			},
+			urlTarget:  "https://example.com/foo/?debug=1",
+			wantResult: true,
+		},
+		{
+			name: "query matches against multiple values (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": ["0", "1", {http.request.uri.query.debug}+"1"]})`,
+			},
+			urlTarget:  "https://example.com/foo/?debug=1",
+			wantResult: true,
+		},
+		{
+			name: "query matches against a wildcard (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": ["*"]})`,
+			},
+			urlTarget:  "https://example.com/foo/?debug=something",
+			wantResult: true,
+		},
+		{
+			name: "query matches against a placeholder value (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": {http.request.uri.query.debug}})`,
+			},
+			urlTarget:  "https://example.com/foo/?debug=1",
+			wantResult: true,
+		},
+		{
+			name: "query error bad map key type (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({1: "1"})`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+		{
+			name: "query error typed struct instead of map (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query(Message{field: "1"})`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+		{
+			name: "query error bad map value type (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query({"debug": 1})`,
+			},
+			urlTarget: "https://example.com/foo/?debug=1",
+			wantErr:   true,
+		},
+		{
+			name: "query error no args (MatchQuery)",
+			expression: &MatchExpression{
+				Expr: `query()`,
+			},
+			urlTarget: "https://example.com/foo/?debug=1",
+			wantErr:   true,
+		},
+		{
+			name: "remote_ip error no args (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip()`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+		{
+			name: "remote_ip single IP match (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('192.0.2.1')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "remote_ip forwarded (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('forwarded', '192.0.2.1')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "remote_ip forwarded not first (MatchRemoteIP)",
+			expression: &MatchExpression{
+				Expr: `remote_ip('192.0.2.1', 'forwarded')`,
+			},
+			urlTarget: "https://example.com/foo",
+			wantErr:   true,
+		},
+	}
+)
+
+func TestMatchExpressionMatch(t *testing.T) {
+	for _, tst := range matcherTests {
+		tc := tst
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.expression.Provision(caddy.Context{})
+			if err != nil {
+				if !tc.wantErr {
+					t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tc.wantErr)
+				}
+				return
+			}
+
+			req := httptest.NewRequest(tc.httpMethod, tc.urlTarget, nil)
+			if tc.httpHeader != nil {
+				req.Header = *tc.httpHeader
+			}
+			repl := caddy.NewReplacer()
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+
+			if tc.clientCertificate != nil {
+				block, _ := pem.Decode(clientCert)
+				if block == nil {
+					t.Fatalf("failed to decode PEM certificate")
+				}
+
+				cert, err := x509.ParseCertificate(block.Bytes)
+				if err != nil {
+					t.Fatalf("failed to decode PEM certificate: %v", err)
+				}
+
+				req.TLS = &tls.ConnectionState{
+					PeerCertificates: []*x509.Certificate{cert},
+				}
+			}
+
+			if tc.expression.Match(req) != tc.wantResult {
+				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
+			}
+		})
+	}
+}
+
+func BenchmarkMatchExpressionMatch(b *testing.B) {
+	for _, tst := range matcherTests {
+		tc := tst
+		if tc.wantErr {
+			continue
+		}
+		b.Run(tst.name, func(b *testing.B) {
+			tc.expression.Provision(caddy.Context{})
+			req := httptest.NewRequest(tc.httpMethod, tc.urlTarget, nil)
+			if tc.httpHeader != nil {
+				req.Header = *tc.httpHeader
+			}
+			repl := caddy.NewReplacer()
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+			if tc.clientCertificate != nil {
+				block, _ := pem.Decode(clientCert)
+				if block == nil {
+					b.Fatalf("failed to decode PEM certificate")
+				}
+
+				cert, err := x509.ParseCertificate(block.Bytes)
+				if err != nil {
+					b.Fatalf("failed to decode PEM certificate: %v", err)
+				}
+
+				req.TLS = &tls.ConnectionState{
+					PeerCertificates: []*x509.Certificate{cert},
+				}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				tc.expression.Match(req)
+			}
+		})
+	}
+}
 
 func TestMatchExpressionProvision(t *testing.T) {
 	tests := []struct {
@@ -51,74 +501,6 @@ func TestMatchExpressionProvision(t *testing.T) {
 			if err := tt.expression.Provision(caddy.Context{}); (err != nil) != tt.wantErr {
 				t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tt.wantErr)
 			}
-		})
-	}
-}
-
-func TestMatchExpressionMatch(t *testing.T) {
-
-	clientCert := []byte(`-----BEGIN CERTIFICATE-----
-MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
-eSBUZXN0IENBMB4XDTE4MDcyNDIxMzUwNVoXDTI4MDcyMTIxMzUwNVowHTEbMBkG
-A1UEAwwSY2xpZW50LmxvY2FsZG9tYWluMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCB
-iQKBgQDFDEpzF0ew68teT3xDzcUxVFaTII+jXH1ftHXxxP4BEYBU4q90qzeKFneF
-z83I0nC0WAQ45ZwHfhLMYHFzHPdxr6+jkvKPASf0J2v2HDJuTM1bHBbik5Ls5eq+
-fVZDP8o/VHKSBKxNs8Goc2NTsr5b07QTIpkRStQK+RJALk4x9QIDAQABo0swSTAJ
-BgNVHRMEAjAAMAsGA1UdDwQEAwIHgDAaBgNVHREEEzARgglsb2NhbGhvc3SHBH8A
-AAEwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADgYEANSjz2Sk+
-eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
-3Q9fgDkiUod+uIK0IynzIKvw+Cjg+3nx6NQ0IM0zo8c7v398RzB4apbXKZyeeqUH
-9fNwfEi+OoXR6s+upSKobCmLGLGi9Na5s5g=
------END CERTIFICATE-----`)
-
-	tests := []struct {
-		name              string
-		expression        *MatchExpression
-		wantErr           bool
-		wantResult        bool
-		clientCertificate []byte
-	}{
-		{
-			name: "boolean matches succeed for placeholder http.request.tls.client.subject",
-			expression: &MatchExpression{
-				Expr: "{http.request.tls.client.subject} == 'CN=client.localdomain'",
-			},
-			clientCertificate: clientCert,
-			wantResult:        true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.expression.Provision(caddy.Context{}); (err != nil) != tt.wantErr {
-				t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			req := httptest.NewRequest("GET", "https://example.com/foo", nil)
-			repl := caddy.NewReplacer()
-			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-			req = req.WithContext(ctx)
-			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
-
-			if tt.clientCertificate != nil {
-				block, _ := pem.Decode(clientCert)
-				if block == nil {
-					t.Fatalf("failed to decode PEM certificate")
-				}
-
-				cert, err := x509.ParseCertificate(block.Bytes)
-				if err != nil {
-					t.Fatalf("failed to decode PEM certificate: %v", err)
-				}
-
-				req.TLS = &tls.ConnectionState{
-					PeerCertificates: []*x509.Certificate{cert},
-				}
-			}
-
-			if tt.expression.Match(req) != tt.wantResult {
-				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tt.wantResult, tt.expression)
-			}
-
 		})
 	}
 }

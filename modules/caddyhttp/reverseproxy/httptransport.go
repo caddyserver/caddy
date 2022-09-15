@@ -25,10 +25,12 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
 
@@ -87,6 +89,12 @@ type HTTPTransport struct {
 	// The size of the read buffer in bytes. Default: `4KiB`.
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 
+	// The maximum time to wait for next read from backend. Default: no timeout.
+	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
+
+	// The maximum time to wait for next write to backend. Default: no timeout.
+	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
+
 	// The versions of HTTP to support. As a special case, "h2c"
 	// can be specified to use H2C (HTTP/2 over Cleartext) to the
 	// upstream (this feature is experimental and subject to
@@ -120,33 +128,11 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	}
 	h.Transport = rt
 
-	// if h2c is enabled, configure its transport (std lib http.Transport
-	// does not "HTTP/2 over cleartext TCP")
-	if sliceContains(h.Versions, "h2c") {
-		// crafting our own http2.Transport doesn't allow us to utilize
-		// most of the customizations/preferences on the http.Transport,
-		// because, for some reason, only http2.ConfigureTransport()
-		// is allowed to set the unexported field that refers to a base
-		// http.Transport config; oh well
-		h2t := &http2.Transport{
-			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
-			DialTLS: func(network, addr string, _ *tls.Config) (net.Conn, error) {
-				// TODO: no context, thus potentially wrong dial info
-				return net.Dial(network, addr)
-			},
-			AllowHTTP: true,
-		}
-		if h.Compression != nil {
-			h2t.DisableCompression = !*h.Compression
-		}
-		h.h2cTransport = h2t
-	}
-
 	return nil
 }
 
 // NewTransport builds a standard-lib-compatible http.Transport value from h.
-func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error) {
+func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
 		h.KeepAlive = &KeepAlive{
@@ -186,22 +172,38 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 		}
 	}
 
+	// Set up the dialer to pull the correct information from the context
+	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+		// the proper dialing information should be embedded into the request's context
+		if dialInfo, ok := GetDialInfo(ctx); ok {
+			network = dialInfo.Network
+			address = dialInfo.Address
+		}
+
+		conn, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			// identify this error as one that occurred during
+			// dialing, which can be important when trying to
+			// decide whether to retry a request
+			return nil, DialError{err}
+		}
+
+		// if read/write timeouts are configured and this is a TCP connection, enforce the timeouts
+		// by wrapping the connection with our own type
+		if tcpConn, ok := conn.(*net.TCPConn); ok && (h.ReadTimeout > 0 || h.WriteTimeout > 0) {
+			conn = &tcpRWTimeoutConn{
+				TCPConn:      tcpConn,
+				readTimeout:  time.Duration(h.ReadTimeout),
+				writeTimeout: time.Duration(h.WriteTimeout),
+				logger:       caddyCtx.Logger(h),
+			}
+		}
+
+		return conn, nil
+	}
+
 	rt := &http.Transport{
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			// the proper dialing information should be embedded into the request's context
-			if dialInfo, ok := GetDialInfo(ctx); ok {
-				network = dialInfo.Network
-				address = dialInfo.Address
-			}
-			conn, err := dialer.DialContext(ctx, network, address)
-			if err != nil {
-				// identify this error as one that occurred during
-				// dialing, which can be important when trying to
-				// decide whether to retry a request
-				return nil, DialError{err}
-			}
-			return conn, nil
-		},
+		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
 		ExpectContinueTimeout:  time.Duration(h.ExpectContinueTimeout),
@@ -213,7 +215,7 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 	if h.TLS != nil {
 		rt.TLSHandshakeTimeout = time.Duration(h.TLS.HandshakeTimeout)
 		var err error
-		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(ctx)
+		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
 		if err != nil {
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
@@ -239,12 +241,69 @@ func (h *HTTPTransport) NewTransport(ctx caddy.Context) (*http.Transport, error)
 		}
 	}
 
+	// if h2c is enabled, configure its transport (std lib http.Transport
+	// does not "HTTP/2 over cleartext TCP")
+	if sliceContains(h.Versions, "h2c") {
+		// crafting our own http2.Transport doesn't allow us to utilize
+		// most of the customizations/preferences on the http.Transport,
+		// because, for some reason, only http2.ConfigureTransport()
+		// is allowed to set the unexported field that refers to a base
+		// http.Transport config; oh well
+		h2t := &http2.Transport{
+			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
+			DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
+				return dialContext(ctx, network, address)
+			},
+			AllowHTTP: true,
+		}
+		if h.Compression != nil {
+			h2t.DisableCompression = !*h.Compression
+		}
+		h.h2cTransport = h2t
+	}
+
 	return rt, nil
+}
+
+// replaceTLSServername checks TLS servername to see if it needs replacing
+// if it does need replacing, it creates a new cloned HTTPTransport object to avoid any races
+// and does the replacing of the TLS servername on that and returns the new object
+// if no replacement is necessary it returns the original
+func (h *HTTPTransport) replaceTLSServername(repl *caddy.Replacer) *HTTPTransport {
+	// check whether we have TLS and need to replace the servername in the TLSClientConfig
+	if h.TLSEnabled() && strings.Contains(h.TLS.ServerName, "{") {
+		// make a new h, "copy" the parts we don't need to touch, add a new *tls.Config and replace servername
+		newtransport := &HTTPTransport{
+			Resolver:              h.Resolver,
+			TLS:                   h.TLS,
+			KeepAlive:             h.KeepAlive,
+			Compression:           h.Compression,
+			MaxConnsPerHost:       h.MaxConnsPerHost,
+			DialTimeout:           h.DialTimeout,
+			FallbackDelay:         h.FallbackDelay,
+			ResponseHeaderTimeout: h.ResponseHeaderTimeout,
+			ExpectContinueTimeout: h.ExpectContinueTimeout,
+			MaxResponseHeaderSize: h.MaxResponseHeaderSize,
+			WriteBufferSize:       h.WriteBufferSize,
+			ReadBufferSize:        h.ReadBufferSize,
+			Versions:              h.Versions,
+			Transport:             h.Transport.Clone(),
+			h2cTransport:          h.h2cTransport,
+		}
+		newtransport.Transport.TLSClientConfig.ServerName = repl.ReplaceAll(newtransport.Transport.TLSClientConfig.ServerName, "")
+		return newtransport
+	}
+
+	return h
 }
 
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	h.SetScheme(req)
+	// Try to replace TLS servername if needed
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	transport := h.replaceTLSServername(repl)
+
+	transport.SetScheme(req)
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
@@ -252,19 +311,40 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return h.h2cTransport.RoundTrip(req)
 	}
 
-	return h.Transport.RoundTrip(req)
+	return transport.Transport.RoundTrip(req)
 }
 
 // SetScheme ensures that the outbound request req
 // has the scheme set in its URL; the underlying
 // http.Transport requires a scheme to be set.
+//
+// This method may be used by other transport modules
+// that wrap/use this one.
 func (h *HTTPTransport) SetScheme(req *http.Request) {
-	if req.URL.Scheme == "" {
+	if req.URL.Scheme != "" {
+		return
+	}
+	if h.shouldUseTLS(req) {
+		req.URL.Scheme = "https"
+	} else {
 		req.URL.Scheme = "http"
-		if h.TLS != nil {
-			req.URL.Scheme = "https"
+	}
+}
+
+// shouldUseTLS returns true if TLS should be used for req.
+func (h *HTTPTransport) shouldUseTLS(req *http.Request) bool {
+	if h.TLS == nil {
+		return false
+	}
+
+	port := req.URL.Port()
+	for i := range h.TLS.ExceptPorts {
+		if h.TLS.ExceptPorts[i] == port {
+			return false
 		}
 	}
+
+	return true
 }
 
 // TLSEnabled returns true if TLS is enabled.
@@ -315,8 +395,30 @@ type TLSConfig struct {
 	// The duration to allow a TLS handshake to a server. Default: No timeout.
 	HandshakeTimeout caddy.Duration `json:"handshake_timeout,omitempty"`
 
-	// The server name (SNI) to use in TLS handshakes.
+	// The server name used when verifying the certificate received in the TLS
+	// handshake. By default, this will use the upstream address' host part.
+	// You only need to override this if your upstream address does not match the
+	// certificate the upstream is likely to use. For example if the upstream
+	// address is an IP address, then you would need to configure this to the
+	// hostname being served by the upstream server. Currently, this does not
+	// support placeholders because the TLS config is not provisioned on each
+	// connection, so a static value must be used.
 	ServerName string `json:"server_name,omitempty"`
+
+	// TLS renegotiation level. TLS renegotiation is the act of performing
+	// subsequent handshakes on a connection after the first.
+	// The level can be:
+	//  - "never": (the default) disables renegotiation.
+	//  - "once": allows a remote server to request renegotiation once per connection.
+	//  - "freely": allows a remote server to repeatedly request renegotiation.
+	Renegotiation string `json:"renegotiation,omitempty"`
+
+	// Skip TLS ports specifies a list of upstream ports on which TLS should not be
+	// attempted even if it is configured. Handy when using dynamic upstreams that
+	// return HTTP and HTTPS endpoints too.
+	// When specified, TLS will automatically be configured on the transport.
+	// The value can be a list of any valid tcp port numbers, default empty.
+	ExceptPorts []string `json:"except_ports,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -386,7 +488,19 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 		cfg.RootCAs = rootPool
 	}
 
-	// custom SNI
+	// Renegotiation
+	switch t.Renegotiation {
+	case "never", "":
+		cfg.Renegotiation = tls.RenegotiateNever
+	case "once":
+		cfg.Renegotiation = tls.RenegotiateOnceAsClient
+	case "freely":
+		cfg.Renegotiation = tls.RenegotiateFreelyAsClient
+	default:
+		return nil, fmt.Errorf("invalid TLS renegotiation level: %v", t.Renegotiation)
+	}
+
+	// override for the server name used verify the TLS handshake
 	cfg.ServerName = t.ServerName
 
 	// throw all security out the window
@@ -402,20 +516,50 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 // KeepAlive holds configuration pertaining to HTTP Keep-Alive.
 type KeepAlive struct {
-	// Whether HTTP Keep-Alive is enabled. Default: true
+	// Whether HTTP Keep-Alive is enabled. Default: `true`
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// How often to probe for liveness. Default: `30s`.
 	ProbeInterval caddy.Duration `json:"probe_interval,omitempty"`
 
-	// Maximum number of idle connections. Default: 0, which means no limit.
+	// Maximum number of idle connections. Default: `0`, which means no limit.
 	MaxIdleConns int `json:"max_idle_conns,omitempty"`
 
-	// Maximum number of idle connections per host. Default: 32.
+	// Maximum number of idle connections per host. Default: `32`.
 	MaxIdleConnsPerHost int `json:"max_idle_conns_per_host,omitempty"`
 
 	// How long connections should be kept alive when idle. Default: `2m`.
 	IdleConnTimeout caddy.Duration `json:"idle_timeout,omitempty"`
+}
+
+// tcpRWTimeoutConn enforces read/write timeouts for a TCP connection.
+// If it fails to set deadlines, the error is logged but does not abort
+// the read/write attempt (ignoring the error is consistent with what
+// the standard library does: https://github.com/golang/go/blob/c5da4fb7ac5cb7434b41fc9a1df3bee66c7f1a4d/src/net/http/server.go#L981-L986)
+type tcpRWTimeoutConn struct {
+	*net.TCPConn
+	readTimeout, writeTimeout time.Duration
+	logger                    *zap.Logger
+}
+
+func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
+	if c.readTimeout > 0 {
+		err := c.TCPConn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		if err != nil {
+			c.logger.Error("failed to set read deadline", zap.Error(err))
+		}
+	}
+	return c.TCPConn.Read(b)
+}
+
+func (c *tcpRWTimeoutConn) Write(b []byte) (int, error) {
+	if c.writeTimeout > 0 {
+		err := c.TCPConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		if err != nil {
+			c.logger.Error("failed to set write deadline", zap.Error(err))
+		}
+	}
+	return c.TCPConn.Write(b)
 }
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.

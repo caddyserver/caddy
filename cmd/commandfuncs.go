@@ -29,7 +29,6 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strings"
 
 	"github.com/aryann/difflib"
@@ -280,7 +279,7 @@ func cmdStop(fl Flags) (int, error) {
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, nil, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -310,7 +309,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addrFlag, config, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -331,30 +330,17 @@ func cmdReload(fl Flags) (int, error) {
 }
 
 func cmdVersion(_ Flags) (int, error) {
-	fmt.Println(CaddyVersion())
+	_, full := caddy.Version()
+	fmt.Println(full)
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdBuildInfo(fl Flags) (int, error) {
+func cmdBuildInfo(_ Flags) (int, error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no build information")
 	}
-
-	fmt.Printf("go_version: %s\n", runtime.Version())
-	fmt.Printf("go_os:      %s\n", runtime.GOOS)
-	fmt.Printf("go_arch:    %s\n", runtime.GOARCH)
-	fmt.Printf("path:       %s\n", bi.Path)
-	fmt.Printf("main:       %s %s %s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
-	fmt.Println("dependencies:")
-
-	for _, goMod := range bi.Deps {
-		fmt.Printf("%s %s %s", goMod.Path, goMod.Version, goMod.Sum)
-		if goMod.Replace != nil {
-			fmt.Printf(" => %s %s %s", goMod.Replace.Path, goMod.Replace.Version, goMod.Replace.Sum)
-		}
-		fmt.Println()
-	}
+	fmt.Println(bi)
 	return caddy.ExitCodeSuccess, nil
 }
 
@@ -471,7 +457,7 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]interface{}{"filename": adaptCmdInputFlag}
+	opts := map[string]any{"filename": adaptCmdInputFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
@@ -593,70 +579,6 @@ func cmdFmt(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdHelp(fl Flags) (int, error) {
-	const fullDocs = `Full documentation is available at:
-https://caddyserver.com/docs/command-line`
-
-	args := fl.Args()
-	if len(args) == 0 {
-		s := `Caddy is an extensible server platform.
-
-usage:
-  caddy <command> [<args...>]
-
-commands:
-`
-		keys := make([]string, 0, len(commands))
-		for k := range commands {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			cmd := commands[k]
-			short := strings.TrimSuffix(cmd.Short, ".")
-			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, short)
-		}
-
-		s += "\nUse 'caddy help <command>' for more information about a command.\n"
-		s += "\n" + fullDocs + "\n"
-
-		fmt.Print(s)
-
-		return caddy.ExitCodeSuccess, nil
-	} else if len(args) > 1 {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("can only give help with one command")
-	}
-
-	subcommand, ok := commands[args[0]]
-	if !ok {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("unknown command: %s", args[0])
-	}
-
-	helpText := strings.TrimSpace(subcommand.Long)
-	if helpText == "" {
-		helpText = subcommand.Short
-		if !strings.HasSuffix(helpText, ".") {
-			helpText += "."
-		}
-	}
-
-	result := fmt.Sprintf("%s\n\nusage:\n  caddy %s %s\n",
-		helpText,
-		subcommand.Name,
-		strings.TrimSpace(subcommand.Usage),
-	)
-
-	if help := flagHelp(subcommand.Flags); help != "" {
-		result += fmt.Sprintf("\nflags:\n%s", help)
-	}
-
-	result += "\n" + fullDocs + "\n"
-
-	fmt.Print(result)
-
-	return caddy.ExitCodeSuccess, nil
-}
-
 // AdminAPIRequest makes an API request according to the CLI flags given,
 // with the given HTTP method and request URI. If body is non-nil, it will
 // be assumed to be Content-Type application/json. The caller should close
@@ -732,10 +654,11 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 
 // DetermineAdminAPIAddress determines which admin API endpoint address should
 // be used based on the inputs. By priority: if `address` is specified, then
-// it is returned; if `configFile` (and `configAdapter`) are specified, then that
-// config will be loaded to find the admin address; otherwise, the default
-// admin listen address will be returned.
-func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string, error) {
+// it is returned; if `config` is specified, then that config will be used for
+// finding the admin address; if `configFile` (and `configAdapter`) are specified,
+// then that config will be loaded to find the admin address; otherwise, the
+// default admin listen address will be returned.
+func DetermineAdminAPIAddress(address string, config []byte, configFile, configAdapter string) (string, error) {
 	// Prefer the address if specified and non-empty
 	if address != "" {
 		return address, nil
@@ -743,21 +666,29 @@ func DetermineAdminAPIAddress(address, configFile, configAdapter string) (string
 
 	// Try to load the config from file if specified, with the given adapter name
 	if configFile != "" {
-		// get the config in caddy's native format
-		config, loadedConfigFile, err := LoadConfig(configFile, configAdapter)
-		if err != nil {
-			return "", err
-		}
-		if loadedConfigFile == "" {
-			return "", fmt.Errorf("no config file to load")
+		var loadedConfigFile string
+		var err error
+
+		// use the provided loaded config if non-empty
+		// otherwise, load it from the specified file/adapter
+		loadedConfig := config
+		if len(loadedConfig) == 0 {
+			// get the config in caddy's native format
+			loadedConfig, loadedConfigFile, err = LoadConfig(configFile, configAdapter)
+			if err != nil {
+				return "", err
+			}
+			if loadedConfigFile == "" {
+				return "", fmt.Errorf("no config file to load")
+			}
 		}
 
-		// get the address of the admin listener if set
-		if len(config) > 0 {
+		// get the address of the admin listener from the config
+		if len(loadedConfig) > 0 {
 			var tmpStruct struct {
 				Admin caddy.AdminConfig `json:"admin"`
 			}
-			err = json.Unmarshal(config, &tmpStruct)
+			err := json.Unmarshal(loadedConfig, &tmpStruct)
 			if err != nil {
 				return "", fmt.Errorf("unmarshaling admin listener address from config: %v", err)
 			}

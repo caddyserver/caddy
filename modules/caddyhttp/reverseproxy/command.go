@@ -27,6 +27,7 @@ import (
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -59,6 +60,7 @@ default, all incoming headers are passed through unmodified.)
 			fs.String("to", "", "Upstream address to which traffic should be sent")
 			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
 			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING SSL CERTIFICATES!)")
+			fs.Bool("internal-certs", false, "Use internal CA for issuing certs")
 			return fs
 		}(),
 	})
@@ -71,6 +73,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	to := fs.String("to")
 	changeHost := fs.Bool("change-host-header")
 	insecure := fs.Bool("insecure")
+	internalCerts := fs.Bool("internal-certs")
 
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
@@ -154,11 +157,29 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		Servers: map[string]*caddyhttp.Server{"proxy": server},
 	}
 
+	appsRaw := caddy.ModuleMap{
+		"http": caddyconfig.JSON(httpApp, nil),
+	}
+	if internalCerts && fromAddr.Host != "" {
+		tlsApp := caddytls.TLS{
+			Automation: &caddytls.AutomationConfig{
+				Policies: []*caddytls.AutomationPolicy{{
+					Subjects:   []string{fromAddr.Host},
+					IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
+				}},
+			},
+		}
+		appsRaw["tls"] = caddyconfig.JSON(tlsApp, nil)
+	}
+
+	var false bool
 	cfg := &caddy.Config{
-		Admin: &caddy.AdminConfig{Disabled: true},
-		AppsRaw: caddy.ModuleMap{
-			"http": caddyconfig.JSON(httpApp, nil),
+		Admin: &caddy.AdminConfig{Disabled: true,
+			Config: &caddy.ConfigSettings{
+				Persist: &false,
+			},
 		},
+		AppsRaw: appsRaw,
 	}
 
 	err = caddy.Run(cfg)

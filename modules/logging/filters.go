@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -456,7 +457,13 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
-	originRequest := http.Request{Header: http.Header{"Cookie": []string{in.String}}}
+	cookiesSlice, ok := in.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		return in
+	}
+
+	// using a dummy Request to make use of the Cookies() function to parse it
+	originRequest := http.Request{Header: http.Header{"Cookie": cookiesSlice}}
 	cookies := originRequest.Cookies()
 	transformedRequest := http.Request{Header: make(http.Header)}
 
@@ -486,7 +493,7 @@ OUTER:
 		transformedRequest.AddCookie(c)
 	}
 
-	in.String = transformedRequest.Header.Get("Cookie")
+	in.Interface = caddyhttp.LoggableStringArray(transformedRequest.Header["Cookie"])
 
 	return in
 }

@@ -71,13 +71,13 @@ func ExampleContext_LoadModule_array() {
 		},
 	}
 
-	// since our input is []json.RawMessage, the output will be []interface{}
+	// since our input is []json.RawMessage, the output will be []any
 	mods, err := ctx.LoadModule(myStruct, "GuestModulesRaw")
 	if err != nil {
 		// you'd want to actually handle the error here
 		// return fmt.Errorf("loading guest modules: %v", err)
 	}
-	for _, mod := range mods.([]interface{}) {
+	for _, mod := range mods.([]any) {
 		myStruct.guestModules = append(myStruct.guestModules, mod.(io.Writer))
 	}
 
@@ -104,13 +104,13 @@ func ExampleContext_LoadModule_map() {
 		},
 	}
 
-	// since our input is map[string]json.RawMessage, the output will be map[string]interface{}
+	// since our input is map[string]json.RawMessage, the output will be map[string]any
 	mods, err := ctx.LoadModule(myStruct, "GuestModulesRaw")
 	if err != nil {
 		// you'd want to actually handle the error here
 		// return fmt.Errorf("loading guest modules: %v", err)
 	}
-	for modName, mod := range mods.(map[string]interface{}) {
+	for modName, mod := range mods.(map[string]any) {
 		myStruct.guestModules[modName] = mod.(io.Writer)
 	}
 

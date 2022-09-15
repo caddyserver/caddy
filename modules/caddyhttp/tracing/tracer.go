@@ -7,7 +7,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -52,7 +51,8 @@ func newOpenTelemetryWrapper(
 		spanName: spanName,
 	}
 
-	res, err := ot.newResource(webEngineName, caddycmd.CaddyVersion())
+	version, _ := caddy.Version()
+	res, err := ot.newResource(webEngineName, version)
 	if err != nil {
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}

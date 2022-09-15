@@ -17,6 +17,7 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -85,9 +86,11 @@ type ACMEIssuer struct {
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
 	rootPool *x509.CertPool
-	template certmagic.ACMEIssuer
-	magic    *certmagic.Config
 	logger   *zap.Logger
+
+	template certmagic.ACMEIssuer  // set at Provision
+	magic    *certmagic.Config     // set at PreCheck
+	issuer   *certmagic.ACMEIssuer // set at PreCheck; result of template + magic
 }
 
 // CaddyModule returns the Caddy module information.
@@ -217,30 +220,27 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 // the ConfigSetter interface.
 func (iss *ACMEIssuer) SetConfig(cfg *certmagic.Config) {
 	iss.magic = cfg
+	iss.issuer = certmagic.NewACMEIssuer(cfg, iss.template)
 }
-
-// TODO: I kind of hate how each call to these methods needs to
-// make a new ACME manager to fill in defaults before using; can
-// we find the right place to do that just once and then re-use?
 
 // PreCheck implements the certmagic.PreChecker interface.
 func (iss *ACMEIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).PreCheck(ctx, names, interactive)
+	return iss.issuer.PreCheck(ctx, names, interactive)
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ACMEIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Issue(ctx, csr)
+	return iss.issuer.Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ACMEIssuer) IssuerKey() string {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).IssuerKey()
+	return iss.issuer.IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	return certmagic.NewACMEIssuer(iss.magic, iss.template).Revoke(ctx, cert, reason)
+	return iss.issuer.Revoke(ctx, cert, reason)
 }
 
 // GetACMEIssuer returns iss. This is useful when other types embed ACMEIssuer, because
@@ -251,28 +251,27 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//     ... acme [<directory_url>] {
-//         dir <directory_url>
-//         test_dir <test_directory_url>
-//         email <email>
-//         timeout <duration>
-//         disable_http_challenge
-//         disable_tlsalpn_challenge
-//         alt_http_port    <port>
-//         alt_tlsalpn_port <port>
-//         eab <key_id> <mac_key>
-//         trusted_roots <pem_files...>
-//         dns <provider_name> [<options>]
-//         propagation_delay <duration>
-//         propagation_timeout <duration>
-//         resolvers <dns_servers...>
-//         dns_challenge_override_domain <domain>
-//         preferred_chains [smallest] {
-//             root_common_name <common_names...>
-//             any_common_name  <common_names...>
-//         }
-//     }
-//
+//	... acme [<directory_url>] {
+//	    dir <directory_url>
+//	    test_dir <test_directory_url>
+//	    email <email>
+//	    timeout <duration>
+//	    disable_http_challenge
+//	    disable_tlsalpn_challenge
+//	    alt_http_port    <port>
+//	    alt_tlsalpn_port <port>
+//	    eab <key_id> <mac_key>
+//	    trusted_roots <pem_files...>
+//	    dns <provider_name> [<options>]
+//	    propagation_delay <duration>
+//	    propagation_timeout <duration>
+//	    resolvers <dns_servers...>
+//	    dns_challenge_override_domain <domain>
+//	    preferred_chains [smallest] {
+//	        root_common_name <common_names...>
+//	        any_common_name  <common_names...>
+//	    }
+//	}
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
@@ -495,8 +494,7 @@ func onDemandAskRequest(ask string, name string) error {
 	resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("certificate for hostname '%s' not allowed; non-2xx status code %d returned from %v",
-			name, resp.StatusCode, ask)
+		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)
 	}
 
 	return nil
@@ -568,6 +566,11 @@ type ChainPreference struct {
 	// of these common names.
 	AnyCommonName []string `json:"any_common_name,omitempty"`
 }
+
+// errAskDenied is an error that should be wrapped or returned when the
+// configured "ask" endpoint does not allow a certificate to be issued,
+// to distinguish that from other errors such as connection failure.
+var errAskDenied = errors.New("certificate not allowed by ask endpoint")
 
 // Interface guards
 var (

@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notify
+package fastcgi
 
-// NotifyReadiness notifies process manager of readiness.
-func NotifyReadiness() error {
-	return notifyReadiness()
-}
+import (
+	"bytes"
+	"sync"
+)
 
-// NotifyReloading notifies process manager of reloading.
-func NotifyReloading() error {
-	return notifyReloading()
-}
-
-// NotifyStopping notifies process manager of stopping.
-func NotifyStopping() error {
-	return notifyStopping()
+var bufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
 }

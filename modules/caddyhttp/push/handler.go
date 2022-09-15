@@ -29,10 +29,24 @@ func init() {
 	caddy.RegisterModule(Handler{})
 }
 
-// Handler is a middleware for manipulating the request body.
+// Handler is a middleware for HTTP/2 server push. Note that
+// HTTP/2 server push has been deprecated by some clients and
+// its use is discouraged unless you can accurately predict
+// which resources actually need to be pushed to the client;
+// it can be difficult to know what the client already has
+// cached. Pushing unnecessary resources results in worse
+// performance. Consider using HTTP 103 Early Hints instead.
+//
+// This handler supports pushing from Link headers; in other
+// words, if the eventual response has Link headers, this
+// handler will push the resources indicated by those headers,
+// even without specifying any resources in its config.
 type Handler struct {
-	Resources []Resource    `json:"resources,omitempty"`
-	Headers   *HeaderConfig `json:"headers,omitempty"`
+	// The resources to push.
+	Resources []Resource `json:"resources,omitempty"`
+
+	// Headers to modify for the push requests.
+	Headers *HeaderConfig `json:"headers,omitempty"`
 
 	logger *zap.Logger
 }

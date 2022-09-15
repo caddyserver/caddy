@@ -123,8 +123,8 @@ func TestH2ToH2CStream(t *testing.T) {
 	// Disable any compression method from server.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	resp := tester.AssertResponseCode(req, 200)
-	if 200 != resp.StatusCode {
+	resp := tester.AssertResponseCode(req, http.StatusOK)
+	if resp.StatusCode != http.StatusOK {
 		return
 	}
 	go func() {
@@ -143,7 +143,6 @@ func TestH2ToH2CStream(t *testing.T) {
 	if !strings.Contains(body, expectedBody) {
 		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", req.RequestURI, expectedBody, body)
 	}
-	return
 }
 
 func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
@@ -335,8 +334,8 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 		fmt.Fprint(w, expectedBody)
 		w.Close()
 	}()
-	resp := tester.AssertResponseCode(req, 200)
-	if 200 != resp.StatusCode {
+	resp := tester.AssertResponseCode(req, http.StatusOK)
+	if resp.StatusCode != http.StatusOK {
 		return
 	}
 
@@ -351,7 +350,6 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	if body != expectedBody {
 		t.Errorf("requesting \"%s\" expected response body \"%s\" but got \"%s\"", req.RequestURI, expectedBody, body)
 	}
-	return
 }
 
 func testH2ToH1ChunkedResponseServeH1(t *testing.T) *http.Server {

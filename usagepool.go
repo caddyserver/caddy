@@ -25,15 +25,15 @@ import (
 // only inserted if they do not already exist. There
 // are two ways to add values to the pool:
 //
-//     1) LoadOrStore will increment usage and store the
-//        value immediately if it does not already exist.
-//     2) LoadOrNew will atomically check for existence
-//        and construct the value immediately if it does
-//        not already exist, or increment the usage
-//        otherwise, then store that value in the pool.
-//        When the constructed value is finally deleted
-//        from the pool (when its usage reaches 0), it
-//        will be cleaned up by calling Destruct().
+//  1. LoadOrStore will increment usage and store the
+//     value immediately if it does not already exist.
+//  2. LoadOrNew will atomically check for existence
+//     and construct the value immediately if it does
+//     not already exist, or increment the usage
+//     otherwise, then store that value in the pool.
+//     When the constructed value is finally deleted
+//     from the pool (when its usage reaches 0), it
+//     will be cleaned up by calling Destruct().
 //
 // The use of LoadOrNew allows values to be created
 // and reused and finally cleaned up only once, even
@@ -57,13 +57,13 @@ import (
 // NewUsagePool() to make a new one.
 type UsagePool struct {
 	sync.RWMutex
-	pool map[interface{}]*usagePoolVal
+	pool map[any]*usagePoolVal
 }
 
 // NewUsagePool returns a new usage pool that is ready to use.
 func NewUsagePool() *UsagePool {
 	return &UsagePool{
-		pool: make(map[interface{}]*usagePoolVal),
+		pool: make(map[any]*usagePoolVal),
 	}
 }
 
@@ -74,7 +74,7 @@ func NewUsagePool() *UsagePool {
 // or constructed value is returned. The loaded return value is true
 // if the value already existed and was loaded, or false if it was
 // newly constructed.
-func (up *UsagePool) LoadOrNew(key interface{}, construct Constructor) (value interface{}, loaded bool, err error) {
+func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loaded bool, err error) {
 	var upv *usagePoolVal
 	up.Lock()
 	upv, loaded = up.pool[key]
@@ -113,7 +113,7 @@ func (up *UsagePool) LoadOrNew(key interface{}, construct Constructor) (value in
 // already exists, or stores it if it does not exist. It returns the
 // value that was either loaded or stored, and true if the value already
 // existed and was
-func (up *UsagePool) LoadOrStore(key, val interface{}) (value interface{}, loaded bool) {
+func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 	var upv *usagePoolVal
 	up.Lock()
 	upv, loaded = up.pool[key]
@@ -144,7 +144,7 @@ func (up *UsagePool) LoadOrStore(key, val interface{}) (value interface{}, loade
 // This method is somewhat naive and acquires a read lock on the
 // entire pool during iteration, so do your best to make f() really
 // fast, m'kay?
-func (up *UsagePool) Range(f func(key, value interface{}) bool) {
+func (up *UsagePool) Range(f func(key, value any) bool) {
 	up.RLock()
 	defer up.RUnlock()
 	for key, upv := range up.pool {
@@ -166,7 +166,7 @@ func (up *UsagePool) Range(f func(key, value interface{}) bool) {
 // true if the usage count reached 0 and the value was deleted.
 // It panics if the usage count drops below 0; always call
 // Delete precisely as many times as LoadOrStore.
-func (up *UsagePool) Delete(key interface{}) (deleted bool, err error) {
+func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 	up.Lock()
 	upv, ok := up.pool[key]
 	if !ok {
@@ -194,6 +194,21 @@ func (up *UsagePool) Delete(key interface{}) (deleted bool, err error) {
 	return
 }
 
+// References returns the number of references (count of usages) to a
+// key in the pool, and true if the key exists, or false otherwise.
+func (up *UsagePool) References(key any) (int, bool) {
+	up.RLock()
+	upv, loaded := up.pool[key]
+	up.RUnlock()
+	if loaded {
+		// I wonder if it'd be safer to read this value during
+		// our lock on the UsagePool... guess we'll see...
+		refs := atomic.LoadInt32(&upv.refs)
+		return int(refs), true
+	}
+	return 0, false
+}
+
 // Constructor is a function that returns a new value
 // that can destruct itself when it is no longer needed.
 type Constructor func() (Destructor, error)
@@ -206,7 +221,7 @@ type Destructor interface {
 
 type usagePoolVal struct {
 	refs  int32 // accessed atomically; must be 64-bit aligned for 32-bit systems
-	value interface{}
+	value any
 	err   error
 	sync.RWMutex
 }

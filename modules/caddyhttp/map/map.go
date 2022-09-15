@@ -62,6 +62,9 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 // Provision sets up h.
 func (h *Handler) Provision(_ caddy.Context) error {
 	for j, dest := range h.Destinations {
+		if strings.Count(dest, "{") != 1 || !strings.HasPrefix(dest, "{") {
+			return fmt.Errorf("destination must be a placeholder and only a placeholder")
+		}
 		h.Destinations[j] = strings.Trim(dest, "{}")
 	}
 
@@ -106,6 +109,16 @@ func (h *Handler) Validate() error {
 		}
 		seen[input] = i
 
+		// prevent infinite recursion
+		for _, out := range m.Outputs {
+			for _, dest := range h.Destinations {
+				if strings.Contains(caddy.ToString(out), dest) ||
+					strings.Contains(m.Input, dest) {
+					return fmt.Errorf("mapping %d requires value of {%s} to define value of {%s}: infinite recursion", i, dest, dest)
+				}
+			}
+		}
+
 		// ensure mappings have 1:1 output-to-destination correspondence
 		nOut := len(m.Outputs)
 		if nOut != nDest {
@@ -119,7 +132,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// defer work until a variable is actually evaluated by using replacer's Map callback
-	repl.Map(func(key string) (interface{}, bool) {
+	repl.Map(func(key string) (any, bool) {
 		// return early if the variable is not even a configured destination
 		destIdx := h.destinationIndex(key)
 		if destIdx < 0 {
@@ -135,21 +148,22 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 			if output == nil {
 				continue
 			}
+			outputStr := caddy.ToString(output)
+
+			// evaluate regular expression if configured
 			if m.re != nil {
 				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, output.(string), input, matches)
+				result = m.re.ExpandString(result, outputStr, input, matches)
 				return string(result), true
 			}
+
+			// otherwise simple string comparison
 			if input == m.Input {
-				if outputStr, ok := output.(string); ok {
-					// NOTE: if the output has a placeholder that has the same key as the input, this is infinite recursion
-					return repl.ReplaceAll(outputStr, ""), true
-				}
-				return output, true
+				return repl.ReplaceAll(outputStr, ""), true
 			}
 		}
 
@@ -187,7 +201,7 @@ type Mapping struct {
 	// Upon a match with the input, each output is positionally correlated
 	// with each destination of the parent handler. An output that is null
 	// (nil) will be treated as if it was not mapped at all.
-	Outputs []interface{} `json:"outputs,omitempty"`
+	Outputs []any `json:"outputs,omitempty"`
 
 	re *regexp.Regexp
 }

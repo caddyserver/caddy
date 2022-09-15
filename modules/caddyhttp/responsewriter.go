@@ -62,6 +62,16 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
+// ReadFrom implements io.ReaderFrom. It simply calls the underlying
+// ResponseWriter's ReadFrom method if there is one, otherwise it defaults
+// to io.Copy.
+func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(rww.ResponseWriter, r)
+}
+
 // HTTPInterfaces mix all the interfaces that middleware ResponseWriters need to support.
 type HTTPInterfaces interface {
 	http.ResponseWriter
@@ -111,15 +121,15 @@ type responseRecorder struct {
 //
 // Proper usage of a recorder looks like this:
 //
-//     rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
-//     err := next.ServeHTTP(rec, req)
-//     if err != nil {
-//         return err
-//     }
-//     if !rec.Buffered() {
-//         return nil
-//     }
-//     // process the buffered response here
+//	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
+//	err := next.ServeHTTP(rec, req)
+//	if err != nil {
+//	    return err
+//	}
+//	if !rec.Buffered() {
+//	    return nil
+//	}
+//	// process the buffered response here
 //
 // The header map is not buffered; i.e. the ResponseRecorder's Header()
 // method returns the same header map of the underlying ResponseWriter.
@@ -129,7 +139,7 @@ type responseRecorder struct {
 // Once you are ready to write the response, there are two ways you can
 // do it. The easier way is to have the recorder do it:
 //
-//     rec.WriteResponse()
+//	rec.WriteResponse()
 //
 // This writes the recorded response headers as well as the buffered body.
 // Or, you may wish to do it yourself, especially if you manipulated the
@@ -138,9 +148,12 @@ type responseRecorder struct {
 // recorder's body buffer, but you might have your own body to write
 // instead):
 //
-//     w.WriteHeader(rec.Status())
-//     io.Copy(w, rec.Buffer())
+//	w.WriteHeader(rec.Status())
+//	io.Copy(w, rec.Buffer())
 //
+// As a special case, 1xx responses are not buffered nor recorded
+// because they are not the final response; they are passed through
+// directly to the underlying ResponseWriter.
 func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
 	return &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
@@ -149,22 +162,29 @@ func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer 
 	}
 }
 
+// WriteHeader writes the headers with statusCode to the wrapped
+// ResponseWriter unless the response is to be buffered instead.
+// 1xx responses are never buffered.
 func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.wroteHeader {
 		return
 	}
-	rr.statusCode = statusCode
-	rr.wroteHeader = true
 
-	// decide whether we should buffer the response
-	if rr.shouldBuffer == nil {
-		rr.stream = true
-	} else {
-		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+	// 1xx responses aren't final; just informational
+	if statusCode < 100 || statusCode > 199 {
+		rr.statusCode = statusCode
+		rr.wroteHeader = true
+
+		// decide whether we should buffer the response
+		if rr.shouldBuffer == nil {
+			rr.stream = true
+		} else {
+			rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+		}
 	}
 
-	// if not buffered, immediately write header
-	if rr.stream {
+	// if informational or not buffered, immediately write header
+	if rr.stream || (100 <= statusCode && statusCode <= 199) {
 		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	}
 }
@@ -178,9 +198,26 @@ func (rr *responseRecorder) Write(data []byte) (int, error) {
 	} else {
 		n, err = rr.buf.Write(data)
 	}
-	if err == nil {
-		rr.size += n
+
+	rr.size += n
+	return n, err
+}
+
+func (rr *responseRecorder) ReadFrom(r io.Reader) (int64, error) {
+	rr.WriteHeader(http.StatusOK)
+	var n int64
+	var err error
+	if rr.stream {
+		if rf, ok := rr.ResponseWriter.(io.ReaderFrom); ok {
+			n, err = rf.ReadFrom(r)
+		} else {
+			n, err = io.Copy(rr.ResponseWriter, r)
+		}
+	} else {
+		n, err = rr.buf.ReadFrom(r)
 	}
+
+	rr.size += int(n)
 	return n, err
 }
 
@@ -241,4 +278,10 @@ type ShouldBufferFunc func(status int, header http.Header) bool
 var (
 	_ HTTPInterfaces   = (*ResponseWriterWrapper)(nil)
 	_ ResponseRecorder = (*responseRecorder)(nil)
+
+	// Implementing ReaderFrom can be such a significant
+	// optimization that it should probably be required!
+	// see PR #5022 (25%-50% speedup)
+	_ io.ReaderFrom = (*ResponseWriterWrapper)(nil)
+	_ io.ReaderFrom = (*responseRecorder)(nil)
 )
