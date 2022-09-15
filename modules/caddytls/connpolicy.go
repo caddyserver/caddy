@@ -309,7 +309,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		ctx.OnCancel(func() { secretsLogPool.Delete(filename) })
+		ctx.OnCancel(func() { _, _ = secretsLogPool.Delete(filename) })
 
 		cfg.KeyLogWriter = logFile.(io.Writer)
 
