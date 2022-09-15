@@ -763,8 +763,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // ParseDuration parses a duration string, adding
 // support for the "d" unit meaning number of days,
-// where a day is assumed to be 24h.
+// where a day is assumed to be 24h. The maximum
+// input string length is 1024.
 func ParseDuration(s string) (time.Duration, error) {
+	if len(s) > 1024 {
+		return 0, fmt.Errorf("parsing duration: input string too long")
+	}
 	var inNumber bool
 	var numStart int
 	for i := 0; i < len(s); i++ {
