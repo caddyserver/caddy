@@ -152,6 +152,10 @@ type Server struct {
 	// Default: `[h1 h2 h3]`
 	Protocols []string `json:"protocols,omitempty"`
 
+	// If set, metrics observations will be enabled.
+	// This setting is EXPERIMENTAL and subject to change.
+	Metrics *Metrics `json:"metrics,omitempty"`
+
 	name string
 
 	primaryHandlerChain Handler
