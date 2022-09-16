@@ -505,23 +505,25 @@ func (app *App) Stop() error {
 		app.logger.Debug("servers shutting down with eternal grace period")
 	}
 
-	// shut down servers
-	for _, server := range app.Servers {
-		if err := server.server.Shutdown(ctx); err != nil {
-			app.logger.Error("server shutdown",
-				zap.Error(err),
-				zap.Strings("addresses", server.Listen))
-		}
-
-		if server.h3server != nil {
-			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
-			if err := server.h3server.Close(); err != nil {
-				app.logger.Error("HTTP/3 server shutdown",
+	// shut down servers (TODO: only do this in the background if the process is not exiting?)
+	go func() {
+		for _, server := range app.Servers {
+			if err := server.server.Shutdown(ctx); err != nil {
+				app.logger.Error("server shutdown",
 					zap.Error(err),
 					zap.Strings("addresses", server.Listen))
 			}
+
+			if server.h3server != nil {
+				// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+				if err := server.h3server.Close(); err != nil {
+					app.logger.Error("HTTP/3 server shutdown",
+						zap.Error(err),
+						zap.Strings("addresses", server.Listen))
+				}
+			}
 		}
-	}
+	}()
 
 	return nil
 }
