@@ -83,6 +83,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    eab    <key_id> <mac_key>
 //	    issuer <module_name> [...]
 //	    get_certificate <module_name> [...]
+//	    insecure_secrets_log <log_file>
 //	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	cp := new(caddytls.ConnectionPolicy)
