@@ -130,7 +130,7 @@ func (routes RouteList) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return err
 	}
-	return routes.ProvisionHandlers(ctx)
+	return routes.ProvisionHandlers(ctx, nil)
 }
 
 // ProvisionMatchers sets up all the matchers by loading the
@@ -156,7 +156,7 @@ func (routes RouteList) ProvisionMatchers(ctx caddy.Context) error {
 // handler modules. Only call this method directly if you need
 // to set up matchers and handlers separately without having
 // to provision a second time; otherwise use Provision instead.
-func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
+func (routes RouteList) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 	for i := range routes {
 		handlersIface, err := ctx.LoadModule(&routes[i], "HandlersRaw")
 		if err != nil {
@@ -168,7 +168,7 @@ func (routes RouteList) ProvisionHandlers(ctx caddy.Context) error {
 
 		// pre-compile the middleware handler chain
 		for _, midhandler := range routes[i].Handlers {
-			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(ctx, midhandler))
+			routes[i].middleware = append(routes[i].middleware, wrapMiddleware(ctx, midhandler, metrics))
 		}
 	}
 	return nil
@@ -270,9 +270,12 @@ func wrapRoute(route Route) Middleware {
 // we need to pull this particular MiddlewareHandler
 // pointer into its own stack frame to preserve it so it
 // won't be overwritten in future loop iterations.
-func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
-	// wrap the middleware with metrics instrumentation
-	metricsHandler := newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh)
+func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
+	handlerToUse := mh
+	if metrics != nil {
+		// wrap the middleware with metrics instrumentation
+		handlerToUse = newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh)
+	}
 
 	return func(next Handler) Handler {
 		// copy the next handler (it's an interface, so it's
@@ -284,7 +287,7 @@ func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// TODO: This is where request tracing could be implemented
 			// TODO: see what the std lib gives us in terms of stack tracing too
-			return metricsHandler.ServeHTTP(w, r, nextCopy)
+			return handlerToUse.ServeHTTP(w, r, nextCopy)
 		})
 	}
 }
