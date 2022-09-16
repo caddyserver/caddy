@@ -147,55 +147,10 @@ type Server struct {
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
 
-	// configuring http.Server
-	connStates   []func(net.Conn, http.ConnState)
-	connContexts []func(ctx context.Context, c net.Conn) context.Context
-	onShutdowns  []func()
-}
-
-// register ConnState callbacks
-func (s *Server) RegisterConnState(f func(net.Conn, http.ConnState)) {
-	s.connStates = append(s.connStates, f)
-}
-
-// register ConnContext callbacks
-func (s *Server) RegisterConnContext(f func(ctx context.Context, c net.Conn) context.Context) {
-	s.connContexts = append(s.connContexts, f)
-}
-
-// register OnShutdown callbacks
-func (s *Server) RegisterOnShutdown(f func()) {
-	s.onShutdowns = append(s.onShutdowns, f)
-}
-
-// apply callbacks to server
-func (s *Server) ConfigureServer(server *http.Server) {
-	for _, f := range s.connStates {
-		if server.ConnState != nil {
-			oldF := server.ConnState
-			server.ConnState = func(conn net.Conn, state http.ConnState) {
-				oldF(conn, state)
-				f(conn, state)
-			}
-		} else {
-			server.ConnState = f
-		}
-	}
-
-	for _, f := range s.connContexts {
-		if server.ConnContext != nil {
-			oldF := server.ConnContext
-			server.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
-				return f(oldF(ctx, c), c)
-			}
-		} else {
-			server.ConnContext = f
-		}
-	}
-
-	for _, f := range s.onShutdowns {
-		server.RegisterOnShutdown(f)
-	}
+	// registered callback functions
+	connStateFuncs   []func(net.Conn, http.ConnState)
+	connContextFuncs []func(ctx context.Context, c net.Conn) context.Context
+	onShutdownFuncs  []func()
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -493,6 +448,51 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	}
 
 	return lastIndex
+}
+
+// configureServer applies/binds the registered callback functions to the server.
+func (s *Server) configureServer(server *http.Server) {
+	for _, f := range s.connStateFuncs {
+		if server.ConnState != nil {
+			baseConnStateFunc := server.ConnState
+			server.ConnState = func(conn net.Conn, state http.ConnState) {
+				baseConnStateFunc(conn, state)
+				f(conn, state)
+			}
+		} else {
+			server.ConnState = f
+		}
+	}
+
+	for _, f := range s.connContextFuncs {
+		if server.ConnContext != nil {
+			baseConnContextFunc := server.ConnContext
+			server.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+				return f(baseConnContextFunc(ctx, c), c)
+			}
+		} else {
+			server.ConnContext = f
+		}
+	}
+
+	for _, f := range s.onShutdownFuncs {
+		server.RegisterOnShutdown(f)
+	}
+}
+
+// RegisterConnState registers f to be invoked on s.ConnState.
+func (s *Server) RegisterConnState(f func(net.Conn, http.ConnState)) {
+	s.connStateFuncs = append(s.connStateFuncs, f)
+}
+
+// RegisterConnContext registers f to be invoked as part of s.ConnContext.
+func (s *Server) RegisterConnContext(f func(ctx context.Context, c net.Conn) context.Context) {
+	s.connContextFuncs = append(s.connContextFuncs, f)
+}
+
+// RegisterOnShutdown registers f to be invoked on server shutdown.
+func (s *Server) RegisterOnShutdown(f func()) {
+	s.onShutdownFuncs = append(s.onShutdownFuncs, f)
 }
 
 // HTTPErrorConfig determines how to handle errors

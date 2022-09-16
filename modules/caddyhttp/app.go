@@ -327,7 +327,7 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 		}
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
-		srv.ConfigureServer(srv.server)
+		srv.configureServer(srv.server)
 
 		// enable h2c if configured
 		if srv.AllowH2C {
