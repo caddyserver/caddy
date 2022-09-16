@@ -23,9 +23,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +36,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
@@ -40,7 +44,13 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
+var supports1xx bool
+
 func init() {
+	// Caddy requires at least Go 1.18, but Early Hints requires Go 1.19; thus we can simply check for 1.18 in version string
+	// TODO: remove this once our minimum Go version is 1.19
+	supports1xx = !strings.Contains(runtime.Version(), "go1.18")
+
 	caddy.RegisterModule(Handler{})
 }
 
@@ -103,6 +113,11 @@ type Handler struct {
 	// response is recognized as a streaming response, or if its
 	// content length is -1; for such responses, writes are flushed
 	// to the client immediately.
+	//
+	// Normally, a request will be canceled if the client disconnects
+	// before the response is received from the backend. If explicitly
+	// set to -1, client disconnection will be ignored and the request
+	// will be completed to help facilitate low-latency streaming.
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
 
 	// A list of IP ranges (supports CIDR notation) from which
@@ -169,7 +184,7 @@ type Handler struct {
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
 	// Holds the parsed CIDR ranges from TrustedProxies
-	trustedProxies []*net.IPNet
+	trustedProxies []netip.Prefix
 
 	// Holds the named response matchers from the Caddyfile while adapting
 	responseMatchers map[string]caddyhttp.ResponseMatcher
@@ -177,8 +192,13 @@ type Handler struct {
 	// Holds the handle_response Caddyfile tokens while adapting
 	handleResponseSegments []*caddyfile.Dispenser
 
+	// Stores upgraded requests (hijacked connections) for proper cleanup
+	connections   map[io.ReadWriteCloser]openConnection
+	connectionsMu *sync.Mutex
+
 	ctx    caddy.Context
 	logger *zap.Logger
+	events *caddyevents.App
 }
 
 // CaddyModule returns the Caddy module information.
@@ -191,8 +211,15 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	eventAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger(h)
+	h.connections = make(map[io.ReadWriteCloser]openConnection)
+	h.connectionsMu = new(sync.Mutex)
 
 	// verify SRV compatibility - TODO: LookupSRV deprecated; will be removed
 	for i, v := range h.Upstreams {
@@ -240,24 +267,18 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	// parse trusted proxy CIDRs ahead of time
 	for _, str := range h.TrustedProxies {
 		if strings.Contains(str, "/") {
-			_, ipNet, err := net.ParseCIDR(str)
+			ipNet, err := netip.ParsePrefix(str)
 			if err != nil {
-				return fmt.Errorf("parsing CIDR expression: %v", err)
+				return fmt.Errorf("parsing CIDR expression: '%s': %v", str, err)
 			}
 			h.trustedProxies = append(h.trustedProxies, ipNet)
 		} else {
-			ip := net.ParseIP(str)
-			if ip == nil {
-				return fmt.Errorf("invalid IP address: %s", str)
+			ipAddr, err := netip.ParseAddr(str)
+			if err != nil {
+				return fmt.Errorf("invalid IP address: '%s': %v", str, err)
 			}
-			if ipv4 := ip.To4(); ipv4 != nil {
-				ip = ipv4
-			}
-			mask := len(ip) * 8
-			h.trustedProxies = append(h.trustedProxies, &net.IPNet{
-				IP:   ip,
-				Mask: net.CIDRMask(mask, mask),
-			})
+			ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
+			h.trustedProxies = append(h.trustedProxies, ipNew)
 		}
 	}
 
@@ -386,19 +407,40 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h)
+	upstreamHealthyUpdater.Init()
+
 	return nil
 }
 
-// Cleanup cleans up the resources made by h during provisioning.
+// Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	// TODO: Close keepalive connections on reload? https://github.com/caddyserver/caddy/pull/2507/files#diff-70219fd88fe3f36834f474ce6537ed26R762
+	// close hijacked connections (both to client and backend)
+	var err error
+	h.connectionsMu.Lock()
+	for _, oc := range h.connections {
+		if oc.gracefulClose != nil {
+			// this is potentially blocking while we have the lock on the connections
+			// map, but that should be OK since the server has in theory shut down
+			// and we are no longer using the connections map
+			gracefulErr := oc.gracefulClose()
+			if gracefulErr != nil && err == nil {
+				err = gracefulErr
+			}
+		}
+		closeErr := oc.conn.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	h.connectionsMu.Unlock()
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
 		_, _ = hosts.Delete(upstream.String())
 	}
 
-	return nil
+	return err
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -658,18 +700,18 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 
 	// Client IP may contain a zone if IPv6, so we need
 	// to pull that out before parsing the IP
-	if idx := strings.IndexByte(clientIP, '%'); idx >= 0 {
-		clientIP = clientIP[:idx]
+	if before, _, found := strings.Cut(clientIP, "%"); found {
+		clientIP = before
 	}
-	ip := net.ParseIP(clientIP)
-	if ip == nil {
-		return fmt.Errorf("invalid client IP address: %s", clientIP)
+	ipAddr, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return fmt.Errorf("invalid IP address: '%s': %v", clientIP, err)
 	}
 
 	// Check if the client is a trusted proxy
 	trusted := false
 	for _, ipRange := range h.trustedProxies {
-		if ipRange.Contains(ip) {
+		if ipRange.Contains(ipAddr) {
 			trusted = true
 			break
 		}
@@ -731,6 +773,34 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
+
+	if supports1xx {
+		// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+		trace := &httptrace.ClientTrace{
+			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+				h := rw.Header()
+				copyHeader(h, http.Header(header))
+				rw.WriteHeader(code)
+
+				// Clear headers, it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses
+				for k := range h {
+					delete(h, k)
+				}
+
+				return nil
+			},
+		}
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	}
+
+	// if FlushInterval is explicitly configured to -1 (i.e. flush continuously to achieve
+	// low-latency streaming), don't let the transport cancel the request if the client
+	// disconnects: user probably wants us to finish sending the data to the upstream
+	// regardless, and we should expect client disconnection in low-latency streaming
+	// scenarios (see issue #4922)
+	if h.FlushInterval == -1 {
+		req = req.WithContext(ignoreClientGoneContext{req.Context(), h.ctx.Done()})
+	}
 
 	// do the round-trip; emit debug log with values we know are
 	// safe, or if there is no error, emit fuller log entry
@@ -1323,7 +1393,7 @@ var bufPool = sync.Pool{
 }
 
 // handleResponseContext carries some contextual information about the
-// the current proxy handling.
+// current proxy handling.
 type handleResponseContext struct {
 	// handler is the active proxy handler instance, so that
 	// routes like copy_response may inherit some config
@@ -1348,6 +1418,19 @@ type handleResponseContext struct {
 	// happen twice.
 	isFinalized bool
 }
+
+// ignoreClientGoneContext is a special context.Context type
+// intended for use when doing a RoundTrip where you don't
+// want a client disconnection to cancel the request during
+// the roundtrip. Set its done field to a Done() channel
+// of a context that doesn't get canceled when the client
+// disconnects, such as caddy.Context.Done() instead.
+type ignoreClientGoneContext struct {
+	context.Context
+	done <-chan struct{}
+}
+
+func (c ignoreClientGoneContext) Done() <-chan struct{} { return c.done }
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
 // so that handle_response routes can inherit some config options

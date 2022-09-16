@@ -36,17 +36,16 @@ func init() {
 // parseCaddyfile parses the file_server directive. It enables the static file
 // server and configures it with this syntax:
 //
-//    file_server [<matcher>] [browse] {
-//        fs            <backend...>
-//        root          <path>
-//        hide          <files...>
-//        index         <files...>
-//        browse        [<template_file>]
-//        precompressed <formats...>
-//        status        <status>
-//        disable_canonical_uris
-//    }
-//
+//	file_server [<matcher>] [browse] {
+//	    fs            <backend...>
+//	    root          <path>
+//	    hide          <files...>
+//	    index         <files...>
+//	    browse        [<template_file>]
+//	    precompressed <formats...>
+//	    status        <status>
+//	    disable_canonical_uris
+//	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var fsrv FileServer
 
@@ -78,11 +77,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				if err != nil {
 					return nil, err
 				}
-				statFS, ok := unm.(fs.StatFS)
+				fsys, ok := unm.(fs.FS)
 				if !ok {
-					return nil, h.Errf("module %s (%T) is not a supported file system implementation (requires fs.StatFS)", modID, unm)
+					return nil, h.Errf("module %s (%T) is not a supported file system implementation (requires fs.FS)", modID, unm)
 				}
-				fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(statFS, "backend", name, nil)
+				fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(fsys, "backend", name, nil)
 
 			case "hide":
 				fsrv.Hide = h.RemainingArgs()
@@ -177,22 +176,23 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // with a rewrite directive, so this is not a standard handler directive.
 // A try_files directive has this syntax (notice no matcher tokens accepted):
 //
-//    try_files <files...>
+//	try_files <files...> {
+//		policy first_exist|smallest_size|largest_size|most_recently_modified
+//	}
 //
 // and is basically shorthand for:
 //
-//    @try_files {
-//        file {
-//            try_files <files...>
-//        }
-//    }
-//    rewrite @try_files {http.matchers.file.relative}
+//	@try_files file {
+//		try_files <files...>
+//		policy first_exist|smallest_size|largest_size|most_recently_modified
+//	}
+//	rewrite @try_files {http.matchers.file.relative}
 //
 // This directive rewrites request paths only, preserving any other part
 // of the URI, unless the part is explicitly given in the file list. For
 // example, if any of the files in the list have a query string:
 //
-//    try_files {path} index.php?{query}&p={path}
+//	try_files {path} index.php?{query}&p={path}
 //
 // then the query string will not be treated as part of the file name; and
 // if that file matches, the given query string will replace any query string
@@ -207,6 +207,27 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 		return nil, h.ArgErr()
 	}
 
+	// parse out the optional try policy
+	var tryPolicy string
+	for nesting := h.Nesting(); h.NextBlock(nesting); {
+		switch h.Val() {
+		case "policy":
+			if tryPolicy != "" {
+				return nil, h.Err("try policy already configured")
+			}
+			if !h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			tryPolicy = h.Val()
+
+			switch tryPolicy {
+			case tryPolicyFirstExist, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod:
+			default:
+				return nil, h.Errf("unrecognized try policy: %s", tryPolicy)
+			}
+		}
+	}
+
 	// makeRoute returns a route that tries the files listed in try
 	// and then rewrites to the matched file; userQueryString is
 	// appended to the rewrite rule.
@@ -215,7 +236,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 			URI: "{http.matchers.file.relative}" + userQueryString,
 		}
 		matcherSet := caddy.ModuleMap{
-			"file": h.JSON(MatchFile{TryFiles: try}),
+			"file": h.JSON(MatchFile{TryFiles: try, TryPolicy: tryPolicy}),
 		}
 		return h.NewRoute(matcherSet, handler)
 	}

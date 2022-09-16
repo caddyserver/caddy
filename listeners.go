@@ -20,16 +20,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
+	"go.uber.org/zap"
 )
 
 // Listen is like net.Listen, except Caddy's listeners can overlap
@@ -41,24 +41,23 @@ import (
 // the socket have been finished. Always be sure to close listeners
 // when you are done with them, just like normal listeners.
 func Listen(network, addr string) (net.Listener, error) {
-	lnKey := listenerKey(network, addr)
+	// a 0 timeout means Go uses its default
+	return ListenTimeout(network, addr, 0)
+}
 
-	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		ln, err := net.Listen(network, addr)
-		if err != nil {
-			// https://github.com/caddyserver/caddy/pull/4534
-			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {
-				return nil, fmt.Errorf("%w: this can happen if Caddy was forcefully killed", err)
-			}
-			return nil, err
-		}
-		return &sharedListener{Listener: ln, key: lnKey}, nil
-	})
-	if err != nil {
-		return nil, err
+// getListenerFromPlugin returns a listener on the given network and address
+// if a plugin has registered the network name. It may return (nil, nil) if
+// no plugin can provide a listener.
+func getListenerFromPlugin(network, addr string) (net.Listener, error) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	// get listener from plugin if network type is registered
+	if getListener, ok := networkTypes[network]; ok {
+		Log().Debug("getting listener from plugin", zap.String("network", network))
+		return getListener(network, addr)
 	}
 
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener)}, nil
+	return nil, nil
 }
 
 // ListenPacket returns a net.PacketConn suitable for use in a Caddy module.
@@ -88,26 +87,35 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // Note that the context passed to Accept is currently ignored, so using
 // a context other than context.Background is meaningless.
-func ListenQUIC(addr string, tlsConf *tls.Config) (quic.EarlyListener, error) {
+// This API is EXPERIMENTAL and may change.
+func ListenQUIC(addr string, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
 	lnKey := listenerKey("udp", addr)
 
 	sharedEl, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{})
+		el, err := quic.ListenAddrEarly(addr, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
+				}
+				return highLoad
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
 		return &sharedQuicListener{EarlyListener: el, key: lnKey}, nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sharedEl.(*sharedQuicListener),
-		context:            ctx, contextCancel: cancel,
-	}, err
-}
-
-func listenerKey(network, addr string) string {
-	return network + "/" + addr
+		context:            ctx,
+		contextCancel:      cancel,
+	}, nil
 }
 
 // ListenerUsage returns the current usage count of the given listener address.
@@ -116,70 +124,8 @@ func ListenerUsage(network, addr string) int {
 	return count
 }
 
-// fakeCloseListener is a private wrapper over a listener that
-// is shared. The state of fakeCloseListener is not shared.
-// This allows one user of a socket to "close" the listener
-// while in reality the socket stays open for other users of
-// the listener. In this way, servers become hot-swappable
-// while the listener remains running. Listeners should be
-// re-wrapped in a new fakeCloseListener each time the listener
-// is reused. This type is atomic and values must not be copied.
-type fakeCloseListener struct {
-	closed          int32 // accessed atomically; belongs to this struct only
-	*sharedListener       // embedded, so we also become a net.Listener
-}
-
-func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
-	// if the listener is already "closed", return error
-	if atomic.LoadInt32(&fcl.closed) == 1 {
-		return nil, fakeClosedErr(fcl)
-	}
-
-	// call underlying accept
-	conn, err := fcl.sharedListener.Accept()
-	if err == nil {
-		return conn, nil
-	}
-
-	// since Accept() returned an error, it may be because our reference to
-	// the listener (this fakeCloseListener) may have been closed, i.e. the
-	// server is shutting down; in that case, we need to clear the deadline
-	// that we set when Close() was called, and return a non-temporary and
-	// non-timeout error value to the caller, masking the "true" error, so
-	// that server loops / goroutines won't retry, linger, and leak
-	if atomic.LoadInt32(&fcl.closed) == 1 {
-		// we dereference the sharedListener explicitly even though it's embedded
-		// so that it's clear in the code that side-effects are shared with other
-		// users of this listener, not just our own reference to it; we also don't
-		// do anything with the error because all we could do is log it, but we
-		// expliclty assign it to nothing so we don't forget it's there if needed
-		_ = fcl.sharedListener.clearDeadline()
-
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, fakeClosedErr(fcl)
-		}
-	}
-
-	return nil, err
-}
-
-// Close stops accepting new connections without closing the
-// underlying listener. The underlying listener is only closed
-// if the caller is the last known user of the socket.
-func (fcl *fakeCloseListener) Close() error {
-	if atomic.CompareAndSwapInt32(&fcl.closed, 0, 1) {
-		// There are two ways I know of to get an Accept()
-		// function to return to the server loop that called
-		// it: close the listener, or set a deadline in the
-		// past. Obviously, we can't close the socket yet
-		// since others may be using it (hence this whole
-		// file). But we can set the deadline in the past,
-		// and this is kind of cheating, but it works, and
-		// it apparently even works on Windows.
-		_ = fcl.sharedListener.setDeadline()
-		_, _ = listenerPool.Delete(fcl.sharedListener.key)
-	}
-	return nil
+func listenerKey(network, addr string) string {
+	return network + "/" + addr
 }
 
 type fakeCloseQuicListener struct {
@@ -265,55 +211,6 @@ func (fcpc fakeClosePacketConn) SyscallConn() (syscall.RawConn, error) {
 	return nil, fmt.Errorf("SyscallConn() not implemented for %T", fcpc.PacketConn)
 }
 
-// sharedListener is a wrapper over an underlying listener. The listener
-// and the other fields on the struct are shared state that is synchronized,
-// so sharedListener structs must never be copied (always use a pointer).
-type sharedListener struct {
-	net.Listener
-	key        string // uniquely identifies this listener
-	deadline   bool   // whether a deadline is currently set
-	deadlineMu sync.Mutex
-}
-
-func (sl *sharedListener) clearDeadline() error {
-	var err error
-	sl.deadlineMu.Lock()
-	if sl.deadline {
-		switch ln := sl.Listener.(type) {
-		case *net.TCPListener:
-			err = ln.SetDeadline(time.Time{})
-		case *net.UnixListener:
-			err = ln.SetDeadline(time.Time{})
-		}
-		sl.deadline = false
-	}
-	sl.deadlineMu.Unlock()
-	return err
-}
-
-func (sl *sharedListener) setDeadline() error {
-	timeInPast := time.Now().Add(-1 * time.Minute)
-	var err error
-	sl.deadlineMu.Lock()
-	if !sl.deadline {
-		switch ln := sl.Listener.(type) {
-		case *net.TCPListener:
-			err = ln.SetDeadline(timeInPast)
-		case *net.UnixListener:
-			err = ln.SetDeadline(timeInPast)
-		}
-		sl.deadline = true
-	}
-	sl.deadlineMu.Unlock()
-	return err
-}
-
-// Destruct is called by the UsagePool when the listener is
-// finally not being used anymore. It closes the socket.
-func (sl *sharedListener) Destruct() error {
-	return sl.Listener.Close()
-}
-
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	quic.EarlyListener
@@ -392,7 +289,7 @@ func (na NetworkAddress) isLoopback() bool {
 	if na.Host == "localhost" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsLoopback()
 	}
 	return false
@@ -402,7 +299,7 @@ func (na NetworkAddress) isWildcardInterface() bool {
 	if na.Host == "" {
 		return true
 	}
-	if ip := net.ParseIP(na.Host); ip != nil {
+	if ip, err := netip.ParseAddr(na.Host); err == nil {
 		return ip.IsUnspecified()
 	}
 	return false
@@ -541,6 +438,35 @@ func JoinNetworkAddress(network, host, port string) string {
 	}
 	return a
 }
+
+// RegisterNetwork registers a network type with Caddy so that if a listener is
+// created for that network type, getListener will be invoked to get the listener.
+// This should be called during init() and will panic if the network type is standard
+// or reserved, or if it is already registered. EXPERIMENTAL and subject to change.
+func RegisterNetwork(network string, getListener ListenerFunc) {
+	network = strings.TrimSpace(strings.ToLower(network))
+
+	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
+		network == "udp" || network == "udp4" || network == "udp6" ||
+		network == "unix" || network == "unixpacket" || network == "unixgram" ||
+		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) {
+		panic("network type " + network + " is reserved")
+	}
+
+	if _, ok := networkTypes[strings.ToLower(network)]; ok {
+		panic("network type " + network + " is already registered")
+	}
+
+	networkTypes[network] = getListener
+}
+
+// ListenerFunc is a function that can return a listener given a network and address.
+// The listeners must be capable of overlapping: with Caddy, new configs are loaded
+// before old ones are unloaded, so listeners may overlap briefly if the configs
+// both need the same listener. EXPERIMENTAL and subject to change.
+type ListenerFunc func(network, addr string) (net.Listener, error)
+
+var networkTypes = map[string]ListenerFunc{}
 
 // ListenerWrapper is a type that wraps a listener
 // so it can modify the input listener's methods.

@@ -33,6 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/certmagic"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 )
 
@@ -40,53 +41,29 @@ func init() {
 	// set a fitting User-Agent for ACME requests
 	version, _ := caddy.Version()
 	cleanModVersion := strings.TrimPrefix(version, "v")
-	certmagic.UserAgent = "Caddy/" + cleanModVersion
+	ua := "Caddy/" + cleanModVersion
+	if uaEnv, ok := os.LookupEnv("USERAGENT"); ok {
+		ua = uaEnv + " " + ua
+	}
+	certmagic.UserAgent = ua
 
 	// by using Caddy, user indicates agreement to CA terms
-	// (very important, or ACME account creation will fail!)
+	// (very important, as Caddy is often non-interactive
+	// and thus ACME account creation will fail!)
 	certmagic.DefaultACME.Agreed = true
 }
 
 // Main implements the main function of the caddy command.
 // Call this if Caddy is to be the main() of your program.
 func Main() {
-	switch len(os.Args) {
-	case 0:
+	if len(os.Args) == 0 {
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
-	case 1:
-		os.Args = append(os.Args, "help")
 	}
 
-	subcommandName := os.Args[1]
-	subcommand, ok := commands[subcommandName]
-	if !ok {
-		if strings.HasPrefix(os.Args[1], "-") {
-			// user probably forgot to type the subcommand
-			fmt.Println("[ERROR] first argument must be a subcommand; see 'caddy help'")
-		} else {
-			fmt.Printf("[ERROR] '%s' is not a recognized subcommand; see 'caddy help'\n", os.Args[1])
-		}
-		os.Exit(caddy.ExitCodeFailedStartup)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
-
-	fs := subcommand.Flags
-	if fs == nil {
-		fs = flag.NewFlagSet(subcommand.Name, flag.ExitOnError)
-	}
-
-	err := fs.Parse(os.Args[2:])
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(caddy.ExitCodeFailedStartup)
-	}
-
-	exitCode, err := subcommand.Func(Flags{fs})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand.Name, err)
-	}
-
-	os.Exit(exitCode)
 }
 
 // handlePingbackConn reads from conn and ensures it matches
@@ -280,7 +257,7 @@ func watchConfigFile(filename, adapterName string) {
 // Flags wraps a FlagSet so that typed values
 // from flags can be easily retrieved.
 type Flags struct {
-	*flag.FlagSet
+	*pflag.FlagSet
 }
 
 // String returns the string representation of the
@@ -324,22 +301,6 @@ func (f Flags) Float64(name string) float64 {
 func (f Flags) Duration(name string) time.Duration {
 	val, _ := caddy.ParseDuration(f.String(name))
 	return val
-}
-
-// flagHelp returns the help text for fs.
-func flagHelp(fs *flag.FlagSet) string {
-	if fs == nil {
-		return ""
-	}
-
-	// temporarily redirect output
-	out := fs.Output()
-	defer fs.SetOutput(out)
-
-	buf := new(bytes.Buffer)
-	fs.SetOutput(buf)
-	fs.PrintDefaults()
-	return buf.String()
 }
 
 func loadEnvFromFile(envFile string) error {
@@ -408,11 +369,8 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// remove any trailing comment after value
-		if commentStart := strings.Index(val, "#"); commentStart > 0 {
-			before := val[commentStart-1]
-			if before == '\t' || before == ' ' {
-				val = strings.TrimRight(val[:commentStart], " \t")
-			}
+		if commentStart, _, found := strings.Cut(val, "#"); found {
+			val = strings.TrimRight(commentStart, " \t")
 		}
 
 		// quoted value: support newlines

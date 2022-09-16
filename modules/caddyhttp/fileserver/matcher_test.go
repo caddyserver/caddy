@@ -28,7 +28,6 @@ import (
 )
 
 func TestFileMatcher(t *testing.T) {
-
 	// Windows doesn't like colons in files names
 	isWindows := runtime.GOOS == "windows"
 	if !isWindows {
@@ -87,25 +86,25 @@ func TestFileMatcher(t *testing.T) {
 		},
 		{
 			path:         "ملف.txt", // the path file name is not escaped
-			expectedPath: "ملف.txt",
+			expectedPath: "/ملف.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         url.PathEscape("ملف.txt"), // singly-escaped path
-			expectedPath: "ملف.txt",
+			expectedPath: "/ملف.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         url.PathEscape(url.PathEscape("ملف.txt")), // doubly-escaped path
-			expectedPath: "%D9%85%D9%84%D9%81.txt",
+			expectedPath: "/%D9%85%D9%84%D9%81.txt",
 			expectedType: "file",
 			matched:      true,
 		},
 		{
 			path:         "./with:in-name.txt", // browsers send the request with the path as such
-			expectedPath: "with:in-name.txt",
+			expectedPath: "/with:in-name.txt",
 			expectedType: "file",
 			matched:      !isWindows,
 		},
@@ -118,7 +117,7 @@ func TestFileMatcher(t *testing.T) {
 
 		u, err := url.Parse(tc.path)
 		if err != nil {
-			t.Fatalf("Test %d: parsing path: %v", i, err)
+			t.Errorf("Test %d: parsing path: %v", i, err)
 		}
 
 		req := &http.Request{URL: u}
@@ -126,24 +125,24 @@ func TestFileMatcher(t *testing.T) {
 
 		result := m.Match(req)
 		if result != tc.matched {
-			t.Fatalf("Test %d: expected match=%t, got %t", i, tc.matched, result)
+			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
 
 		rel, ok := repl.Get("http.matchers.file.relative")
 		if !ok && result {
-			t.Fatalf("Test %d: expected replacer value", i)
+			t.Errorf("Test %d: expected replacer value", i)
 		}
 		if !result {
 			continue
 		}
 
 		if rel != tc.expectedPath {
-			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+			t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 		}
 
 		fileType, _ := repl.Get("http.matchers.file.type")
 		if fileType != tc.expectedType {
-			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+			t.Errorf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
 		}
 	}
 }
@@ -222,7 +221,7 @@ func TestPHPFileMatcher(t *testing.T) {
 
 		u, err := url.Parse(tc.path)
 		if err != nil {
-			t.Fatalf("Test %d: parsing path: %v", i, err)
+			t.Errorf("Test %d: parsing path: %v", i, err)
 		}
 
 		req := &http.Request{URL: u}
@@ -230,24 +229,24 @@ func TestPHPFileMatcher(t *testing.T) {
 
 		result := m.Match(req)
 		if result != tc.matched {
-			t.Fatalf("Test %d: expected match=%t, got %t", i, tc.matched, result)
+			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
 
 		rel, ok := repl.Get("http.matchers.file.relative")
 		if !ok && result {
-			t.Fatalf("Test %d: expected replacer value", i)
+			t.Errorf("Test %d: expected replacer value", i)
 		}
 		if !result {
 			continue
 		}
 
 		if rel != tc.expectedPath {
-			t.Fatalf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+			t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 		}
 
 		fileType, _ := repl.Get("http.matchers.file.type")
 		if fileType != tc.expectedType {
-			t.Fatalf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+			t.Errorf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
 		}
 	}
 }

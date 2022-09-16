@@ -23,7 +23,6 @@ import (
 	weakrand "math/rand"
 	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -84,14 +83,14 @@ type FileServer struct {
 	// disk file system.
 	//
 	// File system modules used here must adhere to the following requirements:
-	// - Implement fs.StatFS interface.
+	// - Implement fs.FS interface.
 	// - Support seeking on opened files; i.e.returned fs.File values must
 	//   implement the io.Seeker interface. This is required for determining
 	//   Content-Length and satisfying Range requests.
 	// - fs.File values that represent directories must implement the
 	//   fs.ReadDirFile interface so that directory listings can be procured.
 	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
-	fileSystem    fs.StatFS
+	fileSystem    fs.FS
 
 	// The path to the root of the site. Default is `{http.vars.root}` if set,
 	// or current working directory otherwise. This should be a trusted value.
@@ -176,7 +175,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading file system module: %v", err)
 		}
-		fsrv.fileSystem = mod.(fs.StatFS)
+		fsrv.fileSystem = mod.(fs.FS)
 	}
 	if fsrv.fileSystem == nil {
 		fsrv.fileSystem = osFS{}
@@ -236,16 +235,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
-	// PathUnescape returns an error if the escapes aren't well-formed,
-	// meaning the count % matches the RFC. Return early if the escape is
-	// improper.
-	if _, err := url.PathUnescape(r.URL.Path); err != nil {
-		fsrv.logger.Debug("improper path escape",
-			zap.String("site_root", root),
-			zap.String("request_path", r.URL.Path),
-			zap.Error(err))
-		return err
-	}
+
 	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
 
 	fsrv.logger.Debug("sanitized path join",
@@ -254,7 +244,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("result", filename))
 
 	// get information about the file
-	info, err := fsrv.fileSystem.Stat(filename)
+	info, err := fs.Stat(fsrv.fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -280,7 +270,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				continue
 			}
 
-			indexInfo, err := fsrv.fileSystem.Stat(indexPath)
+			indexInfo, err := fs.Stat(fsrv.fileSystem, indexPath)
 			if err != nil {
 				continue
 			}
@@ -351,6 +341,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	var etag string
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -359,7 +350,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err := fsrv.fileSystem.Stat(compressedFilename)
+		compressedInfo, err := fs.Stat(fsrv.fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
 			continue
@@ -371,12 +362,19 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
 				return err
 			}
+			file = nil
 			continue
 		}
 		defer file.Close()
 		w.Header().Set("Content-Encoding", ae)
 		w.Header().Del("Accept-Ranges")
 		w.Header().Add("Vary", "Accept-Encoding")
+
+		// don't assign info = compressedInfo because sidecars are kind
+		// of transparent; however we do need to set the Etag:
+		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
+		etag = calculateEtag(compressedInfo)
+
 		break
 	}
 
@@ -394,11 +392,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return err // error is already structured
 		}
 		defer file.Close()
+
+		etag = calculateEtag(info)
 	}
 
-	// set the ETag - note that a conditional If-None-Match request is handled
-	// by http.ServeContent below, which checks against this ETag value
-	w.Header().Set("Etag", calculateEtag(info))
+	// set the Etag - note that a conditional If-None-Match request is handled
+	// by http.ServeContent below, which checks against this Etag value
+	w.Header().Set("Etag", etag)
 
 	if w.Header().Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
@@ -490,7 +490,7 @@ func (fsrv *FileServer) mapDirOpenError(originalErr error, name string) error {
 		if parts[i] == "" {
 			continue
 		}
-		fi, err := fsrv.fileSystem.Stat(strings.Join(parts[:i+1], separator))
+		fi, err := fs.Stat(fsrv.fileSystem, strings.Join(parts[:i+1], separator))
 		if err != nil {
 			return originalErr
 		}
@@ -613,15 +613,20 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 	wr.ResponseWriter.WriteHeader(wr.code)
 }
 
-// osFS is a simple fs.StatFS implementation that uses the local
+// osFS is a simple fs.FS implementation that uses the local
 // file system. (We do not use os.DirFS because we do our own
 // rooting or path prefixing without being constrained to a single
 // root folder. The standard os.DirFS implementation is problematic
 // since roots can be dynamic in our application.)
+//
+// osFS also implements fs.StatFS, fs.GlobFS, fs.ReadDirFS, and fs.ReadFileFS.
 type osFS struct{}
 
-func (osFS) Open(name string) (fs.File, error)     { return os.Open(name) }
-func (osFS) Stat(name string) (fs.FileInfo, error) { return os.Stat(name) }
+func (osFS) Open(name string) (fs.File, error)          { return os.Open(name) }
+func (osFS) Stat(name string) (fs.FileInfo, error)      { return os.Stat(name) }
+func (osFS) Glob(pattern string) ([]string, error)      { return filepath.Glob(pattern) }
+func (osFS) ReadDir(name string) ([]fs.DirEntry, error) { return os.ReadDir(name) }
+func (osFS) ReadFile(name string) ([]byte, error)       { return os.ReadFile(name) }
 
 var defaultIndexNames = []string{"index.html", "index.txt"}
 
@@ -634,4 +639,9 @@ const (
 var (
 	_ caddy.Provisioner           = (*FileServer)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FileServer)(nil)
+
+	_ fs.StatFS     = (*osFS)(nil)
+	_ fs.GlobFS     = (*osFS)(nil)
+	_ fs.ReadDirFS  = (*osFS)(nil)
+	_ fs.ReadFileFS = (*osFS)(nil)
 )

@@ -307,6 +307,14 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.RenewCheckInterval = renewCheckInterval
 	}
 
+	// set the OCSP check interval if configured
+	if ocspCheckInterval, ok := options["ocsp_interval"].(caddy.Duration); ok {
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.OCSPCheckInterval = ocspCheckInterval
+	}
+
 	// set whether OCSP stapling should be disabled for manually-managed certificates
 	if ocspConfig, ok := options["ocsp_stapling"].(certmagic.OCSPConfig); ok {
 		tlsApp.DisableOCSPStapling = ocspConfig.DisableStapling

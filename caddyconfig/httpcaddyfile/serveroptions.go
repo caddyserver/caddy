@@ -38,11 +38,12 @@ type serverOptions struct {
 	ReadHeaderTimeout    caddy.Duration
 	WriteTimeout         caddy.Duration
 	IdleTimeout          caddy.Duration
+	KeepAliveInterval    caddy.Duration
 	MaxHeaderBytes       int
-	AllowH2C             bool
-	ExperimentalHTTP3    bool
+	Protocols            []string
 	StrictSNIHost        *bool
 	ShouldLogCredentials bool
+	Metrics              *caddyhttp.Metrics
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -123,6 +124,15 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 					}
 				}
+			case "keepalive_interval":
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return nil, d.Errf("parsing keepalive interval duration: %v", err)
+				}
+				serverOpts.KeepAliveInterval = caddy.Duration(dur)
 
 			case "max_header_size":
 				var sizeStr string
@@ -141,22 +151,60 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				}
 				serverOpts.ShouldLogCredentials = true
 
+			case "protocols":
+				protos := d.RemainingArgs()
+				for _, proto := range protos {
+					if proto != "h1" && proto != "h2" && proto != "h2c" && proto != "h3" {
+						return nil, d.Errf("unknown protocol '%s': expected h1, h2, h2c, or h3", proto)
+					}
+					if sliceContains(serverOpts.Protocols, proto) {
+						return nil, d.Errf("protocol %s specified more than once", proto)
+					}
+					serverOpts.Protocols = append(serverOpts.Protocols, proto)
+				}
+				if d.NextBlock(0) {
+					return nil, d.ArgErr()
+				}
+
+			case "strict_sni_host":
+				if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
+					return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
+				}
+				boolVal := true
+				if d.Val() == "insecure_off" {
+					boolVal = false
+				}
+				serverOpts.StrictSNIHost = &boolVal
+
+			case "metrics":
+				if d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				if d.NextBlock(0) {
+					return nil, d.ArgErr()
+				}
+				serverOpts.Metrics = new(caddyhttp.Metrics)
+
+			// TODO: DEPRECATED. (August 2022)
 			case "protocol":
+				caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol sub-option will be removed soon")
+
 				for nesting := d.Nesting(); d.NextBlock(nesting); {
 					switch d.Val() {
 					case "allow_h2c":
-						if d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						serverOpts.AllowH2C = true
+						caddy.Log().Named("caddyfile").Warn("DEPRECATED: allow_h2c will be removed soon; use protocols option instead")
 
-					case "experimental_http3":
 						if d.NextArg() {
 							return nil, d.ArgErr()
 						}
-						serverOpts.ExperimentalHTTP3 = true
+						if sliceContains(serverOpts.Protocols, "h2c") {
+							return nil, d.Errf("protocol h2c already specified")
+						}
+						serverOpts.Protocols = append(serverOpts.Protocols, "h2c")
 
 					case "strict_sni_host":
+						caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol > strict_sni_host in this position will be removed soon; move up to the servers block instead")
+
 						if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
 							return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
 						}
@@ -185,17 +233,6 @@ func applyServerOptions(
 	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 ) error {
-	// If experimental HTTP/3 is enabled, enable it on each server.
-	// We already know there won't be a conflict with serverOptions because
-	// we validated earlier that "experimental_http3" cannot be set at the same
-	// time as "servers"
-	if enableH3, ok := options["experimental_http3"].(bool); ok && enableH3 {
-		*warnings = append(*warnings, caddyconfig.Warning{Message: "the 'experimental_http3' global option is deprecated, please use the 'servers > protocol > experimental_http3' option instead"})
-		for _, srv := range servers {
-			srv.ExperimentalHTTP3 = true
-		}
-	}
-
 	serverOpts, ok := options["servers"].([]serverOptions)
 	if !ok {
 		return nil
@@ -228,10 +265,11 @@ func applyServerOptions(
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
+		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
-		server.AllowH2C = opts.AllowH2C
-		server.ExperimentalHTTP3 = opts.ExperimentalHTTP3
+		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
+		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
 				server.Logs = &caddyhttp.ServerLogConfig{}

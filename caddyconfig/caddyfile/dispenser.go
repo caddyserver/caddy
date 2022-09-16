@@ -146,15 +146,15 @@ func (d *Dispenser) NextLine() bool {
 //
 // Proper use of this method looks like this:
 //
-//     for nesting := d.Nesting(); d.NextBlock(nesting); {
-//     }
+//	for nesting := d.Nesting(); d.NextBlock(nesting); {
+//	}
 //
 // However, in simple cases where it is known that the
 // Dispenser is new and has not already traversed state
 // by a loop over NextBlock(), this will do:
 //
-//     for d.NextBlock(0) {
-//     }
+//	for d.NextBlock(0) {
+//	}
 //
 // As with other token parsing logic, a loop over
 // NextBlock() should be contained within a loop over

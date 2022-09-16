@@ -40,7 +40,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/notify"
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -340,17 +339,19 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
 func replaceLocalAdminServer(cfg *Config) error {
-	// always be sure to close down the old admin endpoint
+	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
 	// (old) admin endpoint since it will be different
 	// when the function returns
+	// (* except if the new one fails to start)
 	oldAdminServer := localAdminServer
+	var err error
 	defer func() {
 		// do the shutdown asynchronously so that any
 		// current API request gets a response; this
 		// goroutine may last a few seconds
-		if oldAdminServer != nil {
+		if oldAdminServer != nil && err == nil {
 			go func(oldAdminServer *http.Server) {
 				err := stopAdminServer(oldAdminServer)
 				if err != nil {
@@ -1016,10 +1017,6 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 			HTTPStatus: http.StatusMethodNotAllowed,
 			Err:        fmt.Errorf("method not allowed"),
 		}
-	}
-
-	if err := notify.NotifyStopping(); err != nil {
-		Log().Error("unable to notify stopping to service manager", zap.Error(err))
 	}
 
 	exitProcess(context.Background(), Log().Named("admin.api"))

@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	caddytpl "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"github.com/caddyserver/certmagic"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -70,6 +71,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	browse := fs.Bool("browse")
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
+	debug := fs.Bool("debug")
 
 	var handlers []json.RawMessage
 
@@ -128,6 +130,14 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		AppsRaw: caddy.ModuleMap{
 			"http": caddyconfig.JSON(httpApp, nil),
 		},
+	}
+
+	if debug {
+		cfg.Logging = &caddy.Logging{
+			Logs: map[string]*caddy.CustomLog{
+				"default": {Level: zap.DebugLevel.CapitalString()},
+			},
+		}
 	}
 
 	err := caddy.Run(cfg)

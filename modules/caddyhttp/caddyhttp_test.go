@@ -92,3 +92,60 @@ func TestSanitizedPathJoin(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanPath(t *testing.T) {
+	for i, tc := range []struct {
+		input        string
+		mergeSlashes bool
+		expect       string
+	}{
+		{
+			input:  "/foo",
+			expect: "/foo",
+		},
+		{
+			input:  "/foo/",
+			expect: "/foo/",
+		},
+		{
+			input:  "//foo",
+			expect: "//foo",
+		},
+		{
+			input:        "//foo",
+			mergeSlashes: true,
+			expect:       "/foo",
+		},
+		{
+			input:        "/foo//bar/",
+			mergeSlashes: true,
+			expect:       "/foo/bar/",
+		},
+		{
+			input:  "/foo/./.././bar",
+			expect: "/bar",
+		},
+		{
+			input:  "/foo//./..//./bar",
+			expect: "/foo//bar",
+		},
+		{
+			input:  "/foo///./..//./bar",
+			expect: "/foo///bar",
+		},
+		{
+			input:  "/foo///./..//.",
+			expect: "/foo//",
+		},
+		{
+			input:  "/foo//./bar",
+			expect: "/foo//bar",
+		},
+	} {
+		actual := CleanPath(tc.input, tc.mergeSlashes)
+		if actual != tc.expect {
+			t.Errorf("Test %d [input='%s' mergeSlashes=%t]: Got '%s', expected '%s'",
+				i, tc.input, tc.mergeSlashes, actual, tc.expect)
+		}
+	}
+}

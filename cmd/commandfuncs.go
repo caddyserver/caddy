@@ -29,7 +29,6 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strings"
 
 	"github.com/aryann/difflib"
@@ -580,70 +579,6 @@ func cmdFmt(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdHelp(fl Flags) (int, error) {
-	const fullDocs = `Full documentation is available at:
-https://caddyserver.com/docs/command-line`
-
-	args := fl.Args()
-	if len(args) == 0 {
-		s := `Caddy is an extensible server platform.
-
-usage:
-  caddy <command> [<args...>]
-
-commands:
-`
-		keys := make([]string, 0, len(commands))
-		for k := range commands {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			cmd := commands[k]
-			short := strings.TrimSuffix(cmd.Short, ".")
-			s += fmt.Sprintf("  %-15s %s\n", cmd.Name, short)
-		}
-
-		s += "\nUse 'caddy help <command>' for more information about a command.\n"
-		s += "\n" + fullDocs + "\n"
-
-		fmt.Print(s)
-
-		return caddy.ExitCodeSuccess, nil
-	} else if len(args) > 1 {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("can only give help with one command")
-	}
-
-	subcommand, ok := commands[args[0]]
-	if !ok {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("unknown command: %s", args[0])
-	}
-
-	helpText := strings.TrimSpace(subcommand.Long)
-	if helpText == "" {
-		helpText = subcommand.Short
-		if !strings.HasSuffix(helpText, ".") {
-			helpText += "."
-		}
-	}
-
-	result := fmt.Sprintf("%s\n\nusage:\n  caddy %s %s\n",
-		helpText,
-		subcommand.Name,
-		strings.TrimSpace(subcommand.Usage),
-	)
-
-	if help := flagHelp(subcommand.Flags); help != "" {
-		result += fmt.Sprintf("\nflags: (NOTE: prefix flags with `--` instead of `-`)\n%s", help)
-	}
-
-	result += "\n" + fullDocs + "\n"
-
-	fmt.Print(result)
-
-	return caddy.ExitCodeSuccess, nil
-}
-
 // AdminAPIRequest makes an API request according to the CLI flags given,
 // with the given HTTP method and request URI. If body is non-nil, it will
 // be assumed to be Content-Type application/json. The caller should close
@@ -744,7 +679,7 @@ func DetermineAdminAPIAddress(address string, config []byte, configFile, configA
 				return "", err
 			}
 			if loadedConfigFile == "" {
-				return "", fmt.Errorf("no config file to load")
+				return "", fmt.Errorf("no config file to load; either use --config flag or ensure Caddyfile exists in current directory")
 			}
 		}
 

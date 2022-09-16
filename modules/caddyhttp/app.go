@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/lucas-clemente/quic-go/http3"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -162,6 +162,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.ctx = ctx
 	app.logger = ctx.Logger(app)
 
+	eventsAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
+
 	repl := caddy.NewReplacer()
 
 	// this provisions the matchers for each route,
@@ -178,6 +183,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 		ctx.Context = context.WithValue(oldContext, ServerCtxKey, srv)
 		srv.name = srvName
 		srv.tlsApp = app.tlsApp
+		srv.events = eventsAppIface.(*caddyevents.App)
+		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
@@ -185,6 +192,17 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// only enable access logs if configured
 		if srv.Logs != nil {
 			srv.accessLogger = app.logger.Named("log.access")
+		}
+
+		// the Go standard library does not let us serve only HTTP/2 using
+		// http.Server; we would probably need to write our own server
+		if !srv.protocol("h1") && (srv.protocol("h2") || srv.protocol("h2c")) {
+			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
+		}
+
+		// if no protocols configured explicitly, enable all except h2c
+		if len(srv.Protocols) == 0 {
+			srv.Protocols = []string{"h1", "h2", "h3"}
 		}
 
 		// if not explicitly configured by the user, disallow TLS
@@ -198,8 +216,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// based on hostname
 		if srv.StrictSNIHost == nil && srv.hasTLSClientAuth() {
 			app.logger.Warn("enabling strict SNI-Host enforcement because TLS client auth is configured",
-				zap.String("server_id", srvName),
-			)
+				zap.String("server_id", srvName))
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
 		}
@@ -208,8 +225,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
 			if err != nil {
-				return fmt.Errorf("server %s, listener %d: %v",
-					srvName, i, err)
+				return fmt.Errorf("server %s, listener %d: %v", srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
 		}
@@ -249,7 +265,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			err := srv.Routes.ProvisionHandlers(ctx)
+			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
@@ -326,11 +342,35 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 		}
+
+		// disable HTTP/2, which we enabled by default during provisioning
+		if !srv.protocol("h2") {
+			srv.server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+			for _, cp := range srv.TLSConnPolicies {
+				// the TLSConfig was already provisioned, so... manually remove it
+				for i, np := range cp.TLSConfig.NextProtos {
+					if np == "h2" {
+						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+						break
+					}
+				}
+				// remove it from the parent connection policy too, just to keep things tidy
+				for i, alpn := range cp.ALPN {
+					if alpn == "h2" {
+						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		// this TLS config is used by the std lib to choose the actual TLS config for connections
+		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 		srv.configureServer(srv.server)
 
-		// enable h2c if configured
-		if srv.AllowH2C {
+		// enable H2C if configured
+		if srv.protocol("h2c") {
 			h2server := &http2.Server{
 				IdleTimeout: time.Duration(srv.IdleTimeout),
 			}
@@ -347,7 +387,7 @@ func (app *App) Start() error {
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
-				ln, err := caddy.Listen(listenAddr.Network, hostport)
+				ln, err := caddy.ListenTimeout(listenAddr.Network, hostport, time.Duration(srv.KeepAliveInterval))
 				if err != nil {
 					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
 				}
@@ -365,27 +405,15 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 				if useTLS {
-					// create TLS listener
+					// create TLS listener - this enables and terminates TLS
 					ln = tls.NewListener(ln, tlsCfg)
 
-					// TODO: HTTP/3 support is experimental for now
-					if srv.ExperimentalHTTP3 {
-						if srv.h3server == nil {
-							srv.h3server = &http3.Server{
-								Handler:        srv,
-								TLSConfig:      tlsCfg,
-								MaxHeaderBytes: srv.MaxHeaderBytes,
-							}
+					// enable HTTP/3 if configured
+					if srv.protocol("h3") {
+						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
+							return err
 						}
-
-						app.logger.Info("enabling experimental HTTP/3 listener", zap.String("addr", hostport))
-						h3ln, err := caddy.ListenQUIC(hostport, tlsCfg)
-						if err != nil {
-							return fmt.Errorf("getting HTTP/3 QUIC listener: %v", err)
-						}
-
-						//nolint:errcheck
-						go srv.h3server.ServeListener(h3ln)
 					}
 				}
 
@@ -405,16 +433,22 @@ func (app *App) Start() error {
 
 				app.logger.Debug("starting server loop",
 					zap.String("address", ln.Addr().String()),
-					zap.Bool("http3", srv.ExperimentalHTTP3),
 					zap.Bool("tls", useTLS),
-				)
+					zap.Bool("http3", srv.h3server != nil))
 
 				srv.listeners = append(srv.listeners, ln)
 
-				//nolint:errcheck
-				go srv.server.Serve(ln)
+				// enable HTTP/1 if configured
+				if srv.protocol("h1") {
+					//nolint:errcheck
+					go srv.server.Serve(ln)
+				}
 			}
 		}
+
+		srv.logger.Info("server running",
+			zap.String("name", srvName),
+			zap.Strings("protocols", srv.Protocols))
 	}
 
 	// finish automatic HTTPS by finally beginning

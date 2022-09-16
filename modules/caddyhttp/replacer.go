@@ -143,6 +143,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.uri.path.dir":
 				dir, _ := path.Split(req.URL.Path)
 				return dir, true
+			case "http.request.uri.path.file.base":
+				return strings.TrimSuffix(path.Base(req.URL.Path), path.Ext(req.URL.Path)), true
+			case "http.request.uri.path.file.ext":
+				return path.Ext(req.URL.Path), true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
 			case "http.request.duration":
@@ -169,7 +173,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				req.Body = io.NopCloser(buf)  // replace real body with buffered data
 				return buf.String(), true
 
-				// original request, before any internal changes
+			// original request, before any internal changes
 			case "http.request.orig_method":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.Method, true
