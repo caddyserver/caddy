@@ -31,6 +31,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -403,7 +404,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	if debug {
 		cfg.Logging = &caddy.Logging{
 			Logs: map[string]*caddy.CustomLog{
-				"default": {Level: "DEBUG"},
+				"default": {Level: zap.DebugLevel.CapitalString()},
 			},
 		}
 	}
