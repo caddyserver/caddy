@@ -518,7 +518,6 @@ func (s *Server) serveHTTP3(hostport string, tlsCfg *tls.Config) error {
 	return nil
 }
 
-
 // configureServer applies/binds the registered callback functions to the server.
 func (s *Server) configureServer(server *http.Server) {
 	for _, f := range s.connStateFuncs {
