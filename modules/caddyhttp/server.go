@@ -176,6 +176,11 @@ type Server struct {
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
+
+	// registered callback functions
+	connStateFuncs   []func(net.Conn, http.ConnState)
+	connContextFuncs []func(ctx context.Context, c net.Conn) context.Context
+	onShutdownFuncs  []func()
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -511,6 +516,51 @@ func (s *Server) serveHTTP3(hostport string, tlsCfg *tls.Config) error {
 	go s.h3server.ServeListener(h3ln)
 
 	return nil
+}
+
+// configureServer applies/binds the registered callback functions to the server.
+func (s *Server) configureServer(server *http.Server) {
+	for _, f := range s.connStateFuncs {
+		if server.ConnState != nil {
+			baseConnStateFunc := server.ConnState
+			server.ConnState = func(conn net.Conn, state http.ConnState) {
+				baseConnStateFunc(conn, state)
+				f(conn, state)
+			}
+		} else {
+			server.ConnState = f
+		}
+	}
+
+	for _, f := range s.connContextFuncs {
+		if server.ConnContext != nil {
+			baseConnContextFunc := server.ConnContext
+			server.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+				return f(baseConnContextFunc(ctx, c), c)
+			}
+		} else {
+			server.ConnContext = f
+		}
+	}
+
+	for _, f := range s.onShutdownFuncs {
+		server.RegisterOnShutdown(f)
+	}
+}
+
+// RegisterConnState registers f to be invoked on s.ConnState.
+func (s *Server) RegisterConnState(f func(net.Conn, http.ConnState)) {
+	s.connStateFuncs = append(s.connStateFuncs, f)
+}
+
+// RegisterConnContext registers f to be invoked as part of s.ConnContext.
+func (s *Server) RegisterConnContext(f func(ctx context.Context, c net.Conn) context.Context) {
+	s.connContextFuncs = append(s.connContextFuncs, f)
+}
+
+// RegisterOnShutdown registers f to be invoked on server shutdown.
+func (s *Server) RegisterOnShutdown(f func()) {
+	s.onShutdownFuncs = append(s.onShutdownFuncs, f)
 }
 
 // HTTPErrorConfig determines how to handle errors

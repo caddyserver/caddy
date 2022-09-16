@@ -178,7 +178,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 	}
 
 	// prepare each server
+	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
+		ctx.Context = context.WithValue(oldContext, ServerCtxKey, srv)
 		srv.name = srvName
 		srv.tlsApp = app.tlsApp
 		srv.events = eventsAppIface.(*caddyevents.App)
@@ -293,7 +295,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.IdleTimeout = defaultIdleTimeout
 		}
 	}
-
+	ctx.Context = oldContext
 	return nil
 }
 
@@ -365,6 +367,7 @@ func (app *App) Start() error {
 		// this TLS config is used by the std lib to choose the actual TLS config for connections
 		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+		srv.configureServer(srv.server)
 
 		// enable H2C if configured
 		if srv.protocol("h2c") {
