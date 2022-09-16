@@ -162,12 +162,12 @@ type ConnectionPolicy struct {
 	// Also known as "SSLKEYLOGFILE", TLS secrets will be written to
 	// this file in NSS key log format which can then be parsed by
 	// Wireshark and other tools. This is INSECURE as it allows other
-	// programs or tools to decrypt TLS connections. This capability
-	// can be useful for debugging and troubleshooting, however.
+	// programs or tools to decrypt TLS connections. However, this
+	// capability can be useful for debugging and troubleshooting.
 	// **ENABLING THIS LOG COMPROMISES SECURITY!**
 	//
 	// This feature is EXPERIMENTAL and subject to change or removal.
-	InsecureSecretsLog string `json:"insecure_private_key_log,omitempty"`
+	InsecureSecretsLog string `json:"insecure_secrets_log,omitempty"`
 
 	// TLSConfig is the fully-formed, standard lib TLS config
 	// used to serve TLS connections. Provision all
