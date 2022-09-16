@@ -43,7 +43,7 @@ func (Tailscale) CaddyModule() caddy.ModuleInfo {
 }
 
 func (ts *Tailscale) Provision(ctx caddy.Context) error {
-	ts.logger = ctx.Logger(ts)
+	ts.logger = ctx.Logger()
 	return nil
 }
 

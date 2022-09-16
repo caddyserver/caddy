@@ -1326,7 +1326,7 @@ func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
-	m.logger = ctx.Logger(m)
+	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
 		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {

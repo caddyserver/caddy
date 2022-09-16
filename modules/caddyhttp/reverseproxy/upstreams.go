@@ -76,7 +76,7 @@ func (SRVUpstreams) CaddyModule() caddy.ModuleInfo {
 }
 
 func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
-	su.logger = ctx.Logger(su)
+	su.logger = ctx.Logger()
 	if su.Refresh == 0 {
 		su.Refresh = caddy.Duration(time.Minute)
 	}
@@ -383,7 +383,7 @@ func (MultiUpstreams) CaddyModule() caddy.ModuleInfo {
 }
 
 func (mu *MultiUpstreams) Provision(ctx caddy.Context) error {
-	mu.logger = ctx.Logger(mu)
+	mu.logger = ctx.Logger()
 
 	if mu.SourcesRaw != nil {
 		mod, err := ctx.LoadModule(mu, "SourcesRaw")

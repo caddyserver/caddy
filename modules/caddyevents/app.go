@@ -119,7 +119,7 @@ func (App) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
-	app.logger = ctx.Logger(app)
+	app.logger = ctx.Logger()
 	app.subscriptions = make(map[string]map[caddy.ModuleID][]Handler)
 
 	for _, sub := range app.Subscriptions {

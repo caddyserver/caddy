@@ -61,7 +61,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up h.
 func (h *Handler) Provision(ctx caddy.Context) error {
-	h.logger = ctx.Logger(h)
+	h.logger = ctx.Logger()
 	if h.Headers != nil {
 		err := h.Headers.Provision(ctx)
 		if err != nil {

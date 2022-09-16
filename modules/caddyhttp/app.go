@@ -160,7 +160,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 	}
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
-	app.logger = ctx.Logger(app)
+	app.logger = ctx.Logger()
 
 	eventsAppIface, err := ctx.App("events")
 	if err != nil {

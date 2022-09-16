@@ -113,7 +113,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		return nil, err
 	}
 	for _, warn := range warnings {
-		ctx.Logger(hl).Warn(warn.String())
+		ctx.Logger().Warn(warn.String())
 	}
 
 	return result, nil
@@ -129,7 +129,7 @@ func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 
 		// client authentication
 		if hl.TLS.UseServerIdentity {
-			certs, err := ctx.IdentityCredentials(ctx.Logger(hl))
+			certs, err := ctx.IdentityCredentials(ctx.Logger())
 			if err != nil {
 				return nil, fmt.Errorf("getting server identity credentials: %v", err)
 			}

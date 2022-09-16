@@ -442,10 +442,27 @@ func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage
 }
 
-// TODO: aw man, can I please change this?
-// Logger returns a logger that can be used by mod.
-func (ctx Context) Logger(mod Module) *zap.Logger {
-	// TODO: if mod is nil, use ctx.Module() instead...
+// Logger returns a logger that is intended for use by the most
+// recent module associated with the context. Callers should not
+// pass in any arguments unless they want to associate with a
+// different module; it panics if more than 1 value is passed in.
+//
+// Originally, this method's signature was `Logger(mod Module)`,
+// requiring that an instance of a Caddy module be passsed in.
+// However, that is no longer necessary, as the closest module
+// most recently associated with the context will be automatically
+// assumed. To prevent a sudden breaking change, this method's
+// signature has been changed to be variadic, but we may remove
+// the parameter altogether in the future. Callers should not
+// pass in any argument. If there is valid need to specify a
+// different module, please open an issue to discuss.
+//
+// PARTIALLY DEPRECATED: The Logger(module) form is deprecated and
+// may be removed in the future. Do not pass in any arguments.
+func (ctx Context) Logger(module ...Module) *zap.Logger {
+	if len(module) > 1 {
+		panic("more than 1 module passed in")
+	}
 	if ctx.cfg == nil {
 		// often the case in tests; just use a dev logger
 		l, err := zap.NewDevelopment()
@@ -454,22 +471,12 @@ func (ctx Context) Logger(mod Module) *zap.Logger {
 		}
 		return l
 	}
+	mod := ctx.Module()
+	if len(module) > 0 {
+		mod = module[0]
+	}
 	return ctx.cfg.Logging.Logger(mod)
 }
-
-// TODO: use this
-// // Logger returns a logger that can be used by the current module.
-// func (ctx Context) Log() *zap.Logger {
-// 	if ctx.cfg == nil {
-// 		// often the case in tests; just use a dev logger
-// 		l, err := zap.NewDevelopment()
-// 		if err != nil {
-// 			panic("config missing, unable to create dev logger: " + err.Error())
-// 		}
-// 		return l
-// 	}
-// 	return ctx.cfg.Logging.Logger(ctx.Module())
-// }
 
 // Modules returns the lineage of modules that this context provisioned,
 // with the most recent/current module being last in the list.

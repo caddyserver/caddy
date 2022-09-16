@@ -256,7 +256,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 
 // Provision sets up m's defaults.
 func (m *MatchFile) Provision(ctx caddy.Context) error {
-	m.logger = ctx.Logger(m)
+	m.logger = ctx.Logger()
 
 	// establish the file system to use
 	if len(m.FileSystemRaw) > 0 {

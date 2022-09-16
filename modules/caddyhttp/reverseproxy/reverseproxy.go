@@ -217,7 +217,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	}
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
-	h.logger = ctx.Logger(h)
+	h.logger = ctx.Logger()
 	h.connections = make(map[io.ReadWriteCloser]openConnection)
 	h.connectionsMu = new(sync.Mutex)
 
