@@ -421,13 +421,13 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 
 // parseLogOptions parses the global log option. Syntax:
 //
-//     log [name] {
-//         output  <writer_module> ...
-//         format  <encoder_module> ...
-//         level   <level>
-//         include <namespaces...>
-//         exclude <namespaces...>
-//     }
+//	log [name] {
+//	    output  <writer_module> ...
+//	    format  <encoder_module> ...
+//	    level   <level>
+//	    include <namespaces...>
+//	    exclude <namespaces...>
+//	}
 //
 // When the name argument is unspecified, this directive modifies the default
 // logger.
