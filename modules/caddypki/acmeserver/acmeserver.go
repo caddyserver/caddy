@@ -87,7 +87,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the ACME server handler.
 func (ash *Handler) Provision(ctx caddy.Context) error {
-	ash.logger = ctx.Logger(ash)
+	ash.logger = ctx.Logger()
 	// set some defaults
 	if ash.CA == "" {
 		ash.CA = caddypki.DefaultCAID

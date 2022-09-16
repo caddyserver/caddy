@@ -94,7 +94,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 	t.events = eventsAppIface.(*caddyevents.App)
 	t.ctx = ctx
-	t.logger = ctx.Logger(t)
+	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
 
 	// set up a new certificate cache; this (re)loads all certificates

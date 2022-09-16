@@ -101,7 +101,7 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up rewr.
 func (rewr *Rewrite) Provision(ctx caddy.Context) error {
-	rewr.logger = ctx.Logger(rewr)
+	rewr.logger = ctx.Logger()
 
 	for i, rep := range rewr.PathRegexp {
 		if rep.Find == "" {

@@ -94,7 +94,7 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up t.
 func (t *Transport) Provision(ctx caddy.Context) error {
-	t.logger = ctx.Logger(t)
+	t.logger = ctx.Logger()
 
 	if t.Root == "" {
 		t.Root = "{http.vars.root}"

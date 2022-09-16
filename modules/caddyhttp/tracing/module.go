@@ -42,7 +42,7 @@ func (Tracing) CaddyModule() caddy.ModuleInfo {
 
 // Provision implements caddy.Provisioner.
 func (ot *Tracing) Provision(ctx caddy.Context) error {
-	ot.logger = ctx.Logger(ot)
+	ot.logger = ctx.Logger()
 
 	var err error
 	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName)
@@ -66,10 +66,9 @@ func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     tracing {
-//         [span <span_name>]
-//     }
-//
+//	tracing {
+//	    [span <span_name>]
+//	}
 func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	setParameter := func(d *caddyfile.Dispenser, val *string) error {
 		if d.NextArg() {

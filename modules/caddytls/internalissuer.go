@@ -65,7 +65,7 @@ func (InternalIssuer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the issuer.
 func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
-	iss.logger = ctx.Logger(iss)
+	iss.logger = ctx.Logger()
 
 	// set some defaults
 	if iss.CA == "" {
@@ -148,12 +148,11 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//     ... internal {
-//         ca       <name>
-//         lifetime <duration>
-//         sign_with_root
-//     }
-//
+//	... internal {
+//	    ca       <name>
+//	    lifetime <duration>
+//	    sign_with_root
+//	}
 func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {

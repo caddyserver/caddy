@@ -167,7 +167,7 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the static files responder.
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
-	fsrv.logger = ctx.Logger(fsrv)
+	fsrv.logger = ctx.Logger()
 
 	// establish which file system (possibly a virtual one) we'll be using
 	if len(fsrv.FileSystemRaw) > 0 {

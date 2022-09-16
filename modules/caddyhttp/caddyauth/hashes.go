@@ -92,7 +92,7 @@ func (ScryptHash) CaddyModule() caddy.ModuleInfo {
 // Provision sets up s.
 func (s *ScryptHash) Provision(ctx caddy.Context) error {
 	s.SetDefaults()
-	ctx.Logger(s).Warn("use of 'scrypt' is deprecated, please use 'bcrypt' instead")
+	ctx.Logger().Warn("use of 'scrypt' is deprecated, please use 'bcrypt' instead")
 	return nil
 }
 
