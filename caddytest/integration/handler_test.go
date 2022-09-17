@@ -13,6 +13,7 @@ func TestBrowse(t *testing.T) {
 	{
 		http_port     9080
 		https_port    9443
+		grace_period  1
 	}
 	http://localhost:9080 {
 		file_server browse

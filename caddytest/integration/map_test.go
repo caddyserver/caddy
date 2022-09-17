@@ -13,6 +13,7 @@ func TestMap(t *testing.T) {
 	tester.InitServer(`{
 		http_port     9080
 		https_port    9443
+		grace_period  1
 	}
 
 	localhost:9080 {

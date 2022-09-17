@@ -18,6 +18,7 @@ func TestSRVReverseProxy(t *testing.T) {
 	{
 		"apps": {
 		  "http": {
+			"grace_period": 1,
 			"servers": {
 			  "srv0": {
 				"listen": [
@@ -50,6 +51,7 @@ func TestSRVWithDial(t *testing.T) {
 	{
 		"apps": {
 		  "http": {
+			"grace_period": 1,
 			"servers": {
 			  "srv0": {
 				"listen": [
@@ -115,6 +117,7 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 	{
 		"apps": {
 		  "http": {
+			"grace_period": 1,
 			"servers": {
 			  "srv0": {
 				"listen": [
@@ -156,6 +159,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 	{
 		"apps": {
 			"http": {
+				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
@@ -239,6 +243,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 	{
 		"apps": {
 			"http": {
+				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
@@ -321,6 +326,7 @@ func TestSRVWithActiveHealthcheck(t *testing.T) {
 	{
 		"apps": {
 		  "http": {
+			"grace_period": 1,
 			"servers": {
 			  "srv0": {
 				"listen": [
