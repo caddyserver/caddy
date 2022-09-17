@@ -185,7 +185,7 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 
 	// if informational or not buffered, immediately write header
 	if rr.stream || (100 <= statusCode && statusCode <= 199) {
-		rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
+		rr.ResponseWriterWrapper.WriteHeader(statusCode)
 	}
 }
 
