@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/notify"
@@ -676,6 +677,10 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
+	// let the rest of the program know we're quitting
+	atomic.StoreInt32(exiting, 1)
+
+	// give the OS or service/process manager our 2 weeks' notice: we quit
 	if err := notify.Stopping(); err != nil {
 		Log().Error("unable to notify service manager of stopping state", zap.Error(err))
 	}
@@ -738,6 +743,12 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 		}
 	}()
 }
+
+var exiting = new(int32) // accessed atomically
+
+// Exiting returns true if the process is exiting.
+// EXPERIMENTAL API: subject to change or removal.
+func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
 
 // Duration can be an integer or a string. An integer is
 // interpreted as nanoseconds. If a string, it is a Go
