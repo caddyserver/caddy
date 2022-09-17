@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/notify"
@@ -127,7 +128,9 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // forcefully reloaded, then errConfigUnchanged This function is safe for
 // concurrent use.
 // The ifMatchHeader can optionally be given a string of the format:
-//    "<path> <hash>"
+//
+//	"<path> <hash>"
+//
 // where <path> is the absolute path in the config and <hash> is the expected hash of
 // the config at that path. If the hash in the ifMatchHeader doesn't match
 // the hash of the config, then an APIError with status 412 will be returned.
@@ -662,6 +665,14 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
+	// let the rest of the program know we're quitting
+	atomic.StoreInt32(exiting, 1)
+
+	// give the OS or service/process manager our 2 weeks' notice: we quit
+	if err := notify.NotifyStopping(); err != nil {
+		Log().Error("unable to notify service manager of stopping state", zap.Error(err))
+	}
+
 	if logger == nil {
 		logger = Log()
 	}
@@ -720,6 +731,12 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 		}
 	}()
 }
+
+var exiting = new(int32) // accessed atomically
+
+// Exiting returns true if the process is exiting.
+// EXPERIMENTAL API: subject to change or removal.
+func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
 
 // Duration can be an integer or a string. An integer is
 // interpreted as nanoseconds. If a string, it is a Go

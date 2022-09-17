@@ -416,15 +416,14 @@ func (app *App) Stop() error {
 		defer cancel()
 	}
 
-	// shut down servers (TODO: only do this in the background if the process is not exiting?)
-	go func() {
+	// stopServers stops all servers as gracefully as possible
+	stopServers := func() {
 		for _, server := range app.servers {
 			if err := server.Shutdown(ctx); err != nil {
 				app.logger.Error("server shutdown",
 					zap.Error(err),
 					zap.String("address", server.Addr))
 			}
-
 		}
 		for _, server := range app.Servers {
 			if server.h3server != nil {
@@ -436,7 +435,20 @@ func (app *App) Stop() error {
 				}
 			}
 		}
-	}()
+	}
+
+	// if the process is exiting, we need to block here and wait
+	// for the grace period to complete, otherwise the process will
+	// terminate before the servers are finished shutting down; but
+	// however, we don't really need to wait for the grace period to
+	// finish if the process isn't exiting (but note that frequent
+	// config reloads with long grace periods for a sustained length
+	// of time may deplete resources)
+	if caddy.Exiting() {
+		stopServers()
+	} else {
+		go stopServers()
+	}
 
 	return nil
 }
