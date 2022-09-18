@@ -170,9 +170,11 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 		return
 	}
 
+	// save statusCode in case http middleware upgrading websocket
+	// connections by manually setting headers and writing status 101
+	rr.statusCode = statusCode
 	// 1xx responses aren't final; just informational
 	if statusCode < 100 || statusCode > 199 {
-		rr.statusCode = statusCode
 		rr.wroteHeader = true
 
 		// decide whether we should buffer the response
