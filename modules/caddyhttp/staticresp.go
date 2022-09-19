@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -59,10 +60,10 @@ func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     respond [<matcher>] <status>|<body> [<status>] {
-//         body <text>
-//         close
-//     }
+//	respond [<matcher>] <status>|<body> [<status>] {
+//	    body <text>
+//	    close
+//	}
 //
 // If there is just one argument (other than the matcher), it is considered
 // to be a status code if it's a valid positive integer of 3 digits.
@@ -156,6 +157,8 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 
 	// write headers
 	w.WriteHeader(statusCode)
+
+	time.Sleep(10 * time.Second)
 
 	// write response body
 	if s.Body != "" {

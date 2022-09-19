@@ -416,38 +416,40 @@ func (app *App) Stop() error {
 		defer cancel()
 	}
 
-	// stopServers stops all servers as gracefully as possible
-	stopServers := func() {
-		for _, server := range app.servers {
+	exiting := caddy.Exiting()
+
+	for _, server := range app.servers {
+		shutdown := func(server *http.Server) {
 			if err := server.Shutdown(ctx); err != nil {
 				app.logger.Error("server shutdown",
 					zap.Error(err),
 					zap.String("address", server.Addr))
 			}
 		}
-		for _, server := range app.Servers {
-			if server.h3server != nil {
-				// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
-				if err := server.h3server.Close(); err != nil {
-					app.logger.Error("HTTP/3 server shutdown",
-						zap.Error(err),
-						zap.Strings("addresses", server.Listen))
-				}
-			}
+
+		// if the process is exiting, we need to block here and wait
+		// for the grace period to complete, otherwise the process will
+		// terminate before the servers are finished shutting down; but
+		// however, we don't really need to wait for the grace period to
+		// finish if the process isn't exiting (but note that frequent
+		// config reloads with long grace periods for a sustained length
+		// of time may deplete resources)
+		if exiting {
+			shutdown(server)
+		} else {
+			go shutdown(server)
 		}
 	}
 
-	// if the process is exiting, we need to block here and wait
-	// for the grace period to complete, otherwise the process will
-	// terminate before the servers are finished shutting down; but
-	// however, we don't really need to wait for the grace period to
-	// finish if the process isn't exiting (but note that frequent
-	// config reloads with long grace periods for a sustained length
-	// of time may deplete resources)
-	if caddy.Exiting() {
-		stopServers()
-	} else {
-		go stopServers()
+	for _, server := range app.Servers {
+		if server.h3server != nil {
+			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+			if err := server.h3server.Close(); err != nil {
+				app.logger.Error("HTTP/3 server shutdown",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
 	}
 
 	return nil
