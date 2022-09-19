@@ -201,6 +201,9 @@ func (app *App) On(eventName string, handler Handler) error {
 // Emit creates and dispatches an event named eventName to all relevant handlers with
 // the metadata data. Events are emitted and propagated synchronously. The returned Event
 // value will have any additional information from the invoked handlers.
+//
+// Note that the data map is not copied, for efficiency. After Emit() is called, the
+// data passed in should not be changed in other goroutines.
 func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) Event {
 	logger := app.logger.With(zap.String("name", eventName))
 
@@ -212,11 +215,11 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 	eventName = strings.ToLower(eventName)
 
 	e := Event{
+		Data:   data,
 		id:     id,
 		ts:     time.Now(),
 		name:   eventName,
 		origin: ctx.Module(),
-		data:   data,
 	}
 
 	logger = logger.With(
@@ -244,12 +247,12 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		case "event.module":
 			return e.origin.CaddyModule().ID, true
 		case "event.data":
-			return e.data, true
+			return e.Data, true
 		}
 
 		if strings.HasPrefix(key, "event.data.") {
 			key = strings.TrimPrefix(key, "event.data.")
-			if val, ok := data[key]; ok {
+			if val, ok := e.Data[key]; ok {
 				return val, true
 			}
 		}
@@ -257,7 +260,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	logger.Debug("event", zap.Any("data", e.data))
+	logger.Debug("event", zap.Any("data", e.Data))
 
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
@@ -314,26 +317,40 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 }
 
 // Event represents something that has happened or is happening.
+// An Event value is not synchronized, so it should be copied if
+// being used in goroutines.
+//
+// EXPERIMENTAL: As with the rest of this package, events are
+// subject to change.
 type Event struct {
-	id     uuid.UUID
-	ts     time.Time
-	name   string
-	origin caddy.Module
-	data   map[string]any
-
 	// If non-nil, the event has been aborted, meaning
 	// propagation has stopped to other handlers and
 	// the code should stop what it was doing. Emitters
 	// may choose to use this as a signal to adjust their
 	// code path appropriately.
 	Aborted error
+
+	// The data associated with the event. Usually the
+	// original emitter will be the only one to set or
+	// change these values, but the field is exported
+	// so handlers can have full access if needed.
+	// However, this map is not synchronized, so
+	// handlers must not use this map directly in new
+	// goroutines; instead, copy the map to use it in a
+	// goroutine.
+	Data map[string]any
+
+	id     uuid.UUID
+	ts     time.Time
+	name   string
+	origin caddy.Module
 }
 
 // CloudEvent exports event e as a structure that, when
 // serialized as JSON, is compatible with the
 // CloudEvents spec.
 func (e Event) CloudEvent() CloudEvent {
-	dataJSON, _ := json.Marshal(e.data)
+	dataJSON, _ := json.Marshal(e.Data)
 	return CloudEvent{
 		ID:              e.id.String(),
 		Source:          e.origin.CaddyModule().String(),
