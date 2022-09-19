@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -157,8 +156,6 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Hand
 
 	// write headers
 	w.WriteHeader(statusCode)
-
-	time.Sleep(10 * time.Second)
 
 	// write response body
 	if s.Body != "" {
