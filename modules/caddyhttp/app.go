@@ -510,7 +510,7 @@ func (app *App) Stop() error {
 	// to start their server shutdowns, and another to wait for
 	// them to finish; we'll always block for them to start so
 	// that when we return the caller can be confident* that the
-	// old servers are likely longer accepting new connections
+	// old servers are no longer accepting new connections
 	// (* the scheduler might still pause them right before
 	// calling Shutdown(), but it's unlikely)
 	var startedShutdown, finishedShutdown sync.WaitGroup
