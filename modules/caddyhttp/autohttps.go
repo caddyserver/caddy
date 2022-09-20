@@ -378,19 +378,29 @@ redirServersLoop:
 		// we'll create a new server for all the listener addresses
 		// that are unused and serve the remaining redirects from it
 		for _, srv := range app.Servers {
-			if srv.hasListenerAddress(redirServerAddr) {
-				// find the index of the route after the last route with a host
-				// matcher, then insert the redirects there, but before any
-				// user-defined catch-all routes
-				// see https://github.com/caddyserver/caddy/issues/3212
-				insertIndex := srv.findLastRouteWithHostMatcher()
-				srv.Routes = append(srv.Routes[:insertIndex], append(routes, srv.Routes[insertIndex:]...)...)
-
-				// append our catch-all route in case the user didn't define their own
-				srv.Routes = appendCatchAll(srv.Routes)
-
-				continue redirServersLoop
+			// only look at servers which listen on an address which
+			// we want to add redirects to
+			if !srv.hasListenerAddress(redirServerAddr) {
+				continue
 			}
+
+			// find the index of the route after the last route with a host
+			// matcher, then insert the redirects there, but before any
+			// user-defined catch-all routes
+			// see https://github.com/caddyserver/caddy/issues/3212
+			insertIndex := srv.findLastRouteWithHostMatcher()
+
+			// add the redirects at the insert index, except for when
+			// we have a catch-all for HTTPS, in which case the user's
+			// defined catch-all should take precedence. See #4829
+			if len(uniqueDomainsForCerts) != 0 {
+				srv.Routes = append(srv.Routes[:insertIndex], append(routes, srv.Routes[insertIndex:]...)...)
+			}
+
+			// append our catch-all route in case the user didn't define their own
+			srv.Routes = appendCatchAll(srv.Routes)
+
+			continue redirServersLoop
 		}
 
 		// no server with this listener address exists;
