@@ -12,8 +12,8 @@
 		}
 		max_header_size 100MB
 		log_credentials
-		strict_sni_host
 		protocols h1 h2 h2c h3
+		strict_sni_host
 	}
 }
 
