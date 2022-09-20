@@ -16,6 +16,7 @@ func TestRespond(t *testing.T) {
   {
     http_port     9080
     https_port    9443
+    grace_period  1
   }
   
   localhost:9080 {
@@ -37,6 +38,7 @@ func TestRedirect(t *testing.T) {
   {
     http_port     9080
     https_port    9443
+    grace_period  1
   }
   
   localhost:9080 {
@@ -86,6 +88,7 @@ func TestReadCookie(t *testing.T) {
   {
     http_port     9080
     https_port    9443
+    grace_period  1
   }
   
   localhost:9080 {
@@ -109,6 +112,7 @@ func TestReplIndex(t *testing.T) {
   {
     http_port     9080
     https_port    9443
+    grace_period  1
   }
 
   localhost:9080 {

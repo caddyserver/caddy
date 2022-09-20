@@ -505,22 +505,62 @@ func (app *App) Stop() error {
 		app.logger.Debug("servers shutting down with eternal grace period")
 	}
 
-	// shut down servers
-	for _, server := range app.Servers {
+	// goroutines aren't guaranteed to be scheduled right away,
+	// so we'll use one WaitGroup to wait for all the goroutines
+	// to start their server shutdowns, and another to wait for
+	// them to finish; we'll always block for them to start so
+	// that when we return the caller can be confident* that the
+	// old servers are no longer accepting new connections
+	// (* the scheduler might still pause them right before
+	// calling Shutdown(), but it's unlikely)
+	var startedShutdown, finishedShutdown sync.WaitGroup
+
+	// these will run in goroutines
+	stopServer := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
+	}
+	stopH3Server := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
 
-		if server.h3server != nil {
-			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
-			if err := server.h3server.Close(); err != nil {
-				app.logger.Error("HTTP/3 server shutdown",
-					zap.Error(err),
-					zap.Strings("addresses", server.Listen))
-			}
+		if server.h3server == nil {
+			return
 		}
+		// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		if err := server.h3server.Close(); err != nil {
+			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+	}
+
+	for _, server := range app.Servers {
+		startedShutdown.Add(2)
+		finishedShutdown.Add(2)
+		go stopServer(server)
+		go stopH3Server(server)
+	}
+
+	// block until all the goroutines have been run by the scheduler;
+	// this means that they have likely called Shutdown() by now
+	startedShutdown.Wait()
+
+	// if the process is exiting, we need to block here and wait
+	// for the grace periods to complete, otherwise the process will
+	// terminate before the servers are finished shutting down; but
+	// we don't really need to wait for the grace period to finish
+	// if the process isn't exiting (but note that frequent config
+	// reloads with long grace periods for a sustained length of time
+	// may deplete resources)
+	if caddy.Exiting() {
+		finishedShutdown.Wait()
 	}
 
 	return nil
