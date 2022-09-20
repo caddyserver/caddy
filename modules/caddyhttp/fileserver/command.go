@@ -57,6 +57,7 @@ respond with a file listing.`,
 			fs.Bool("browse", false, "Enable directory browsing")
 			fs.Bool("templates", false, "Enable template rendering")
 			fs.Bool("access-log", false, "Enable the access log")
+			fs.Bool("debug", false, "Enable verbose debug logs")
 			return fs
 		}(),
 	})
