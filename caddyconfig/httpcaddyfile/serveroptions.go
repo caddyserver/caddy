@@ -162,7 +162,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					}
 					serverOpts.Protocols = append(serverOpts.Protocols, proto)
 				}
-				if d.NextBlock(0) {
+				if nesting := d.Nesting(); d.NextBlock(nesting) {
 					return nil, d.ArgErr()
 				}
 
