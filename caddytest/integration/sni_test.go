@@ -15,6 +15,7 @@ func TestDefaultSNI(t *testing.T) {
       "http": {
         "http_port": 9080,
         "https_port": 9443,
+        "grace_period": 1,
         "servers": {
           "srv0": {
             "listen": [
@@ -112,6 +113,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
       "http": {
         "http_port": 9080,
         "https_port": 9443,
+        "grace_period": 1,
         "servers": {
           "srv0": {
             "listen": [
@@ -212,6 +214,7 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
       "http": {
         "http_port": 9080,
         "https_port": 9443,
+        "grace_period": 1,
         "servers": {
           "srv0": {
             "listen": [

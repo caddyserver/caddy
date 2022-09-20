@@ -27,6 +27,7 @@ func TestH2ToH2CStream(t *testing.T) {
       "http": {
         "http_port": 9080,
         "https_port": 9443,
+		"grace_period": 1,
         "servers": {
           "srv0": {
             "listen": [
@@ -216,6 +217,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
     "http": {
       "http_port": 9080,
       "https_port": 9443,
+	  "grace_period": 1,
       "servers": {
         "srv0": {
           "listen": [
