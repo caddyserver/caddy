@@ -515,39 +515,40 @@ func (app *App) Stop() error {
 	// calling Shutdown(), but it's unlikely)
 	var startedShutdown, finishedShutdown sync.WaitGroup
 
+	// these will run in goroutines
+	stopServer := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
+		if err := server.server.Shutdown(ctx); err != nil {
+			app.logger.Error("server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+	}
+	stopH3Server := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
+		if server.h3server == nil {
+			return
+		}
+		// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		if err := server.h3server.Close(); err != nil {
+			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+	}
+
 	for _, server := range app.Servers {
-		stopServer := func(server *Server) {
-			defer finishedShutdown.Done()
-			startedShutdown.Done()
-
-			if err := server.server.Shutdown(ctx); err != nil {
-				app.logger.Error("server shutdown",
-					zap.Error(err),
-					zap.Strings("addresses", server.Listen))
-			}
-		}
-		stopH3Server := func(server *Server) {
-			defer finishedShutdown.Done()
-			startedShutdown.Done()
-
-			if server.h3server == nil {
-				return
-			}
-			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
-			if err := server.h3server.Close(); err != nil {
-				app.logger.Error("HTTP/3 server shutdown",
-					zap.Error(err),
-					zap.Strings("addresses", server.Listen))
-			}
-		}
-
 		startedShutdown.Add(2)
 		finishedShutdown.Add(2)
 		go stopServer(server)
 		go stopH3Server(server)
 	}
 
-	// block until all the goroutines have at least been scheduled;
+	// block until all the goroutines have been run by the scheduler;
 	// this means that they have likely called Shutdown() by now
 	startedShutdown.Wait()
 
