@@ -239,7 +239,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			repl.Set("http.response.status", wrec.Status())
+			repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
 			repl.Set("http.response.size", wrec.Size())
 			repl.Set("http.response.duration", duration)
 			repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
