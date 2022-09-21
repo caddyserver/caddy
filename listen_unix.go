@@ -21,6 +21,8 @@ package caddy
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net"
 	"sync"
 	"syscall"
@@ -67,7 +69,7 @@ func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Lis
 		// unlink it before you bind to it -- this is often crucial if the last program using
 		// it was killed forcefully without a chance to clean up the socket, but there is a
 		// race, as the comment in net.UnixListener.close() explains... oh well?
-		if err := syscall.Unlink(addr); err != nil {
+		if err := syscall.Unlink(addr); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
 	}
