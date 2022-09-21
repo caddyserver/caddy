@@ -409,7 +409,7 @@ func (app *App) Start() error {
 					ln = tls.NewListener(ln, tlsCfg)
 
 					// enable HTTP/3 if configured
-					if srv.protocol("h3") {
+					if srv.protocol("h3") && !listenAddr.IsUnixNetwork() {
 						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
 						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
 							return err
