@@ -241,8 +241,6 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	if !rw.wroteHeader {
 		if rw.statusCode != 0 {
 			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
-		} else {
-			rw.HTTPInterfaces.WriteHeader(http.StatusOK)
 		}
 		rw.wroteHeader = true
 	}
@@ -264,10 +262,9 @@ func (rw *responseWriter) Close() error {
 			rw.init()
 		}
 
+		// issue #5059, don't write status code if not set explicitly.
 		if rw.statusCode != 0 {
 			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
-		} else {
-			rw.HTTPInterfaces.WriteHeader(http.StatusOK)
 		}
 		rw.wroteHeader = true
 	}
