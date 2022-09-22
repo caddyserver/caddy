@@ -119,7 +119,7 @@ jobs:
       uses: goreleaser/goreleaser-action@v2
       with:
         version: latest
-        args: release --rm-dist
+        args: release --rm-dist --timeout 60m
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
