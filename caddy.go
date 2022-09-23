@@ -824,6 +824,13 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
+// VersionString is an optional string that overrides Caddy's
+// reported version. It can be helpful when downstream packagers
+// need to manually set Caddy's version. The short form version (see
+// Version()) will be set to VersionString, and the full version
+// will include VersionString at the beginning.
+var VersionString string
+
 // Version returns the Caddy version in a simple/short form, and
 // a full version string. The short form will not have spaces and
 // is intended for User-Agent strings and similar, but may be
@@ -841,6 +848,10 @@ func InstanceID() (uuid.UUID, error) {
 //
 // This function is experimental and subject to change or removal.
 func Version() (simple, full string) {
+	// The full version string uses VersionString as a
+	// starting point.
+	full = VersionString + " "
+
 	// the currently-recommended way to build Caddy involves
 	// building it as a dependency so we can extract version
 	// information from go.mod tooling; once the upstream
@@ -858,7 +869,8 @@ func Version() (simple, full string) {
 		}
 	}
 	if module != nil {
-		simple, full = module.Version, module.Version
+		simple = module.Version
+		full += module.Version
 		if module.Sum != "" {
 			full += " " + module.Sum
 		}
@@ -910,7 +922,12 @@ func Version() (simple, full string) {
 		}
 	}
 
-	if simple == "" || simple == "(devel)" {
+	// If VersionString is empty, full starts with a space
+	full = strings.TrimSpace(full)
+
+	if VersionString != "" {
+		simple = VersionString
+	} else if simple == "" || simple == "(devel)" {
 		simple = "unknown"
 	}
 
