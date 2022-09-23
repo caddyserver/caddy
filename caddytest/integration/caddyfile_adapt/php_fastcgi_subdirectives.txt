@@ -43,7 +43,7 @@ php_fastcgi localhost:9000 {
 									"handler": "static_response",
 									"headers": {
 										"Location": [
-											"{http.request.uri.path}/"
+											"{http.request.orig_uri.path}/"
 										]
 									},
 									"status_code": 308
