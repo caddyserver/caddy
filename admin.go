@@ -1246,8 +1246,7 @@ func (e APIError) Error() string {
 // parseAdminListenAddr extracts a singular listen address from either addr
 // or defaultAddr, returning the network and the address of the listener.
 func parseAdminListenAddr(addr string, defaultAddr string) (NetworkAddress, error) {
-	repl := NewReplacer()
-	input, err := repl.ReplaceOrErr(addr, true, true)
+	input, err := NewReplacer().ReplaceOrErr(addr, true, true)
 	if err != nil {
 		return NetworkAddress{}, fmt.Errorf("replacing listen address: %v", err)
 	}
