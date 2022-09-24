@@ -14,9 +14,10 @@ func TestRespond(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
   {
+    admin localhost:2999
     http_port     9080
     https_port    9443
-    grace_period  1
+    grace_period  1ns
   }
   
   localhost:9080 {
@@ -36,9 +37,10 @@ func TestRedirect(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
   {
+    admin localhost:2999
     http_port     9080
     https_port    9443
-    grace_period  1
+    grace_period  1ns
   }
   
   localhost:9080 {
@@ -86,9 +88,11 @@ func TestReadCookie(t *testing.T) {
 	tester.Client.Jar.SetCookies(localhost, []*http.Cookie{&cookie})
 	tester.InitServer(` 
   {
+    skip_install_trust
+    admin localhost:2999
     http_port     9080
     https_port    9443
-    grace_period  1
+    grace_period  1ns
   }
   
   localhost:9080 {
@@ -110,9 +114,11 @@ func TestReplIndex(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
   {
+    skip_install_trust
+    admin localhost:2999
     http_port     9080
     https_port    9443
-    grace_period  1
+    grace_period  1ns
   }
 
   localhost:9080 {

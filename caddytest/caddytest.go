@@ -237,7 +237,7 @@ func validateTestPrerequisites() error {
 
 	if isCaddyAdminRunning() != nil {
 		// start inprocess caddy server
-		os.Args = []string{"caddy", "run"}
+		os.Args = []string{"caddy", "run", "--config", "./test.init.config", "--adapter", "caddyfile"}
 		go func() {
 			caddycmd.Main()
 		}()
