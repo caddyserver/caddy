@@ -23,6 +23,9 @@ func TestH2ToH2CStream(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
   {
+	"admin": {
+		"listen": "localhost:2999"
+	},
     "apps": {
       "http": {
         "http_port": 9080,
@@ -206,6 +209,9 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
 {
+	"admin": {
+		"listen": "localhost:2999"
+	},
   "logging": {
     "logs": {
       "default": {

@@ -16,7 +16,17 @@ func TestSRVReverseProxy(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		"admin": {
+			"listen": "localhost:2999"
+		},
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+					"local" : {
+					"install_trust": false
+					}
+				}
+			},
 		  "http": {
 			"grace_period": 1,
 			"servers": {
@@ -50,6 +60,13 @@ func TestSRVWithDial(t *testing.T) {
 	caddytest.AssertLoadError(t, `
 	{
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			  },
 		  "http": {
 			"grace_period": 1,
 			"servers": {
@@ -115,7 +132,17 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		"admin": {
+			"listen": "localhost:2999"
+		},
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			  },
 		  "http": {
 			"grace_period": 1,
 			"servers": {
@@ -157,7 +184,17 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		"admin": {
+			"listen": "localhost:2999"
+		},
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			  },
 			"http": {
 				"grace_period": 1,
 				"servers": {
@@ -241,7 +278,17 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		"admin": {
+			"listen": "localhost:2999"
+		},
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			  },
 			"http": {
 				"grace_period": 1,
 				"servers": {
@@ -325,6 +372,13 @@ func TestSRVWithActiveHealthcheck(t *testing.T) {
 	caddytest.AssertLoadError(t, `
 	{
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			  },
 		  "http": {
 			"grace_period": 1,
 			"servers": {
@@ -363,8 +417,11 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
+		grace_period 1ns
 	}
 	http://localhost:2020 {
 		respond "Hello, World!"
@@ -424,8 +481,11 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 
 	tester.InitServer(fmt.Sprintf(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
+		grace_period 1ns
 	}
 	http://localhost:9080 {
 		reverse_proxy {
@@ -479,8 +539,11 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 
 	tester.InitServer(fmt.Sprintf(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
+		grace_period 1ns
 	}
 	http://localhost:9080 {
 		reverse_proxy {
