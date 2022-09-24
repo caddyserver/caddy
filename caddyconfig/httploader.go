@@ -15,6 +15,7 @@
 package caddyconfig
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func init() {
@@ -44,6 +46,9 @@ type HTTPLoader struct {
 
 	// Maximum time allowed for a complete connection and request.
 	Timeout caddy.Duration `json:"timeout,omitempty"`
+
+	// Maximum number of retries for a successful call to URL. Defaults to 0.
+	MaxRetries int `json:"max_retries,omitempty"`
 
 	TLS *struct {
 		// Present this instance's managed remote identity credentials to the server.
@@ -119,9 +124,25 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 	return result, nil
 }
 
+func getRetryClient(ctx caddy.Context, maxRetries int, timeout caddy.Duration) (*http.Client, error) {
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = maxRetries
+
+	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		if err != nil || (resp.StatusCode < 200 || resp.StatusCode > 499) {
+			return true, err
+		}
+		return false, err
+	}
+	retryClient.HTTPClient.Timeout = time.Duration(timeout)
+
+	return retryClient.StandardClient(), nil
+}
+
 func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
-	client := &http.Client{
-		Timeout: time.Duration(hl.Timeout),
+	client, err := getRetryClient(ctx, hl.MaxRetries, hl.Timeout)
+	if err != nil {
+		return nil, err
 	}
 
 	if hl.TLS != nil {
