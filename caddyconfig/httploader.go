@@ -15,17 +15,16 @@
 package caddyconfig
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/hashicorp/go-retryablehttp"
 )
 
 func init() {
@@ -47,7 +46,8 @@ type HTTPLoader struct {
 	// Maximum time allowed for a complete connection and request.
 	Timeout caddy.Duration `json:"timeout,omitempty"`
 
-	// Maximum number of retries for a successful call to URL. Defaults to 0.
+	// Maximum number of retries for a successful call to URL.
+	// Does exponential back-offs (2...4...8...16... seconds) between retries. Defaults to 0.
 	MaxRetries int `json:"max_retries,omitempty"`
 
 	TLS *struct {
@@ -99,7 +99,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		}
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doHttpCallWithRetries(client, req, hl.MaxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -124,25 +124,34 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 	return result, nil
 }
 
-func getRetryClient(ctx caddy.Context, maxRetries int, timeout caddy.Duration) (*http.Client, error) {
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
+// Reattempts the http call using exponential back off when maxRetries is greater than 0.
+func doHttpCallWithRetries(client *http.Client, request *http.Request, maxRetries int) (*http.Response, error) {
+	var resp *http.Response
+	var err error
 
-	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
-		if err != nil || (resp.StatusCode < 200 || resp.StatusCode > 499) {
-			return true, err
+	for retry := 0; retry <= maxRetries; retry++ {
+		if retry > 0 {
+			caddy.Log().Error(err.Error())
+			exponentialBackOff := math.Pow(2, float64(retry))
+			caddy.Log().Sugar().Infof("reattempting http load in %g seconds (%v retries remain)", exponentialBackOff, maxRetries-retry)
+			time.Sleep(time.Duration(exponentialBackOff) * time.Second)
 		}
-		return false, err
+		resp, err = client.Do(request)
+		if err != nil {
+			err = fmt.Errorf("problem calling http loader url: %v", err)
+		} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
+			err = fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
+		} else {
+			return resp, nil
+		}
 	}
-	retryClient.HTTPClient.Timeout = time.Duration(timeout)
 
-	return retryClient.StandardClient(), nil
+	return resp, err
 }
 
 func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
-	client, err := getRetryClient(ctx, hl.MaxRetries, hl.Timeout)
-	if err != nil {
-		return nil, err
+	client := &http.Client{
+		Timeout: time.Duration(hl.Timeout),
 	}
 
 	if hl.TLS != nil {
