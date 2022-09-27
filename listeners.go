@@ -626,7 +626,7 @@ func (uln *unixListener) Close() error {
 			unixSocketsMu.Lock()
 			delete(unixSockets, uln.mapKey)
 			unixSocketsMu.Unlock()
-			syscall.Unlink(addr)
+			_ = syscall.Unlink(addr)
 		}()
 	}
 	return uln.UnixListener.Close()
@@ -646,7 +646,7 @@ func (uc *unixConn) Close() error {
 			unixSocketsMu.Lock()
 			delete(unixSockets, uc.mapKey)
 			unixSocketsMu.Unlock()
-			syscall.Unlink(uc.filename)
+			_ = syscall.Unlink(uc.filename)
 		}()
 	}
 	return uc.UnixConn.Close()
