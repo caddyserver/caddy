@@ -156,7 +156,9 @@ type (
 	MatchHeaderRE map[string]*MatchRegexp
 
 	// MatchProtocol matches requests by protocol. Recognized values are
-	// "http", "https", and "grpc".
+	// "http", "https", and "grpc" for broad protocol matches, or specific
+	// HTTP versions can be specified like so: "http/1", "http/1.1",
+	// "http/2", "http/3", or minimum versions: "http/2+", etc.
 	MatchProtocol string
 
 	// MatchRemoteIP matches requests by client IP (or CIDR range).

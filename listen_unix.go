@@ -24,78 +24,88 @@ import (
 	"errors"
 	"io/fs"
 	"net"
-	"sync"
+	"sync/atomic"
 	"syscall"
-	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
-// ListenTimeout is the same as Listen, but with a configurable keep-alive timeout duration.
-func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
-	// check to see if plugin provides listener
-	if ln, err := getListenerFromPlugin(network, addr); err != nil || ln != nil {
-		return ln, err
+// reuseUnixSocket copies and reuses the unix domain socket (UDS) if we already
+// have it open; if not, unlink it so we can have it. No-op if not a unix network.
+func reuseUnixSocket(network, addr string) (any, error) {
+	if !isUnixNetwork(network) {
+		return nil, nil
 	}
 
 	socketKey := listenerKey(network, addr)
-	if isUnixNetwork(network) {
-		unixSocketsMu.Lock()
-		defer unixSocketsMu.Unlock()
 
-		socket, exists := unixSockets[socketKey]
-		if exists {
-			// make copy of file descriptor
-			socketFile, err := socket.File() // dup() deep down
-			if err != nil {
-				return nil, err
-			}
+	socket, exists := unixSockets[socketKey]
+	if exists {
+		// make copy of file descriptor
+		socketFile, err := socket.File() // does dup() deep down
+		if err != nil {
+			return nil, err
+		}
 
-			// use copy to make new listener
+		// use copied fd to make new Listener or PacketConn, then replace
+		// it in the map so that future copies always come from the most
+		// recent fd (as the previous ones will be closed, and we'd get
+		// "use of closed network connection" errors) -- note that we
+		// preserve the *pointer* to the counter (not just the value) so
+		// that all socket wrappers will refer to the same value
+		switch unixSocket := socket.(type) {
+		case *unixListener:
 			ln, err := net.FileListener(socketFile)
 			if err != nil {
 				return nil, err
 			}
+			atomic.AddInt32(unixSocket.count, 1)
+			unixSockets[socketKey] = &unixListener{ln.(*net.UnixListener), socketKey, unixSocket.count}
 
-			// the old socket fd will likely be closed soon, so replace it in the map
-			unixSockets[socketKey] = ln.(*net.UnixListener)
-
-			return ln.(*net.UnixListener), nil
+		case *unixConn:
+			pc, err := net.FilePacketConn(socketFile)
+			if err != nil {
+				return nil, err
+			}
+			atomic.AddInt32(unixSocket.count, 1)
+			unixSockets[socketKey] = &unixConn{pc.(*net.UnixConn), addr, socketKey, unixSocket.count}
 		}
 
-		// from what I can tell after some quick research, it's quite common for programs to
-		// leave their socket file behind after they close, so the typical pattern is to
-		// unlink it before you bind to it -- this is often crucial if the last program using
-		// it was killed forcefully without a chance to clean up the socket, but there is a
-		// race, as the comment in net.UnixListener.close() explains... oh well?
-		if err := syscall.Unlink(addr); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
+		return unixSockets[socketKey], nil
 	}
 
-	config := &net.ListenConfig{Control: reusePort, KeepAlive: keepalivePeriod}
-
-	ln, err := config.Listen(context.Background(), network, addr)
-	if err != nil {
+	// from what I can tell after some quick research, it's quite common for programs to
+	// leave their socket file behind after they close, so the typical pattern is to
+	// unlink it before you bind to it -- this is often crucial if the last program using
+	// it was killed forcefully without a chance to clean up the socket, but there is a
+	// race, as the comment in net.UnixListener.close() explains... oh well, I guess?
+	if err := syscall.Unlink(addr); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 
-	if uln, ok := ln.(*net.UnixListener); ok {
-		// TODO: ideally, we should unlink the socket once we know we're done using it
-		// (i.e. either on exit or a new config that doesn't use this socket; in UsagePool
-		// terms, when the reference count reaches 0), but given that we unlink existing
-		// socket before we create the new one anyway (see above), we don't necessarily
-		// need to clean up after ourselves; still, doing so would probably be more tidy
-		uln.SetUnlinkOnClose(false)
-		unixSockets[socketKey] = uln
-	}
+	return nil, nil
+}
 
-	return ln, nil
+func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (net.Listener, error) {
+	// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
+	oldControl := config.Control
+	config.Control = func(network, address string, c syscall.RawConn) error {
+		if oldControl != nil {
+			if err := oldControl(network, address, c); err != nil {
+				return err
+			}
+		}
+		return reusePort(network, address, c)
+	}
+	return config.Listen(ctx, network, address)
 }
 
 // reusePort sets SO_REUSEPORT. Ineffective for unix sockets.
 func reusePort(network, address string, conn syscall.RawConn) error {
+	if isUnixNetwork(network) {
+		return nil
+	}
 	return conn.Control(func(descriptor uintptr) {
 		if err := unix.SetsockoptInt(int(descriptor), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1); err != nil {
 			Log().Error("setting SO_REUSEPORT",
@@ -106,10 +116,3 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 		}
 	})
 }
-
-// unixSockets keeps track of the currently-active unix sockets
-// so we can transfer their FDs gracefully during reloads.
-var (
-	unixSockets   = make(map[string]*net.UnixListener)
-	unixSocketsMu sync.Mutex
-)
