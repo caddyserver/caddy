@@ -169,7 +169,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 		// fall back to default if no match or if matched nil value
 		if len(h.Defaults) > destIdx {
-			return h.Defaults[destIdx], true
+			return repl.ReplaceAll(h.Defaults[destIdx], ""), true
 		}
 
 		return nil, true
