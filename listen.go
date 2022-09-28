@@ -20,7 +20,7 @@
 package caddy
 
 import (
-	"fmt"
+	"context"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -29,21 +29,14 @@ import (
 	"go.uber.org/zap"
 )
 
-func ListenTimeout(network, addr string, keepAlivePeriod time.Duration) (net.Listener, error) {
-	// check to see if plugin provides listener
-	if ln, err := getListenerFromPlugin(network, addr); err != nil || ln != nil {
-		return ln, err
-	}
+func reuseUnixSocket(network, addr string) (any, error) {
+	return nil, nil
+}
 
-	lnKey := listenerKey(network, addr)
-
+func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (net.Listener, error) {
 	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		ln, err := net.Listen(network, addr)
+		ln, err := config.Listen(ctx, network, address)
 		if err != nil {
-			// https://github.com/caddyserver/caddy/pull/4534
-			if isUnixNetwork(network) && isListenBindAddressAlreadyInUseError(err) {
-				return nil, fmt.Errorf("%w: this can happen if Caddy was forcefully killed", err)
-			}
 			return nil, err
 		}
 		return &sharedListener{Listener: ln, key: lnKey}, nil
@@ -51,8 +44,7 @@ func ListenTimeout(network, addr string, keepAlivePeriod time.Duration) (net.Lis
 	if err != nil {
 		return nil, err
 	}
-
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: keepAlivePeriod}, nil
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -156,8 +148,6 @@ func (sl *sharedListener) clearDeadline() error {
 		switch ln := sl.Listener.(type) {
 		case *net.TCPListener:
 			err = ln.SetDeadline(time.Time{})
-		case *net.UnixListener:
-			err = ln.SetDeadline(time.Time{})
 		}
 		sl.deadline = false
 	}
@@ -172,8 +162,6 @@ func (sl *sharedListener) setDeadline() error {
 	if !sl.deadline {
 		switch ln := sl.Listener.(type) {
 		case *net.TCPListener:
-			err = ln.SetDeadline(timeInPast)
-		case *net.UnixListener:
 			err = ln.SetDeadline(timeInPast)
 		}
 		sl.deadline = true
