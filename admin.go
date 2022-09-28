@@ -382,7 +382,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 
 	handler := cfg.Admin.newAdminHandler(addr, false)
 
-	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
+	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 		serverMu.Lock()
 		server := localAdminServer
 		serverMu.Unlock()
-		if err := server.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(ln.(net.Listener)); !errors.Is(err, http.ErrServerClosed) {
 			adminLogger.Error("admin server shutdown for unknown reason", zap.Error(err))
 		}
 	}()
@@ -549,10 +549,11 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	serverMu.Unlock()
 
 	// start listener
-	ln, err := Listen(addr.Network, addr.JoinHostPort(0))
+	lnAny, err := addr.Listen(ctx, 0, net.ListenConfig{})
 	if err != nil {
 		return err
 	}
+	ln := lnAny.(net.Listener)
 	ln = tls.NewListener(ln, tlsConfig)
 
 	go func() {
