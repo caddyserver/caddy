@@ -55,8 +55,12 @@ type NetworkAddress struct {
 	EndPort   uint
 }
 
-// TODO: is this even useful? I might remove this.
-func (na NetworkAddress) ListenAll(ctx context.Context, portOffset uint, config net.ListenConfig) ([]any, error) {
+// ListenAll calls Listen() for all addresses represented by this struct, i.e. all ports in the range.
+// (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
+// It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
+//
+// TODO: Experimental API: subject to change or removal.
+func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
 	var listeners []any
 	var err error
 
@@ -104,7 +108,7 @@ func (na NetworkAddress) ListenAll(ctx context.Context, portOffset uint, config 
 // The provided ListenConfig is used to create the listener. Its Control function,
 // if set, may be wrapped by an internally-used Control function. The provided
 // context may be used to cancel long operations early. The context is not used
-// to close the actual listener after it has been created.
+// to close the listener after it has been created.
 //
 // Caddy's listeners can overlap each other: multiple listeners may be created on
 // the same socket at the same time. This is useful because during config changes,
