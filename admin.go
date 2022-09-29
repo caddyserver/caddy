@@ -57,7 +57,7 @@ type AdminConfig struct {
 
 	// The address to which the admin endpoint's listener should
 	// bind itself. Can be any single network address that can be
-	// parsed by Caddy. Default: localhost:2019
+	// parsed by Caddy. Accepts placeholders. Default: localhost:2019
 	Listen string `json:"listen,omitempty"`
 
 	// If true, CORS headers will be emitted, and requests to the
@@ -156,7 +156,7 @@ type IdentityConfig struct {
 //
 // EXPERIMENTAL: Subject to change.
 type RemoteAdmin struct {
-	// The address on which to start the secure listener.
+	// The address on which to start the secure listener. Accepts placeholders.
 	// Default: :2021
 	Listen string `json:"listen,omitempty"`
 
@@ -1247,7 +1247,10 @@ func (e APIError) Error() string {
 // parseAdminListenAddr extracts a singular listen address from either addr
 // or defaultAddr, returning the network and the address of the listener.
 func parseAdminListenAddr(addr string, defaultAddr string) (NetworkAddress, error) {
-	input := addr
+	input, err := NewReplacer().ReplaceOrErr(addr, true, true)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("replacing listen address: %v", err)
+	}
 	if input == "" {
 		input = defaultAddr
 	}
