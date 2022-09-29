@@ -824,12 +824,19 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
-// VersionString is an optional string that overrides Caddy's
+// CustomVersion is an optional string that overrides Caddy's
 // reported version. It can be helpful when downstream packagers
-// need to manually set Caddy's version. The short form version (see
-// Version()) will be set to VersionString, and the full version
-// will include VersionString at the beginning.
-var VersionString string
+// need to manually set Caddy's version. If no other version
+// information is available, the short form version (see
+// Version()) will be set to CustomVersion, and the full version
+// will include CustomVersion at the beginning.
+//
+// Set this variable during `go build` with `-ldflags`:
+//
+//	-ldflags '-X github.com/caddyserver/caddy/v2.CustomVersion=v2.6.2'
+//
+// for example.
+var CustomVersion string
 
 // Version returns the Caddy version in a simple/short form, and
 // a full version string. The short form will not have spaces and
@@ -840,18 +847,16 @@ var VersionString string
 // build info provided by go.mod dependencies; then it tries to
 // get info from embedded VCS information, which requires having
 // built Caddy from a git repository. If no version is available,
-// this function returns "(devel)" becaise Go uses that, but for
-// the simple form we change it to "unknown".
+// this function returns "(devel)" because Go uses that, but for
+// the simple form we change it to "unknown". If still no version
+// is available (e.g. no VCS repo), then it will use CustomVersion;
+// CustomVersion is always prepended to the full version string.
 //
 // See relevant Go issues: https://github.com/golang/go/issues/29228
 // and https://github.com/golang/go/issues/50603.
 //
 // This function is experimental and subject to change or removal.
 func Version() (simple, full string) {
-	// The full version string uses VersionString as a
-	// starting point.
-	full = VersionString + " "
-
 	// the currently-recommended way to build Caddy involves
 	// building it as a dependency so we can extract version
 	// information from go.mod tooling; once the upstream
@@ -869,8 +874,7 @@ func Version() (simple, full string) {
 		}
 	}
 	if module != nil {
-		simple = module.Version
-		full += module.Version
+		simple, full = module.Version, module.Version
 		if module.Sum != "" {
 			full += " " + module.Sum
 		}
@@ -922,13 +926,18 @@ func Version() (simple, full string) {
 		}
 	}
 
-	// If VersionString is empty, full starts with a space
-	full = strings.TrimSpace(full)
+	if full == "" {
+		full = CustomVersion
+	} else if CustomVersion != "" {
+		full = CustomVersion + " " + full
+	}
 
-	if VersionString != "" {
-		simple = VersionString
-	} else if simple == "" || simple == "(devel)" {
-		simple = "unknown"
+	if simple == "" || simple == "(devel)" {
+		if CustomVersion != "" {
+			simple = CustomVersion
+		} else {
+			simple = "unknown"
+		}
 	}
 
 	return
