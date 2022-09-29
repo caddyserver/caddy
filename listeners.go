@@ -436,7 +436,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 //
 // TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
 func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
-	lnKey := listenerKey(ln.LocalAddr().Network(), ln.LocalAddr().String())
+	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
@@ -451,7 +451,6 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		if err != nil {
 			return nil, err
 		}
-
 		return &sharedQuicListener{EarlyListener: earlyLn, key: lnKey}, nil
 	})
 	if err != nil {
