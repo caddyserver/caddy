@@ -537,9 +537,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				size, err := strconv.Atoi(d.Val())
+				size, err := humanize.ParseBytes(d.Val())
 				if err != nil {
-					return d.Errf("invalid size (bytes): %s", d.Val())
+					return d.Errf("invalid byte size '%s': %v", d.Val(), err)
 				}
 				if d.NextArg() {
 					return d.ArgErr()
