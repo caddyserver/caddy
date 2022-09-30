@@ -78,7 +78,7 @@ func TestValidateCookieFilter(t *testing.T) {
 	}
 }
 
-func TestRegexpFilter(t *testing.T) {
+func TestRegexpFilterSingleValue(t *testing.T) {
 	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
 	f.Provision(caddy.Context{})
 
@@ -88,11 +88,44 @@ func TestRegexpFilter(t *testing.T) {
 	}
 }
 
-func TestHashFilter(t *testing.T) {
+func TestRegexpFilterMultiValue(t *testing.T) {
+	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
+	f.Provision(caddy.Context{})
+
+	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{"foo-secret-bar", "bar-secret-foo"}})
+	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Integer)
+	}
+	if arr[0] != "foo-REDACTED-bar" {
+		t.Fatalf("field entry 0 has not been filtered: %s", arr[0])
+	}
+	if arr[1] != "bar-REDACTED-foo" {
+		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
+	}
+}
+
+func TestHashFilterSingleValue(t *testing.T) {
 	f := HashFilter{}
 
 	out := f.Filter(zapcore.Field{String: "foo"})
 	if out.String != "2c26b46b" {
 		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+}
+
+func TestHashFilterMultiValue(t *testing.T) {
+	f := HashFilter{}
+
+	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{"foo", "bar"}})
+	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Integer)
+	}
+	if arr[0] != "2c26b46b" {
+		t.Fatalf("field entry 0 has not been filtered: %s", arr[0])
+	}
+	if arr[1] != "fcde2b2e" {
+		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
 	}
 }
