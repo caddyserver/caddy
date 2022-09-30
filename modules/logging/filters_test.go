@@ -8,6 +8,71 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func TestIPMaskSingleValue(t *testing.T) {
+	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
+	f.Provision(caddy.Context{})
+
+	out := f.Filter(zapcore.Field{String: "255.255.255.255"})
+	if out.String != "255.255.0.0" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+
+	out = f.Filter(zapcore.Field{String: "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"})
+	if out.String != "ffff:ffff::" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+}
+
+func TestIPMaskCommaValue(t *testing.T) {
+	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
+	f.Provision(caddy.Context{})
+
+	out := f.Filter(zapcore.Field{String: "255.255.255.255, 244.244.244.244"})
+	if out.String != "255.255.0.0, 244.244.0.0" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+
+	out = f.Filter(zapcore.Field{String: "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff, ff00:ffff:ffff:ffff:ffff:ffff:ffff:ffff"})
+	if out.String != "ffff:ffff::, ff00:ffff::" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+}
+
+func TestIPMaskMultiValue(t *testing.T) {
+	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
+	f.Provision(caddy.Context{})
+
+	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+		"255.255.255.255",
+		"244.244.244.244",
+	}})
+	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Integer)
+	}
+	if arr[0] != "255.255.0.0" {
+		t.Fatalf("field entry 0 has not been filtered: %s", arr[0])
+	}
+	if arr[1] != "244.244.0.0" {
+		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
+	}
+
+	out = f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+		"ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+		"ff00:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+	}})
+	arr, ok = out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Integer)
+	}
+	if arr[0] != "ffff:ffff::" {
+		t.Fatalf("field entry 0 has not been filtered: %s", arr[0])
+	}
+	if arr[1] != "ff00:ffff::" {
+		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
+	}
+}
+
 func TestQueryFilter(t *testing.T) {
 	f := QueryFilter{[]queryFilterAction{
 		{replaceAction, "foo", "REDACTED"},
