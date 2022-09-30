@@ -32,7 +32,7 @@ func TestHTTPVarReplacement(t *testing.T) {
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 	req = req.WithContext(ctx)
 	req.Host = "example.com:80"
-	req.RemoteAddr = "localhost:1234"
+	req.RemoteAddr = "192.168.159.32:1234"
 
 	clientCert := []byte(`-----BEGIN CERTIFICATE-----
 MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
@@ -61,7 +61,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	req.TLS = &tls.ConnectionState{
 		Version:                    tls.VersionTLS13,
 		HandshakeComplete:          true,
-		ServerName:                 "foo.com",
+		ServerName:                 "example.com",
 		CipherSuite:                tls.TLS_AES_256_GCM_SHA384,
 		PeerCertificates:           []*x509.Certificate{cert},
 		NegotiatedProtocol:         "h2",
@@ -97,7 +97,19 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		},
 		{
 			get:    "http.request.remote.host",
-			expect: "localhost",
+			expect: "192.168.159.32",
+		},
+		{
+			get:    "http.request.remote.host/24",
+			expect: "192.168.159.0/24",
+		},
+		{
+			get:    "http.request.remote.host/24,32",
+			expect: "192.168.159.0/24",
+		},
+		{
+			get:    "http.request.remote.host/999",
+			expect: "",
 		},
 		{
 			get:    "http.request.remote.port",
@@ -146,7 +158,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		},
 		{
 			get:    "http.request.tls.server_name",
-			expect: "foo.com",
+			expect: "example.com",
 		},
 		{
 			get:    "http.request.tls.version",
