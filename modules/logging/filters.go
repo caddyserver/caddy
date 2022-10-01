@@ -240,6 +240,7 @@ func (m IPMaskFilter) mask(s string) string {
 		ipAddr := net.ParseIP(host)
 		if ipAddr == nil {
 			output += value + ", "
+			continue
 		}
 		mask := m.v4Mask
 		if ipAddr.To4() == nil {
