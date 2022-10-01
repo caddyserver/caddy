@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -220,6 +222,24 @@ func (app *App) Provision(ctx caddy.Context) error {
 				zap.String("server_id", srvName))
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
+		}
+
+		// parse trusted proxy CIDRs ahead of time
+		for _, str := range srv.TrustedProxies {
+			if strings.Contains(str, "/") {
+				ipNet, err := netip.ParsePrefix(str)
+				if err != nil {
+					return fmt.Errorf("parsing CIDR expression: '%s': %v", str, err)
+				}
+				srv.trustedProxies = append(srv.trustedProxies, ipNet)
+			} else {
+				ipAddr, err := netip.ParseAddr(str)
+				if err != nil {
+					return fmt.Errorf("invalid IP address: '%s': %v", str, err)
+				}
+				ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
+				srv.trustedProxies = append(srv.trustedProxies, ipNew)
+			}
 		}
 
 		// process each listener address

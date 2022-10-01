@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"runtime"
 	"strings"
@@ -117,6 +118,18 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
+	// A list of IP ranges (supports CIDR notation) from which
+	// requests should be trusted. By default, no proxies are
+	// trusted.
+	//
+	// On its own, this configuration will not do anything,
+	// but it can be used as a default set of ranges for
+	// handlers or matchers in routes to pick up, instead
+	// of needing to configure each of them. See the
+	// `reverse_proxy` handler for example, which uses this
+	// to trust sensitive incoming `X-Forwarded-*` headers.
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -174,6 +187,9 @@ type Server struct {
 	h3server    *http3.Server
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	addresses   []caddy.NetworkAddress
+
+	// Holds the parsed CIDR ranges from TrustedProxies
+	trustedProxies []netip.Prefix
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
@@ -675,7 +691,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+		TrustedProxyVarKey: determineTrustedProxy(r, s),
+	})
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
@@ -705,6 +723,43 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 	}
 }
 
+// determineTrustedProxy parses the remote IP address of
+// the request, and determines (if the server configured it)
+// if the client is a trusted proxy.
+func determineTrustedProxy(r *http.Request, s *Server) bool {
+	// If there's no server, then we can't check anything
+	if s == nil {
+		return false
+	}
+
+	// Parse the remote IP, ignore the error as non-fatal,
+	// but the remote IP is required to continue, so we
+	// just return early. This should probably never happen
+	// though, unless some other module manipulated the request's
+	// remote address and used an invalid value.
+	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+
+	// Client IP may contain a zone if IPv6, so we need
+	// to pull that out before parsing the IP
+	clientIP, _, _ = strings.Cut(clientIP, "%")
+	ipAddr, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false
+	}
+
+	// Check if the client is a trusted proxy
+	for _, ipRange := range s.trustedProxies {
+		if ipRange.Contains(ipAddr) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // cloneURL makes a copy of r.URL and returns a
 // new value that doesn't reference the original.
 func cloneURL(from, to *url.URL) {
@@ -713,6 +768,19 @@ func cloneURL(from, to *url.URL) {
 		userInfo := new(url.Userinfo)
 		*userInfo = *from.User
 		to.User = userInfo
+	}
+}
+
+// PrivateRangesCIDR returns a list of private CIDR range
+// strings, which can be used as a configuration shortcut.
+func PrivateRangesCIDR() []string {
+	return []string{
+		"192.168.0.0/16",
+		"172.16.0.0/12",
+		"10.0.0.0/8",
+		"127.0.0.1/8",
+		"fd00::/8",
+		"::1",
 	}
 }
 
@@ -727,4 +795,7 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// For tracking whether the client is a trusted proxy
+	TrustedProxyVarKey string = "trusted_proxy"
 )

@@ -42,6 +42,7 @@ type serverOptions struct {
 	MaxHeaderBytes       int
 	Protocols            []string
 	StrictSNIHost        *bool
+	TrustedProxies       []string
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
 }
@@ -176,6 +177,15 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				}
 				serverOpts.StrictSNIHost = &boolVal
 
+			case "trusted_proxies":
+				for d.NextArg() {
+					if d.Val() == "private_ranges" {
+						serverOpts.TrustedProxies = append(serverOpts.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
+						continue
+					}
+					serverOpts.TrustedProxies = append(serverOpts.TrustedProxies, d.Val())
+				}
+
 			case "metrics":
 				if d.NextArg() {
 					return nil, d.ArgErr()
@@ -269,6 +279,7 @@ func applyServerOptions(
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
+		server.TrustedProxies = opts.TrustedProxies
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
