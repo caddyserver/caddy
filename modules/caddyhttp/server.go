@@ -690,10 +690,15 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
+
+	trusted, clientIP := determineTrustedProxy(r, s)
 	ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
-		TrustedProxyVarKey: determineTrustedProxy(r, s),
+		TrustedProxyVarKey: trusted,
+		ClientIPVarKey:     clientIP,
 	})
+
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
@@ -725,10 +730,10 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 // determineTrustedProxy parses the remote IP address of
 // the request, and determines (if the server configured it)
 // if the client is a trusted proxy.
-func determineTrustedProxy(r *http.Request, s *Server) bool {
+func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	// If there's no server, then we can't check anything
 	if s == nil {
-		return false
+		return false, ""
 	}
 
 	// Parse the remote IP, ignore the error as non-fatal,
@@ -738,7 +743,7 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	// remote address and used an invalid value.
 	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
 	// Client IP may contain a zone if IPv6, so we need
@@ -746,7 +751,7 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	clientIP, _, _ = strings.Cut(clientIP, "%")
 	ipAddr, err := netip.ParseAddr(clientIP)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
 	// Check if the client is a trusted proxy
@@ -755,11 +760,43 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	}
 	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
 		if ipRange.Contains(ipAddr) {
-			return true
+			return true, trustedClientIP(r, ipAddr.String())
 		}
 	}
 
-	return false
+	return false, ipAddr.String()
+}
+
+// trustedClientIP finds the client IP from the request
+// assuming it is from a trusted client. If there is no
+// XFF header, then the direct remote address is returned.
+// If there is an XFF header, then the first value is used.
+func trustedClientIP(r *http.Request, clientIP string) string {
+	// TODO: Configurable header field?
+	values := r.Header.Values("X-Forwarded-For")
+
+	// If we don't have an XFF, then just assume
+	// the client IP is not sourced from there
+	if len(values) == 0 {
+		return clientIP
+	}
+
+	// Since there can be many XFF header values, we need to
+	// join them together before splitting to get the full list
+	allValues := strings.Split(strings.Join(values, ","), ",")
+
+	// Get first valid left-most IP address
+	for _, ip := range allValues {
+		ip, _, _ = strings.Cut(strings.TrimSpace(ip), "%")
+		ipAddr, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		return ipAddr.String()
+	}
+
+	// We didn't find a valid IP
+	return clientIP
 }
 
 // cloneURL makes a copy of r.URL and returns a
@@ -787,4 +824,7 @@ const (
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
+
+	// For tracking the real client IP (affected by trusted_proxy)
+	ClientIPVarKey string = "client_ip"
 )

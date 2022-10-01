@@ -40,6 +40,7 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 
 	enc.AddString("remote_ip", ip)
 	enc.AddString("remote_port", port)
+	enc.AddString("client_ip", GetVar(r.Context(), ClientIPVarKey).(string))
 	enc.AddString("proto", r.Proto)
 	enc.AddString("method", r.Method)
 	enc.AddString("host", r.Host)
