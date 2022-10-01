@@ -21,6 +21,11 @@ func TestIPMaskSingleValue(t *testing.T) {
 	if out.String != "ffff:ffff::" {
 		t.Fatalf("field has not been filtered: %s", out.String)
 	}
+
+	out = f.Filter(zapcore.Field{String: "not-an-ip"})
+	if out.String != "not-an-ip" {
+		t.Fatalf("field has been filtered: %s", out.String)
+	}
 }
 
 func TestIPMaskCommaValue(t *testing.T) {
@@ -34,6 +39,11 @@ func TestIPMaskCommaValue(t *testing.T) {
 
 	out = f.Filter(zapcore.Field{String: "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff, ff00:ffff:ffff:ffff:ffff:ffff:ffff:ffff"})
 	if out.String != "ffff:ffff::, ff00:ffff::" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+
+	out = f.Filter(zapcore.Field{String: "not-an-ip, 255.255.255.255"})
+	if out.String != "not-an-ip, 255.255.0.0" {
 		t.Fatalf("field has not been filtered: %s", out.String)
 	}
 }
