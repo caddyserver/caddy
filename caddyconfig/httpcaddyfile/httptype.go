@@ -185,7 +185,7 @@ func (st ServerType) Setup(
 			// some subroutes in this directive; we add them to the pile
 			// for this server block
 			if state[namedRouteKey] != nil {
-				for name, _ := range state[namedRouteKey].(map[string]struct{}) {
+				for name := range state[namedRouteKey].(map[string]struct{}) {
 					result := ConfigValue{Class: namedRouteKey, Value: name}
 					sb.pile[result.Class] = append(sb.pile[result.Class], result)
 				}
