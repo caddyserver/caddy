@@ -148,7 +148,6 @@ func (p *parser) begin() error {
 	}
 
 	err := p.addresses()
-
 	if err != nil {
 		return err
 	}
@@ -156,6 +155,25 @@ func (p *parser) begin() error {
 	if p.eof {
 		// this happens if the Caddyfile consists of only
 		// a line of addresses and nothing else
+		return nil
+	}
+
+	if ok, name := p.isNamedRoute(); ok {
+		// named routes only have one key, the route name
+		p.block.Keys = []string{name}
+		p.block.IsNamedRoute = true
+
+		// we just need a dummy leading token to ease parsing later
+		nameToken := p.Token()
+		nameToken.Text = name
+
+		// get all the tokens from the block, including the braces
+		tokens, err := p.blockTokens(true)
+		if err != nil {
+			return err
+		}
+		tokens = append([]Token{nameToken}, tokens...)
+		p.block.Segments = []Segment{tokens}
 		return nil
 	}
 
@@ -167,7 +185,7 @@ func (p *parser) begin() error {
 			return p.Errf("redeclaration of previously declared snippet %s", name)
 		}
 		// consume all tokens til matched close brace
-		tokens, err := p.snippetTokens()
+		tokens, err := p.blockTokens(false)
 		if err != nil {
 			return err
 		}
@@ -576,6 +594,15 @@ func (p *parser) closeCurlyBrace() error {
 	return nil
 }
 
+func (p *parser) isNamedRoute() (bool, string) {
+	keys := p.block.Keys
+	// A named route block is a single key with parens, prefixed with &.
+	if len(keys) == 1 && strings.HasPrefix(keys[0], "&(") && strings.HasSuffix(keys[0], ")") {
+		return true, strings.TrimSuffix(keys[0][2:], ")")
+	}
+	return false, ""
+}
+
 func (p *parser) isSnippet() (bool, string) {
 	keys := p.block.Keys
 	// A snippet block is a single key with parens. Nothing else qualifies.
@@ -586,18 +613,24 @@ func (p *parser) isSnippet() (bool, string) {
 }
 
 // read and store everything in a block for later replay.
-func (p *parser) snippetTokens() ([]Token, error) {
-	// snippet must have curlies.
+func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
+	// block must have curlies.
 	err := p.openCurlyBrace()
 	if err != nil {
 		return nil, err
 	}
-	nesting := 1 // count our own nesting in snippets
+	nesting := 1 // count our own nesting
 	tokens := []Token{}
+	if retainCurlies {
+		tokens = append(tokens, p.Token())
+	}
 	for p.Next() {
 		if p.Val() == "}" {
 			nesting--
 			if nesting == 0 {
+				if retainCurlies {
+					tokens = append(tokens, p.Token())
+				}
 				break
 			}
 		}
@@ -617,9 +650,10 @@ func (p *parser) snippetTokens() ([]Token, error) {
 // head of the server block with tokens, which are
 // grouped by segments.
 type ServerBlock struct {
-	HasBraces bool
-	Keys      []string
-	Segments  []Segment
+	HasBraces    bool
+	Keys         []string
+	Segments     []Segment
+	IsNamedRoute bool
 }
 
 // DispenseDirective returns a dispenser that contains

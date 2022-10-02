@@ -65,6 +65,7 @@ var directiveOrder = []string{
 	"templates",
 
 	// special routing & dispatching directives
+	"invoke",
 	"handle",
 	"handle_path",
 	"route",
