@@ -27,9 +27,6 @@ import (
 // the dial address, including support for a scheme in front
 // as a shortcut for the port number, and a network type,
 // for example 'unix' to dial a unix socket.
-//
-// TODO: the logic in this function is kind of sensitive, we
-// need to write tests before making any more changes to it
 func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 	var network, scheme, host, port string
 
