@@ -208,6 +208,24 @@ func TestParseUpstreamDialAddress(t *testing.T) {
 			input:     "h2c://foo:443",
 			expectErr: true,
 		},
+		{
+			input:          `unix/c:\absolute\path`,
+			expectHostPort: `unix/c:\absolute\path`,
+		},
+		{
+			input:          `unix+h2c/c:\absolute\path`,
+			expectHostPort: `unix/c:\absolute\path`,
+			expectScheme:   "h2c",
+		},
+		{
+			input:          "unix/c:/absolute/path",
+			expectHostPort: "unix/c:/absolute/path",
+		},
+		{
+			input:          "unix+h2c/c:/absolute/path",
+			expectHostPort: "unix/c:/absolute/path",
+			expectScheme:   "h2c",
+		},
 	} {
 		actualHostPort, actualScheme, err := parseUpstreamDialAddress(tc.input)
 		if tc.expectErr && err == nil {

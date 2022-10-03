@@ -34,7 +34,7 @@ import (
 // reuseUnixSocket copies and reuses the unix domain socket (UDS) if we already
 // have it open; if not, unlink it so we can have it. No-op if not a unix network.
 func reuseUnixSocket(network, addr string) (any, error) {
-	if !isUnixNetwork(network) {
+	if !IsUnixNetwork(network) {
 		return nil, nil
 	}
 
@@ -103,7 +103,7 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 
 // reusePort sets SO_REUSEPORT. Ineffective for unix sockets.
 func reusePort(network, address string, conn syscall.RawConn) error {
-	if isUnixNetwork(network) {
+	if IsUnixNetwork(network) {
 		return nil
 	}
 	return conn.Control(func(descriptor uintptr) {
