@@ -21,7 +21,7 @@ import (
 
 func init() {
 	isService, err := svc.IsWindowsService()
-	if err != nil || isService {
+	if err != nil || !isService {
 		return
 	}
 	go func() {
