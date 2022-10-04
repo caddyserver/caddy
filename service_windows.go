@@ -15,6 +15,9 @@
 package caddy
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/caddyserver/caddy/v2/notify"
 	"golang.org/x/sys/windows/svc"
 )
@@ -24,6 +27,14 @@ func init() {
 	if err != nil || !isService {
 		return
 	}
+
+	// Windows services always start in the system32 directory, try to
+	// switch into the directory where the caddy executable is.
+	execPath, err := os.Executable()
+	if err == nil {
+		_ = os.Chdir(filepath.Dir(execPath))
+	}
+
 	go func() {
 		_ = svc.Run("", runner{})
 	}()
