@@ -45,15 +45,21 @@ func (ConsoleEncoder) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the encoder.
 func (ce *ConsoleEncoder) Provision(_ caddy.Context) error {
+	if ce.LevelFormat == "" {
+		ce.LevelFormat = "color"
+	}
+	if ce.TimeFormat == "" {
+		ce.TimeFormat = "wall_milli"
+	}
 	ce.Encoder = zapcore.NewConsoleEncoder(ce.ZapcoreEncoderConfig())
 	return nil
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     console {
-//         <common encoder config subdirectives...>
-//     }
+//	console {
+//	    <common encoder config subdirectives...>
+//	}
 //
 // See the godoc on the LogEncoderConfig type for the syntax of
 // subdirectives that are common to most/all encoders.
@@ -92,9 +98,9 @@ func (je *JSONEncoder) Provision(_ caddy.Context) error {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     json {
-//         <common encoder config subdirectives...>
-//     }
+//	json {
+//	    <common encoder config subdirectives...>
+//	}
 //
 // See the godoc on the LogEncoderConfig type for the syntax of
 // subdirectives that are common to most/all encoders.
@@ -127,19 +133,18 @@ type LogEncoderConfig struct {
 
 // UnmarshalCaddyfile populates the struct from Caddyfile tokens. Syntax:
 //
-//     {
-//         message_key     <key>
-//         level_key       <key>
-//         time_key        <key>
-//         name_key        <key>
-//         caller_key      <key>
-//         stacktrace_key  <key>
-//         line_ending     <char>
-//         time_format     <format>
-//         duration_format <format>
-//         level_format    <format>
-//     }
-//
+//	{
+//	    message_key     <key>
+//	    level_key       <key>
+//	    time_key        <key>
+//	    name_key        <key>
+//	    caller_key      <key>
+//	    stacktrace_key  <key>
+//	    line_ending     <char>
+//	    time_format     <format>
+//	    duration_format <format>
+//	    level_format    <format>
+//	}
 func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		subdir := d.Val()
