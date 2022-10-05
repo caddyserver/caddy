@@ -127,6 +127,7 @@ type LogEncoderConfig struct {
 	StacktraceKey  *string `json:"stacktrace_key,omitempty"`
 	LineEnding     *string `json:"line_ending,omitempty"`
 	TimeFormat     string  `json:"time_format,omitempty"`
+	TimeLocal      bool    `json:"time_local,omitempty"`
 	DurationFormat string  `json:"duration_format,omitempty"`
 	LevelFormat    string  `json:"level_format,omitempty"`
 }
@@ -142,12 +143,21 @@ type LogEncoderConfig struct {
 //	    stacktrace_key  <key>
 //	    line_ending     <char>
 //	    time_format     <format>
+//	    time_local
 //	    duration_format <format>
 //	    level_format    <format>
 //	}
 func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		subdir := d.Val()
+		switch subdir {
+		case "time_local":
+			lec.TimeLocal = true
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			continue
+		}
 		var arg string
 		if !d.AllArgs(&arg) {
 			return d.ArgErr()
@@ -237,7 +247,13 @@ func (lec *LogEncoderConfig) ZapcoreEncoderConfig() zapcore.EncoderConfig {
 			timeFormat = "02/Jan/2006:15:04:05 -0700"
 		}
 		timeFormatter = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
-			encoder.AppendString(ts.UTC().Format(timeFormat))
+			var time time.Time
+			if lec.TimeLocal {
+				time = ts.Local()
+			} else {
+				time = ts.UTC()
+			}
+			encoder.AppendString(time.Format(timeFormat))
 		}
 	}
 	cfg.EncodeTime = timeFormatter
