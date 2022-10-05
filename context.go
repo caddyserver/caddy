@@ -448,7 +448,7 @@ func (ctx Context) Storage() certmagic.Storage {
 // different module; it panics if more than 1 value is passed in.
 //
 // Originally, this method's signature was `Logger(mod Module)`,
-// requiring that an instance of a Caddy module be passsed in.
+// requiring that an instance of a Caddy module be passed in.
 // However, that is no longer necessary, as the closest module
 // most recently associated with the context will be automatically
 // assumed. To prevent a sudden breaking change, this method's
