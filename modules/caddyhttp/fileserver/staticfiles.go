@@ -247,7 +247,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	info, err := fs.Stat(fsrv.fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(err, filename)
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
 			return fsrv.notFound(w, r, next)
 		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
