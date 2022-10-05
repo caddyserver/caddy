@@ -59,26 +59,28 @@ func (st ServerType) buildTLSApp(
 	// by auto-HTTPS (since they won't appear in route matchers)
 	var serverBlocksWithTLSHostlessKey int
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	for _, pair := range pairings {
-		for _, sb := range pair.serverBlocks {
-			for _, addr := range sb.keys {
-				if addr.Host == "" {
-					// this address has no hostname, but if it's explicitly set
-					// to HTTPS, then we need to count it as being TLS-enabled
-					if addr.Scheme == "https" || addr.Port == httpsPort {
-						serverBlocksWithTLSHostlessKey++
-					}
-					// this server block has a hostless key, now
-					// go through and add all the hosts to the set
-					for _, otherAddr := range sb.keys {
-						if otherAddr.Original == addr.Original {
-							continue
+	if autoHTTPS != "off" {
+		for _, pair := range pairings {
+			for _, sb := range pair.serverBlocks {
+				for _, addr := range sb.keys {
+					if addr.Host == "" {
+						// this address has no hostname, but if it's explicitly set
+						// to HTTPS, then we need to count it as being TLS-enabled
+						if addr.Scheme == "https" || addr.Port == httpsPort {
+							serverBlocksWithTLSHostlessKey++
 						}
-						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
-							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+						// this server block has a hostless key, now
+						// go through and add all the hosts to the set
+						for _, otherAddr := range sb.keys {
+							if otherAddr.Original == addr.Original {
+								continue
+							}
+							if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+								httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+							}
 						}
+						break
 					}
-					break
 				}
 			}
 		}
