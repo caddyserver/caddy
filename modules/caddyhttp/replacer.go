@@ -31,6 +31,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"path"
@@ -194,6 +195,37 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.orig_uri.query":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.URL.RawQuery, true
+			}
+
+			// remote IP range/prefix (e.g. keep top 24 bits of 1.2.3.4  => "1.2.3.0/24")
+			// syntax: "/V4,V6" where V4 = IPv4 bits, and V6 = IPv6 bits; if no comma, then same bit length used for both
+			// (EXPERIMENTAL)
+			if strings.HasPrefix(key, "http.request.remote.host/") {
+				host, _, err := net.SplitHostPort(req.RemoteAddr)
+				if err != nil {
+					host = req.RemoteAddr // assume no port, I guess?
+				}
+				addr, err := netip.ParseAddr(host)
+				if err != nil {
+					return host, true // not an IP address
+				}
+				// extract the bits from the end of the placeholder (start after "/") then split on ","
+				bitsBoth := key[strings.Index(key, "/")+1:]
+				ipv4BitsStr, ipv6BitsStr, cutOK := strings.Cut(bitsBoth, ",")
+				bitsStr := ipv4BitsStr
+				if addr.Is6() && cutOK {
+					bitsStr = ipv6BitsStr
+				}
+				// convert to integer then compute prefix
+				bits, err := strconv.Atoi(bitsStr)
+				if err != nil {
+					return "", true
+				}
+				prefix, err := addr.Prefix(bits)
+				if err != nil {
+					return "", true
+				}
+				return prefix.String(), true
 			}
 
 			// hostname labels

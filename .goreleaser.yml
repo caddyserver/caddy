@@ -4,6 +4,7 @@ before:
     # This is so we can run goreleaser on tag without Git complaining of being dirty. The main.go in cmd/caddy directory 
     # cannot be built within that directory due to changes necessary for the build causing Git to be dirty, which
     # subsequently causes gorleaser to refuse running.
+    - rm -rf caddy-build caddy-dist
     - mkdir -p caddy-build
     - cp cmd/caddy/main.go caddy-build/main.go
     - /bin/sh -c 'cd ./caddy-build && go mod init caddy'

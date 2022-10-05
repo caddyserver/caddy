@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -387,10 +388,11 @@ func (app *App) Start() error {
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
-				ln, err := caddy.ListenTimeout(listenAddr.Network, hostport, time.Duration(srv.KeepAliveInterval))
+				lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
 				if err != nil {
-					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
+					return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 				}
+				ln := lnAny.(net.Listener)
 
 				// wrap listener before TLS (up to the TLS placeholder wrapper)
 				var lnWrapperIdx int
@@ -409,10 +411,27 @@ func (app *App) Start() error {
 					ln = tls.NewListener(ln, tlsCfg)
 
 					// enable HTTP/3 if configured
-					if srv.protocol("h3") && !listenAddr.IsUnixNetwork() {
-						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
-							return err
+					if srv.protocol("h3") {
+						// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
+						// a different transport mechanism... which is fine, but the OS doesn't
+						// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
+						// are still one file on the system. So even though "unixpacket" and
+						// "unixgram" are different network types just as "tcp" and "udp" are,
+						// the OS will not let us use the same file as both STREAM and DGRAM.
+						if len(srv.Protocols) > 1 && listenAddr.IsUnixNetwork() {
+							app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
+								zap.String("file", hostport))
+							for i := range srv.Protocols {
+								if srv.Protocols[i] == "h3" {
+									srv.Protocols = append(srv.Protocols[:i], srv.Protocols[i+1:]...)
+									break
+								}
+							}
+						} else {
+							app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+							if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
+								return err
+							}
 						}
 					}
 				}
@@ -424,11 +443,10 @@ func (app *App) Start() error {
 
 				// if binding to port 0, the OS chooses a port for us;
 				// but the user won't know the port unless we print it
-				if listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+				if !listenAddr.IsUnixNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
 					app.logger.Info("port 0 listener",
 						zap.String("input_address", lnAddr),
-						zap.String("actual_address", ln.Addr().String()),
-					)
+						zap.String("actual_address", ln.Addr().String()))
 				}
 
 				app.logger.Debug("starting server loop",
@@ -533,6 +551,18 @@ func (app *App) Stop() error {
 		if server.h3server == nil {
 			return
 		}
+
+		// TODO: we have to manually close our listeners because quic-go won't
+		// close listeners it didn't create along with the server itself...
+		// see https://github.com/lucas-clemente/quic-go/issues/3560
+		for _, el := range server.h3listeners {
+			if err := el.Close(); err != nil {
+				app.logger.Error("HTTP/3 listener close",
+					zap.Error(err),
+					zap.String("address", el.LocalAddr().String()))
+			}
+		}
+
 		// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
 		if err := server.h3server.Close(); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
