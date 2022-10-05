@@ -824,6 +824,20 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
+// CustomVersion is an optional string that overrides Caddy's
+// reported version. It can be helpful when downstream packagers
+// need to manually set Caddy's version. If no other version
+// information is available, the short form version (see
+// Version()) will be set to CustomVersion, and the full version
+// will include CustomVersion at the beginning.
+//
+// Set this variable during `go build` with `-ldflags`:
+//
+//	-ldflags '-X github.com/caddyserver/caddy/v2.CustomVersion=v2.6.2'
+//
+// for example.
+var CustomVersion string
+
 // Version returns the Caddy version in a simple/short form, and
 // a full version string. The short form will not have spaces and
 // is intended for User-Agent strings and similar, but may be
@@ -833,8 +847,10 @@ func InstanceID() (uuid.UUID, error) {
 // build info provided by go.mod dependencies; then it tries to
 // get info from embedded VCS information, which requires having
 // built Caddy from a git repository. If no version is available,
-// this function returns "(devel)" becaise Go uses that, but for
-// the simple form we change it to "unknown".
+// this function returns "(devel)" because Go uses that, but for
+// the simple form we change it to "unknown". If still no version
+// is available (e.g. no VCS repo), then it will use CustomVersion;
+// CustomVersion is always prepended to the full version string.
 //
 // See relevant Go issues: https://github.com/golang/go/issues/29228
 // and https://github.com/golang/go/issues/50603.
@@ -910,8 +926,22 @@ func Version() (simple, full string) {
 		}
 	}
 
+	if full == "" {
+		if CustomVersion != "" {
+			full = CustomVersion
+		} else {
+			full = "unknown"
+		}
+	} else if CustomVersion != "" {
+		full = CustomVersion + " " + full
+	}
+
 	if simple == "" || simple == "(devel)" {
-		simple = "unknown"
+		if CustomVersion != "" {
+			simple = CustomVersion
+		} else {
+			simple = "unknown"
+		}
 	}
 
 	return
