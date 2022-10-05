@@ -219,7 +219,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		if ncl.name == "" {
 			return
 		}
-		if ncl.name == "default" {
+		if ncl.name == caddy.DefaultLoggerName {
 			hasDefaultLog = true
 		}
 		if _, ok := options["debug"]; ok && ncl.log.Level == "" {
@@ -240,7 +240,7 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		// configure it with any applicable options
 		if _, ok := options["debug"]; ok {
 			customLogs = append(customLogs, namedCustomLog{
-				name: "default",
+				name: caddy.DefaultLoggerName,
 				log:  &caddy.CustomLog{Level: zap.DebugLevel.CapitalString()},
 			})
 		}
@@ -299,11 +299,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			// most users seem to prefer not writing access logs
 			// to the default log when they are directed to a
 			// file or have any other special customization
-			if ncl.name != "default" && len(ncl.log.Include) > 0 {
-				defaultLog, ok := cfg.Logging.Logs["default"]
+			if ncl.name != caddy.DefaultLoggerName && len(ncl.log.Include) > 0 {
+				defaultLog, ok := cfg.Logging.Logs[caddy.DefaultLoggerName]
 				if !ok {
 					defaultLog = new(caddy.CustomLog)
-					cfg.Logging.Logs["default"] = defaultLog
+					cfg.Logging.Logs[caddy.DefaultLoggerName] = defaultLog
 				}
 				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
 			}
@@ -518,15 +518,6 @@ func (st *ServerType) serversFromPairings(
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
 		autoHTTPSWillAddConnPolicy := autoHTTPS != "off"
 
-		// if a catch-all server block (one which accepts all hostnames) exists in this pairing,
-		// we need to know that so that we can configure logs properly (see #3878)
-		var catchAllSblockExists bool
-		for _, sblock := range p.serverBlocks {
-			if len(sblock.hostsFromKeys(false)) == 0 {
-				catchAllSblockExists = true
-			}
-		}
-
 		// if needed, the ServerLogConfig is initialized beforehand so
 		// that all server blocks can populate it with data, even when not
 		// coming with a log directive
@@ -658,18 +649,10 @@ func (st *ServerType) serversFromPairings(
 				} else {
 					// map each host to the user's desired logger name
 					for _, h := range sblockLogHosts {
-						// if the custom logger name is non-empty, add it to the map;
-						// otherwise, only map to an empty logger name if this or
-						// another site block on this server has a catch-all host (in
-						// which case only requests with mapped hostnames will be
-						// access-logged, so it'll be necessary to add them to the
-						// map even if they use default logger)
-						if ncl.name != "" || catchAllSblockExists {
-							if srv.Logs.LoggerNames == nil {
-								srv.Logs.LoggerNames = make(map[string]string)
-							}
-							srv.Logs.LoggerNames[h] = ncl.name
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]string)
 						}
+						srv.Logs.LoggerNames[h] = ncl.name
 					}
 				}
 			}

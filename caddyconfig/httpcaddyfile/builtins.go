@@ -735,7 +735,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				// reference the default logger. See the
 				// setupNewDefault function in the logging
 				// package for where this is configured.
-				globalLogName = "default"
+				globalLogName = caddy.DefaultLoggerName
 			}
 
 			// Verify this name is unused.
