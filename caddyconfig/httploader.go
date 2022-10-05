@@ -45,10 +45,6 @@ type HTTPLoader struct {
 	// Maximum time allowed for a complete connection and request.
 	Timeout caddy.Duration `json:"timeout,omitempty"`
 
-	// The number of seconds to wait in between attempts to call `URL`.
-	// Defaults to 0, indicating no retries.
-	RetryDelay time.Duration `json:"retry_delay,omitempty"`
-
 	TLS *struct {
 		// Present this instance's managed remote identity credentials to the server.
 		UseServerIdentity bool `json:"use_server_identity,omitempty"`
@@ -98,7 +94,8 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		}
 	}
 
-	resp, err := doHttpCallWithRetries(ctx, client, req, hl.RetryDelay)
+	caddy.Log().Info("attempting to load config via http loader url")
+	resp, err := doHttpCallWithRetries(ctx, client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -123,31 +120,38 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 	return result, nil
 }
 
-// Reattempts the http call, waiting `retryDelay` seconds in between attempts.
-func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request, retryDelay time.Duration) (*http.Response, error) {
-	// make attempt
+func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response, error) {
 	resp, err := client.Do(request)
 	if err != nil {
-		err = fmt.Errorf("problem calling http loader url: %v", err)
+		return nil, fmt.Errorf("problem calling http loader url: %v", err)
 	} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
-		err = fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
+		return nil, fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
 	} else {
+		// the http call was successful
 		return resp, nil
 	}
-	// skip retries if valid retryDelay not provided
-	if retryDelay <= 0 {
-		return resp, err
+}
+
+func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	const maxAttempts = 10
+
+	// attempt up to 10 times
+	for i := 0; i < maxAttempts; i++ {
+		resp, err = attemptHttpCall(client, request)
+		if err != nil && i < maxAttempts-1 {
+			// wait 500ms before reattempting, or until context is done
+			select {
+			case <-time.After(time.Millisecond * 500):
+				continue
+			case <-ctx.Done():
+				return resp, ctx.Err()
+			}
+		}
 	}
-	// log the error
-	caddy.Log().Error(err.Error())
-	// wait for the retry delay to lapse before reattempting,
-	// or return when context is done
-	select {
-	case <-time.After(time.Second * retryDelay):
-		return doHttpCallWithRetries(ctx, client, request, retryDelay)
-	case <-ctx.Done():
-		return nil, err
-	}
+
+	return resp, err
 }
 
 func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
