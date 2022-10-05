@@ -639,21 +639,18 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		// logging is disabled
 		return false
 	}
+	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+		// this host is mapped to a particular logger name
+		return true
+	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
 		if certmagic.MatchWildcard(r.Host, dh) {
 			return false
 		}
 	}
-	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
-		// this host is mapped to a particular logger name
-		return true
-	}
-	if s.Logs.SkipUnmappedHosts {
-		// this host is not mapped and thus must not be logged
-		return false
-	}
-	return true
+	// if configured, this host is not mapped and thus must not be logged
+	return !s.Logs.SkipUnmappedHosts
 }
 
 // protocol returns true if the protocol proto is configured/enabled.
