@@ -927,7 +927,11 @@ func Version() (simple, full string) {
 	}
 
 	if full == "" {
-		full = CustomVersion
+		if CustomVersion != "" {
+			full = CustomVersion
+		} else {
+			full = "unknown"
+		}
 	} else if CustomVersion != "" {
 		full = CustomVersion + " " + full
 	}
