@@ -192,13 +192,13 @@ func (st ServerType) buildTLSApp(
 			// this is an example of a poor mapping from Caddyfile to JSON but that's
 			// the least-leaky abstraction I could figure out
 			if len(sblockHosts) == 0 {
-				if serverBlocksWithTLSHostlessKey > 1 {
-					// this server block and at least one other has a key with no host,
-					// making the two indistinguishable; it is misleading to define such
-					// a policy within one server block since it actually will apply to
-					// others as well
-					return nil, warnings, fmt.Errorf("cannot make a TLS automation policy from a server block that has a host-less address when there are other TLS-enabled server block addresses lacking a host")
-				}
+				// if serverBlocksWithTLSHostlessKey > 1 {
+				// 	// this server block and at least one other has a key with no host,
+				// 	// making the two indistinguishable; it is misleading to define such
+				// 	// a policy within one server block since it actually will apply to
+				// 	// others as well
+				// 	return nil, warnings, fmt.Errorf("cannot make a TLS automation policy from a server block that has a host-less address when there are other TLS-enabled server block addresses lacking a host")
+				// }
 				if catchAllAP == nil {
 					// this server block has a key with no hosts, but there is not yet
 					// a catch-all automation policy (probably because no global options
