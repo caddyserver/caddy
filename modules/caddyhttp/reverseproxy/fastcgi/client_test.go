@@ -171,7 +171,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 
 	log.Println("c: send data length ≈", length, string(content))
 	conn.Close()
-	time.Sleep(1 * time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	if bytes.Contains(content, []byte("FAILED")) {
 		globalt.Error("Server return failed message")
@@ -230,7 +230,7 @@ func DisabledTest(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	// init
 	fcgiParams := make(map[string]string)
