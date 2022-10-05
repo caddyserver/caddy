@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -76,7 +77,10 @@ func hash(s string) string {
 }
 
 // HashFilter is a Caddy log field filter that
-// replaces the field with the initial 4 bytes of the SHA-256 hash of the content.
+// replaces the field with the initial 4 bytes
+// of the SHA-256 hash of the content. Operates
+// on string fields, or on arrays of strings
+// where each string is hashed.
 type HashFilter struct {
 }
 
@@ -95,7 +99,13 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
-	in.String = hash(in.String)
+	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		for i, s := range array {
+			array[i] = hash(s)
+		}
+	} else {
+		in.String = hash(in.String)
+	}
 	return in
 }
 
@@ -131,7 +141,10 @@ func (f *ReplaceFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 // IPMaskFilter is a Caddy log field filter that
-// masks IP addresses.
+// masks IP addresses in a string, or in an array
+// of strings. The string may be a comma separated
+// list of IP addresses, where all of the values
+// will be masked.
 type IPMaskFilter struct {
 	// The IPv4 mask, as an subnet size CIDR.
 	IPv4MaskRaw int `json:"ipv4_cidr,omitempty"`
@@ -205,25 +218,43 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
-	host, port, err := net.SplitHostPort(in.String)
-	if err != nil {
-		host = in.String // assume whole thing was IP address
-	}
-	ipAddr := net.ParseIP(host)
-	if ipAddr == nil {
-		return in
-	}
-	mask := m.v4Mask
-	if ipAddr.To4() == nil {
-		mask = m.v6Mask
-	}
-	masked := ipAddr.Mask(mask)
-	if port == "" {
-		in.String = masked.String()
+	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		for i, s := range array {
+			array[i] = m.mask(s)
+		}
 	} else {
-		in.String = net.JoinHostPort(masked.String(), port)
+		in.String = m.mask(in.String)
 	}
+
 	return in
+}
+
+func (m IPMaskFilter) mask(s string) string {
+	output := ""
+	for _, value := range strings.Split(s, ",") {
+		value = strings.TrimSpace(value)
+		host, port, err := net.SplitHostPort(value)
+		if err != nil {
+			host = value // assume whole thing was IP address
+		}
+		ipAddr := net.ParseIP(host)
+		if ipAddr == nil {
+			output += value + ", "
+			continue
+		}
+		mask := m.v4Mask
+		if ipAddr.To4() == nil {
+			mask = m.v6Mask
+		}
+		masked := ipAddr.Mask(mask)
+		if port == "" {
+			output += masked.String() + ", "
+			continue
+		}
+
+		output += net.JoinHostPort(masked.String(), port) + ", "
+	}
+	return strings.TrimSuffix(output, ", ")
 }
 
 type filterAction string
@@ -499,7 +530,10 @@ OUTER:
 }
 
 // RegexpFilter is a Caddy log field filter that
-// replaces the field matching the provided regexp with the indicated string.
+// replaces the field matching the provided regexp
+// with the indicated string. If the field is an
+// array of strings, each of them will have the
+// regexp replacement applied.
 type RegexpFilter struct {
 	// The regular expression pattern defining what to replace.
 	RawRegexp string `json:"regexp,omitempty"`
@@ -545,7 +579,13 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	in.String = f.regexp.ReplaceAllString(in.String, f.Value)
+	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		for i, s := range array {
+			array[i] = f.regexp.ReplaceAllString(s, f.Value)
+		}
+	} else {
+		in.String = f.regexp.ReplaceAllString(in.String, f.Value)
+	}
 
 	return in
 }
@@ -576,7 +616,6 @@ func (f *RenameFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter renames the input field with the replacement name.
 func (f *RenameFilter) Filter(in zapcore.Field) zapcore.Field {
-	in.Type = zapcore.StringType
 	in.Key = f.Name
 	return in
 }
