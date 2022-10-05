@@ -48,6 +48,10 @@ func (st ServerType) buildTLSApp(
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
 	}
+	autoHTTPS := "on"
+	if ah, ok := options["auto_https"].(string); ok {
+		autoHTTPS = ah
+	}
 
 	// count how many server blocks have a TLS-enabled key with
 	// no host, and find all hosts that share a server block with
@@ -331,10 +335,12 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	for h := range httpsHostsSharedWithHostlessKey {
-		al = append(al, h)
-		if !certmagic.SubjectQualifiesForPublicCert(h) {
-			internalAP.Subjects = append(internalAP.Subjects, h)
+	if autoHTTPS != "off" {
+		for h := range httpsHostsSharedWithHostlessKey {
+			al = append(al, h)
+			if !certmagic.SubjectQualifiesForPublicCert(h) {
+				internalAP.Subjects = append(internalAP.Subjects, h)
+			}
 		}
 	}
 	if len(al) > 0 {
