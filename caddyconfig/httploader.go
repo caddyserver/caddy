@@ -94,7 +94,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		}
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doHttpCallWithRetries(ctx, client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +117,37 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 	}
 
 	return result, nil
+}
+
+func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response, error) {
+	resp, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("problem calling http loader url: %v", err)
+	} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
+		return nil, fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
+	}
+	return resp, nil
+}
+
+func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	const maxAttempts = 10
+
+	// attempt up to 10 times
+	for i := 0; i < maxAttempts; i++ {
+		resp, err = attemptHttpCall(client, request)
+		if err != nil && i < maxAttempts-1 {
+			// wait 500ms before reattempting, or until context is done
+			select {
+			case <-time.After(time.Millisecond * 500):
+			case <-ctx.Done():
+				return resp, ctx.Err()
+			}
+		}
+	}
+
+	return resp, err
 }
 
 func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
