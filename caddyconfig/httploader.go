@@ -94,7 +94,6 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		}
 	}
 
-	caddy.Log().Info("attempting to load config via http loader url")
 	resp, err := doHttpCallWithRetries(ctx, client, req)
 	if err != nil {
 		return nil, err
@@ -126,10 +125,8 @@ func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response
 		return nil, fmt.Errorf("problem calling http loader url: %v", err)
 	} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
 		return nil, fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
-	} else {
-		// the http call was successful
-		return resp, nil
 	}
+	return resp, nil
 }
 
 func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request) (*http.Response, error) {
@@ -144,7 +141,6 @@ func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http
 			// wait 500ms before reattempting, or until context is done
 			select {
 			case <-time.After(time.Millisecond * 500):
-				continue
 			case <-ctx.Done():
 				return resp, ctx.Err()
 			}
