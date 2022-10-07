@@ -180,7 +180,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				if d.NextArg() {
 					return nil, d.ArgErr()
 				}
-				if d.NextBlock(0) {
+				if nesting := d.Nesting(); d.NextBlock(nesting) {
 					return nil, d.ArgErr()
 				}
 				serverOpts.Metrics = new(caddyhttp.Metrics)
