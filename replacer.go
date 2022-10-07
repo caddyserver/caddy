@@ -308,6 +308,10 @@ func globalDefaultReplacements(key string) (any, bool) {
 		return string(filepath.Separator), true
 	case "system.os":
 		return runtime.GOOS, true
+	case "system.wd":
+		// OK if there is an error; just return empty string
+		wd, _ := os.Getwd()
+		return wd, true
 	case "system.arch":
 		return runtime.GOARCH, true
 	case "time.now":
