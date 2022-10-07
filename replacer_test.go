@@ -372,6 +372,7 @@ func TestReplacerNew(t *testing.T) {
 	} else {
 		// test if default global replacements are added  as the first provider
 		hostname, _ := os.Hostname()
+		wd, _ := os.Getwd()
 		os.Setenv("CADDY_REPLACER_TEST", "envtest")
 		defer os.Setenv("CADDY_REPLACER_TEST", "")
 
@@ -394,6 +395,10 @@ func TestReplacerNew(t *testing.T) {
 			{
 				variable: "system.arch",
 				value:    runtime.GOARCH,
+			},
+			{
+				variable: "system.wd",
+				value:    wd,
 			},
 			{
 				variable: "env.CADDY_REPLACER_TEST",
