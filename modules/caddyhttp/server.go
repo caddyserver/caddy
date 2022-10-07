@@ -505,7 +505,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	case "tcp6":
 		addr.Network = "udp6"
 	default:
-		addr.Network = "udp"
+		addr.Network = "udp" // TODO: Maybe a better default is to not enable HTTP/3 if we do not know how?
 	}
 
 	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
