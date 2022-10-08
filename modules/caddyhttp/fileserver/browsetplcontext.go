@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"context"
 	"io/fs"
 	"net/url"
 	"os"
@@ -30,13 +31,17 @@ import (
 	"go.uber.org/zap"
 )
 
-func (fsrv *FileServer) directoryListing(entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	var dirCount, fileCount int
 	fileInfos := []fileInfo{}
 
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+
 		name := entry.Name()
 
 		if fileHidden(name, filesToHide) {

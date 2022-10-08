@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -82,7 +83,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// calling path.Clean here prevents weird breadcrumbs when URL paths are sketchy like /%2e%2e%2f
-	listing, err := fsrv.loadDirectoryContents(dir.(fs.ReadDirFile), root, path.Clean(r.URL.Path), repl)
+	listing, err := fsrv.loadDirectoryContents(r.Context(), dir.(fs.ReadDirFile), root, path.Clean(r.URL.Path), repl)
 	switch {
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -136,7 +137,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
+func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
 	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
 	if err != nil && err != io.EOF {
 		return browseTemplateContext{}, err
@@ -145,7 +146,7 @@ func (fsrv *FileServer) loadDirectoryContents(dir fs.ReadDirFile, root, urlPath 
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	return fsrv.directoryListing(files, canGoUp, root, urlPath, repl), nil
+	return fsrv.directoryListing(ctx, files, canGoUp, root, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
