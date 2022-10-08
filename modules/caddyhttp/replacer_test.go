@@ -27,12 +27,12 @@ import (
 )
 
 func TestHTTPVarReplacement(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/foo/bar.tar.gz", nil)
 	repl := caddy.NewReplacer()
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 	req = req.WithContext(ctx)
 	req.Host = "example.com:80"
-	req.RemoteAddr = "localhost:1234"
+	req.RemoteAddr = "192.168.159.32:1234"
 
 	clientCert := []byte(`-----BEGIN CERTIFICATE-----
 MIIB9jCCAV+gAwIBAgIBAjANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1DYWRk
@@ -61,7 +61,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	req.TLS = &tls.ConnectionState{
 		Version:                    tls.VersionTLS13,
 		HandshakeComplete:          true,
-		ServerName:                 "foo.com",
+		ServerName:                 "example.com",
 		CipherSuite:                tls.TLS_AES_256_GCM_SHA384,
 		PeerCertificates:           []*x509.Certificate{cert},
 		NegotiatedProtocol:         "h2",
@@ -72,114 +72,146 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	addHTTPVarsToReplacer(repl, req, res)
 
 	for i, tc := range []struct {
-		input  string
+		get    string
 		expect string
 	}{
 		{
-			input:  "{http.request.scheme}",
+			get:    "http.request.scheme",
 			expect: "https",
 		},
 		{
-			input:  "{http.request.host}",
+			get:    "http.request.method",
+			expect: http.MethodGet,
+		},
+		{
+			get:    "http.request.host",
 			expect: "example.com",
 		},
 		{
-			input:  "{http.request.port}",
+			get:    "http.request.port",
 			expect: "80",
 		},
 		{
-			input:  "{http.request.hostport}",
+			get:    "http.request.hostport",
 			expect: "example.com:80",
 		},
 		{
-			input:  "{http.request.remote.host}",
-			expect: "localhost",
+			get:    "http.request.remote.host",
+			expect: "192.168.159.32",
 		},
 		{
-			input:  "{http.request.remote.port}",
+			get:    "http.request.remote.host/24",
+			expect: "192.168.159.0/24",
+		},
+		{
+			get:    "http.request.remote.host/24,32",
+			expect: "192.168.159.0/24",
+		},
+		{
+			get:    "http.request.remote.host/999",
+			expect: "",
+		},
+		{
+			get:    "http.request.remote.port",
 			expect: "1234",
 		},
 		{
-			input:  "{http.request.host.labels.0}",
+			get:    "http.request.host.labels.0",
 			expect: "com",
 		},
 		{
-			input:  "{http.request.host.labels.1}",
+			get:    "http.request.host.labels.1",
 			expect: "example",
 		},
 		{
-			input:  "{http.request.host.labels.2}",
-			expect: "<empty>",
+			get:    "http.request.host.labels.2",
+			expect: "",
 		},
 		{
-			input:  "{http.request.tls.cipher_suite}",
+			get:    "http.request.uri.path.file",
+			expect: "bar.tar.gz",
+		},
+		{
+			get:    "http.request.uri.path.file.base",
+			expect: "bar.tar",
+		},
+		{
+			// not ideal, but also most correct, given that files can have dots (example: index.<SHA>.html) TODO: maybe this isn't right..
+			get:    "http.request.uri.path.file.ext",
+			expect: ".gz",
+		},
+		{
+			get:    "http.request.tls.cipher_suite",
 			expect: "TLS_AES_256_GCM_SHA384",
 		},
 		{
-			input:  "{http.request.tls.proto}",
+			get:    "http.request.tls.proto",
 			expect: "h2",
 		},
 		{
-			input:  "{http.request.tls.proto_mutual}",
+			get:    "http.request.tls.proto_mutual",
 			expect: "true",
 		},
 		{
-			input:  "{http.request.tls.resumed}",
+			get:    "http.request.tls.resumed",
 			expect: "false",
 		},
 		{
-			input:  "{http.request.tls.server_name}",
-			expect: "foo.com",
+			get:    "http.request.tls.server_name",
+			expect: "example.com",
 		},
 		{
-			input:  "{http.request.tls.version}",
+			get:    "http.request.tls.version",
 			expect: "tls1.3",
 		},
 		{
-			input:  "{http.request.tls.client.fingerprint}",
+			get:    "http.request.tls.client.fingerprint",
 			expect: "9f57b7b497cceacc5459b76ac1c3afedbc12b300e728071f55f84168ff0f7702",
 		},
 		{
-			input:  "{http.request.tls.client.issuer}",
+			get:    "http.request.tls.client.issuer",
 			expect: "CN=Caddy Test CA",
 		},
 		{
-			input:  "{http.request.tls.client.serial}",
+			get:    "http.request.tls.client.serial",
 			expect: "2",
 		},
 		{
-			input:  "{http.request.tls.client.subject}",
+			get:    "http.request.tls.client.subject",
 			expect: "CN=client.localdomain",
 		},
 		{
-			input:  "{http.request.tls.client.san.dns_names}",
+			get:    "http.request.tls.client.san.dns_names",
 			expect: "[localhost]",
 		},
 		{
-			input:  "{http.request.tls.client.san.dns_names.0}",
+			get:    "http.request.tls.client.san.dns_names.0",
 			expect: "localhost",
 		},
 		{
-			input:  "{http.request.tls.client.san.dns_names.1}",
-			expect: "<empty>",
+			get:    "http.request.tls.client.san.dns_names.1",
+			expect: "",
 		},
 		{
-			input:  "{http.request.tls.client.san.ips}",
+			get:    "http.request.tls.client.san.ips",
 			expect: "[127.0.0.1]",
 		},
 		{
-			input:  "{http.request.tls.client.san.ips.0}",
+			get:    "http.request.tls.client.san.ips.0",
 			expect: "127.0.0.1",
 		},
 		{
-			input:  "{http.request.tls.client.certificate_pem}",
+			get:    "http.request.tls.client.certificate_pem",
 			expect: string(clientCert) + "\n", // returned value comes with a newline appended to it
 		},
 	} {
-		actual := repl.ReplaceAll(tc.input, "<empty>")
+		actual, got := repl.GetString(tc.get)
+		if !got {
+			t.Errorf("Test %d: Expected to recognize the placeholder name, but didn't", i)
+		}
 		if actual != tc.expect {
-			t.Errorf("Test %d: Expected placeholder %s to be '%s' but got '%s'",
-				i, tc.input, tc.expect, actual)
+			t.Errorf("Test %d: Expected %s to be '%s' but got '%s'",
+				i, tc.get, tc.expect, actual)
 		}
 	}
 }

@@ -11,8 +11,11 @@ func TestMap(t *testing.T) {
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
+		grace_period  1ns
 	}
 
 	localhost:9080 {
@@ -38,6 +41,8 @@ func TestMapRespondWithDefault(t *testing.T) {
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
 		}
@@ -60,12 +65,22 @@ func TestMapRespondWithDefault(t *testing.T) {
 	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost unknown")
 }
 
-func TestMapAsJson(t *testing.T) {
+func TestMapAsJSON(t *testing.T) {
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		"admin": {
+			"listen": "localhost:2999"
+		},
 		"apps": {
+			"pki": {
+				"certificate_authorities" : {
+				  "local" : {
+					"install_trust": false
+				  }
+				}
+			},
 			"http": {
 				"http_port": 9080,
 				"https_port": 9443,
@@ -85,7 +100,7 @@ func TestMapAsJson(t *testing.T) {
 													{
 														"handler": "map",
 														"source": "{http.request.method}",
-														"destinations": ["dest-name"],
+														"destinations": ["{dest-name}"],
 														"defaults": ["unknown"],
 														"mappings": [
 															{

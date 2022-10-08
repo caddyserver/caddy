@@ -98,6 +98,28 @@ func TestHandler(t *testing.T) {
 				"output": "testing",
 			},
 		},
+		{
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Defaults:     []string{"default"},
+			},
+			expect: map[string]any{
+				"output": "default",
+			},
+		},
+		{
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Defaults:     []string{"{testvar}"},
+			},
+			expect: map[string]any{
+				"output": "testing",
+			},
+		},
 	} {
 		if err := tc.handler.Provision(caddy.Context{}); err != nil {
 			t.Fatalf("Test %d: Provisioning handler: %v", i, err)

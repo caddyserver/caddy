@@ -189,6 +189,14 @@ func init() {
 // {{.RespHeader.Set "Field-Name" "val"}}
 // ```
 //
+// ##### `httpError`
+//
+// Returns an error with the given status code to the HTTP handler chain.
+//
+// ```
+// {{if not (fileExists $includedFile)}}{{httpError 404}}{{end}}
+// ```
+//
 // ##### `splitFrontMatter`
 //
 // Splits front matter out from the body. Front matter is metadata that appears at the very beginning of a file or string. Front matter can be in YAML, TOML, or JSON formats:
@@ -296,7 +304,7 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
 	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
-	customFuncs := make([]template.FuncMap, len(fnModInfos), 0)
+	customFuncs := make([]template.FuncMap, 0, len(fnModInfos))
 	for _, modInfo := range fnModInfos {
 		mod := modInfo.New()
 		fnMod, ok := mod.(CustomFunctions)

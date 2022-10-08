@@ -43,7 +43,7 @@ func (Tailscale) CaddyModule() caddy.ModuleInfo {
 }
 
 func (ts *Tailscale) Provision(ctx caddy.Context) error {
-	ts.logger = ctx.Logger(ts)
+	ts.logger = ctx.Logger()
 	return nil
 }
 
@@ -66,7 +66,9 @@ func (ts Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHell
 	status, err := tscert.GetStatus(ctx)
 	if err != nil {
 		if ts.Optional {
-			return false, nil // ignore error if we don't expect/require it to work anyway
+			// ignore error if we don't expect/require it to work anyway, but log it for debugging
+			ts.logger.Debug("error getting tailscale status", zap.Error(err), zap.String("server_name", hello.ServerName))
+			return false, nil
 		}
 		return false, err
 	}
@@ -80,8 +82,7 @@ func (ts Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHell
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
 //
-//     ... tailscale
-//
+//	... tailscale
 func (Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
@@ -178,8 +179,7 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into ts.
 //
-//     ... http <url>
-//
+//	... http <url>
 func (hcg *HTTPCertGetter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if !d.NextArg() {

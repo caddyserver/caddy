@@ -4,6 +4,7 @@ before:
     # This is so we can run goreleaser on tag without Git complaining of being dirty. The main.go in cmd/caddy directory 
     # cannot be built within that directory due to changes necessary for the build causing Git to be dirty, which
     # subsequently causes gorleaser to refuse running.
+    - rm -rf caddy-build caddy-dist
     - mkdir -p caddy-build
     - cp cmd/caddy/main.go caddy-build/main.go
     - /bin/sh -c 'cd ./caddy-build && go mod init caddy'
@@ -14,7 +15,11 @@ before:
     # run `go mod tidy`. The `/bin/sh -c '...'` is because goreleaser can't find cd in PATH without shell invocation.
     - /bin/sh -c 'cd ./caddy-build && go mod tidy'
     - git clone --depth 1 https://github.com/caddyserver/dist caddy-dist
+    - mkdir -p caddy-dist/man
     - go mod download
+    - go run cmd/caddy/main.go manpage --directory ./caddy-dist/man
+    - gzip -r ./caddy-dist/man/
+    - /bin/sh -c 'go run cmd/caddy/main.go completion bash > ./caddy-dist/scripts/bash-completion'
 
 builds:
 - env:
@@ -58,9 +63,21 @@ builds:
       goarm: "5"
   flags:
   - -trimpath
+  - -mod=readonly
   ldflags:
   - -s -w
-
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: '{{ trimsuffix (trimsuffix .Env.artifact ".zip") ".tar.gz" }}.pem'
+    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${certificate}", "${artifact}"]
+    artifacts: all
+sboms:
+  - artifacts: binary
+    documents:
+    - '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{if .Arm}}v{{ .Arm }}{{end}}.sbom'
+    cmd: syft
+    args: ["$artifact", "--file", "${document}", "--output", "cyclonedx-json"]
 archives:
   - format_overrides:
       - goos: windows
@@ -96,12 +113,15 @@ nfpms:
       - src: ./caddy-dist/welcome/index.html
         dst: /usr/share/caddy/index.html
       
-      - src: ./caddy-dist/scripts/completions/bash-completion
+      - src: ./caddy-dist/scripts/bash-completion
         dst: /etc/bash_completion.d/caddy
     
       - src: ./caddy-dist/config/Caddyfile
         dst: /etc/caddy/Caddyfile
         type: config
+
+      - src: ./caddy-dist/man/*
+        dst: /usr/share/man/man8/
 
     scripts:
       postinstall: ./caddy-dist/scripts/postinstall.sh

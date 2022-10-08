@@ -62,6 +62,9 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 // Provision sets up h.
 func (h *Handler) Provision(_ caddy.Context) error {
 	for j, dest := range h.Destinations {
+		if strings.Count(dest, "{") != 1 || !strings.HasPrefix(dest, "{") {
+			return fmt.Errorf("destination must be a placeholder and only a placeholder")
+		}
 		h.Destinations[j] = strings.Trim(dest, "{}")
 	}
 
@@ -112,6 +115,7 @@ func (h *Handler) Validate() error {
 			return fmt.Errorf("mapping %d has %d outputs but there are %d destinations defined", i, nOut, nDest)
 		}
 	}
+
 	return nil
 }
 
@@ -135,27 +139,28 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 			if output == nil {
 				continue
 			}
+			outputStr := caddy.ToString(output)
+
+			// evaluate regular expression if configured
 			if m.re != nil {
 				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, output.(string), input, matches)
+				result = m.re.ExpandString(result, outputStr, input, matches)
 				return string(result), true
 			}
+
+			// otherwise simple string comparison
 			if input == m.Input {
-				if outputStr, ok := output.(string); ok {
-					// NOTE: if the output has a placeholder that has the same key as the input, this is infinite recursion
-					return repl.ReplaceAll(outputStr, ""), true
-				}
-				return output, true
+				return repl.ReplaceAll(outputStr, ""), true
 			}
 		}
 
 		// fall back to default if no match or if matched nil value
 		if len(h.Defaults) > destIdx {
-			return h.Defaults[destIdx], true
+			return repl.ReplaceAll(h.Defaults[destIdx], ""), true
 		}
 
 		return nil, true

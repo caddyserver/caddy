@@ -101,7 +101,7 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up rewr.
 func (rewr *Rewrite) Provision(ctx caddy.Context) error {
-	rewr.logger = ctx.Logger(rewr)
+	rewr.logger = ctx.Logger()
 
 	for i, rep := range rewr.PathRegexp {
 		if rep.Find == "" {
@@ -383,8 +383,13 @@ func trimPathPrefix(escapedPath, prefix string) string {
 		iPrefix++
 	}
 
-	// found matching prefix, trim it
-	return escapedPath[iPath:]
+	// if we iterated through the entire prefix, we found it, so trim it
+	if iPath >= len(prefix) {
+		return escapedPath[iPath:]
+	}
+
+	// otherwise we did not find the prefix
+	return escapedPath
 }
 
 func reverse(s string) string {

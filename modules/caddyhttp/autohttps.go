@@ -93,6 +93,9 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// https://github.com/caddyserver/caddy/issues/3443)
 	redirDomains := make(map[string][]caddy.NetworkAddress)
 
+	// the log configuration for an HTTPS enabled server
+	var logCfg *ServerLogConfig
+
 	for srvName, srv := range app.Servers {
 		// as a prerequisite, provision route matchers; this is
 		// required for all routes on all servers, and must be
@@ -170,6 +173,13 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		// redirects, which we set up below; hence these two conditions
 		if len(serverDomainSet) == 0 && len(srv.TLSConnPolicies) == 0 {
 			continue
+		}
+
+		// clone the logger so we can apply it to the HTTP server
+		// (not sure if necessary to clone it; but probably safer)
+		// (we choose one log cfg arbitrarily; not sure which is best)
+		if srv.Logs != nil {
+			logCfg = srv.Logs.clone()
 		}
 
 		// for all the hostnames we found, filter them so we have
@@ -368,19 +378,29 @@ redirServersLoop:
 		// we'll create a new server for all the listener addresses
 		// that are unused and serve the remaining redirects from it
 		for _, srv := range app.Servers {
-			if srv.hasListenerAddress(redirServerAddr) {
-				// find the index of the route after the last route with a host
-				// matcher, then insert the redirects there, but before any
-				// user-defined catch-all routes
-				// see https://github.com/caddyserver/caddy/issues/3212
-				insertIndex := srv.findLastRouteWithHostMatcher()
-				srv.Routes = append(srv.Routes[:insertIndex], append(routes, srv.Routes[insertIndex:]...)...)
-
-				// append our catch-all route in case the user didn't define their own
-				srv.Routes = appendCatchAll(srv.Routes)
-
-				continue redirServersLoop
+			// only look at servers which listen on an address which
+			// we want to add redirects to
+			if !srv.hasListenerAddress(redirServerAddr) {
+				continue
 			}
+
+			// find the index of the route after the last route with a host
+			// matcher, then insert the redirects there, but before any
+			// user-defined catch-all routes
+			// see https://github.com/caddyserver/caddy/issues/3212
+			insertIndex := srv.findLastRouteWithHostMatcher()
+
+			// add the redirects at the insert index, except for when
+			// we have a catch-all for HTTPS, in which case the user's
+			// defined catch-all should take precedence. See #4829
+			if len(uniqueDomainsForCerts) != 0 {
+				srv.Routes = append(srv.Routes[:insertIndex], append(routes, srv.Routes[insertIndex:]...)...)
+			}
+
+			// append our catch-all route in case the user didn't define their own
+			srv.Routes = appendCatchAll(srv.Routes)
+
+			continue redirServersLoop
 		}
 
 		// no server with this listener address exists;
@@ -400,6 +420,7 @@ redirServersLoop:
 		app.Servers["remaining_auto_https_redirects"] = &Server{
 			Listen: redirServerAddrsList,
 			Routes: appendCatchAll(redirRoutes),
+			Logs:   logCfg,
 		}
 	}
 

@@ -48,6 +48,10 @@ func (st ServerType) buildTLSApp(
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
 	}
+	autoHTTPS := "on"
+	if ah, ok := options["auto_https"].(string); ok {
+		autoHTTPS = ah
+	}
 
 	// count how many server blocks have a TLS-enabled key with
 	// no host, and find all hosts that share a server block with
@@ -307,6 +311,14 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.RenewCheckInterval = renewCheckInterval
 	}
 
+	// set the OCSP check interval if configured
+	if ocspCheckInterval, ok := options["ocsp_interval"].(caddy.Duration); ok {
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.OCSPCheckInterval = ocspCheckInterval
+	}
+
 	// set whether OCSP stapling should be disabled for manually-managed certificates
 	if ocspConfig, ok := options["ocsp_stapling"].(certmagic.OCSPConfig); ok {
 		tlsApp.DisableOCSPStapling = ocspConfig.DisableStapling
@@ -323,10 +335,12 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	for h := range httpsHostsSharedWithHostlessKey {
-		al = append(al, h)
-		if !certmagic.SubjectQualifiesForPublicCert(h) {
-			internalAP.Subjects = append(internalAP.Subjects, h)
+	if autoHTTPS != "off" {
+		for h := range httpsHostsSharedWithHostlessKey {
+			al = append(al, h)
+			if !certmagic.SubjectQualifiesForPublicCert(h) {
+				internalAP.Subjects = append(internalAP.Subjects, h)
+			}
 		}
 	}
 	if len(al) > 0 {

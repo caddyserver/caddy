@@ -18,12 +18,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
@@ -159,7 +161,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 	}
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
 	app.ctx = ctx
-	app.logger = ctx.Logger(app)
+	app.logger = ctx.Logger()
+
+	eventsAppIface, err := ctx.App("events")
+	if err != nil {
+		return fmt.Errorf("getting events app: %v", err)
+	}
 
 	repl := caddy.NewReplacer()
 
@@ -172,9 +179,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 	}
 
 	// prepare each server
+	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
+		ctx.Context = context.WithValue(oldContext, ServerCtxKey, srv)
 		srv.name = srvName
 		srv.tlsApp = app.tlsApp
+		srv.events = eventsAppIface.(*caddyevents.App)
+		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
@@ -255,7 +266,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			err := srv.Routes.ProvisionHandlers(ctx)
+			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
@@ -285,7 +296,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.IdleTimeout = defaultIdleTimeout
 		}
 	}
-
+	ctx.Context = oldContext
 	return nil
 }
 
@@ -357,6 +368,7 @@ func (app *App) Start() error {
 		// this TLS config is used by the std lib to choose the actual TLS config for connections
 		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
+		srv.configureServer(srv.server)
 
 		// enable H2C if configured
 		if srv.protocol("h2c") {
@@ -380,10 +392,11 @@ func (app *App) Start() error {
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				// create the listener for this socket
 				hostport := listenAddr.JoinHostPort(portOffset)
-				ln, err := caddy.Listen(listenAddr.Network, hostport)
+				lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
 				if err != nil {
-					return fmt.Errorf("%s: listening on %s: %v", listenAddr.Network, hostport, err)
+					return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 				}
+				ln := lnAny.(net.Listener)
 
 				// wrap listener before TLS (up to the TLS placeholder wrapper)
 				var lnWrapperIdx int
@@ -403,9 +416,26 @@ func (app *App) Start() error {
 
 					// enable HTTP/3 if configured
 					if srv.protocol("h3") {
-						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-						if err := srv.serveHTTP3(hostport, tlsCfg); err != nil {
-							return err
+						// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
+						// a different transport mechanism... which is fine, but the OS doesn't
+						// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
+						// are still one file on the system. So even though "unixpacket" and
+						// "unixgram" are different network types just as "tcp" and "udp" are,
+						// the OS will not let us use the same file as both STREAM and DGRAM.
+						if len(srv.Protocols) > 1 && listenAddr.IsUnixNetwork() {
+							app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
+								zap.String("file", hostport))
+							for i := range srv.Protocols {
+								if srv.Protocols[i] == "h3" {
+									srv.Protocols = append(srv.Protocols[:i], srv.Protocols[i+1:]...)
+									break
+								}
+							}
+						} else {
+							app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+							if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
+								return err
+							}
 						}
 					}
 				}
@@ -417,11 +447,10 @@ func (app *App) Start() error {
 
 				// if binding to port 0, the OS chooses a port for us;
 				// but the user won't know the port unless we print it
-				if listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+				if !listenAddr.IsUnixNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
 					app.logger.Info("port 0 listener",
 						zap.String("input_address", lnAddr),
-						zap.String("actual_address", ln.Addr().String()),
-					)
+						zap.String("actual_address", ln.Addr().String()))
 				}
 
 				app.logger.Debug("starting server loop",
@@ -498,22 +527,56 @@ func (app *App) Stop() error {
 		app.logger.Debug("servers shutting down with eternal grace period")
 	}
 
-	// shut down servers
-	for _, server := range app.Servers {
+	// goroutines aren't guaranteed to be scheduled right away,
+	// so we'll use one WaitGroup to wait for all the goroutines
+	// to start their server shutdowns, and another to wait for
+	// them to finish; we'll always block for them to start so
+	// that when we return the caller can be confident* that the
+	// old servers are no longer accepting new connections
+	// (* the scheduler might still pause them right before
+	// calling Shutdown(), but it's unlikely)
+	var startedShutdown, finishedShutdown sync.WaitGroup
+
+	// these will run in goroutines
+	stopServer := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
+	}
+	stopH3Server := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
 
-		if server.h3server != nil {
-			// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
-			if err := server.h3server.Close(); err != nil {
-				app.logger.Error("HTTP/3 server shutdown",
+		if server.h3server == nil {
+			return
+		}
+
+		// TODO: we have to manually close our listeners because quic-go won't
+		// close listeners it didn't create along with the server itself...
+		// see https://github.com/lucas-clemente/quic-go/issues/3560
+		for _, el := range server.h3listeners {
+			if err := el.Close(); err != nil {
+				app.logger.Error("HTTP/3 listener close",
 					zap.Error(err),
-					zap.Strings("addresses", server.Listen))
+					zap.String("address", el.LocalAddr().String()))
 			}
 		}
+
+		// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		if err := server.h3server.Close(); err != nil {
+			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+	}
+	stopH2chandler := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
 
 		if server.h2chandler != nil {
 			if err := server.h2chandler.Shutdown(ctx); err != nil {
@@ -522,6 +585,29 @@ func (app *App) Stop() error {
 					zap.Strings("addresses", server.Listen))
 			}
 		}
+	}
+
+	for _, server := range app.Servers {
+		startedShutdown.Add(3)
+		finishedShutdown.Add(3)
+		go stopServer(server)
+		go stopH3Server(server)
+		go stopH2chandler(server)
+	}
+
+	// block until all the goroutines have been run by the scheduler;
+	// this means that they have likely called Shutdown() by now
+	startedShutdown.Wait()
+
+	// if the process is exiting, we need to block here and wait
+	// for the grace periods to complete, otherwise the process will
+	// terminate before the servers are finished shutting down; but
+	// we don't really need to wait for the grace period to finish
+	// if the process isn't exiting (but note that frequent config
+	// reloads with long grace periods for a sustained length of time
+	// may deplete resources)
+	if caddy.Exiting() {
+		finishedShutdown.Wait()
 	}
 
 	return nil

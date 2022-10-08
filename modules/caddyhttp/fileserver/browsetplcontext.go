@@ -65,7 +65,7 @@ func (fsrv *FileServer) directoryListing(entries []fs.DirEntry, canGoUp bool, ro
 		fileIsSymlink := isSymlink(info)
 		if fileIsSymlink {
 			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			fileInfo, err := fsrv.fileSystem.Stat(path)
+			fileInfo, err := fs.Stat(fsrv.fileSystem, path)
 			if err == nil {
 				size = fileInfo.Size()
 			}

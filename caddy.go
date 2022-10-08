@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/notify"
@@ -102,20 +103,32 @@ func Run(cfg *Config) error {
 // if it is different from the current config or
 // forceReload is true.
 func Load(cfgJSON []byte, forceReload bool) error {
-	if err := notify.NotifyReloading(); err != nil {
-		Log().Error("unable to notify reloading to service manager", zap.Error(err))
+	if err := notify.Reloading(); err != nil {
+		Log().Error("unable to notify service manager of reloading state", zap.Error(err))
 	}
 
+	// after reload, notify system of success or, if
+	// failure, update with status (error message)
+	var err error
 	defer func() {
-		if err := notify.NotifyReadiness(); err != nil {
-			Log().Error("unable to notify readiness to service manager", zap.Error(err))
+		if err != nil {
+			if notifyErr := notify.Error(err, 0); notifyErr != nil {
+				Log().Error("unable to notify to service manager of reload error",
+					zap.Error(notifyErr),
+					zap.String("reload_err", err.Error()))
+			}
+			return
+		}
+		if err := notify.Ready(); err != nil {
+			Log().Error("unable to notify to service manager of ready state", zap.Error(err))
 		}
 	}()
 
-	err := changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
+	err = changeConfig(http.MethodPost, "/"+rawConfigKey, cfgJSON, "", forceReload)
 	if errors.Is(err, errSameConfig) {
 		err = nil // not really an error
 	}
+
 	return err
 }
 
@@ -664,6 +677,14 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
+	// let the rest of the program know we're quitting
+	atomic.StoreInt32(exiting, 1)
+
+	// give the OS or service/process manager our 2 weeks' notice: we quit
+	if err := notify.Stopping(); err != nil {
+		Log().Error("unable to notify service manager of stopping state", zap.Error(err))
+	}
+
 	if logger == nil {
 		logger = Log()
 	}
@@ -723,6 +744,12 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	}()
 }
 
+var exiting = new(int32) // accessed atomically
+
+// Exiting returns true if the process is exiting.
+// EXPERIMENTAL API: subject to change or removal.
+func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
+
 // Duration can be an integer or a string. An integer is
 // interpreted as nanoseconds. If a string, it is a Go
 // time.Duration value such as `300ms`, `1.5h`, or `2h45m`;
@@ -747,8 +774,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // ParseDuration parses a duration string, adding
 // support for the "d" unit meaning number of days,
-// where a day is assumed to be 24h.
+// where a day is assumed to be 24h. The maximum
+// input string length is 1024.
 func ParseDuration(s string) (time.Duration, error) {
+	if len(s) > 1024 {
+		return 0, fmt.Errorf("parsing duration: input string too long")
+	}
 	var inNumber bool
 	var numStart int
 	for i := 0; i < len(s); i++ {
@@ -793,6 +824,20 @@ func InstanceID() (uuid.UUID, error) {
 	return uuid.ParseBytes(uuidFileBytes)
 }
 
+// CustomVersion is an optional string that overrides Caddy's
+// reported version. It can be helpful when downstream packagers
+// need to manually set Caddy's version. If no other version
+// information is available, the short form version (see
+// Version()) will be set to CustomVersion, and the full version
+// will include CustomVersion at the beginning.
+//
+// Set this variable during `go build` with `-ldflags`:
+//
+//	-ldflags '-X github.com/caddyserver/caddy/v2.CustomVersion=v2.6.2'
+//
+// for example.
+var CustomVersion string
+
 // Version returns the Caddy version in a simple/short form, and
 // a full version string. The short form will not have spaces and
 // is intended for User-Agent strings and similar, but may be
@@ -802,8 +847,10 @@ func InstanceID() (uuid.UUID, error) {
 // build info provided by go.mod dependencies; then it tries to
 // get info from embedded VCS information, which requires having
 // built Caddy from a git repository. If no version is available,
-// this function returns "(devel)" becaise Go uses that, but for
-// the simple form we change it to "unknown".
+// this function returns "(devel)" because Go uses that, but for
+// the simple form we change it to "unknown". If still no version
+// is available (e.g. no VCS repo), then it will use CustomVersion;
+// CustomVersion is always prepended to the full version string.
 //
 // See relevant Go issues: https://github.com/golang/go/issues/29228
 // and https://github.com/golang/go/issues/50603.
@@ -879,8 +926,22 @@ func Version() (simple, full string) {
 		}
 	}
 
+	if full == "" {
+		if CustomVersion != "" {
+			full = CustomVersion
+		} else {
+			full = "unknown"
+		}
+	} else if CustomVersion != "" {
+		full = CustomVersion + " " + full
+	}
+
 	if simple == "" || simple == "(devel)" {
-		simple = "unknown"
+		if CustomVersion != "" {
+			simple = CustomVersion
+		} else {
+			simple = "unknown"
+		}
 	}
 
 	return

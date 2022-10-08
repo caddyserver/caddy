@@ -37,6 +37,7 @@ func init() {
 	RegisterGlobalOption("storage", parseOptStorage)
 	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
 	RegisterGlobalOption("renew_interval", parseOptDuration)
+	RegisterGlobalOption("ocsp_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
 	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
@@ -420,13 +421,13 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 
 // parseLogOptions parses the global log option. Syntax:
 //
-//     log [name] {
-//         output  <writer_module> ...
-//         format  <encoder_module> ...
-//         level   <level>
-//         include <namespaces...>
-//         exclude <namespaces...>
-//     }
+//	log [name] {
+//	    output  <writer_module> ...
+//	    format  <encoder_module> ...
+//	    level   <level>
+//	    include <namespaces...>
+//	    exclude <namespaces...>
+//	}
 //
 // When the name argument is unspecified, this directive modifies the default
 // logger.
