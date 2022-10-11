@@ -909,8 +909,8 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 
 	// No need to wrap the handlers in a subroute if this is the only server block
 	// and there is no matcher for it (doing so would produce unnecessarily nested
-	// JSON), *unless* there is a host matcher in this site block; if so, then we
-	// still need to wrap in a subroute because otherwise the host matcher from
+	// JSON), *unless* there is a host matcher within this site block; if so, then
+	// we still need to wrap in a subroute because otherwise the host matcher from
 	// the inside of the site block would be a top-level host matcher, which is
 	// subject to auto-HTTPS (cert management), and using a host matcher within
 	// a site block is a valid, common pattern for excluding domains from cert
@@ -929,7 +929,7 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 				}
 			}
 		}
-		wrapInSubroute = !hasHostMatcher
+		wrapInSubroute = hasHostMatcher
 	}
 
 	if wrapInSubroute {

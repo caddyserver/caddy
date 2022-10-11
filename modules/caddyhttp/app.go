@@ -66,7 +66,7 @@ func init() {
 // `{http.request.orig_uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
-// `{http.request.remote.host}` | The host part of the remote client's address
+// `{http.request.remote.host}` | The host (IP) part of the remote client's address
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme
