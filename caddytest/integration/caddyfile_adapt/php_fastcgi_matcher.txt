@@ -1,7 +1,12 @@
 :8884
 
-@api host example.com
-php_fastcgi @api localhost:9000
+# the use of a host matcher here should cause this
+# site block to be wrapped in a subroute, even though
+# the site block does not have a hostname; this is
+# to prevent auto-HTTPS from picking up on this host
+# matcher because it is not a key on the site block
+@test host example.com
+php_fastcgi @test localhost:9000
 ----------
 {
 	"apps": {
@@ -13,13 +18,6 @@ php_fastcgi @api localhost:9000
 					],
 					"routes": [
 						{
-							"match": [
-								{
-									"host": [
-										"example.com"
-									]
-								}
-							],
 							"handle": [
 								{
 									"handler": "subroute",
@@ -27,82 +25,99 @@ php_fastcgi @api localhost:9000
 										{
 											"handle": [
 												{
-													"handler": "static_response",
-													"headers": {
-														"Location": [
-															"{http.request.orig_uri.path}/"
-														]
-													},
-													"status_code": 308
-												}
-											],
-											"match": [
-												{
-													"file": {
-														"try_files": [
-															"{http.request.uri.path}/index.php"
-														]
-													},
-													"not": [
+													"handler": "subroute",
+													"routes": [
 														{
-															"path": [
-																"*/"
+															"handle": [
+																{
+																	"handler": "static_response",
+																	"headers": {
+																		"Location": [
+																			"{http.request.orig_uri.path}/"
+																		]
+																	},
+																	"status_code": 308
+																}
+															],
+															"match": [
+																{
+																	"file": {
+																		"try_files": [
+																			"{http.request.uri.path}/index.php"
+																		]
+																	},
+																	"not": [
+																		{
+																			"path": [
+																				"*/"
+																			]
+																		}
+																	]
+																}
+															]
+														},
+														{
+															"handle": [
+																{
+																	"handler": "rewrite",
+																	"uri": "{http.matchers.file.relative}"
+																}
+															],
+															"match": [
+																{
+																	"file": {
+																		"split_path": [
+																			".php"
+																		],
+																		"try_files": [
+																			"{http.request.uri.path}",
+																			"{http.request.uri.path}/index.php",
+																			"index.php"
+																		]
+																	}
+																}
+															]
+														},
+														{
+															"handle": [
+																{
+																	"handler": "reverse_proxy",
+																	"transport": {
+																		"protocol": "fastcgi",
+																		"split_path": [
+																			".php"
+																		]
+																	},
+																	"upstreams": [
+																		{
+																			"dial": "localhost:9000"
+																		}
+																	]
+																}
+															],
+															"match": [
+																{
+																	"path": [
+																		"*.php"
+																	]
+																}
 															]
 														}
 													]
 												}
-											]
-										},
-										{
-											"handle": [
-												{
-													"handler": "rewrite",
-													"uri": "{http.matchers.file.relative}"
-												}
 											],
 											"match": [
 												{
-													"file": {
-														"split_path": [
-															".php"
-														],
-														"try_files": [
-															"{http.request.uri.path}",
-															"{http.request.uri.path}/index.php",
-															"index.php"
-														]
-													}
-												}
-											]
-										},
-										{
-											"handle": [
-												{
-													"handler": "reverse_proxy",
-													"transport": {
-														"protocol": "fastcgi",
-														"split_path": [
-															".php"
-														]
-													},
-													"upstreams": [
-														{
-															"dial": "localhost:9000"
-														}
-													]
-												}
-											],
-											"match": [
-												{
-													"path": [
-														"*.php"
+													"host": [
+														"example.com"
 													]
 												}
 											]
 										}
 									]
 								}
-							]
+							],
+							"terminal": true
 						}
 					]
 				}
