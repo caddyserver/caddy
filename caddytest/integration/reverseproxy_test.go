@@ -436,8 +436,8 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	
 			health_uri /health
 			health_port 2021
-			health_interval 2s
-			health_timeout 5s
+			health_interval 10ms
+			health_timeout 100ms
 		}
 	}
   `, "caddyfile")

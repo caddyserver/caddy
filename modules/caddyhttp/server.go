@@ -500,14 +500,12 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	switch addr.Network {
 	case "unix":
 		addr.Network = "unixgram"
-	case "tcp":
-		addr.Network = "udp"
 	case "tcp4":
 		addr.Network = "udp4"
 	case "tcp6":
 		addr.Network = "udp6"
 	default:
-		return fmt.Errorf("unsure what network to use for HTTP/3 given network type: %s", addr.Network)
+		addr.Network = "udp" // TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
 	}
 
 	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
