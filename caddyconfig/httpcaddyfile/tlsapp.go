@@ -44,41 +44,32 @@ func (st ServerType) buildTLSApp(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
-	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
-	if hsp, ok := options["https_port"].(int); ok {
-		httpsPort = strconv.Itoa(hsp)
-	}
 	autoHTTPS := "on"
 	if ah, ok := options["auto_https"].(string); ok {
 		autoHTTPS = ah
 	}
 
-	// count how many server blocks have a TLS-enabled key with
-	// no host, and find all hosts that share a server block with
-	// a hostless key, so that they don't get forgotten/omitted
-	// by auto-HTTPS (since they won't appear in route matchers)
-	var serverBlocksWithTLSHostlessKey int
+	// find all hosts that share a server block with a hostless
+	// key, so that they don't get forgotten/omitted by auto-HTTPS
+	// (since they won't appear in route matchers)
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	for _, pair := range pairings {
-		for _, sb := range pair.serverBlocks {
-			for _, addr := range sb.keys {
-				if addr.Host == "" {
-					// this address has no hostname, but if it's explicitly set
-					// to HTTPS, then we need to count it as being TLS-enabled
-					if addr.Scheme == "https" || addr.Port == httpsPort {
-						serverBlocksWithTLSHostlessKey++
-					}
-					// this server block has a hostless key, now
-					// go through and add all the hosts to the set
-					for _, otherAddr := range sb.keys {
-						if otherAddr.Original == addr.Original {
-							continue
+	if autoHTTPS != "off" {
+		for _, pair := range pairings {
+			for _, sb := range pair.serverBlocks {
+				for _, addr := range sb.keys {
+					if addr.Host == "" {
+						// this server block has a hostless key, now
+						// go through and add all the hosts to the set
+						for _, otherAddr := range sb.keys {
+							if otherAddr.Original == addr.Original {
+								continue
+							}
+							if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+								httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+							}
 						}
-						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
-							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
-						}
+						break
 					}
-					break
 				}
 			}
 		}
@@ -138,6 +129,19 @@ func (st ServerType) buildTLSApp(
 					issuers = append(issuers, issuerVal.Value.(certmagic.Issuer))
 				}
 				if ap == catchAllAP && !reflect.DeepEqual(ap.Issuers, issuers) {
+					// this more correctly implements an error check that was removed
+					// below; try it with this config:
+					//
+					// :443 {
+					// 	bind 127.0.0.1
+					// }
+					//
+					// :443 {
+					// 	bind ::1
+					// 	tls {
+					// 		issuer acme
+					// 	}
+					// }
 					return nil, warnings, fmt.Errorf("automation policy from site block is also default/catch-all policy because of key without hostname, and the two are in conflict: %#v != %#v", ap.Issuers, issuers)
 				}
 				ap.Issuers = issuers
@@ -180,29 +184,25 @@ func (st ServerType) buildTLSApp(
 				}
 			}
 
-			// first make sure this block is allowed to create an automation policy;
-			// doing so is forbidden if it has a key with no host (i.e. ":443")
+			// we used to ensure this block is allowed to create an automation policy;
+			// doing so was forbidden if it has a key with no host (i.e. ":443")
 			// and if there is a different server block that also has a key with no
 			// host -- since a key with no host matches any host, we need its
 			// associated automation policy to have an empty Subjects list, i.e. no
 			// host filter, which is indistinguishable between the two server blocks
 			// because automation is not done in the context of a particular server...
 			// this is an example of a poor mapping from Caddyfile to JSON but that's
-			// the least-leaky abstraction I could figure out
-			if len(sblockHosts) == 0 {
-				if serverBlocksWithTLSHostlessKey > 1 {
-					// this server block and at least one other has a key with no host,
-					// making the two indistinguishable; it is misleading to define such
-					// a policy within one server block since it actually will apply to
-					// others as well
-					return nil, warnings, fmt.Errorf("cannot make a TLS automation policy from a server block that has a host-less address when there are other TLS-enabled server block addresses lacking a host")
-				}
-				if catchAllAP == nil {
-					// this server block has a key with no hosts, but there is not yet
-					// a catch-all automation policy (probably because no global options
-					// were set), so this one becomes it
-					catchAllAP = ap
-				}
+			// the least-leaky abstraction I could figure out -- however, this check
+			// was preventing certain listeners, like those provided by plugins, from
+			// being used as desired (see the Tailscale listener plugin), so I removed
+			// the check: and I think since I originally wrote the check I added a new
+			// check above which *properly* detects this ambiguity without breaking the
+			// listener plugin; see the check above with a commented example config
+			if len(sblockHosts) == 0 && catchAllAP == nil {
+				// this server block has a key with no hosts, but there is not yet
+				// a catch-all automation policy (probably because no global options
+				// were set), so this one becomes it
+				catchAllAP = ap
 			}
 
 			// associate our new automation policy with this server block's hosts
