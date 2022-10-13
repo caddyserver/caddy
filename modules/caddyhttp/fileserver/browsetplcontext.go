@@ -92,9 +92,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			Mode:      info.Mode(),
 		})
 	}
-	name, _ := url.PathUnescape(urlPath)
+	name := unescapeSlash(path.Base(urlPath))
 	return browseTemplateContext{
-		Name:     path.Base(name),
+		Name:     name,
 		Path:     urlPath,
 		CanGoUp:  canGoUp,
 		Items:    fileInfos,
@@ -157,12 +157,20 @@ func (l browseTemplateContext) Breadcrumbs() []crumb {
 		// the directory name could include an encoded slash in its path,
 		// so the item name should be unescaped in the loop rather than unescaping the
 		// entire path outside the loop.
-		p, _ = url.PathUnescape(p)
+		p = unescapeSlash(p)
 		lnk := strings.Repeat("../", len(parts)-i-1)
 		result[i] = crumb{Link: lnk, Text: p}
 	}
 
 	return result
+}
+
+func unescapeSlash(s string) string {
+	// url.PathUnescape can't handle all uses of % symbol
+	// because it is used to encode special chars in URLs.
+	// "a % b" is valid folder name, but an invalid percent-encoding.
+	s = strings.ReplaceAll(s, "%2F", "/")
+	return strings.ReplaceAll(s, "%2f", "/")
 }
 
 func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {

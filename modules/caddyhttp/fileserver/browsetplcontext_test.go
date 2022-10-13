@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"context"
 	"testing"
 )
 
@@ -49,6 +50,16 @@ func TestBreadcrumbs(t *testing.T) {
 			{Link: "../", Text: "/"},
 			{Link: "", Text: "مجلد/1"},
 		}},
+		{"with %2f encoded %2F/slashes/not % 2F encoded", []crumb{
+			{Link: "../../", Text: "with / encoded /"},
+			{Link: "../", Text: "slashes"},
+			{Link: "", Text: "not % 2F encoded"},
+		}},
+		{"folder/with % sign/sub", []crumb{
+			{Link: "../../", Text: "folder"},
+			{Link: "../", Text: "with % sign"},
+			{Link: "", Text: "sub"},
+		}},
 	}
 
 	for _, d := range testdata {
@@ -63,5 +74,46 @@ func TestBreadcrumbs(t *testing.T) {
 				t.Errorf("got %#v but expected %#v at index %d", c, d.expected[i], i)
 			}
 		}
+	}
+}
+
+func TestFileServer_directoryListing(t *testing.T) {
+	tests := []struct {
+		name         string
+		urlPath      string
+		expectedName string
+	}{
+		{
+			name:         "dir with percent sign",
+			urlPath:      "/path/with%percent",
+			expectedName: "with%percent",
+		},
+		{
+			name:         "percent-encoded slash",
+			urlPath:      "/path/with%2Fslash",
+			expectedName: "with/slash",
+		},
+		{
+			name:         "other percent-encoded chars",
+			urlPath:      "/path/with%20space",
+			expectedName: "with%20space",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsrv := FileServer{}
+			bCtx := fsrv.directoryListing(
+				context.Background(),
+				nil,
+				false,
+				"/path/to/root",
+				tt.urlPath,
+				nil,
+			)
+			actual := bCtx.Name
+			if actual != tt.expectedName {
+				t.Errorf("got %+v but expected %+v", actual, tt.expectedName)
+			}
+		})
 	}
 }
