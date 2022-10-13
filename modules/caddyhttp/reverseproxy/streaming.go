@@ -73,27 +73,24 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	}()
 	defer close(backConnCloseCh)
 
+	// write header first, response headers should not be counted in size
+	// like the rest of handler chain.
+	copyHeader(rw.Header(), res.Header)
+	rw.WriteHeader(res.StatusCode)
+
 	logger.Debug("upgrading connection")
 	conn, brw, err := hj.Hijack()
 	if err != nil {
 		h.logger.Error("hijack failed on protocol switch", zap.Error(err))
 		return
 	}
-	defer conn.Close()
 
 	start := time.Now()
 	defer func() {
+		conn.Close()
 		logger.Debug("connection closed", zap.Duration("duration", time.Since(start)))
 	}()
 
-	copyHeader(rw.Header(), res.Header)
-
-	res.Header = rw.Header()
-	res.Body = nil // so res.Write only writes the headers; we have res.Body in backConn above
-	if err := res.Write(brw); err != nil {
-		h.logger.Debug("response write", zap.Error(err))
-		return
-	}
 	if err := brw.Flush(); err != nil {
 		h.logger.Debug("response flush", zap.Error(err))
 		return

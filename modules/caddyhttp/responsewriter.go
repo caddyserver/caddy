@@ -211,11 +211,7 @@ func (rr *responseRecorder) ReadFrom(r io.Reader) (int64, error) {
 	var n int64
 	var err error
 	if rr.stream {
-		if rf, ok := rr.ResponseWriter.(io.ReaderFrom); ok {
-			n, err = rf.ReadFrom(r)
-		} else {
-			n, err = io.Copy(rr.ResponseWriter, r)
-		}
+		n, err = rr.ResponseWriterWrapper.ReadFrom(r)
 	} else {
 		n, err = rr.buf.ReadFrom(r)
 	}
@@ -258,6 +254,32 @@ func (rr *responseRecorder) WriteResponse() error {
 	rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)
 	return err
+}
+
+func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, brw, err := rr.ResponseWriterWrapper.Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	return &hijackedConn{conn, rr}, brw, nil
+}
+
+// used to track the size of hijacked response writers
+type hijackedConn struct {
+	net.Conn
+	rr *responseRecorder
+}
+
+func (hc *hijackedConn) Write(p []byte) (int, error) {
+	n, err := hc.Conn.Write(p)
+	hc.rr.size += n
+	return n, err
+}
+
+func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
+	n, err := io.Copy(hc.Conn, r)
+	hc.rr.size += int(n)
+	return n, err
 }
 
 // ResponseRecorder is a http.ResponseWriter that records
