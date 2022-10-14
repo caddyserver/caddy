@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -230,6 +231,11 @@ func StatusCodeMatches(actual, configured int) bool {
 func SanitizedPathJoin(root, reqPath string) string {
 	if root == "" {
 		root = "."
+	}
+
+	// windows ignores trailing dots and spaces (sigh...)
+	if runtime.GOOS == "windows" {
+		reqPath = strings.TrimRight(reqPath, ". ")
 	}
 
 	path := filepath.Join(root, filepath.Clean("/"+reqPath))
