@@ -94,9 +94,11 @@ func TestSanitizedPathJoin(t *testing.T) {
 			t.Fatalf("Test %d: invalid URL: %v", i, err)
 		}
 		actual := SanitizedPathJoin(tc.inputRoot, u.Path)
-		if runtime.GOOS == "windows" && tc.expectWin != "" && actual != tc.expectWin {
-			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s')",
-				i, tc.inputRoot, tc.inputPath, actual, tc.expectWin)
+		if runtime.GOOS == "windows" && tc.expectWin != "" {
+			if actual != tc.expectWin {
+				t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s') (Windows-only)",
+					i, tc.inputRoot, tc.inputPath, actual, tc.expectWin)
+			}
 		} else if actual != tc.expect {
 			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s')",
 				i, tc.inputRoot, tc.inputPath, actual, tc.expect)
