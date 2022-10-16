@@ -268,7 +268,6 @@ func init() {
 // {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
 // {{humanize "time:2006-Jan-02" "2022-May-05"}}
 // ```
-
 type Templates struct {
 	// The root path from which to load files. Required if template functions
 	// accessing the file system are used (such as include). Default is
