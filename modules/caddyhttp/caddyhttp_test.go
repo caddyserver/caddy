@@ -3,7 +3,6 @@ package caddyhttp
 import (
 	"net/url"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -16,7 +15,6 @@ func TestSanitizedPathJoin(t *testing.T) {
 		inputRoot string
 		inputPath string
 		expect    string
-		expectWin string
 	}{
 		{
 			inputPath: "",
@@ -81,7 +79,6 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputRoot: "C:\\www",
 			inputPath: "/file.txt . ..",
 			expect:    "C:\\www/file.txt . ..",
-			expectWin: "C:\\www\\file.txt",
 		},
 	} {
 		// we don't *need* to use an actual parsed URL, but it
@@ -94,12 +91,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 			t.Fatalf("Test %d: invalid URL: %v", i, err)
 		}
 		actual := SanitizedPathJoin(tc.inputRoot, u.Path)
-		if runtime.GOOS == "windows" && tc.expectWin != "" {
-			if actual != tc.expectWin {
-				t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s') (Windows-only)",
-					i, tc.inputRoot, tc.inputPath, actual, tc.expectWin)
-			}
-		} else if actual != tc.expect {
+		if actual != tc.expect {
 			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s')",
 				i, tc.inputRoot, tc.inputPath, actual, tc.expect)
 		}
