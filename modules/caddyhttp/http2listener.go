@@ -45,9 +45,11 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 
 func (h *http2Listener) serveHttp2(csc connectionStateConn) {
 	atomic.AddUint64(&h.cnt, 1)
+	h.runHook(csc, http.StateNew)
 	defer func() {
 		csc.Close()
 		atomic.AddUint64(&h.cnt, ^uint64(0))
+		h.runHook(csc, http.StateClosed)
 	}()
 	h.h2server.ServeConn(csc, &http2.ServeConnOpts{
 		Context:    h.server.ConnContext(context.Background(), csc),
@@ -83,5 +85,11 @@ func (h *http2Listener) Shutdown(ctx context.Context) error {
 		case <-timer.C:
 			timer.Reset(nextPollInterval())
 		}
+	}
+}
+
+func (h *http2Listener) runHook(conn net.Conn, state http.ConnState) {
+	if h.server.ConnState != nil {
+		h.server.ConnState(conn, state)
 	}
 }
