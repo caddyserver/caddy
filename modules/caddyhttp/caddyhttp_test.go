@@ -75,11 +75,6 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputPath: "/D:\\foo\\bar",
 			expect:    filepath.Join("C:\\www", "D:\\foo\\bar"),
 		},
-		{
-			inputRoot: "C:\\www",
-			inputPath: "/file.txt . ..",
-			expect:    "C:\\www/file.txt . ..",
-		},
 	} {
 		// we don't *need* to use an actual parsed URL, but it
 		// adds some authenticity to the tests since real-world
