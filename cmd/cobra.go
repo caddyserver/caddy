@@ -101,7 +101,7 @@ const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
 
 func init() {
-	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter)
+	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
 }
 
 func caddyCmdToCoral(caddyCmd Command) *cobra.Command {
