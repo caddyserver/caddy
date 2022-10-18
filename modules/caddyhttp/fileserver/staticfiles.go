@@ -235,7 +235,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	if runtime.GOOS == "windows" {
 		// reject paths with Alternate Data Streams (ADS)
-		if (strings.Contains(r.URL.Path, ":") && strings.Contains(r.URL.Path, ".")) || strings.Contains(r.URL.Path, ":$") {
+		if strings.Contains(r.URL.Path, ":") {
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
 		}
 		// reject paths with "8.3" short names
