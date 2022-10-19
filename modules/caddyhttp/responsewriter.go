@@ -261,7 +261,10 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return &hijackedConn{conn, rr}, brw, nil
+	// Per http documentation, returned bufio.Writer is empty, but bufio.Read maybe not
+	conn = &hijackedConn{conn, rr}
+	brw.Writer.Reset(conn)
+	return conn, brw, nil
 }
 
 // used to track the size of hijacked response writers
