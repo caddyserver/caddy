@@ -11,6 +11,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Metrics configures metrics observations.
+// EXPERIMENTAL and subject to change or removal.
+type Metrics struct{}
+
 var httpMetrics = struct {
 	init             sync.Once
 	requestInFlight  *prometheus.GaugeVec

@@ -27,10 +27,10 @@ func init() {
 
 // parseCaddyfile sets up the map handler from Caddyfile tokens. Syntax:
 //
-//     map [<matcher>] <source> <destinations...> {
-//         [~]<input> <outputs...>
-//         default    <defaults...>
-//     }
+//	map [<matcher>] <source> <destinations...> {
+//	    [~]<input> <outputs...>
+//	    default    <defaults...>
+//	}
 //
 // If the input value is prefixed with a tilde (~), then the input will be parsed as a
 // regular expression.
@@ -76,7 +76,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				continue
 			}
 
-			// every other line maps one input to one or more outputs
+			// every line maps an input value to one or more outputs
 			in := h.Val()
 			var outs []any
 			for h.NextArg() {

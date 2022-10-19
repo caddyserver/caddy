@@ -45,7 +45,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // used in the Accept-Encoding request headers.
 func (Zstd) AcceptEncoding() string { return "zstd" }
 
-// NewEncoder returns a new gzip writer.
+// NewEncoder returns a new Zstandard writer.
 func (z Zstd) NewEncoder() encode.Encoder {
 	// The default of 8MB for the window is
 	// too large for many clients, so we limit

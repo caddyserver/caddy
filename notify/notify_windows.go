@@ -24,7 +24,7 @@ func SetGlobalStatus(status chan<- svc.Status) {
 	globalStatus = status
 }
 
-func notifyReadiness() error {
+func Ready() error {
 	if globalStatus != nil {
 		globalStatus <- svc.Status{
 			State:   svc.Running,
@@ -34,16 +34,22 @@ func notifyReadiness() error {
 	return nil
 }
 
-func notifyReloading() error {
+func Reloading() error {
 	if globalStatus != nil {
 		globalStatus <- svc.Status{State: svc.StartPending}
 	}
 	return nil
 }
 
-func notifyStopping() error {
+func Stopping() error {
 	if globalStatus != nil {
 		globalStatus <- svc.Status{State: svc.StopPending}
 	}
 	return nil
 }
+
+// TODO: not implemented
+func Status(_ string) error { return nil }
+
+// TODO: not implemented
+func Error(_ error, _ int) error { return nil }

@@ -156,17 +156,18 @@ jobs:
           short_sha=$(git rev-parse --short HEAD)
 
           # The environment is fresh, so there's no point in keeping accepting and adding the key.
-          rsync -arz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --progress --delete --exclude '.git' . caddy-ci@ci-s390x.caddyserver.com:/var/tmp/"$short_sha"
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t caddy-ci@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -v ./..."
+          rsync -arz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --progress --delete --exclude '.git' . "$CI_USER"@ci-s390x.caddyserver.com:/var/tmp/"$short_sha"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t "$CI_USER"@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -v ./..."
           test_result=$?
 
           # There's no need leaving the files around
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null caddy-ci@ci-s390x.caddyserver.com "rm -rf /var/tmp/'$short_sha'"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$CI_USER"@ci-s390x.caddyserver.com "rm -rf /var/tmp/'$short_sha'"
 
           echo "Test exit code: $test_result"
           exit $test_result
         env:
           SSH_KEY: ${{ secrets.S390X_SSH_KEY }}
+          CI_USER: ${{ secrets.CI_USER }}
 
   goreleaser-check:
     runs-on: ubuntu-latest

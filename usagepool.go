@@ -25,15 +25,15 @@ import (
 // only inserted if they do not already exist. There
 // are two ways to add values to the pool:
 //
-//     1) LoadOrStore will increment usage and store the
-//        value immediately if it does not already exist.
-//     2) LoadOrNew will atomically check for existence
-//        and construct the value immediately if it does
-//        not already exist, or increment the usage
-//        otherwise, then store that value in the pool.
-//        When the constructed value is finally deleted
-//        from the pool (when its usage reaches 0), it
-//        will be cleaned up by calling Destruct().
+//  1. LoadOrStore will increment usage and store the
+//     value immediately if it does not already exist.
+//  2. LoadOrNew will atomically check for existence
+//     and construct the value immediately if it does
+//     not already exist, or increment the usage
+//     otherwise, then store that value in the pool.
+//     When the constructed value is finally deleted
+//     from the pool (when its usage reaches 0), it
+//     will be cleaned up by calling Destruct().
 //
 // The use of LoadOrNew allows values to be created
 // and reused and finally cleaned up only once, even
@@ -196,7 +196,7 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 
 // References returns the number of references (count of usages) to a
 // key in the pool, and true if the key exists, or false otherwise.
-func (up *UsagePool) References(key interface{}) (int, bool) {
+func (up *UsagePool) References(key any) (int, bool) {
 	up.RLock()
 	upv, loaded := up.pool[key]
 	up.RUnlock()

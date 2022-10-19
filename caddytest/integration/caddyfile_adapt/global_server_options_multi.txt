@@ -3,9 +3,7 @@
 		timeouts {
 			idle 90s
 		}
-		protocol {
-			strict_sni_host insecure_off
-		}
+		strict_sni_host insecure_off
 	}
 	servers :80 {
 		timeouts {
@@ -16,9 +14,7 @@
 		timeouts {
 			idle 30s
 		}
-		protocol {
-			strict_sni_host
-		}
+		strict_sni_host
 	}
 }
 

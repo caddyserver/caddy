@@ -81,7 +81,7 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
-	m.logger = ctx.Logger(m)
+	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
 		cidrs, err := m.parseIPRange(str)
 		if err != nil {

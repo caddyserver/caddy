@@ -161,7 +161,7 @@ func (fooModule) Stop() error  { return nil }
 func TestETags(t *testing.T) {
 	RegisterModule(fooModule{})
 
-	if err := Load([]byte(`{"apps": {"foo": {"strField": "abc", "intField": 0}}}`), true); err != nil {
+	if err := Load([]byte(`{"admin": {"listen": "localhost:2999"}, "apps": {"foo": {"strField": "abc", "intField": 0}}}`), true); err != nil {
 		t.Fatalf("loading: %s", err)
 	}
 

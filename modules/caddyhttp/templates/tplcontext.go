@@ -305,7 +305,7 @@ func (TemplateContext) funcStripHTML(s string) string {
 // funcMarkdown renders the markdown body as HTML. The resulting
 // HTML is NOT escaped so that it can be rendered as HTML.
 func (TemplateContext) funcMarkdown(input any) (string, error) {
-	inputStr := toString(input)
+	inputStr := caddy.ToString(input)
 
 	md := goldmark.New(
 		goldmark.WithExtensions(
@@ -341,7 +341,7 @@ func (TemplateContext) funcMarkdown(input any) (string, error) {
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
 func (TemplateContext) funcSplitFrontMatter(input any) (parsedMarkdownDoc, error) {
-	meta, body, err := extractFrontMatter(toString(input))
+	meta, body, err := extractFrontMatter(caddy.ToString(input))
 	if err != nil {
 		return parsedMarkdownDoc{}, err
 	}
@@ -463,19 +463,6 @@ func (h WrappedHeader) Set(field, val string) string {
 func (h WrappedHeader) Del(field string) string {
 	h.Header.Del(field)
 	return ""
-}
-
-func toString(input any) string {
-	switch v := input.(type) {
-	case string:
-		return v
-	case fmt.Stringer:
-		return v.String()
-	case error:
-		return v.Error()
-	default:
-		return fmt.Sprintf("%v", input)
-	}
 }
 
 var bufPool = sync.Pool{

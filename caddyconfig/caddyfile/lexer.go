@@ -191,3 +191,7 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 	}
 	return tokens, nil
 }
+
+func (t Token) Quoted() bool {
+	return t.wasQuoted > 0
+}

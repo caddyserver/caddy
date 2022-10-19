@@ -47,7 +47,7 @@ func (adminAPI) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the adminAPI module.
 func (a *adminAPI) Provision(ctx caddy.Context) error {
 	a.ctx = ctx
-	a.log = ctx.Logger(a)
+	a.log = ctx.Logger(a) // TODO: passing in 'a' is a hack until the admin API is officially extensible (see #5032)
 
 	// First check if the PKI app was configured, because
 	// a.ctx.App() has the side effect of instantiating

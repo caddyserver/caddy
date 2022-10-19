@@ -1,0 +1,58 @@
+# example from issue #4667
+{
+	auto_https off
+}
+
+https://, example.com {
+	tls test.crt test.key
+	respond "Hello World"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello World",
+									"handler": "static_response"
+								}
+							]
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"certificate_selection": {
+								"any_tag": [
+									"cert0"
+								]
+							}
+						}
+					],
+					"automatic_https": {
+						"disable": true
+					}
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"load_files": [
+					{
+						"certificate": "test.crt",
+						"key": "test.key",
+						"tags": [
+							"cert0"
+						]
+					}
+				]
+			}
+		}
+	}
+}

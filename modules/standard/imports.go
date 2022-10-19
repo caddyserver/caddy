@@ -3,6 +3,8 @@ package standard
 import (
 	// standard Caddy modules
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyevents"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyevents/eventsconfig"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/standard"
 	_ "github.com/caddyserver/caddy/v2/modules/caddypki"
 	_ "github.com/caddyserver/caddy/v2/modules/caddypki/acmeserver"

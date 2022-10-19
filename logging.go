@@ -105,7 +105,7 @@ func (logging *Logging) openLogs(ctx Context) error {
 	// then set up any other custom logs
 	for name, l := range logging.Logs {
 		// the default log is already set up
-		if name == "default" {
+		if name == DefaultLoggerName {
 			continue
 		}
 
@@ -138,7 +138,7 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 
 	// extract the user-defined default log, if any
 	newDefault := new(defaultCustomLog)
-	if userDefault, ok := logging.Logs["default"]; ok {
+	if userDefault, ok := logging.Logs[DefaultLoggerName]; ok {
 		newDefault.CustomLog = userDefault
 	} else {
 		// if none, make one with our own default settings
@@ -147,7 +147,7 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 		if err != nil {
 			return fmt.Errorf("setting up default Caddy log: %v", err)
 		}
-		logging.Logs["default"] = newDefault.CustomLog
+		logging.Logs[DefaultLoggerName] = newDefault.CustomLog
 	}
 
 	// set up this new log
@@ -701,6 +701,8 @@ var (
 )
 
 var writers = NewUsagePool()
+
+const DefaultLoggerName = "default"
 
 // Interface guards
 var (

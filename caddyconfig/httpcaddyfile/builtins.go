@@ -48,12 +48,12 @@ func init() {
 	RegisterHandlerDirective("handle", parseHandle)
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterDirective("log", parseLog)
+	RegisterHandlerDirective("skip_log", parseSkipLog)
 }
 
 // parseBind parses the bind directive. Syntax:
 //
-//     bind <addresses...>
-//
+//	bind <addresses...>
 func parseBind(h Helper) ([]ConfigValue, error) {
 	var lnHosts []string
 	for h.Next() {
@@ -64,28 +64,28 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 
 // parseTLS parses the tls directive. Syntax:
 //
-//     tls [<email>|internal]|[<cert_file> <key_file>] {
-//         protocols <min> [<max>]
-//         ciphers   <cipher_suites...>
-//         curves    <curves...>
-//         client_auth {
-//             mode                   [request|require|verify_if_given|require_and_verify]
-//             trusted_ca_cert        <base64_der>
-//             trusted_ca_cert_file   <filename>
-//             trusted_leaf_cert      <base64_der>
-//             trusted_leaf_cert_file <filename>
-//         }
-//         alpn      <values...>
-//         load      <paths...>
-//         ca        <acme_ca_endpoint>
-//         ca_root   <pem_file>
-//         dns       <provider_name> [...]
-//         on_demand
-//         eab    <key_id> <mac_key>
-//         issuer <module_name> [...]
-//         get_certificate <module_name> [...]
-//     }
-//
+//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	    protocols <min> [<max>]
+//	    ciphers   <cipher_suites...>
+//	    curves    <curves...>
+//	    client_auth {
+//	        mode                   [request|require|verify_if_given|require_and_verify]
+//	        trusted_ca_cert        <base64_der>
+//	        trusted_ca_cert_file   <filename>
+//	        trusted_leaf_cert      <base64_der>
+//	        trusted_leaf_cert_file <filename>
+//	    }
+//	    alpn      <values...>
+//	    load      <paths...>
+//	    ca        <acme_ca_endpoint>
+//	    ca_root   <pem_file>
+//	    dns       <provider_name> [...]
+//	    on_demand
+//	    eab    <key_id> <mac_key>
+//	    issuer <module_name> [...]
+//	    get_certificate <module_name> [...]
+//	    insecure_secrets_log <log_file>
+//	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	cp := new(caddytls.ConnectionPolicy)
 	var fileLoader caddytls.FileLoader
@@ -395,6 +395,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				onDemand = true
 
+			case "insecure_secrets_log":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				cp.InsecureSecretsLog = h.Val()
+
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
 			}
@@ -515,8 +521,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 // parseRoot parses the root directive. Syntax:
 //
-//     root [<matcher>] <path>
-//
+//	root [<matcher>] <path>
 func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	var root string
 	for h.Next() {
@@ -694,12 +699,11 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 
 // parseLog parses the log directive. Syntax:
 //
-//     log {
-//         output <writer_module> ...
-//         format <encoder_module> ...
-//         level  <level>
-//     }
-//
+//	log {
+//	    output <writer_module> ...
+//	    format <encoder_module> ...
+//	    level  <level>
+//	}
 func parseLog(h Helper) ([]ConfigValue, error) {
 	return parseLogHelper(h, nil)
 }
@@ -731,7 +735,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				// reference the default logger. See the
 				// setupNewDefault function in the logging
 				// package for where this is configured.
-				globalLogName = "default"
+				globalLogName = caddy.DefaultLoggerName
 			}
 
 			// Verify this name is unused.
@@ -857,4 +861,16 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 		})
 	}
 	return configValues, nil
+}
+
+// parseSkipLog parses the skip_log directive. Syntax:
+//
+//	skip_log [<matcher>]
+func parseSkipLog(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	for h.Next() {
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return caddyhttp.VarsMiddleware{"skip_log": true}, nil
 }

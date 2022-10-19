@@ -153,7 +153,10 @@ func Format(input []byte) []byte {
 			openBraceWritten = true
 			nextLine()
 			newLines = 0
-			nesting++
+			// prevent infinite nesting from ridiculous inputs (issue #4169)
+			if nesting < 10 {
+				nesting++
+			}
 		}
 
 		switch {

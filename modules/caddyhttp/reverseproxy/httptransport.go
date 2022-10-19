@@ -195,7 +195,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				TCPConn:      tcpConn,
 				readTimeout:  time.Duration(h.ReadTimeout),
 				writeTimeout: time.Duration(h.WriteTimeout),
-				logger:       caddyCtx.Logger(h),
+				logger:       caddyCtx.Logger(),
 			}
 		}
 

@@ -20,11 +20,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/mholt/acmez"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -156,6 +159,16 @@ type ConnectionPolicy struct {
 	// is no policy configured for the empty SNI value.
 	DefaultSNI string `json:"default_sni,omitempty"`
 
+	// Also known as "SSLKEYLOGFILE", TLS secrets will be written to
+	// this file in NSS key log format which can then be parsed by
+	// Wireshark and other tools. This is INSECURE as it allows other
+	// programs or tools to decrypt TLS connections. However, this
+	// capability can be useful for debugging and troubleshooting.
+	// **ENABLING THIS LOG COMPROMISES SECURITY!**
+	//
+	// This feature is EXPERIMENTAL and subject to change or removal.
+	InsecureSecretsLog string `json:"insecure_secrets_log,omitempty"`
+
 	// TLSConfig is the fully-formed, standard lib TLS config
 	// used to serve TLS connections. Provision all
 	// ConnectionPolicies to populate this. It is exported only
@@ -280,6 +293,30 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		}
 	}
 
+	if p.InsecureSecretsLog != "" {
+		filename, err := caddy.NewReplacer().ReplaceOrErr(p.InsecureSecretsLog, true, true)
+		if err != nil {
+			return err
+		}
+		filename, err = filepath.Abs(filename)
+		if err != nil {
+			return err
+		}
+		logFile, _, err := secretsLogPool.LoadOrNew(filename, func() (caddy.Destructor, error) {
+			w, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+			return destructableWriter{w}, err
+		})
+		if err != nil {
+			return err
+		}
+		ctx.OnCancel(func() { _, _ = secretsLogPool.Delete(filename) })
+
+		cfg.KeyLogWriter = logFile.(io.Writer)
+
+		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
+			zap.String("log_filename", filename))
+	}
+
 	setDefaultTLSParams(cfg)
 
 	p.TLSConfig = cfg
@@ -297,7 +334,8 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.ProtocolMin == "" &&
 		p.ProtocolMax == "" &&
 		p.ClientAuthentication == nil &&
-		p.DefaultSNI == ""
+		p.DefaultSNI == "" &&
+		p.InsecureSecretsLog == ""
 }
 
 // ClientAuthentication configures TLS client auth.
@@ -542,3 +580,9 @@ type ClientCertificateVerifier interface {
 }
 
 var defaultALPN = []string{"h2", "http/1.1"}
+
+type destructableWriter struct{ *os.File }
+
+func (d destructableWriter) Destruct() error { return d.Close() }
+
+var secretsLogPool = caddy.NewUsagePool()

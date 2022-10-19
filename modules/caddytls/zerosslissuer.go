@@ -66,7 +66,7 @@ func (*ZeroSSLIssuer) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up iss.
 func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
-	iss.logger = ctx.Logger(iss)
+	iss.logger = ctx.Logger()
 	if iss.ACMEIssuer == nil {
 		iss.ACMEIssuer = new(ACMEIssuer)
 	}

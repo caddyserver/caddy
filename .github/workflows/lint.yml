@@ -29,5 +29,7 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.47
+          # Windows times out frequently after about 5m50s if we don't set a longer timeout.
+          args: --timeout 10m
           # Optional: show only new issues if it's a pull request. The default value is `false`.
           # only-new-issues: true

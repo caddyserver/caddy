@@ -16,6 +16,8 @@
 
 package notify
 
-func notifyReadiness() error { return nil }
-func notifyReloading() error { return nil }
-func notifyStopping() error  { return nil }
+func Ready() error               { return nil }
+func Reloading() error           { return nil }
+func Stopping() error            { return nil }
+func Status(_ string) error      { return nil }
+func Error(_ error, _ int) error { return nil }

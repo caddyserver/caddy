@@ -32,12 +32,12 @@ func init() {
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
 //
-//     header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]] {
-//         [+]<field> [<value|regexp> [<replacement>]]
-//         ?<field> <default_value>
-//         -<field>
-//         [defer]
-//     }
+//	header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]] {
+//	    [+]<field> [<value|regexp> [<replacement>]]
+//	    ?<field> <default_value>
+//	    -<field>
+//	    [defer]
+//	}
 //
 // Either a block can be opened or a single header field can be configured
 // in the first line, but not both in the same directive. Header operations
@@ -148,8 +148,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 // parseReqHdrCaddyfile sets up the handler for request headers
 // from Caddyfile tokens. Syntax:
 //
-//     request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
-//
+//	request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()

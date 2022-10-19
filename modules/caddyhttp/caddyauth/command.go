@@ -42,11 +42,13 @@ hash is written to stdout as a base64 string.
 Caddy is attached to a controlling tty, the plaintext will
 not be echoed.
 
---algorithm may be bcrypt or scrypt. If script, the default
+--algorithm may be bcrypt or scrypt. If scrypt, the default
 parameters are used.
 
 Use the --salt flag for algorithms which require a salt to
 be provided (scrypt).
+
+Note that scrypt is deprecated. Please use 'bcrypt' instead.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("hash-password", flag.ExitOnError)
@@ -112,13 +114,16 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	}
 
 	var hash []byte
+	var hashString string
 	switch algorithm {
 	case "bcrypt":
 		hash, err = BcryptHash{}.Hash(plaintext, nil)
+		hashString = string(hash)
 	case "scrypt":
 		def := ScryptHash{}
 		def.SetDefaults()
 		hash, err = def.Hash(plaintext, salt)
+		hashString = base64.StdEncoding.EncodeToString(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
 	}
@@ -126,9 +131,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	hashBase64 := base64.StdEncoding.EncodeToString(hash)
-
-	fmt.Println(hashBase64)
+	fmt.Println(hashString)
 
 	return 0, nil
 }

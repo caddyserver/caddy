@@ -1,5 +1,7 @@
 http://localhost:2020 {
 	log
+	skip_log /first-hidden*
+	skip_log /second-hidden*
 	respond 200
 }
 
@@ -28,6 +30,36 @@ http://localhost:2020 {
 								{
 									"handler": "subroute",
 									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"skip_log": true
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/second-hidden*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"skip_log": true
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/first-hidden*"
+													]
+												}
+											]
+										},
 										{
 											"handle": [
 												{

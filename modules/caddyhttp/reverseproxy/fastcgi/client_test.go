@@ -118,11 +118,13 @@ func (s FastCGIServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[string]string, files map[string]string) (content []byte) {
-	fcgi, err := Dial("tcp", ipPort)
+	conn, err := net.Dial("tcp", ipPort)
 	if err != nil {
 		log.Println("err:", err)
 		return
 	}
+
+	fcgi := client{rwc: conn, reqID: 1}
 
 	length := 0
 
@@ -168,8 +170,8 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	content, _ = io.ReadAll(resp.Body)
 
 	log.Println("c: send data length ≈", length, string(content))
-	fcgi.Close()
-	time.Sleep(1 * time.Second)
+	conn.Close()
+	time.Sleep(250 * time.Millisecond)
 
 	if bytes.Contains(content, []byte("FAILED")) {
 		globalt.Error("Server return failed message")
@@ -228,7 +230,7 @@ func DisabledTest(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	// init
 	fcgiParams := make(map[string]string)

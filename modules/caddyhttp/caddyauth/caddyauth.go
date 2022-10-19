@@ -56,7 +56,7 @@ func (Authentication) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up a.
 func (a *Authentication) Provision(ctx caddy.Context) error {
-	a.logger = ctx.Logger(a)
+	a.logger = ctx.Logger()
 	a.Providers = make(map[string]Authenticator)
 	mods, err := ctx.LoadModule(a, "ProvidersRaw")
 	if err != nil {

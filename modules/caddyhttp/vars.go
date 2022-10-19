@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -62,11 +63,10 @@ func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler. Syntax:
 //
-//     vars [<name> <val>] {
-//         <name> <val>
-//         ...
-//     }
-//
+//	vars [<name> <val>] {
+//	    <name> <val>
+//	    ...
+//	}
 func (m *VarsMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(VarsMiddleware)
@@ -109,14 +109,17 @@ func (m *VarsMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // VarsMatcher is an HTTP request matcher which can match
-// requests based on variables in the context. The key is
-// the name of the variable, and the values are possible
-// values the variable can be in order to match (OR'ed).
+// requests based on variables in the context or placeholder
+// values. The key is the placeholder or name of the variable,
+// and the values are possible values the variable can be in
+// order to match (logical OR'ed).
 //
-// As a special case, this matcher can also match on
-// placeholders generally. If the key is not an HTTP chain
-// variable, it will be checked to see if it is a
-// placeholder name, and if so, will compare its value.
+// If the key is surrounded by `{ }` it is assumed to be a
+// placeholder. Otherwise, it will be considered a variable
+// name.
+//
+// Placeholders in the keys are not expanded, but
+// placeholders in the values are.
 type VarsMatcher map[string][]string
 
 // CaddyModule returns the Caddy module information.
@@ -160,13 +163,13 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for key, vals := range m {
-		// look up the comparison value we will check against with this key
-		matcherVarNameExpanded := repl.ReplaceAll(key, "")
-		varValue, ok := vars[matcherVarNameExpanded]
-		if !ok {
-			// as a special case, if it's not an HTTP variable,
-			// see if it's a placeholder name
-			varValue, _ = repl.Get(matcherVarNameExpanded)
+		var varValue any
+		if strings.HasPrefix(key, "{") &&
+			strings.HasSuffix(key, "}") &&
+			strings.Count(key, "{") == 1 {
+			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+		} else {
+			varValue = vars[key]
 		}
 
 		// see if any of the values given in the matcher match the actual value
