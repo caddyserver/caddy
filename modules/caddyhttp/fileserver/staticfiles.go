@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -231,6 +232,19 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	if runtime.GOOS == "windows" {
+		// reject paths with Alternate Data Streams (ADS)
+		if strings.Contains(r.URL.Path, ":") {
+			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
+		}
+		// reject paths with "8.3" short names
+		trimmedPath := strings.TrimRight(r.URL.Path, ". ") // Windows ignores trailing dots and spaces, sigh
+		if len(path.Base(trimmedPath)) <= 12 && strings.Contains(trimmedPath, "~") {
+			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal short name"))
+		}
+		// both of those could bypass file hiding or possibly leak information even if the file is not hidden
+	}
 
 	filesToHide := fsrv.transformHidePaths(repl)
 

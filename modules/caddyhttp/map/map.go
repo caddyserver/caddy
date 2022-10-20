@@ -40,6 +40,7 @@ type Handler struct {
 	Source string `json:"source,omitempty"`
 
 	// Destinations are the names of placeholders in which to store the outputs.
+	// Destination values should be wrapped in braces, for example, {my_placeholder}.
 	Destinations []string `json:"destinations,omitempty"`
 
 	// Mappings from source values (inputs) to destination values (outputs).
