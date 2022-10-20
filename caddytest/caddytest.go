@@ -218,7 +218,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		if reflect.DeepEqual(expected, fetchConfig(client)) {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 	tc.t.Errorf("POSTed configuration isn't active")
 	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
