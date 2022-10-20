@@ -335,33 +335,29 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 			var fieldValue any
 			switch {
 			case strings.HasPrefix(field, "dns_names"):
+				if !isTLSReq {
+					return nil, true
+				}
 				fieldName = "dns_names"
-				if isTLSReq {
-					fieldValue = cert.DNSNames
-				} else {
-					return nil, true
-				}
+				fieldValue = cert.DNSNames
 			case strings.HasPrefix(field, "emails"):
+				if !isTLSReq {
+					return nil, true
+				}
 				fieldName = "emails"
-				if isTLSReq {
-					fieldValue = cert.EmailAddresses
-				} else {
-					return nil, true
-				}
+				fieldValue = cert.EmailAddresses
 			case strings.HasPrefix(field, "ips"):
+				if !isTLSReq {
+					return nil, true
+				}
 				fieldName = "ips"
-				if isTLSReq {
-					fieldValue = cert.IPAddresses
-				} else {
-					return nil, true
-				}
+				fieldValue = cert.IPAddresses
 			case strings.HasPrefix(field, "uris"):
-				fieldName = "uris"
-				if isTLSReq {
-					fieldValue = cert.URIs
-				} else {
+				if !isTLSReq {
 					return nil, true
 				}
+				fieldName = "uris"
+				fieldValue = cert.URIs
 			default:
 				return nil, false
 			}
@@ -404,58 +400,52 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 
 		switch field {
 		case "client.fingerprint":
-			if isTLSReq {
-				return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
 		case "client.public_key", "client.public_key_sha256":
-			if isTLSReq {
-				if cert.PublicKey == nil {
-					return nil, true
-				}
-				pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
-				if err != nil {
-					return nil, true
-				}
-				if strings.HasSuffix(field, "_sha256") {
-					return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
-				}
-				return fmt.Sprintf("%x", pubKeyBytes), true
-			} else {
+			if !isTLSReq {
 				return nil, true
 			}
+
+			if cert.PublicKey == nil {
+				return nil, true
+			}
+			pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
+			if err != nil {
+				return nil, true
+			}
+			if strings.HasSuffix(field, "_sha256") {
+				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
+			}
+			return fmt.Sprintf("%x", pubKeyBytes), true
 		case "client.issuer":
-			if isTLSReq {
-				return cert.Issuer, true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			return cert.Issuer, true
 		case "client.serial":
-			if isTLSReq {
-				return cert.SerialNumber, true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			return cert.SerialNumber, true
 		case "client.subject":
-			if isTLSReq {
-				return cert.Subject, true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			return cert.Subject, true
 		case "client.certificate_pem":
-			if isTLSReq {
-				block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
-				return pem.EncodeToMemory(&block), true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+			return pem.EncodeToMemory(&block), true
 		case "client.certificate_der_base64":
-			if isTLSReq {
-				return base64.StdEncoding.EncodeToString(cert.Raw), true
-			} else {
+			if !isTLSReq {
 				return "", true
 			}
+			return base64.StdEncoding.EncodeToString(cert.Raw), true
 		default:
 			return nil, false
 		}
@@ -463,42 +453,36 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 
 	switch field {
 	case "version":
-		if isTLSReq {
-			return caddytls.ProtocolName(req.TLS.Version), true
-		} else {
+		if !isTLSReq {
 			return "", true
 		}
+		return caddytls.ProtocolName(req.TLS.Version), true
 	case "cipher_suite":
-		if isTLSReq {
-			return tls.CipherSuiteName(req.TLS.CipherSuite), true
-		} else {
+		if !isTLSReq {
 			return "", true
 		}
+		return tls.CipherSuiteName(req.TLS.CipherSuite), true
 	case "resumed":
-		if isTLSReq {
-			return req.TLS.DidResume, true
-		} else {
+		if !isTLSReq {
 			return false, true
 		}
+		return req.TLS.DidResume, true
 	case "proto":
-		if isTLSReq {
-			return req.TLS.NegotiatedProtocol, true
-		} else {
+		if !isTLSReq {
 			return "", true
 		}
+		return req.TLS.NegotiatedProtocol, true
 	case "proto_mutual":
-		if isTLSReq {
-			// req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
-			return true, true
-		} else {
+		if !isTLSReq {
 			return false, true
 		}
+		// req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
+		return true, true
 	case "server_name":
-		if isTLSReq {
-			return req.TLS.ServerName, true
-		} else {
+		if !isTLSReq {
 			return "", true
 		}
+		return req.TLS.ServerName, true
 	}
 	return nil, false
 }
