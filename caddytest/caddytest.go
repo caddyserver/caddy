@@ -244,7 +244,7 @@ func validateTestPrerequisites() error {
 
 		// wait for caddy to start serving the initial config
 		for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 		}
 	}
 
