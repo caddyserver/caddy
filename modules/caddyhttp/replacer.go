@@ -266,6 +266,27 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return pathParts[idx], true
 			}
 
+			// orig uri path parts
+			if strings.HasPrefix(key, reqOrigURIPathReplPrefix) {
+				idxStr := key[len(reqOrigURIPathReplPrefix):]
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil {
+					return "", false
+				}
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				pathParts := strings.Split(or.URL.Path, "/")
+				if len(pathParts) > 0 && pathParts[0] == "" {
+					pathParts = pathParts[1:]
+				}
+				if idx < 0 {
+					return "", false
+				}
+				if idx >= len(pathParts) {
+					return "", true
+				}
+				return pathParts[idx], true
+			}
+
 			// middleware variables
 			if strings.HasPrefix(key, varsReplPrefix) {
 				varName := key[len(varsReplPrefix):]
@@ -471,12 +492,13 @@ func (rid *requestID) String() string {
 }
 
 const (
-	reqCookieReplPrefix     = "http.request.cookie."
-	reqHeaderReplPrefix     = "http.request.header."
-	reqHostLabelsReplPrefix = "http.request.host.labels."
-	reqTLSReplPrefix        = "http.request.tls."
-	reqURIPathReplPrefix    = "http.request.uri.path."
-	reqURIQueryReplPrefix   = "http.request.uri.query."
-	respHeaderReplPrefix    = "http.response.header."
-	varsReplPrefix          = "http.vars."
+	reqCookieReplPrefix      = "http.request.cookie."
+	reqHeaderReplPrefix      = "http.request.header."
+	reqHostLabelsReplPrefix  = "http.request.host.labels."
+	reqTLSReplPrefix         = "http.request.tls."
+	reqURIPathReplPrefix     = "http.request.uri.path."
+	reqURIQueryReplPrefix    = "http.request.uri.query."
+	respHeaderReplPrefix     = "http.response.header."
+	varsReplPrefix           = "http.vars."
+	reqOrigURIPathReplPrefix = "http.request.orig_uri.path."
 )
