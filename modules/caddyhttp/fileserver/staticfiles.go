@@ -410,6 +410,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		etag = calculateEtag(info)
 	}
 
+	// at this point, we're serving a file; Go std lib supports only
+	// GET and HEAD, which is sensible for a static file server - reject
+	// any other methods (see issue #5166)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Add("Allow", "GET, HEAD")
+		return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+	}
+
 	// set the Etag - note that a conditional If-None-Match request is handled
 	// by http.ServeContent below, which checks against this Etag value
 	w.Header().Set("Etag", etag)
