@@ -718,7 +718,7 @@ func TestQueryMatcher(t *testing.T) {
 			expect:   true,
 		},
 		{
-			scenario: "non match against a wildcarded",
+			scenario: "non match against a wildcard",
 			match:    MatchQuery{"debug": []string{"*"}},
 			input:    "/?other=something",
 			expect:   false,
@@ -765,6 +765,30 @@ func TestQueryMatcher(t *testing.T) {
 			input:    "/?somekey=1",
 			expect:   true,
 		},
+		{
+			scenario: "don't match conflicting values",
+			match:    MatchQuery{"a": []string{"1"}},
+			input:    "/?a=1&a=2",
+			expect:   false,
+		},
+		{
+			scenario: "conflicting values are ambiguous with multiple match values",
+			match:    MatchQuery{"a": []string{"1", "2"}},
+			input:    "/?a=1&a=2",
+			expect:   false,
+		},
+		{
+			scenario: "repeated kv pairs in URI",
+			match:    MatchQuery{"a": []string{"1"}},
+			input:    "/?a=1&a=1",
+			expect:   true,
+		},
+		{
+			scenario: "TODO: it's unclear whether the values should be AND'ed or OR'ed", // perhaps multiple query matchers could be used to "and"
+			match:    MatchQuery{"a": []string{"1", "2"}},
+			input:    "/?a=2",
+			expect:   true,
+		},
 	} {
 
 		u, _ := url.Parse(tc.input)
@@ -777,7 +801,7 @@ func TestQueryMatcher(t *testing.T) {
 		req = req.WithContext(ctx)
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
-			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
+			t.Errorf("Test %d %v: Expected %t, got %t for '%s' (%s)", i, tc.match, tc.expect, actual, tc.input, tc.scenario)
 			continue
 		}
 	}
