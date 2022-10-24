@@ -124,6 +124,7 @@ func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response
 	if err != nil {
 		return nil, fmt.Errorf("problem calling http loader url: %v", err)
 	} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
+		resp.Body.Close()
 		return nil, fmt.Errorf("bad response status code from http loader url: %v", resp.StatusCode)
 	}
 	return resp, nil
