@@ -572,12 +572,13 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 }
 
 func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool) *certmagic.Config {
+	var cmCfg *certmagic.Config
 	if ident == nil {
 		// user might not have configured identity; that's OK, we can still make a
 		// certmagic config, although it'll be mostly useless for remote management
 		ident = new(IdentityConfig)
 	}
-	cmCfg := &certmagic.Config{
+	template := certmagic.Config{
 		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
 		Logger:  logger,
 		Issuers: ident.issuers,
@@ -589,7 +590,8 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool)
 			},
 		})
 	}
-	return certmagic.New(identityCertCache, *cmCfg)
+	cmCfg = certmagic.New(identityCertCache, template)
+	return cmCfg
 }
 
 // IdentityCredentials returns this instance's configured, managed identity credentials
