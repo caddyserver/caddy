@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"os"
 	"strconv"
 	"strings"
@@ -193,7 +194,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 
 	// set all headers
 	for field, vals := range s.Headers {
-		field = repl.ReplaceAll(field, "")
+		field = textproto.CanonicalMIMEHeaderKey(repl.ReplaceAll(field, ""))
 		newVals := make([]string, len(vals))
 		for i := range vals {
 			newVals[i] = repl.ReplaceAll(vals[i], "")
