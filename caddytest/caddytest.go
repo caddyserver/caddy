@@ -218,7 +218,7 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		if reflect.DeepEqual(expected, fetchConfig(client)) {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 	tc.t.Errorf("POSTed configuration isn't active")
 	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
@@ -244,7 +244,7 @@ func validateTestPrerequisites() error {
 
 		// wait for caddy to start serving the initial config
 		for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 		}
 	}
 
