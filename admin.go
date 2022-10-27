@@ -587,6 +587,7 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool)
 			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
 				return cmCfg, nil
 			},
+			Logger: logger.Named("cache"),
 		})
 	}
 	return certmagic.New(identityCertCache, *cmCfg)
