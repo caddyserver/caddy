@@ -52,7 +52,7 @@ func (a *adminAPI) Provision(ctx caddy.Context) error {
 	// First check if the PKI app was configured, because
 	// a.ctx.App() has the side effect of instantiating
 	// and provisioning an app even if it wasn't configured.
-	pkiAppConfigured := a.ctx.AppIsConfigured("pki")
+	pkiAppConfigured := a.ctx.AppIfConfigured("pki")
 	if !pkiAppConfigured {
 		return nil
 	}
