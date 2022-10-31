@@ -12,6 +12,9 @@ on:
       - master
       - 2.*
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:

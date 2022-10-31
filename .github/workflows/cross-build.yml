@@ -10,6 +10,9 @@ on:
       - master
       - 2.*
 
+permissions:
+  contents: read
+
 jobs:
   cross-build-test:
     strategy:
