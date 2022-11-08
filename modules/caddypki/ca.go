@@ -240,6 +240,9 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 }
 
 func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey any, err error) {
+	if ca.Root != nil {
+		return ca.Root.Load()
+	}
 	rootCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootCert())
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
