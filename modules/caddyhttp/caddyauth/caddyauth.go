@@ -104,24 +104,32 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 	if !authed {
 		// if we have any redirect we use the result from that.
-		for _, rw := range responseWriters {
+		for provName, rw := range responseWriters {
 			if rw.Status() >= 300 && rw.Status() < 400 {
-				rw.WriteResponse()
+				if err := rw.WriteResponse(); err != nil {
+					a.logger.Error("failed to write response from auth provider",
+						zap.String("provider", provName),
+						zap.Error(err),
+					)
+				}
 				return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 			}
 		}
 		// no redirect choose a random reply.
-		for _, rw := range responseWriters {
-			rw.WriteResponse()
+		for provName, rw := range responseWriters {
+			if err := rw.WriteResponse(); err != nil {
+				a.logger.Error("failed to write response from auth provider",
+					zap.String("provider", provName),
+					zap.Error(err),
+				)
+			}
 			break
 		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
 	// In case authentication was successful we don't care about any response
-	// from the authentication handlers. We already nil the responseWriters here
-	// so the memory could be freed.
-	responseWriters = nil
+	// from the authentication handlers.
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.auth.user.id", user.ID)
