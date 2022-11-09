@@ -15,6 +15,7 @@
 package caddyauth
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 
@@ -38,7 +39,11 @@ func init() {
 // Its API is still experimental and may be subject to change.
 type Authentication struct {
 	// A set of authentication providers. If none are specified,
-	// all requests will always be unauthenticated.
+	// all requests will always be unauthenticated. If multiple
+	// providers are specified only one needs to authenticate
+	// successfully. In case all of them are unauthorized the reply
+	// will be taken from any provider that redirects, if there is
+	// no provider that redirects the reply of any provider is taken.
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
 
 	Providers map[string]Authenticator `json:"-"`
@@ -72,8 +77,21 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var user User
 	var authed bool
 	var err error
+	// This code makes the following assumption: In case of multiple
+	// authentication providers it is enough if one of them authenticates the
+	// user for the whole authentication to succeed. In case all of the
+	// providers fail to authenticate we write the reply of any of the providers
+	// that redirect to the response writer, if there is no such provider the
+	// response of any provider is written.
+	responseWriters := make(map[string]caddyhttp.ResponseRecorder, len(a.Providers))
 	for provName, prov := range a.Providers {
-		user, authed, err = prov.Authenticate(w, r)
+		// We always want to buffer the response because only once we have the
+		// reply of all providers we can decide which one to actually use (if
+		// any). Usually auth replies should be small enough.
+		alwaysBuffer := func(status int, header http.Header) bool { return true }
+		rw := caddyhttp.NewResponseRecorder(w, new(bytes.Buffer), alwaysBuffer)
+		responseWriters[provName] = rw
+		user, authed, err = prov.Authenticate(rw, r)
 		if err != nil {
 			a.logger.Error("auth provider returned error",
 				zap.String("provider", provName),
@@ -85,8 +103,25 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 	if !authed {
+		// if we have any redirect we use the result from that.
+		for _, rw := range responseWriters {
+			if rw.Status() >= 300 && rw.Status() < 400 {
+				rw.WriteResponse()
+				return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+			}
+		}
+		// no redirect choose a random reply.
+		for _, rw := range responseWriters {
+			rw.WriteResponse()
+			break
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
+
+	// In case authentication was successful we don't care about any response
+	// from the authentication handlers. We already nil the responseWriters here
+	// so the memory could be freed.
+	responseWriters = nil
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.auth.user.id", user.ID)
