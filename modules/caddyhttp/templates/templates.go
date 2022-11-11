@@ -152,10 +152,10 @@ func init() {
 //
 // Accesses the current HTTP request, which has various fields, including:
 //
-//    - `.Method` - the method
-//    - `.URL` - the URL, which in turn has component fields (Scheme, Host, Path, etc.)
-//    - `.Header` - the header fields
-//    - `.Host` - the Host or :authority header of the request
+//   - `.Method` - the method
+//   - `.URL` - the URL, which in turn has component fields (Scheme, Host, Path, etc.)
+//   - `.Header` - the header fields
+//   - `.Host` - the Host or :authority header of the request
 //
 // ```
 // {{.Req.Header.Get "User-Agent"}}
@@ -221,22 +221,22 @@ func init() {
 // ---
 // ```
 //
-//
 // **JSON** is simply `{` and `}`:
 //
 // ```
-// {
-// 	"template": "blog",
-// 	"title": "Blog Homepage",
-// 	"sitename": "A Caddy site"
-// }
+//
+//	{
+//		"template": "blog",
+//		"title": "Blog Homepage",
+//		"sitename": "A Caddy site"
+//	}
+//
 // ```
 //
 // The resulting front matter will be made available like so:
 //
 // - `.Meta` to access the metadata fields, for example: `{{$parsed.Meta.title}}`
 // - `.Body` to access the body after the front matter, for example: `{{markdown $parsed.Body}}`
-//
 //
 // ##### `stripHTML`
 //
