@@ -131,14 +131,14 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     file <filename> {
-//         roll_disabled
-//         roll_size     <size>
-//         roll_uncompressed
-//         roll_local_time
-//         roll_keep     <num>
-//         roll_keep_for <days>
-//     }
+//	file <filename> {
+//	    roll_disabled
+//	    roll_size     <size>
+//	    roll_uncompressed
+//	    roll_local_time
+//	    roll_keep     <num>
+//	    roll_keep_for <days>
+//	}
 //
 // The roll_size value has megabyte resolution.
 // Fractional values are rounded up to the next whole megabyte (MiB).
