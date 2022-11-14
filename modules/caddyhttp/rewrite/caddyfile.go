@@ -34,7 +34,7 @@ func init() {
 
 // parseCaddyfileRewrite sets up a basic rewrite handler from Caddyfile tokens. Syntax:
 //
-//     rewrite [<matcher>] <to>
+//	rewrite [<matcher>] <to>
 //
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
@@ -54,8 +54,7 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 
 // parseCaddyfileMethod sets up a basic method rewrite handler from Caddyfile tokens. Syntax:
 //
-//     method [<matcher>] <method>
-//
+//	method [<matcher>] <method>
 func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var rewr Rewrite
 	for h.Next() {
@@ -73,7 +72,7 @@ func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 // parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
 // URI from Caddyfile tokens. Syntax:
 //
-//     uri [<matcher>] strip_prefix|strip_suffix|replace|path_regexp <target> [<replacement> [<limit>]]
+//	uri [<matcher>] strip_prefix|strip_suffix|replace|path_regexp <target> [<replacement> [<limit>]]
 //
 // If strip_prefix or strip_suffix are used, then <target> will be stripped
 // only if it is the beginning or the end, respectively, of the URI path. If
@@ -147,9 +146,9 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 
 // parseCaddyfileHandlePath parses the handle_path directive. Syntax:
 //
-//     handle_path [<matcher>] {
-//         <directives...>
-//     }
+//	handle_path [<matcher>] {
+//	    <directives...>
+//	}
 //
 // Only path matchers (with a `/` prefix) are supported as this is a shortcut
 // for the handle directive with a strip_prefix rewrite.

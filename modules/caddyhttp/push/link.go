@@ -29,9 +29,9 @@ type linkResource struct {
 //
 // Accepted formats are:
 //
-//     Link: <resource>; as=script
-//     Link: <resource>; as=script,<resource>; as=style
-//     Link: <resource>;<resource2>
+//	Link: <resource>; as=script
+//	Link: <resource>; as=script,<resource>; as=style
+//	Link: <resource>;<resource2>
 //
 // where <resource> begins with a forward slash (/).
 func parseLinkHeader(header string) []linkResource {

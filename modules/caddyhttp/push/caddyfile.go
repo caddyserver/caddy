@@ -26,13 +26,13 @@ func init() {
 
 // parseCaddyfile sets up the push handler. Syntax:
 //
-//     push [<matcher>] [<resource>] {
-//         [GET|HEAD] <resource>
-//         headers {
-//             [+]<field> [<value|regexp> [<replacement>]]
-//             -<field>
-//         }
-//     }
+//	push [<matcher>] [<resource>] {
+//	    [GET|HEAD] <resource>
+//	    headers {
+//	        [+]<field> [<value|regexp> [<replacement>]]
+//	        -<field>
+//	    }
+//	}
 //
 // A single resource can be specified inline without opening a
 // block for the most common/simple case. Or, a block can be

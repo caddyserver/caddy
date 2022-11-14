@@ -26,23 +26,23 @@ func init() {
 
 // parsePKIApp parses the global log option. Syntax:
 //
-//     pki {
-//         ca [<id>] {
-//             name            <name>
-//             root_cn         <name>
-//             intermediate_cn <name>
-//             root {
-//                 cert   <path>
-//                 key    <path>
-//                 format <format>
-//             }
-//             intermediate {
-//                 cert   <path>
-//                 key    <path>
-//                 format <format>
-//             }
-//         }
-//     }
+//	pki {
+//	    ca [<id>] {
+//	        name            <name>
+//	        root_cn         <name>
+//	        intermediate_cn <name>
+//	        root {
+//	            cert   <path>
+//	            key    <path>
+//	            format <format>
+//	        }
+//	        intermediate {
+//	            cert   <path>
+//	            key    <path>
+//	            format <format>
+//	        }
+//	    }
+//	}
 //
 // When the CA ID is unspecified, 'local' is assumed.
 func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {

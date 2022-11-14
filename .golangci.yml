@@ -96,3 +96,7 @@ issues:
       text: "G404" # G404: Insecure random number source (rand)
       linters:
         - gosec
+    - path: modules/caddyhttp/reverseproxy/streaming.go
+      text: "G404" # G404: Insecure random number source (rand)
+      linters:
+        - gosec
