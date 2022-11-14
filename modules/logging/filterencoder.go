@@ -98,14 +98,14 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     filter {
-//         wrap <another encoder>
-//         fields {
-//             <field> <filter> {
-//                 <filter options>
-//             }
-//         }
-//     }
+//	filter {
+//	    wrap <another encoder>
+//	    fields {
+//	        <field> <filter> {
+//	            <filter options>
+//	        }
+//	    }
+//	}
 func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
