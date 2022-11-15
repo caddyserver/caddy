@@ -28,6 +28,7 @@ import (
 type mockProvider struct {
 	Status   int
 	Authed   bool
+	Header   map[string]string
 	Response []byte
 	User     User
 	Error    error
@@ -36,6 +37,9 @@ type mockProvider struct {
 func (p *mockProvider) Authenticate(w http.ResponseWriter, r *http.Request) (User, bool, error) {
 	if p.Error != nil {
 		return User{}, false, p.Error
+	}
+	for k, v := range p.Header {
+		w.Header().Add(k, v)
 	}
 	w.WriteHeader(p.Status)
 	if _, err := w.Write(p.Response); err != nil {
@@ -117,6 +121,9 @@ func TestAuthenticationServeHTTP(t *testing.T) {
 				"other": &mockProvider{
 					Status:   301,
 					Response: []byte("oauth"),
+					Header: map[string]string{
+						"Location": "https://example.org/redirect",
+					},
 				},
 			},
 			validStatuses: []int{301},
@@ -125,6 +132,7 @@ func TestAuthenticationServeHTTP(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -44,6 +44,8 @@ type Authentication struct {
 	// successfully. In case all of them are unauthorized the reply
 	// will be taken from any provider that redirects, if there is
 	// no provider that redirects the reply of any provider is taken.
+	// If you want multiple authentication providers that all need to succeed
+	// you can create a chain of handlers.
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
 
 	Providers map[string]Authenticator `json:"-"`
@@ -82,7 +84,9 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// user for the whole authentication to succeed. In case all of the
 	// providers fail to authenticate we write the reply of any of the providers
 	// that redirect to the response writer, if there is no such provider the
-	// response of any provider is written.
+	// response of any provider is written. We choose response of the
+	// redirecting provider so that a login flow that relies on redirects works
+	// correctly.
 	responseWriters := make(map[string]caddyhttp.ResponseRecorder, len(a.Providers))
 	for provName, prov := range a.Providers {
 		// We always want to buffer the response because only once we have the
@@ -105,15 +109,19 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	if !authed {
 		// if we have any redirect we use the result from that.
 		for provName, rw := range responseWriters {
-			if rw.Status() >= 300 && rw.Status() < 400 {
-				if err := rw.WriteResponse(); err != nil {
-					a.logger.Error("failed to write response from auth provider",
-						zap.String("provider", provName),
-						zap.Error(err),
-					)
-				}
-				return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+			if rw.Status() < 300 || rw.Status() >= 400 {
+				continue
 			}
+			if l := rw.Header().Get("Location"); l == "" {
+				continue
+			}
+			if err := rw.WriteResponse(); err != nil {
+				a.logger.Error("failed to write response from auth provider",
+					zap.String("provider", provName),
+					zap.Error(err),
+				)
+			}
+			return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 		}
 		// no redirect choose a random reply.
 		for provName, rw := range responseWriters {
