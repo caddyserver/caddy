@@ -890,7 +890,7 @@ func Version() (simple, full string) {
 		}
 	}
 
-	if full == "" {
+	if full == "" && bi != nil {
 		var vcsRevision string
 		var vcsTime time.Time
 		var vcsModified bool
