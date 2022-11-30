@@ -123,6 +123,7 @@ type (
 	// keyed by the query keys, with an array of string values to match for that key.
 	// Query key matches are exact, but wildcards may be used for value matches. Both
 	// keys and values may be placeholders.
+	//
 	// An example of the structure to match `?key=value&topic=api&query=something` is:
 	//
 	// ```json
@@ -135,6 +136,13 @@ type (
 	//
 	// Invalid query strings, including those with bad escapings or illegal characters
 	// like semicolons, will fail to parse and thus fail to match.
+	//
+	// **NOTE:** Notice that query string values are arrays, not singular values. This is
+	// because repeated keys are valid in query strings, and each one may have a
+	// different value. This matcher will match for a key if any one of its configured
+	// values is assigned in the query string. Backend applications relyon on query
+	// strings MUST take into consideration that query string values are arrays and can
+	// have multiple values.
 	MatchQuery url.Values
 
 	// MatchHeader matches requests by header fields. The key is the field
@@ -144,6 +152,13 @@ type (
 	// surrounding the value with the wildcard `*` character, respectively.
 	// If a list is null, the header must not exist. If the list is empty,
 	// the field must simply exist, regardless of its value.
+	//
+	// **NOTE:** Notice that header values are arrays, not singular values. This is
+	// because repeated fields are valid in headers, and each one may have a
+	// different value. This matcher will match for a field if any one of its configured
+	// values matches in the header. Backend applications relying on headers MUST take
+	// into consideration that header field values are arrays and can have multiple
+	// values.
 	MatchHeader http.Header
 
 	// MatchHeaderRE matches requests by a regular expression on header fields.
