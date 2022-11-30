@@ -46,10 +46,10 @@ type HealthChecks struct {
 
 	// Passive health checks monitor proxied requests for errors or timeouts.
 	// To minimally enable passive health checks, specify at least an empty
-	// config object. Passive health check state is shared (stored globally),
-	// so a failure from one handler will be counted by all handlers; but
-	// the tolerances or standards for what defines healthy/unhealthy backends
-	// is configured per-proxy-handler.
+	// config object with fail_duration > 0. Passive health check state is
+	// shared (stored globally), so a failure from one handler will be counted
+	// by all handlers; but the tolerances or standards for what defines
+	// healthy/unhealthy backends is configured per-proxy-handler.
 	//
 	// Passive health checks technically do operate on dynamic upstreams,
 	// but are only effective for very busy proxies where the list of
