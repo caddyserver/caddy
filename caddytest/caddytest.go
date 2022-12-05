@@ -114,7 +114,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		return nil
 	}
 
-	err := validateTestPrerequisites()
+	err := validateTestPrerequisites(tc.t)
 	if err != nil {
 		tc.t.Skipf("skipping tests as failed integration prerequisites. %s", err)
 		return nil
@@ -224,9 +224,14 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
 }
 
+const initConfig = `{
+	admin localhost:2999
+}
+`
+
 // validateTestPrerequisites ensures the certificates are available in the
 // designated path and Caddy sub-process is running.
-func validateTestPrerequisites() error {
+func validateTestPrerequisites(t *testing.T) error {
 
 	// check certificates are found
 	for _, certName := range Default.Certifcates {
@@ -236,8 +241,20 @@ func validateTestPrerequisites() error {
 	}
 
 	if isCaddyAdminRunning() != nil {
+		// setup the init config file, and set the cleanup afterwards
+		f, err := os.CreateTemp("", "")
+		if err != nil {
+			return err
+		}
+		t.Cleanup(func() {
+			os.Remove(f.Name())
+		})
+		if _, err := f.WriteString(initConfig); err != nil {
+			return err
+		}
+
 		// start inprocess caddy server
-		os.Args = []string{"caddy", "run", "--config", "./test.init.config", "--adapter", "caddyfile"}
+		os.Args = []string{"caddy", "run", "--config", f.Name(), "--adapter", "caddyfile"}
 		go func() {
 			caddycmd.Main()
 		}()
