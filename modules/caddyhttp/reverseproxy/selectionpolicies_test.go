@@ -95,18 +95,18 @@ func TestIPHashPolicy(t *testing.T) {
 	// We should be able to predict where every request is routed.
 	req.RemoteAddr = "172.0.0.1:80"
 	h := ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.2:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.3:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[2] {
-		t.Error("Expected ip hash policy host to be the third host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.4:80"
 	h = ipHash.Select(pool, req, nil)
@@ -117,18 +117,18 @@ func TestIPHashPolicy(t *testing.T) {
 	// we should get the same results without a port
 	req.RemoteAddr = "172.0.0.1"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.2"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[0] {
-		t.Error("Expected ip hash policy host to be the first host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.3"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[2] {
-		t.Error("Expected ip hash policy host to be the third host.")
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
 	}
 	req.RemoteAddr = "172.0.0.4"
 	h = ipHash.Select(pool, req, nil)
@@ -141,8 +141,8 @@ func TestIPHashPolicy(t *testing.T) {
 	req.RemoteAddr = "172.0.0.4"
 	pool[1].setHealthy(false)
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[2] {
-		t.Error("Expected ip hash policy host to be the third host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 
 	req.RemoteAddr = "172.0.0.2"
@@ -172,8 +172,8 @@ func TestIPHashPolicy(t *testing.T) {
 	}
 	req.RemoteAddr = "172.0.0.1:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.2:80"
 	h = ipHash.Select(pool, req, nil)
@@ -182,8 +182,8 @@ func TestIPHashPolicy(t *testing.T) {
 	}
 	req.RemoteAddr = "172.0.0.3:80"
 	h = ipHash.Select(pool, req, nil)
-	if h != pool[1] {
-		t.Error("Expected ip hash policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.4:80"
 	h = ipHash.Select(pool, req, nil)
@@ -252,8 +252,8 @@ func TestURIHashPolicy(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	h := uriPolicy.Select(pool, request, nil)
-	if h != pool[2] {
-		t.Error("Expected uri policy host to be the third host.")
+	if h != pool[1] {
+		t.Error("Expected uri policy host to be the second host.")
 	}
 
 	pool[2].setHealthy(false)
@@ -264,8 +264,8 @@ func TestURIHashPolicy(t *testing.T) {
 
 	request = httptest.NewRequest(http.MethodGet, "/test_2", nil)
 	h = uriPolicy.Select(pool, request, nil)
-	if h != pool[1] {
-		t.Error("Expected uri policy host to be the second host.")
+	if h != pool[0] {
+		t.Error("Expected uri policy host to be the first host.")
 	}
 
 	// We should be able to resize the host pool and still be able to predict
