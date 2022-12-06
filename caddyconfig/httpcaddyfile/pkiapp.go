@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
@@ -28,9 +29,10 @@ func init() {
 //
 //	pki {
 //	    ca [<id>] {
-//	        name            <name>
-//	        root_cn         <name>
-//	        intermediate_cn <name>
+//	        name                  <name>
+//	        root_cn               <name>
+//	        intermediate_cn       <name>
+//	        intermediate_lifetime <duration>
 //	        root {
 //	            cert   <path>
 //	            key    <path>
@@ -82,6 +84,16 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 							return nil, d.ArgErr()
 						}
 						pkiCa.IntermediateCommonName = d.Val()
+
+					case "intermediate_lifetime":
+						if !d.NextArg() {
+							return nil, d.ArgErr()
+						}
+						dur, err := caddy.ParseDuration(d.Val())
+						if err != nil {
+							return nil, err
+						}
+						pkiCa.IntermediateLifetime = caddy.Duration(dur)
 
 					case "root":
 						if pkiCa.Root == nil {
