@@ -48,6 +48,9 @@ type CA struct {
 	// intermediate certificates.
 	IntermediateCommonName string `json:"intermediate_common_name,omitempty"`
 
+	// The lifetime for the intermediate certificates
+	IntermediateLifetime caddy.Duration `json:"intermediate_lifetime,omitempty"`
+
 	// Whether Caddy will attempt to install the CA's root
 	// into the system trust store, as well as into Java
 	// and Mozilla Firefox trust stores. Default: true.
@@ -117,6 +120,11 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	}
 	if ca.IntermediateCommonName == "" {
 		ca.IntermediateCommonName = defaultIntermediateCommonName
+	}
+	if ca.IntermediateLifetime == 0 {
+		ca.IntermediateLifetime = caddy.Duration(defaultIntermediateLifetime)
+	} else if time.Duration(ca.IntermediateLifetime) >= defaultRootLifetime {
+		return fmt.Errorf("intermediate certificate lifetime must be less than root certificate lifetime (%s)", defaultRootLifetime)
 	}
 
 	// load the certs and key that will be used for signing
@@ -341,7 +349,7 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.Si
 func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) (interCert *x509.Certificate, interKey crypto.Signer, err error) {
 	repl := ca.newReplacer()
 
-	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey)
+	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey, time.Duration(ca.IntermediateLifetime))
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating CA intermediate: %v", err)
 	}

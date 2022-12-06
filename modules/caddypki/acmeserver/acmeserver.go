@@ -113,6 +113,12 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return err
 	}
 
+	// make sure leaf cert lifetime is less than the intermediate cert lifetime. this check only
+	// applies for caddy-managed intermediate certificates
+	if ca.Intermediate == nil && ash.Lifetime >= ca.IntermediateLifetime {
+		return fmt.Errorf("certificate lifetime (%s) should be less than intermediate certificate lifetime (%s)", time.Duration(ash.Lifetime), time.Duration(ca.IntermediateLifetime))
+	}
+
 	database, err := ash.openDatabase()
 	if err != nil {
 		return err

@@ -35,8 +35,8 @@ func generateRoot(commonName string) (*x509.Certificate, crypto.Signer, error) {
 	return root, signer, nil
 }
 
-func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey crypto.Signer) (*x509.Certificate, crypto.Signer, error) {
-	template, signer, err := newCert(commonName, x509util.DefaultIntermediateTemplate, defaultIntermediateLifetime)
+func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey crypto.Signer, lifetime time.Duration) (*x509.Certificate, crypto.Signer, error) {
+	template, signer, err := newCert(commonName, x509util.DefaultIntermediateTemplate, lifetime)
 	if err != nil {
 		return nil, nil, err
 	}
