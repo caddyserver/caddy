@@ -48,6 +48,9 @@ type Handler struct {
 	// the default ID is "local".
 	CA string `json:"ca,omitempty"`
 
+	// The lifetime for issued certificates
+	Lifetime caddy.Duration `json:"lifetime,omitempty"`
+
 	// The hostname or IP address by which ACME clients
 	// will access the server. This is used to populate
 	// the ACME directory endpoint. If not set, the Host
@@ -95,6 +98,9 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	if ash.PathPrefix == "" {
 		ash.PathPrefix = defaultPathPrefix
 	}
+	if ash.Lifetime == 0 {
+		ash.Lifetime = caddy.Duration(12 * time.Hour)
+	}
 
 	// get a reference to the configured CA
 	appModule, err := ctx.App("pki")
@@ -105,6 +111,12 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	ca, err := pkiApp.GetCA(ctx, ash.CA)
 	if err != nil {
 		return err
+	}
+
+	// make sure leaf cert lifetime is less than the intermediate cert lifetime. this check only
+	// applies for caddy-managed intermediate certificates
+	if ca.Intermediate == nil && ash.Lifetime >= ca.IntermediateLifetime {
+		return fmt.Errorf("certificate lifetime (%s) should be less than intermediate certificate lifetime (%s)", time.Duration(ash.Lifetime), time.Duration(ca.IntermediateLifetime))
 	}
 
 	database, err := ash.openDatabase()
@@ -122,7 +134,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 					Claims: &provisioner.Claims{
 						MinTLSDur:     &provisioner.Duration{Duration: 5 * time.Minute},
 						MaxTLSDur:     &provisioner.Duration{Duration: 24 * time.Hour * 365},
-						DefaultTLSDur: &provisioner.Duration{Duration: 12 * time.Hour},
+						DefaultTLSDur: &provisioner.Duration{Duration: time.Duration(ash.Lifetime)},
 					},
 				},
 			},
