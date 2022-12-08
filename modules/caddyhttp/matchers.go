@@ -140,7 +140,7 @@ type (
 	// **NOTE:** Notice that query string values are arrays, not singular values. This is
 	// because repeated keys are valid in query strings, and each one may have a
 	// different value. This matcher will match for a key if any one of its configured
-	// values is assigned in the query string. Backend applications relyon on query
+	// values is assigned in the query string. Backend applications relying on query
 	// strings MUST take into consideration that query string values are arrays and can
 	// have multiple values.
 	MatchQuery url.Values
