@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.15.11
 	github.com/klauspost/cpuid/v2 v2.1.2
-	github.com/lucas-clemente/quic-go v0.30.0
+	github.com/lucas-clemente/quic-go v0.31.0
 	github.com/mholt/acmez v1.0.4
 	github.com/prometheus/client_golang v1.12.2
 	github.com/smallstep/certificates v0.23.0
@@ -127,7 +127,7 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/sys v0.1.0
+	golang.org/x/sys v0.1.1-0.20221102194838-fc697a31fa06
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/grpc v1.50.1 // indirect
