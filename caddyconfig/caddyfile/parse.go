@@ -318,6 +318,45 @@ func (p *parser) directives() error {
 	return nil
 }
 
+// parseVariadic determine if placeholder is a valid variadic placeholder
+// and return start and end index
+func parseVariadic(name string, args []string) (bool, int, int) {
+	if !strings.HasPrefix(name, "{args.") {
+		return false, 0, 0
+	}
+	if !strings.HasSuffix(name, "}") {
+		return false, 0, 0
+	}
+	s, e, f := strings.Cut(name[len("{args."):len(name)-len("}")], ":")
+	if !f {
+		return false, 0, 0
+	}
+
+	var (
+		si  = 0
+		ei  = len(args)
+		err error
+	)
+	if s != "" {
+		si, err = strconv.Atoi(s)
+		if err != nil {
+			return false, 0, 0
+		}
+	}
+	if e != "" {
+		ei, err = strconv.Atoi(e)
+		if err != nil {
+			return false, 0, 0
+		}
+	}
+
+	// bound check
+	if 0 <= si && si <= ei && ei <= len(args) {
+		return true, si, ei
+	}
+	return false, 0, 0
+}
+
 // doImport swaps out the import directive and its argument
 // (a total of 2 tokens) with the tokens in the specified file
 // or globbing pattern. When the function returns, the cursor
@@ -428,13 +467,25 @@ func (p *parser) doImport() error {
 	}
 
 	// copy the tokens so we don't overwrite p.definedSnippets
-	tokensCopy := make([]Token, len(importedTokens))
-	copy(tokensCopy, importedTokens)
+	tokensCopy := make([]Token, 0, len(importedTokens))
+
+	// set line number to actual place in file instead of token's
+	line := p.tokens[p.cursor].Line
 
 	// run the argument replacer on the tokens
-	for index, token := range tokensCopy {
-		token.Text = repl.ReplaceKnown(token.Text, "")
-		tokensCopy[index] = token
+	// golang for range slice return a copy of value
+	// similarly, append also copy value
+	for _, token := range importedTokens {
+		token.Line = line
+		if v, si, ei := parseVariadic(token.Text, args); v {
+			for _, arg := range args[si:ei] {
+				token.Text = arg
+				tokensCopy = append(tokensCopy, token)
+			}
+		} else {
+			token.Text = repl.ReplaceKnown(token.Text, "")
+			tokensCopy = append(tokensCopy, token)
+		}
 	}
 
 	// splice the imported tokens in the place of the import statement
