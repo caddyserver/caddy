@@ -476,9 +476,9 @@ func (p *parser) doImport() error {
 		// set file name to refer to import directive line number
 		// and snippet name
 		if token.inSnippet {
-			token.UpdateFile(fmt.Sprintf("%s:%d(import %s)", token.RealFile(), p.Line(), token.snippetName))
+			token.UpdateFile(fmt.Sprintf("%s:%d(import %s)", token.File, p.Line(), token.snippetName))
 		} else {
-			token.UpdateFile(fmt.Sprintf("%s:%d(import)", token.RealFile(), p.Line()))
+			token.UpdateFile(fmt.Sprintf("%s:%d(import)", token.File, p.Line()))
 		}
 
 		if v, si, ei := parseVariadic(token.Text, args); v {
