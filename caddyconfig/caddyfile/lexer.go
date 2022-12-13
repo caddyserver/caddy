@@ -36,6 +36,7 @@ type (
 	// Token represents a single parsable unit.
 	Token struct {
 		File        string
+		realFile    string
 		Line        int
 		Text        string
 		wasQuoted   rune // enclosing quote character, if any
@@ -43,6 +44,23 @@ type (
 		snippetName string
 	}
 )
+
+// RealFile gets original filename before import modification.
+func (t Token) RealFile() string {
+	if t.realFile != "" {
+		return t.realFile
+	}
+	return t.File
+}
+
+// UpdateFile updates filename for display and saves original filename,
+// it's used in import processing.
+func (t *Token) UpdateFile(file string) {
+	if t.realFile == "" {
+		t.realFile = t.File
+	}
+	t.File = file
+}
 
 // load prepares the lexer to scan an input for tokens.
 // It discards any leading byte order mark.

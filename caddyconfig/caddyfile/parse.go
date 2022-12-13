@@ -455,7 +455,7 @@ func (p *parser) doImport() error {
 		nodes = matches
 	}
 
-	nodeName := p.File()
+	nodeName := p.Token().RealFile()
 	if p.Token().inSnippet {
 		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
 	}
@@ -475,7 +475,12 @@ func (p *parser) doImport() error {
 	for _, token := range importedTokens {
 		// set file name to refer to import directive line number
 		// and snippet name
-		token.File = fmt.Sprintf("%s:%d(import %s)", token.File, p.tokens[p.cursor].Line, token.snippetName)
+		if token.inSnippet {
+			token.UpdateFile(fmt.Sprintf("%s:%d(import %s)", token.RealFile(), p.Line(), token.snippetName))
+		} else {
+			token.UpdateFile(fmt.Sprintf("%s:%d(import)", token.RealFile(), p.Line()))
+		}
+
 		if v, si, ei := parseVariadic(token.Text, args); v {
 			for _, arg := range args[si:ei] {
 				token.Text = arg
