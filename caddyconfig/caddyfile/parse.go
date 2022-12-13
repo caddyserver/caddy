@@ -469,14 +469,13 @@ func (p *parser) doImport() error {
 	// copy the tokens so we don't overwrite p.definedSnippets
 	tokensCopy := make([]Token, 0, len(importedTokens))
 
-	// set line number to actual place in file instead of token's
-	line := p.tokens[p.cursor].Line
-
 	// run the argument replacer on the tokens
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for _, token := range importedTokens {
-		token.Line = line
+		// set file name to refer to import directive line number
+		// and snippet name
+		token.File = fmt.Sprintf("%s:%d(import %s)", token.File, p.tokens[p.cursor].Line, token.snippetName)
 		if v, si, ei := parseVariadic(token.Text, args); v {
 			for _, arg := range args[si:ei] {
 				token.Text = arg
