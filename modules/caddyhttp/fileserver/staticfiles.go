@@ -339,13 +339,15 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path + "/"
+				origReq.URL.Path += "/"
+				to := origReq.URL.String()
 				fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
 					zap.String("from_path", origReq.URL.Path),
 					zap.String("to_path", to))
 				return redirect(w, r, to)
 			} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path[:len(origReq.URL.Path)-1]
+				origReq.URL.Path = origReq.URL.Path[:len(origReq.URL.Path)-1]
+				to := origReq.URL.String()
 				fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
 					zap.String("from_path", origReq.URL.Path),
 					zap.String("to_path", to))
