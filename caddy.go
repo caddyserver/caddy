@@ -864,13 +864,21 @@ func Version() (simple, full string) {
 	// bi.Main... hopefully.
 	var module *debug.Module
 	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		// find the Caddy module in the dependency list
-		for _, dep := range bi.Deps {
-			if dep.Path == ImportPath {
-				module = dep
-				break
-			}
+	if !ok {
+		if CustomVersion != "" {
+			full = CustomVersion
+			simple = CustomVersion
+			return
+		}
+		full = "unknown"
+		simple = "unknown"
+		return
+	}
+	// find the Caddy module in the dependency list
+	for _, dep := range bi.Deps {
+		if dep.Path == ImportPath {
+			module = dep
+			break
 		}
 	}
 	if module != nil {
