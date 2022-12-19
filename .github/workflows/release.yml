@@ -95,7 +95,7 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Cache the build cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         # In order:
         # * Module download cache
