@@ -289,28 +289,12 @@ func TestIsEncodeAllowed(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Cache-Control HTTP header starting with no-transform directive",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {"no-transform; no-cache"},
-			},
-			expected: false,
-		},
-		{
-			name: "With Cache-Control HTTP header no-transform directive in the middle",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {"no-store; no-cache; no-transform; another-directive"},
-			},
-			expected: false,
-		},
-		{
 			name: "With Cache-Control HTTP header no-transform as Cache-Extension value",
 			headers: http.Header{
 				"Accept-Encoding": {"gzip"},
 				"Cache-Control":   {`no-store; no-cache; community="no-transform"`},
 			},
-			expected: true,
+			expected: false,
 		},
 	}
 

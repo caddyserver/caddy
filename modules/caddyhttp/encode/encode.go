@@ -24,7 +24,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -119,7 +118,7 @@ func (enc *Encode) Validate() error {
 }
 
 func isEncodeAllowed(h http.Header) bool {
-	return !noTransformCacheControlReg.Match([]byte(h.Get("Cache-Control")))
+	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -405,10 +404,6 @@ type Precompressed interface {
 
 // defaultMinLength is the minimum length at which to compress content.
 const defaultMinLength = 512
-
-// noTransformCacheControlReg validate is the request to validate that
-// the Cache-Control HTTP header contains the `no-transform` directive
-var noTransformCacheControlReg = regexp.MustCompile("(^| )no-transform(;|$)")
 
 // Interface guards
 var (
