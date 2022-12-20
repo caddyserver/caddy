@@ -175,7 +175,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       
-      - uses: goreleaser/goreleaser-action@v2
+      - uses: goreleaser/goreleaser-action@v4
         with:
           version: latest
           args: check
