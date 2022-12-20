@@ -117,14 +117,20 @@ func (enc *Encode) Validate() error {
 	return nil
 }
 
+func isEncodeAllowed(h http.Header) bool {
+	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
+}
+
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-		if _, ok := enc.writerPools[encName]; !ok {
-			continue // encoding not offered
+	if isEncodeAllowed(r.Header) {
+		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+			if _, ok := enc.writerPools[encName]; !ok {
+				continue // encoding not offered
+			}
+			w = enc.openResponseWriter(encName, w)
+			defer w.(*responseWriter).Close()
+			break
 		}
-		w = enc.openResponseWriter(encName, w)
-		defer w.(*responseWriter).Close()
-		break
 	}
 	return next.ServeHTTP(w, r)
 }
@@ -281,7 +287,7 @@ func (rw *responseWriter) Close() error {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" &&
+	if rw.Header().Get("Content-Encoding") == "" && isEncodeAllowed(rw.Header()) &&
 		rw.config.Match(rw) {
 
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
