@@ -61,8 +61,8 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-        echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
-        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "version_tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
         # Add "pip install" CLI tools to PATH
         echo ~/.local/bin >> $GITHUB_PATH
@@ -74,10 +74,10 @@ jobs:
         TAG_MINOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\2#"`
         TAG_PATCH=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\3#"`
         TAG_SPECIAL=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\4#"`
-        echo "::set-output name=tag_major::${TAG_MAJOR}"
-        echo "::set-output name=tag_minor::${TAG_MINOR}"
-        echo "::set-output name=tag_patch::${TAG_PATCH}"
-        echo "::set-output name=tag_special::${TAG_SPECIAL}"
+        echo "tag_major=${TAG_MAJOR}" >> $GITHUB_OUTPUT
+        echo "tag_minor=${TAG_MINOR}" >> $GITHUB_OUTPUT
+        echo "tag_patch=${TAG_PATCH}" >> $GITHUB_OUTPUT
+        echo "tag_special=${TAG_SPECIAL}" >> $GITHUB_OUTPUT
 
     # Cloudsmith CLI tooling for pushing releases
     # See https://help.cloudsmith.io/docs/cli
