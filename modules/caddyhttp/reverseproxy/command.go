@@ -172,6 +172,10 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		Listen: []string{":" + fromAddr.Port},
 	}
 
+	if fromAddr.Scheme == "http" {
+		server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{Disabled: true}
+	}
+
 	httpApp := caddyhttp.App{
 		Servers: map[string]*caddyhttp.Server{"proxy": server},
 	}
