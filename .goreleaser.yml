@@ -82,8 +82,14 @@ archives:
   - format_overrides:
       - goos: windows
         format: zip
-    replacements:
-      darwin: mac
+    name_template: >-
+      {{ .ProjectName }}_
+      {{ - .Version }}_
+      {{ - if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_
+      {{ - .Arch }}
+      {{ - with .Arm }}v{{ . }}{{ end }}
+      {{ - with .Mips }}_{{ . }}{{ end }}
+      {{ - if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
 checksum:
   algorithm: sha512
 
