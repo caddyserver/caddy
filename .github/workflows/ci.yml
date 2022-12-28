@@ -64,7 +64,7 @@ jobs:
     #     go get github.com/axw/gocov/gocov
     #     go get github.com/AlekSi/gocov-xml
     #     go get -u github.com/jstemmer/go-junit-report
-    #     echo "::add-path::$(go env GOPATH)/bin"
+    #     echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
     - name: Print Go version and environment
       id: vars
@@ -77,7 +77,7 @@ jobs:
         env
         printf "Git version: $(git version)\n\n"
         # Calculate the short SHA1 hash of the git commit
-        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Cache the build cache
       uses: actions/cache@v3
@@ -123,7 +123,7 @@ jobs:
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -v -coverprofile="cover-profile.out" -short -race ./...
-        # echo "::set-output name=status::$?"
+        # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
