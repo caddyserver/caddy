@@ -188,27 +188,39 @@ scan:
 		sb.WriteString(input[lastWriteCursor:i])
 
 		// trim opening bracket
-		key := input[i+1 : end]
+		keyString := input[i+1 : end]
+
+		// split the string into a key and an optional default
+		keyParts := strings.SplitN(string(keyString), varDefaultDelimiter, 2)
 
 		// try to get a value for this key, handle empty values accordingly
-		val, found := r.Get(key)
+		val, found := r.Get(keyParts[0])
 		if !found {
-			// placeholder is unknown (unrecognized); handle accordingly
-			if errOnUnknown {
-				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
-					string(phOpen), key, string(phClose))
-			} else if !treatUnknownAsEmpty {
-				// if treatUnknownAsEmpty is true, we'll handle an empty
-				// val later; so only continue otherwise
-				lastWriteCursor = i
-				continue
+			// replace with variable default, if one is defined
+			if len(keyParts) == 2 {
+				val = keyParts[1]
+				if val == "" {
+					return "", fmt.Errorf("evaluated placeholder %s%s%s and default are empty",
+						string(phOpen), keyString, string(phClose))
+				}
+			} else {
+				// placeholder is unknown (unrecognized); handle accordingly
+				if errOnUnknown {
+					return "", fmt.Errorf("unrecognized placeholder %s%s%s",
+						string(phOpen), keyParts[0], string(phClose))
+				} else if !treatUnknownAsEmpty {
+					// if treatUnknownAsEmpty is true, we'll handle an empty
+					// val later; so only continue otherwise
+					lastWriteCursor = i
+					continue
+				}
 			}
 		}
 
 		// apply any transformations
 		if f != nil {
 			var err error
-			val, err = f(key, val)
+			val, err = f(keyParts[0], val)
 			if err != nil {
 				return "", err
 			}
@@ -222,7 +234,7 @@ scan:
 		if valStr == "" {
 			if errOnEmpty {
 				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
-					string(phOpen), key, string(phClose))
+					string(phOpen), keyParts[0], string(phClose))
 			} else if empty != "" {
 				sb.WriteString(empty)
 			}
@@ -345,3 +357,5 @@ var nowFunc = time.Now
 const ReplacerCtxKey CtxKey = "replacer"
 
 const phOpen, phClose, phEscape = '{', '}', '\\'
+
+const varDefaultDelimiter = ":"

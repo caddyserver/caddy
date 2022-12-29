@@ -79,9 +79,13 @@ func TestReplacer(t *testing.T) {
 			input:  `\{\}`,
 			expect: `{}`,
 		},
-		{
+		{ // TODO currently failing, we might split using a regex or check last character of actual placeholder key not to be a backslash
+			input:  `{"json"\: "object"}`,
+			expect: ``,
+		},
+		{ // TODO currently not failing, is this expected behavior? I guess users would just need to escape the colon in future, see test above
 			input:  `{"json": "object"}`,
-			expect: "",
+			expect: ` "object"`, // placeholder defaulting happened
 		},
 		{
 			input:  `\{"json": "object"}`,
@@ -123,7 +127,7 @@ func TestReplacer(t *testing.T) {
 			input:  `{{}`,
 			expect: "",
 		},
-		{
+		{ // TODO currently failing, is this a parser bug? not a finished placeholder sequence
 			input:  `{"json": "object"\}`,
 			expect: "",
 		},
@@ -293,6 +297,21 @@ func TestReplacerReplaceKnown(t *testing.T) {
 			// test with non existing vars
 			testInput: "{test1} {nope} {1} ",
 			expected:  "val1 {nope} test-123 ",
+		},
+		{
+			// test with default
+			testInput: "{nope} {nope:default} {test1:default}",
+			expected:  "{nope} default val1",
+		},
+		{
+			// test with empty default
+			testInput: "{nope:}",
+			expected:  "",
+		},
+		{
+			// should not chain variable expands
+			testInput: "{nope:$test1}",
+			expected:  "$test1",
 		},
 	} {
 		actual := rep.ReplaceKnown(tc.testInput, "EMPTY")
