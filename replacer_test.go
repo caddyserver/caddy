@@ -32,6 +32,10 @@ func TestReplacer(t *testing.T) {
 	// ReplaceAll
 	for i, tc := range []testCase{
 		{
+			input:  `\`,
+			expect: `\`,
+		},
+		{
 			input:  "{",
 			expect: "{",
 		},
@@ -69,7 +73,7 @@ func TestReplacer(t *testing.T) {
 		},
 		{
 			input:  `\}`,
-			expect: `\}`,
+			expect: `}`,
 		},
 		{
 			input:  "{}",
@@ -79,13 +83,14 @@ func TestReplacer(t *testing.T) {
 			input:  `\{\}`,
 			expect: `{}`,
 		},
-		{ // TODO currently failing, we might split using a regex or check last character of actual placeholder key not to be a backslash
+		{
 			input:  `{"json"\: "object"}`,
 			expect: ``,
 		},
-		{ // TODO currently not failing, is this expected behavior? I guess users would just need to escape the colon in future, see test above
+		{ // JSON-compatible interpretation (keys may not have quotes), interpreted as non-existing placeholder name
 			input:  `{"json": "object"}`,
-			expect: ` "object"`, // placeholder defaulting happened
+			empty:  `-`,
+			expect: `-`,
 		},
 		{
 			input:  `\{"json": "object"}`,
@@ -124,12 +129,12 @@ func TestReplacer(t *testing.T) {
 			expect: "{{",
 		},
 		{
-			input:  `{{}`,
-			expect: "",
+			input:  `a{b{c}d`,
+			expect: "a{bd",
 		},
-		{ // TODO currently failing, is this a parser bug? not a finished placeholder sequence
+		{
 			input:  `{"json": "object"\}`,
-			expect: "",
+			expect: `{"json": "object"}`,
 		},
 		{
 			input:  `{unknown}`,
@@ -142,7 +147,7 @@ func TestReplacer(t *testing.T) {
 		},
 		{
 			input:  `double back\\slashes`,
-			expect: `double back\\slashes`,
+			expect: `double back\slashes`,
 		},
 		{
 			input:  `placeholder {with \{ brace} in name`,
@@ -160,9 +165,27 @@ func TestReplacer(t *testing.T) {
 			input:  `\{'group':'default','max_age':3600,'endpoints':[\{'url':'https://some.domain.local/a/d/g'\}],'include_subdomains':true\}`,
 			expect: `{'group':'default','max_age':3600,'endpoints':[{'url':'https://some.domain.local/a/d/g'}],'include_subdomains':true}`,
 		},
+		{ // escapes in braces get dropped, escapes outside remain
+			input:  `{}{}{}\\\\{\\\\}`,
+			expect: `\\`,
+		},
 		{
-			input:  `{}{}{}{\\\\}\\\\`,
-			expect: `{\\\}\\\\`,
+			input:  `{{{{{{{}`,
+			expect: `{{{{{{`,
+		},
+		{
+			input:  `{:}`,
+			empty:  `-`,
+			expect: `-`,
+		},
+		{
+			input:  `{\:default}`,
+			empty:  `-`,
+			expect: `-`,
+		},
+		{
+			input:  `{:default}`,
+			expect: `default`,
 		},
 		{
 			input:  string([]byte{0x26, 0x00, 0x83, 0x7B, 0x84, 0x07, 0x5C, 0x7D, 0x84}),
@@ -262,6 +285,8 @@ func TestReplacerReplaceKnown(t *testing.T) {
 					return "1.2.3.4", true
 				case "testEmpty":
 					return "", true
+				case "with:colon":
+					return "colon:value", true
 				default:
 					return "NOOO", false
 				}
@@ -269,56 +294,131 @@ func TestReplacerReplaceKnown(t *testing.T) {
 		},
 	}
 
+	const empty = "EMPTY"
 	for _, tc := range []struct {
-		testInput string
-		expected  string
+		testInput            string
+		expectedReplaceKnown string
+		expectedReplaceAll   string
 	}{
 		{
 			// test vars without space
-			testInput: "{test1}{asdf}{äöü}{1}{with space}{mySuper_IP}",
-			expected:  "val1123öö_äütest-123space value1.2.3.4",
+			testInput:            "{test1}{asdf}{äöü}{1}{with space}{mySuper_IP}",
+			expectedReplaceKnown: "val1123öö_äütest-123space value1.2.3.4",
+			expectedReplaceAll:   "val1123öö_äütest-123space value1.2.3.4",
 		},
 		{
 			// test vars with space
-			testInput: "{test1} {asdf} {äöü} {1} {with space} {mySuper_IP} ",
-			expected:  "val1 123 öö_äü test-123 space value 1.2.3.4 ",
+			testInput:            "{test1} {asdf} {äöü} {1} {with space} {mySuper_IP} ",
+			expectedReplaceKnown: "val1 123 öö_äü test-123 space value 1.2.3.4 ",
+			expectedReplaceAll:   "val1 123 öö_äü test-123 space value 1.2.3.4 ",
 		},
 		{
 			// test with empty val
-			testInput: "{test1} {testEmpty} {asdf} {1} ",
-			expected:  "val1 EMPTY 123 test-123 ",
+			testInput:            "{test1} {testEmpty} {asdf} {1} ",
+			expectedReplaceKnown: fmt.Sprintf("val1 %s 123 test-123 ", empty),
+			expectedReplaceAll:   fmt.Sprintf("val1 %s 123 test-123 ", empty),
 		},
 		{
 			// test vars with not finished placeholders
-			testInput: "{te{test1}{as{{df{1}",
-			expected:  "{teval1{as{{dftest-123",
+			testInput:            "{te{test1}{as{{df{1}",
+			expectedReplaceKnown: "{teval1{as{{dftest-123",
+			expectedReplaceAll:   "{teval1{as{{dftest-123",
 		},
 		{
 			// test with non existing vars
-			testInput: "{test1} {nope} {1} ",
-			expected:  "val1 {nope} test-123 ",
+			testInput:            "{test1} {nope} {1} ",
+			expectedReplaceKnown: "val1 {nope} test-123 ",
+			expectedReplaceAll:   fmt.Sprintf("val1 %s test-123 ", empty),
 		},
 		{
 			// test with default
-			testInput: "{nope} {nope:default} {test1:default}",
-			expected:  "{nope} default val1",
+			testInput:            "{nope} {nope:default} {test1:default}",
+			expectedReplaceKnown: "{nope} default val1",
+			expectedReplaceAll:   fmt.Sprintf("%s default val1", empty),
 		},
 		{
 			// test with empty default
-			testInput: "{nope:}",
-			expected:  "",
+			testInput:            "{nope:}",
+			expectedReplaceKnown: empty,
+			expectedReplaceAll:   empty,
 		},
 		{
-			// should not chain variable expands
-			testInput: "{nope:$test1}",
-			expected:  "$test1",
+			// should chain variable expands
+			testInput:            "{nope:foo {test1}bar}",
+			expectedReplaceKnown: "foo val1bar",
+			expectedReplaceAll:   "foo val1bar",
+		},
+		{
+			// should chain variable expands
+			testInput:            "{nope:{nope:{test1:default}}}",
+			expectedReplaceKnown: "val1",
+			expectedReplaceAll:   "val1",
+		},
+		{
+			// should chain variable expands
+			testInput:            `{unknown\:with\:colon}`,
+			expectedReplaceKnown: "{unknown:with:colon}",
+			expectedReplaceAll:   empty,
+		},
+		{
+			// should chain variable expands
+			testInput:            `{with\:colon}`,
+			expectedReplaceKnown: "colon:value",
+			expectedReplaceAll:   "colon:value",
+		},
+		{
+			testInput:            `{nope:foo:test1}`,
+			expectedReplaceKnown: "foo:test1",
+			expectedReplaceAll:   "foo:test1",
+		},
+		{
+			testInput:            `{nope\:foo:test1}`,
+			expectedReplaceKnown: "test1",
+			expectedReplaceAll:   "test1",
+		},
+		{
+			testInput:            `{nope:{foo\:test1}}`,
+			expectedReplaceKnown: "{nope:{foo:test1}}",
+			expectedReplaceAll:   empty,
+		},
+		{
+			testInput:            `{nope:foo\}bar}`,
+			expectedReplaceKnown: "foo}bar",
+			expectedReplaceAll:   "foo}bar",
+		},
+		{
+			testInput:            `{nope:foo\{bar}`,
+			expectedReplaceKnown: "foo{bar",
+			expectedReplaceAll:   "foo{bar",
+		},
+		{
+			testInput:            `{nope:{foo\{bar}}`,
+			expectedReplaceKnown: `{nope:{foo{bar}}`,
+			expectedReplaceAll:   empty,
+		},
+		{
+			testInput:            `{nope:{nope2}}`,
+			expectedReplaceKnown: `{nope:{nope2}}`,
+			expectedReplaceAll:   empty,
+		},
+		{
+			testInput:            `a{b{c{test1}`,
+			expectedReplaceKnown: "a{b{cval1",
+			expectedReplaceAll:   "a{b{cval1",
 		},
 	} {
-		actual := rep.ReplaceKnown(tc.testInput, "EMPTY")
+		actual := rep.ReplaceKnown(tc.testInput, empty)
 
 		// test if all are replaced as expected
-		if actual != tc.expected {
-			t.Errorf("Expected '%s' got '%s' for '%s'", tc.expected, actual, tc.testInput)
+		if actual != tc.expectedReplaceKnown {
+			t.Errorf("Expected '%s' got '%s' for '%s' (ReplaceKnown)", tc.expectedReplaceKnown, actual, tc.testInput)
+		}
+
+		actual = rep.ReplaceAll(tc.testInput, empty)
+
+		// test if all are replaced as expected
+		if actual != tc.expectedReplaceAll {
+			t.Errorf("Expected '%s' got '%s' for '%s' (ReplaceAll)", tc.expectedReplaceAll, actual, tc.testInput)
 		}
 	}
 }

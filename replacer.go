@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -101,14 +102,15 @@ func (r *Replacer) fromStatic(key string) (any, bool) {
 // that are empty or not recognized will cause an error to
 // be returned.
 func (r *Replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
-	return r.replace(input, "", false, errOnEmpty, errOnUnknown, nil)
+	out, _, err := r.replace(input, "", false, errOnEmpty, errOnUnknown, nil)
+	return out, err
 }
 
 // ReplaceKnown is like ReplaceAll but only replaces
 // placeholders that are known (recognized). Unrecognized
 // placeholders will remain in the output.
 func (r *Replacer) ReplaceKnown(input, empty string) string {
-	out, _ := r.replace(input, empty, false, false, false, nil)
+	out, _, _ := r.replace(input, empty, false, false, false, nil)
 	return out
 }
 
@@ -117,7 +119,7 @@ func (r *Replacer) ReplaceKnown(input, empty string) string {
 // whether they are recognized or not. Values that are empty
 // string will be substituted with empty.
 func (r *Replacer) ReplaceAll(input, empty string) string {
-	out, _ := r.replace(input, empty, true, false, false, nil)
+	out, _, _ := r.replace(input, empty, true, false, false, nil)
 	return out
 }
 
@@ -125,51 +127,48 @@ func (r *Replacer) ReplaceAll(input, empty string) string {
 // replacement to be made, in case f wants to change or inspect
 // the replacement.
 func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
-	return r.replace(input, "", true, false, false, f)
+	out, _, err := r.replace(input, "", true, false, false, f)
+	return out, err
 }
 
-func (r *Replacer) replace(input, empty string,
-	treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool,
-	f ReplacementFunc) (string, error) {
+func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool, f ReplacementFunc) (string, bool, error) {
+	var result strings.Builder
 
-	var sb strings.Builder
-
-	// it is reasonable to assume that the output
-	// will be approximately as long as the input
-	sb.Grow(len(input))
+	// it is reasonable to assume that the output will be approximately as long as the input
+	result.Grow(len(input))
+	allPlaceholdersFound := true
 
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
-
-	//scan:
-	for i := 0; i < len(input); i++ {
-		switch input[i] {
+	for placeholderStart := 0; placeholderStart < len(input); placeholderStart++ {
+		switch input[placeholderStart] {
 		case phOpen:
-			// process possible placeholder in remaining loop (not drop into default)
+			// process possible placeholder in remaining loop (do not drop into default)
 		case phEscape:
 			// escape character at the end of the input or next character not a brace or escape character
-			if i+1 == len(input) || (input[i+1] != phOpen && input[i+1] != phClose && input[i+1] != phEscape) {
+			if placeholderStart+1 == len(input) || (input[placeholderStart+1] != phOpen && input[placeholderStart+1] != phClose && input[placeholderStart+1] != phEscape) {
 				continue
 			}
 			// if there's anything to copy (until the escape character), do so
-			if i > lastWriteCursor {
-				sb.WriteString(input[lastWriteCursor:i])
+			if placeholderStart > lastWriteCursor {
+				result.WriteString(input[lastWriteCursor:placeholderStart])
 			}
 			// skip handling escaped character, get it copied with the next special character
-			i++
-			lastWriteCursor = i
+			placeholderStart++
+			lastWriteCursor = placeholderStart
 			continue
 		default:
 			// just copy anything else
 			continue
 		}
 
-		// our iterator is now on an unescaped open brace (start of placeholder)
-
-		end := 0
+		// our iterator is now on an unescaped open brace (start of placeholder), find matching closing brace
+		var placeholderEnd int
 		bracesLevel := 0
-		for j := i + 1; j < len(input); j++ {
-			switch input[j] {
+		placeHolderEndFound := false
+	placeholderEndScanner:
+		for placeholderEnd = placeholderStart + 1; placeholderEnd < len(input); placeholderEnd++ {
+			switch input[placeholderEnd] {
 			case phOpen:
 				bracesLevel++
 			case phClose:
@@ -177,86 +176,118 @@ func (r *Replacer) replace(input, empty string,
 					bracesLevel--
 					continue
 				}
-				end = j
-				break
+				placeHolderEndFound = true
+				break placeholderEndScanner
 			case phEscape:
-				// skip scaped character
-				j++
+				// skip escaped character
+				placeholderEnd++
 			default:
 			}
 		}
-		// no matching closing brace found
-		if end == 0 {
+		// no matching closing brace found, this is not a complete placeholder, continue search
+		if !placeHolderEndFound {
 			continue
 		}
 
 		// write the substring from the last cursor to this point
-		sb.WriteString(input[lastWriteCursor:i])
+		result.WriteString(input[lastWriteCursor:placeholderStart])
 
-		// trim opening bracket
-		keyString := input[i+1 : end]
-
-		// split the string into a key and an optional default
-		keyParts := strings.SplitN(string(keyString), varDefaultDelimiter, 2)
+		// split to key and default (if exists), allowing for escaped colons
+		var keyBuilder strings.Builder
+		var key, defaultKey string
+		// both key and defaultKey are bound to placeholder length
+		keyBuilder.Grow(placeholderEnd - placeholderStart)
+		defaultKeyExists := false
+	keyScanner:
+		for dividerScanner := placeholderStart + 1; dividerScanner < placeholderEnd; dividerScanner++ {
+			switch input[dividerScanner] {
+			case phColon:
+				defaultKeyExists = true
+				// default key will be parsed recursively
+				defaultKey = input[dividerScanner+1 : placeholderEnd]
+				break keyScanner
+			case phEscape:
+				// skip escape character, then copy escaped character
+				dividerScanner++
+				fallthrough
+			default:
+				keyBuilder.WriteByte(input[dividerScanner])
+			}
+		}
+		key = keyBuilder.String()
+		unescapedPlaceholder := key
 
 		// try to get a value for this key, handle empty values accordingly
-		val, found := r.Get(keyParts[0])
-		if !found {
-			// replace with variable default, if one is defined
-			if len(keyParts) == 2 {
-				val = keyParts[1]
-				if val == "" {
-					return "", fmt.Errorf("evaluated placeholder %s%s%s and default are empty",
-						string(phOpen), keyString, string(phClose))
-				}
+		val, found := r.Get(key)
+		// try to replace with variable default, if one is defined; if key contains a quote, consider it JSON and do not apply defaulting
+		if !found && defaultKeyExists && !strings.Contains(key, string(phQuote)) {
+			var err error
+			defaultVal, defaultFound, err := r.replace(defaultKey, empty, treatUnknownAsEmpty, errOnEmpty, errOnUnknown, f)
+			if err != nil {
+				return "", false, err
+			}
+			if !defaultFound {
+				allPlaceholdersFound = false
+				unescapedPlaceholder = unescapedPlaceholder + ":" + defaultVal
 			} else {
-				// placeholder is unknown (unrecognized); handle accordingly
-				if errOnUnknown {
-					return "", fmt.Errorf("unrecognized placeholder %s%s%s",
-						string(phOpen), keyParts[0], string(phClose))
-				} else if !treatUnknownAsEmpty {
-					// if treatUnknownAsEmpty is true, we'll handle an empty
-					// val later; so only continue otherwise
-					lastWriteCursor = i
-					continue
-				}
+				found = true
+				val = defaultVal
+			}
+		}
+
+		// if placeholder is still unknown (unrecognized); see if we need to error out or skip the placeholder
+		if !found {
+			if errOnUnknown {
+				return "", false, fmt.Errorf("unrecognized placeholder %s%s%s",
+					string(phOpen), key, string(phClose))
+			}
+			// move cursors over placeholder
+			placeholderStart = placeholderEnd + 1
+			lastWriteCursor = placeholderStart
+			// if not supposed to treat unknown placeholders as empty values, print the unescaped copy
+			if !treatUnknownAsEmpty {
+				allPlaceholdersFound = false
+				result.WriteByte(phOpen)
+				result.WriteString(unescapedPlaceholder)
+				result.WriteByte(phClose)
 			}
 		}
 
 		// apply any transformations
 		if f != nil {
 			var err error
-			val, err = f(keyParts[0], val)
+			val, err = f(key, val)
 			if err != nil {
-				return "", err
+				return "", false, err
 			}
 		}
 
 		// convert val to a string as efficiently as possible
 		valStr := ToString(val)
 
-		// write the value; if it's empty, either return
-		// an error or write a default value
-		if valStr == "" {
+		// write the value; if it's empty, either return an error or write a default value
+		if valStr == "" && (found || treatUnknownAsEmpty) {
 			if errOnEmpty {
-				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
-					string(phOpen), keyParts[0], string(phClose))
-			} else if empty != "" {
-				sb.WriteString(empty)
+				return "", false, fmt.Errorf("evaluated placeholder %s%s%s is empty",
+					string(phOpen), key, string(phClose))
 			}
-		} else {
-			sb.WriteString(valStr)
+			if empty != "" {
+				valStr = empty
+			}
 		}
+		result.WriteString(valStr)
 
 		// advance cursor to end of placeholder
-		i = end
-		lastWriteCursor = i + 1
+		placeholderStart = placeholderEnd
+		lastWriteCursor = placeholderStart + 1
 	}
 
 	// flush any unwritten remainder
-	sb.WriteString(input[lastWriteCursor:])
+	if lastWriteCursor < len(input) {
+		result.WriteString(input[lastWriteCursor:])
+	}
 
-	return sb.String(), nil
+	return result.String(), allPlaceholdersFound, nil
 }
 
 // ToString returns val as a string, as efficiently as possible.
@@ -362,6 +393,7 @@ var nowFunc = time.Now
 // ReplacerCtxKey is the context key for a replacer.
 const ReplacerCtxKey CtxKey = "replacer"
 
-const phOpen, phClose, phEscape = '{', '}', '\\'
+const phOpen, phClose, phEscape, phQuote, phColon = '{', '}', '\\', '"', ':'
 
-const varDefaultDelimiter = ":"
+var varDefaultDelimiter = regexp.MustCompile(`[^\\](:)`)
+var escapedDefaultDelimiter = regexp.MustCompile(`\\:`)
