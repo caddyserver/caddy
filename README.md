@@ -1,9 +1,9 @@
 <p align="center">
 	<a href="https://caddyserver.com">
 		<picture>
-			<source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/1128849/210150775-22ec1a89-e9d0-47a5-a10e-aa5b9473b4d2.svg">
-			<source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/1128849/210150753-c6511c6f-a8cc-4d95-8fd0-0f933a4cae7f.svg">
-			<img src="https://user-images.githubusercontent.com/1128849/210150753-c6511c6f-a8cc-4d95-8fd0-0f933a4cae7f.svg" alt="Caddy" width="550">
+			<source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/1128849/210187358-e2c39003-9a5e-4dd5-a783-6deb6483ee72.svg">
+			<source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/1128849/210187356-dfb7f1c5-ac2e-43aa-bb23-fc014280ae1f.svg">
+			<img src="https://user-images.githubusercontent.com/1128849/210187356-dfb7f1c5-ac2e-43aa-bb23-fc014280ae1f.svg" alt="Caddy" width="550">
 		</picture>
 	</a>
 	<br>
