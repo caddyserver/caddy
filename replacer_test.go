@@ -565,6 +565,10 @@ func BenchmarkReplacer(b *testing.B) {
 			name:  "escaped placeholder",
 			input: `\{"json": \{"nested": "{bar}"\}\}`,
 		},
+		{
+			name:  "many unclosed braces",
+			input: `{{{{{{{{{{{{{{{{{{{{{{{{{`,
+		},
 	} {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {

@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -140,9 +141,14 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 
 	// iterate the input to find each placeholder
 	var lastWriteCursor int
+	skipOpeningBraces := 0
 	for placeholderStart := 0; placeholderStart < len(input); placeholderStart++ {
 		switch input[placeholderStart] {
 		case phOpen:
+			if skipOpeningBraces > 0 {
+				skipOpeningBraces--
+				continue
+			}
 			// process possible placeholder in remaining loop (do not drop into default)
 		case phEscape:
 			// escape character at the end of the input or next character not a brace or escape character
@@ -164,16 +170,21 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 
 		// our iterator is now on an unescaped open brace (start of placeholder), find matching closing brace
 		var placeholderEnd int
-		bracesLevel := 0
+		skipOpeningBraces = math.MaxInt
+		unclosedBraces := 0
 		placeHolderEndFound := false
 	placeholderEndScanner:
 		for placeholderEnd = placeholderStart + 1; placeholderEnd < len(input); placeholderEnd++ {
 			switch input[placeholderEnd] {
 			case phOpen:
-				bracesLevel++
+				unclosedBraces++
 			case phClose:
-				if bracesLevel > 0 {
-					bracesLevel--
+				// remember the minimum level of unclosed braces, we can skip that many opening braces later
+				if unclosedBraces < skipOpeningBraces {
+					skipOpeningBraces = unclosedBraces - 1
+				}
+				if unclosedBraces > 0 {
+					unclosedBraces--
 					continue
 				}
 				placeHolderEndFound = true
@@ -186,6 +197,10 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 		}
 		// no matching closing brace found, this is not a complete placeholder, continue search
 		if !placeHolderEndFound {
+			// remember the minimum level of unclosed braces, we can skip that many opening braces later
+			if unclosedBraces < skipOpeningBraces {
+				skipOpeningBraces = unclosedBraces - 1
+			}
 			continue
 		}
 
