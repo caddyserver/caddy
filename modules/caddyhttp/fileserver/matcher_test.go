@@ -63,6 +63,12 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
+			path:         "/foo.txt?a=b",
+			expectedPath: "/foo.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
 			path:         "/foodir",
 			expectedPath: "/foodir/",
 			expectedType: "directory",
@@ -210,6 +216,12 @@ func TestPHPFileMatcher(t *testing.T) {
 			expectedPath: "/%E2%C3",
 			expectedType: "file",
 			matched:      false,
+		},
+		{
+			path:         "/index.php?path={path}&{query}",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
 		},
 	} {
 		m := &MatchFile{
