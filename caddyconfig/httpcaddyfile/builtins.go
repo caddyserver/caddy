@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -75,16 +76,22 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
-//	    alpn      <values...>
-//	    load      <paths...>
-//	    ca        <acme_ca_endpoint>
-//	    ca_root   <pem_file>
-//	    dns       <provider_name> [...]
+//	    alpn                          <values...>
+//	    load                          <paths...>
+//	    ca                            <acme_ca_endpoint>
+//	    ca_root                       <pem_file>
+//	    key_type                      [ed25519|p256|p384|rsa2048|rsa4096]
+//	    dns                           <provider_name> [...]
+//	    propagation_delay             <duration>
+//	    propagation_timeout           <duration>
+//	    resolvers                     <dns_servers...>
+//	    dns_ttl                       <duration>
+//	    dns_challenge_override_domain <domain>
 //	    on_demand
-//	    eab    <key_id> <mac_key>
-//	    issuer <module_name> [...]
-//	    get_certificate <module_name> [...]
-//	    insecure_secrets_log <log_file>
+//	    eab                           <key_id> <mac_key>
+//	    issuer                        <module_name> [...]
+//	    get_certificate               <module_name> [...]
+//	    insecure_secrets_log          <log_file>
 //	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	cp := new(caddytls.ConnectionPolicy)
@@ -362,6 +369,75 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 				}
 				acmeIssuer.Challenges.DNS.Resolvers = args
+
+			case "propagation_delay":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				delayStr := arg[0]
+				delay, err := caddy.ParseDuration(delayStr)
+				if err != nil {
+					return nil, h.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
+
+			case "propagation_timeout":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				timeoutStr := arg[0]
+				var timeout time.Duration
+				if timeoutStr == "-1" {
+					timeout = time.Duration(-1)
+				} else {
+					var err error
+					timeout, err = caddy.ParseDuration(timeoutStr)
+					if err != nil {
+						return nil, h.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+					}
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
+
+			case "dns_ttl":
+				arg := h.RemainingArgs()
+				if len(arg) != 1 {
+					return nil, h.ArgErr()
+				}
+				ttlStr := arg[0]
+				ttl, err := caddy.ParseDuration(ttlStr)
+				if err != nil {
+					return nil, h.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+				}
+				if acmeIssuer == nil {
+					acmeIssuer = new(caddytls.ACMEIssuer)
+				}
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				if acmeIssuer.Challenges.DNS == nil {
+					acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+				}
+				acmeIssuer.Challenges.DNS.TTL = caddy.Duration(ttl)
 
 			case "dns_challenge_override_domain":
 				arg := h.RemainingArgs()
