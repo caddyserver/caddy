@@ -277,7 +277,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
 	}
-	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, req)
+	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
 	req = req.WithContext(ctx)
 	for key, hdrs := range h.HealthChecks.Active.Headers {
 		if strings.ToLower(key) == "host" {
