@@ -266,6 +266,7 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //	    propagation_delay <duration>
 //	    propagation_timeout <duration>
 //	    resolvers <dns_servers...>
+//	    dns_ttl <duration>
 //	    dns_challenge_override_domain <domain>
 //	    preferred_chains [smallest] {
 //	        root_common_name <common_names...>
@@ -444,6 +445,23 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(iss.Challenges.DNS.Resolvers) == 0 {
 					return d.ArgErr()
 				}
+
+			case "dns_ttl":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				ttlStr := d.Val()
+				ttl, err := caddy.ParseDuration(ttlStr)
+				if err != nil {
+					return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.TTL = caddy.Duration(ttl)
 
 			case "dns_challenge_override_domain":
 				arg := d.RemainingArgs()
