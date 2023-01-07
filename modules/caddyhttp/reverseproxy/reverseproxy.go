@@ -622,8 +622,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.BufferRequests && req.Body != nil {
-		req.Body = h.bufferedBody(req.Body)
+	if (h.BufferRequests || isChunkedRequest(req)) && req.Body != nil {
+		req.Body, req.ContentLength = h.bufferedBody(req.Body)
+		req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
 	}
 
 	if req.ContentLength == 0 {
@@ -854,7 +855,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// if enabled, buffer the response body
 	if h.BufferResponses {
-		res.Body = h.bufferedBody(res.Body)
+		res.Body, _ = h.bufferedBody(res.Body)
 	}
 
 	// see if any response handler is configured for this response from the backend
@@ -1125,7 +1126,8 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 
 // bufferedBody reads originalBody into a buffer, then returns a reader for the buffer.
 // Always close the return value when done with it, just like if it was the original body!
-func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
+func (h Handler) bufferedBody(originalBody io.ReadCloser) (io.ReadCloser, int64) {
+	var written int64
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if h.MaxBufferSize > 0 {
@@ -1135,16 +1137,25 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
 				Reader: io.MultiReader(buf, originalBody),
 				buf:    buf,
 				body:   originalBody,
-			}
+			}, n
 		}
 	} else {
-		_, _ = io.Copy(buf, originalBody)
+		written, _ = io.Copy(buf, originalBody)
 	}
 	originalBody.Close() // no point in keeping it open
 	return bodyReadCloser{
 		Reader: buf,
 		buf:    buf,
+	}, written
+}
+
+func isChunkedRequest(req *http.Request) bool {
+	for _, transferEncoding := range req.TransferEncoding {
+		if transferEncoding == "chunked" {
+			return true
+		}
 	}
+	return false
 }
 
 // cloneRequest makes a semi-deep clone of origReq.
