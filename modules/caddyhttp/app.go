@@ -373,9 +373,13 @@ func (app *App) Start() error {
 		// enable H2C if configured
 		if srv.protocol("h2c") {
 			h2server := &http2.Server{
-				IdleTimeout: time.Duration(srv.IdleTimeout),
+				NewWriteScheduler: func() http2.WriteScheduler { return http2.NewPriorityWriteScheduler(nil) },
 			}
-			srv.server.Handler = h2c.NewHandler(srv, h2server)
+			//nolint:errcheck
+			http2.ConfigureServer(srv.server, h2server)
+			h2chandler := newH2cHandler(h2c.NewHandler(srv, h2server))
+			srv.server.Handler = h2chandler
+			srv.h2chandler = h2chandler
 		}
 
 		for _, lnAddr := range srv.Listen {
@@ -570,12 +574,25 @@ func (app *App) Stop() error {
 				zap.Strings("addresses", server.Listen))
 		}
 	}
+	stopH2chandler := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
+		if server.h2chandler != nil {
+			if err := server.h2chandler.Shutdown(ctx); err != nil {
+				app.logger.Error("h2c handler shutdown",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+	}
 
 	for _, server := range app.Servers {
-		startedShutdown.Add(2)
-		finishedShutdown.Add(2)
+		startedShutdown.Add(3)
+		finishedShutdown.Add(3)
 		go stopServer(server)
 		go stopH3Server(server)
+		go stopH2chandler(server)
 	}
 
 	// block until all the goroutines have been run by the scheduler;

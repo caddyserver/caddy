@@ -175,6 +175,8 @@ type Server struct {
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	addresses   []caddy.NetworkAddress
 
+	h2chandler *h2chandler
+
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
 
