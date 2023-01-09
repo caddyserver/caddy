@@ -2,7 +2,12 @@ localhost
 
 respond "hello from localhost"
 tls {
-	dns_ttl 5m10s
+	issuer acme {
+		dns_ttl 5m10s
+	}
+	issuer zerossl {
+		dns_ttl 10m20s
+	}
 }
 ----------
 {
@@ -62,7 +67,7 @@ tls {
 							{
 								"challenges": {
 									"dns": {
-										"ttl": 310000000000
+										"ttl": 620000000000
 									}
 								},
 								"module": "zerossl"

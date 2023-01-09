@@ -2,7 +2,8 @@ localhost
 
 respond "hello from localhost"
 tls {
-	dns_ttl 5m10s
+	propagation_delay 5m10s
+	propagation_timeout 10m20s
 }
 ----------
 {
@@ -54,7 +55,8 @@ tls {
 							{
 								"challenges": {
 									"dns": {
-										"ttl": 310000000000
+										"propagation_delay": 310000000000,
+										"propagation_timeout": 620000000000
 									}
 								},
 								"module": "acme"
@@ -62,7 +64,8 @@ tls {
 							{
 								"challenges": {
 									"dns": {
-										"ttl": 310000000000
+										"propagation_delay": 310000000000,
+										"propagation_timeout": 620000000000
 									}
 								},
 								"module": "zerossl"
