@@ -701,16 +701,14 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 
 	// Client IP may contain a zone if IPv6, so we need
 	// to pull that out before parsing the IP
-	if before, _, found := strings.Cut(clientIP, "%"); found {
-		clientIP = before
-	}
+	clientIP, _, _ = strings.Cut(clientIP, "%")
 	ipAddr, err := netip.ParseAddr(clientIP)
 	if err != nil {
 		return fmt.Errorf("invalid IP address: '%s': %v", clientIP, err)
 	}
 
 	// Check if the client is a trusted proxy
-	trusted := false
+	trusted := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool)
 	for _, ipRange := range h.trustedProxies {
 		if ipRange.Contains(ipAddr) {
 			trusted = true
