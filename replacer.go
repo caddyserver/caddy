@@ -182,7 +182,7 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 		// our iterator is now on an unescaped open brace (start of placeholder), find matching closing brace
 		var placeholderEnd int
 		skipOpeningBraces = math.MaxInt
-		unclosedBraces := 0
+		unclosedBraces := 1 // first unclosed brace already at `placeholderStart`, we start scanning immediately after this
 		placeHolderEndFound := false
 	placeholderEndScanner:
 		for placeholderEnd = placeholderStart + 1; placeholderEnd < len(input); placeholderEnd++ {
@@ -190,12 +190,21 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 			case phOpen:
 				unclosedBraces++
 			case phClose:
-				// remember the minimum level of unclosed braces, we can skip that many opening braces later
+				unclosedBraces--
+				// Remember the minimum level of unclosed braces, we can skip that many opening braces later. Idea behind this
+				// optimization: given we have an input like
+				//
+				//     a{b{c{d{e}f{g}
+				//      1 2 3 4 3 4 3 (unclosedBraces counter)
+				//
+				// This will remember a maximumm of two braces (3 minus the one we're already handling right now) to skip during
+				// the next iteration. After dismissing the opening brace between a and b for not having a paired closing
+				// brace, it will skip those between b and d and the next placeholder search will continue at the `{e}`
+				// placeholder.
 				if unclosedBraces < skipOpeningBraces {
 					skipOpeningBraces = unclosedBraces - 1
 				}
 				if unclosedBraces > 0 {
-					unclosedBraces--
 					continue
 				}
 				placeHolderEndFound = true
