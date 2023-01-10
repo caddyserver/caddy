@@ -133,9 +133,20 @@ func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) 
 }
 
 func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty, errOnUnknown bool, f ReplacementFunc) (string, bool, error) {
-	var result strings.Builder
+	// exit early in case of strings without escapes and opening braces, which are common and won't be changed by this function
+	potentialPlaceholderFound := false
+	for _, byte := range input {
+		if byte == '\\' || byte == '{' {
+			potentialPlaceholderFound = true
+			break
+		}
+	}
+	if !potentialPlaceholderFound {
+		return input, true, nil
+	}
 
 	// it is reasonable to assume that the output will be approximately as long as the input
+	var result strings.Builder
 	result.Grow(len(input))
 	allPlaceholdersFound := true
 
