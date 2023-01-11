@@ -576,6 +576,10 @@ func cmdFmt(fl Flags) (int, error) {
 		fmt.Print(string(output))
 	}
 
+	if !bytes.Equal(input, output) {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("diff found")
+	}
+
 	return caddy.ExitCodeSuccess, nil
 }
 
