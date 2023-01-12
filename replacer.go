@@ -19,7 +19,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -276,9 +275,6 @@ func (r *Replacer) replace(input, empty string, treatUnknownAsEmpty, errOnEmpty,
 				return "", false, fmt.Errorf("unrecognized placeholder %s%s%s",
 					string(phOpen), key, string(phClose))
 			}
-			// move cursors over placeholder
-			placeholderStart = placeholderEnd + 1
-			lastWriteCursor = placeholderStart
 			// if not supposed to treat unknown placeholders as empty values, print the unescaped copy
 			if !treatUnknownAsEmpty {
 				allPlaceholdersFound = false
@@ -429,6 +425,3 @@ var nowFunc = time.Now
 const ReplacerCtxKey CtxKey = "replacer"
 
 const phOpen, phClose, phEscape, phQuote, phColon = '{', '}', '\\', '"', ':'
-
-var varDefaultDelimiter = regexp.MustCompile(`[^\\](:)`)
-var escapedDefaultDelimiter = regexp.MustCompile(`\\:`)
