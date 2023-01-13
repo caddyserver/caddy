@@ -62,19 +62,17 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 		if req != nil {
 			// query string parameters
 			if strings.HasPrefix(key, reqURIQueryReplPrefix) {
-				vals := req.URL.Query()[key[len(reqURIQueryReplPrefix):]]
+				vals, found := req.URL.Query()[key[len(reqURIQueryReplPrefix):]]
 				// always return true, since the query param might
 				// be present only in some requests
-				return strings.Join(vals, ","), true
+				return strings.Join(vals, ","), found
 			}
 
 			// request header fields
 			if strings.HasPrefix(key, reqHeaderReplPrefix) {
 				field := key[len(reqHeaderReplPrefix):]
-				vals := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
-				// always return true, since the header field might
-				// be present only in some requests
-				return strings.Join(vals, ","), true
+				vals, found := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
+				return strings.Join(vals, ","), found
 			}
 
 			// cookies
@@ -82,11 +80,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				name := key[len(reqCookieReplPrefix):]
 				for _, cookie := range req.Cookies() {
 					if strings.EqualFold(name, cookie.Name) {
-						// always return true, since the cookie might
-						// be present only in some requests
 						return cookie.Value, true
 					}
 				}
+				return nil, false
 			}
 
 			// http.request.tls.*
@@ -161,7 +158,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return id.String(), true
 			case "http.request.body":
 				if req.Body == nil {
-					return "", true
+					return "", false
 				}
 				// normally net/http will close the body for us, but since we
 				// are replacing it with a fake one, we have to ensure we close
@@ -219,11 +216,11 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				// convert to integer then compute prefix
 				bits, err := strconv.Atoi(bitsStr)
 				if err != nil {
-					return "", true
+					return "", false
 				}
 				prefix, err := addr.Prefix(bits)
 				if err != nil {
-					return "", true
+					return "", false
 				}
 				return prefix.String(), true
 			}
@@ -293,7 +290,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				raw := GetVar(req.Context(), varName)
 				// variables can be dynamic, so always return true
 				// even when it may not be set; treat as empty then
-				return raw, true
+				return raw, raw != nil
 			}
 		}
 
@@ -301,10 +298,8 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// response header fields
 			if strings.HasPrefix(key, respHeaderReplPrefix) {
 				field := key[len(respHeaderReplPrefix):]
-				vals := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
-				// always return true, since the header field might
-				// be present only in some responses
-				return strings.Join(vals, ","), true
+				vals, found := w.Header()[textproto.CanonicalMIMEHeaderKey(field)]
+				return strings.Join(vals, ","), found
 			}
 		}
 
