@@ -576,8 +576,8 @@ func cmdFmt(fl Flags) (int, error) {
 		fmt.Print(string(output))
 	}
 
-	if !bytes.Equal(input, output) {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("diff found")
+	if warning, diff := caddyfile.FormattingDifference(formatCmdConfigFile, input); diff {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("%s:%d: Caddyfile input is not formatted", warning.File, warning.Line)
 	}
 
 	return caddy.ExitCodeSuccess, nil

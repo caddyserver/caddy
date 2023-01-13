@@ -54,7 +54,7 @@ func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconf
 
 	// lint check: see if input was properly formatted; sometimes messy files files parse
 	// successfully but result in logical errors (the Caddyfile is a bad format, I'm sorry)
-	if warning, different := formattingDifference(filename, body); different {
+	if warning, different := FormattingDifference(filename, body); different {
 		warnings = append(warnings, warning)
 	}
 
@@ -63,10 +63,10 @@ func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconf
 	return result, warnings, err
 }
 
-// formattingDifference returns a warning and true if the formatted version
+// FormattingDifference returns a warning and true if the formatted version
 // is any different from the input; empty warning and false otherwise.
 // TODO: also perform this check on imported files
-func formattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
+func FormattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
 	// replace windows-style newlines to normalize comparison
 	normalizedBody := bytes.Replace(body, []byte("\r\n"), []byte("\n"), -1)
 
