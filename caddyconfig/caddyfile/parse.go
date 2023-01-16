@@ -61,20 +61,12 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 // It returns all the tokens from the input, unstructured
 // and in order. It may mutate input as it expands env vars.
 func allTokens(filename string, input []byte) ([]Token, error) {
-	inputCopy, err := replaceEnvVars(input)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := Tokenize(inputCopy, filename)
-	if err != nil {
-		return nil, err
-	}
-	return tokens, nil
+	return Tokenize(replaceEnvVars(input), filename)
 }
 
 // replaceEnvVars replaces all occurrences of environment variables.
 // It mutates the underlying array and returns the updated slice.
-func replaceEnvVars(input []byte) ([]byte, error) {
+func replaceEnvVars(input []byte) []byte {
 	var offset int
 	for {
 		begin := bytes.Index(input[offset:], spanOpen)
@@ -115,7 +107,7 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		// continue at the end of the replacement
 		offset = begin + len(envVarBytes)
 	}
-	return input, nil
+	return input
 }
 
 type parser struct {

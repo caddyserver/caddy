@@ -604,10 +604,7 @@ func TestEnvironmentReplacement(t *testing.T) {
 			expect: "}{$",
 		},
 	} {
-		actual, err := replaceEnvVars([]byte(test.input))
-		if err != nil {
-			t.Fatal(err)
-		}
+		actual := replaceEnvVars([]byte(test.input))
 		if !bytes.Equal(actual, []byte(test.expect)) {
 			t.Errorf("Test %d: Expected: '%s' but got '%s'", i, test.expect, actual)
 		}
