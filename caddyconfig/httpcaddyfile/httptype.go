@@ -618,7 +618,7 @@ func (st *ServerType) serversFromPairings(
 
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
-			siteSubroute, err := buildSubroute(dirRoutes, groupCounter)
+			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
 			if err != nil {
 				return nil, err
 			}
@@ -959,14 +959,16 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 
 // buildSubroute turns the config values, which are expected to be routes
 // into a clean and orderly subroute that has all the routes within it.
-func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
-	for _, val := range routes {
-		if !directiveIsOrdered(val.directive) {
-			return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
+func buildSubroute(routes []ConfigValue, groupCounter counter, needsSorting bool) (*caddyhttp.Subroute, error) {
+	if needsSorting {
+		for _, val := range routes {
+			if !directiveIsOrdered(val.directive) {
+				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
+			}
 		}
-	}
 
-	sortRoutes(routes)
+		sortRoutes(routes)
+	}
 
 	subroute := new(caddyhttp.Subroute)
 
