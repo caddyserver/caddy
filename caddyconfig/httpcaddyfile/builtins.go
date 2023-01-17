@@ -736,6 +736,14 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, err
 	}
 
+	for _, result := range allResults {
+		switch result.Value.(type) {
+		case caddyhttp.Route, caddyhttp.Subroute:
+		default:
+			return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", result.directive, result.Value)
+		}
+	}
+
 	return buildSubroute(allResults, h.groupCounter, false)
 }
 
