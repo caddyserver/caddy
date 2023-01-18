@@ -731,29 +731,20 @@ func parseError(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 // parseRoute parses the route directive.
 func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	sr := new(caddyhttp.Subroute)
-
 	allResults, err := parseSegmentAsConfig(h)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, result := range allResults {
-		switch handler := result.Value.(type) {
-		case caddyhttp.Route:
-			sr.Routes = append(sr.Routes, handler)
-		case caddyhttp.Subroute:
-			// directives which return a literal subroute instead of a route
-			// means they intend to keep those handlers together without
-			// them being reordered; we're doing that anyway since we're in
-			// the route directive, so just append its handlers
-			sr.Routes = append(sr.Routes, handler.Routes...)
+		switch result.Value.(type) {
+		case caddyhttp.Route, caddyhttp.Subroute:
 		default:
 			return nil, h.Errf("%s directive returned something other than an HTTP route or subroute: %#v (only handler directives can be used in routes)", result.directive, result.Value)
 		}
 	}
 
-	return sr, nil
+	return buildSubroute(allResults, h.groupCounter, false)
 }
 
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
