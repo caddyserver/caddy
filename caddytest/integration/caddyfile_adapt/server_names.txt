@@ -1,0 +1,77 @@
+{
+	servers :443 {
+		name https
+	}
+
+	servers :8000 {
+		name app1
+	}
+
+	servers :8001 {
+		name app2
+	}
+
+	servers 123.123.123.123:8002 {
+		name bind-server
+	}
+}
+
+example.com {
+}
+
+:8000 {
+}
+
+:8001, :8002 {
+}
+
+:8002 {
+	bind 123.123.123.123 222.222.222.222
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"app1": {
+					"listen": [
+						":8000"
+					]
+				},
+				"app2": {
+					"listen": [
+						":8001"
+					]
+				},
+				"bind-server": {
+					"listen": [
+						"123.123.123.123:8002",
+						"222.222.222.222:8002"
+					]
+				},
+				"https": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv4": {
+					"listen": [
+						":8002"
+					]
+				}
+			}
+		}
+	}
+}

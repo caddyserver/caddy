@@ -33,6 +33,7 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
+	Name                 string
 	ListenerWrappersRaw  []json.RawMessage
 	ReadTimeout          caddy.Duration
 	ReadHeaderTimeout    caddy.Duration
@@ -58,6 +59,15 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 		}
 		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			switch d.Val() {
+			case "name":
+				if serverOpts.ListenerAddress == "" {
+					return nil, d.Errf("cannot set a name for a server without a listener address")
+				}
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				serverOpts.Name = d.Val()
+
 			case "listener_wrappers":
 				for nesting := d.Nesting(); d.NextBlock(nesting); {
 					modID := "caddy.listeners." + d.Val()
@@ -248,7 +258,10 @@ func applyServerOptions(
 		return nil
 	}
 
-	for _, server := range servers {
+	// collect the server name overrides
+	nameReplacements := map[string]string{}
+
+	for key, server := range servers {
 		// find the options that apply to this server
 		opts := func() *serverOptions {
 			for _, entry := range serverOpts {
@@ -287,6 +300,16 @@ func applyServerOptions(
 			}
 			server.Logs.ShouldLogCredentials = opts.ShouldLogCredentials
 		}
+
+		if opts.Name != "" {
+			nameReplacements[key] = opts.Name
+		}
+	}
+
+	// rename the servers if marked to do so
+	for old, new := range nameReplacements {
+		servers[new] = servers[old]
+		delete(servers, old)
 	}
 
 	return nil
