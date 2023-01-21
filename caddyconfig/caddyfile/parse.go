@@ -466,8 +466,8 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	}
 
 	// only warning in case of empty files
-	if len(input) == 0 {
-		caddy.Log().Warn("import file is empty", zap.String("file", importFile))
+	if len(input) == 0 || len(strings.TrimSpace(string(input))) == 0 {
+		caddy.Log().Warn("Import file is empty", zap.String("file", importFile))
 		return []Token{}, nil
 	}
 

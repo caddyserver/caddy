@@ -190,6 +190,8 @@ func TestParseOneAndImport(t *testing.T) {
 		// empty file should just log a warning, and result in no tokens
 		{`import testdata/empty.txt`, false, []string{}, []int{}},
 
+		{`import testdata/only_white_space.txt`, false, []string{}, []int{}},
+
 		// import path/to/dir/* should skip any files that start with a . when iterating over them.
 		{`localhost
 		  dir1 arg1
