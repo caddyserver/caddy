@@ -187,6 +187,23 @@ func TestParseOneAndImport(t *testing.T) {
 
 		{`import testdata/not_found.txt`, true, []string{}, []int{}},
 
+		// empty file should just log a warning, and result in no tokens
+		{`import testdata/empty.txt`, false, []string{}, []int{}},
+
+		{`import testdata/only_white_space.txt`, false, []string{}, []int{}},
+
+		// import path/to/dir/* should skip any files that start with a . when iterating over them.
+		{`localhost
+		  dir1 arg1
+		  import testdata/glob/*`, false, []string{
+			"localhost",
+		}, []int{2, 3, 1}},
+
+		// import path/to/dir/.* should continue to read all dotfiles in a dir.
+		{`import testdata/glob/.*`, false, []string{
+			"host1",
+		}, []int{1, 2}},
+
 		{`""`, false, []string{}, []int{}},
 
 		{``, false, []string{}, []int{}},
