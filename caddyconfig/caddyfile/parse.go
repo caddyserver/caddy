@@ -389,6 +389,20 @@ func (p *parser) doImport() error {
 			} else {
 				return p.Errf("File to import not found: %s", importPattern)
 			}
+		} else {
+			// See issue #5295 - should skip any files that start with a . when iterating over them.
+			sep := string(filepath.Separator)
+			segGlobPattern := strings.Split(globPattern, sep)
+			if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
+				var tmpMatches []string
+				for _, m := range matches {
+					seg := strings.Split(m, sep)
+					if !strings.HasPrefix(seg[len(seg)-1], ".") {
+						tmpMatches = append(tmpMatches, m)
+					}
+				}
+				matches = tmpMatches
+			}
 		}
 
 		// collect all the imported tokens
@@ -449,6 +463,12 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+
+	// only warning in case of empty files
+	if len(input) == 0 || len(strings.TrimSpace(string(input))) == 0 {
+		caddy.Log().Warn("Import file is empty", zap.String("file", importFile))
+		return []Token{}, nil
 	}
 
 	importedTokens, err := allTokens(importFile, input)

@@ -1,0 +1,4 @@
+host1 {
+	dir1
+	dir2 arg1
+}
