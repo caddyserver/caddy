@@ -504,7 +504,7 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	rootCmd.AddCommand(caddyCmdToCoral(cmd))
+	rootCmd.AddCommand(caddyCmdToCobra(cmd))
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)
