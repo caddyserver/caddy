@@ -258,6 +258,18 @@ func applyServerOptions(
 		return nil
 	}
 
+	// check for duplicate names, which would clobber the config
+	existingNames := map[string]bool{}
+	for _, opts := range serverOpts {
+		if opts.Name == "" {
+			continue
+		}
+		if existingNames[opts.Name] {
+			return fmt.Errorf("cannot use duplicate server name '%s'", opts.Name)
+		}
+		existingNames[opts.Name] = true
+	}
+
 	// collect the server name overrides
 	nameReplacements := map[string]string{}
 

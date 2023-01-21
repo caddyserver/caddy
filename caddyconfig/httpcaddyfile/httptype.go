@@ -706,7 +706,7 @@ func (st *ServerType) serversFromPairings(
 
 	err := applyServerOptions(servers, options, warnings)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("applying global server options: %v", err)
 	}
 
 	return servers, nil
