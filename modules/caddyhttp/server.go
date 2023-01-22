@@ -797,5 +797,5 @@ const (
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
 	// For tracking whether the client is a trusted proxy
-	TrustedProxyVarKey string = "trusted_proxy"
+	TrustedProxyVarKey caddy.CtxKey = "trusted_proxy"
 )
