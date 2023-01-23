@@ -14,7 +14,7 @@
 		log_credentials
 		protocols h1 h2 h2c h3
 		strict_sni_host
-		trusted_proxies private_ranges
+		trusted_proxies static private_ranges
 	}
 }
 
@@ -56,14 +56,17 @@ foo.com {
 						}
 					],
 					"strict_sni_host": true,
-					"trusted_proxies": [
-						"192.168.0.0/16",
-						"172.16.0.0/12",
-						"10.0.0.0/8",
-						"127.0.0.1/8",
-						"fd00::/8",
-						"::1"
-					],
+					"trusted_proxies": {
+						"ranges": [
+							"192.168.0.0/16",
+							"172.16.0.0/12",
+							"10.0.0.0/8",
+							"127.0.0.1/8",
+							"fd00::/8",
+							"::1"
+						],
+						"source": "static"
+					},
 					"logs": {
 						"should_log_credentials": true
 					},

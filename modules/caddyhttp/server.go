@@ -118,7 +118,7 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
-	// A list of IP ranges (supports CIDR notation) from which
+	// A module which provides a source of IP ranges, from which
 	// requests should be trusted. By default, no proxies are
 	// trusted.
 	//
@@ -128,7 +128,7 @@ type Server struct {
 	// of needing to configure each of them. See the
 	// `reverse_proxy` handler for example, which uses this
 	// to trust sensitive incoming `X-Forwarded-*` headers.
-	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_range_sources inline_key=source"`
 
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
@@ -188,8 +188,7 @@ type Server struct {
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	addresses   []caddy.NetworkAddress
 
-	// Holds the parsed CIDR ranges from TrustedProxies
-	trustedProxies []netip.Prefix
+	trustedProxies IPRangeSource
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
@@ -751,7 +750,10 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	}
 
 	// Check if the client is a trusted proxy
-	for _, ipRange := range s.trustedProxies {
+	if s.trustedProxies == nil {
+		return false
+	}
+	for _, ipRange := range s.trustedProxies.GetIPRanges() {
 		if ipRange.Contains(ipAddr) {
 			return true
 		}
@@ -768,19 +770,6 @@ func cloneURL(from, to *url.URL) {
 		userInfo := new(url.Userinfo)
 		*userInfo = *from.User
 		to.User = userInfo
-	}
-}
-
-// PrivateRangesCIDR returns a list of private CIDR range
-// strings, which can be used as a configuration shortcut.
-func PrivateRangesCIDR() []string {
-	return []string{
-		"192.168.0.0/16",
-		"172.16.0.0/12",
-		"10.0.0.0/8",
-		"127.0.0.1/8",
-		"fd00::/8",
-		"::1",
 	}
 }
 
