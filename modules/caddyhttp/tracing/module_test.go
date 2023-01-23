@@ -98,7 +98,7 @@ func TestTracing_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
 		SpanName: "mySpan",
 	}
 
-	req := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	req := createRequestWithContext("GET", "https://example.com/foo")
 	w := httptest.NewRecorder()
 
 	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
@@ -128,7 +128,7 @@ func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 		SpanName: "mySpan",
 	}
 
-	req := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	req := createRequestWithContext("GET", "https://example.com/foo")
 	req.Header.Set("traceparent", "00-11111111111111111111111111111111-1111111111111111-01")
 	w := httptest.NewRecorder()
 
@@ -159,7 +159,7 @@ func TestTracing_ServeHTTP_Next_Error(t *testing.T) {
 		SpanName: "mySpan",
 	}
 
-	req := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	req := createRequestWithContext("GET", "https://example.com/foo")
 	w := httptest.NewRecorder()
 
 	expectErr := errors.New("test error")
@@ -179,4 +179,12 @@ func TestTracing_ServeHTTP_Next_Error(t *testing.T) {
 	if err := ot.ServeHTTP(w, req, handler); err == nil || !errors.Is(err, expectErr) {
 		t.Errorf("expected error, got: %v", err)
 	}
+}
+
+func createRequestWithContext(method string, url string) *http.Request {
+	r, _ := http.NewRequest(method, url, nil)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	r = r.WithContext(ctx)
+	return r
 }
