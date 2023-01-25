@@ -176,13 +176,8 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	if fromAddr.Scheme == "http" {
 		server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{Disabled: true}
-	}
-	if disableRedir {
-		if server.AutoHTTPS != nil {
-			server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{DisableRedir: true}
-		} else {
-			server.AutoHTTPS.DisableRedir = true
-		}
+	} else if disableRedir {
+		server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{DisableRedir: true}
 	}
 
 	httpApp := caddyhttp.App{
