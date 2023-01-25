@@ -22,7 +22,7 @@ require (
 	github.com/smallstep/truststore v0.12.0
 	github.com/spf13/cobra v1.6.0
 	github.com/spf13/pflag v1.0.5
-	github.com/tailscale/tscert v0.0.0-20220316030059-54bbcb9f74e2
+	github.com/tailscale/tscert v0.0.0-20230124224810-c6dc1f4049b2
 	github.com/yuin/goldmark v1.5.2
 	github.com/yuin/goldmark-highlighting v0.0.0-20220208100518-594be1970594
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.34.0
@@ -39,6 +39,7 @@ require (
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.4.0 // indirect
 	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
