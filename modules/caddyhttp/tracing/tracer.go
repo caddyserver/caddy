@@ -69,7 +69,13 @@ func newOpenTelemetryWrapper(
 		sdktrace.WithResource(res),
 	)
 
-	ot.handler = otelhttp.NewHandler(http.HandlerFunc(ot.serveHTTP), ot.spanName, otelhttp.WithTracerProvider(tracerProvider), otelhttp.WithPropagators(ot.propagators))
+	ot.handler = otelhttp.NewHandler(http.HandlerFunc(ot.serveHTTP),
+		ot.spanName,
+		otelhttp.WithTracerProvider(tracerProvider),
+		otelhttp.WithPropagators(ot.propagators),
+		otelhttp.WithSpanNameFormatter(ot.spanNameFormatter),
+	)
+
 	return ot, nil
 }
 
@@ -105,4 +111,9 @@ func (ot *openTelemetryWrapper) newResource(
 		semconv.WebEngineNameKey.String(webEngineName),
 		semconv.WebEngineVersionKey.String(webEngineVersion),
 	))
+}
+
+// spanNameFormatter performs the replacement of placeholders in the span name
+func (ot *openTelemetryWrapper) spanNameFormatter(operation string, r *http.Request) string {
+	return r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer).ReplaceAll(operation, "")
 }
