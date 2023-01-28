@@ -286,6 +286,17 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	if adminConfig, ok := options["admin"].(*caddy.AdminConfig); ok && adminConfig != nil {
 		cfg.Admin = adminConfig
 	}
+
+	if pc, ok := options["persist_config"].(string); ok && pc == "off" {
+		if cfg.Admin == nil {
+			cfg.Admin = new(caddy.AdminConfig)
+		}
+		if cfg.Admin.Config == nil {
+			cfg.Admin.Config = new(caddy.ConfigSettings)
+		}
+		cfg.Admin.Config.Persist = new(bool)
+	}
+
 	if len(customLogs) > 0 {
 		if cfg.Logging == nil {
 			cfg.Logging = &caddy.Logging{
