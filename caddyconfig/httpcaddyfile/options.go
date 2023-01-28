@@ -397,7 +397,7 @@ func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
 		return "", d.ArgErr()
 	}
 	if val != "off" {
-		return "", d.Errf("persist_config must be one of 'off'")
+		return "", d.Errf("persist_config must be 'off'")
 	}
 	return val, nil
 }
