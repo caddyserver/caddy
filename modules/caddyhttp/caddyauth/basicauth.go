@@ -193,7 +193,10 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 		return same, nil
 	}
 	// slow track: do the expensive op, then add it to the cache
-	// but it occurred the thunder herd, thus it uses singleflight
+	// but perform it in a singleflight group so that multiple
+	// parallel requests using the same password don't cause a
+	// thundering herd problem by all performing the same hashing
+	// operation before the first one finishes and caches it.
 	v, err, _ := hba.HashCache.g.Do(cacheKey, func() (any, error) {
 		return compare()
 	})
