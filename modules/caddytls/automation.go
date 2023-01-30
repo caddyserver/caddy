@@ -174,8 +174,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				if tlsApp.Automation != nil &&
 					tlsApp.Automation.OnDemand != nil &&
 					tlsApp.Automation.OnDemand.Ask != "" {
-					err := onDemandAskRequest(tlsApp.Automation.OnDemand.Ask, name)
-					if err != nil {
+					if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
 						// distinguish true errors from denials, because it's important to log actual errors
 						if !errors.Is(err, errAskDenied) {
 							tlsApp.logger.Error("request to 'ask' endpoint failed",
