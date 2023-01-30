@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/sync/singleflight"
 )
 
 func init() {
@@ -142,6 +143,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	if hba.HashCache != nil {
 		hba.HashCache.cache = make(map[string]bool)
 		hba.HashCache.mu = new(sync.RWMutex)
+		hba.HashCache.g = new(singleflight.Group)
 	}
 
 	return nil
@@ -190,12 +192,15 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 	if ok {
 		return same, nil
 	}
-
 	// slow track: do the expensive op, then add it to the cache
-	same, err := compare()
+	// but it occurred the thunder herd, thus it uses singleflight
+	v, err, _ := hba.HashCache.g.Do(cacheKey, func() (any, error) {
+		return compare()
+	})
 	if err != nil {
 		return false, err
 	}
+	same = v.(bool)
 	hba.HashCache.mu.Lock()
 	if len(hba.HashCache.cache) >= 1000 {
 		hba.HashCache.makeRoom() // keep cache size under control
@@ -223,6 +228,7 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 // compute on every HTTP request.
 type Cache struct {
 	mu *sync.RWMutex
+	g  *singleflight.Group
 
 	// map of concatenated hashed password + plaintext password + salt, to result
 	cache map[string]bool
