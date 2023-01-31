@@ -506,6 +506,15 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
+	runCmdLoadEnvfileFlag := fl.String("envfile")
+
+	// load all additional envs as soon as possible
+	if runCmdLoadEnvfileFlag != "" {
+		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
 
 	input, _, err := LoadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {

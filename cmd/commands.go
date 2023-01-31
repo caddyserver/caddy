@@ -297,6 +297,7 @@ provisioning stages.`,
 			fs := flag.NewFlagSet("validate", flag.ExitOnError)
 			fs.String("config", "", "Input configuration file")
 			fs.String("adapter", "", "Name of config adapter")
+			fs.String("envfile", "", "Environment file to load")
 			return fs
 		}(),
 	})
