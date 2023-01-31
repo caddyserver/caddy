@@ -929,6 +929,7 @@ func TestVarREMatcher(t *testing.T) {
 			expect: true,
 		},
 	} {
+		i := i   // capture range value
 		tc := tc // capture range value
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
