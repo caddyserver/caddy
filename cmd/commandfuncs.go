@@ -558,7 +558,10 @@ func cmdFmt(fl Flags) (int, error) {
 		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
-	} else if fl.Bool("diff") {
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	if fl.Bool("diff") {
 		diff := difflib.Diff(
 			strings.Split(string(input), "\n"),
 			strings.Split(string(output), "\n"))
