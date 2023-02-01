@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go: [ '1.18', '1.19' ]
+        go: [ '1.18', '1.20' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
@@ -27,8 +27,8 @@ jobs:
         - go: '1.18'
           GO_SEMVER: '~1.18.4'
 
-        - go: '1.19'
-          GO_SEMVER: '~1.19.0'
+        - go: '1.20'
+          GO_SEMVER: '~1.20.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
