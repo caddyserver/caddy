@@ -16,7 +16,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.1.2
 	github.com/mholt/acmez v1.0.4
 	github.com/prometheus/client_golang v1.12.2
-	github.com/quic-go/quic-go v0.31.2-0.20230128084952-89769f409f63
+	github.com/quic-go/quic-go v0.32.0
 	github.com/smallstep/certificates v0.23.0
 	github.com/smallstep/nosql v0.5.0
 	github.com/smallstep/truststore v0.12.0
@@ -48,7 +48,7 @@ require (
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-18 v0.2.0 // indirect
 	github.com/quic-go/qtls-go1-19 v0.2.0 // indirect
-	github.com/quic-go/qtls-go1-20 v0.1.0-rc.1 // indirect
+	github.com/quic-go/qtls-go1-20 v0.1.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/exp v0.0.0-20221205204356-47842c84f3db // indirect
