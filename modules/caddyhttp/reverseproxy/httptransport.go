@@ -210,6 +210,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		MaxResponseHeaderBytes: h.MaxResponseHeaderSize,
 		WriteBufferSize:        h.WriteBufferSize,
 		ReadBufferSize:         h.ReadBufferSize,
+		Proxy:                  http.ProxyFromEnvironment,
 	}
 
 	if h.TLS != nil {
