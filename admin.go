@@ -46,6 +46,17 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func init() {
+	// The hard-coded default `DefaultAdminListen` can be overidden
+	// by setting the `CADDY_ADMIN` environment variable.
+	// The environment variable may be used by packagers to change
+	// the default admin address to something more appropriate for
+	// that platform. See #5317 for discussion.
+	if env, exists := os.LookupEnv("CADDY_ADMIN"); exists {
+		DefaultAdminListen = env
+	}
+}
+
 // AdminConfig configures Caddy's API endpoint, which is used
 // to manage Caddy while it is running.
 type AdminConfig struct {
@@ -57,7 +68,9 @@ type AdminConfig struct {
 
 	// The address to which the admin endpoint's listener should
 	// bind itself. Can be any single network address that can be
-	// parsed by Caddy. Accepts placeholders. Default: localhost:2019
+	// parsed by Caddy. Accepts placeholders.
+	// Default: the value of the `CADDY_ADMIN` environment variable,
+	// or `localhost:2019` otherwise.
 	Listen string `json:"listen,omitempty"`
 
 	// If true, CORS headers will be emitted, and requests to the
