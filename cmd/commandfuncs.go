@@ -506,6 +506,15 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
+	runCmdLoadEnvfileFlag := fl.String("envfile")
+
+	// load all additional envs as soon as possible
+	if runCmdLoadEnvfileFlag != "" {
+		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
 
 	input, _, err := LoadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {
@@ -558,7 +567,10 @@ func cmdFmt(fl Flags) (int, error) {
 		if err := os.WriteFile(formatCmdConfigFile, output, 0600); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
-	} else if fl.Bool("diff") {
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	if fl.Bool("diff") {
 		diff := difflib.Diff(
 			strings.Split(string(input), "\n"),
 			strings.Split(string(output), "\n"))
