@@ -128,7 +128,7 @@ type Server struct {
 	// of needing to configure each of them. See the
 	// `reverse_proxy` handler for example, which uses this
 	// to trust sensitive incoming `X-Forwarded-*` headers.
-	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_range_sources inline_key=source"`
+	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_sources inline_key=source"`
 
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this

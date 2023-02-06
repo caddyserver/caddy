@@ -191,7 +191,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				if !d.NextArg() {
 					return nil, d.Err("trusted_proxies expects an IP range source module name as its first argument")
 				}
-				modID := "http.ip_range_sources." + d.Val()
+				modID := "http.ip_sources." + d.Val()
 				unm, err := caddyfile.UnmarshalModule(d, modID)
 				if err != nil {
 					return nil, err

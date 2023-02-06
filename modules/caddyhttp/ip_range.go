@@ -64,7 +64,7 @@ type StaticIPRange struct {
 // CaddyModule returns the Caddy module information.
 func (StaticIPRange) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.ip_range_sources.static",
+		ID:  "http.ip_sources.static",
 		New: func() caddy.Module { return new(StaticIPRange) },
 	}
 }
