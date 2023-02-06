@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"fmt"
+	"net/http"
 	"net/netip"
 	"strings"
 
@@ -29,22 +30,26 @@ func init() {
 
 // IPRangeSource gets a list of IP ranges.
 //
+// The request is passed as an argument to allow plugin implementations
+// to have more flexibility. But, a plugin MUST NOT modify the request.
+// The caller will have read the `r.RemoteAddr` before getting IP ranges.
+//
 // This should be a very fast function -- instant if possible.
 // The list of IP ranges should be sourced as soon as possible if loaded
 // from an external source (i.e. initially loaded during Provisioning),
 // so that it's ready to be used when requests start getting handled.
 // A read lock should probably be used to get the cached value if the
 // ranges can change at runtime (e.g. periodically refreshed).
-// Using a caddy.UsagePool may be a good idea to avoid having refetch
+// Using a `caddy.UsagePool` may be a good idea to avoid having refetch
 // the values when a config reload occurs, which would waste time.
 //
-// If the list of IP ranges cannot be sourced, then provisioning should
-// fail. Getting the IP ranges at runtime must not fail, because it would
-// cancel incoming requests, which is not ideal. If refreshing the list
-// fails, then the previous list of IP ranges should continue to be returned
-// so that the server can continue to operate normally.
+// If the list of IP ranges cannot be sourced, then provisioning SHOULD
+// fail. Getting the IP ranges at runtime MUST NOT fail, because it would
+// cancel incoming requests. If refreshing the list fails, then the
+// previous list of IP ranges should continue to be returned so that the
+// server can continue to operate normally.
 type IPRangeSource interface {
-	GetIPRanges() []netip.Prefix
+	GetIPRanges(*http.Request) []netip.Prefix
 }
 
 // StaticIPRange provides a static range of IP address prefixes (CIDRs).
@@ -76,7 +81,7 @@ func (s *StaticIPRange) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (s *StaticIPRange) GetIPRanges() []netip.Prefix {
+func (s *StaticIPRange) GetIPRanges(_ *http.Request) []netip.Prefix {
 	return s.ranges
 }
 

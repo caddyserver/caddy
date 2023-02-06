@@ -753,7 +753,7 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	if s.trustedProxies == nil {
 		return false
 	}
-	for _, ipRange := range s.trustedProxies.GetIPRanges() {
+	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
 		if ipRange.Contains(ipAddr) {
 			return true
 		}
