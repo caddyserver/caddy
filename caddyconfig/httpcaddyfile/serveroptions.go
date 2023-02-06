@@ -43,7 +43,7 @@ type serverOptions struct {
 	MaxHeaderBytes       int
 	Protocols            []string
 	StrictSNIHost        *bool
-	TrustedProxies       []string
+	TrustedProxiesRaw    json.RawMessage
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
 }
@@ -188,13 +188,25 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				serverOpts.StrictSNIHost = &boolVal
 
 			case "trusted_proxies":
-				for d.NextArg() {
-					if d.Val() == "private_ranges" {
-						serverOpts.TrustedProxies = append(serverOpts.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
-						continue
-					}
-					serverOpts.TrustedProxies = append(serverOpts.TrustedProxies, d.Val())
+				if !d.NextArg() {
+					return nil, d.Err("trusted_proxies expects an IP range source module name as its first argument")
 				}
+				modID := "http.ip_sources." + d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return nil, err
+				}
+				source, ok := unm.(caddyhttp.IPRangeSource)
+				if !ok {
+					return nil, fmt.Errorf("module %s (%T) is not an IP range source", modID, unm)
+				}
+				jsonSource := caddyconfig.JSONModuleObject(
+					source,
+					"source",
+					source.(caddy.Module).CaddyModule().ID.Name(),
+					nil,
+				)
+				serverOpts.TrustedProxiesRaw = jsonSource
 
 			case "metrics":
 				if d.NextArg() {
@@ -304,7 +316,7 @@ func applyServerOptions(
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
-		server.TrustedProxies = opts.TrustedProxies
+		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
