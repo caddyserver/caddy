@@ -232,7 +232,7 @@ func SanitizedPathJoin(root, reqPath string) string {
 		root = "."
 	}
 
-	path := filepath.Join(root, filepath.Clean("/"+reqPath))
+	path := filepath.Join(root, path.Clean("/"+reqPath))
 
 	// filepath.Join also cleans the path, and cleaning strips
 	// the trailing slash, so we need to re-add it afterwards.

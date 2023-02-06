@@ -30,8 +30,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 )
 
@@ -462,7 +462,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	// of closes) because closing the quic.EarlyListener doesn't actually close
 	// the underlying PacketConn, but we need to for unix sockets since we dup
 	// the file descriptor and thus need to close the original; track issue:
-	// https://github.com/lucas-clemente/quic-go/issues/3560#issuecomment-1258959608
+	// https://github.com/quic-go/quic-go/issues/3560#issuecomment-1258959608
 	var unix *unixConn
 	if uc, ok := ln.(*unixConn); ok {
 		unix = uc
