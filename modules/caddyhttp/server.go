@@ -130,6 +130,17 @@ type Server struct {
 	// to trust sensitive incoming `X-Forwarded-*` headers.
 	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_sources inline_key=source"`
 
+	// The headers from which the client IP address could be
+	// read from. These will be considered in order, with the
+	// first good value being used as the client IP.
+	// By default, only `X-Forwarded-For` is considered.
+	//
+	// This depends on `trusted_proxies` being configured and
+	// the request being validated as coming from a trusted
+	// proxy, otherwise the client IP will be set to the direct
+	// remote IP address.
+	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -729,7 +740,8 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 
 // determineTrustedProxy parses the remote IP address of
 // the request, and determines (if the server configured it)
-// if the client is a trusted proxy.
+// if the client is a trusted proxy. If trusted, also returns
+// the real client IP if possible.
 func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	// If there's no server, then we can't check anything
 	if s == nil {
@@ -756,32 +768,36 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 
 	// Check if the client is a trusted proxy
 	if s.trustedProxies == nil {
-		return false
+		return false, ipAddr.String()
 	}
 	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
 		if ipRange.Contains(ipAddr) {
-			return true, trustedClientIP(r, ipAddr.String())
+			// We trust the proxy, so let's try to
+			// determine the real client IP
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
 		}
 	}
 
 	return false, ipAddr.String()
 }
 
-// trustedClientIP finds the client IP from the request
-// assuming it is from a trusted client. If there is no
-// XFF header, then the direct remote address is returned.
-// If there is an XFF header, then the first value is used.
-func trustedClientIP(r *http.Request, clientIP string) string {
-	// TODO: Configurable header field?
-	values := r.Header.Values("X-Forwarded-For")
+// trustedRealClientIP finds the client IP from the request assuming it is
+// from a trusted client. If there is no client IP headers, then the
+// direct remote address is returned. If there are client IP headers,
+// then the first value from those headers is used.
+func trustedRealClientIP(r *http.Request, headers []string, clientIP string) string {
+	// Read all the values of the configured client IP headers, in order
+	var values []string
+	for _, field := range headers {
+		values = append(values, r.Header.Values(field)...)
+	}
 
-	// If we don't have an XFF, then just assume
-	// the client IP is not sourced from there
+	// If we don't have any values, then give up
 	if len(values) == 0 {
 		return clientIP
 	}
 
-	// Since there can be many XFF header values, we need to
+	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
 	allValues := strings.Split(strings.Join(values, ","), ",")
 
