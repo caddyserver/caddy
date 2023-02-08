@@ -124,7 +124,7 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// create the CEL environment
 	env, err := cel.NewEnv(
-		cel.Function(placeholderFuncName, cel.SingletonBinaryImpl(m.caddyPlaceholderFunc), cel.Overload(
+		cel.Function(placeholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
 			placeholderFuncName+"_httpRequest_string",
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
@@ -345,7 +345,7 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 		cel.Macros(macro),
 		cel.Function(funcName,
 			cel.Overload(funcName, append([]*cel.Type{requestType}, matcherDataTypes...), cel.BoolType),
-			cel.SingletonBinaryImpl(CELMatcherRuntimeFunction(funcName, fac))),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, fac))),
 	}
 	programOptions := []cel.ProgramOption{
 		cel.CustomDecorator(CELMatcherDecorator(funcName, fac)),
