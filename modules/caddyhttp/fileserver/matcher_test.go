@@ -292,8 +292,8 @@ var (
 			expression: &caddyhttp.MatchExpression{
 				Expr: `file()`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			urlTarget:  "https://example.com/foo.txt",
+			wantResult: true,
 		},
 		{
 			name: "file error bad try files (MatchFile)",
