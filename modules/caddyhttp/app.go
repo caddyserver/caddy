@@ -54,16 +54,17 @@ func init() {
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
 // `{http.request.uuid}` | The request unique identifier
 // `{http.request.header.*}` | Specific request header field
-// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
 // `{http.request.host}` | The host part of the request's Host header
+// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
 // `{http.request.hostport}` | The host and port from the request's Host header
 // `{http.request.method}` | The request method
 // `{http.request.orig_method}` | The request's original method
+// `{http.request.orig_uri}` | The request's original URI
+// `{http.request.orig_uri.path}` | The request's original path
+// `{http.request.orig_uri.path.*}` | Parts of the original path, split by `/` (0-based from left)
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
-// `{http.request.orig_uri.path}` | The request's original path
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
-// `{http.request.orig_uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
 // `{http.request.remote.host}` | The host (IP) part of the remote client's address
@@ -88,13 +89,13 @@ func init() {
 // `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
+// `{http.request.uri}` | The full request URI
+// `{http.request.uri.path}` | The path component of the request URI
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
-// `{http.request.uri.path}` | The path component of the request URI
-// `{http.request.uri.query.*}` | Individual query string value
 // `{http.request.uri.query}` | The query string (without `?`)
-// `{http.request.uri}` | The full request URI
+// `{http.request.uri.query.*}` | Individual query string value
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
 // `{http.shutting_down}` | True if the HTTP app is shutting down

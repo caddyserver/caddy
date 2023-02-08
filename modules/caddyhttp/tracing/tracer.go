@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.uber.org/zap"
 )
 
@@ -108,8 +108,8 @@ func (ot *openTelemetryWrapper) newResource(
 	webEngineVersion string,
 ) (*resource.Resource, error) {
 	return resource.Merge(resource.Default(), resource.NewSchemaless(
-		semconv.WebEngineNameKey.String(webEngineName),
-		semconv.WebEngineVersionKey.String(webEngineVersion),
+		semconv.WebEngineName(webEngineName),
+		semconv.WebEngineVersion(webEngineVersion),
 	))
 }
 
