@@ -61,6 +61,15 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult:        true,
 		},
 		{
+			name: "boolean matches succeed for placeholder default",
+			expression: &MatchExpression{
+				Expr: "{unset:default} == 'default'",
+			},
+			clientCertificate: clientCert,
+			urlTarget:         "https://example.com/foo",
+			wantResult:        true,
+		},
+		{
 			name: "header matches (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header({'Field': 'foo'})`,
