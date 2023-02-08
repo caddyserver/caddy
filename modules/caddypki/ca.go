@@ -48,6 +48,9 @@ type CA struct {
 	// intermediate certificates.
 	IntermediateCommonName string `json:"intermediate_common_name,omitempty"`
 
+	// The lifetime for the intermediate certificates
+	IntermediateLifetime caddy.Duration `json:"intermediate_lifetime,omitempty"`
+
 	// Whether Caddy will attempt to install the CA's root
 	// into the system trust store, as well as into Java
 	// and Mozilla Firefox trust stores. Default: true.
@@ -118,10 +121,15 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	if ca.IntermediateCommonName == "" {
 		ca.IntermediateCommonName = defaultIntermediateCommonName
 	}
+	if ca.IntermediateLifetime == 0 {
+		ca.IntermediateLifetime = caddy.Duration(defaultIntermediateLifetime)
+	} else if time.Duration(ca.IntermediateLifetime) >= defaultRootLifetime {
+		return fmt.Errorf("intermediate certificate lifetime must be less than root certificate lifetime (%s)", defaultRootLifetime)
+	}
 
 	// load the certs and key that will be used for signing
 	var rootCert, interCert *x509.Certificate
-	var rootKey, interKey any
+	var rootKey, interKey crypto.Signer
 	var err error
 	if ca.Root != nil {
 		if ca.Root.Format == "" || ca.Root.Format == "pem_file" {
@@ -239,7 +247,10 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 	return auth, nil
 }
 
-func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey any, err error) {
+func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey crypto.Signer, err error) {
+	if ca.Root != nil {
+		return ca.Root.Load()
+	}
 	rootCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootCert())
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -273,7 +284,7 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey any, err error
 	return rootCert, rootKey, nil
 }
 
-func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey any, err error) {
+func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey crypto.Signer, err error) {
 	repl := ca.newReplacer()
 
 	rootCert, rootKey, err = generateRoot(repl.ReplaceAll(ca.RootCommonName, ""))
@@ -300,7 +311,7 @@ func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey any, err error) {
 	return rootCert, rootKey, nil
 }
 
-func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.PrivateKey) (interCert *x509.Certificate, interKey crypto.PrivateKey, err error) {
+func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) (interCert *x509.Certificate, interKey crypto.Signer, err error) {
 	interCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyIntermediateCert())
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -335,10 +346,10 @@ func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.Pr
 	return interCert, interKey, nil
 }
 
-func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.PrivateKey) (interCert *x509.Certificate, interKey crypto.PrivateKey, err error) {
+func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) (interCert *x509.Certificate, interKey crypto.Signer, err error) {
 	repl := ca.newReplacer()
 
-	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey)
+	interCert, interKey, err = generateIntermediate(repl.ReplaceAll(ca.IntermediateCommonName, ""), rootCert, rootKey, time.Duration(ca.IntermediateLifetime))
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating CA intermediate: %v", err)
 	}

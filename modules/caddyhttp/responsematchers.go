@@ -58,15 +58,14 @@ func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
 
 // ParseNamedResponseMatcher parses the tokens of a named response matcher.
 //
-//     @name {
-//         header <field> [<value>]
-//         status <code...>
-//     }
+//	@name {
+//	    header <field> [<value>]
+//	    status <code...>
+//	}
 //
 // Or, single line syntax:
 //
-//     @name [header <field> [<value>]] | [status <code...>]
-//
+//	@name [header <field> [<value>]] | [status <code...>]
 func ParseNamedResponseMatcher(d *caddyfile.Dispenser, matchers map[string]ResponseMatcher) error {
 	for d.Next() {
 		definitionName := d.Val()

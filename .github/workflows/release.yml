@@ -11,13 +11,13 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        go: [ '1.19' ]
+        go: [ '1.20' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.19'
-          GO_SEMVER: '~1.19.0'
+        - go: '1.20'
+          GO_SEMVER: '~1.20.0'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
@@ -61,8 +61,8 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-        echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
-        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "version_tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
         # Add "pip install" CLI tools to PATH
         echo ~/.local/bin >> $GITHUB_PATH
@@ -74,10 +74,10 @@ jobs:
         TAG_MINOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\2#"`
         TAG_PATCH=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\3#"`
         TAG_SPECIAL=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\4#"`
-        echo "::set-output name=tag_major::${TAG_MAJOR}"
-        echo "::set-output name=tag_minor::${TAG_MINOR}"
-        echo "::set-output name=tag_patch::${TAG_PATCH}"
-        echo "::set-output name=tag_special::${TAG_SPECIAL}"
+        echo "tag_major=${TAG_MAJOR}" >> $GITHUB_OUTPUT
+        echo "tag_minor=${TAG_MINOR}" >> $GITHUB_OUTPUT
+        echo "tag_patch=${TAG_PATCH}" >> $GITHUB_OUTPUT
+        echo "tag_special=${TAG_SPECIAL}" >> $GITHUB_OUTPUT
 
     # Cloudsmith CLI tooling for pushing releases
     # See https://help.cloudsmith.io/docs/cli
@@ -95,7 +95,7 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Cache the build cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         # In order:
         # * Module download cache
@@ -116,7 +116,7 @@ jobs:
       run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v2
+      uses: goreleaser/goreleaser-action@v4
       with:
         version: latest
         args: release --rm-dist --timeout 60m

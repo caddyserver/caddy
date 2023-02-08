@@ -64,6 +64,7 @@ default, all incoming headers are passed through unmodified.)
 			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING SSL CERTIFICATES!)")
 			fs.Bool("internal-certs", false, "Use internal CA for issuing certs")
 			fs.Bool("debug", false, "Enable verbose debug logs")
+			fs.Bool("disable-redirects", false, "Disable HTTP->HTTPS redirects")
 			return fs
 		}(),
 	})
@@ -77,6 +78,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	insecure := fs.Bool("insecure")
 	internalCerts := fs.Bool("internal-certs")
 	debug := fs.Bool("debug")
+	disableRedir := fs.Bool("disable-redirects")
 
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
@@ -170,6 +172,12 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	server := &caddyhttp.Server{
 		Routes: caddyhttp.RouteList{route},
 		Listen: []string{":" + fromAddr.Port},
+	}
+
+	if fromAddr.Scheme == "http" {
+		server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{Disabled: true}
+	} else if disableRedir {
+		server.AutoHTTPS = &caddyhttp.AutoHTTPSConfig{DisableRedir: true}
 	}
 
 	httpApp := caddyhttp.App{

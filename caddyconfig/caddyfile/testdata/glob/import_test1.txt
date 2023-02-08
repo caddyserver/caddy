@@ -1,0 +1,2 @@
+dir2 arg1 arg2
+dir3

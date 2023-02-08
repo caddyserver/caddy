@@ -46,6 +46,17 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func init() {
+	// The hard-coded default `DefaultAdminListen` can be overidden
+	// by setting the `CADDY_ADMIN` environment variable.
+	// The environment variable may be used by packagers to change
+	// the default admin address to something more appropriate for
+	// that platform. See #5317 for discussion.
+	if env, exists := os.LookupEnv("CADDY_ADMIN"); exists {
+		DefaultAdminListen = env
+	}
+}
+
 // AdminConfig configures Caddy's API endpoint, which is used
 // to manage Caddy while it is running.
 type AdminConfig struct {
@@ -57,7 +68,9 @@ type AdminConfig struct {
 
 	// The address to which the admin endpoint's listener should
 	// bind itself. Can be any single network address that can be
-	// parsed by Caddy. Accepts placeholders. Default: localhost:2019
+	// parsed by Caddy. Accepts placeholders.
+	// Default: the value of the `CADDY_ADMIN` environment variable,
+	// or `localhost:2019` otherwise.
 	Listen string `json:"listen,omitempty"`
 
 	// If true, CORS headers will be emitted, and requests to the
@@ -572,12 +585,13 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 }
 
 func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool) *certmagic.Config {
+	var cmCfg *certmagic.Config
 	if ident == nil {
 		// user might not have configured identity; that's OK, we can still make a
 		// certmagic config, although it'll be mostly useless for remote management
 		ident = new(IdentityConfig)
 	}
-	cmCfg := &certmagic.Config{
+	template := certmagic.Config{
 		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
 		Logger:  logger,
 		Issuers: ident.issuers,
@@ -587,9 +601,11 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool)
 			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
 				return cmCfg, nil
 			},
+			Logger: logger.Named("cache"),
 		})
 	}
-	return certmagic.New(identityCertCache, *cmCfg)
+	cmCfg = certmagic.New(identityCertCache, template)
+	return cmCfg
 }
 
 // IdentityCredentials returns this instance's configured, managed identity credentials

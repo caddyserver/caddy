@@ -104,7 +104,7 @@ func init() {
 	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
 }
 
-func caddyCmdToCoral(caddyCmd Command) *cobra.Command {
+func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   caddyCmd.Name,
 		Short: caddyCmd.Short,

@@ -61,20 +61,12 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 // It returns all the tokens from the input, unstructured
 // and in order. It may mutate input as it expands env vars.
 func allTokens(filename string, input []byte) ([]Token, error) {
-	inputCopy, err := replaceEnvVars(input)
-	if err != nil {
-		return nil, err
-	}
-	tokens, err := Tokenize(inputCopy, filename)
-	if err != nil {
-		return nil, err
-	}
-	return tokens, nil
+	return Tokenize(replaceEnvVars(input), filename)
 }
 
 // replaceEnvVars replaces all occurrences of environment variables.
 // It mutates the underlying array and returns the updated slice.
-func replaceEnvVars(input []byte) ([]byte, error) {
+func replaceEnvVars(input []byte) []byte {
 	var offset int
 	for {
 		begin := bytes.Index(input[offset:], spanOpen)
@@ -115,7 +107,7 @@ func replaceEnvVars(input []byte) ([]byte, error) {
 		// continue at the end of the replacement
 		offset = begin + len(envVarBytes)
 	}
-	return input, nil
+	return input
 }
 
 type parser struct {
@@ -397,6 +389,20 @@ func (p *parser) doImport() error {
 			} else {
 				return p.Errf("File to import not found: %s", importPattern)
 			}
+		} else {
+			// See issue #5295 - should skip any files that start with a . when iterating over them.
+			sep := string(filepath.Separator)
+			segGlobPattern := strings.Split(globPattern, sep)
+			if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
+				var tmpMatches []string
+				for _, m := range matches {
+					seg := strings.Split(m, sep)
+					if !strings.HasPrefix(seg[len(seg)-1], ".") {
+						tmpMatches = append(tmpMatches, m)
+					}
+				}
+				matches = tmpMatches
+			}
 		}
 
 		// collect all the imported tokens
@@ -457,6 +463,12 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+
+	// only warning in case of empty files
+	if len(input) == 0 || len(strings.TrimSpace(string(input))) == 0 {
+		caddy.Log().Warn("Import file is empty", zap.String("file", importFile))
+		return []Token{}, nil
 	}
 
 	importedTokens, err := allTokens(importFile, input)

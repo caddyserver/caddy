@@ -66,24 +66,41 @@ builds:
   - -mod=readonly
   ldflags:
   - -s -w
+
 signs:
   - cmd: cosign
     signature: "${artifact}.sig"
     certificate: '{{ trimsuffix (trimsuffix .Env.artifact ".zip") ".tar.gz" }}.pem'
     args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${certificate}", "${artifact}"]
     artifacts: all
+
 sboms:
   - artifacts: binary
     documents:
-    - '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{if .Arm}}v{{ .Arm }}{{end}}.sbom'
+      - >-
+        {{ .ProjectName }}_
+        {{- .Version }}_
+        {{- if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_
+        {{- .Arch }}
+        {{- with .Arm }}v{{ . }}{{ end }}
+        {{- with .Mips }}_{{ . }}{{ end }}
+        {{- if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}.sbom
     cmd: syft
     args: ["$artifact", "--file", "${document}", "--output", "cyclonedx-json"]
+
 archives:
   - format_overrides:
       - goos: windows
         format: zip
-    replacements:
-      darwin: mac
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
+      {{- with .Arm }}v{{ . }}{{ end }}
+      {{- with .Mips }}_{{ . }}{{ end }}
+      {{- if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
+
 checksum:
   algorithm: sha512
 
@@ -127,7 +144,6 @@ nfpms:
       postinstall: ./caddy-dist/scripts/postinstall.sh
       preremove: ./caddy-dist/scripts/preremove.sh
       postremove: ./caddy-dist/scripts/postremove.sh
-
 
 release:
   github:

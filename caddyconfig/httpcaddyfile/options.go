@@ -54,6 +54,7 @@ func init() {
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 	RegisterGlobalOption("log", parseLogOptions)
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
+	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -384,6 +385,21 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, d.Err("expected at least one config parameter for on_demand_tls")
 	}
 	return ond, nil
+}
+
+func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume parameter name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val != "off" {
+		return "", d.Errf("persist_config must be 'off'")
+	}
+	return val, nil
 }
 
 func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {

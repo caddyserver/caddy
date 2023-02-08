@@ -63,6 +63,12 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
+			path:         "/foo.txt?a=b",
+			expectedPath: "/foo.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
 			path:         "/foodir",
 			expectedPath: "/foodir/",
 			expectedType: "directory",
@@ -211,6 +217,12 @@ func TestPHPFileMatcher(t *testing.T) {
 			expectedType: "file",
 			matched:      false,
 		},
+		{
+			path:         "/index.php?path={path}&{query}",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
 	} {
 		m := &MatchFile{
 			fileSystem: osFS{},
@@ -280,8 +292,8 @@ var (
 			expression: &caddyhttp.MatchExpression{
 				Expr: `file()`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			urlTarget:  "https://example.com/foo.txt",
+			wantResult: true,
 		},
 		{
 			name: "file error bad try files (MatchFile)",

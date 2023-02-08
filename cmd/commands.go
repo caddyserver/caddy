@@ -287,16 +287,20 @@ zero exit status will be returned.`,
 	RegisterCommand(Command{
 		Name:  "validate",
 		Func:  cmdValidateConfig,
-		Usage: "--config <path> [--adapter <name>]",
+		Usage: "--config <path> [--adapter <name>] [--envfile <path>]",
 		Short: "Tests whether a configuration file is valid",
 		Long: `
 Loads and provisions the provided config, but does not start running it.
 This reveals any errors with the configuration through the loading and
-provisioning stages.`,
+provisioning stages.
+
+If --envfile is specified, an environment file with environment variables in
+the KEY=VALUE format will be loaded into the Caddy process.`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("validate", flag.ExitOnError)
 			fs.String("config", "", "Input configuration file")
 			fs.String("adapter", "", "Name of config adapter")
+			fs.String("envfile", "", "Environment file to load")
 			return fs
 		}(),
 	})
@@ -456,7 +460,7 @@ argument of --directory. If the directory does not exist, it will be created.
 	`, rootCmd.Root().Name()),
 		DisableFlagsInUseLine: true,
 		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-		Args:                  cobra.ExactValidArgs(1),
+		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch args[0] {
 			case "bash":
@@ -504,7 +508,7 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	rootCmd.AddCommand(caddyCmdToCoral(cmd))
+	rootCmd.AddCommand(caddyCmdToCobra(cmd))
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)

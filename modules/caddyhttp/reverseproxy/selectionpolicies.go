@@ -418,7 +418,8 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
-//     lb_policy cookie [<name> [<secret>]]
+//
+//	lb_policy cookie [<name> [<secret>]]
 //
 // By default name is `lb`
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -527,7 +528,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 		if !up.Available() {
 			continue
 		}
-		h := hash(s + up.String()) // important to hash key and server together
+		h := hash(up.String() + s) // important to hash key and server together
 		if h > highestHash {
 			highestHash = h
 			upstream = up

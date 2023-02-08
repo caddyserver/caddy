@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go: [ '1.18', '1.19' ]
+        go: [ '1.18', '1.20' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
@@ -27,8 +27,8 @@ jobs:
         - go: '1.18'
           GO_SEMVER: '~1.18.4'
 
-        - go: '1.19'
-          GO_SEMVER: '~1.19.0'
+        - go: '1.20'
+          GO_SEMVER: '~1.20.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
@@ -64,7 +64,7 @@ jobs:
     #     go get github.com/axw/gocov/gocov
     #     go get github.com/AlekSi/gocov-xml
     #     go get -u github.com/jstemmer/go-junit-report
-    #     echo "::add-path::$(go env GOPATH)/bin"
+    #     echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
     - name: Print Go version and environment
       id: vars
@@ -77,10 +77,10 @@ jobs:
         env
         printf "Git version: $(git version)\n\n"
         # Calculate the short SHA1 hash of the git commit
-        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Cache the build cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         # In order:
         # * Module download cache
@@ -109,7 +109,7 @@ jobs:
         go build -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v3
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
@@ -123,7 +123,7 @@ jobs:
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -v -coverprofile="cover-profile.out" -short -race ./...
-        # echo "::set-output name=status::$?"
+        # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
@@ -143,7 +143,7 @@ jobs:
   s390x-test:
     name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
       - name: Checkout code into the Go module directory
@@ -175,7 +175,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       
-      - uses: goreleaser/goreleaser-action@v2
+      - uses: goreleaser/goreleaser-action@v4
         with:
           version: latest
           args: check

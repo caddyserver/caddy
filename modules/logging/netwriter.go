@@ -102,10 +102,9 @@ func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     net <address> {
-//         dial_timeout <duration>
-//     }
-//
+//	net <address> {
+//	    dial_timeout <duration>
+//	}
 func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if !d.NextArg() {

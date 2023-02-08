@@ -1,0 +1,108 @@
+{
+	pki {
+		ca internal {
+			name "Internal"
+			root_cn "Internal Root Cert"
+			intermediate_cn "Internal Intermediate Cert"
+		}
+		ca internal-long-lived {
+			name "Long-lived"
+			root_cn "Internal Root Cert 2"
+			intermediate_cn "Internal Intermediate Cert 2"
+		}
+	}
+}
+
+acme-internal.example.com {
+	acme_server {
+		ca internal
+	}
+}
+
+acme-long-lived.example.com {
+	acme_server {
+		ca internal-long-lived
+		lifetime 7d
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"acme-long-lived.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "internal-long-lived",
+													"handler": "acme_server",
+													"lifetime": 604800000000000
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"acme-internal.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "internal",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"pki": {
+			"certificate_authorities": {
+				"internal": {
+					"name": "Internal",
+					"root_common_name": "Internal Root Cert",
+					"intermediate_common_name": "Internal Intermediate Cert"
+				},
+				"internal-long-lived": {
+					"name": "Long-lived",
+					"root_common_name": "Internal Root Cert 2",
+					"intermediate_common_name": "Internal Intermediate Cert 2"
+				}
+			}
+		}
+	}
+}

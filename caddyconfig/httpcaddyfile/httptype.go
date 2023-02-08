@@ -286,6 +286,17 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	if adminConfig, ok := options["admin"].(*caddy.AdminConfig); ok && adminConfig != nil {
 		cfg.Admin = adminConfig
 	}
+
+	if pc, ok := options["persist_config"].(string); ok && pc == "off" {
+		if cfg.Admin == nil {
+			cfg.Admin = new(caddy.AdminConfig)
+		}
+		if cfg.Admin.Config == nil {
+			cfg.Admin.Config = new(caddy.ConfigSettings)
+		}
+		cfg.Admin.Config.Persist = new(bool)
+	}
+
 	if len(customLogs) > 0 {
 		if cfg.Logging == nil {
 			cfg.Logging = &caddy.Logging{
@@ -618,7 +629,7 @@ func (st *ServerType) serversFromPairings(
 
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
-			siteSubroute, err := buildSubroute(dirRoutes, groupCounter)
+			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
 			if err != nil {
 				return nil, err
 			}
@@ -706,7 +717,7 @@ func (st *ServerType) serversFromPairings(
 
 	err := applyServerOptions(servers, options, warnings)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("applying global server options: %v", err)
 	}
 
 	return servers, nil
@@ -959,14 +970,16 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 
 // buildSubroute turns the config values, which are expected to be routes
 // into a clean and orderly subroute that has all the routes within it.
-func buildSubroute(routes []ConfigValue, groupCounter counter) (*caddyhttp.Subroute, error) {
-	for _, val := range routes {
-		if !directiveIsOrdered(val.directive) {
-			return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
+func buildSubroute(routes []ConfigValue, groupCounter counter, needsSorting bool) (*caddyhttp.Subroute, error) {
+	if needsSorting {
+		for _, val := range routes {
+			if !directiveIsOrdered(val.directive) {
+				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
+			}
 		}
-	}
 
-	sortRoutes(routes)
+		sortRoutes(routes)
+	}
 
 	subroute := new(caddyhttp.Subroute)
 

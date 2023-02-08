@@ -1,4 +1,3 @@
-
 https://example.com {
 	reverse_proxy /path https://localhost:54321 {
 		header_up Host {upstream_hostport}
@@ -24,13 +23,12 @@ https://example.com {
 			max_conns_per_host 5
 			keepalive_idle_conns_per_host 2
 			keepalive_interval 30s
-			
+
 			tls_renegotiation freely
 			tls_except_ports 8181 8182
 		}
 	}
 }
-
 ----------
 {
 	"apps": {

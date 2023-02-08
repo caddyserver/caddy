@@ -30,8 +30,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 )
 
@@ -205,7 +205,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 // IsUnixNetwork returns true if na.Network is
 // unix, unixgram, or unixpacket.
 func (na NetworkAddress) IsUnixNetwork() bool {
-	return isUnixNetwork(na.Network)
+	return IsUnixNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
@@ -289,8 +289,9 @@ func (na NetworkAddress) String() string {
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
-func isUnixNetwork(netw string) bool {
-	return netw == "unix" || netw == "unixgram" || netw == "unixpacket"
+// IsUnixNetwork returns true if the netw is a unix network.
+func IsUnixNetwork(netw string) bool {
+	return strings.HasPrefix(netw, "unix")
 }
 
 // ParseNetworkAddress parses addr into its individual
@@ -310,7 +311,7 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	if network == "" {
 		network = "tcp"
 	}
-	if isUnixNetwork(network) {
+	if IsUnixNetwork(network) {
 		return NetworkAddress{
 			Network: network,
 			Host:    host,
@@ -353,7 +354,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
 	}
-	if isUnixNetwork(network) {
+	if IsUnixNetwork(network) {
 		host = a
 		return
 	}
@@ -384,7 +385,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if (host != "" && port == "") || isUnixNetwork(network) {
+	if (host != "" && port == "") || IsUnixNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
@@ -462,7 +463,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	// of closes) because closing the quic.EarlyListener doesn't actually close
 	// the underlying PacketConn, but we need to for unix sockets since we dup
 	// the file descriptor and thus need to close the original; track issue:
-	// https://github.com/lucas-clemente/quic-go/issues/3560#issuecomment-1258959608
+	// https://github.com/quic-go/quic-go/issues/3560#issuecomment-1258959608
 	var unix *unixConn
 	if uc, ok := ln.(*unixConn); ok {
 		unix = uc

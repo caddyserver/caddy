@@ -46,10 +46,10 @@ type HealthChecks struct {
 
 	// Passive health checks monitor proxied requests for errors or timeouts.
 	// To minimally enable passive health checks, specify at least an empty
-	// config object. Passive health check state is shared (stored globally),
-	// so a failure from one handler will be counted by all handlers; but
-	// the tolerances or standards for what defines healthy/unhealthy backends
-	// is configured per-proxy-handler.
+	// config object with fail_duration > 0. Passive health check state is
+	// shared (stored globally), so a failure from one handler will be counted
+	// by all handlers; but the tolerances or standards for what defines
+	// healthy/unhealthy backends is configured per-proxy-handler.
 	//
 	// Passive health checks technically do operate on dynamic upstreams,
 	// but are only effective for very busy proxies where the list of
@@ -266,7 +266,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		u.Host = net.JoinHostPort(host, portStr)
 	}
 
-	// attach dialing information to this request
+	// attach dialing information to this request, as well as context values that
+	// may be expected by handlers of this request
 	ctx := h.ctx.Context
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
@@ -276,6 +277,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
 	}
+	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
+	req = req.WithContext(ctx)
 	for key, hdrs := range h.HealthChecks.Active.Headers {
 		if strings.ToLower(key) == "host" {
 			req.Host = h.HealthChecks.Active.Headers.Get(key)
