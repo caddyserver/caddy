@@ -645,7 +645,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.ResponseBuffers != 0 && req.Body != nil {
+	if h.RequestBuffers != 0 && req.Body != nil {
 		req.Body, _ = h.bufferedBody(req.Body, h.ResponseBuffers)
 	}
 
