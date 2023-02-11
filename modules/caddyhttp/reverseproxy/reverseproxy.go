@@ -1174,15 +1174,6 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 	}, written
 }
 
-func isChunkedRequest(req *http.Request) bool {
-	for _, transferEncoding := range req.TransferEncoding {
-		if transferEncoding == "chunked" {
-			return true
-		}
-	}
-	return false
-}
-
 // cloneRequest makes a semi-deep clone of origReq.
 //
 // Most of this code is borrowed from the Go stdlib reverse proxy,
