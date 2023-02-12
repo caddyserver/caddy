@@ -143,33 +143,33 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 					"install_trust": false
 				  }
 				}
-			  },
-		  "http": {
-			"grace_period": 1,
-			"servers": {
-			  "srv0": {
-				"listen": [
-				  ":8080"
-				],
-				"routes": [
-				  {
-					"handle": [
-					  {
-						"handler": "reverse_proxy",
-						"upstreams": [
-						  {
-							"dial": "unix/{http.request.header.X-Caddy-Upstream-Dial}"
-						  }
+			},
+		  	"http": {
+				"grace_period": 1,
+				"servers": {
+					"srv0": {
+						"listen": [
+							":8080"
+						],
+						"routes": [
+							{
+								"handle": [
+									{
+										"handler": "reverse_proxy",
+										"upstreams": [
+											{
+												"dial": "unix/{http.request.header.X-Caddy-Upstream-Dial}"
+											}
+										]
+									}
+								]
+							}
 						]
-					  }
-					]
-				  }
-				]
-			  }
-			}
-		  }
+					}
+				}
+		  	}
 		}
-	  }
+	}
 	`, "json")
 
 	req, err := http.NewRequest(http.MethodGet, "http://localhost:8080", nil)

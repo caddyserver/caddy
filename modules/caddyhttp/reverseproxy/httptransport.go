@@ -126,6 +126,7 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return err
 	}
+	rt.Proxy = http.ProxyFromEnvironment
 	h.Transport = rt
 
 	return nil
@@ -172,38 +173,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 	}
 
-	// Set up the dialer to pull the correct information from the context
-	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		// the proper dialing information should be embedded into the request's context
-		if dialInfo, ok := GetDialInfo(ctx); ok {
-			network = dialInfo.Network
-			address = dialInfo.Address
-		}
-
-		conn, err := dialer.DialContext(ctx, network, address)
-		if err != nil {
-			// identify this error as one that occurred during
-			// dialing, which can be important when trying to
-			// decide whether to retry a request
-			return nil, DialError{err}
-		}
-
-		// if read/write timeouts are configured and this is a TCP connection, enforce the timeouts
-		// by wrapping the connection with our own type
-		if tcpConn, ok := conn.(*net.TCPConn); ok && (h.ReadTimeout > 0 || h.WriteTimeout > 0) {
-			conn = &tcpRWTimeoutConn{
-				TCPConn:      tcpConn,
-				readTimeout:  time.Duration(h.ReadTimeout),
-				writeTimeout: time.Duration(h.WriteTimeout),
-				logger:       caddyCtx.Logger(),
-			}
-		}
-
-		return conn, nil
-	}
-
 	rt := &http.Transport{
-		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
 		ExpectContinueTimeout:  time.Duration(h.ExpectContinueTimeout),
@@ -252,7 +222,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		h2t := &http2.Transport{
 			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
 			DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-				return dialContext(ctx, network, address)
+				return dialer.DialContext(ctx, network, address)
 			},
 			AllowHTTP: true,
 		}

@@ -40,6 +40,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
+	unixtransport "github.com/peterbourgon/unixtransport"
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 )
@@ -329,9 +330,9 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("provisioning default transport: %v", err)
 		}
+		unixtransport.Register(t.Transport)
 		h.Transport = t
 	}
-
 	// set up load balancing
 	if h.LoadBalancing == nil {
 		h.LoadBalancing = new(LoadBalancing)
@@ -1111,7 +1112,15 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 		(req.URL.Scheme == "https" && di.Port == "443") {
 		reqHost = di.Host
 	}
-
+	if strings.Contains(di.Network, "unix") {
+		req.URL.Scheme = di.Network
+		if !strings.HasPrefix(req.URL.Scheme, "http") {
+			req.URL.Scheme = "http+unix"
+		}
+		req.URL.Path = di.Address + ":" + req.URL.Path
+		req.URL.Host = ""
+		return
+	}
 	req.URL.Host = reqHost
 }
 
