@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.15.15
 	github.com/klauspost/cpuid/v2 v2.2.3
-	github.com/mholt/acmez v1.0.4
+	github.com/mholt/acmez v1.1.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/quic-go/quic-go v0.32.0
 	github.com/smallstep/certificates v0.23.2
@@ -31,7 +31,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.13.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/crypto v0.5.0
-	golang.org/x/net v0.5.0
+	golang.org/x/net v0.7.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/term v0.5.0
 	google.golang.org/genproto v0.0.0-20230202175211-008b39050e57
@@ -132,7 +132,7 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/sys v0.5.0
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/grpc v1.52.3 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
