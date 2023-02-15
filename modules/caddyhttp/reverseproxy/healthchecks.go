@@ -242,9 +242,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		// this is kind of a hacky way to know if we should use HTTPS, but whatever
 		scheme = "https"
 	}
-	if dialInfo.Network == "unix" || dialInfo.Network == "unixgram" {
-		scheme += "+unix"
-	}
 	u := &url.URL{
 		Scheme: scheme,
 		Host:   hostAddr,
@@ -280,7 +277,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
 	}
-	h.directRequest(req, dialInfo)
 	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
 	req = req.WithContext(ctx)
 	for key, hdrs := range h.HealthChecks.Active.Headers {
