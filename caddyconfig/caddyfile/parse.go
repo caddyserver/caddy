@@ -20,7 +20,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -173,11 +172,10 @@ func (p *parser) begin() error {
 			return err
 		}
 		// Just as we need to track which file the token comes from, we need to
-		// keep track of which snippets do the tokens come from. This is helpful
-		// in tracking import cycles across files/snippets by namespacing them. Without
-		// this we end up with false-positives in cycle-detection.
+		// keep track of which snippet the token comes from. This is helpful
+		// in tracking import cycles across files/snippets by namespacing them.
+		// Without this, we end up with false-positives in cycle-detection.
 		for k, v := range tokens {
-			v.inSnippet = true
 			v.snippetName = name
 			tokens[k] = v
 		}
@@ -318,45 +316,6 @@ func (p *parser) directives() error {
 	return nil
 }
 
-// parseVariadic determine if placeholder is a valid variadic placeholder
-// and return start and end index
-func parseVariadic(name string, args []string) (bool, int, int) {
-	if !strings.HasPrefix(name, "{args.") {
-		return false, 0, 0
-	}
-	if !strings.HasSuffix(name, "}") {
-		return false, 0, 0
-	}
-	s, e, f := strings.Cut(name[len("{args."):len(name)-len("}")], ":")
-	if !f {
-		return false, 0, 0
-	}
-
-	var (
-		si  = 0
-		ei  = len(args)
-		err error
-	)
-	if s != "" {
-		si, err = strconv.Atoi(s)
-		if err != nil {
-			return false, 0, 0
-		}
-	}
-	if e != "" {
-		ei, err = strconv.Atoi(e)
-		if err != nil {
-			return false, 0, 0
-		}
-	}
-
-	// bound check
-	if 0 <= si && si <= ei && ei <= len(args) {
-		return true, si, ei
-	}
-	return false, 0, 0
-}
-
 // doImport swaps out the import directive and its argument
 // (a total of 2 tokens) with the tokens in the specified file
 // or globbing pattern. When the function returns, the cursor
@@ -376,11 +335,8 @@ func (p *parser) doImport() error {
 	// grab remaining args as placeholder replacements
 	args := p.RemainingArgs()
 
-	// add args to the replacer
-	repl := caddy.NewEmptyReplacer()
-	for index, arg := range args {
-		repl.Set("args."+strconv.Itoa(index), arg)
-	}
+	// set up a replacer for non-variadic args replacement
+	repl := makeArgsReplacer(args)
 
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
@@ -455,8 +411,8 @@ func (p *parser) doImport() error {
 		nodes = matches
 	}
 
-	nodeName := p.Token().RealFile()
-	if p.Token().inSnippet {
+	nodeName := p.Token().originalFile()
+	if p.Token().snippetName != "" {
 		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
 	}
 	p.importGraph.addNode(nodeName)
@@ -473,16 +429,16 @@ func (p *parser) doImport() error {
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for _, token := range importedTokens {
-		// set file name to refer to import directive line number
-		// and snippet name
-		if token.inSnippet {
-			token.UpdateFile(fmt.Sprintf("%s:%d(import %s)", token.File, p.Line(), token.snippetName))
+		// set the token's file to refer to import directive line number and snippet name
+		if token.snippetName != "" {
+			token.updateFile(fmt.Sprintf("%s:%d (import %s)", token.File, p.Line(), token.snippetName))
 		} else {
-			token.UpdateFile(fmt.Sprintf("%s:%d(import)", token.File, p.Line()))
+			token.updateFile(fmt.Sprintf("%s:%d (import)", token.File, p.Line()))
 		}
 
-		if v, si, ei := parseVariadic(token.Text, args); v {
-			for _, arg := range args[si:ei] {
+		foundVariadic, startIndex, endIndex := parseVariadic(token, len(args))
+		if foundVariadic {
+			for _, arg := range args[startIndex:endIndex] {
 				token.Text = arg
 				tokensCopy = append(tokensCopy, token)
 			}

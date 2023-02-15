@@ -36,28 +36,27 @@ type (
 	// Token represents a single parsable unit.
 	Token struct {
 		File        string
-		realFile    string
+		origFile    string
 		Line        int
 		Text        string
 		wasQuoted   rune // enclosing quote character, if any
-		inSnippet   bool
 		snippetName string
 	}
 )
 
-// RealFile gets original filename before import modification.
-func (t Token) RealFile() string {
-	if t.realFile != "" {
-		return t.realFile
+// originalFile gets original filename before import modification.
+func (t Token) originalFile() string {
+	if t.origFile != "" {
+		return t.origFile
 	}
 	return t.File
 }
 
-// UpdateFile updates filename for display and saves original filename,
-// it's used in import processing.
-func (t *Token) UpdateFile(file string) {
-	if t.realFile == "" {
-		t.realFile = t.File
+// updateFile updates the token's source filename for error display
+// and remembers the original filename. Used during "import" processing.
+func (t *Token) updateFile(file string) {
+	if t.origFile == "" {
+		t.origFile = t.File
 	}
 	t.File = file
 }

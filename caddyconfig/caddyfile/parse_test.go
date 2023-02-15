@@ -28,31 +28,76 @@ func TestParseVariadic(t *testing.T) {
 		result bool
 	}{
 		{
+			input:  "",
+			result: false,
+		},
+		{
+			input:  "{args[1",
+			result: false,
+		},
+		{
+			input:  "1]}",
+			result: false,
+		},
+		{
+			input:  "{args[:]}aaaaa",
+			result: false,
+		},
+		{
+			input:  "aaaaa{args[:]}",
+			result: false,
+		},
+		{
 			input:  "{args.}",
 			result: false,
 		},
 		{
-			input:  "{args.:}",
+			input:  "{args.1}",
+			result: false,
+		},
+		{
+			input:  "{args[]}",
+			result: false,
+		},
+		{
+			input:  "{args[:]}",
 			result: true,
 		},
 		{
-			input:  "{args.-1:}",
+			input:  "{args[:]}",
+			result: true,
+		},
+		{
+			input:  "{args[0:]}",
+			result: true,
+		},
+		{
+			input:  "{args[:0]}",
+			result: true,
+		},
+		{
+			input:  "{args[-1:]}",
 			result: false,
 		},
 		{
-			input:  "{args.:11}",
+			input:  "{args[:11]}",
 			result: false,
 		},
 		{
-			input:  "{args.10:0}",
+			input:  "{args[10:0]}",
 			result: false,
 		},
 		{
-			input:  "{args.0:10}",
+			input:  "{args[0:10]}",
 			result: true,
 		},
 	} {
-		if v, _, _ := parseVariadic(tc.input, args); v != tc.result {
+		token := Token{
+			File: "test",
+			Line: 1,
+			Text: tc.input,
+		}
+		if v, _, _ := parseVariadic(token, len(args)); v != tc.result {
 			t.Errorf("Test %d error expectation failed Expected: %t, got %t", i, tc.result, v)
 		}
 	}

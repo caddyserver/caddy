@@ -248,8 +248,7 @@ func (d *Dispenser) Line() int {
 	return d.tokens[d.cursor].Line
 }
 
-// File gets the filename where the current token originated,
-// it may be modified by import directive to help debug import error.
+// File gets the filename where the current token originated.
 func (d *Dispenser) File() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""

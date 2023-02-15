@@ -215,32 +215,32 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 	}
 }
 
-func TestErrorLine(t *testing.T) {
+func TestImportErrorLine(t *testing.T) {
 	for i, tc := range []struct {
 		input     string
 		errorFunc func(err error) bool
 	}{
 		{
 			input: `(t1) {
-					abort {args.:}
+					abort {args[:]}
 				}
 				:8080 {
 					import t1
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:6(import t1):2")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:6 (import t1):2")
 			},
 		},
 		{
 			input: `(t1) {
-					abort {args.:}
+					abort {args[:]}
 				}
 				:8080 {
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:5(import t1):2")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1):2")
 			},
 		},
 	} {
