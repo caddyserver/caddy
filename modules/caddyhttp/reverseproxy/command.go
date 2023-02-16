@@ -35,7 +35,7 @@ func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "reverse-proxy",
 		Func:  cmdReverseProxy,
-		Usage: "[--from <addr>] [--to <addr>] [--change-host-header]",
+		Usage: "[--from <addr>] [--to <addr>] [--change-host-header] [--insecure] [--internal-certs] [--disable-redirects]",
 		Short: "A quick and production-ready reverse proxy",
 		Long: `
 A simple but production-ready reverse proxy. Useful for quick deployments,
@@ -52,16 +52,23 @@ If the --from address has a host or IP, Caddy will attempt to serve the
 proxy over HTTPS with a certificate (unless overridden by the HTTP scheme
 or port).
 
-If --change-host-header is set, the Host header on the request will be modified
-from its original incoming value to the address of the upstream. (Otherwise, by
-default, all incoming headers are passed through unmodified.)
+If serving HTTPS: 
+  --disable-redirects can be used to avoid binding to the HTTP port.
+  --internal-certs can be used to force issuance certs using the internal
+    CA instead of attempting to issue a public certificate.
+
+For proxying:
+  --change-host-header sets the Host header on the request to the address
+    of the upstream, instead of defaulting to the incoming Host header.
+  --insecure disables TLS verification with the upstream. WARNING: THIS
+    DISABLES SECURITY BY NOT VERIFYING THE UPSTREAM'S CERTIFICATE.
 `,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("reverse-proxy", flag.ExitOnError)
 			fs.String("from", "localhost", "Address on which to receive traffic")
 			fs.Var(&reverseProxyCmdTo, "to", "Upstream address(es) to which traffic should be sent")
 			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
-			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING SSL CERTIFICATES!)")
+			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
 			fs.Bool("internal-certs", false, "Use internal CA for issuing certs")
 			fs.Bool("debug", false, "Enable verbose debug logs")
 			fs.Bool("disable-redirects", false, "Disable HTTP->HTTPS redirects")

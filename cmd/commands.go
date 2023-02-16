@@ -91,14 +91,15 @@ the KEY=VALUE format will be loaded into the Caddy process.
 
 On Windows, the spawned child process will remain attached to the terminal, so
 closing the window will forcefully stop Caddy; to avoid forgetting this, try
-using 'caddy run' instead to keep it in the foreground.`,
+using 'caddy run' instead to keep it in the foreground.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("start", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
-			fs.String("envfile", "", "Environment file to load")
 			fs.String("adapter", "", "Name of config adapter to apply")
-			fs.String("pidfile", "", "Path of file to which to write process ID")
+			fs.String("envfile", "", "Environment file to load")
 			fs.Bool("watch", false, "Reload changed config file automatically")
+			fs.String("pidfile", "", "Path of file to which to write process ID")
 			return fs
 		}(),
 	})
@@ -138,7 +139,8 @@ save file. It is not an error if --resume is used and no autosave file exists.
 
 If --watch is specified, the config file will be loaded automatically after
 changes. ⚠️ This can make unintentional config changes easier; only use this
-option in a local development environment.`,
+option in a local development environment.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("run", flag.ExitOnError)
 			fs.String("config", "", "Configuration file")
@@ -163,7 +165,8 @@ Stops the background Caddy process as gracefully as possible.
 
 It requires that the admin API is enabled and accessible, since it will
 use the API's /stop endpoint. The address of this request can be customized
-using the --address flag, or from the given --config, if not the default.`,
+using the --address flag, or from the given --config, if not the default.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("stop", flag.ExitOnError)
 			fs.String("address", "", "The address to use to reach the admin API endpoint, if not the default")
@@ -185,7 +188,8 @@ workflows revolving around config files.
 
 Since the admin endpoint is configurable, the endpoint configuration is loaded
 from the --address flag if specified; otherwise it is loaded from the given
-config file; otherwise the default is assumed.`,
+config file; otherwise the default is assumed.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("reload", flag.ExitOnError)
 			fs.String("config", "", "Configuration file (required)")
@@ -273,7 +277,8 @@ for human readability.
 
 If --validate is used, the adapted config will be checked for validity.
 If the config is invalid, an error will be printed to stderr and a non-
-zero exit status will be returned.`,
+zero exit status will be returned.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("adapt", flag.ExitOnError)
 			fs.String("config", "", "Configuration file to adapt (required)")
@@ -295,7 +300,8 @@ This reveals any errors with the configuration through the loading and
 provisioning stages.
 
 If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.`,
+the KEY=VALUE format will be loaded into the Caddy process.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("validate", flag.ExitOnError)
 			fs.String("config", "", "Input configuration file")
@@ -308,7 +314,7 @@ the KEY=VALUE format will be loaded into the Caddy process.`,
 	RegisterCommand(Command{
 		Name:  "fmt",
 		Func:  cmdFmt,
-		Usage: "[--overwrite] [<path>]",
+		Usage: "[--overwrite] [--diff] [<path>]",
 		Short: "Formats a Caddyfile",
 		Long: `
 Formats the Caddyfile by adding proper indentation and spaces to improve
@@ -324,7 +330,8 @@ is not a valid patch format.
 
 If you wish you use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
-is always printed to stdout.`,
+is always printed to stdout.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 			fs.Bool("overwrite", false, "Overwrite the input file with the results")
@@ -339,7 +346,8 @@ is always printed to stdout.`,
 		Short: "Upgrade Caddy (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the same modules/plugins at the
-latest versions. EXPERIMENTAL: May be changed or removed.`,
+latest versions. EXPERIMENTAL: May be changed or removed.
+`,
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
 			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
