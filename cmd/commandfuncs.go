@@ -589,7 +589,10 @@ func cmdFmt(fl Flags) (int, error) {
 	}
 
 	if warning, diff := caddyfile.FormattingDifference(formatCmdConfigFile, input); diff {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("%s:%d: Caddyfile input is not formatted", warning.File, warning.Line)
+		return caddy.ExitCodeFailedStartup, fmt.Errorf(`%s:%d: Caddyfile input is not formatted; Tip: use '--overwrite' to update your Caddyfile in-place instead of previewing it. Consult '--help' for more options`,
+			warning.File,
+			warning.Line,
+		)
 	}
 
 	return caddy.ExitCodeSuccess, nil
