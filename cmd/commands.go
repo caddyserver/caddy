@@ -34,12 +34,6 @@ type Command struct {
 	// Required.
 	Name string
 
-	// Func is a function that executes a subcommand using
-	// the parsed flags. It returns an exit code and any
-	// associated error.
-	// Required.
-	Func CommandFunc
-
 	// Usage is a brief message describing the syntax of
 	// the subcommand's flags and args. Use [] to indicate
 	// optional parameters and <> to enclose literal values
@@ -60,7 +54,21 @@ type Command struct {
 	Long string
 
 	// Flags is the flagset for command.
+	// This is ignored if CobraFunc is set.
 	Flags *flag.FlagSet
+
+	// Func is a function that executes a subcommand using
+	// the parsed flags. It returns an exit code and any
+	// associated error.
+	// Required if CobraFunc is not set.
+	Func CommandFunc
+
+	// CobraFunc allows further configuration of the command
+	// via cobra's APIs. If this is set, then Func and Flags
+	// are ignored, with the assumption that they are set in
+	// this function. A caddycmd.WrapCommandFuncForCobra helper
+	// exists to simplify porting CommandFunc to Cobra's RunE.
+	CobraFunc func(*cobra.Command)
 }
 
 // CommandFunc is a command's function. It runs the
@@ -504,7 +512,7 @@ func RegisterCommand(cmd Command) {
 	if cmd.Name == "" {
 		panic("command name is required")
 	}
-	if cmd.Func == nil {
+	if cmd.Func == nil && cmd.CobraFunc == nil {
 		panic("command function missing")
 	}
 	if cmd.Short == "" {
