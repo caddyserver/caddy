@@ -204,7 +204,7 @@ config file; otherwise the default is assumed.
 		Name:  "version",
 		Short: "Prints the version",
 		Long: `
-		Prints the version of this Caddy binary.
+Prints the version of this Caddy binary.
 
 Version information must be embedded into the binary at compile-time in
 order for Caddy to display anything useful with this command. If Caddy
