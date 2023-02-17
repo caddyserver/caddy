@@ -20,7 +20,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -173,11 +172,10 @@ func (p *parser) begin() error {
 			return err
 		}
 		// Just as we need to track which file the token comes from, we need to
-		// keep track of which snippets do the tokens come from. This is helpful
-		// in tracking import cycles across files/snippets by namespacing them. Without
-		// this we end up with false-positives in cycle-detection.
+		// keep track of which snippet the token comes from. This is helpful
+		// in tracking import cycles across files/snippets by namespacing them.
+		// Without this, we end up with false-positives in cycle-detection.
 		for k, v := range tokens {
-			v.inSnippet = true
 			v.snippetName = name
 			tokens[k] = v
 		}
@@ -337,11 +335,8 @@ func (p *parser) doImport() error {
 	// grab remaining args as placeholder replacements
 	args := p.RemainingArgs()
 
-	// add args to the replacer
-	repl := caddy.NewEmptyReplacer()
-	for index, arg := range args {
-		repl.Set("args."+strconv.Itoa(index), arg)
-	}
+	// set up a replacer for non-variadic args replacement
+	repl := makeArgsReplacer(args)
 
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
@@ -416,8 +411,8 @@ func (p *parser) doImport() error {
 		nodes = matches
 	}
 
-	nodeName := p.File()
-	if p.Token().inSnippet {
+	nodeName := p.Token().originalFile()
+	if p.Token().snippetName != "" {
 		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
 	}
 	p.importGraph.addNode(nodeName)
@@ -428,13 +423,29 @@ func (p *parser) doImport() error {
 	}
 
 	// copy the tokens so we don't overwrite p.definedSnippets
-	tokensCopy := make([]Token, len(importedTokens))
-	copy(tokensCopy, importedTokens)
+	tokensCopy := make([]Token, 0, len(importedTokens))
 
 	// run the argument replacer on the tokens
-	for index, token := range tokensCopy {
-		token.Text = repl.ReplaceKnown(token.Text, "")
-		tokensCopy[index] = token
+	// golang for range slice return a copy of value
+	// similarly, append also copy value
+	for _, token := range importedTokens {
+		// set the token's file to refer to import directive line number and snippet name
+		if token.snippetName != "" {
+			token.updateFile(fmt.Sprintf("%s:%d (import %s)", token.File, p.Line(), token.snippetName))
+		} else {
+			token.updateFile(fmt.Sprintf("%s:%d (import)", token.File, p.Line()))
+		}
+
+		foundVariadic, startIndex, endIndex := parseVariadic(token, len(args))
+		if foundVariadic {
+			for _, arg := range args[startIndex:endIndex] {
+				token.Text = arg
+				tokensCopy = append(tokensCopy, token)
+			}
+		} else {
+			token.Text = repl.ReplaceKnown(token.Text, "")
+			tokensCopy = append(tokensCopy, token)
+		}
 	}
 
 	// splice the imported tokens in the place of the import statement

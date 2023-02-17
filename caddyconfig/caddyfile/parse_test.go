@@ -21,6 +21,88 @@ import (
 	"testing"
 )
 
+func TestParseVariadic(t *testing.T) {
+	var args = make([]string, 10)
+	for i, tc := range []struct {
+		input  string
+		result bool
+	}{
+		{
+			input:  "",
+			result: false,
+		},
+		{
+			input:  "{args[1",
+			result: false,
+		},
+		{
+			input:  "1]}",
+			result: false,
+		},
+		{
+			input:  "{args[:]}aaaaa",
+			result: false,
+		},
+		{
+			input:  "aaaaa{args[:]}",
+			result: false,
+		},
+		{
+			input:  "{args.}",
+			result: false,
+		},
+		{
+			input:  "{args.1}",
+			result: false,
+		},
+		{
+			input:  "{args[]}",
+			result: false,
+		},
+		{
+			input:  "{args[:]}",
+			result: true,
+		},
+		{
+			input:  "{args[:]}",
+			result: true,
+		},
+		{
+			input:  "{args[0:]}",
+			result: true,
+		},
+		{
+			input:  "{args[:0]}",
+			result: true,
+		},
+		{
+			input:  "{args[-1:]}",
+			result: false,
+		},
+		{
+			input:  "{args[:11]}",
+			result: false,
+		},
+		{
+			input:  "{args[10:0]}",
+			result: false,
+		},
+		{
+			input:  "{args[0:10]}",
+			result: true,
+		},
+	} {
+		token := Token{
+			File: "test",
+			Line: 1,
+			Text: tc.input,
+		}
+		if v, _, _ := parseVariadic(token, len(args)); v != tc.result {
+			t.Errorf("Test %d error expectation failed Expected: %t, got %t", i, tc.result, v)
+		}
+	}
+}
+
 func TestAllTokens(t *testing.T) {
 	input := []byte("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
