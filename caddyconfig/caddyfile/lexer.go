@@ -47,23 +47,6 @@ type (
 	}
 )
 
-// originalFile gets original filename before import modification.
-func (t Token) originalFile() string {
-	if t.origFile != "" {
-		return t.origFile
-	}
-	return t.File
-}
-
-// updateFile updates the token's source filename for error display
-// and remembers the original filename. Used during "import" processing.
-func (t *Token) updateFile(file string) {
-	if t.origFile == "" {
-		t.origFile = t.File
-	}
-	t.File = file
-}
-
 // load prepares the lexer to scan an input for tokens.
 // It discards any leading byte order mark.
 func (l *lexer) load(input io.Reader) error {
@@ -304,6 +287,35 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 	return tokens, nil
 }
 
+// originalFile gets original filename before import modification.
+func (t Token) originalFile() string {
+	if t.origFile != "" {
+		return t.origFile
+	}
+	return t.File
+}
+
+// updateFile updates the token's source filename for error display
+// and remembers the original filename. Used during "import" processing.
+func (t *Token) updateFile(file string) {
+	if t.origFile == "" {
+		t.origFile = t.File
+	}
+	t.File = file
+}
+
 func (t Token) Quoted() bool {
 	return t.wasQuoted > 0
+}
+
+// NumLineBreaks counts how many line breaks are in the token text.
+func (t Token) NumLineBreaks() int {
+	lineBreaks := strings.Count(t.Text, "\n")
+	if t.wasQuoted == '<' {
+		// heredocs have an extra linebreak because the opening
+		// delimiter is on its own line and is not included in
+		// the token Text itself
+		lineBreaks++
+	}
+	return lineBreaks
 }
