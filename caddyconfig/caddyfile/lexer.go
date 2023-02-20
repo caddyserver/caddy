@@ -139,38 +139,12 @@ func (l *lexer) next() bool {
 
 			// check if we're done, i.e. that the last few characters are the marker
 			if len(val) > len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
-				// find the last newline of the heredoc, which is where the contents end
-				lastNewline := strings.LastIndex(string(val), "\n")
-
-				// figure out how much whitespace we need to strip from the front of every line
-				paddingToStrip := string(val[lastNewline+1 : len(val)-len(heredocMarker)])
-
-				// collapse the content, then split into separate lines
-				lines := strings.Split(string(val[:lastNewline+1]), "\n")
-
-				// iterate over each line and strip the whitespace from the front
-				var out string
-				for i, line := range lines[:len(lines)-1] {
-					// find an exact match for the padding
-					index := strings.Index(line, paddingToStrip)
-
-					// if the padding doesn't match exactly at the start then we can't safely strip
-					if index != 0 {
-						panic(fmt.Errorf("mismatched whitespace in heredoc on line #%d [%s], expected whitespace [%s]", i, line, paddingToStrip))
-					}
-
-					// strip, then append the line, with the newline, to the output.
-					// also removes all "\r" because Windows.
-					out += strings.ReplaceAll(line[len(paddingToStrip):]+"\n", "\r", "")
-				}
-
-				// set the final value
-				val = []rune(out)
-
 				// set the line counter
 				l.line += l.skippedLines
 				l.skippedLines = 0
 
+				// set the final value, and make the token
+				val = finalizeHeredoc(val, heredocMarker)
 				return makeToken('<')
 			}
 
@@ -285,6 +259,40 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 		tokens = append(tokens, l.token)
 	}
 	return tokens, nil
+}
+
+// finalizeHeredoc takes the runes read as the heredoc text and the marker,
+// and processes the text to strip leading whitespace, returning the final
+// value without the leading whitespace.
+func finalizeHeredoc(val []rune, marker string) []rune {
+	// find the last newline of the heredoc, which is where the contents end
+	lastNewline := strings.LastIndex(string(val), "\n")
+
+	// figure out how much whitespace we need to strip from the front of every line
+	// by getting the string that precedes the marker, on the last line
+	paddingToStrip := string(val[lastNewline+1 : len(val)-len(marker)])
+
+	// collapse the content, then split into separate lines
+	lines := strings.Split(string(val[:lastNewline+1]), "\n")
+
+	// iterate over each line and strip the whitespace from the front
+	var out string
+	for i, line := range lines[:len(lines)-1] {
+		// find an exact match for the padding
+		index := strings.Index(line, paddingToStrip)
+
+		// if the padding doesn't match exactly at the start then we can't safely strip
+		if index != 0 {
+			panic(fmt.Errorf("mismatched whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s]", marker, i, line, paddingToStrip))
+		}
+
+		// strip, then append the line, with the newline, to the output.
+		// also removes all "\r" because Windows.
+		out += strings.ReplaceAll(line[len(paddingToStrip):]+"\n", "\r", "")
+	}
+
+	// return the final value
+	return []rune(out)
 }
 
 // originalFile gets original filename before import modification.
