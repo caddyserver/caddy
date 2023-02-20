@@ -191,15 +191,17 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	celReq, ok := lhs.(celHTTPRequest)
 	if !ok {
 		return types.NewErr(
-			"invalid request of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
+			"invalid request of type '%v' to %s(request, placeholderVarName)",
 			lhs.Type(),
+			placeholderFuncName,
 		)
 	}
 	phStr, ok := rhs.(types.String)
 	if !ok {
 		return types.NewErr(
-			"invalid placeholder variable name of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
+			"invalid placeholder variable name of type '%v' to %s(request, placeholderVarName)",
 			rhs.Type(),
+			placeholderFuncName,
 		)
 	}
 
