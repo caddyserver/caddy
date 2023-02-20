@@ -37,12 +37,13 @@ type (
 
 	// Token represents a single parsable unit.
 	Token struct {
-		File        string
-		origFile    string
-		Line        int
-		Text        string
-		wasQuoted   rune // enclosing quote character, if any
-		snippetName string
+		File          string
+		origFile      string
+		Line          int
+		Text          string
+		wasQuoted     rune // enclosing quote character, if any
+		heredocMarker string
+		snippetName   string
 	}
 )
 
@@ -96,13 +97,13 @@ func (l *lexer) load(input io.Reader) error {
 // a token was loaded; false otherwise.
 func (l *lexer) next() bool {
 	var val []rune
-	var comment, quoted, btQuoted, inHeredoc, escaped bool
+	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped bool
 	var heredocMarker string
-	var heredocEscaped bool
 
 	makeToken := func(quoted rune) bool {
 		l.token.Text = string(val)
 		l.token.wasQuoted = quoted
+		l.token.heredocMarker = heredocMarker
 		return true
 	}
 
@@ -154,7 +155,7 @@ func (l *lexer) next() bool {
 			}
 
 			// check if we're done, i.e. that the last few characters are the marker
-			if len(val) > len(heredocMarker) && string(val[len(val)-len(heredocMarker):]) == heredocMarker {
+			if len(val) > len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
 				// find the last newline of the heredoc, which is where the contents end
 				lastNewline := strings.LastIndex(string(val), "\n")
 
@@ -187,14 +188,7 @@ func (l *lexer) next() bool {
 				l.line += l.skippedLines
 				l.skippedLines = 0
 
-				// adds +1 to the count of newlines in the token text
-				// for the parser to track whether we're still on
-				// the same directive; this is a hack, because we
-				// consume the first newline in the heredoc, so
-				// it throws off the line count.
-				l.token.Heredoc = 1
-
-				return makeToken()
+				return makeToken('<')
 			}
 
 			// stay in the heredoc until we find the ending marker
@@ -217,11 +211,8 @@ func (l *lexer) next() bool {
 				}
 				escaped = false
 			} else {
-				if quoted && ch == '"' {
-					return makeToken('"')
-				}
-				if btQuoted && ch == '`' {
-					return makeToken('`')
+				if (quoted && ch == '"') || (btQuoted && ch == '`') {
+					return makeToken(ch)
 				}
 			}
 			// allow quoted text to wrap continue on multiple lines

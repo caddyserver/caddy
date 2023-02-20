@@ -203,14 +203,17 @@ func (d *Dispenser) Val() string {
 }
 
 // ValRaw gets the raw text of the current token (including quotes).
+// If the token was a heredoc, then the delimiter is not included,
+// because that is not relevant to any unmarshaling logic at this time.
 // If there is no token loaded, it returns empty string.
 func (d *Dispenser) ValRaw() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	}
 	quote := d.tokens[d.cursor].wasQuoted
-	if quote > 0 {
-		return string(quote) + d.tokens[d.cursor].Text + string(quote) // string literal
+	if quote > 0 && quote != '<' {
+		// string literal
+		return string(quote) + d.tokens[d.cursor].Text + string(quote)
 	}
 	return d.tokens[d.cursor].Text
 }
@@ -445,7 +448,14 @@ func (d *Dispenser) numLineBreaks(tknIdx int) int {
 	if tknIdx < 0 || tknIdx >= len(d.tokens) {
 		return 0
 	}
-	return strings.Count(d.tokens[tknIdx].Text, "\n") + d.tokens[tknIdx].Heredoc
+	lineBreaks := strings.Count(d.tokens[tknIdx].Text, "\n")
+	if d.tokens[tknIdx].wasQuoted == '<' {
+		// heredocs have an extra linebreak because the opening
+		// delimiter is on its own line and is not included in
+		// the token Text itself
+		lineBreaks++
+	}
+	return lineBreaks
 }
 
 // isNewLine determines whether the current token is on a different
