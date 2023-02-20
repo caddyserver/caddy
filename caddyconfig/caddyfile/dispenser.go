@@ -440,6 +440,16 @@ func (d *Dispenser) Delete() []Token {
 	return d.tokens
 }
 
+// DeleteN is the same as Delete, but can delete many tokens at once.
+// If there aren't N tokens available to delete, none are deleted.
+func (d *Dispenser) DeleteN(amount int) []Token {
+	if amount > 0 && d.cursor >= (amount-1) && d.cursor <= len(d.tokens)-1 {
+		d.tokens = append(d.tokens[:d.cursor-(amount-1)], d.tokens[d.cursor+1:]...)
+		d.cursor -= amount
+	}
+	return d.tokens
+}
+
 // isNewLine determines whether the current token is on a different
 // line (higher line number) than the previous token. It handles imported
 // tokens correctly. If there isn't a previous token, it returns true.
