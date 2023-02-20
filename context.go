@@ -326,7 +326,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 
 	// fill in its config only if there is a config to fill in
 	if len(rawMsg) > 0 {
-		err := strictUnmarshalJSON(rawMsg, &val)
+		err := StrictUnmarshalJSON(rawMsg, &val)
 		if err != nil {
 			return nil, fmt.Errorf("decoding module config: %s: %v", modInfo, err)
 		}
