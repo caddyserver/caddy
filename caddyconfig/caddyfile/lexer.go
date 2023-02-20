@@ -78,7 +78,7 @@ func (l *lexer) load(input io.Reader) error {
 // may be escaped. The rest of the line is skipped
 // if a "#" character is read in. Returns true if
 // a token was loaded; false otherwise.
-func (l *lexer) next() bool {
+func (l *lexer) next() (bool, error) {
 	var val []rune
 	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped bool
 	var heredocMarker string
@@ -98,18 +98,18 @@ func (l *lexer) next() bool {
 		ch, _, err := l.reader.ReadRune()
 		if err != nil {
 			if len(val) > 0 {
-				return makeToken(0)
+				return makeToken(0), nil
 			}
 			if err == io.EOF {
-				return false
+				return false, nil
 			}
-			panic(err)
+			return false, err
 		}
 
 		// detect whether we have the start of a heredoc
 		if !inHeredoc && !heredocEscaped && len(val) > 1 && string(val[:2]) == "<<" {
 			if ch == '<' {
-				panic(fmt.Errorf("too many '<' for heredoc"))
+				return false, fmt.Errorf("too many '<' for heredoc; only use two, for example <<END")
 			}
 			if ch == '\r' {
 				continue
@@ -144,8 +144,11 @@ func (l *lexer) next() bool {
 				l.skippedLines = 0
 
 				// set the final value, and make the token
-				val = finalizeHeredoc(val, heredocMarker)
-				return makeToken('<')
+				val, err = finalizeHeredoc(val, heredocMarker)
+				if err != nil {
+					return false, err
+				}
+				return makeToken('<'), nil
 			}
 
 			// stay in the heredoc until we find the ending marker
@@ -169,7 +172,7 @@ func (l *lexer) next() bool {
 				escaped = false
 			} else {
 				if (quoted && ch == '"') || (btQuoted && ch == '`') {
-					return makeToken(ch)
+					return makeToken(ch), nil
 				}
 			}
 			// allow quoted text to wrap continue on multiple lines
@@ -203,7 +206,7 @@ func (l *lexer) next() bool {
 			}
 			// any kind of space means we're at the end of this token
 			if len(val) > 0 {
-				return makeToken(0)
+				return makeToken(0), nil
 			}
 			continue
 		}
@@ -254,7 +257,14 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 		return nil, err
 	}
 	var tokens []Token
-	for l.next() {
+	for {
+		found, err := l.next()
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			break
+		}
 		l.token.File = filename
 		tokens = append(tokens, l.token)
 	}
@@ -264,7 +274,7 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 // finalizeHeredoc takes the runes read as the heredoc text and the marker,
 // and processes the text to strip leading whitespace, returning the final
 // value without the leading whitespace.
-func finalizeHeredoc(val []rune, marker string) []rune {
+func finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	// find the last newline of the heredoc, which is where the contents end
 	lastNewline := strings.LastIndex(string(val), "\n")
 
@@ -283,7 +293,7 @@ func finalizeHeredoc(val []rune, marker string) []rune {
 
 		// if the padding doesn't match exactly at the start then we can't safely strip
 		if index != 0 {
-			panic(fmt.Errorf("mismatched whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s]", marker, i, line, paddingToStrip))
+			return nil, fmt.Errorf("mismatched whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s]", marker, i, line, paddingToStrip)
 		}
 
 		// strip, then append the line, with the newline, to the output.
@@ -292,7 +302,7 @@ func finalizeHeredoc(val []rune, marker string) []rune {
 	}
 
 	// return the final value
-	return []rune(out)
+	return []rune(out), nil
 }
 
 // originalFile gets original filename before import modification.
