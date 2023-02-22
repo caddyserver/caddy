@@ -333,11 +333,11 @@ func ParseStructTag(tag string) (map[string]string, error) {
 	return results, nil
 }
 
-// strictUnmarshalJSON is like json.Unmarshal but returns an error
+// StrictUnmarshalJSON is like json.Unmarshal but returns an error
 // if any of the fields are unrecognized. Useful when decoding
 // module configurations, where you want to be more sure they're
 // correct.
-func strictUnmarshalJSON(data []byte, v any) error {
+func StrictUnmarshalJSON(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
