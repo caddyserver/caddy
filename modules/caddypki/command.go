@@ -53,8 +53,8 @@ This command will attempt to connect to Caddy's admin API running at
 explicitly specify the --address, or use the --config flag to load
 the admin address from your config, if not using the default.`,
 		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().StringP("ca", "i", "", "The ID of the CA to trust (defaults to 'local')")
-			cmd.Flags().StringP("address", "d", "", "Address of the administration API listener (if --config is not used)")
+			cmd.Flags().StringP("ca", "", "", "The ID of the CA to trust (defaults to 'local')")
+			cmd.Flags().StringP("address", "", "", "Address of the administration API listener (if --config is not used)")
 			cmd.Flags().StringP("config", "c", "", "Configuration file (if --address is not used)")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply (if --config is used)")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdTrust)
@@ -88,8 +88,8 @@ You may explicitly specify the --address, or use the --config flag
 to load the admin address from your config, if not using the default.`,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("cert", "p", "", "The path to the CA certificate to untrust")
-			cmd.Flags().StringP("ca", "i", "", "The ID of the CA to untrust (defaults to 'local')")
-			cmd.Flags().StringP("address", "d", "", "Address of the administration API listener (if --config is not used)")
+			cmd.Flags().StringP("ca", "", "", "The ID of the CA to untrust (defaults to 'local')")
+			cmd.Flags().StringP("address", "", "", "Address of the administration API listener (if --config is not used)")
 			cmd.Flags().StringP("config", "c", "", "Configuration file (if --address is not used)")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply (if --config is used)")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdUntrust)

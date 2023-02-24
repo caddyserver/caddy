@@ -69,7 +69,7 @@ For proxying:
 			cmd.Flags().BoolP("insecure", "", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
 			cmd.Flags().BoolP("disable-redirects", "r", false, "Disable HTTP->HTTPS redirects")
 			cmd.Flags().BoolP("internal-certs", "i", false, "Use internal CA for issuing certs")
-			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
+			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdReverseProxy)
 		},

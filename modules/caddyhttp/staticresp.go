@@ -74,7 +74,7 @@ Response headers may be added using the --header flag for each header field.
 			cmd.Flags().StringP("listen", "l", ":0", "The address to which to bind the listener")
 			cmd.Flags().IntP("status", "s", http.StatusOK, "The response status code")
 			cmd.Flags().StringP("body", "b", "", "The body of the HTTP response")
-			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
+			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable more verbose debug-level logging")
 			cmd.Flags().StringSliceP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdRespond)

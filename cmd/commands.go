@@ -103,9 +103,9 @@ using 'caddy run' instead to keep it in the foreground.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "f", "", "Environment file to load")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
 			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
-			cmd.Flags().StringP("pidfile", "p", "", "Path of file to which to write process ID")
+			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
 		},
 	})
@@ -149,7 +149,7 @@ option in a local development environment.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "f", "", "Environment file to load")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
 			cmd.Flags().BoolP("environ", "e", false, "Print environment")
 			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
 			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
@@ -173,7 +173,7 @@ using the --address flag, or from the given --config, if not the default.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to use to parse the admin address, if --address is not used")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply (when --config is used)")
-			cmd.Flags().StringP("address", "d", "", "The address to use to reach the admin API endpoint, if not the default")
+			cmd.Flags().StringP("address", "", "", "The address to use to reach the admin API endpoint, if not the default")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStop)
 		},
 	})
@@ -194,7 +194,7 @@ config file; otherwise the default is assumed.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file (required)")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("address", "d", "", "Address of the administration listener, if different from config")
+			cmd.Flags().StringP("address", "", "", "Address of the administration listener, if different from config")
 			cmd.Flags().BoolP("force", "f", false, "Force config reload, even if it is the same")
 			cmd.RunE = WrapCommandFuncForCobra(cmdReload)
 		},
@@ -224,8 +224,8 @@ documentation: https://go.dev/doc/modules/version-numbers
 		Usage: "[--packages] [--versions] [--skip-standard]",
 		Short: "Lists the installed Caddy modules",
 		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().BoolP("packages", "p", false, "Print package paths")
-			cmd.Flags().BoolP("versions", "v", false, "Print version information")
+			cmd.Flags().BoolP("packages", "", false, "Print package paths")
+			cmd.Flags().BoolP("versions", "", false, "Print version information")
 			cmd.Flags().BoolP("skip-standard", "s", false, "Skip printing standard modules")
 			cmd.RunE = WrapCommandFuncForCobra(cmdListModules)
 		},
@@ -280,7 +280,7 @@ zero exit status will be returned.
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
 			cmd.Flags().StringP("adapter", "a", "caddyfile", "Name of config adapter")
 			cmd.Flags().BoolP("pretty", "p", false, "Format the output for human readability")
-			cmd.Flags().BoolP("validate", "v", false, "Validate the output")
+			cmd.Flags().BoolP("validate", "", false, "Validate the output")
 			cmd.RunE = WrapCommandFuncForCobra(cmdAdaptConfig)
 		},
 	})
@@ -300,7 +300,7 @@ the KEY=VALUE format will be loaded into the Caddy process.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Input configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter")
-			cmd.Flags().StringP("envfile", "e", "", "Environment file to load")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdValidateConfig)
 		},
 	})
