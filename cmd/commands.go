@@ -34,12 +34,6 @@ type Command struct {
 	// Required.
 	Name string
 
-	// Func is a function that executes a subcommand using
-	// the parsed flags. It returns an exit code and any
-	// associated error.
-	// Required.
-	Func CommandFunc
-
 	// Usage is a brief message describing the syntax of
 	// the subcommand's flags and args. Use [] to indicate
 	// optional parameters and <> to enclose literal values
@@ -60,7 +54,21 @@ type Command struct {
 	Long string
 
 	// Flags is the flagset for command.
+	// This is ignored if CobraFunc is set.
 	Flags *flag.FlagSet
+
+	// Func is a function that executes a subcommand using
+	// the parsed flags. It returns an exit code and any
+	// associated error.
+	// Required if CobraFunc is not set.
+	Func CommandFunc
+
+	// CobraFunc allows further configuration of the command
+	// via cobra's APIs. If this is set, then Func and Flags
+	// are ignored, with the assumption that they are set in
+	// this function. A caddycmd.WrapCommandFuncForCobra helper
+	// exists to simplify porting CommandFunc to Cobra's RunE.
+	CobraFunc func(*cobra.Command)
 }
 
 // CommandFunc is a command's function. It runs the
@@ -79,7 +87,6 @@ var commands = make(map[string]Command)
 func init() {
 	RegisterCommand(Command{
 		Name:  "start",
-		Func:  cmdStart,
 		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--watch] [--pidfile <file>]",
 		Short: "Starts the Caddy process in the background and then returns",
 		Long: `
@@ -93,21 +100,19 @@ On Windows, the spawned child process will remain attached to the terminal, so
 closing the window will forcefully stop Caddy; to avoid forgetting this, try
 using 'caddy run' instead to keep it in the foreground.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("start", flag.ExitOnError)
-			fs.String("config", "", "Configuration file")
-			fs.String("adapter", "", "Name of config adapter to apply")
-			fs.String("envfile", "", "Environment file to load")
-			fs.Bool("watch", false, "Reload changed config file automatically")
-			fs.String("pidfile", "", "Path of file to which to write process ID")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
+			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
+			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
+			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "run",
-		Func:  cmdRun,
-		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--environ] [--resume] [--watch] [--pidfile <fil>]",
+		Usage: "[--config <path> [--adapter <name>]] [--envfile <path>] [--environ] [--resume] [--watch] [--pidfile <file>]",
 		Short: `Starts the Caddy process and blocks indefinitely`,
 		Long: `
 Starts the Caddy process, optionally bootstrapped with an initial config file,
@@ -141,24 +146,22 @@ If --watch is specified, the config file will be loaded automatically after
 changes. ⚠️ This can make unintentional config changes easier; only use this
 option in a local development environment.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("run", flag.ExitOnError)
-			fs.String("config", "", "Configuration file")
-			fs.String("adapter", "", "Name of config adapter to apply")
-			fs.String("envfile", "", "Environment file to load")
-			fs.Bool("environ", false, "Print environment")
-			fs.Bool("resume", false, "Use saved config, if any (and prefer over --config file)")
-			fs.Bool("watch", false, "Watch config file for changes and reload it automatically")
-			fs.String("pidfile", "", "Path of file to which to write process ID")
-			fs.String("pingback", "", "Echo confirmation bytes to this address on success")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
+			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().BoolP("environ", "e", false, "Print environment")
+			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
+			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
+			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
+			cmd.Flags().StringP("pingback", "", "", "Echo confirmation bytes to this address on success")
+			cmd.RunE = WrapCommandFuncForCobra(cmdRun)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "stop",
-		Func:  cmdStop,
-		Usage: "[--address <interface>] [--config <path> [--adapter <name>]]",
+		Usage: "[--config <path> [--adapter <name>]] [--address <interface>]",
 		Short: "Gracefully stops a started Caddy process",
 		Long: `
 Stops the background Caddy process as gracefully as possible.
@@ -167,18 +170,16 @@ It requires that the admin API is enabled and accessible, since it will
 use the API's /stop endpoint. The address of this request can be customized
 using the --address flag, or from the given --config, if not the default.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("stop", flag.ExitOnError)
-			fs.String("address", "", "The address to use to reach the admin API endpoint, if not the default")
-			fs.String("config", "", "Configuration file to use to parse the admin address, if --address is not used")
-			fs.String("adapter", "", "Name of config adapter to apply (when --config is used)")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file to use to parse the admin address, if --address is not used")
+			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply (when --config is used)")
+			cmd.Flags().StringP("address", "", "", "The address to use to reach the admin API endpoint, if not the default")
+			cmd.RunE = WrapCommandFuncForCobra(cmdStop)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "reload",
-		Func:  cmdReload,
 		Usage: "--config <path> [--adapter <name>] [--address <interface>]",
 		Short: "Changes the config of the running Caddy instance",
 		Long: `
@@ -190,19 +191,17 @@ Since the admin endpoint is configurable, the endpoint configuration is loaded
 from the --address flag if specified; otherwise it is loaded from the given
 config file; otherwise the default is assumed.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("reload", flag.ExitOnError)
-			fs.String("config", "", "Configuration file (required)")
-			fs.String("adapter", "", "Name of config adapter to apply")
-			fs.String("address", "", "Address of the administration listener, if different from config")
-			fs.Bool("force", false, "Force config reload, even if it is the same")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file (required)")
+			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
+			cmd.Flags().StringP("address", "", "", "Address of the administration listener, if different from config")
+			cmd.Flags().BoolP("force", "f", false, "Force config reload, even if it is the same")
+			cmd.RunE = WrapCommandFuncForCobra(cmdReload)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "version",
-		Func:  cmdVersion,
 		Short: "Prints the version",
 		Long: `
 Prints the version of this Caddy binary.
@@ -217,31 +216,29 @@ detailed version information is printed as given by Go modules.
 For more details about the full version string, see the Go module
 documentation: https://go.dev/doc/modules/version-numbers
 `,
+		Func: cmdVersion,
 	})
 
 	RegisterCommand(Command{
 		Name:  "list-modules",
-		Func:  cmdListModules,
-		Usage: "[--packages] [--versions]",
+		Usage: "[--packages] [--versions] [--skip-standard]",
 		Short: "Lists the installed Caddy modules",
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("list-modules", flag.ExitOnError)
-			fs.Bool("packages", false, "Print package paths")
-			fs.Bool("versions", false, "Print version information")
-			fs.Bool("skip-standard", false, "Skip printing standard modules")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().BoolP("packages", "", false, "Print package paths")
+			cmd.Flags().BoolP("versions", "", false, "Print version information")
+			cmd.Flags().BoolP("skip-standard", "s", false, "Skip printing standard modules")
+			cmd.RunE = WrapCommandFuncForCobra(cmdListModules)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "build-info",
-		Func:  cmdBuildInfo,
 		Short: "Prints information about this build",
+		Func:  cmdBuildInfo,
 	})
 
 	RegisterCommand(Command{
 		Name:  "environ",
-		Func:  cmdEnviron,
 		Short: "Prints the environment",
 		Long: `
 Prints the environment as seen by this Caddy process.
@@ -261,11 +258,11 @@ by adding the "--environ" flag.
 
 Environments may contain sensitive data.
 `,
+		Func: cmdEnviron,
 	})
 
 	RegisterCommand(Command{
 		Name:  "adapt",
-		Func:  cmdAdaptConfig,
 		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
 		Short: "Adapts a configuration to Caddy's native JSON",
 		Long: `
@@ -279,19 +276,17 @@ If --validate is used, the adapted config will be checked for validity.
 If the config is invalid, an error will be printed to stderr and a non-
 zero exit status will be returned.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("adapt", flag.ExitOnError)
-			fs.String("config", "", "Configuration file to adapt (required)")
-			fs.String("adapter", "caddyfile", "Name of config adapter")
-			fs.Bool("pretty", false, "Format the output for human readability")
-			fs.Bool("validate", false, "Validate the output")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
+			cmd.Flags().StringP("adapter", "a", "caddyfile", "Name of config adapter")
+			cmd.Flags().BoolP("pretty", "p", false, "Format the output for human readability")
+			cmd.Flags().BoolP("validate", "", false, "Validate the output")
+			cmd.RunE = WrapCommandFuncForCobra(cmdAdaptConfig)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "validate",
-		Func:  cmdValidateConfig,
 		Usage: "--config <path> [--adapter <name>] [--envfile <path>]",
 		Short: "Tests whether a configuration file is valid",
 		Long: `
@@ -302,18 +297,16 @@ provisioning stages.
 If --envfile is specified, an environment file with environment variables in
 the KEY=VALUE format will be loaded into the Caddy process.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("validate", flag.ExitOnError)
-			fs.String("config", "", "Input configuration file")
-			fs.String("adapter", "", "Name of config adapter")
-			fs.String("envfile", "", "Environment file to load")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Input configuration file")
+			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter")
+			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.RunE = WrapCommandFuncForCobra(cmdValidateConfig)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "fmt",
-		Func:  cmdFmt,
 		Usage: "[--overwrite] [--diff] [<path>]",
 		Short: "Formats a Caddyfile",
 		Long: `
@@ -332,32 +325,28 @@ If you wish you use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("fmt", flag.ExitOnError)
-			fs.Bool("overwrite", false, "Overwrite the input file with the results")
-			fs.Bool("diff", false, "Print the differences between the input file and the formatted output")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
+			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
+			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "upgrade",
-		Func:  cmdUpgrade,
 		Short: "Upgrade Caddy (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
-			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
+			cmd.RunE = WrapCommandFuncForCobra(cmdUpgrade)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "add-package",
-		Func:  cmdAddPackage,
 		Usage: "<packages...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
@@ -365,11 +354,10 @@ Downloads an updated Caddy binary with the specified packages (module/plugin)
 added. Retains existing packages. Returns an error if the any of packages are 
 already included. EXPERIMENTAL: May be changed or removed.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("add-package", flag.ExitOnError)
-			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
+			cmd.RunE = WrapCommandFuncForCobra(cmdAddPackage)
+		},
 	})
 
 	RegisterCommand(Command{
@@ -382,31 +370,14 @@ Downloads an updated Caddy binaries without the specified packages (module/plugi
 Returns an error if any of the packages are not included. 
 EXPERIMENTAL: May be changed or removed.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("remove-package", flag.ExitOnError)
-			fs.Bool("keep-backup", false, "Keep the backed up binary, instead of deleting it")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
+			cmd.RunE = WrapCommandFuncForCobra(cmdRemovePackage)
+		},
 	})
 
 	RegisterCommand(Command{
-		Name: "manpage",
-		Func: func(fl Flags) (int, error) {
-			dir := strings.TrimSpace(fl.String("directory"))
-			if dir == "" {
-				return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
-			}
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return caddy.ExitCodeFailedQuit, err
-			}
-			if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
-				Title:   "Caddy",
-				Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
-			}, dir); err != nil {
-				return caddy.ExitCodeFailedQuit, err
-			}
-			return caddy.ExitCodeSuccess, nil
-		},
+		Name:  "manpage",
 		Usage: "--directory <path>",
 		Short: "Generates the manual pages for Caddy commands",
 		Long: `
@@ -416,11 +387,25 @@ tagged into section 8 (System Administration).
 The manual page files are generated into the directory specified by the
 argument of --directory. If the directory does not exist, it will be created.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("manpage", flag.ExitOnError)
-			fs.String("directory", "", "The output directory where the manpages are generated")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("directory", "o", "", "The output directory where the manpages are generated")
+			cmd.RunE = WrapCommandFuncForCobra(func(fl Flags) (int, error) {
+				dir := strings.TrimSpace(fl.String("directory"))
+				if dir == "" {
+					return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+				}
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return caddy.ExitCodeFailedQuit, err
+				}
+				if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+					Title:   "Caddy",
+					Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
+				}, dir); err != nil {
+					return caddy.ExitCodeFailedQuit, err
+				}
+				return caddy.ExitCodeSuccess, nil
+			})
+		},
 	})
 
 	// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
@@ -504,7 +489,7 @@ func RegisterCommand(cmd Command) {
 	if cmd.Name == "" {
 		panic("command name is required")
 	}
-	if cmd.Func == nil {
+	if cmd.Func == nil && cmd.CobraFunc == nil {
 		panic("command function missing")
 	}
 	if cmd.Short == "" {

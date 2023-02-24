@@ -17,7 +17,6 @@ package caddyhttp
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +31,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +39,6 @@ func init() {
 	caddy.RegisterModule(StaticResponse{})
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "respond",
-		Func:  cmdRespond,
 		Usage: `[--status <code>] [--body <content>] [--listen <addr>] [--access-log] [--debug] [--header "Field: value"] <body|status>`,
 		Short: "Simple, hard-coded HTTP responses for development and testing",
 		Long: `
@@ -71,16 +70,15 @@ Access/request logging and more verbose debug logging can also be enabled.
 
 Response headers may be added using the --header flag for each header field.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("respond", flag.ExitOnError)
-			fs.String("listen", ":0", "The address to which to bind the listener")
-			fs.Int("status", http.StatusOK, "The response status code")
-			fs.String("body", "", "The body of the HTTP response")
-			fs.Bool("access-log", false, "Enable the access log")
-			fs.Bool("debug", false, "Enable more verbose debug-level logging")
-			fs.Var(&respondCmdHeaders, "header", "Set a header on the response (format: \"Field: value\"")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("listen", "l", ":0", "The address to which to bind the listener")
+			cmd.Flags().IntP("status", "s", http.StatusOK, "The response status code")
+			cmd.Flags().StringP("body", "b", "", "The body of the HTTP response")
+			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
+			cmd.Flags().BoolP("debug", "v", false, "Enable more verbose debug-level logging")
+			cmd.Flags().StringSliceP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
+			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdRespond)
+		},
 	})
 }
 
@@ -318,8 +316,12 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	}
 
 	// build headers map
+	headers, err := fl.GetStringSlice("header")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
+	}
 	hdr := make(http.Header)
-	for i, h := range respondCmdHeaders {
+	for i, h := range headers {
 		key, val, found := strings.Cut(h, ":")
 		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
 		if !found || key == "" || val == "" {
@@ -431,9 +433,6 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 
 	select {}
 }
-
-// respondCmdHeaders holds the parsed values from repeated use of the --header flag.
-var respondCmdHeaders caddycmd.StringSlice
 
 // Interface guards
 var (

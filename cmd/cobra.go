@@ -109,12 +109,21 @@ func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 		Use:   caddyCmd.Name,
 		Short: caddyCmd.Short,
 		Long:  caddyCmd.Long,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			fls := cmd.Flags()
-			_, err := caddyCmd.Func(Flags{fls})
-			return err
-		},
 	}
-	cmd.Flags().AddGoFlagSet(caddyCmd.Flags)
+	if caddyCmd.CobraFunc != nil {
+		caddyCmd.CobraFunc(cmd)
+	} else {
+		cmd.RunE = WrapCommandFuncForCobra(caddyCmd.Func)
+		cmd.Flags().AddGoFlagSet(caddyCmd.Flags)
+	}
 	return cmd
+}
+
+// WrapCommandFuncForCobra wraps a Caddy CommandFunc for use
+// in a cobra command's RunE field.
+func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string) error {
+	return func(cmd *cobra.Command, _ []string) error {
+		_, err := f(Flags{cmd.Flags()})
+		return err
+	}
 }

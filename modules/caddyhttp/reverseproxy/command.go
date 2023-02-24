@@ -16,7 +16,6 @@ package reverseproxy
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -28,14 +27,14 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "reverse-proxy",
-		Func:  cmdReverseProxy,
-		Usage: "[--from <addr>] [--to <addr>] [--change-host-header] [--insecure] [--internal-certs] [--disable-redirects]",
+		Usage: "[--from <addr>] [--to <addr>] [--change-host-header] [--insecure] [--internal-certs] [--disable-redirects] [--access-log]",
 		Short: "A quick and production-ready reverse proxy",
 		Long: `
 A simple but production-ready reverse proxy. Useful for quick deployments,
@@ -63,17 +62,17 @@ For proxying:
   --insecure disables TLS verification with the upstream. WARNING: THIS
     DISABLES SECURITY BY NOT VERIFYING THE UPSTREAM'S CERTIFICATE.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("reverse-proxy", flag.ExitOnError)
-			fs.String("from", "localhost", "Address on which to receive traffic")
-			fs.Var(&reverseProxyCmdTo, "to", "Upstream address(es) to which traffic should be sent")
-			fs.Bool("change-host-header", false, "Set upstream Host header to address of upstream")
-			fs.Bool("insecure", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
-			fs.Bool("internal-certs", false, "Use internal CA for issuing certs")
-			fs.Bool("debug", false, "Enable verbose debug logs")
-			fs.Bool("disable-redirects", false, "Disable HTTP->HTTPS redirects")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("from", "f", "localhost", "Address on which to receive traffic")
+			cmd.Flags().StringSliceP("to", "t", []string{}, "Upstream address(es) to which traffic should be sent")
+			cmd.Flags().BoolP("change-host-header", "c", false, "Set upstream Host header to address of upstream")
+			cmd.Flags().BoolP("insecure", "", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
+			cmd.Flags().BoolP("disable-redirects", "r", false, "Disable HTTP->HTTPS redirects")
+			cmd.Flags().BoolP("internal-certs", "i", false, "Use internal CA for issuing certs")
+			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
+			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
+			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdReverseProxy)
+		},
 	})
 }
 
@@ -83,14 +82,19 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	from := fs.String("from")
 	changeHost := fs.Bool("change-host-header")
 	insecure := fs.Bool("insecure")
-	internalCerts := fs.Bool("internal-certs")
-	debug := fs.Bool("debug")
 	disableRedir := fs.Bool("disable-redirects")
+	internalCerts := fs.Bool("internal-certs")
+	accessLog := fs.Bool("access-log")
+	debug := fs.Bool("debug")
 
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
 
-	if len(reverseProxyCmdTo) == 0 {
+	to, err := fs.GetStringSlice("to")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid to flag: %v", err)
+	}
+	if len(to) == 0 {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("--to is required")
 	}
 
@@ -119,9 +123,9 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	// set up the upstream address; assume missing information from given parts
 	// mixing schemes isn't supported, so use first defined (if available)
-	toAddresses := make([]string, len(reverseProxyCmdTo))
+	toAddresses := make([]string, len(to))
 	var toScheme string
-	for i, toLoc := range reverseProxyCmdTo {
+	for i, toLoc := range to {
 		addr, scheme, err := parseUpstreamDialAddress(toLoc)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", toLoc, err)
@@ -179,6 +183,9 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	server := &caddyhttp.Server{
 		Routes: caddyhttp.RouteList{route},
 		Listen: []string{":" + fromAddr.Port},
+	}
+	if accessLog {
+		server.Logs = &caddyhttp.ServerLogConfig{}
 	}
 
 	if fromAddr.Scheme == "http" {
@@ -238,6 +245,3 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	select {}
 }
-
-// reverseProxyCmdTo holds the parsed values from repeated use of the --to flag.
-var reverseProxyCmdTo caddycmd.StringSlice
