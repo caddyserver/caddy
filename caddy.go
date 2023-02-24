@@ -314,7 +314,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 	strippedCfgJSON := RemoveMetaFields(cfgJSON)
 
 	var newCfg *Config
-	err := strictUnmarshalJSON(strippedCfgJSON, &newCfg)
+	err := StrictUnmarshalJSON(strippedCfgJSON, &newCfg)
 	if err != nil {
 		return err
 	}
