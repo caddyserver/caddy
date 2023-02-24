@@ -47,6 +47,31 @@ type (
 	}
 )
 
+// Tokenize takes bytes as input and lexes it into
+// a list of tokens that can be parsed as a Caddyfile.
+// Also takes a filename to fill the token's File as
+// the source of the tokens, which is important to
+// determine relative paths for `import` directives.
+func Tokenize(input []byte, filename string) ([]Token, error) {
+	l := lexer{}
+	if err := l.load(bytes.NewReader(input)); err != nil {
+		return nil, err
+	}
+	var tokens []Token
+	for {
+		found, err := l.next()
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			break
+		}
+		l.token.File = filename
+		tokens = append(tokens, l.token)
+	}
+	return tokens, nil
+}
+
 // load prepares the lexer to scan an input for tokens.
 // It discards any leading byte order mark.
 func (l *lexer) load(input io.Reader) error {
@@ -98,6 +123,10 @@ func (l *lexer) next() (bool, error) {
 		ch, _, err := l.reader.ReadRune()
 		if err != nil {
 			if len(val) > 0 {
+				if inHeredoc {
+					return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
+				}
+
 				return makeToken(0), nil
 			}
 			if err == io.EOF {
@@ -139,15 +168,15 @@ func (l *lexer) next() (bool, error) {
 
 			// check if we're done, i.e. that the last few characters are the marker
 			if len(val) > len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
-				// set the line counter
-				l.line += l.skippedLines
-				l.skippedLines = 0
-
-				// set the final value, and make the token
-				val, err = finalizeHeredoc(val, heredocMarker)
+				// set the final value
+				val, err = l.finalizeHeredoc(val, heredocMarker)
 				if err != nil {
 					return false, err
 				}
+
+				// set the line counter, and make the token
+				l.line += l.skippedLines
+				l.skippedLines = 0
 				return makeToken('<'), nil
 			}
 
@@ -246,59 +275,34 @@ func (l *lexer) next() (bool, error) {
 	}
 }
 
-// Tokenize takes bytes as input and lexes it into
-// a list of tokens that can be parsed as a Caddyfile.
-// Also takes a filename to fill the token's File as
-// the source of the tokens, which is important to
-// determine relative paths for `import` directives.
-func Tokenize(input []byte, filename string) ([]Token, error) {
-	l := lexer{}
-	if err := l.load(bytes.NewReader(input)); err != nil {
-		return nil, err
-	}
-	var tokens []Token
-	for {
-		found, err := l.next()
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			break
-		}
-		l.token.File = filename
-		tokens = append(tokens, l.token)
-	}
-	return tokens, nil
-}
-
 // finalizeHeredoc takes the runes read as the heredoc text and the marker,
 // and processes the text to strip leading whitespace, returning the final
 // value without the leading whitespace.
-func finalizeHeredoc(val []rune, marker string) ([]rune, error) {
+func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	// find the last newline of the heredoc, which is where the contents end
 	lastNewline := strings.LastIndex(string(val), "\n")
+
+	// collapse the content, then split into separate lines
+	lines := strings.Split(string(val[:lastNewline+1]), "\n")
 
 	// figure out how much whitespace we need to strip from the front of every line
 	// by getting the string that precedes the marker, on the last line
 	paddingToStrip := string(val[lastNewline+1 : len(val)-len(marker)])
 
-	// collapse the content, then split into separate lines
-	lines := strings.Split(string(val[:lastNewline+1]), "\n")
-
 	// iterate over each line and strip the whitespace from the front
 	var out string
-	for i, line := range lines[:len(lines)-1] {
+	for lineNum, lineText := range lines[:len(lines)-1] {
 		// find an exact match for the padding
-		index := strings.Index(line, paddingToStrip)
+		index := strings.Index(lineText, paddingToStrip)
 
 		// if the padding doesn't match exactly at the start then we can't safely strip
 		if index != 0 {
-			return nil, fmt.Errorf("mismatched whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s]", marker, i, line, paddingToStrip)
+			return nil, fmt.Errorf("mismatched leading whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s] to match the closing marker", marker, l.line+lineNum+1, lineText, paddingToStrip)
 		}
 
 		// strip, then append the line, with the newline, to the output.
 		// also removes all "\r" because Windows.
-		out += strings.ReplaceAll(line[len(paddingToStrip):]+"\n", "\r", "")
+		out += strings.ReplaceAll(lineText[len(paddingToStrip):]+"\n", "\r", "")
 	}
 
 	// return the final value
