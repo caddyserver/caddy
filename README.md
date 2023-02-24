@@ -70,7 +70,7 @@
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **Production-ready** after serving trillions of requests and managing millions of TLS certificates
 - **Scales to hundreds of thousands of sites** as proven in production
-- **HTTP/1.1, HTTP/2, and HTTP/3** supported all by default
+- **HTTP/1.1, HTTP/2, and HTTP/3** all supported by default
 - **Highly extensible** [modular architecture](https://caddyserver.com/docs/architecture) lets Caddy do anything without bloat
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
@@ -87,7 +87,7 @@ See [our online documentation](https://caddyserver.com/docs/install) for other i
 
 Requirements:
 
-- [Go 1.18 or newer](https://golang.org/dl/)
+- [Go 1.19 or newer](https://golang.org/dl/)
 
 ### For development
 
