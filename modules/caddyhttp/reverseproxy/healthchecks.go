@@ -122,6 +122,11 @@ type PassiveHealthChecks struct {
 	// How long to remember a successful request to a backend. Default is 0.
 	SuccessDuration caddy.Duration `json:"success_duration,omitempty"`
 
+	// The minimum ratio of successful to failed requests necessary to
+	// consider a backend as healthy. Both fail and success durations
+	// must be configured for those stats to be counted. Default is 0 (no ratio).
+	MinSuccessRatio caddyhttp.Ratio `json:"min_success_ratio,omitempty"`
+
 	// Limits the number of simultaneous requests to a backend by
 	// marking the backend as "down" if it has this many concurrent
 	// requests or more.

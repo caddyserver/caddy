@@ -78,6 +78,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    fail_duration     <duration>
 //	    max_fails         <num>
 //	    success_duration  <duration>
+//	    min_success_ratio <ratio>
 //	    unhealthy_status  <status>
 //	    unhealthy_latency <duration>
 //	    unhealthy_request_count <num>
@@ -438,6 +439,22 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.HealthChecks.Passive.SuccessDuration = caddy.Duration(dur)
+
+			case "min_success_ratio":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				if h.HealthChecks == nil {
+					h.HealthChecks = new(HealthChecks)
+				}
+				if h.HealthChecks.Passive == nil {
+					h.HealthChecks.Passive = new(PassiveHealthChecks)
+				}
+				ratio, err := caddyhttp.ParseRatio(d.Val())
+				if err != nil {
+					return d.Errf("bad ratio value '%s': %v", d.Val(), err)
+				}
+				h.HealthChecks.Passive.MinSuccessRatio = ratio
 
 			case "fail_duration":
 				if !d.NextArg() {
