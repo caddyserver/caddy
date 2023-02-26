@@ -256,7 +256,7 @@ EOF same-line-arg
 	`),
 			expected: []Token{
 				{Line: 1, Text: `heredoc`},
-				{Line: 1, Text: "content\n"},
+				{Line: 1, Text: "content"},
 				{Line: 3, Text: `same-line-arg`},
 			},
 		},
@@ -267,8 +267,30 @@ VERY-LONG-MARKER same-line-arg
 	`),
 			expected: []Token{
 				{Line: 1, Text: `heredoc`},
-				{Line: 1, Text: "content\n"},
+				{Line: 1, Text: "content"},
 				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+extra-newline
+
+EOF same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "extra-newline\n"},
+				{Line: 4, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+		EOF same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: ""},
+				{Line: 2, Text: `same-line-arg`},
 			},
 		},
 		{
@@ -278,7 +300,7 @@ VERY-LONG-MARKER same-line-arg
 	`),
 			expected: []Token{
 				{Line: 1, Text: `heredoc`},
-				{Line: 1, Text: "content\n"},
+				{Line: 1, Text: "content"},
 				{Line: 3, Text: `same-line-arg`},
 			},
 		},
@@ -294,7 +316,7 @@ VERY-LONG-MARKER same-line-arg
 			expected: []Token{
 				{Line: 1, Text: `prev-line`},
 				{Line: 2, Text: `heredoc`},
-				{Line: 2, Text: "\tmulti\n\tline\n\tcontent\n"},
+				{Line: 2, Text: "\tmulti\n\tline\n\tcontent"},
 				{Line: 6, Text: `same-line-arg`},
 				{Line: 7, Text: `next-line`},
 			},
@@ -319,7 +341,7 @@ VERY-LONG-MARKER same-line-arg
 	`),
 			expected: []Token{
 				{Line: 1, Text: `heredoc`},
-				{Line: 1, Text: "�\n"},
+				{Line: 1, Text: "�"},
 			},
 		},
 		{
