@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -138,7 +139,7 @@ func (l *lexer) next() (bool, error) {
 		// detect whether we have the start of a heredoc
 		if !inHeredoc && !heredocEscaped && len(val) > 1 && string(val[:2]) == "<<" {
 			if ch == '<' {
-				return false, fmt.Errorf("too many '<' for heredoc; only use two, for example <<END")
+				return false, fmt.Errorf("too many '<' for heredoc on line #%d; only use two, for example <<END", l.line)
 			}
 			if ch == '\r' {
 				continue
@@ -148,8 +149,12 @@ func (l *lexer) next() (bool, error) {
 			// we reset the val because the heredoc is syntax we don't
 			// want to keep.
 			if ch == '\n' {
-				inHeredoc = true
 				heredocMarker = string(val[2:])
+				if !heredocMarkerRegexp.Match([]byte(heredocMarker)) {
+					return false, fmt.Errorf("heredoc marker on line #%d must contain only alpha-numeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
+				}
+
+				inHeredoc = true
 				l.skippedLines++
 				val = nil
 				continue
@@ -341,3 +346,5 @@ func (t Token) NumLineBreaks() int {
 	}
 	return lineBreaks
 }
+
+var heredocMarkerRegexp = regexp.MustCompile("^[A-Za-z0-9_-]+$")
