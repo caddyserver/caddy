@@ -243,20 +243,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.logger.Warn("UNLIMITED BUFFERING: buffering is enabled without any cap on buffer size, which can result in OOM crashes")
 	}
 
-	// verify SRV compatibility - TODO: LookupSRV deprecated; will be removed
-	for i, v := range h.Upstreams {
-		if v.LookupSRV == "" {
-			continue
-		}
-		h.logger.Warn("DEPRECATED: lookup_srv: will be removed in a near-future version of Caddy; use the http.reverse_proxy.upstreams.srv module instead")
-		if h.HealthChecks != nil && h.HealthChecks.Active != nil {
-			return fmt.Errorf(`upstream: lookup_srv is incompatible with active health checks: %d: {"dial": %q, "lookup_srv": %q}`, i, v.Dial, v.LookupSRV)
-		}
-		if v.Dial != "" {
-			return fmt.Errorf(`upstream: specifying dial address is incompatible with lookup_srv: %d: {"dial": %q, "lookup_srv": %q}`, i, v.Dial, v.LookupSRV)
-		}
-	}
-
 	// start by loading modules
 	if h.TransportRaw != nil {
 		mod, err := ctx.LoadModule(h, "TransportRaw")
