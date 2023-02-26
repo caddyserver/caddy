@@ -1,1 +1,1 @@
-respond "'I am {args.0}', hears {args.1}"
+respond "'I am {args[0]}', hears {args[1]}"

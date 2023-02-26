@@ -129,8 +129,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 					return nil, dispenser.ArgErr()
 				}
 				rpHandler.Rewrite.URI = dispenser.Val()
-				dispenser.Delete()
-				dispenser.Delete()
+				dispenser.DeleteN(2)
 
 			case "copy_headers":
 				args := dispenser.RemainingArgs()
@@ -140,13 +139,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 					args = append(args, dispenser.Val())
 				}
 
-				dispenser.Delete() // directive name
+				// directive name + args
+				dispenser.DeleteN(len(args) + 1)
 				if hadBlock {
-					dispenser.Delete() // opening brace
-					dispenser.Delete() // closing brace
-				}
-				for range args {
-					dispenser.Delete()
+					// opening & closing brace
+					dispenser.DeleteN(2)
 				}
 
 				for _, headerField := range args {
