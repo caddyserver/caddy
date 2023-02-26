@@ -18,13 +18,13 @@ import (
 	"testing"
 )
 
-type lexerTestCase struct {
-	input    []byte
-	expected []Token
-}
-
 func TestLexer(t *testing.T) {
-	testCases := []lexerTestCase{
+	testCases := []struct {
+		input        []byte
+		expected     []Token
+		expectErr    bool
+		errorMessage string
+	}{
 		{
 			input: []byte(`host:123`),
 			expected: []Token{
@@ -249,10 +249,123 @@ func TestLexer(t *testing.T) {
 				{Line: 1, Text: `quotes`},
 			},
 		},
+		{
+			input: []byte(`heredoc <<EOF
+content
+EOF same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "content\n"},
+				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<VERY-LONG-MARKER
+content
+VERY-LONG-MARKER same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "content\n"},
+				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+	content
+	EOF same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "content\n"},
+				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`prev-line
+	heredoc <<EOF
+		multi
+		line
+		content
+	EOF same-line-arg
+	next-line
+	`),
+			expected: []Token{
+				{Line: 1, Text: `prev-line`},
+				{Line: 2, Text: `heredoc`},
+				{Line: 2, Text: "\tmulti\n\tline\n\tcontent\n"},
+				{Line: 6, Text: `same-line-arg`},
+				{Line: 7, Text: `next-line`},
+			},
+		},
+		{
+			input: []byte(`heredoc <EOF
+	content
+	EOF same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: `<EOF`},
+				{Line: 2, Text: `content`},
+				{Line: 3, Text: `EOF`},
+				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<HERE SAME LINE
+	content
+	HERE same-line-arg
+	`),
+			expectErr:    true,
+			errorMessage: "heredoc marker on line #1 must contain only alpha-numeric characters, dashes and underscores; got 'HERE SAME LINE'",
+		},
+		{
+			input: []byte(`heredoc <<<EOF
+	content
+	EOF same-line-arg
+	`),
+			expectErr:    true,
+			errorMessage: "too many '<' for heredoc on line #1; only use two, for example <<END",
+		},
+		{
+			input: []byte(`heredoc <<EOF
+	content
+	`),
+			expectErr:    true,
+			errorMessage: "incomplete heredoc <<EOF on line #3, expected ending marker EOF",
+		},
+		{
+			input: []byte(`heredoc <<EOF
+	content
+		EOF
+	`),
+			expectErr:    true,
+			errorMessage: "mismatched leading whitespace in heredoc <<EOF on line #2 [\tcontent], expected whitespace [\t\t] to match the closing marker",
+		},
+		{
+			input: []byte(`heredoc <<EOF
+        content
+		EOF
+	`),
+			expectErr:    true,
+			errorMessage: "mismatched leading whitespace in heredoc <<EOF on line #2 [        content], expected whitespace [\t\t] to match the closing marker",
+		},
 	}
 
 	for i, testCase := range testCases {
 		actual, err := Tokenize(testCase.input, "")
+		if testCase.expectErr {
+			if err == nil {
+				t.Errorf("expected error, got actual: %v", actual)
+				continue
+			}
+			if err.Error() != testCase.errorMessage {
+				t.Errorf("expected error '%v', got: %v", testCase.errorMessage, err)
+			}
+			continue
+		}
+
 		if err != nil {
 			t.Errorf("%v", err)
 		}
