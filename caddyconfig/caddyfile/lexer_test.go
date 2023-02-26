@@ -345,6 +345,27 @@ EOF same-line-arg
 			},
 		},
 		{
+			input: []byte("\u000Aheredoc \u003C\u003C\u0073\u0073\u000A\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F\u000A\u0073\u0073\u000A\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F\u000A\u00BF\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F"),
+			expected: []Token{
+				{
+					Line: 2,
+					Text: "heredoc",
+				},
+				{
+					Line: 2,
+					Text: "\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F",
+				},
+				{
+					Line: 5,
+					Text: "\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F",
+				},
+				{
+					Line: 6,
+					Text: "\u00BF\u00BF\u0057\u0001\u0000\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u00FF\u003D\u001F",
+				},
+			},
+		},
+		{
 			input: []byte(`heredoc <<HERE SAME LINE
 	content
 	HERE same-line-arg
