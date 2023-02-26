@@ -313,6 +313,16 @@ VERY-LONG-MARKER same-line-arg
 			},
 		},
 		{
+			input: []byte(`heredoc <<s
+			�
+			s
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "�\n"},
+			},
+		},
+		{
 			input: []byte(`heredoc <<HERE SAME LINE
 	content
 	HERE same-line-arg
@@ -357,17 +367,17 @@ VERY-LONG-MARKER same-line-arg
 		actual, err := Tokenize(testCase.input, "")
 		if testCase.expectErr {
 			if err == nil {
-				t.Errorf("expected error, got actual: %v", actual)
+				t.Fatalf("expected error, got actual: %v", actual)
 				continue
 			}
 			if err.Error() != testCase.errorMessage {
-				t.Errorf("expected error '%v', got: %v", testCase.errorMessage, err)
+				t.Fatalf("expected error '%v', got: %v", testCase.errorMessage, err)
 			}
 			continue
 		}
 
 		if err != nil {
-			t.Errorf("%v", err)
+			t.Fatalf("%v", err)
 		}
 		lexerCompare(t, i, testCase.expected, actual)
 	}
@@ -375,17 +385,17 @@ VERY-LONG-MARKER same-line-arg
 
 func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	if len(expected) != len(actual) {
-		t.Errorf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
+		t.Fatalf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
 	}
 
 	for i := 0; i < len(actual) && i < len(expected); i++ {
 		if actual[i].Line != expected[i].Line {
-			t.Errorf("Test case %d token %d ('%s'): expected line %d but was line %d",
+			t.Fatalf("Test case %d token %d ('%s'): expected line %d but was line %d",
 				n, i, expected[i].Text, expected[i].Line, actual[i].Line)
 			break
 		}
 		if actual[i].Text != expected[i].Text {
-			t.Errorf("Test case %d token %d: expected text '%s' but was '%s'",
+			t.Fatalf("Test case %d token %d: expected text '%s' but was '%s'",
 				n, i, expected[i].Text, actual[i].Text)
 			break
 		}
