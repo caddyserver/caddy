@@ -69,7 +69,6 @@
 										},
 										"source": "a",
 										"versions": {
-											"ipv4": false,
 											"ipv6": true
 										}
 									},

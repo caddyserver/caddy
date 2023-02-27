@@ -1404,13 +1404,8 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("must specify at least one version")
 				}
 
-				// Set up defaults; if versions are specified,
-				// both versions start as false, then flipped
-				// to true otherwise.
-				falseBool := false
-				u.Versions = &ipVersions{
-					IPv4: &falseBool,
-					IPv6: &falseBool,
+				if u.Versions == nil {
+					u.Versions = &ipVersions{}
 				}
 
 				trueBool := true
