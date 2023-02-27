@@ -11,6 +11,7 @@
 			resolvers 8.8.8.8 8.8.4.4
 			dial_timeout 2s
 			dial_fallback_delay 300ms
+			versions ipv6
 		}
 	}
 }
@@ -66,7 +67,10 @@
 												"8.8.4.4"
 											]
 										},
-										"source": "a"
+										"source": "a",
+										"versions": {
+											"ipv6": true
+										}
 									},
 									"handler": "reverse_proxy"
 								}
