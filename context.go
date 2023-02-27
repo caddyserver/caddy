@@ -426,15 +426,20 @@ func (ctx Context) App(name string) (any, error) {
 	return modVal, nil
 }
 
-// AppIsConfigured returns whether an app named name has been
-// configured. Can be called before calling App() to avoid
+// AppIfConfigured returns an app by its name if it has been
+// configured. Can be called instead of App() to avoid
 // instantiating an empty app when that's not desirable.
-func (ctx Context) AppIsConfigured(name string) bool {
-	if _, ok := ctx.cfg.apps[name]; ok {
-		return true
+func (ctx Context) AppIfConfigured(name string) (any, error) {
+	app, ok := ctx.cfg.apps[name]
+	if !ok || app == nil {
+		return nil, nil
 	}
-	appRaw := ctx.cfg.AppsRaw[name]
-	return appRaw != nil
+
+	appModule, err := ctx.App(name)
+	if err != nil {
+		return nil, err
+	}
+	return appModule, nil
 }
 
 // Storage returns the configured Caddy storage implementation.
