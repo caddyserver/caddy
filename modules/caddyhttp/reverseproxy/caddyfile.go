@@ -1401,14 +1401,14 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "versions":
 				args := d.RemainingArgs()
 				if len(args) == 0 {
-					return d.Errf("Must specify at least one version")
+					return d.Errf("must specify at least one version")
 				}
 
 				// Set up defaults; if versions are specified,
 				// both versions start as false, then flipped
 				// to true otherwise.
 				falseBool := false
-				u.Versions = ipVersions{
+				u.Versions = &ipVersions{
 					IPv4: &falseBool,
 					IPv6: &falseBool,
 				}
@@ -1421,7 +1421,7 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					case "ipv6":
 						u.Versions.IPv6 = &trueBool
 					default:
-						return d.Errf("Unsupported version: '%s'", arg)
+						return d.Errf("unsupported version: '%s'", arg)
 					}
 				}
 

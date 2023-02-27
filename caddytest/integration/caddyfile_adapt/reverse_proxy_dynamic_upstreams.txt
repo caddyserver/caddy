@@ -50,8 +50,7 @@
 									"dynamic_upstreams": {
 										"name": "foo",
 										"port": "9000",
-										"source": "a",
-										"versions": {}
+										"source": "a"
 									},
 									"handler": "reverse_proxy"
 								},

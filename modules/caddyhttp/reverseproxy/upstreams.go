@@ -248,7 +248,7 @@ type AUpstreams struct {
 	// The IP versions to resolve for. By default, both
 	// "ipv4" and "ipv6" will be enabled, which
 	// correspond to A and AAAA records respectively.
-	Versions ipVersions `json:"versions,omitempty"`
+	Versions *ipVersions `json:"versions,omitempty"`
 
 	resolver *net.Resolver
 }
