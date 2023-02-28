@@ -479,6 +479,9 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 }
 
 // ListenerUsage returns the current usage count of the given listener address.
+//
+// Deprecated: this is inaccurate on Unix servers because we now use
+// SO_REUSEPORT to reuse listeners instead of using the listener pool.
 func ListenerUsage(network, addr string) int {
 	count, _ := listenerPool.References(listenerKey(network, addr))
 	return count

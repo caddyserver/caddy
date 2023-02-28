@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -337,6 +338,9 @@ func (app *App) Validate() error {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
+	// increment the HTTP app reference count
+	atomic.AddInt32(&appRefCount, 1)
+
 	// get a logger compatible with http.Server
 	serverLogger, err := zap.NewStdLogAt(app.logger.Named("stdlib"), zap.DebugLevel)
 	if err != nil {
@@ -493,31 +497,31 @@ func (app *App) Start() error {
 func (app *App) Stop() error {
 	ctx := context.Background()
 
-	// see if any listeners in our config will be closing or if they are continuing
-	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	// decrement the HTTP app reference count; get the current count
+	// so that we can detect whether this was the last reference,
+	// meaning that this is a shutdown and not a config reload.
+	currentRefCount := atomic.AddInt32(&appRefCount, -1)
+
+	// set up the shutdown delay if this is the last HTTP app instance running
 	var delay bool
 	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
 	if app.ShutdownDelay > 0 {
 		for _, server := range app.Servers {
-			for _, na := range server.addresses {
-				for _, addr := range na.Expand() {
-					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
-						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
-						server.shutdownAtMu.Lock()
-						server.shutdownAt = scheduledTime
-						server.shutdownAtMu.Unlock()
-						delay = true
-					} else {
-						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
-					}
-				}
+			if currentRefCount == 0 {
+				app.logger.Debug("server closing and shutdown delay is configured", zap.String("server", server.name))
+				server.shutdownAtMu.Lock()
+				server.shutdownAt = scheduledTime
+				server.shutdownAtMu.Unlock()
+				delay = true
+			} else {
+				app.logger.Debug("server reloading and shutdown delay is configured", zap.String("server", server.name))
 			}
 		}
 	}
 
 	// honor scheduled/delayed shutdown time
 	if delay {
-		app.logger.Debug("shutdown scheduled",
+		app.logger.Info("shutdown scheduled",
 			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
 			zap.Time("time", scheduledTime))
 		time.Sleep(time.Duration(app.ShutdownDelay))
@@ -528,7 +532,7 @@ func (app *App) Stop() error {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
-		app.logger.Debug("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
 	} else {
 		app.logger.Debug("servers shutting down with eternal grace period")
 	}
@@ -625,6 +629,10 @@ func (app *App) httpsPort() int {
 // exhaustion behind hungry CDNs, for example (we've had
 // several complaints without this).
 const defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+
+// appRefCount tracks the amount of HTTP apps in memory,
+// to detect whether a config change is a reloads or shutdown.
+var appRefCount int32
 
 // Interface guards
 var (
