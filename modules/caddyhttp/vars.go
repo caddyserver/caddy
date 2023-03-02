@@ -255,9 +255,18 @@ func (m MatchVarsRE) Provision(ctx caddy.Context) error {
 func (m MatchVarsRE) Match(r *http.Request) bool {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	for k, rm := range m {
+	for key, val := range m {
+		var varValue any
+		if strings.HasPrefix(key, "{") &&
+			strings.HasSuffix(key, "}") &&
+			strings.Count(key, "{") == 1 {
+			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+		} else {
+			varValue = vars[key]
+		}
+
 		var varStr string
-		switch vv := vars[k].(type) {
+		switch vv := varValue.(type) {
 		case string:
 			varStr = vv
 		case fmt.Stringer:
@@ -267,13 +276,9 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 		default:
 			varStr = fmt.Sprintf("%v", vv)
 		}
-		valExpanded := repl.ReplaceAll(varStr, "")
-		if match := rm.Match(valExpanded, repl); match {
-			return match
-		}
 
-		replacedVal := repl.ReplaceAll(k, "")
-		if match := rm.Match(replacedVal, repl); match {
+		valExpanded := repl.ReplaceAll(varStr, "")
+		if match := val.Match(valExpanded, repl); match {
 			return match
 		}
 	}
