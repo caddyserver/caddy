@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Even though the filename ends in _unix.go, we still have to specify the
+// build constraint here, because the filename convention only works for
+// literal GOOS values, and "unix" is a shortcut unique to build tags.
+//go:build unix
+
 package caddy
 
 import (
