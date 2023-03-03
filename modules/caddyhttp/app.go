@@ -517,7 +517,7 @@ func (app *App) Stop() error {
 
 	// honor scheduled/delayed shutdown time
 	if delay {
-		app.logger.Debug("shutdown scheduled",
+		app.logger.Info("shutdown scheduled",
 			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
 			zap.Time("time", scheduledTime))
 		time.Sleep(time.Duration(app.ShutdownDelay))
@@ -528,9 +528,9 @@ func (app *App) Stop() error {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
-		app.logger.Debug("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
 	} else {
-		app.logger.Debug("servers shutting down with eternal grace period")
+		app.logger.Info("servers shutting down with eternal grace period")
 	}
 
 	// goroutines aren't guaranteed to be scheduled right away,

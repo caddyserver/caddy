@@ -93,10 +93,18 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 		}
 		return reusePort(network, address, c)
 	}
+
+	// even though SO_REUSEPORT lets us bind the socket multiple times,
+	// we still put it in the listenerPool so we can count how many
+	// configs are using this socket; necessary to ensure we can know
+	// whether to enforce shutdown delays, for example (see #5393).
 	ln, err := config.Listen(ctx, network, address)
 	if err == nil {
 		listenerPool.LoadOrStore(lnKey, nil)
 	}
+
+	// lightly wrap the listener so that when it is closed,
+	// we can decrement the usage pool counter
 	return deleteListener{ln, lnKey}, err
 }
 
@@ -116,6 +124,10 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 	})
 }
 
+// deleteListener is a type that simply deletes itself
+// from the listenerPool when it closes. It is used
+// solely for the purpose of reference counting (i.e.
+// counting how many configs are using a given socket).
 type deleteListener struct {
 	net.Listener
 	lnKey string
