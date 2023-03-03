@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: Go 1.19 introduced the "unix" build tag. We have to support Go 1.18 until Go 1.20 is released.
-// When Go 1.19 is our minimum, remove this build tag, since "_unix" in the filename will do this.
-// (see also change needed in listen.go)
-//go:build aix || android || darwin || dragonfly || freebsd || hurd || illumos || ios || linux || netbsd || openbsd || solaris
-
 package caddy
 
 import (
@@ -98,7 +93,11 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 		}
 		return reusePort(network, address, c)
 	}
-	return config.Listen(ctx, network, address)
+	ln, err := config.Listen(ctx, network, address)
+	if err == nil {
+		listenerPool.LoadOrStore(lnKey, nil)
+	}
+	return deleteListener{ln, lnKey}, err
 }
 
 // reusePort sets SO_REUSEPORT. Ineffective for unix sockets.
@@ -115,4 +114,14 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 				zap.Error(err))
 		}
 	})
+}
+
+type deleteListener struct {
+	net.Listener
+	lnKey string
+}
+
+func (dl deleteListener) Close() error {
+	_, _ = listenerPool.Delete(dl.lnKey)
+	return dl.Listener.Close()
 }
