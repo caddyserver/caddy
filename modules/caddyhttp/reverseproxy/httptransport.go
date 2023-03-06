@@ -30,6 +30,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/mastercactapus/proxyprotocol"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
@@ -63,6 +64,10 @@ type HTTPTransport struct {
 
 	// Maximum number of connections per host. Default: 0 (no limit)
 	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
+
+	// Which version of proxy protocol to send when connecting to
+	// an upstream. Default: `don't send proxy protocol`.
+	ProxyProtocol string `json:"proxy_protocol,omitempty"`
 
 	// How long to wait before timing out trying to connect to
 	// an upstream. Default: `3s`.
@@ -193,6 +198,33 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			// dialing, which can be important when trying to
 			// decide whether to retry a request
 			return nil, DialError{err}
+		}
+
+		if proxyProtocolInfo, ok := GetProxyProtocolInfo(ctx); ok {
+			switch h.ProxyProtocol {
+			case "":
+				return conn, nil
+			case "v1":
+				var header proxyprotocol.HeaderV1
+				header.FromConn(conn, true)
+				header.SrcIP = proxyProtocolInfo.IP
+				header.SrcPort = proxyProtocolInfo.Port
+				_, err = header.WriteTo(conn)
+			case "v2":
+				var header proxyprotocol.HeaderV2
+				header.FromConn(conn, true)
+				header.Src = &net.TCPAddr{
+					IP:   proxyProtocolInfo.IP,
+					Port: proxyProtocolInfo.Port,
+				}
+				_, err = header.WriteTo(conn)
+			}
+			if err != nil {
+				// identify this error as one that occurred during
+				// dialing, which can be important when trying to
+				// decide whether to retry a request
+				return nil, DialError{err}
+			}
 		}
 
 		// if read/write timeouts are configured and this is a TCP connection,
