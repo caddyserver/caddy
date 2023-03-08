@@ -570,32 +570,27 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// or satisfactorily represented in a URL
 	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
-	var proxyProtocolInfo ProxyProtocolInfo
-	// using X-Forwarded-For header which is already filtered by trusted proxies
+	var remoteAddr string
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// addForwardedHeaders ensures xff has at least remoteAddr
-		xff = strings.TrimSpace(strings.Split(xff, ",")[0])
-		ip := net.ParseIP(xff)
-		if ip != nil {
-			proxyProtocolInfo.IP = ip
-			// X-Forwarded-For is set by caddy, not by prefix matching because ipv6 remoteAddr starts with [
-			if strings.Contains(r.RemoteAddr, xff) {
-				// addForwardedHeaders already check this error
-				_, p, _ := net.SplitHostPort(r.RemoteAddr)
-
-				// however port is never checked
-				port, err := strconv.Atoi(p)
-				if err != nil {
-					return true, fmt.Errorf("making proxy protocol info: %v", err)
-				}
-				proxyProtocolInfo.Port = port
-			} else {
-				// set to zero for unknown
-				proxyProtocolInfo.Port = 0
-			}
-			caddyhttp.SetVar(r.Context(), proxyProtocolInfoVarKey, dialInfo)
-		}
+		h.logger.Debug("using xff header for proxy protocol", zap.Any("xff", xff))
+		remoteAddr = strings.TrimSpace(strings.Split(xff, ",")[0])
+	} else {
+		remoteAddr = r.RemoteAddr
 	}
+
+	ipStr, portStr, err := net.SplitHostPort(remoteAddr)
+	if err != nil { // probably didn't have a port
+		ipStr = remoteAddr
+		portStr = "0"
+	}
+	ip := net.ParseIP(ipStr)
+	port, _ := strconv.Atoi(portStr)
+
+	proxyProtocolInfo := ProxyProtocolInfo{
+		IP:   ip,
+		Port: port,
+	}
+	caddyhttp.SetVar(r.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
 
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())

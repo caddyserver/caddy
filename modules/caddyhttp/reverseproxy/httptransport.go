@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/mastercactapus/proxyprotocol"
 	"go.uber.org/zap"
@@ -200,25 +201,47 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, DialError{err}
 		}
 
-		if proxyProtocolInfo, ok := GetProxyProtocolInfo(ctx); ok {
+		if h.ProxyProtocol != "" {
+			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
+			if !ok {
+				return nil, fmt.Errorf("failed to get proxy protocol info from context")
+			}
+
+			// The src and dst have to be of the some address family. As we don't know the original
+			// dst address (it's kind of impossible to know) and this address is generelly of very
+			// little interest, we just set it to all zeros.
+			var destIP net.IP
+			switch {
+			case len(proxyProtocolInfo.IP.To4()) == net.IPv4len:
+				destIP = net.IPv4zero
+			case len(proxyProtocolInfo.IP) == net.IPv6len:
+				destIP = net.IPv6zero
+			default:
+				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
+			}
+
 			switch h.ProxyProtocol {
-			case "":
-				return conn, nil
 			case "v1":
-				var header proxyprotocol.HeaderV1
-				header.FromConn(conn, true)
-				header.SrcIP = proxyProtocolInfo.IP
-				header.SrcPort = proxyProtocolInfo.Port
+				header := proxyprotocol.HeaderV1{
+					SrcIP:    proxyProtocolInfo.IP,
+					SrcPort:  proxyProtocolInfo.Port,
+					DestIP:   destIP,
+					DestPort: 0,
+				}
+				caddyCtx.Logger().Debug("sending proxy protocol header v1", zap.Any("header", header))
 				_, err = header.WriteTo(conn)
 			case "v2":
-				var header proxyprotocol.HeaderV2
-				header.FromConn(conn, true)
-				header.Src = &net.TCPAddr{
-					IP:   proxyProtocolInfo.IP,
-					Port: proxyProtocolInfo.Port,
+				header := proxyprotocol.HeaderV2{
+					Command: proxyprotocol.CmdProxy,
+					Src:     &net.TCPAddr{IP: proxyProtocolInfo.IP, Port: proxyProtocolInfo.Port},
+					Dest:    &net.TCPAddr{IP: destIP, Port: 0},
 				}
+				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
 				_, err = header.WriteTo(conn)
+			default:
+				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
+
 			if err != nil {
 				// identify this error as one that occurred during
 				// dialing, which can be important when trying to
@@ -269,6 +292,14 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.MaxIdleConns = h.KeepAlive.MaxIdleConns
 		rt.MaxIdleConnsPerHost = h.KeepAlive.MaxIdleConnsPerHost
 		rt.IdleConnTimeout = time.Duration(h.KeepAlive.IdleConnTimeout)
+	}
+
+	// The proxy protocol header can only be sent once right after opening the connection.
+	// So single connection must not be used for multiple requests, which can potentially
+	// come from different clients.
+	if !rt.DisableKeepAlives && h.ProxyProtocol != "" {
+		caddyCtx.Logger().Warn("disabling keepalive, because it is not supported when using the proxy protocol")
+		rt.DisableKeepAlives = true
 	}
 
 	if h.Compression != nil {
