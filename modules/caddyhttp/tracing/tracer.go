@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
-
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/propagators/autoprop"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -62,7 +62,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
 
-	ot.propagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
+	ot.propagators = autoprop.NewTextMapPropagator()
 
 	tracerProvider := globalTracerProvider.getTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
