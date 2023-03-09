@@ -82,6 +82,16 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
+		// get extension(s)
+		var ext, fullExt string
+		firstDot, lastDot := strings.Index(name, "."), strings.LastIndex(name, ".")
+		if firstDot >= 0 {
+			fullExt = name[firstDot:]
+		}
+		if lastDot >= 0 {
+			ext = name[lastDot:]
+		}
+
 		fileInfos = append(fileInfos, fileInfo{
 			IsDir:     isDir,
 			IsSymlink: fileIsSymlink,
@@ -90,6 +100,8 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			URL:       u.String(),
 			ModTime:   info.ModTime().UTC(),
 			Mode:      info.Mode(),
+			Ext:       ext,
+			Extension: fullExt,
 		})
 	}
 	name, _ := url.PathUnescape(urlPath)
@@ -134,6 +146,9 @@ type browseTemplateContext struct {
 
 	// Sorting order
 	Order string `json:"order,omitempty"`
+
+	// Display format (list or grid)
+	Layout string `json:"layout,omitempty"`
 }
 
 // Breadcrumbs returns l.Path where every element maps
@@ -221,6 +236,8 @@ type crumb struct {
 // about a file or directory.
 type fileInfo struct {
 	Name      string      `json:"name"`
+	Ext       string      `json:"ext"`       // filename starting at last dot
+	Extension string      `json:"extension"` // filename starting at first dot ("full" extension)
 	Size      int64       `json:"size"`
 	URL       string      `json:"url"`
 	ModTime   time.Time   `json:"mod_time"`
