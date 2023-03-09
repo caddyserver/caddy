@@ -105,15 +105,22 @@ body {
 	background-color: #f3f6f7;
 }
 
+img,
+svg {
+	vertical-align: middle;
+	z-index: 1;
+}
+
 img {
 	max-width: 100%;
 	max-height: 100%;
 	border-radius: 5px;
 }
 
-svg {
-	vertical-align: middle;
-	z-index: 1;
+td img {
+	max-width: 1.5em;
+	max-height: 2em;
+	object-fit: cover;
 }
 
 body,
@@ -407,12 +414,17 @@ td .go-up {
 	height: 100%;
 }
 
-.entry svg {
+.grid .entry svg {
 	width: 75px;
 	height: 75px;
 }
 
-.entry .name {
+.grid .entry img {
+	max-height: 200px;
+	object-fit: cover;
+}
+
+.grid .entry .name {
 	margin-top: 1em;
 }
 
