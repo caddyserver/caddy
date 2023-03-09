@@ -266,6 +266,7 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //	    propagation_delay <duration>
 //	    propagation_timeout <duration>
 //	    resolvers <dns_servers...>
+//	    dns_ttl <duration>
 //	    dns_challenge_override_domain <domain>
 //	    preferred_chains [smallest] {
 //	        root_common_name <common_names...>
@@ -445,6 +446,23 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.ArgErr()
 				}
 
+			case "dns_ttl":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				ttlStr := d.Val()
+				ttl, err := caddy.ParseDuration(ttlStr)
+				if err != nil {
+					return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+				}
+				if iss.Challenges == nil {
+					iss.Challenges = new(ChallengesConfig)
+				}
+				if iss.Challenges.DNS == nil {
+					iss.Challenges.DNS = new(DNSChallengeConfig)
+				}
+				iss.Challenges.DNS.TTL = caddy.Duration(ttl)
+
 			case "dns_challenge_override_domain":
 				arg := d.RemainingArgs()
 				if len(arg) != 1 {
@@ -477,7 +495,7 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // to see if a certificate can be obtained for name.
 // The certificate request should be denied if this
 // returns an error.
-func onDemandAskRequest(ask string, name string) error {
+func onDemandAskRequest(logger *zap.Logger, ask string, name string) error {
 	askURL, err := url.Parse(ask)
 	if err != nil {
 		return fmt.Errorf("parsing ask URL: %v", err)
@@ -486,12 +504,18 @@ func onDemandAskRequest(ask string, name string) error {
 	qs.Set("domain", name)
 	askURL.RawQuery = qs.Encode()
 
-	resp, err := onDemandAskClient.Get(askURL.String())
+	askURLString := askURL.String()
+	resp, err := onDemandAskClient.Get(askURLString)
 	if err != nil {
 		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
 			ask, name, err)
 	}
 	resp.Body.Close()
+
+	logger.Debug("response from ask endpoint",
+		zap.String("domain", name),
+		zap.String("url", askURLString),
+		zap.Int("status", resp.StatusCode))
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)

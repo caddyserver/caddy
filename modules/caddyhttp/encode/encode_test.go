@@ -261,3 +261,50 @@ func TestValidate(t *testing.T) {
 
 	}
 }
+
+func TestIsEncodeAllowed(t *testing.T) {
+	testCases := []struct {
+		name     string
+		headers  http.Header
+		expected bool
+	}{
+		{
+			name:     "Without any headers",
+			headers:  http.Header{},
+			expected: true,
+		},
+		{
+			name: "Without Cache-Control HTTP header",
+			headers: http.Header{
+				"Accept-Encoding": {"gzip"},
+			},
+			expected: true,
+		},
+		{
+			name: "Cache-Control HTTP header ending with no-transform directive",
+			headers: http.Header{
+				"Accept-Encoding": {"gzip"},
+				"Cache-Control":   {"no-cache; no-transform"},
+			},
+			expected: false,
+		},
+		{
+			name: "With Cache-Control HTTP header no-transform as Cache-Extension value",
+			headers: http.Header{
+				"Accept-Encoding": {"gzip"},
+				"Cache-Control":   {`no-store; no-cache; community="no-transform"`},
+			},
+			expected: false,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			if result := isEncodeAllowed(test.headers); result != test.expected {
+				t.Errorf("The headers given to the isEncodeAllowed should return %t, %t given.",
+					result,
+					test.expected)
+			}
+		})
+	}
+}

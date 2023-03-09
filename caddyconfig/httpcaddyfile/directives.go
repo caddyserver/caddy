@@ -289,7 +289,7 @@ func ParseSegmentAsSubroute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, err
 	}
 
-	return buildSubroute(allResults, h.groupCounter)
+	return buildSubroute(allResults, h.groupCounter, true)
 }
 
 // parseSegmentAsConfig parses the segment such that its subdirectives

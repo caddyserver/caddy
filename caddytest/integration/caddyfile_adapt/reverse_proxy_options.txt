@@ -1,4 +1,3 @@
-
 https://example.com {
 	reverse_proxy /path https://localhost:54321 {
 		header_up Host {upstream_hostport}
@@ -7,7 +6,7 @@ https://example.com {
 		method GET
 		rewrite /rewritten?uri={uri}
 
-		buffer_requests
+		request_buffers 4KB
 
 		transport http {
 			read_buffer 10MB
@@ -24,13 +23,12 @@ https://example.com {
 			max_conns_per_host 5
 			keepalive_idle_conns_per_host 2
 			keepalive_interval 30s
-			
+
 			tls_renegotiation freely
 			tls_except_ports 8181 8182
 		}
 	}
 }
-
 ----------
 {
 	"apps": {
@@ -56,7 +54,6 @@ https://example.com {
 										{
 											"handle": [
 												{
-													"buffer_requests": true,
 													"handler": "reverse_proxy",
 													"headers": {
 														"request": {
@@ -70,6 +67,7 @@ https://example.com {
 															}
 														}
 													},
+													"request_buffers": 4000,
 													"rewrite": {
 														"method": "GET",
 														"uri": "/rewritten?uri={http.request.uri}"

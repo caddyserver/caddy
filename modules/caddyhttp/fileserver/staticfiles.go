@@ -250,7 +250,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
 
-	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
+	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
 
 	fsrv.logger.Debug("sanitized path join",
 		zap.String("site_root", root),

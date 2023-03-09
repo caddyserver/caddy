@@ -124,7 +124,7 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// create the CEL environment
 	env, err := cel.NewEnv(
-		cel.Function(placeholderFuncName, cel.SingletonBinaryImpl(m.caddyPlaceholderFunc), cel.Overload(
+		cel.Function(placeholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
 			placeholderFuncName+"_httpRequest_string",
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
@@ -191,15 +191,17 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	celReq, ok := lhs.(celHTTPRequest)
 	if !ok {
 		return types.NewErr(
-			"invalid request of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
+			"invalid request of type '%v' to %s(request, placeholderVarName)",
 			lhs.Type(),
+			placeholderFuncName,
 		)
 	}
 	phStr, ok := rhs.(types.String)
 	if !ok {
 		return types.NewErr(
-			"invalid placeholder variable name of type '%v' to "+placeholderFuncName+"(request, placeholderVarName)",
+			"invalid placeholder variable name of type '%v' to %s(request, placeholderVarName)",
 			rhs.Type(),
+			placeholderFuncName,
 		)
 	}
 
@@ -345,7 +347,7 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 		cel.Macros(macro),
 		cel.Function(funcName,
 			cel.Overload(funcName, append([]*cel.Type{requestType}, matcherDataTypes...), cel.BoolType),
-			cel.SingletonBinaryImpl(CELMatcherRuntimeFunction(funcName, fac))),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, fac))),
 	}
 	programOptions := []cel.ProgramOption{
 		cel.CustomDecorator(CELMatcherDecorator(funcName, fac)),

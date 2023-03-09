@@ -20,9 +20,11 @@
 package encode
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -117,14 +119,20 @@ func (enc *Encode) Validate() error {
 	return nil
 }
 
+func isEncodeAllowed(h http.Header) bool {
+	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
+}
+
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-		if _, ok := enc.writerPools[encName]; !ok {
-			continue // encoding not offered
+	if isEncodeAllowed(r.Header) {
+		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+			if _, ok := enc.writerPools[encName]; !ok {
+				continue // encoding not offered
+			}
+			w = enc.openResponseWriter(encName, w)
+			defer w.(*responseWriter).Close()
+			break
 		}
-		w = enc.openResponseWriter(encName, w)
-		defer w.(*responseWriter).Close()
-		break
 	}
 	return next.ServeHTTP(w, r)
 }
@@ -206,6 +214,18 @@ func (rw *responseWriter) Flush() {
 	rw.HTTPInterfaces.Flush()
 }
 
+// Hijack implements http.Hijacker. It will flush status code if set. We don't track actual hijacked
+// status assuming http middlewares will track its status.
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if !rw.wroteHeader {
+		if rw.statusCode != 0 {
+			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+		}
+		rw.wroteHeader = true
+	}
+	return rw.HTTPInterfaces.Hijack()
+}
+
 // Write writes to the response. If the response qualifies,
 // it is encoded using the encoder, which is initialized
 // if not done so already.
@@ -281,7 +301,7 @@ func (rw *responseWriter) Close() error {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" &&
+	if rw.Header().Get("Content-Encoding") == "" && isEncodeAllowed(rw.Header()) &&
 		rw.config.Match(rw) {
 
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)

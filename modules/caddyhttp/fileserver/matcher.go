@@ -163,6 +163,8 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // Example:
 //
+//	expression file()
+//	expression file({http.request.uri.path}, '/index.php')
 //	expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
@@ -199,7 +201,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		cel.Function("file", cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType)),
 		cel.Function("file_request_map",
 			cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType),
-			cel.SingletonBinaryImpl(caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory))),
+			cel.SingletonBinaryBinding(caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory))),
 	}
 
 	programOptions := []cel.ProgramOption{
@@ -212,18 +214,21 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 func celFileMatcherMacroExpander() parser.MacroExpander {
 	return func(eh parser.ExprHelper, target *exprpb.Expr, args []*exprpb.Expr) (*exprpb.Expr, *common.Error) {
 		if len(args) == 0 {
-			return nil, &common.Error{
-				Message: "matcher requires at least one argument",
-			}
+			return eh.GlobalCall("file",
+				eh.Ident("request"),
+				eh.NewMap(),
+			), nil
 		}
 		if len(args) == 1 {
 			arg := args[0]
 			if isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg) {
 				return eh.GlobalCall("file",
 					eh.Ident("request"),
-					eh.NewMap(
-						eh.NewMapEntry(eh.LiteralString("try_files"), eh.NewList(arg)),
-					),
+					eh.NewMap(eh.NewMapEntry(
+						eh.LiteralString("try_files"),
+						eh.NewList(arg),
+						false,
+					)),
 				), nil
 			}
 			if isCELTryFilesLiteral(arg) {
@@ -245,11 +250,11 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		}
 		return eh.GlobalCall("file",
 			eh.Ident("request"),
-			eh.NewMap(
-				eh.NewMapEntry(
-					eh.LiteralString("try_files"), eh.NewList(args...),
-				),
-			),
+			eh.NewMap(eh.NewMapEntry(
+				eh.LiteralString("try_files"),
+				eh.NewList(args...),
+				false,
+			)),
 		), nil
 	}
 }

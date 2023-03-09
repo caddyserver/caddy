@@ -521,19 +521,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					h.FlushInterval = caddy.Duration(dur)
 				}
 
-			case "buffer_requests":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				h.BufferRequests = true
-
-			case "buffer_responses":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				h.BufferResponses = true
-
-			case "max_buffer_size":
+			case "request_buffers", "response_buffers":
+				subdir := d.Val()
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
@@ -544,19 +533,44 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if d.NextArg() {
 					return d.ArgErr()
 				}
-				h.MaxBufferSize = int64(size)
+				if subdir == "request_buffers" {
+					h.RequestBuffers = int64(size)
+				} else if subdir == "response_buffers" {
+					h.ResponseBuffers = int64(size)
+
+				}
+
+			// TODO: These three properties are deprecated; remove them sometime after v2.6.4
+			case "buffer_requests": // TODO: deprecated
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_requests: use request_buffers instead (with a maximum buffer size)")
+				h.DeprecatedBufferRequests = true
+			case "buffer_responses": // TODO: deprecated
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_responses: use response_buffers instead (with a maximum buffer size)")
+				h.DeprecatedBufferResponses = true
+			case "max_buffer_size": // TODO: deprecated
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				size, err := humanize.ParseBytes(d.Val())
+				if err != nil {
+					return d.Errf("invalid byte size '%s': %v", d.Val(), err)
+				}
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: max_buffer_size: use request_buffers and/or response_buffers instead (with maximum buffer sizes)")
+				h.DeprecatedMaxBufferSize = int64(size)
 
 			case "trusted_proxies":
 				for d.NextArg() {
 					if d.Val() == "private_ranges" {
-						h.TrustedProxies = append(h.TrustedProxies, []string{
-							"192.168.0.0/16",
-							"172.16.0.0/12",
-							"10.0.0.0/8",
-							"127.0.0.1/8",
-							"fd00::/8",
-							"::1",
-						}...)
+						h.TrustedProxies = append(h.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
 						continue
 					}
 					h.TrustedProxies = append(h.TrustedProxies, d.Val())
@@ -1310,6 +1324,7 @@ func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //	    resolvers           <resolvers...>
 //	    dial_timeout        <timeout>
 //	    dial_fallback_delay <timeout>
+//	    versions            ipv4|ipv6
 //	}
 func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
@@ -1383,8 +1398,30 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				u.FallbackDelay = caddy.Duration(dur)
 
+			case "versions":
+				args := d.RemainingArgs()
+				if len(args) == 0 {
+					return d.Errf("must specify at least one version")
+				}
+
+				if u.Versions == nil {
+					u.Versions = &ipVersions{}
+				}
+
+				trueBool := true
+				for _, arg := range args {
+					switch arg {
+					case "ipv4":
+						u.Versions.IPv4 = &trueBool
+					case "ipv6":
+						u.Versions.IPv6 = &trueBool
+					default:
+						return d.Errf("unsupported version: '%s'", arg)
+					}
+				}
+
 			default:
-				return d.Errf("unrecognized srv option '%s'", d.Val())
+				return d.Errf("unrecognized a option '%s'", d.Val())
 			}
 		}
 	}

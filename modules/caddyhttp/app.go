@@ -54,16 +54,17 @@ func init() {
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
 // `{http.request.uuid}` | The request unique identifier
 // `{http.request.header.*}` | Specific request header field
-// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
 // `{http.request.host}` | The host part of the request's Host header
+// `{http.request.host.labels.*}` | Request host labels (0-based from right); e.g. for foo.example.com: 0=com, 1=example, 2=foo
 // `{http.request.hostport}` | The host and port from the request's Host header
 // `{http.request.method}` | The request method
 // `{http.request.orig_method}` | The request's original method
+// `{http.request.orig_uri}` | The request's original URI
+// `{http.request.orig_uri.path}` | The request's original path
+// `{http.request.orig_uri.path.*}` | Parts of the original path, split by `/` (0-based from left)
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
-// `{http.request.orig_uri.path}` | The request's original path
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
-// `{http.request.orig_uri}` | The request's original URI
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
 // `{http.request.remote.host}` | The host (IP) part of the remote client's address
@@ -88,13 +89,13 @@ func init() {
 // `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
+// `{http.request.uri}` | The full request URI
+// `{http.request.uri.path}` | The path component of the request URI
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
-// `{http.request.uri.path}` | The path component of the request URI
-// `{http.request.uri.query.*}` | Individual query string value
 // `{http.request.uri.query}` | The query string (without `?`)
-// `{http.request.uri}` | The full request URI
+// `{http.request.uri.query.*}` | Individual query string value
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
 // `{http.shutting_down}` | True if the HTTP app is shutting down
@@ -220,6 +221,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 				zap.String("server_id", srvName))
 			trueBool := true
 			srv.StrictSNIHost = &trueBool
+		}
+
+		// set up the trusted proxies source
+		for srv.TrustedProxiesRaw != nil {
+			val, err := ctx.LoadModule(srv, "TrustedProxiesRaw")
+			if err != nil {
+				return fmt.Errorf("loading trusted proxies modules: %v", err)
+			}
+			srv.trustedProxies = val.(IPRangeSource)
 		}
 
 		// process each listener address
@@ -507,7 +517,7 @@ func (app *App) Stop() error {
 
 	// honor scheduled/delayed shutdown time
 	if delay {
-		app.logger.Debug("shutdown scheduled",
+		app.logger.Info("shutdown scheduled",
 			zap.Duration("delay_duration", time.Duration(app.ShutdownDelay)),
 			zap.Time("time", scheduledTime))
 		time.Sleep(time.Duration(app.ShutdownDelay))
@@ -518,9 +528,9 @@ func (app *App) Stop() error {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
 		defer cancel()
-		app.logger.Debug("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
 	} else {
-		app.logger.Debug("servers shutting down with eternal grace period")
+		app.logger.Info("servers shutting down with eternal grace period")
 	}
 
 	// goroutines aren't guaranteed to be scheduled right away,
@@ -554,7 +564,7 @@ func (app *App) Stop() error {
 
 		// TODO: we have to manually close our listeners because quic-go won't
 		// close listeners it didn't create along with the server itself...
-		// see https://github.com/lucas-clemente/quic-go/issues/3560
+		// see https://github.com/quic-go/quic-go/issues/3560
 		for _, el := range server.h3listeners {
 			if err := el.Close(); err != nil {
 				app.logger.Error("HTTP/3 listener close",
@@ -563,7 +573,7 @@ func (app *App) Stop() error {
 			}
 		}
 
-		// TODO: CloseGracefully, once implemented upstream (see https://github.com/lucas-clemente/quic-go/issues/2103)
+		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
 		if err := server.h3server.Close(); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),

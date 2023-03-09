@@ -1,0 +1,36 @@
+{
+	http_port 8080
+	persist_config off
+	admin {
+		origins localhost:2019 [::1]:2019 127.0.0.1:2019 192.168.10.128
+	}
+}
+
+:80
+----------
+{
+	"admin": {
+		"listen": "localhost:2019",
+		"origins": [
+			"localhost:2019",
+			"[::1]:2019",
+			"127.0.0.1:2019",
+			"192.168.10.128"
+		],
+		"config": {
+			"persist": false
+		}
+	},
+	"apps": {
+		"http": {
+			"http_port": 8080,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					]
+				}
+			}
+		}
+	}
+}
