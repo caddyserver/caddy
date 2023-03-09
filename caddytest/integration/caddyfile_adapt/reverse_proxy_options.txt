@@ -6,7 +6,7 @@ https://example.com {
 		method GET
 		rewrite /rewritten?uri={uri}
 
-		buffer_requests
+		request_buffers 4KB
 
 		transport http {
 			read_buffer 10MB
@@ -54,7 +54,6 @@ https://example.com {
 										{
 											"handle": [
 												{
-													"buffer_requests": true,
 													"handler": "reverse_proxy",
 													"headers": {
 														"request": {
@@ -68,6 +67,7 @@ https://example.com {
 															}
 														}
 													},
+													"request_buffers": 4000,
 													"rewrite": {
 														"method": "GET",
 														"uri": "/rewritten?uri={http.request.uri}"

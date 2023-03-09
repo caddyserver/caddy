@@ -20,9 +20,11 @@
 package encode
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -210,6 +212,18 @@ func (rw *responseWriter) Flush() {
 		return
 	}
 	rw.HTTPInterfaces.Flush()
+}
+
+// Hijack implements http.Hijacker. It will flush status code if set. We don't track actual hijacked
+// status assuming http middlewares will track its status.
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if !rw.wroteHeader {
+		if rw.statusCode != 0 {
+			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+		}
+		rw.wroteHeader = true
+	}
+	return rw.HTTPInterfaces.Hijack()
 }
 
 // Write writes to the response. If the response qualifies,
