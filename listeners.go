@@ -441,6 +441,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+			Allow0RTT: func(net.Addr) bool { return true },
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
 				var highLoad bool
 				if activeRequests != nil {
