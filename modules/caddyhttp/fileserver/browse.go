@@ -152,12 +152,20 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, dir fs.ReadDi
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
 func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
+	layoutParam := r.URL.Query().Get("layout")
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
 	offsetParam := r.URL.Query().Get("offset")
 
-	// first figure out what to sort by
+	switch layoutParam {
+	case "list", "grid", "":
+		listing.Layout = layoutParam
+	default:
+		listing.Layout = "list"
+	}
+
+	// figure out what to sort by
 	switch sortParam {
 	case "":
 		sortParam = sortByNameDirFirst
