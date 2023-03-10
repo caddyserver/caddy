@@ -15,14 +15,18 @@
 package caddy
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlog"
 	"io"
 	"net"
 	"net/netip"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -429,6 +433,20 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 	return ln.(net.PacketConn), nil
 }
 
+// Utils for qlog
+type bufferedWriteCloser struct {
+	*bufio.Writer
+	io.Closer
+}
+
+// NewBufferedWriteCloser creates an io.WriteCloser from a bufio.Writer and an io.Closer
+func NewBufferedWriteCloser(writer *bufio.Writer, closer io.Closer) io.WriteCloser {
+	return &bufferedWriteCloser{
+		Writer: writer,
+		Closer: closer,
+	}
+}
+
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // The network will be transformed into a QUIC-compatible type (if unix, then
 // unixgram will be used; otherwise, udp will be used).
@@ -440,7 +458,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+		quicConf := &quic.Config{
 			Allow0RTT: func(net.Addr) bool { return true },
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
 				var highLoad bool
@@ -449,7 +467,20 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 				}
 				return highLoad
 			},
-		})
+		}
+		qlogDir := os.Getenv("CADDY_QUIC_GO_QLOG_DIR")
+		if len(qlogDir) > 0 {
+			quicConf.Tracer = qlog.NewTracer(func(p logging.Perspective, connectionID []byte) io.WriteCloser {
+				filename := fmt.Sprintf("%x.server.sqlog", connectionID)
+				output := path.Join(qlogDir, filename)
+				f, err := os.Create(output)
+				if err != nil {
+					_ = fmt.Errorf("can't create qlog file [%s], reason : %s", output, err)
+				}
+				return NewBufferedWriteCloser(bufio.NewWriter(f), f)
+			})
+		}
+		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(tlsConf), quicConf)
 		if err != nil {
 			return nil, err
 		}
