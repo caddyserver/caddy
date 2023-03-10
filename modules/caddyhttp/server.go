@@ -15,14 +15,18 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -35,6 +39,8 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -508,6 +514,20 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
+// Utils for qlog
+type bufferedWriteCloser struct {
+	*bufio.Writer
+	io.Closer
+}
+
+// NewBufferedWriteCloser creates an io.WriteCloser from a bufio.Writer and an io.Closer
+func NewBufferedWriteCloser(writer *bufio.Writer, closer io.Closer) io.WriteCloser {
+	return &bufferedWriteCloser{
+		Writer: writer,
+		Closer: closer,
+	}
+}
+
 // serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
@@ -533,7 +553,21 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
-
+	quicConf := &quic.Config{
+		Versions: []quic.VersionNumber{quic.Version1, quic.Version2},
+	}
+	qlogDir := os.Getenv("CADDY_QUIC_GO_QLOG_DIR")
+	if len(qlogDir) > 0 {
+		quicConf.Tracer = qlog.NewTracer(func(p logging.Perspective, connectionID []byte) io.WriteCloser {
+			filename := fmt.Sprintf("%x.server.sqlog", connectionID)
+			output := path.Join(qlogDir, filename)
+			f, err := os.Create(output)
+			if err != nil {
+				_ = fmt.Errorf("can't create qlog file [%s], reason : %s", output, err)
+			}
+			return NewBufferedWriteCloser(bufio.NewWriter(f), f)
+		})
+	}
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
 		s.h3server = &http3.Server{
@@ -541,9 +575,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
-			QuicConfig: &quic.Config{
-				Versions: []quic.VersionNumber{quic.Version1, quic.Version2},
-			},
+			QuicConfig: quicConf,
 		}
 	}
 
