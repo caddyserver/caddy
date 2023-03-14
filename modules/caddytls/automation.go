@@ -168,22 +168,26 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// on-demand TLS
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand {
+		// ask endpoint is now required after a number of negligence cases causing abuse
+		if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.Ask == "" {
+			return fmt.Errorf("on-demand TLS cannot be enabled without an 'ask' endpoint to prevent abuse; please refer to documentation for details")
+		}
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(name string) error {
-				// if an "ask" endpoint was defined, consult it first
-				if tlsApp.Automation != nil &&
-					tlsApp.Automation.OnDemand != nil &&
-					tlsApp.Automation.OnDemand.Ask != "" {
-					if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
-						// distinguish true errors from denials, because it's important to log actual errors
-						if !errors.Is(err, errAskDenied) {
-							tlsApp.logger.Error("request to 'ask' endpoint failed",
-								zap.Error(err),
-								zap.String("endpoint", tlsApp.Automation.OnDemand.Ask),
-								zap.String("domain", name))
-						}
-						return err
+				if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
+					// distinguish true errors from denials, because it's important to elevate actual errors
+					if errors.Is(err, errAskDenied) {
+						tlsApp.logger.Debug("certificate issuance denied",
+							zap.String("ask_endpoint", tlsApp.Automation.OnDemand.Ask),
+							zap.String("domain", name),
+							zap.Error(err))
+					} else {
+						tlsApp.logger.Error("request to 'ask' endpoint failed",
+							zap.String("ask_endpoint", tlsApp.Automation.OnDemand.Ask),
+							zap.String("domain", name),
+							zap.Error(err))
 					}
+					return err
 				}
 				// check the rate limiter last because
 				// doing so makes a reservation
@@ -404,7 +408,7 @@ type OnDemandConfig struct {
 	// issuance of certificates from handshakes.
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
 
-	// If Caddy needs to obtain or renew a certificate
+	// REQUIRED. If Caddy needs to obtain/renew a certificate
 	// during a TLS handshake, it will perform a quick
 	// HTTP request to this URL to check if it should be
 	// allowed to try to get a certificate for the name
