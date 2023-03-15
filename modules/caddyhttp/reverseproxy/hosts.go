@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync/atomic"
 
@@ -267,7 +268,5 @@ const proxyProtocolInfoVarKey = "reverse_proxy.proxy_protocol_info"
 // ProxyProtocolInfo contains information needed to write proxy protocol to a
 // connection to an upstream host.
 type ProxyProtocolInfo struct {
-	// assume network is tcp because golang http transport can only support tcp now
-	IP   net.IP
-	Port int
+	AddrPort netip.AddrPort
 }

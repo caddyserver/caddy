@@ -578,18 +578,12 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		remoteAddr = r.RemoteAddr
 	}
 
-	ipStr, portStr, err := net.SplitHostPort(remoteAddr)
+	addrPort, err := netip.ParseAddrPort(remoteAddr)
 	if err != nil { // probably didn't have a port
-		ipStr = remoteAddr
-		portStr = "0"
+		addrPort, _ = netip.ParseAddrPort(remoteAddr + ":0")
 	}
-	ip := net.ParseIP(ipStr)
-	port, _ := strconv.Atoi(portStr)
 
-	proxyProtocolInfo := ProxyProtocolInfo{
-		IP:   ip,
-		Port: port,
-	}
+	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
 	caddyhttp.SetVar(r.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
 
 	// set placeholders with information about this upstream

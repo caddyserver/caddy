@@ -212,9 +212,9 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			// little interest, we just set it to all zeros.
 			var destIP net.IP
 			switch {
-			case len(proxyProtocolInfo.IP.To4()) == net.IPv4len:
+			case proxyProtocolInfo.AddrPort.Addr().Is4():
 				destIP = net.IPv4zero
-			case len(proxyProtocolInfo.IP) == net.IPv6len:
+			case proxyProtocolInfo.AddrPort.Addr().Is6():
 				destIP = net.IPv6zero
 			default:
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
@@ -223,8 +223,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			switch h.ProxyProtocol {
 			case "v1":
 				header := proxyprotocol.HeaderV1{
-					SrcIP:    proxyProtocolInfo.IP,
-					SrcPort:  proxyProtocolInfo.Port,
+					SrcIP:    net.IP(proxyProtocolInfo.AddrPort.Addr().AsSlice()),
+					SrcPort:  int(proxyProtocolInfo.AddrPort.Port()),
 					DestIP:   destIP,
 					DestPort: 0,
 				}
@@ -233,7 +233,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			case "v2":
 				header := proxyprotocol.HeaderV2{
 					Command: proxyprotocol.CmdProxy,
-					Src:     &net.TCPAddr{IP: proxyProtocolInfo.IP, Port: proxyProtocolInfo.Port},
+					Src:     &net.TCPAddr{IP: net.IP(proxyProtocolInfo.AddrPort.Addr().AsSlice()), Port: int(proxyProtocolInfo.AddrPort.Port())},
 					Dest:    &net.TCPAddr{IP: destIP, Port: 0},
 				}
 				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
