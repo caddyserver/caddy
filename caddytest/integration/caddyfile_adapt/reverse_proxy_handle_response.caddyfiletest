@@ -11,7 +11,9 @@ reverse_proxy 127.0.0.1:65535 {
 
 	@accel header X-Accel-Redirect *
 	handle_response @accel {
-		respond "Header X-Accel-Redirect!"
+		rewrite * {rp.header.X-Accel-Redirect} {
+			force_modify_query
+		}
 	}
 
 	@another {
@@ -104,10 +106,12 @@ reverse_proxy 127.0.0.1:65535 {
 											},
 											"routes": [
 												{
+													"group": "group0",
 													"handle": [
 														{
-															"body": "Header X-Accel-Redirect!",
-															"handler": "static_response"
+															"force_modify_query": true,
+															"handler": "rewrite",
+															"uri": "{http.reverse_proxy.header.X-Accel-Redirect}"
 														}
 													]
 												}
