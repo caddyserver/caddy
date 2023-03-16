@@ -214,6 +214,23 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"),
 			expect: newRequest(t, "GET", "/bar#fragFirst?c=d"),
 		},
+		{
+			rule:   Rewrite{URI: "{test.path_and_query}"},
+			input:  newRequest(t, "GET", "/"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			// TODO: This might be an incorrect result, since it also replaces
+			// the path with empty string when that might not be the intent.
+			rule:   Rewrite{URI: "{test.query}", ModifyQuery: true},
+			input:  newRequest(t, "GET", "/foo"),
+			expect: newRequest(t, "GET", "?bar=1"),
+		},
+		{
+			rule:   Rewrite{URI: "{test.path_and_query}", ModifyQuery: true},
+			input:  newRequest(t, "GET", "/"),
+			expect: newRequest(t, "GET", "/foo?bar=1"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -343,6 +360,9 @@ func TestRewrite(t *testing.T) {
 		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+		repl.Set("test.path", "/foo")
+		repl.Set("test.query", "?bar=1")
+		repl.Set("test.path_and_query", "/foo?bar=1")
 
 		// we can't directly call Provision() without a valid caddy.Context
 		// (TODO: fix that) so here we ad-hoc compile the regex

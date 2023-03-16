@@ -34,7 +34,9 @@ func init() {
 
 // parseCaddyfileRewrite sets up a basic rewrite handler from Caddyfile tokens. Syntax:
 //
-//	rewrite [<matcher>] <to>
+//	rewrite [<matcher>] <to> {
+//		modify_query
+//	}
 //
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
@@ -47,6 +49,16 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 		rewr.URI = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
+		}
+
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			switch h.Val() {
+			case "modify_query":
+				rewr.ModifyQuery = true
+
+			default:
+				return nil, h.Errf("unknown subdirective: %s", h.Val())
+			}
 		}
 	}
 	return rewr, nil
