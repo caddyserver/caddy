@@ -268,31 +268,120 @@ type StandardLibLog struct {
 	// The module that writes out log entries for the sink.
 	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
 
-	writer io.WriteCloser
+	// The encoder is how the log entries are formatted or encoded.
+	EncoderRaw json.RawMessage `json:"encoder,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
+
+	// Level is the minimum level to emit, and is inclusive.
+	// Possible levels: DEBUG, INFO, WARN, ERROR, PANIC, and FATAL
+	Level string `json:"level,omitempty"`
+
+	// Sampling configures log entry sampling. If enabled,
+	// only some log entries will be emitted. This is useful
+	// for improving performance on extremely high-pressure
+	// servers.
+	Sampling *LogSampling `json:"sampling,omitempty"`
+
+	writerOpener WriterOpener
+	writer       io.WriteCloser
+	encoder      zapcore.Encoder
+	levelEnabler zapcore.LevelEnabler
+	core         zapcore.Core
+	logger       *zap.Logger
 }
 
 func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
+
 	if sll.WriterRaw != nil {
 		mod, err := ctx.LoadModule(sll, "WriterRaw")
 		if err != nil {
-			return fmt.Errorf("loading sink log writer module: %v", err)
+			return fmt.Errorf("loading log writer module: %v", err)
 		}
-		wo := mod.(WriterOpener)
-
-		var isNew bool
-		sll.writer, isNew, err = logging.openWriter(wo)
-		if err != nil {
-			return fmt.Errorf("opening sink log writer %#v: %v", mod, err)
-		}
-
-		if isNew {
-			log.Printf("[INFO] Redirecting sink to: %s", wo)
-			log.SetOutput(sll.writer)
-			log.Printf("[INFO] Redirected sink to here (%s)", wo)
-		}
+		sll.writerOpener = mod.(WriterOpener)
+	}
+	if sll.writerOpener == nil {
+		sll.writerOpener = StderrWriter{}
+	}
+	var err error
+	sll.writer, _, err = logging.openWriter(sll.writerOpener)
+	if err != nil {
+		return fmt.Errorf("opening log writer using %#v: %v", sll.writerOpener, err)
 	}
 
+	repl := NewReplacer()
+	level, err := repl.ReplaceOrErr(sll.Level, true, true)
+	if err != nil {
+		return fmt.Errorf("invalid log level: %v", err)
+	}
+	level = strings.ToLower(level)
+
+	// set up the log level
+	switch level {
+	case "debug":
+		sll.levelEnabler = zapcore.DebugLevel
+	case "", "info":
+		sll.levelEnabler = zapcore.InfoLevel
+	case "warn":
+		sll.levelEnabler = zapcore.WarnLevel
+	case "error":
+		sll.levelEnabler = zapcore.ErrorLevel
+	case "panic":
+		sll.levelEnabler = zapcore.PanicLevel
+	case "fatal":
+		sll.levelEnabler = zapcore.FatalLevel
+	default:
+		return fmt.Errorf("unrecognized log level: %s", sll.Level)
+	}
+
+	if sll.EncoderRaw != nil {
+		mod, err := ctx.LoadModule(sll, "EncoderRaw")
+		if err != nil {
+			return fmt.Errorf("loading log encoder module: %v", err)
+		}
+		sll.encoder = mod.(zapcore.Encoder)
+	}
+	if sll.encoder == nil {
+		// only allow colorized output if this log is going to stdout or stderr
+		var colorize bool
+		switch sll.writerOpener.(type) {
+		case StdoutWriter, StderrWriter,
+			*StdoutWriter, *StderrWriter:
+			colorize = true
+		}
+		sll.encoder = newDefaultProductionLogEncoder(colorize)
+	}
+	sll.buildCore()
+	sll.logger = zap.New(sll.core)
+	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(sll.logger))
 	return nil
+}
+
+func (sl *StandardLibLog) buildCore() {
+	// logs which only discard their output don't need
+	// to perform encoding or any other processing steps
+	// at all, so just shorcut to a nop core instead
+	if _, ok := sl.writerOpener.(*DiscardWriter); ok {
+		sl.core = zapcore.NewNopCore()
+		return
+	}
+	c := zapcore.NewCore(
+		sl.encoder,
+		zapcore.AddSync(sl.writer),
+		sl.levelEnabler,
+	)
+	if sl.Sampling != nil {
+		if sl.Sampling.Interval == 0 {
+			sl.Sampling.Interval = 1 * time.Second
+		}
+		if sl.Sampling.First == 0 {
+			sl.Sampling.First = 100
+		}
+		if sl.Sampling.Thereafter == 0 {
+			sl.Sampling.Thereafter = 100
+		}
+		c = zapcore.NewSamplerWithOptions(c, sl.Sampling.Interval,
+			sl.Sampling.First, sl.Sampling.Thereafter)
+	}
+	sl.core = c
 }
 
 // CustomLog represents a custom logger configuration.
