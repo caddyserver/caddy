@@ -75,7 +75,7 @@ signs:
   - cmd: cosign
     signature: "${artifact}.sig"
     certificate: '{{ trimsuffix (trimsuffix .Env.artifact ".zip") ".tar.gz" }}.pem'
-    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate", "${certificate}", "${artifact}"]
+    args: ["sign-blob", "--yes", "--output-signature=${signature}", "--output-certificate", "${certificate}", "${artifact}"]
     artifacts: all
 
 sboms:
