@@ -182,8 +182,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
 	} else {
 		// remove any existing rate limiter
-		onDemandRateLimiter.SetMaxEvents(0)
 		onDemandRateLimiter.SetWindow(0)
+		onDemandRateLimiter.SetMaxEvents(0)
 	}
 
 	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
