@@ -22,7 +22,6 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
@@ -260,17 +259,7 @@ func (t *TLS) Start() error {
 	if t.Automation.OnDemand == nil ||
 		(t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.RateLimit == nil) {
 		for _, ap := range t.Automation.Policies {
-			isWildcardOrDefault := false
-			if len(ap.Subjects) == 0 {
-				isWildcardOrDefault = true
-			}
-			for _, sub := range ap.Subjects {
-				if strings.HasPrefix(sub, "*") {
-					isWildcardOrDefault = true
-					break
-				}
-			}
-			if ap.OnDemand && isWildcardOrDefault {
+			if ap.OnDemand && ap.isWildcardOrDefault() {
 				t.logger.Warn("YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place",
 					zap.String("docs", "https://caddyserver.com/docs/automatic-https#on-demand-tls"))
 				break
