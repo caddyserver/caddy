@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -224,8 +225,10 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// on-demand TLS
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand {
-		// ask endpoint is now required after a number of negligence cases causing abuse
-		if !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.Ask == "") {
+		// ask endpoint is now required after a number of negligence cases causing abuse;
+		// but is still allowed for explicit subjects (non-wildcard, non-unbounded),
+		// and for the internal issuer since it doesn't cause ACME issuer pressure
+		if ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.Ask == "") {
 			return fmt.Errorf("on-demand TLS cannot be enabled without an 'ask' endpoint to prevent abuse; please refer to documentation for details")
 		}
 		ond = &certmagic.OnDemandConfig{
@@ -292,6 +295,22 @@ func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 	}
 	_, ok := ap.Issuers[0].(*InternalIssuer)
 	return ok
+}
+
+// isWildcardOrDefault determines if the subjects include any wildcard domains,
+// or is the "default" policy (i.e. no subjects) which is unbounded.
+func (ap *AutomationPolicy) isWildcardOrDefault() bool {
+	isWildcardOrDefault := false
+	if len(ap.Subjects) == 0 {
+		isWildcardOrDefault = true
+	}
+	for _, sub := range ap.Subjects {
+		if strings.HasPrefix(sub, "*") {
+			isWildcardOrDefault = true
+			break
+		}
+	}
+	return isWildcardOrDefault
 }
 
 // DefaultIssuers returns empty Issuers (not provisioned) to be used as defaults.
