@@ -135,7 +135,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		cfg.Logging = &caddy.Logging{
 			Logs: map[string]*caddy.CustomLog{
 				"default": {
-					StandardLibLog: caddy.StandardLibLog{Level: zap.DebugLevel.CapitalString()},
+					BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()},
 				},
 			},
 		}

@@ -226,7 +226,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	if debug {
 		cfg.Logging = &caddy.Logging{
 			Logs: map[string]*caddy.CustomLog{
-				"default": {StandardLibLog: caddy.StandardLibLog{Level: zap.DebugLevel.CapitalString()}},
+				"default": {BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()}},
 			},
 		}
 	}

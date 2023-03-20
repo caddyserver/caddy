@@ -62,7 +62,7 @@ type Logging struct {
 	// in dependencies that are not designed specifically for use
 	// in Caddy. Because it is global and unstructured, the sink
 	// lacks most advanced features and customizations.
-	Sink *StandardLibLog `json:"sink,omitempty"`
+	Sink *SinkLog `json:"sink,omitempty"`
 
 	// Logs are your logs, keyed by an arbitrary name of your
 	// choosing. The default log can be customized by defining
@@ -259,12 +259,12 @@ func (wdest writerDestructor) Destruct() error {
 	return wdest.Close()
 }
 
-// StandardLibLog configures the default Go standard library
+// BaseLog configures the default Go standard library
 // global logger in the log package. This is necessary because
 // module dependencies which are not built specifically for
 // Caddy will use the standard logger. This is also known as
 // the "sink" logger.
-type StandardLibLog struct {
+type BaseLog struct {
 	// The module that writes out log entries for the sink.
 	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
 
@@ -288,7 +288,7 @@ type StandardLibLog struct {
 	core         zapcore.Core
 }
 
-func (cl *StandardLibLog) provisionCommon(ctx Context, logging *Logging) error {
+func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 
 	if cl.WriterRaw != nil {
 		mod, err := ctx.LoadModule(cl, "WriterRaw")
@@ -352,7 +352,7 @@ func (cl *StandardLibLog) provisionCommon(ctx Context, logging *Logging) error {
 	return nil
 }
 
-func (cl *StandardLibLog) buildCore() {
+func (cl *BaseLog) buildCore() {
 	// logs which only discard their output don't need
 	// to perform encoding or any other processing steps
 	// at all, so just shorcut to a nop core instead
@@ -381,7 +381,11 @@ func (cl *StandardLibLog) buildCore() {
 	cl.core = c
 }
 
-func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
+type SinkLog struct {
+	BaseLog
+}
+
+func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 	if err := sll.provisionCommon(ctx, logging); err != nil {
 		return err
 	}
@@ -399,7 +403,7 @@ func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
 // exclusive, and longer namespaces have priority. If neither
 // are populated, all logs are emitted.
 type CustomLog struct {
-	StandardLibLog
+	BaseLog
 
 	// Include defines the names of loggers to emit in this
 	// log. For example, to include only logs emitted by the
