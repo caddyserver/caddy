@@ -259,11 +259,7 @@ func (wdest writerDestructor) Destruct() error {
 	return wdest.Close()
 }
 
-// BaseLog configures the default Go standard library
-// global logger in the log package. This is necessary because
-// module dependencies which are not built specifically for
-// Caddy will use the standard logger. This is also known as
-// the "sink" logger.
+// BaseLog contains the common logging parameters for logging.
 type BaseLog struct {
 	// The module that writes out log entries for the sink.
 	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
@@ -381,6 +377,11 @@ func (cl *BaseLog) buildCore() {
 	cl.core = c
 }
 
+// SinkLog configures the default Go standard library
+// global logger in the log package. This is necessary because
+// module dependencies which are not built specifically for
+// Caddy will use the standard logger. This is also known as
+// the "sink" logger.
 type SinkLog struct {
 	BaseLog
 }
