@@ -157,6 +157,19 @@ type Handler struct {
 	// could be useful if the backend has tighter memory constraints.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
 
+	// If nonzero, streaming requests such as WebSockets will be
+	// forcibly closed at the end of the timeout. Default: no timeout.
+	StreamTimeout caddy.Duration `json:"stream_timeout,omitempty"`
+
+	// If nonzero, streaming requests such as WebSockets will not be
+	// closed when the proxy config is unloaded, and instead the stream
+	// will remain open until the delay is complete. In other words,
+	// enabling this prevents streams from closing when Caddy's config
+	// is reloaded. Enabling this may be a good idea to avoid a thundering
+	// herd of reconnecting clients which had their connections closed
+	// by the previous config closing. Default: no delay.
+	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -387,6 +400,29 @@ func (h *Handler) Cleanup() error {
 	h.connectionsMu.Lock()
 	for _, oc := range h.connections {
 		if oc.gracefulClose != nil {
+			if h.StreamCloseDelay != 0 {
+				// this is non-blocking, so we can't acutally get the
+				// error from it, so the best we can do is log it;
+				// the timer may be cancelled if the connection is
+				// closed before the end of the delay.
+				oc.delayTimer = time.AfterFunc(time.Duration(h.StreamCloseDelay), func() {
+					gracefulErr := oc.gracefulClose()
+					if gracefulErr != nil {
+						h.logger.Error("failed to close connection gracefully",
+							zap.Error(gracefulErr),
+							zap.Duration("delay", time.Duration(h.StreamCloseDelay)))
+					}
+
+					closeErr := oc.conn.Close()
+					if closeErr != nil {
+						h.logger.Error("failed to close connection after grace",
+							zap.Error(closeErr),
+							zap.Duration("delay", time.Duration(h.StreamCloseDelay)))
+					}
+				})
+				continue
+			}
+
 			// this is potentially blocking while we have the lock on the connections
 			// map, but that should be OK since the server has in theory shut down
 			// and we are no longer using the connections map

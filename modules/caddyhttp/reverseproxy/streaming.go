@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -120,10 +121,21 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 
 	spc := switchProtocolCopier{user: conn, backend: backConn}
 
+	// If no timeout, set it to infinity
+	timeout := time.Duration(h.StreamTimeout)
+	if h.StreamTimeout == 0 {
+		timeout = math.MaxInt64
+	}
+
 	errc := make(chan error, 1)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
-	<-errc
+	select {
+	case err := <-errc:
+		h.logger.Debug("streaming error", zap.Error(err))
+	case time := <-time.After(timeout):
+		h.logger.Debug("stream timed out", zap.Time("timeout", time))
+	}
 }
 
 // flushInterval returns the p.FlushInterval value, conditionally
@@ -238,7 +250,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 // connection is done to remove it from memory.
 func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (del func()) {
 	h.connectionsMu.Lock()
-	h.connections[conn] = openConnection{conn, gracefulClose}
+	h.connections[conn] = openConnection{conn, gracefulClose, nil}
 	h.connectionsMu.Unlock()
 	return func() {
 		h.connectionsMu.Lock()
@@ -364,6 +376,17 @@ func isWebsocket(r *http.Request) bool {
 type openConnection struct {
 	conn          io.ReadWriteCloser
 	gracefulClose func() error
+	delayTimer    *time.Timer
+}
+
+// Close closes the underlying connection, and cancels
+// the graceful close timer if set.
+func (c *openConnection) Close() error {
+	if c.delayTimer != nil {
+		c.delayTimer.Stop()
+		c.delayTimer = nil
+	}
+	return c.conn.Close()
 }
 
 type writeFlusher interface {
