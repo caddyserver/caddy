@@ -66,8 +66,8 @@ type HTTPTransport struct {
 	// Maximum number of connections per host. Default: 0 (no limit)
 	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
 
-	// Which version of proxy protocol to send when connecting to
-	// an upstream. Default: `don't send proxy protocol`.
+	// If non-empty, which PROXY protocol version to send when
+	// connecting to an upstream. Default: off.
 	ProxyProtocol string `json:"proxy_protocol,omitempty"`
 
 	// How long to wait before timing out trying to connect to
@@ -298,7 +298,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// So single connection must not be used for multiple requests, which can potentially
 	// come from different clients.
 	if !rt.DisableKeepAlives && h.ProxyProtocol != "" {
-		caddyCtx.Logger().Warn("disabling keepalive, because it is not supported when using the proxy protocol")
+		caddyCtx.Logger().Warn("disabling keepalives, they are incompatible with using PROXY protocol")
 		rt.DisableKeepAlives = true
 	}
 
