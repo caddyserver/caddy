@@ -285,7 +285,6 @@ type BaseLog struct {
 }
 
 func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
-
 	if cl.WriterRaw != nil {
 		mod, err := ctx.LoadModule(cl, "WriterRaw")
 		if err != nil {

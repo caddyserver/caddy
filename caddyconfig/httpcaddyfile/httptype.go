@@ -243,7 +243,8 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 				name: caddy.DefaultLoggerName,
 				log: &caddy.CustomLog{
 					BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()},
-				}})
+				},
+			})
 		}
 	}
 
