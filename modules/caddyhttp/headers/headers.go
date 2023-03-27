@@ -192,6 +192,16 @@ type RespHeaderOps struct {
 
 // ApplyTo applies ops to hdr using repl.
 func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
+	// delete all fields before manipulating HTTP headers
+	for _, fieldName := range ops.Delete {
+		fieldName = strings.ToLower(repl.ReplaceKnown(fieldName, ""))
+		if fieldName == "*" {
+			for existingField := range hdr {
+				delete(hdr, existingField)
+			}
+		}
+	}
+
 	// add
 	for fieldName, vals := range ops.Add {
 		fieldName = repl.ReplaceKnown(fieldName, "")
@@ -216,9 +226,6 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	for _, fieldName := range ops.Delete {
 		fieldName = strings.ToLower(repl.ReplaceKnown(fieldName, ""))
 		if fieldName == "*" {
-			for existingField := range hdr {
-				delete(hdr, existingField)
-			}
 			continue
 		}
 		switch {
