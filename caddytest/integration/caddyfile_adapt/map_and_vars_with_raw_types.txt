@@ -101,15 +101,15 @@ vars {
 													"source": "{http.request.host}"
 												},
 												{
-													"foo": "bar",
-													"handler": "vars"
-												},
-												{
 													"abc": true,
 													"def": 1,
 													"ghi": 2.3,
 													"handler": "vars",
 													"jkl": "mn op"
+												},
+												{
+													"foo": "bar",
+													"handler": "vars"
 												}
 											]
 										}
