@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // NewReplacer returns a new Replacer.
@@ -310,6 +312,26 @@ func globalDefaultReplacements(key string) (any, bool) {
 	const envPrefix = "env."
 	if strings.HasPrefix(key, envPrefix) {
 		return os.Getenv(key[len(envPrefix):]), true
+	}
+
+	// check files
+	// TODO: We may want to cache the file contents in case
+	// this is used in a hot path in a config. But for now,
+	// we'll just read the file every time, the kernel will
+	// tend to cache the file contents for us.
+	const filePrefix = "file."
+	if strings.HasPrefix(key, filePrefix) {
+		filename := key[len(filePrefix):]
+		body, err := os.ReadFile(filename)
+		if err != nil {
+			wd, _ := os.Getwd()
+			Log().Error("placeholder: failed to read file",
+				zap.String("file", filename),
+				zap.String("wd", wd),
+				zap.Error(err))
+			return nil, true
+		}
+		return body, true
 	}
 
 	switch key {
