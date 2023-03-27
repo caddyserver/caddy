@@ -232,6 +232,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.trustedProxies = val.(IPRangeSource)
 		}
 
+		// set the default client IP header to read from
+		if srv.ClientIPHeaders == nil {
+			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
+		}
+
 		// process each listener address
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
