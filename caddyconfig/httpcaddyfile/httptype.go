@@ -241,7 +241,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		if _, ok := options["debug"]; ok {
 			customLogs = append(customLogs, namedCustomLog{
 				name: caddy.DefaultLoggerName,
-				log:  &caddy.CustomLog{Level: zap.DebugLevel.CapitalString()},
+				log: &caddy.CustomLog{
+					BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()},
+				},
 			})
 		}
 	}
