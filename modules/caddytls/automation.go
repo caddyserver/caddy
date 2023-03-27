@@ -85,7 +85,7 @@ type AutomationConfig struct {
 // TLS app to properly provision a new policy.
 type AutomationPolicy struct {
 	// Which subjects (hostnames or IP addresses) this policy applies to.
-	Subjects []string `json:"subjects,omitempty"`
+	SubjectsRaw []string `json:"subjects,omitempty"`
 
 	// The modules that may issue certificates. Default: internal if all
 	// subjects do not qualify for public certificates; othewise acme and
@@ -147,12 +147,21 @@ type AutomationPolicy struct {
 	Issuers  []certmagic.Issuer  `json:"-"`
 	Managers []certmagic.Manager `json:"-"`
 
-	magic   *certmagic.Config
-	storage certmagic.Storage
+	subjects []string
+	magic    *certmagic.Config
+	storage  certmagic.Storage
 }
 
 // Provision sets up ap and builds its underlying CertMagic config.
 func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
+	// replace placeholders in subjects to allow environment variables
+	repl := caddy.NewReplacer()
+	subjects := make([]string, len(ap.SubjectsRaw))
+	for i, sub := range ap.SubjectsRaw {
+		subjects[i] = repl.ReplaceAll(sub, "")
+	}
+	ap.subjects = subjects
+
 	// policy-specific storage implementation
 	if ap.StorageRaw != nil {
 		val, err := tlsApp.ctx.LoadModule(ap, "StorageRaw")
@@ -289,6 +298,11 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	return nil
 }
 
+// Subjects returns the list of subjects with all placeholders replaced.
+func (ap *AutomationPolicy) Subjects() []string {
+	return ap.subjects
+}
+
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 	if len(ap.Issuers) != 1 {
 		return false
@@ -301,10 +315,10 @@ func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 // or is the "default" policy (i.e. no subjects) which is unbounded.
 func (ap *AutomationPolicy) isWildcardOrDefault() bool {
 	isWildcardOrDefault := false
-	if len(ap.Subjects) == 0 {
+	if len(ap.subjects) == 0 {
 		isWildcardOrDefault = true
 	}
-	for _, sub := range ap.Subjects {
+	for _, sub := range ap.subjects {
 		if strings.HasPrefix(sub, "*") {
 			isWildcardOrDefault = true
 			break

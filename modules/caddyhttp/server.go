@@ -130,6 +130,17 @@ type Server struct {
 	// to trust sensitive incoming `X-Forwarded-*` headers.
 	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_sources inline_key=source"`
 
+	// The headers from which the client IP address could be
+	// read from. These will be considered in order, with the
+	// first good value being used as the client IP.
+	// By default, only `X-Forwarded-For` is considered.
+	//
+	// This depends on `trusted_proxies` being configured and
+	// the request being validated as coming from a trusted
+	// proxy, otherwise the client IP will be set to the direct
+	// remote IP address.
+	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -690,10 +701,15 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
+
+	trusted, clientIP := determineTrustedProxy(r, s)
 	ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
-		TrustedProxyVarKey: determineTrustedProxy(r, s),
+		TrustedProxyVarKey: trusted,
+		ClientIPVarKey:     clientIP,
 	})
+
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
@@ -724,11 +740,12 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 
 // determineTrustedProxy parses the remote IP address of
 // the request, and determines (if the server configured it)
-// if the client is a trusted proxy.
-func determineTrustedProxy(r *http.Request, s *Server) bool {
+// if the client is a trusted proxy. If trusted, also returns
+// the real client IP if possible.
+func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	// If there's no server, then we can't check anything
 	if s == nil {
-		return false
+		return false, ""
 	}
 
 	// Parse the remote IP, ignore the error as non-fatal,
@@ -738,7 +755,7 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	// remote address and used an invalid value.
 	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
 	// Client IP may contain a zone if IPv6, so we need
@@ -746,20 +763,56 @@ func determineTrustedProxy(r *http.Request, s *Server) bool {
 	clientIP, _, _ = strings.Cut(clientIP, "%")
 	ipAddr, err := netip.ParseAddr(clientIP)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
 	// Check if the client is a trusted proxy
 	if s.trustedProxies == nil {
-		return false
+		return false, ipAddr.String()
 	}
 	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
 		if ipRange.Contains(ipAddr) {
-			return true
+			// We trust the proxy, so let's try to
+			// determine the real client IP
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
 		}
 	}
 
-	return false
+	return false, ipAddr.String()
+}
+
+// trustedRealClientIP finds the client IP from the request assuming it is
+// from a trusted client. If there is no client IP headers, then the
+// direct remote address is returned. If there are client IP headers,
+// then the first value from those headers is used.
+func trustedRealClientIP(r *http.Request, headers []string, clientIP string) string {
+	// Read all the values of the configured client IP headers, in order
+	var values []string
+	for _, field := range headers {
+		values = append(values, r.Header.Values(field)...)
+	}
+
+	// If we don't have any values, then give up
+	if len(values) == 0 {
+		return clientIP
+	}
+
+	// Since there can be many header values, we need to
+	// join them together before splitting to get the full list
+	allValues := strings.Split(strings.Join(values, ","), ",")
+
+	// Get first valid left-most IP address
+	for _, ip := range allValues {
+		ip, _, _ = strings.Cut(strings.TrimSpace(ip), "%")
+		ipAddr, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		return ipAddr.String()
+	}
+
+	// We didn't find a valid IP
+	return clientIP
 }
 
 // cloneURL makes a copy of r.URL and returns a
@@ -787,4 +840,7 @@ const (
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
+
+	// For tracking the real client IP (affected by trusted_proxy)
+	ClientIPVarKey string = "client_ip"
 )

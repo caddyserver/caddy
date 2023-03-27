@@ -427,26 +427,16 @@ func sortRoutes(routes []ConfigValue) {
 			jPathLen = len(jPM[0])
 		}
 
-		// some directives involve setting values which can overwrite
-		// each other, so it makes most sense to reverse the order so
-		// that the lease specific matcher is first; everything else
-		// has most-specific matcher first
-		if iDir == "vars" {
+		sortByPath := func() bool {
 			// we can only confidently compare path lengths if both
 			// directives have a single path to match (issue #5037)
 			if iPathLen > 0 && jPathLen > 0 {
-				// sort least-specific (shortest) path first
-				return iPathLen < jPathLen
-			}
+				// if both paths are the same except for a trailing wildcard,
+				// sort by the shorter path first (which is more specific)
+				if strings.TrimSuffix(iPM[0], "*") == strings.TrimSuffix(jPM[0], "*") {
+					return iPathLen < jPathLen
+				}
 
-			// if both directives don't have a single path to compare,
-			// sort whichever one has no matcher first; if both have
-			// no matcher, sort equally (stable sort preserves order)
-			return len(iRoute.MatcherSetsRaw) == 0 && len(jRoute.MatcherSetsRaw) > 0
-		} else {
-			// we can only confidently compare path lengths if both
-			// directives have a single path to match (issue #5037)
-			if iPathLen > 0 && jPathLen > 0 {
 				// sort most-specific (longest) path first
 				return iPathLen > jPathLen
 			}
@@ -455,7 +445,18 @@ func sortRoutes(routes []ConfigValue) {
 			// sort whichever one has a matcher first; if both have
 			// a matcher, sort equally (stable sort preserves order)
 			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
+		}()
+
+		// some directives involve setting values which can overwrite
+		// each other, so it makes most sense to reverse the order so
+		// that the least-specific matcher is first, allowing the last
+		// matching one to win
+		if iDir == "vars" {
+			return !sortByPath
 		}
+
+		// everything else is most-specific matcher first
+		return sortByPath
 	})
 }
 

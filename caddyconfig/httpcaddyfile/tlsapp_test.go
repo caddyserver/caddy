@@ -47,8 +47,8 @@ func TestAutomationPolicyIsSubset(t *testing.T) {
 			expect: false,
 		},
 	} {
-		apA := &caddytls.AutomationPolicy{Subjects: test.a}
-		apB := &caddytls.AutomationPolicy{Subjects: test.b}
+		apA := &caddytls.AutomationPolicy{SubjectsRaw: test.a}
+		apB := &caddytls.AutomationPolicy{SubjectsRaw: test.b}
 		if actual := automationPolicyIsSubset(apA, apB); actual != test.expect {
 			t.Errorf("Test %d: Expected %t but got %t (A: %v  B: %v)", i, test.expect, actual, test.a, test.b)
 		}
