@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -259,6 +260,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 
+		// wrap the request body in a LengthReader
+		// so we can track the number of bytes read from it
+		var bodyReader *lengthReader
+		if r.Body != nil {
+			bodyReader = &lengthReader{Source: r.Body}
+			r.Body = bodyReader
+		}
+
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
@@ -285,7 +294,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			userID, _ := repl.GetString("http.auth.user.id")
 
+			reqBodyLength := 0
+			if bodyReader != nil {
+				reqBodyLength = bodyReader.Length
+			}
+
 			log("handled request",
+				zap.Int("bytes_read", reqBodyLength),
 				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
@@ -824,6 +839,23 @@ func cloneURL(from, to *url.URL) {
 		*userInfo = *from.User
 		to.User = userInfo
 	}
+}
+
+// lengthReader is an io.ReadCloser that keeps track of the
+// number of bytes read from the request body.
+type lengthReader struct {
+	Source io.ReadCloser
+	Length int
+}
+
+func (r *lengthReader) Read(b []byte) (int, error) {
+	n, err := r.Source.Read(b)
+	r.Length += n
+	return n, err
+}
+
+func (r *lengthReader) Close() error {
+	return r.Source.Close()
 }
 
 // Context keys for HTTP request context values.
