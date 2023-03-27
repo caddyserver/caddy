@@ -108,10 +108,6 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expect: "192.168.159.0/24",
 		},
 		{
-			get:    "http.request.remote.host/999",
-			expect: "",
-		},
-		{
 			get:    "http.request.remote.port",
 			expect: "1234",
 		},
@@ -207,7 +203,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	} {
 		actual, got := repl.GetString(tc.get)
 		if !got {
-			t.Errorf("Test %d: Expected to recognize the placeholder name, but didn't", i)
+			t.Errorf("Test %d: Expected to recognize the placeholder name %q, but didn't", i, tc.get)
 		}
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected %s to be '%s' but got '%s'",
