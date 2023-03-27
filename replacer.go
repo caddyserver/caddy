@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -315,14 +316,11 @@ func globalDefaultReplacements(key string) (any, bool) {
 	}
 
 	// check files
-	// TODO: We may want to cache the file contents in case
-	// this is used in a hot path in a config. But for now,
-	// we'll just read the file every time, the kernel will
-	// tend to cache the file contents for us.
 	const filePrefix = "file."
 	if strings.HasPrefix(key, filePrefix) {
 		filename := key[len(filePrefix):]
-		body, err := os.ReadFile(filename)
+		maxSize := 1024 * 1024
+		body, err := readFileIntoBuffer(filename, maxSize)
 		if err != nil {
 			wd, _ := os.Getwd()
 			Log().Error("placeholder: failed to read file",
@@ -367,6 +365,24 @@ func globalDefaultReplacements(key string) (any, bool) {
 	}
 
 	return nil, false
+}
+
+// readFileIntoBuffer reads the file at filePath into a size limited buffer.
+func readFileIntoBuffer(filename string, size int) ([]byte, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	buffer := make([]byte, size)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	// slice the buffer to the actual size
+	return buffer[:n], nil
 }
 
 // ReplacementFunc is a function that is called when a
