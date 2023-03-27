@@ -327,7 +327,7 @@ func globalDefaultReplacements(key string) (any, bool) {
 			wd, _ := os.Getwd()
 			Log().Error("placeholder: failed to read file",
 				zap.String("file", filename),
-				zap.String("wd", wd),
+				zap.String("working_dir", wd),
 				zap.Error(err))
 			return nil, true
 		}
