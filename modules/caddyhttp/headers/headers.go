@@ -192,26 +192,6 @@ type RespHeaderOps struct {
 
 // ApplyTo applies ops to hdr using repl.
 func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
-	// add
-	for fieldName, vals := range ops.Add {
-		fieldName = repl.ReplaceKnown(fieldName, "")
-		for _, v := range vals {
-			hdr.Add(fieldName, repl.ReplaceKnown(v, ""))
-		}
-	}
-
-	// set
-	for fieldName, vals := range ops.Set {
-		fieldName = repl.ReplaceKnown(fieldName, "")
-		var newVals []string
-		for i := range vals {
-			// append to new slice so we don't overwrite
-			// the original values in ops.Set
-			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
-		}
-		hdr.Set(fieldName, strings.Join(newVals, ","))
-	}
-
 	// delete
 	for _, fieldName := range ops.Delete {
 		fieldName = strings.ToLower(repl.ReplaceKnown(fieldName, ""))
@@ -243,6 +223,26 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 		default:
 			hdr.Del(fieldName)
 		}
+	}
+
+	// add
+	for fieldName, vals := range ops.Add {
+		fieldName = repl.ReplaceKnown(fieldName, "")
+		for _, v := range vals {
+			hdr.Add(fieldName, repl.ReplaceKnown(v, ""))
+		}
+	}
+
+	// set
+	for fieldName, vals := range ops.Set {
+		fieldName = repl.ReplaceKnown(fieldName, "")
+		var newVals []string
+		for i := range vals {
+			// append to new slice so we don't overwrite
+			// the original values in ops.Set
+			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
+		}
+		hdr.Set(fieldName, strings.Join(newVals, ","))
 	}
 
 	// replace
