@@ -569,22 +569,6 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// or satisfactorily represented in a URL
 	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
-	var remoteAddr string
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		h.logger.Debug("using xff header for proxy protocol", zap.Any("xff", xff))
-		remoteAddr = strings.TrimSpace(strings.Split(xff, ",")[0])
-	} else {
-		remoteAddr = r.RemoteAddr
-	}
-
-	addrPort, err := netip.ParseAddrPort(remoteAddr)
-	if err != nil { // probably didn't have a port
-		addrPort, _ = netip.ParseAddrPort(remoteAddr + ":0")
-	}
-
-	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
-	caddyhttp.SetVar(r.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
-
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
@@ -704,8 +688,20 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		req.Header.Set("Upgrade", reqUpType)
 	}
 
+	// Set up the PROXY protocol info
+	// TODO: We should probably migrate away from netip, but due to
+	// the upstream dependency, we can't do that yet.
+	address := caddyhttp.GetVar(req.Context(), caddyhttp.ClientIPVarKey).(string)
+	addrPort, err := netip.ParseAddrPort(address)
+	if err != nil {
+		// OK; probably didn't have a port
+		addrPort, _ = netip.ParseAddrPort(address + ":0")
+	}
+	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
+	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
+
 	// Add the supported X-Forwarded-* headers
-	err := h.addForwardedHeaders(req)
+	err = h.addForwardedHeaders(req)
 	if err != nil {
 		return nil, err
 	}
