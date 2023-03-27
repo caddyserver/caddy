@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -317,7 +318,7 @@ func globalDefaultReplacements(key string) (any, bool) {
 	case "time.now":
 		return nowFunc(), true
 	case "time.now.http":
-		return nowFunc().Format("Mon, 02 Jan 2006 15:04:05 GMT"), true
+		return nowFunc().Format(http.TimeFormat), true
 	case "time.now.common_log":
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":
