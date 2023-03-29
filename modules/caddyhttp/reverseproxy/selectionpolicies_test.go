@@ -246,6 +246,61 @@ func TestFirstPolicy(t *testing.T) {
 	}
 }
 
+func TestQueryHashPolicy(t *testing.T) {
+	pool := testPool()
+	uriPolicy := QueryHashSelection{Key: "foo"}
+
+	request := httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
+	h := uriPolicy.Select(pool, request, nil)
+	if h != pool[0] {
+		t.Error("Expected query policy host to be the first host.")
+	}
+
+	pool[0].setHealthy(false)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != pool[1] {
+		t.Error("Expected query policy host to be the second host.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/?foo=4", nil)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != pool[1] {
+		t.Error("Expected query policy host to be the second host.")
+	}
+
+	// We should be able to resize the host pool and still be able to predict
+	// where a request will be routed with the same query used above
+	pool = UpstreamPool{
+		{Host: new(Host)},
+		{Host: new(Host)},
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != pool[0] {
+		t.Error("Expected query policy host to be the first host.")
+	}
+
+	pool[0].setHealthy(false)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != pool[1] {
+		t.Error("Expected query policy host to be the second host.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/?foo=4", nil)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != pool[1] {
+		t.Error("Expected query policy host to be the second host.")
+	}
+
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
+	h = uriPolicy.Select(pool, request, nil)
+	if h != nil {
+		t.Error("Expected query policy policy host to be nil.")
+	}
+}
+
 func TestURIHashPolicy(t *testing.T) {
 	pool := testPool()
 	uriPolicy := new(URIHashSelection)

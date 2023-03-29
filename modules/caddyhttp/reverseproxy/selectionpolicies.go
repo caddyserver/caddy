@@ -39,6 +39,7 @@ func init() {
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(URIHashSelection{})
+	caddy.RegisterModule(QueryHashSelection{})
 	caddy.RegisterModule(HeaderHashSelection{})
 	caddy.RegisterModule(CookieHashSelection{})
 
@@ -330,6 +331,45 @@ func (r *URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// QueryHashSelection is a policy that selects
+// a host based on a given request query parameter.
+type QueryHashSelection struct {
+	// The query key whose value is to be hashed and used for upstream selection.
+	Key string `json:"key,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (QueryHashSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.query",
+		New: func() caddy.Module { return new(QueryHashSelection) },
+	}
+}
+
+// Select returns an available host, if any.
+func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
+	if s.Key == "" {
+		return nil
+	}
+
+	val := req.URL.Query().Get(s.Key)
+	if val == "" {
+		return RandomSelection{}.Select(pool, req, nil)
+	}
+	return hostByHashing(pool, val)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (s *QueryHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		s.Key = d.Val()
+	}
+	return nil
+}
+
 // HeaderHashSelection is a policy that selects
 // a host based on a given request header.
 type HeaderHashSelection struct {
@@ -553,6 +593,7 @@ var (
 	_ Selector = (*FirstSelection)(nil)
 	_ Selector = (*IPHashSelection)(nil)
 	_ Selector = (*URIHashSelection)(nil)
+	_ Selector = (*QueryHashSelection)(nil)
 	_ Selector = (*HeaderHashSelection)(nil)
 	_ Selector = (*CookieHashSelection)(nil)
 
