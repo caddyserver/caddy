@@ -15,9 +15,12 @@
 package reverseproxy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func testPool() UpstreamPool {
@@ -186,6 +189,149 @@ func TestIPHashPolicy(t *testing.T) {
 		t.Error("Expected ip hash policy host to be the first host.")
 	}
 	req.RemoteAddr = "172.0.0.4:80"
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+
+	// We should get nil when there are no healthy hosts
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
+	h = ipHash.Select(pool, req, nil)
+	if h != nil {
+		t.Error("Expected ip hash policy host to be nil.")
+	}
+
+	// Reproduce #4135
+	pool = UpstreamPool{
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+		{Host: new(Host)},
+	}
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(false)
+	pool[2].setHealthy(false)
+	pool[3].setHealthy(false)
+	pool[4].setHealthy(false)
+	pool[5].setHealthy(false)
+	pool[6].setHealthy(false)
+	pool[7].setHealthy(false)
+	pool[8].setHealthy(true)
+
+	// We should get a result back when there is one healthy host left.
+	h = ipHash.Select(pool, req, nil)
+	if h == nil {
+		// If it is nil, it means we missed a host even though one is available
+		t.Error("Expected ip hash policy host to not be nil, but it is nil.")
+	}
+}
+
+func TestClientIPHashPolicy(t *testing.T) {
+	pool := testPool()
+	ipHash := new(ClientIPHashSelection)
+	req, _ := http.NewRequest("GET", "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), caddyhttp.VarsCtxKey, make(map[string]any)))
+
+	// We should be able to predict where every request is routed.
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.1:80")
+	h := ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.2:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.3:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.4:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+
+	// we should get the same results without a port
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.1")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.2")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.3")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.4")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+
+	// we should get a healthy host if the original host is unhealthy and a
+	// healthy host is available
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.4")
+	pool[1].setHealthy(false)
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.2")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+	pool[1].setHealthy(true)
+
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.3")
+	pool[2].setHealthy(false)
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.4")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected ip hash policy host to be the second host.")
+	}
+
+	// We should be able to resize the host pool and still be able to predict
+	// where a req will be routed with the same IP's used above
+	pool = UpstreamPool{
+		{Host: new(Host), Dial: "0.0.0.2"},
+		{Host: new(Host), Dial: "0.0.0.3"},
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.1:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.2:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.3:80")
+	h = ipHash.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected ip hash policy host to be the first host.")
+	}
+	caddyhttp.SetVar(req.Context(), caddyhttp.ClientIPVarKey, "172.0.0.4:80")
 	h = ipHash.Select(pool, req, nil)
 	if h != pool[0] {
 		t.Error("Expected ip hash policy host to be the first host.")

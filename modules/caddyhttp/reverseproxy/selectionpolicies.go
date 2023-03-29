@@ -29,6 +29,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {
@@ -38,6 +39,7 @@ func init() {
 	caddy.RegisterModule(RoundRobinSelection{})
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
+	caddy.RegisterModule(ClientIPHashSelection{})
 	caddy.RegisterModule(URIHashSelection{})
 	caddy.RegisterModule(QueryHashSelection{})
 	caddy.RegisterModule(HeaderHashSelection{})
@@ -296,6 +298,39 @@ func (IPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.Respo
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (r *IPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
+// ClientIPHashSelection is a policy that selects a host
+// based on hashing the client IP of the request, as determined
+// by the HTTP app's trusted proxies settings.
+type ClientIPHashSelection struct{}
+
+// CaddyModule returns the Caddy module information.
+func (ClientIPHashSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.client_ip_hash",
+		New: func() caddy.Module { return new(ClientIPHashSelection) },
+	}
+}
+
+// Select returns an available host, if any.
+func (ClientIPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
+	address := caddyhttp.GetVar(req.Context(), caddyhttp.ClientIPVarKey).(string)
+	clientIP, _, err := net.SplitHostPort(address)
+	if err != nil {
+		clientIP = address // no port
+	}
+	return hostByHashing(pool, clientIP)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -592,6 +627,7 @@ var (
 	_ Selector = (*RoundRobinSelection)(nil)
 	_ Selector = (*FirstSelection)(nil)
 	_ Selector = (*IPHashSelection)(nil)
+	_ Selector = (*ClientIPHashSelection)(nil)
 	_ Selector = (*URIHashSelection)(nil)
 	_ Selector = (*QueryHashSelection)(nil)
 	_ Selector = (*HeaderHashSelection)(nil)
