@@ -689,8 +689,6 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	// Set up the PROXY protocol info
-	// TODO: We should probably migrate away from netip, but due to
-	// the upstream dependency, we can't do that yet.
 	address := caddyhttp.GetVar(req.Context(), caddyhttp.ClientIPVarKey).(string)
 	addrPort, err := netip.ParseAddrPort(address)
 	if err != nil {

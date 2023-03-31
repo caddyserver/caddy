@@ -220,6 +220,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
 			}
 
+			// TODO: We should probably migrate away from net.IP to use netip.Addr,
+			// but due to the upstream dependency, we can't do that yet.
 			switch h.ProxyProtocol {
 			case "v1":
 				header := proxyprotocol.HeaderV1{
