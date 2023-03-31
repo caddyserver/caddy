@@ -224,7 +224,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 		}
 		if rerr != nil {
 			if rerr == io.EOF {
-				rerr = nil
+				return written, nil
 			}
 			return written, fmt.Errorf("reading: %v", rerr)
 		}
