@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/compress v1.16.0
 	github.com/klauspost/cpuid/v2 v2.2.4
+	github.com/mastercactapus/proxyprotocol v0.0.4
 	github.com/mholt/acmez v1.1.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/quic-go/quic-go v0.33.0

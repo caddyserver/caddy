@@ -688,8 +688,18 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		req.Header.Set("Upgrade", reqUpType)
 	}
 
+	// Set up the PROXY protocol info
+	address := caddyhttp.GetVar(req.Context(), caddyhttp.ClientIPVarKey).(string)
+	addrPort, err := netip.ParseAddrPort(address)
+	if err != nil {
+		// OK; probably didn't have a port
+		addrPort, _ = netip.ParseAddrPort(address + ":0")
+	}
+	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
+	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
+
 	// Add the supported X-Forwarded-* headers
-	err := h.addForwardedHeaders(req)
+	err = h.addForwardedHeaders(req)
 	if err != nil {
 		return nil, err
 	}
