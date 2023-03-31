@@ -195,11 +195,11 @@ type Server struct {
 	errorLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
+	server         *http.Server
+	h3server       *http3.Server
+	h3listeners    []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	http2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	addresses      []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
