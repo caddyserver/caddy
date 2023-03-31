@@ -53,9 +53,9 @@ func (StaticError) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     error [<matcher>] <status>|<message> [<status>] {
-//         message <text>
-//     }
+//	error [<matcher>] <status>|<message> [<status>] {
+//	    message <text>
+//	}
 //
 // If there is just one argument (other than the matcher), it is considered
 // to be a status code if it's a valid positive integer of 3 digits.

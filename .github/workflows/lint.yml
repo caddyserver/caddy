@@ -10,9 +10,15 @@ on:
       - master
       - 2.*
 
+permissions:
+  contents: read
+
 jobs:
   # From https://github.com/golangci/golangci-lint-action
   golangci:
+    permissions:
+      contents: read  # for actions/checkout to fetch code
+      pull-requests: read  # for golangci/golangci-lint-action to fetch pull requests
     name: lint
     strategy:
       matrix:
@@ -22,13 +28,13 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: '~1.18.4'
+          go-version: '~1.19.6'
           check-latest: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.47
+          version: v1.50
           # Windows times out frequently after about 5m50s if we don't set a longer timeout.
           args: --timeout 10m
           # Optional: show only new issues if it's a pull request. The default value is `false`.

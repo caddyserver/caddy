@@ -285,7 +285,7 @@ uniqueDomainsLoop:
 		// one automation policy would be confusing and an error
 		if app.tlsApp.Automation != nil {
 			for _, ap := range app.tlsApp.Automation.Policies {
-				for _, apHost := range ap.Subjects {
+				for _, apHost := range ap.Subjects() {
 					if apHost == d {
 						continue uniqueDomainsLoop
 					}
@@ -518,7 +518,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 		}
 
 		// while we're here, is this the catch-all/base policy?
-		if !foundBasePolicy && len(ap.Subjects) == 0 {
+		if !foundBasePolicy && len(ap.SubjectsRaw) == 0 {
 			basePolicy = ap
 			foundBasePolicy = true
 		}
@@ -634,7 +634,7 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames []stri
 		// rather they just want to change the CA for the set
 		// of names that would normally use the production API;
 		// anyway, that gets into the weeds a bit...
-		newPolicy.Subjects = internalNames
+		newPolicy.SubjectsRaw = internalNames
 		newPolicy.Issuers = []certmagic.Issuer{internalIssuer}
 		err := app.tlsApp.AddAutomationPolicy(newPolicy)
 		if err != nil {

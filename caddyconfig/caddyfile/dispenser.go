@@ -20,7 +20,6 @@ import (
 	"io"
 	"log"
 	"strconv"
-	"strings"
 )
 
 // Dispenser is a type that dispenses tokens, similarly to a lexer,
@@ -101,12 +100,12 @@ func (d *Dispenser) nextOnSameLine() bool {
 		d.cursor++
 		return true
 	}
-	if d.cursor >= len(d.tokens) {
+	if d.cursor >= len(d.tokens)-1 {
 		return false
 	}
-	if d.cursor < len(d.tokens)-1 &&
-		d.tokens[d.cursor].File == d.tokens[d.cursor+1].File &&
-		d.tokens[d.cursor].Line+d.numLineBreaks(d.cursor) == d.tokens[d.cursor+1].Line {
+	curr := d.tokens[d.cursor]
+	next := d.tokens[d.cursor+1]
+	if curr.File == next.File && curr.Line+curr.NumLineBreaks() == next.Line {
 		d.cursor++
 		return true
 	}
@@ -122,12 +121,12 @@ func (d *Dispenser) NextLine() bool {
 		d.cursor++
 		return true
 	}
-	if d.cursor >= len(d.tokens) {
+	if d.cursor >= len(d.tokens)-1 {
 		return false
 	}
-	if d.cursor < len(d.tokens)-1 &&
-		(d.tokens[d.cursor].File != d.tokens[d.cursor+1].File ||
-			d.tokens[d.cursor].Line+d.numLineBreaks(d.cursor) < d.tokens[d.cursor+1].Line) {
+	curr := d.tokens[d.cursor]
+	next := d.tokens[d.cursor+1]
+	if curr.File != next.File || curr.Line+curr.NumLineBreaks() < next.Line {
 		d.cursor++
 		return true
 	}
@@ -203,14 +202,17 @@ func (d *Dispenser) Val() string {
 }
 
 // ValRaw gets the raw text of the current token (including quotes).
+// If the token was a heredoc, then the delimiter is not included,
+// because that is not relevant to any unmarshaling logic at this time.
 // If there is no token loaded, it returns empty string.
 func (d *Dispenser) ValRaw() string {
 	if d.cursor < 0 || d.cursor >= len(d.tokens) {
 		return ""
 	}
 	quote := d.tokens[d.cursor].wasQuoted
-	if quote > 0 {
-		return string(quote) + d.tokens[d.cursor].Text + string(quote) // string literal
+	if quote > 0 && quote != '<' {
+		// string literal
+		return string(quote) + d.tokens[d.cursor].Text + string(quote)
 	}
 	return d.tokens[d.cursor].Text
 }
@@ -438,14 +440,14 @@ func (d *Dispenser) Delete() []Token {
 	return d.tokens
 }
 
-// numLineBreaks counts how many line breaks are in the token
-// value given by the token index tknIdx. It returns 0 if the
-// token does not exist or there are no line breaks.
-func (d *Dispenser) numLineBreaks(tknIdx int) int {
-	if tknIdx < 0 || tknIdx >= len(d.tokens) {
-		return 0
+// DeleteN is the same as Delete, but can delete many tokens at once.
+// If there aren't N tokens available to delete, none are deleted.
+func (d *Dispenser) DeleteN(amount int) []Token {
+	if amount > 0 && d.cursor >= (amount-1) && d.cursor <= len(d.tokens)-1 {
+		d.tokens = append(d.tokens[:d.cursor-(amount-1)], d.tokens[d.cursor+1:]...)
+		d.cursor -= amount
 	}
-	return strings.Count(d.tokens[tknIdx].Text, "\n")
+	return d.tokens
 }
 
 // isNewLine determines whether the current token is on a different
@@ -468,18 +470,10 @@ func (d *Dispenser) isNewLine() bool {
 		return true
 	}
 
-	// The previous token may contain line breaks if
-	// it was quoted and spanned multiple lines. e.g:
-	//
-	// dir "foo
-	//   bar
-	//   baz"
-	prevLineBreaks := d.numLineBreaks(d.cursor - 1)
-
 	// If the previous token (incl line breaks) ends
 	// on a line earlier than the current token,
 	// then the current token is on a new line
-	return prev.Line+prevLineBreaks < curr.Line
+	return prev.Line+prev.NumLineBreaks() < curr.Line
 }
 
 // isNextOnNewLine determines whether the current token is on a different
@@ -502,16 +496,8 @@ func (d *Dispenser) isNextOnNewLine() bool {
 		return true
 	}
 
-	// The current token may contain line breaks if
-	// it was quoted and spanned multiple lines. e.g:
-	//
-	// dir "foo
-	//   bar
-	//   baz"
-	currLineBreaks := d.numLineBreaks(d.cursor)
-
 	// If the current token (incl line breaks) ends
 	// on a line earlier than the next token,
 	// then the next token is on a new line
-	return curr.Line+currLineBreaks < next.Line
+	return curr.Line+curr.NumLineBreaks() < next.Line
 }

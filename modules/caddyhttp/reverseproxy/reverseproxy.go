@@ -136,21 +136,27 @@ type Handler struct {
 	// are also set implicitly.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
-	// If true, the entire request body will be read and buffered
-	// in memory before being proxied to the backend. This should
-	// be avoided if at all possible for performance reasons, but
-	// could be useful if the backend is intolerant of read latency.
-	BufferRequests bool `json:"buffer_requests,omitempty"`
+	// DEPRECATED: Do not use; will be removed. See request_buffers instead.
+	DeprecatedBufferRequests bool `json:"buffer_requests,omitempty"`
 
-	// If true, the entire response body will be read and buffered
-	// in memory before being proxied to the client. This should
-	// be avoided if at all possible for performance reasons, but
+	// DEPRECATED: Do not use; will be removed. See response_buffers instead.
+	DeprecatedBufferResponses bool `json:"buffer_responses,omitempty"`
+
+	// DEPRECATED: Do not use; will be removed. See request_buffers and response_buffers instead.
+	DeprecatedMaxBufferSize int64 `json:"max_buffer_size,omitempty"`
+
+	// If nonzero, the entire request body up to this size will be read
+	// and buffered in memory before being proxied to the backend. This
+	// should be avoided if at all possible for performance reasons, but
+	// could be useful if the backend is intolerant of read latency or
+	// chunked encodings.
+	RequestBuffers int64 `json:"request_buffers,omitempty"`
+
+	// If nonzero, the entire response body up to this size will be read
+	// and buffered in memory before being proxied to the client. This
+	// should be avoided if at all possible for performance reasons, but
 	// could be useful if the backend has tighter memory constraints.
-	BufferResponses bool `json:"buffer_responses,omitempty"`
-
-	// If body buffering is enabled, the maximum size of the buffers
-	// used for the requests and responses (in bytes).
-	MaxBufferSize int64 `json:"max_buffer_size,omitempty"`
+	ResponseBuffers int64 `json:"response_buffers,omitempty"`
 
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
@@ -221,11 +227,28 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.connections = make(map[io.ReadWriteCloser]openConnection)
 	h.connectionsMu = new(sync.Mutex)
 
+	// TODO: remove deprecated fields sometime after v2.6.4
+	if h.DeprecatedBufferRequests {
+		h.logger.Warn("DEPRECATED: buffer_requests: this property will be removed soon; use request_buffers instead (and set a maximum buffer size)")
+	}
+	if h.DeprecatedBufferResponses {
+		h.logger.Warn("DEPRECATED: buffer_responses: this property will be removed soon; use response_buffers instead (and set a maximum buffer size)")
+	}
+	if h.DeprecatedMaxBufferSize != 0 {
+		h.logger.Warn("DEPRECATED: max_buffer_size: this property will be removed soon; use request_buffers and/or response_buffers instead (and set maximum buffer sizes)")
+	}
+
+	// warn about unsafe buffering config
+	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
+		h.logger.Warn("UNLIMITED BUFFERING: buffering is enabled without any cap on buffer size, which can result in OOM crashes")
+	}
+
 	// verify SRV compatibility - TODO: LookupSRV deprecated; will be removed
 	for i, v := range h.Upstreams {
 		if v.LookupSRV == "" {
 			continue
 		}
+		h.logger.Warn("DEPRECATED: lookup_srv: will be removed in a near-future version of Caddy; use the http.reverse_proxy.upstreams.srv module instead")
 		if h.HealthChecks != nil && h.HealthChecks.Active != nil {
 			return fmt.Errorf(`upstream: lookup_srv is incompatible with active health checks: %d: {"dial": %q, "lookup_srv": %q}`, i, v.Dial, v.LookupSRV)
 		}
@@ -622,8 +645,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.BufferRequests && req.Body != nil {
-		req.Body = h.bufferedBody(req.Body)
+	if h.RequestBuffers != 0 && req.Body != nil {
+		req.Body, req.ContentLength = h.bufferedBody(req.Body, h.RequestBuffers)
+		req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
 	}
 
 	if req.ContentLength == 0 {
@@ -700,16 +724,14 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 
 	// Client IP may contain a zone if IPv6, so we need
 	// to pull that out before parsing the IP
-	if before, _, found := strings.Cut(clientIP, "%"); found {
-		clientIP = before
-	}
+	clientIP, _, _ = strings.Cut(clientIP, "%")
 	ipAddr, err := netip.ParseAddr(clientIP)
 	if err != nil {
 		return fmt.Errorf("invalid IP address: '%s': %v", clientIP, err)
 	}
 
 	// Check if the client is a trusted proxy
-	trusted := false
+	trusted := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool)
 	for _, ipRange := range h.trustedProxies {
 		if ipRange.Contains(ipAddr) {
 			trusted = true
@@ -853,8 +875,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 
 	// if enabled, buffer the response body
-	if h.BufferResponses {
-		res.Body = h.bufferedBody(res.Body)
+	if h.ResponseBuffers != 0 {
+		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
 	// see if any response handler is configured for this response from the backend
@@ -1123,28 +1145,34 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 	}
 }
 
-// bufferedBody reads originalBody into a buffer, then returns a reader for the buffer.
-// Always close the return value when done with it, just like if it was the original body!
-func (h Handler) bufferedBody(originalBody io.ReadCloser) io.ReadCloser {
+// bufferedBody reads originalBody into a buffer with maximum size of limit (-1 for unlimited),
+// then returns a reader for the buffer along with how many bytes were buffered. Always close
+// the return value when done with it, just like if it was the original body! If limit is 0
+// (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
+func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
+	if limit == 0 {
+		return originalBody, 0
+	}
+	var written int64
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	if h.MaxBufferSize > 0 {
-		n, err := io.CopyN(buf, originalBody, h.MaxBufferSize)
-		if err != nil || n == h.MaxBufferSize {
+	if limit > 0 {
+		n, err := io.CopyN(buf, originalBody, limit)
+		if err != nil || n == limit {
 			return bodyReadCloser{
 				Reader: io.MultiReader(buf, originalBody),
 				buf:    buf,
 				body:   originalBody,
-			}
+			}, n
 		}
 	} else {
-		_, _ = io.Copy(buf, originalBody)
+		written, _ = io.Copy(buf, originalBody)
 	}
 	originalBody.Close() // no point in keeping it open
 	return bodyReadCloser{
 		Reader: buf,
 		buf:    buf,
-	}
+	}, written
 }
 
 // cloneRequest makes a semi-deep clone of origReq.

@@ -16,13 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go: [ '1.19' ]
+        go: [ '1.20' ]
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.19'
-          GO_SEMVER: '~1.19.0'
+        - go: '1.20'
+          GO_SEMVER: '~1.20.1'
 
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -44,7 +44,7 @@ jobs:
           env
 
       - name: Cache the build cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           # In order:
           # * Module download cache

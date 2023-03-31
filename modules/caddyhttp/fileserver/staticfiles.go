@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -232,11 +233,25 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+	if runtime.GOOS == "windows" {
+		// reject paths with Alternate Data Streams (ADS)
+		if strings.Contains(r.URL.Path, ":") {
+			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
+		}
+		// reject paths with "8.3" short names
+		trimmedPath := strings.TrimRight(r.URL.Path, ". ") // Windows ignores trailing dots and spaces, sigh
+		if len(path.Base(trimmedPath)) <= 12 && strings.Contains(trimmedPath, "~") {
+			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal short name"))
+		}
+		// both of those could bypass file hiding or possibly leak information even if the file is not hidden
+	}
+
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	root := repl.ReplaceAll(fsrv.Root, ".")
 
-	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
+	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
 
 	fsrv.logger.Debug("sanitized path join",
 		zap.String("site_root", root),
@@ -394,6 +409,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		defer file.Close()
 
 		etag = calculateEtag(info)
+	}
+
+	// at this point, we're serving a file; Go std lib supports only
+	// GET and HEAD, which is sensible for a static file server - reject
+	// any other methods (see issue #5166)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Add("Allow", "GET, HEAD")
+		return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
 	}
 
 	// set the Etag - note that a conditional If-None-Match request is handled

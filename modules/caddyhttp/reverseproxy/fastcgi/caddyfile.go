@@ -217,25 +217,18 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.ArgErr()
 				}
 				fcgiTransport.Root = dispenser.Val()
-				dispenser.Delete()
-				dispenser.Delete()
+				dispenser.DeleteN(2)
 
 			case "split":
 				extensions = dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range extensions {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(extensions) + 1)
 				if len(extensions) == 0 {
 					return nil, dispenser.ArgErr()
 				}
 
 			case "env":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range args {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(args) + 1)
 				if len(args) != 2 {
 					return nil, dispenser.ArgErr()
 				}
@@ -246,10 +239,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 			case "index":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range args {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(args) + 1)
 				if len(args) != 1 {
 					return nil, dispenser.ArgErr()
 				}
@@ -257,10 +247,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 			case "try_files":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range args {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(args) + 1)
 				if len(args) < 1 {
 					return nil, dispenser.ArgErr()
 				}
@@ -268,10 +255,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 			case "resolve_root_symlink":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range args {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(args) + 1)
 				fcgiTransport.ResolveRootSymlink = true
 
 			case "dial_timeout":
@@ -283,8 +267,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.Errf("bad timeout value %s: %v", dispenser.Val(), err)
 				}
 				fcgiTransport.DialTimeout = caddy.Duration(dur)
-				dispenser.Delete()
-				dispenser.Delete()
+				dispenser.DeleteN(2)
 
 			case "read_timeout":
 				if !dispenser.NextArg() {
@@ -295,8 +278,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.Errf("bad timeout value %s: %v", dispenser.Val(), err)
 				}
 				fcgiTransport.ReadTimeout = caddy.Duration(dur)
-				dispenser.Delete()
-				dispenser.Delete()
+				dispenser.DeleteN(2)
 
 			case "write_timeout":
 				if !dispenser.NextArg() {
@@ -307,15 +289,11 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.Errf("bad timeout value %s: %v", dispenser.Val(), err)
 				}
 				fcgiTransport.WriteTimeout = caddy.Duration(dur)
-				dispenser.Delete()
-				dispenser.Delete()
+				dispenser.DeleteN(2)
 
 			case "capture_stderr":
 				args := dispenser.RemainingArgs()
-				dispenser.Delete()
-				for range args {
-					dispenser.Delete()
-				}
+				dispenser.DeleteN(len(args) + 1)
 				fcgiTransport.CaptureStderr = true
 			}
 		}

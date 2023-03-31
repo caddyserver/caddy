@@ -134,6 +134,9 @@ type browseTemplateContext struct {
 
 	// Sorting order
 	Order string `json:"order,omitempty"`
+
+	// Display format (list or grid)
+	Layout string `json:"layout,omitempty"`
 }
 
 // Breadcrumbs returns l.Path where every element maps
@@ -227,6 +230,16 @@ type fileInfo struct {
 	Mode      os.FileMode `json:"mode"`
 	IsDir     bool        `json:"is_dir"`
 	IsSymlink bool        `json:"is_symlink"`
+}
+
+// HasExt returns true if the filename has any of the given suffixes, case-insensitive.
+func (fi fileInfo) HasExt(exts ...string) bool {
+	for _, ext := range exts {
+		if strings.HasSuffix(strings.ToLower(fi.Name), strings.ToLower(ext)) {
+			return true
+		}
+	}
+	return false
 }
 
 // HumanSize returns the size of the file as a

@@ -87,7 +87,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		}
 		actual := SanitizedPathJoin(tc.inputRoot, u.Path)
 		if actual != tc.expect {
-			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  %s (expected '%s')",
+			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s')",
 				i, tc.inputRoot, tc.inputPath, actual, tc.expect)
 		}
 	}

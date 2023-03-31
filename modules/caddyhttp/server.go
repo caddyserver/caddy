@@ -19,8 +19,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"runtime"
 	"strings"
@@ -32,8 +34,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -117,6 +119,29 @@ type Server struct {
 	// client authentication.
 	StrictSNIHost *bool `json:"strict_sni_host,omitempty"`
 
+	// A module which provides a source of IP ranges, from which
+	// requests should be trusted. By default, no proxies are
+	// trusted.
+	//
+	// On its own, this configuration will not do anything,
+	// but it can be used as a default set of ranges for
+	// handlers or matchers in routes to pick up, instead
+	// of needing to configure each of them. See the
+	// `reverse_proxy` handler for example, which uses this
+	// to trust sensitive incoming `X-Forwarded-*` headers.
+	TrustedProxiesRaw json.RawMessage `json:"trusted_proxies,omitempty" caddy:"namespace=http.ip_sources inline_key=source"`
+
+	// The headers from which the client IP address could be
+	// read from. These will be considered in order, with the
+	// first good value being used as the client IP.
+	// By default, only `X-Forwarded-For` is considered.
+	//
+	// This depends on `trusted_proxies` being configured and
+	// the request being validated as coming from a trusted
+	// proxy, otherwise the client IP will be set to the direct
+	// remote IP address.
+	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -175,6 +200,8 @@ type Server struct {
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	http2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
+
+	trustedProxies IPRangeSource
 
 	shutdownAt   time.Time
 	shutdownAtMu *sync.RWMutex
@@ -242,6 +269,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 
+		// wrap the request body in a LengthReader
+		// so we can track the number of bytes read from it
+		var bodyReader *lengthReader
+		if r.Body != nil {
+			bodyReader = &lengthReader{Source: r.Body}
+			r.Body = bodyReader
+		}
+
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
@@ -268,7 +303,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			userID, _ := repl.GetString("http.auth.user.id")
 
+			reqBodyLength := 0
+			if bodyReader != nil {
+				reqBodyLength = bodyReader.Length
+			}
+
 			log("handled request",
+				zap.Int("bytes_read", reqBodyLength),
 				zap.String("user_id", userID),
 				zap.Duration("duration", duration),
 				zap.Int("size", wrec.Size()),
@@ -684,8 +725,15 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
+
+	trusted, clientIP := determineTrustedProxy(r, s)
+	ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+		TrustedProxyVarKey: trusted,
+		ClientIPVarKey:     clientIP,
+	})
+
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
+
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 	r = r.WithContext(ctx)
@@ -714,6 +762,83 @@ func originalRequest(req *http.Request, urlCopy *url.URL) http.Request {
 	}
 }
 
+// determineTrustedProxy parses the remote IP address of
+// the request, and determines (if the server configured it)
+// if the client is a trusted proxy. If trusted, also returns
+// the real client IP if possible.
+func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
+	// If there's no server, then we can't check anything
+	if s == nil {
+		return false, ""
+	}
+
+	// Parse the remote IP, ignore the error as non-fatal,
+	// but the remote IP is required to continue, so we
+	// just return early. This should probably never happen
+	// though, unless some other module manipulated the request's
+	// remote address and used an invalid value.
+	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false, ""
+	}
+
+	// Client IP may contain a zone if IPv6, so we need
+	// to pull that out before parsing the IP
+	clientIP, _, _ = strings.Cut(clientIP, "%")
+	ipAddr, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false, ""
+	}
+
+	// Check if the client is a trusted proxy
+	if s.trustedProxies == nil {
+		return false, ipAddr.String()
+	}
+	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
+		if ipRange.Contains(ipAddr) {
+			// We trust the proxy, so let's try to
+			// determine the real client IP
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
+		}
+	}
+
+	return false, ipAddr.String()
+}
+
+// trustedRealClientIP finds the client IP from the request assuming it is
+// from a trusted client. If there is no client IP headers, then the
+// direct remote address is returned. If there are client IP headers,
+// then the first value from those headers is used.
+func trustedRealClientIP(r *http.Request, headers []string, clientIP string) string {
+	// Read all the values of the configured client IP headers, in order
+	var values []string
+	for _, field := range headers {
+		values = append(values, r.Header.Values(field)...)
+	}
+
+	// If we don't have any values, then give up
+	if len(values) == 0 {
+		return clientIP
+	}
+
+	// Since there can be many header values, we need to
+	// join them together before splitting to get the full list
+	allValues := strings.Split(strings.Join(values, ","), ",")
+
+	// Get first valid left-most IP address
+	for _, ip := range allValues {
+		ip, _, _ = strings.Cut(strings.TrimSpace(ip), "%")
+		ipAddr, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		return ipAddr.String()
+	}
+
+	// We didn't find a valid IP
+	return clientIP
+}
+
 // cloneURL makes a copy of r.URL and returns a
 // new value that doesn't reference the original.
 func cloneURL(from, to *url.URL) {
@@ -723,6 +848,23 @@ func cloneURL(from, to *url.URL) {
 		*userInfo = *from.User
 		to.User = userInfo
 	}
+}
+
+// lengthReader is an io.ReadCloser that keeps track of the
+// number of bytes read from the request body.
+type lengthReader struct {
+	Source io.ReadCloser
+	Length int
+}
+
+func (r *lengthReader) Read(b []byte) (int, error) {
+	n, err := r.Source.Read(b)
+	r.Length += n
+	return n, err
+}
+
+func (r *lengthReader) Close() error {
+	return r.Source.Close()
 }
 
 // Context keys for HTTP request context values.
@@ -739,4 +881,10 @@ const (
 
 	// For referencing underlying net.Conn
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// For tracking whether the client is a trusted proxy
+	TrustedProxyVarKey string = "trusted_proxy"
+
+	// For tracking the real client IP (affected by trusted_proxy)
+	ClientIPVarKey string = "client_ip"
 )

@@ -43,6 +43,9 @@
 
 	@matcher11 remote_ip private_ranges
 	respond @matcher11 "remote_ip matcher with private ranges"
+
+	@matcher12 client_ip private_ranges
+	respond @matcher12 "client_ip matcher with private ranges"
 }
 ----------
 {
@@ -247,6 +250,28 @@
 							"handle": [
 								{
 									"body": "remote_ip matcher with private ranges",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"client_ip": {
+										"ranges": [
+											"192.168.0.0/16",
+											"172.16.0.0/12",
+											"10.0.0.0/8",
+											"127.0.0.1/8",
+											"fd00::/8",
+											"::1"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "client_ip matcher with private ranges",
 									"handler": "static_response"
 								}
 							]

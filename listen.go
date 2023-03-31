@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: Go 1.19 introduced the "unix" build tag. We have to support Go 1.18 until Go 1.20 is released.
-// When Go 1.19 is our minimum, change this build tag to simply "!unix".
-// (see similar change needed in listen_unix.go)
-//go:build !(aix || android || darwin || dragonfly || freebsd || hurd || illumos || ios || linux || netbsd || openbsd || solaris)
+//go:build !unix
 
 package caddy
 

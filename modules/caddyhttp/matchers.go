@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/textproto"
 	"net/url"
 	"path"
@@ -35,7 +34,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
-	"go.uber.org/zap"
 )
 
 type (
@@ -123,6 +121,7 @@ type (
 	// keyed by the query keys, with an array of string values to match for that key.
 	// Query key matches are exact, but wildcards may be used for value matches. Both
 	// keys and values may be placeholders.
+	//
 	// An example of the structure to match `?key=value&topic=api&query=something` is:
 	//
 	// ```json
@@ -135,6 +134,13 @@ type (
 	//
 	// Invalid query strings, including those with bad escapings or illegal characters
 	// like semicolons, will fail to parse and thus fail to match.
+	//
+	// **NOTE:** Notice that query string values are arrays, not singular values. This is
+	// because repeated keys are valid in query strings, and each one may have a
+	// different value. This matcher will match for a key if any one of its configured
+	// values is assigned in the query string. Backend applications relying on query
+	// strings MUST take into consideration that query string values are arrays and can
+	// have multiple values.
 	MatchQuery url.Values
 
 	// MatchHeader matches requests by header fields. The key is the field
@@ -144,6 +150,13 @@ type (
 	// surrounding the value with the wildcard `*` character, respectively.
 	// If a list is null, the header must not exist. If the list is empty,
 	// the field must simply exist, regardless of its value.
+	//
+	// **NOTE:** Notice that header values are arrays, not singular values. This is
+	// because repeated fields are valid in headers, and each one may have a
+	// different value. This matcher will match for a field if any one of its configured
+	// values matches in the header. Backend applications relying on headers MUST take
+	// into consideration that header field values are arrays and can have multiple
+	// values.
 	MatchHeader http.Header
 
 	// MatchHeaderRE matches requests by a regular expression on header fields.
@@ -160,24 +173,6 @@ type (
 	// HTTP versions can be specified like so: "http/1", "http/1.1",
 	// "http/2", "http/3", or minimum versions: "http/2+", etc.
 	MatchProtocol string
-
-	// MatchRemoteIP matches requests by client IP (or CIDR range).
-	MatchRemoteIP struct {
-		// The IPs or CIDR ranges to match.
-		Ranges []string `json:"ranges,omitempty"`
-
-		// If true, prefer the first IP in the request's X-Forwarded-For
-		// header, if present, rather than the immediate peer's IP, as
-		// the reference IP against which to match. Note that it is easy
-		// to spoof request headers. Default: false
-		Forwarded bool `json:"forwarded,omitempty"`
-
-		// cidrs and zones vars should aligned always in the same
-		// length and indexes for matching later
-		cidrs  []*netip.Prefix
-		zones  []string
-		logger *zap.Logger
-	}
 
 	// MatchNot matches requests by negating the results of its matcher
 	// sets. A single "not" matcher takes one or more matcher sets. Each
@@ -214,7 +209,6 @@ func init() {
 	caddy.RegisterModule(MatchHeader{})
 	caddy.RegisterModule(MatchHeaderRE{})
 	caddy.RegisterModule(new(MatchProtocol))
-	caddy.RegisterModule(MatchRemoteIP{})
 	caddy.RegisterModule(MatchNot{})
 }
 
@@ -1246,166 +1240,6 @@ func (m MatchNot) Match(r *http.Request) bool {
 	return true
 }
 
-// CaddyModule returns the Caddy module information.
-func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  "http.matchers.remote_ip",
-		New: func() caddy.Module { return new(MatchRemoteIP) },
-	}
-}
-
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextArg() {
-			if d.Val() == "forwarded" {
-				if len(m.Ranges) > 0 {
-					return d.Err("if used, 'forwarded' must be first argument")
-				}
-				m.Forwarded = true
-				continue
-			}
-			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, []string{
-					"192.168.0.0/16",
-					"172.16.0.0/12",
-					"10.0.0.0/8",
-					"127.0.0.1/8",
-					"fd00::/8",
-					"::1",
-				}...)
-				continue
-			}
-			m.Ranges = append(m.Ranges, d.Val())
-		}
-		if d.NextBlock(0) {
-			return d.Err("malformed remote_ip matcher: blocks are not supported")
-		}
-	}
-	return nil
-}
-
-// CELLibrary produces options that expose this matcher for use in CEL
-// expression matchers.
-//
-// Example:
-//
-//	expression remote_ip('forwarded', '192.168.0.0/16', '172.16.0.0/12', '10.0.0.0/8')
-func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	return CELMatcherImpl(
-		// name of the macro, this is the function name that users see when writing expressions.
-		"remote_ip",
-		// name of the function that the macro will be rewritten to call.
-		"remote_ip_match_request_list",
-		// internal data type of the MatchPath value.
-		[]*cel.Type{cel.ListType(cel.StringType)},
-		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
-			refStringList := reflect.TypeOf([]string{})
-			strList, err := data.ConvertToNative(refStringList)
-			if err != nil {
-				return nil, err
-			}
-
-			m := MatchRemoteIP{}
-
-			for _, input := range strList.([]string) {
-				if input == "forwarded" {
-					if len(m.Ranges) > 0 {
-						return nil, errors.New("if used, 'forwarded' must be first argument")
-					}
-					m.Forwarded = true
-					continue
-				}
-				m.Ranges = append(m.Ranges, input)
-			}
-
-			err = m.Provision(ctx)
-			return m, err
-		},
-	)
-}
-
-// Provision parses m's IP ranges, either from IP or CIDR expressions.
-func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
-	m.logger = ctx.Logger()
-	for _, str := range m.Ranges {
-		// Exclude the zone_id from the IP
-		if strings.Contains(str, "%") {
-			split := strings.Split(str, "%")
-			str = split[0]
-			// write zone identifiers in m.zones for matching later
-			m.zones = append(m.zones, split[1])
-		} else {
-			m.zones = append(m.zones, "")
-		}
-		if strings.Contains(str, "/") {
-			ipNet, err := netip.ParsePrefix(str)
-			if err != nil {
-				return fmt.Errorf("parsing CIDR expression '%s': %v", str, err)
-			}
-			m.cidrs = append(m.cidrs, &ipNet)
-		} else {
-			ipAddr, err := netip.ParseAddr(str)
-			if err != nil {
-				return fmt.Errorf("invalid IP address: '%s': %v", str, err)
-			}
-			ipNew := netip.PrefixFrom(ipAddr, ipAddr.BitLen())
-			m.cidrs = append(m.cidrs, &ipNew)
-		}
-	}
-	return nil
-}
-
-func (m MatchRemoteIP) getClientIP(r *http.Request) (netip.Addr, string, error) {
-	remote := r.RemoteAddr
-	zoneID := ""
-	if m.Forwarded {
-		if fwdFor := r.Header.Get("X-Forwarded-For"); fwdFor != "" {
-			remote = strings.TrimSpace(strings.Split(fwdFor, ",")[0])
-		}
-	}
-	ipStr, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		ipStr = remote // OK; probably didn't have a port
-	}
-	// Some IPv6-Adresses can contain zone identifiers at the end,
-	// which are separated with "%"
-	if strings.Contains(ipStr, "%") {
-		split := strings.Split(ipStr, "%")
-		ipStr = split[0]
-		zoneID = split[1]
-	}
-	ipAddr, err := netip.ParseAddr(ipStr)
-	if err != nil {
-		return netip.IPv4Unspecified(), "", err
-	}
-	return ipAddr, zoneID, nil
-}
-
-// Match returns true if r matches m.
-func (m MatchRemoteIP) Match(r *http.Request) bool {
-	clientIP, zoneID, err := m.getClientIP(r)
-	if err != nil {
-		m.logger.Error("getting client IP", zap.Error(err))
-		return false
-	}
-	zoneFilter := true
-	for i, ipRange := range m.cidrs {
-		if ipRange.Contains(clientIP) {
-			// Check if there are zone filters assigned and if they match.
-			if m.zones[i] == "" || zoneID == m.zones[i] {
-				return true
-			}
-			zoneFilter = false
-		}
-	}
-	if !zoneFilter {
-		m.logger.Debug("zone ID from remote did not match", zap.String("zone", zoneID))
-	}
-	return false
-}
-
 // MatchRegexp is an embedable type for matching
 // using regular expressions. It adds placeholders
 // to the request's replacer.
@@ -1580,8 +1414,6 @@ var (
 	_ RequestMatcher    = (*MatchHeaderRE)(nil)
 	_ caddy.Provisioner = (*MatchHeaderRE)(nil)
 	_ RequestMatcher    = (*MatchProtocol)(nil)
-	_ RequestMatcher    = (*MatchRemoteIP)(nil)
-	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
 	_ RequestMatcher    = (*MatchNot)(nil)
 	_ caddy.Provisioner = (*MatchNot)(nil)
 	_ caddy.Provisioner = (*MatchRegexp)(nil)
@@ -1594,7 +1426,6 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchHeader)(nil)
 	_ caddyfile.Unmarshaler = (*MatchHeaderRE)(nil)
 	_ caddyfile.Unmarshaler = (*MatchProtocol)(nil)
-	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
 	_ caddyfile.Unmarshaler = (*MatchVarsRE)(nil)
 
@@ -1606,7 +1437,6 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
-	_ CELLibraryProducer = (*MatchRemoteIP)(nil)
 	// _ CELLibraryProducer = (*VarsMatcher)(nil)
 	// _ CELLibraryProducer = (*MatchVarsRE)(nil)
 

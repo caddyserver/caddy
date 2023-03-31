@@ -19,33 +19,50 @@ import (
 	"crypto/x509"
 	"time"
 
-	"github.com/smallstep/cli/crypto/x509util"
+	"go.step.sm/crypto/keyutil"
+	"go.step.sm/crypto/x509util"
 )
 
-func generateRoot(commonName string) (rootCrt *x509.Certificate, privateKey any, err error) {
-	rootProfile, err := x509util.NewRootProfile(commonName)
+func generateRoot(commonName string) (*x509.Certificate, crypto.Signer, error) {
+	template, signer, err := newCert(commonName, x509util.DefaultRootTemplate, defaultRootLifetime)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
-	rootProfile.Subject().NotAfter = time.Now().Add(defaultRootLifetime) // TODO: make configurable
-	return newCert(rootProfile)
+	root, err := x509util.CreateCertificate(template, template, signer.Public(), signer)
+	if err != nil {
+		return nil, nil, err
+	}
+	return root, signer, nil
 }
 
-func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey crypto.PrivateKey) (cert *x509.Certificate, privateKey crypto.PrivateKey, err error) {
-	interProfile, err := x509util.NewIntermediateProfile(commonName, rootCrt, rootKey)
+func generateIntermediate(commonName string, rootCrt *x509.Certificate, rootKey crypto.Signer, lifetime time.Duration) (*x509.Certificate, crypto.Signer, error) {
+	template, signer, err := newCert(commonName, x509util.DefaultIntermediateTemplate, lifetime)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
-	interProfile.Subject().NotAfter = time.Now().Add(defaultIntermediateLifetime) // TODO: make configurable
-	return newCert(interProfile)
+	intermediate, err := x509util.CreateCertificate(template, rootCrt, signer.Public(), rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return intermediate, signer, nil
 }
 
-func newCert(profile x509util.Profile) (cert *x509.Certificate, privateKey crypto.PrivateKey, err error) {
-	certBytes, err := profile.CreateCertificate()
+func newCert(commonName, templateName string, lifetime time.Duration) (cert *x509.Certificate, signer crypto.Signer, err error) {
+	signer, err = keyutil.GenerateDefaultSigner()
 	if err != nil {
-		return
+		return nil, nil, err
 	}
-	privateKey = profile.SubjectPrivateKey()
-	cert, err = x509.ParseCertificate(certBytes)
-	return
+	csr, err := x509util.CreateCertificateRequest(commonName, []string{}, signer)
+	if err != nil {
+		return nil, nil, err
+	}
+	template, err := x509util.NewCertificate(csr, x509util.WithTemplate(templateName, x509util.CreateTemplateData(commonName, []string{})))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cert = template.GetCertificate()
+	cert.NotBefore = time.Now().Truncate(time.Second)
+	cert.NotAfter = cert.NotBefore.Add(lifetime)
+	return cert, signer, nil
 }

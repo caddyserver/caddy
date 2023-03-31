@@ -39,18 +39,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     encode [<matcher>] <formats...> {
-//         gzip           [<level>]
-//         zstd
-//         minimum_length <length>
-//         # response matcher block
-//         match {
-//             status <code...>
-//             header <field> [<value>]
-//         }
-//         # or response matcher single line syntax
-//         match [header <field> [<value>]] | [status <code...>]
-//     }
+//	encode [<matcher>] <formats...> {
+//	    gzip           [<level>]
+//	    zstd
+//	    minimum_length <length>
+//	    # response matcher block
+//	    match {
+//	        status <code...>
+//	        header <field> [<value>]
+//	    }
+//	    # or response matcher single line syntax
+//	    match [header <field> [<value>]] | [status <code...>]
+//	}
 //
 // Specifying the formats on the first line will use those formats' defaults.
 func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {

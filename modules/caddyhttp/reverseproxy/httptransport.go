@@ -172,12 +172,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 	}
 
-	// Set up the dialer to pull the correct information from the context
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		// the proper dialing information should be embedded into the request's context
+		// For unix socket upstreams, we need to recover the dial info from
+		// the request's context, because the Host on the request's URL
+		// will have been modified by directing the request, overwriting
+		// the unix socket filename.
+		// Also, we need to avoid overwriting the address at this point
+		// when not necessary, because http.ProxyFromEnvironment may have
+		// modified the address according to the user's env proxy config.
 		if dialInfo, ok := GetDialInfo(ctx); ok {
-			network = dialInfo.Network
-			address = dialInfo.Address
+			if strings.HasPrefix(dialInfo.Network, "unix") {
+				network = dialInfo.Network
+				address = dialInfo.Address
+			}
 		}
 
 		conn, err := dialer.DialContext(ctx, network, address)
@@ -188,8 +195,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, DialError{err}
 		}
 
-		// if read/write timeouts are configured and this is a TCP connection, enforce the timeouts
-		// by wrapping the connection with our own type
+		// if read/write timeouts are configured and this is a TCP connection,
+		// enforce the timeouts by wrapping the connection with our own type
 		if tcpConn, ok := conn.(*net.TCPConn); ok && (h.ReadTimeout > 0 || h.WriteTimeout > 0) {
 			conn = &tcpRWTimeoutConn{
 				TCPConn:      tcpConn,
@@ -203,6 +210,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	rt := &http.Transport{
+		Proxy:                  http.ProxyFromEnvironment,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),

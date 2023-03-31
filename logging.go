@@ -62,7 +62,7 @@ type Logging struct {
 	// in dependencies that are not designed specifically for use
 	// in Caddy. Because it is global and unstructured, the sink
 	// lacks most advanced features and customizations.
-	Sink *StandardLibLog `json:"sink,omitempty"`
+	Sink *SinkLog `json:"sink,omitempty"`
 
 	// Logs are your logs, keyed by an arbitrary name of your
 	// choosing. The default log can be customized by defining
@@ -259,53 +259,9 @@ func (wdest writerDestructor) Destruct() error {
 	return wdest.Close()
 }
 
-// StandardLibLog configures the default Go standard library
-// global logger in the log package. This is necessary because
-// module dependencies which are not built specifically for
-// Caddy will use the standard logger. This is also known as
-// the "sink" logger.
-type StandardLibLog struct {
+// BaseLog contains the common logging parameters for logging.
+type BaseLog struct {
 	// The module that writes out log entries for the sink.
-	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
-
-	writer io.WriteCloser
-}
-
-func (sll *StandardLibLog) provision(ctx Context, logging *Logging) error {
-	if sll.WriterRaw != nil {
-		mod, err := ctx.LoadModule(sll, "WriterRaw")
-		if err != nil {
-			return fmt.Errorf("loading sink log writer module: %v", err)
-		}
-		wo := mod.(WriterOpener)
-
-		var isNew bool
-		sll.writer, isNew, err = logging.openWriter(wo)
-		if err != nil {
-			return fmt.Errorf("opening sink log writer %#v: %v", mod, err)
-		}
-
-		if isNew {
-			log.Printf("[INFO] Redirecting sink to: %s", wo)
-			log.SetOutput(sll.writer)
-			log.Printf("[INFO] Redirected sink to here (%s)", wo)
-		}
-	}
-
-	return nil
-}
-
-// CustomLog represents a custom logger configuration.
-//
-// By default, a log will emit all log entries. Some entries
-// will be skipped if sampling is enabled. Further, the Include
-// and Exclude parameters define which loggers (by name) are
-// allowed or rejected from emitting in this log. If both Include
-// and Exclude are populated, their values must be mutually
-// exclusive, and longer namespaces have priority. If neither
-// are populated, all logs are emitted.
-type CustomLog struct {
-	// The writer defines where log entries are emitted.
 	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
 
 	// The encoder is how the log entries are formatted or encoded.
@@ -321,16 +277,6 @@ type CustomLog struct {
 	// servers.
 	Sampling *LogSampling `json:"sampling,omitempty"`
 
-	// Include defines the names of loggers to emit in this
-	// log. For example, to include only logs emitted by the
-	// admin API, you would include "admin.api".
-	Include []string `json:"include,omitempty"`
-
-	// Exclude defines the names of loggers that should be
-	// skipped by this log. For example, to exclude only
-	// HTTP access logs, you would exclude "http.log.access".
-	Exclude []string `json:"exclude,omitempty"`
-
 	writerOpener WriterOpener
 	writer       io.WriteCloser
 	encoder      zapcore.Encoder
@@ -338,8 +284,23 @@ type CustomLog struct {
 	core         zapcore.Core
 }
 
-func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
-	// Replace placeholder for log level
+func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
+	if cl.WriterRaw != nil {
+		mod, err := ctx.LoadModule(cl, "WriterRaw")
+		if err != nil {
+			return fmt.Errorf("loading log writer module: %v", err)
+		}
+		cl.writerOpener = mod.(WriterOpener)
+	}
+	if cl.writerOpener == nil {
+		cl.writerOpener = StderrWriter{}
+	}
+	var err error
+	cl.writer, _, err = logging.openWriter(cl.writerOpener)
+	if err != nil {
+		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
+	}
+
 	repl := NewReplacer()
 	level, err := repl.ReplaceOrErr(cl.Level, true, true)
 	if err != nil {
@@ -363,6 +324,101 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 		cl.levelEnabler = zapcore.FatalLevel
 	default:
 		return fmt.Errorf("unrecognized log level: %s", cl.Level)
+	}
+
+	if cl.EncoderRaw != nil {
+		mod, err := ctx.LoadModule(cl, "EncoderRaw")
+		if err != nil {
+			return fmt.Errorf("loading log encoder module: %v", err)
+		}
+		cl.encoder = mod.(zapcore.Encoder)
+	}
+	if cl.encoder == nil {
+		// only allow colorized output if this log is going to stdout or stderr
+		var colorize bool
+		switch cl.writerOpener.(type) {
+		case StdoutWriter, StderrWriter,
+			*StdoutWriter, *StderrWriter:
+			colorize = true
+		}
+		cl.encoder = newDefaultProductionLogEncoder(colorize)
+	}
+	cl.buildCore()
+	return nil
+}
+
+func (cl *BaseLog) buildCore() {
+	// logs which only discard their output don't need
+	// to perform encoding or any other processing steps
+	// at all, so just shorcut to a nop core instead
+	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
+		cl.core = zapcore.NewNopCore()
+		return
+	}
+	c := zapcore.NewCore(
+		cl.encoder,
+		zapcore.AddSync(cl.writer),
+		cl.levelEnabler,
+	)
+	if cl.Sampling != nil {
+		if cl.Sampling.Interval == 0 {
+			cl.Sampling.Interval = 1 * time.Second
+		}
+		if cl.Sampling.First == 0 {
+			cl.Sampling.First = 100
+		}
+		if cl.Sampling.Thereafter == 0 {
+			cl.Sampling.Thereafter = 100
+		}
+		c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
+			cl.Sampling.First, cl.Sampling.Thereafter)
+	}
+	cl.core = c
+}
+
+// SinkLog configures the default Go standard library
+// global logger in the log package. This is necessary because
+// module dependencies which are not built specifically for
+// Caddy will use the standard logger. This is also known as
+// the "sink" logger.
+type SinkLog struct {
+	BaseLog
+}
+
+func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
+	if err := sll.provisionCommon(ctx, logging); err != nil {
+		return err
+	}
+	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(zap.New(sll.core)))
+	return nil
+}
+
+// CustomLog represents a custom logger configuration.
+//
+// By default, a log will emit all log entries. Some entries
+// will be skipped if sampling is enabled. Further, the Include
+// and Exclude parameters define which loggers (by name) are
+// allowed or rejected from emitting in this log. If both Include
+// and Exclude are populated, their values must be mutually
+// exclusive, and longer namespaces have priority. If neither
+// are populated, all logs are emitted.
+type CustomLog struct {
+	BaseLog
+
+	// Include defines the names of loggers to emit in this
+	// log. For example, to include only logs emitted by the
+	// admin API, you would include "admin.api".
+	Include []string `json:"include,omitempty"`
+
+	// Exclude defines the names of loggers that should be
+	// skipped by this log. For example, to exclude only
+	// HTTP access logs, you would exclude "http.log.access".
+	Exclude []string `json:"exclude,omitempty"`
+}
+
+func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
+	if err := cl.provisionCommon(ctx, logging); err != nil {
+		return err
 	}
 
 	// If both Include and Exclude lists are populated, then each item must
@@ -394,73 +450,7 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 			return fmt.Errorf("when both include and exclude are populated, each element must be a superspace or subspace of one in the other list; check '%s' in include", allow)
 		}
 	}
-
-	if cl.WriterRaw != nil {
-		mod, err := ctx.LoadModule(cl, "WriterRaw")
-		if err != nil {
-			return fmt.Errorf("loading log writer module: %v", err)
-		}
-		cl.writerOpener = mod.(WriterOpener)
-	}
-	if cl.writerOpener == nil {
-		cl.writerOpener = StderrWriter{}
-	}
-
-	cl.writer, _, err = logging.openWriter(cl.writerOpener)
-	if err != nil {
-		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
-	}
-
-	if cl.EncoderRaw != nil {
-		mod, err := ctx.LoadModule(cl, "EncoderRaw")
-		if err != nil {
-			return fmt.Errorf("loading log encoder module: %v", err)
-		}
-		cl.encoder = mod.(zapcore.Encoder)
-	}
-	if cl.encoder == nil {
-		// only allow colorized output if this log is going to stdout or stderr
-		var colorize bool
-		switch cl.writerOpener.(type) {
-		case StdoutWriter, StderrWriter,
-			*StdoutWriter, *StderrWriter:
-			colorize = true
-		}
-		cl.encoder = newDefaultProductionLogEncoder(colorize)
-	}
-
-	cl.buildCore()
-
 	return nil
-}
-
-func (cl *CustomLog) buildCore() {
-	// logs which only discard their output don't need
-	// to perform encoding or any other processing steps
-	// at all, so just shorcut to a nop core instead
-	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
-		cl.core = zapcore.NewNopCore()
-		return
-	}
-	c := zapcore.NewCore(
-		cl.encoder,
-		zapcore.AddSync(cl.writer),
-		cl.levelEnabler,
-	)
-	if cl.Sampling != nil {
-		if cl.Sampling.Interval == 0 {
-			cl.Sampling.Interval = 1 * time.Second
-		}
-		if cl.Sampling.First == 0 {
-			cl.Sampling.First = 100
-		}
-		if cl.Sampling.Thereafter == 0 {
-			cl.Sampling.Thereafter = 100
-		}
-		c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
-			cl.Sampling.First, cl.Sampling.Thereafter)
-	}
-	cl.core = c
 }
 
 func (cl *CustomLog) matchesModule(moduleID string) bool {
