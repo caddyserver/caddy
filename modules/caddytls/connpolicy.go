@@ -54,7 +54,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		}
 
 		// enable HTTP/2 by default
-		if len(pol.ALPN) == 0 {
+		if pol.ALPN == nil {
 			pol.ALPN = append(pol.ALPN, defaultALPN...)
 		}
 
