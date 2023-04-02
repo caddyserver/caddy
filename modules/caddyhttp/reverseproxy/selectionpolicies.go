@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -387,11 +388,15 @@ func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.
 		return nil
 	}
 
-	val := req.URL.Query().Get(s.Key)
-	if val == "" {
+	// Since the query may have multiple values for the same key,
+	// we'll join them to avoid a problem where the user can control
+	// the upstream that the request goes to by changing the order
+	// of the query values.
+	vals := strings.Join(req.URL.Query()[s.Key], ",")
+	if vals == "" {
 		return RandomSelection{}.Select(pool, req, nil)
 	}
-	return hostByHashing(pool, val)
+	return hostByHashing(pool, vals)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.

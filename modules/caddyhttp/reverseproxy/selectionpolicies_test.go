@@ -394,24 +394,31 @@ func TestFirstPolicy(t *testing.T) {
 
 func TestQueryHashPolicy(t *testing.T) {
 	pool := testPool()
-	uriPolicy := QueryHashSelection{Key: "foo"}
+	queryPolicy := QueryHashSelection{Key: "foo"}
 
 	request := httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
-	h := uriPolicy.Select(pool, request, nil)
+	h := queryPolicy.Select(pool, request, nil)
 	if h != pool[0] {
 		t.Error("Expected query policy host to be the first host.")
 	}
 
+	request = httptest.NewRequest(http.MethodGet, "/?foo=100000", nil)
+	h = queryPolicy.Select(pool, request, nil)
+	if h != pool[0] {
+		t.Error("Expected query policy host to be the first host.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
 	pool[0].setHealthy(false)
-	h = uriPolicy.Select(pool, request, nil)
+	h = queryPolicy.Select(pool, request, nil)
 	if h != pool[1] {
 		t.Error("Expected query policy host to be the second host.")
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/?foo=4", nil)
-	h = uriPolicy.Select(pool, request, nil)
-	if h != pool[1] {
-		t.Error("Expected query policy host to be the second host.")
+	request = httptest.NewRequest(http.MethodGet, "/?foo=100000", nil)
+	h = queryPolicy.Select(pool, request, nil)
+	if h != pool[2] {
+		t.Error("Expected query policy host to be the third host.")
 	}
 
 	// We should be able to resize the host pool and still be able to predict
@@ -422,28 +429,35 @@ func TestQueryHashPolicy(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
-	h = uriPolicy.Select(pool, request, nil)
+	h = queryPolicy.Select(pool, request, nil)
 	if h != pool[0] {
 		t.Error("Expected query policy host to be the first host.")
 	}
 
 	pool[0].setHealthy(false)
-	h = uriPolicy.Select(pool, request, nil)
+	h = queryPolicy.Select(pool, request, nil)
 	if h != pool[1] {
 		t.Error("Expected query policy host to be the second host.")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/?foo=4", nil)
-	h = uriPolicy.Select(pool, request, nil)
+	h = queryPolicy.Select(pool, request, nil)
 	if h != pool[1] {
 		t.Error("Expected query policy host to be the second host.")
 	}
 
 	pool[0].setHealthy(false)
 	pool[1].setHealthy(false)
-	h = uriPolicy.Select(pool, request, nil)
+	h = queryPolicy.Select(pool, request, nil)
 	if h != nil {
 		t.Error("Expected query policy policy host to be nil.")
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/?foo=aa11&foo=bb22", nil)
+	pool = testPool()
+	h = queryPolicy.Select(pool, request, nil)
+	if h != pool[0] {
+		t.Error("Expected query policy host to be the first host.")
 	}
 }
 
