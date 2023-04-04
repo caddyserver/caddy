@@ -390,8 +390,11 @@ func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.
 
 	// Since the query may have multiple values for the same key,
 	// we'll join them to avoid a problem where the user can control
-	// the upstream that the request goes to by changing the order
-	// of the query values.
+	// the upstream that the request goes to by sending multiple values
+	// for the same key, when the upstream only considers the first value.
+	// Keep in mind that a client changing the order of the values may
+	// affect which upstream is selected, but this is a semantically
+	// different request, because the order of the values is significant.
 	vals := strings.Join(req.URL.Query()[s.Key], ",")
 	if vals == "" {
 		return RandomSelection{}.Select(pool, req, nil)
