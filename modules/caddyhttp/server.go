@@ -82,6 +82,12 @@ type Server struct {
 	// HTTP request headers.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
 
+	// Enable full-duplex communication for HTTP/1.1 requests.
+	// Only has an effect if Caddy was built with Go 1.21 or later.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	EnableFullDuplex bool `json:"enable_full_duplex,omitempty"`
+
 	// Routes describes how this server will handle requests.
 	// Routes are executed sequentially. First a route's matchers
 	// are evaluated, then its grouping. If it matches and has
@@ -263,6 +269,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
+
+	// enable full-duplex for HTTP/1, ensuring the entire
+	// request body gets consumed before writing the response
+	if s.EnableFullDuplex {
+		// TODO: Remove duplex_go12*.go abstraction once our
+		// minimum Go version is 1.21 or later
+		enableFullDuplex(w)
+	}
 
 	// encode the request for logging purposes before
 	// it enters any handler chain; this is necessary
