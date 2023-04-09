@@ -492,6 +492,10 @@ type TLSConfig struct {
 	// When specified, TLS will automatically be configured on the transport.
 	// The value can be a list of any valid tcp port numbers, default empty.
 	ExceptPorts []string `json:"except_ports,omitempty"`
+
+	// MaxVersion contains the maximum TLS version that is acceptable.
+	// By default, the maximum version supported is used, which is currently "1.3".
+	MaxVersion string `json:"max_version,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -578,6 +582,22 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
+
+	// Max TLS version to use
+	switch t.MaxVersion {
+	case "":
+		break // default is package maximum
+	case "1.3":
+		cfg.MaxVersion = tls.VersionTLS13
+	case "1.2":
+		cfg.MaxVersion = tls.VersionTLS12
+	case "1.1":
+		cfg.MaxVersion = tls.VersionTLS11
+	case "1.0":
+		cfg.MaxVersion = tls.VersionTLS10
+	default:
+		return nil, fmt.Errorf("invalid TLS version level: %v", t.MaxVersion)
+	}
 
 	// only return a config if it's not empty
 	if reflect.DeepEqual(cfg, new(tls.Config)) {
