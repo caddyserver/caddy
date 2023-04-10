@@ -203,7 +203,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				}
 				addr.StartPort, addr.EndPort = hcp, hcp
 			}
-			if upstream.LookupSRV == "" && addr.PortRangeSize() != 1 {
+			if addr.PortRangeSize() != 1 {
 				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
 					zap.String("address", networkAddr),
 				)
