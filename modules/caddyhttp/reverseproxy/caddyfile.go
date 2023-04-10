@@ -15,7 +15,6 @@
 package reverseproxy
 
 import (
-	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -142,15 +141,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	h.responseMatchers = make(map[string]caddyhttp.ResponseMatcher)
 
 	// appendUpstream creates an upstream for address and adds
-	// it to the list. If the address starts with "srv+" it is
-	// treated as a SRV-based upstream, and any port will be
-	// dropped.
+	// it to the list.
 	appendUpstream := func(address string) error {
-		isSRV := strings.HasPrefix(address, "srv+")
-		if isSRV {
-			address = strings.TrimPrefix(address, "srv+")
-		}
-
 		dialAddr, scheme, err := parseUpstreamDialAddress(address)
 		if err != nil {
 			return d.WrapErr(err)
@@ -165,14 +157,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 		commonScheme = scheme
 
-		if isSRV {
-			if host, _, err := net.SplitHostPort(dialAddr); err == nil {
-				dialAddr = host
-			}
-			h.Upstreams = append(h.Upstreams, &Upstream{LookupSRV: dialAddr})
-		} else {
-			h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
-		}
+		h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
 		return nil
 	}
 
