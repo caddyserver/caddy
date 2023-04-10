@@ -198,6 +198,7 @@ type Server struct {
 	server      *http.Server
 	h3server    *http3.Server
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
+	h2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
@@ -213,6 +214,16 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
+	// Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
+	if r.TLS == nil {
+		conn := r.Context().Value(ConnCtxKey).(net.Conn)
+		if csc, ok := conn.(connectionStateConn); ok {
+			r.TLS = new(tls.ConnectionState)
+			*r.TLS = csc.ConnectionState()
+		}
+	}
+
 	w.Header().Set("Server", "Caddy")
 
 	// advertise HTTP/3, if enabled
@@ -869,6 +880,9 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// For referencing underlying net.Conn
+	ConnCtxKey caddy.CtxKey = "conn"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
