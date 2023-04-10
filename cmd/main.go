@@ -374,18 +374,19 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		}
 
 		// quoted value: support newlines
-		if strings.HasPrefix(val, `"`) {
-			for !(strings.HasSuffix(line, `"`) && !strings.HasSuffix(line, `\"`)) {
-				val = strings.ReplaceAll(val, `\"`, `"`)
+		if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "'") {
+			quote := string(val[0])
+			for !(strings.HasSuffix(line, quote) && !strings.HasSuffix(line, `\`+quote)) {
+				val = strings.ReplaceAll(val, `\`+quote, quote)
 				if !scanner.Scan() {
 					break
 				}
 				lineNumber++
-				line = strings.ReplaceAll(scanner.Text(), `\"`, `"`)
+				line = strings.ReplaceAll(scanner.Text(), `\`+quote, quote)
 				val += "\n" + line
 			}
-			val = strings.TrimPrefix(val, `"`)
-			val = strings.TrimSuffix(val, `"`)
+			val = strings.TrimPrefix(val, quote)
+			val = strings.TrimSuffix(val, quote)
 		}
 
 		envMap[key] = val
