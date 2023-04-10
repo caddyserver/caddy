@@ -1,7 +1,7 @@
 Contributing to Caddy
 =====================
 
-Welcome! Thank you for choosing to be a part of our community. Caddy wouldn't be great without your involvement!
+Welcome! Thank you for choosing to be a part of our community. Caddy wouldn't be nearly as excellent without your involvement!
 
 For starters, we invite you to join [the Caddy forum](https://caddy.community) where you can hang out with other Caddy users and developers.
 
@@ -35,19 +35,29 @@ Here are some of the expectations we have of contributors:
 
 - **Keep related commits together in a PR.** We do want pull requests to be small, but you should also keep multiple related commits in the same PR if they rely on each other.
 
-- **Write tests.** Tests are essential! Written properly, they ensure your change works, and that other changes in the future won't break your change. CI checks should pass.
+- **Write tests.** Good, automated tests are very valuable! Written properly, they ensure your change works, and that other changes in the future won't break your change. CI checks should pass.
 
-- **Benchmarks should be included for optimizations.** Optimizations sometimes make code harder to read or have changes that are less than obvious. They should be proven with benchmarks or profiling.
+- **Benchmarks should be included for optimizations.** Optimizations sometimes make code harder to read or have changes that are less than obvious. They should be proven with benchmarks and profiling.
 
 - **[Squash](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html) insignificant commits.** Every commit should be significant. Commits which merely rewrite a comment or fix a typo can be combined into another commit that has more substance. Interactive rebase can do this, or a simpler way is `git reset --soft <diverging-commit>` then `git commit -s`.
 
-- **Own your contributions.** Caddy is a growing project, and it's much better when individual contributors help maintain their change after it is merged.
+- **Be responsible for and maintain your contributions.** Caddy is a growing project, and it's much better when individual contributors help maintain their change after it is merged.
 
 - **Use comments properly.** We expect good godoc comments for package-level functions, types, and values. Comments are also useful whenever the purpose for a line of code is not obvious.
 
-- **Pull requests may still get closed.** The longer a PR stays open and idle, the more likely it is to be closed. If we haven't reviewed it in a while, it probably means the change is not a priority. Please don't take this personally, we're trying to balance a lot of tasks! If nobody else has commented or reacted to the PR, it likely means your change is useful only to you. The reality is this happens quite a bit. We don't tend to accept PRs that aren't generally helpful. For these reasons or others, the PR may get closed even after a review. We are not obligated to accept all proposed changes, even if the best justification we can give is something vague like, "It doesn't sit right." Sometimes PRs are just the wrong thing or the wrong time. Because it is open source, you can always build your own modified version of Caddy with a change you need, even if we reject it in the official repo.
+- **Pull requests may still get closed.** The longer a PR stays open and idle, the more likely it is to be closed. If we haven't reviewed it in a while, it probably means the change is not a priority. Please don't take this personally, we're trying to balance a lot of tasks! If nobody else has commented or reacted to the PR, it likely means your change is useful only to you. The reality is this happens quite a lot. We don't tend to accept PRs that aren't generally helpful. For these reasons or others, the PR may get closed even after a review. We are not obligated to accept all proposed changes, even if the best justification we can give is something vague like, "It doesn't sit right." Sometimes PRs are just the wrong thing or the wrong time. Because it is open source, you can always build your own modified version of Caddy with a change you need, even if we reject it in the official repo. Plus, because Caddy is extensible, it's possible your feature could make a great plugin instead!
 
-We often grant [collaborator status](#collaborator-instructions) to contributors who author one or more significant, high-quality PRs that are merged into the code base!
+- **You certify that you wrote and comprehend the code you submit.** The Caddy project welcomes original contributions that comply with [our CLA](https://cla-assistant.io/caddyserver/caddy), meaning that authors must be able to certify that they created or have rights to the code they are contributing. In addition, we require that code is not simply copy-pasted from Q/A sites or AI language models without full comprehension and rigorous testing. In other words: contributors are allowed to refer to communities for assistance and use AI tools such as language models for inspiration, but code which originates from or is assisted by these resources MUST be:
+
+	- Licensed for you to freely share
+	- Fully comprehended by you (be able to explain every line of code)
+	- Verified by automated tests when feasible, or thorough manual tests otherwise
+
+	We have found that current language models (LLMs, like ChatGPT) may understand code syntax and even problem spaces to an extent, but often fail in subtle ways to convey true knowledge and produce correct algorithms. Integrated tools such as GitHub Copilot and Sourcegraph Cody may be used for inspiration, but code generated by these tools still needs to meet our criteria for licensing, human comprehension, and testing. These tools may be used to help write code comments and tests as long as you can certify they are accurate and correct. Note that it is often more trouble than it's worth to certify that Copilot (for example) is not giving you code that is possibly plagiarised, unlicensed, or licensed with incompatible terms -- as the Caddy project cannot accept such contributions. If that's too difficult for you (or impossible), then we recommend using these resources only for inspiration and write your own code. Ultimately, you (the contributor) are responsible for the code you're submitting.
+
+	As a courtesy to reviewers, we kindly ask that you disclose when contributing code that was generated by an AI tool or copied from another website so we can be aware of what to look for in code review.
+
+We often grant [collaborator status](#collaborator-instructions) to contributors who author one or more significant, high-quality PRs that are merged into the code base.
 
 
 #### HOW TO MAKE A PULL REQUEST TO CADDY
