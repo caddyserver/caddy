@@ -918,6 +918,17 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.MaxResponseHeaderSize = int64(size)
 
+			case "proxy_protocol":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch proxyProtocol := d.Val(); proxyProtocol {
+				case "v1", "v2":
+					h.ProxyProtocol = proxyProtocol
+				default:
+					return d.Errf("invalid proxy protocol version '%s'", proxyProtocol)
+				}
+
 			case "dial_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()

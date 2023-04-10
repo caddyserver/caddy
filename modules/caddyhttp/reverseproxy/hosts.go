@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync/atomic"
 
@@ -259,3 +260,13 @@ var hosts = caddy.NewUsagePool()
 // dialInfoVarKey is the key used for the variable that holds
 // the dial info for the upstream connection.
 const dialInfoVarKey = "reverse_proxy.dial_info"
+
+// proxyProtocolInfoVarKey is the key used for the variable that holds
+// the proxy protocol info for the upstream connection.
+const proxyProtocolInfoVarKey = "reverse_proxy.proxy_protocol_info"
+
+// ProxyProtocolInfo contains information needed to write proxy protocol to a
+// connection to an upstream host.
+type ProxyProtocolInfo struct {
+	AddrPort netip.AddrPort
+}
