@@ -24,11 +24,13 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {
@@ -38,7 +40,9 @@ func init() {
 	caddy.RegisterModule(RoundRobinSelection{})
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
+	caddy.RegisterModule(ClientIPHashSelection{})
 	caddy.RegisterModule(URIHashSelection{})
+	caddy.RegisterModule(QueryHashSelection{})
 	caddy.RegisterModule(HeaderHashSelection{})
 	caddy.RegisterModule(CookieHashSelection{})
 
@@ -303,6 +307,39 @@ func (r *IPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// ClientIPHashSelection is a policy that selects a host
+// based on hashing the client IP of the request, as determined
+// by the HTTP app's trusted proxies settings.
+type ClientIPHashSelection struct{}
+
+// CaddyModule returns the Caddy module information.
+func (ClientIPHashSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.client_ip_hash",
+		New: func() caddy.Module { return new(ClientIPHashSelection) },
+	}
+}
+
+// Select returns an available host, if any.
+func (ClientIPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
+	address := caddyhttp.GetVar(req.Context(), caddyhttp.ClientIPVarKey).(string)
+	clientIP, _, err := net.SplitHostPort(address)
+	if err != nil {
+		clientIP = address // no port
+	}
+	return hostByHashing(pool, clientIP)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // URIHashSelection is a policy that selects a
 // host by hashing the request URI.
 type URIHashSelection struct{}
@@ -326,6 +363,52 @@ func (r *URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if d.NextArg() {
 			return d.ArgErr()
 		}
+	}
+	return nil
+}
+
+// QueryHashSelection is a policy that selects
+// a host based on a given request query parameter.
+type QueryHashSelection struct {
+	// The query key whose value is to be hashed and used for upstream selection.
+	Key string `json:"key,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (QueryHashSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.query",
+		New: func() caddy.Module { return new(QueryHashSelection) },
+	}
+}
+
+// Select returns an available host, if any.
+func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
+	if s.Key == "" {
+		return nil
+	}
+
+	// Since the query may have multiple values for the same key,
+	// we'll join them to avoid a problem where the user can control
+	// the upstream that the request goes to by sending multiple values
+	// for the same key, when the upstream only considers the first value.
+	// Keep in mind that a client changing the order of the values may
+	// affect which upstream is selected, but this is a semantically
+	// different request, because the order of the values is significant.
+	vals := strings.Join(req.URL.Query()[s.Key], ",")
+	if vals == "" {
+		return RandomSelection{}.Select(pool, req, nil)
+	}
+	return hostByHashing(pool, vals)
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (s *QueryHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		s.Key = d.Val()
 	}
 	return nil
 }
@@ -552,7 +635,9 @@ var (
 	_ Selector = (*RoundRobinSelection)(nil)
 	_ Selector = (*FirstSelection)(nil)
 	_ Selector = (*IPHashSelection)(nil)
+	_ Selector = (*ClientIPHashSelection)(nil)
 	_ Selector = (*URIHashSelection)(nil)
+	_ Selector = (*QueryHashSelection)(nil)
 	_ Selector = (*HeaderHashSelection)(nil)
 	_ Selector = (*CookieHashSelection)(nil)
 

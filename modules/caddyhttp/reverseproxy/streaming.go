@@ -20,6 +20,7 @@ package reverseproxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	weakrand "math/rand"
 	"mime"
@@ -215,7 +216,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 				written += int64(nw)
 			}
 			if werr != nil {
-				return written, werr
+				return written, fmt.Errorf("writing: %w", werr)
 			}
 			if nr != nw {
 				return written, io.ErrShortWrite
@@ -223,9 +224,9 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 		}
 		if rerr != nil {
 			if rerr == io.EOF {
-				rerr = nil
+				return written, nil
 			}
-			return written, rerr
+			return written, fmt.Errorf("reading: %w", rerr)
 		}
 	}
 }

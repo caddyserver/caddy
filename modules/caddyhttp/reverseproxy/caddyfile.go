@@ -903,6 +903,17 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.MaxResponseHeaderSize = int64(size)
 
+			case "proxy_protocol":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				switch proxyProtocol := d.Val(); proxyProtocol {
+				case "v1", "v2":
+					h.ProxyProtocol = proxyProtocol
+				default:
+					return d.Errf("invalid proxy protocol version '%s'", proxyProtocol)
+				}
+
 			case "dial_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()
@@ -1309,6 +1320,7 @@ func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //	    resolvers           <resolvers...>
 //	    dial_timeout        <timeout>
 //	    dial_fallback_delay <timeout>
+//	    versions            ipv4|ipv6
 //	}
 func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
@@ -1382,8 +1394,30 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				u.FallbackDelay = caddy.Duration(dur)
 
+			case "versions":
+				args := d.RemainingArgs()
+				if len(args) == 0 {
+					return d.Errf("must specify at least one version")
+				}
+
+				if u.Versions == nil {
+					u.Versions = &ipVersions{}
+				}
+
+				trueBool := true
+				for _, arg := range args {
+					switch arg {
+					case "ipv4":
+						u.Versions.IPv4 = &trueBool
+					case "ipv6":
+						u.Versions.IPv6 = &trueBool
+					default:
+						return d.Errf("unsupported version: '%s'", arg)
+					}
+				}
+
 			default:
-				return d.Errf("unrecognized srv option '%s'", d.Val())
+				return d.Errf("unrecognized a option '%s'", d.Val())
 			}
 		}
 	}

@@ -241,7 +241,9 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 		if _, ok := options["debug"]; ok {
 			customLogs = append(customLogs, namedCustomLog{
 				name: caddy.DefaultLoggerName,
-				log:  &caddy.CustomLog{Level: zap.DebugLevel.CapitalString()},
+				log: &caddy.CustomLog{
+					BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()},
+				},
 			})
 		}
 	}
@@ -1328,6 +1330,7 @@ func placeholderShorthands() []string {
 		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
 		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
 		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
+		"{client_ip}", "{http.vars.client_ip}",
 	}
 }
 
