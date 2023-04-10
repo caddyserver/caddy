@@ -12,6 +12,12 @@ import (
 	"golang.org/x/net/http2"
 )
 
+// http2Listener wraps the listener to solve the following problems:
+// 1. server h2 natively without using h2c hack when listener handles tls connection but
+// don't return *tls.Conn
+// 2. graceful shutdown. the shutdown logic is copied from stdlib http.Server, it's an extra maintenance burden but
+// whatever, the shutdown logic maybe extracted to be used with h2c graceful shutdown. http2.Server supports graceful shutdown
+// sending GO_AWAY frame to connected clients, but doesn't track connection status. It requires explicit call of http2.ConfigureServer
 type http2Listener struct {
 	cnt uint64
 	net.Listener

@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/quic-go/quic-go"
 	"io"
 	"net"
 	"net/http"
@@ -34,7 +35,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/certmagic"
-	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -195,11 +195,11 @@ type Server struct {
 	errorLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server         *http.Server
-	h3server       *http3.Server
-	h3listeners    []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
-	http2listeners []*http2Listener
-	addresses      []caddy.NetworkAddress
+	server      *http.Server
+	h3server    *http3.Server
+	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
+	h2listeners []*http2Listener
+	addresses   []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -214,6 +214,8 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
+	// Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
 	if r.TLS == nil {
 		conn := r.Context().Value(ConnCtxKey).(net.Conn)
 		if csc, ok := conn.(connectionStateConn); ok {

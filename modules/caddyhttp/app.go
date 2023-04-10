@@ -471,7 +471,7 @@ func (app *App) Start() error {
 						server:   srv.server,
 						h2server: h2server,
 					}
-					srv.http2listeners = append(srv.http2listeners, http2lnWrapper)
+					srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
 					ln = http2lnWrapper
 				}
 
@@ -608,7 +608,7 @@ func (app *App) Stop() error {
 		defer finishedShutdown.Done()
 		startedShutdown.Done()
 
-		for i, s := range server.http2listeners {
+		for i, s := range server.h2listeners {
 			if err := s.Shutdown(ctx); err != nil {
 				app.logger.Error("http2 listener shutdown",
 					zap.Error(err),
