@@ -185,7 +185,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if (weakrand.Int() % count) == 0 { //nolint:gosec
+			if count > 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}
@@ -594,6 +594,9 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	}
 	if len(best) == 0 {
 		return nil
+	}
+	if len(best) == 1 {
+		return best[0]
 	}
 	return best[weakrand.Intn(len(best))] //nolint:gosec
 }
