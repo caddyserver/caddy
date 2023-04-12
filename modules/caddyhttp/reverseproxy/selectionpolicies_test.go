@@ -20,6 +20,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -33,7 +35,7 @@ func testPool() UpstreamPool {
 
 func TestRoundRobinPolicy(t *testing.T) {
 	pool := testPool()
-	rrPolicy := new(RoundRobinSelection)
+	rrPolicy := RoundRobinSelection{}
 	req, _ := http.NewRequest("GET", "/", nil)
 
 	h := rrPolicy.Select(pool, req, nil)
@@ -74,7 +76,7 @@ func TestRoundRobinPolicy(t *testing.T) {
 
 func TestLeastConnPolicy(t *testing.T) {
 	pool := testPool()
-	lcPolicy := new(LeastConnSelection)
+	lcPolicy := LeastConnSelection{}
 	req, _ := http.NewRequest("GET", "/", nil)
 
 	pool[0].countRequest(10)
@@ -92,7 +94,7 @@ func TestLeastConnPolicy(t *testing.T) {
 
 func TestIPHashPolicy(t *testing.T) {
 	pool := testPool()
-	ipHash := new(IPHashSelection)
+	ipHash := IPHashSelection{}
 	req, _ := http.NewRequest("GET", "/", nil)
 
 	// We should be able to predict where every request is routed.
@@ -234,7 +236,7 @@ func TestIPHashPolicy(t *testing.T) {
 
 func TestClientIPHashPolicy(t *testing.T) {
 	pool := testPool()
-	ipHash := new(ClientIPHashSelection)
+	ipHash := ClientIPHashSelection{}
 	req, _ := http.NewRequest("GET", "/", nil)
 	req = req.WithContext(context.WithValue(req.Context(), caddyhttp.VarsCtxKey, make(map[string]any)))
 
@@ -377,7 +379,7 @@ func TestClientIPHashPolicy(t *testing.T) {
 
 func TestFirstPolicy(t *testing.T) {
 	pool := testPool()
-	firstPolicy := new(FirstSelection)
+	firstPolicy := FirstSelection{}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	h := firstPolicy.Select(pool, req, nil)
@@ -393,8 +395,15 @@ func TestFirstPolicy(t *testing.T) {
 }
 
 func TestQueryHashPolicy(t *testing.T) {
-	pool := testPool()
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
 	queryPolicy := QueryHashSelection{Key: "foo"}
+	if err := queryPolicy.Provision(ctx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
+	pool := testPool()
 
 	request := httptest.NewRequest(http.MethodGet, "/?foo=1", nil)
 	h := queryPolicy.Select(pool, request, nil)
@@ -463,7 +472,7 @@ func TestQueryHashPolicy(t *testing.T) {
 
 func TestURIHashPolicy(t *testing.T) {
 	pool := testPool()
-	uriPolicy := new(URIHashSelection)
+	uriPolicy := URIHashSelection{}
 
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	h := uriPolicy.Select(pool, request, nil)
@@ -552,8 +561,7 @@ func TestRandomChoicePolicy(t *testing.T) {
 	pool[2].countRequest(30)
 
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
-	randomChoicePolicy := new(RandomChoiceSelection)
-	randomChoicePolicy.Choose = 2
+	randomChoicePolicy := RandomChoiceSelection{Choose: 2}
 
 	h := randomChoicePolicy.Select(pool, request, nil)
 
@@ -568,6 +576,14 @@ func TestRandomChoicePolicy(t *testing.T) {
 }
 
 func TestCookieHashPolicy(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	cookieHashPolicy := CookieHashSelection{}
+	if err := cookieHashPolicy.Provision(ctx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
 	pool := testPool()
 	pool[0].Dial = "localhost:8080"
 	pool[1].Dial = "localhost:8081"
@@ -577,7 +593,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	pool[2].setHealthy(false)
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()
-	cookieHashPolicy := new(CookieHashSelection)
+
 	h := cookieHashPolicy.Select(pool, request, w)
 	cookieServer1 := w.Result().Cookies()[0]
 	if cookieServer1 == nil {
@@ -609,6 +625,62 @@ func TestCookieHashPolicy(t *testing.T) {
 	h = cookieHashPolicy.Select(pool, request, w)
 	if h == pool[0] {
 		t.Error("Expected cookieHashPolicy to select a new host.")
+	}
+	if w.Result().Cookies() == nil {
+		t.Error("Expected cookieHashPolicy to set a new cookie.")
+	}
+}
+
+func TestCookieHashPolicyWithFirstFallback(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	cookieHashPolicy := CookieHashSelection{
+		FallbackRaw: caddyconfig.JSONModuleObject(FirstSelection{}, "policy", "first", nil),
+	}
+	if err := cookieHashPolicy.Provision(ctx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
+	pool := testPool()
+	pool[0].Dial = "localhost:8080"
+	pool[1].Dial = "localhost:8081"
+	pool[2].Dial = "localhost:8082"
+	pool[0].setHealthy(true)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+
+	h := cookieHashPolicy.Select(pool, request, w)
+	cookieServer1 := w.Result().Cookies()[0]
+	if cookieServer1 == nil {
+		t.Fatal("cookieHashPolicy should set a cookie")
+	}
+	if cookieServer1.Name != "lb" {
+		t.Error("cookieHashPolicy should set a cookie with name lb")
+	}
+	if h != pool[0] {
+		t.Errorf("Expected cookieHashPolicy host to be the first only available host, got %s", h)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(cookieServer1)
+	h = cookieHashPolicy.Select(pool, request, w)
+	if h != pool[0] {
+		t.Errorf("Expected cookieHashPolicy host to stick to the first host (matching cookie), got %s", h)
+	}
+	s := w.Result().Cookies()
+	if len(s) != 0 {
+		t.Error("Expected cookieHashPolicy to not set a new cookie.")
+	}
+	pool[0].setHealthy(false)
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(cookieServer1)
+	h = cookieHashPolicy.Select(pool, request, w)
+	if h != pool[1] {
+		t.Errorf("Expected cookieHashPolicy to select the next first available host, got %s", h)
 	}
 	if w.Result().Cookies() == nil {
 		t.Error("Expected cookieHashPolicy to set a new cookie.")
