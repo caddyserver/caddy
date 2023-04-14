@@ -41,12 +41,12 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	// Taken from https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
 	// We know reqUpType is ASCII, it's checked by the caller.
 	if !asciiIsPrint(resUpType) {
-		h.logger.Debug("backend tried to switch to invalid protocol",
+		logger.Debug("backend tried to switch to invalid protocol",
 			zap.String("backend_upgrade", resUpType))
 		return
 	}
 	if !asciiEqualFold(reqUpType, resUpType) {
-		h.logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
+		logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
 			zap.String("backend_upgrade", resUpType),
 			zap.String("requested_upgrade", reqUpType))
 		return
@@ -54,12 +54,12 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 
 	hj, ok := rw.(http.Hijacker)
 	if !ok {
-		h.logger.Sugar().Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw)
+		logger.Error("can't switch protocols using non-Hijacker ResponseWriter", zap.String("type", fmt.Sprintf("%T", rw)))
 		return
 	}
 	backConn, ok := res.Body.(io.ReadWriteCloser)
 	if !ok {
-		h.logger.Error("internal error: 101 switching protocols response with non-writable body")
+		logger.Error("internal error: 101 switching protocols response with non-writable body")
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	logger.Debug("upgrading connection")
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		h.logger.Error("hijack failed on protocol switch", zap.Error(err))
+		logger.Error("hijack failed on protocol switch", zap.Error(err))
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	}()
 
 	if err := brw.Flush(); err != nil {
-		h.logger.Debug("response flush", zap.Error(err))
+		logger.Debug("response flush", zap.Error(err))
 		return
 	}
 
@@ -132,9 +132,9 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	go spc.copyFromBackend(errc)
 	select {
 	case err := <-errc:
-		h.logger.Debug("streaming error", zap.Error(err))
+		logger.Debug("streaming error", zap.Error(err))
 	case time := <-time.After(timeout):
-		h.logger.Debug("stream timed out", zap.Time("timeout", time))
+		logger.Debug("stream timed out", zap.Time("timeout", time))
 	}
 }
 

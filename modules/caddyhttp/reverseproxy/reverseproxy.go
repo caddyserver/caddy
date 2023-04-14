@@ -902,7 +902,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 		repl.Set("http.reverse_proxy.status_text", res.Status)
 
-		h.logger.Debug("handling response", zap.Int("handler", i))
+		logger.Debug("handling response", zap.Int("handler", i))
 
 		// we make some data available via request context to child routes
 		// so that they may inherit some options and functions from the
@@ -997,7 +997,7 @@ func (h Handler) finalizeResponse(
 		// there's nothing an error handler can do to recover at this point;
 		// the standard lib's proxy panics at this point, but we'll just log
 		// the error and abort the stream here
-		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		logger.Error("aborting with incomplete response", zap.Error(err))
 		return nil
 	}
 
