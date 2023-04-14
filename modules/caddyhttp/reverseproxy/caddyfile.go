@@ -15,6 +15,7 @@
 package reverseproxy
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -157,7 +158,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 		commonScheme = scheme
 
-		h.Upstreams = append(h.Upstreams, &Upstream{Dial: dialAddr})
+		parsedAddr, err := caddy.ParseNetworkAddress(dialAddr)
+		if err != nil {
+			return d.WrapErr(err)
+		}
+
+		if parsedAddr.StartPort == 0 && parsedAddr.EndPort == 0 {
+			h.Upstreams = append(h.Upstreams, &Upstream{
+				Dial: dialAddr,
+			})
+		} else {
+			// expand a port range into multiple upstreams
+			for i := parsedAddr.StartPort; i <= parsedAddr.EndPort; i++ {
+				h.Upstreams = append(h.Upstreams, &Upstream{
+					Dial: caddy.JoinNetworkAddress("", parsedAddr.Host, fmt.Sprint(i)),
+				})
+			}
+		}
+
 		return nil
 	}
 

@@ -153,9 +153,23 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	upstreamPool := UpstreamPool{}
 	for _, toAddr := range toAddresses {
-		upstreamPool = append(upstreamPool, &Upstream{
-			Dial: toAddr,
-		})
+		parsedAddr, err := caddy.ParseNetworkAddress(toAddr)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", toAddr, err)
+		}
+
+		if parsedAddr.StartPort == 0 && parsedAddr.EndPort == 0 {
+			upstreamPool = append(upstreamPool, &Upstream{
+				Dial: toAddr,
+			})
+		} else {
+			// expand a port range into multiple upstreams
+			for i := parsedAddr.StartPort; i <= parsedAddr.EndPort; i++ {
+				upstreamPool = append(upstreamPool, &Upstream{
+					Dial: caddy.JoinNetworkAddress("", parsedAddr.Host, fmt.Sprint(i)),
+				})
+			}
+		}
 	}
 
 	handler := Handler{
