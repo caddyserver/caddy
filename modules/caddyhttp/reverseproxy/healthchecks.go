@@ -127,6 +127,14 @@ type PassiveHealthChecks struct {
 	// must be configured for those stats to be counted. Default is 0 (no ratio).
 	MinSuccessRatio caddyhttp.Ratio `json:"min_success_ratio,omitempty"`
 
+	// The minimum number of successful requests before considering the
+	// minimum success ratio. Default is 5. Requires MinSuccessRatio >= 0.
+	//
+	// If there are less than this many successful requests, then the ratio is
+	// ignored, because of a lack of data. This ensures that the upstream isn't
+	// prematurely considered unhealthy because no requests have happened yet.
+	MinSuccesses int `json:"min_successes,omitempty"`
+
 	// Limits the number of simultaneous requests to a backend by
 	// marking the backend as "down" if it has this many concurrent
 	// requests or more.

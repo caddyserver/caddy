@@ -352,6 +352,10 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
 				h.HealthChecks.Passive.MaxFails = 1
 			}
+
+			if h.HealthChecks.Passive.MinSuccessRatio > 0 && h.HealthChecks.Passive.MinSuccesses == 0 {
+				h.HealthChecks.Passive.MinSuccesses = 5
+			}
 		}
 
 		// if active health checks are enabled, configure them and start a worker
