@@ -48,14 +48,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
     - name: Install Go
       uses: actions/setup-go@v4
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
-
-    - name: Checkout code
-      uses: actions/checkout@v3
 
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
@@ -146,7 +146,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
-      - name: Checkout code into the Go module directory
+      - name: Checkout code
         uses: actions/checkout@v3
       - name: Run Tests
         run: |
@@ -172,7 +172,7 @@ jobs:
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
+      - name: Checkout code
         uses: actions/checkout@v3
       
       - uses: goreleaser/goreleaser-action@v4
