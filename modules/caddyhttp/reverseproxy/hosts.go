@@ -84,6 +84,15 @@ func (u *Upstream) Healthy() bool {
 	if healthy && u.healthCheckPolicy != nil {
 		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
 	}
+	if healthy && u.healthCheckPolicy != nil &&
+		u.healthCheckPolicy.MinSuccessRatio > 0 {
+		successes := u.Host.Successes()
+		if successes >= u.healthCheckPolicy.MinSuccesses {
+			fails := u.Host.Fails()
+			healthRatio := float64(fails) / float64(successes)
+			healthy = healthRatio < (1 - float64(u.healthCheckPolicy.MinSuccessRatio))
+		}
+	}
 	if healthy && u.cb != nil {
 		healthy = u.cb.OK()
 	}
