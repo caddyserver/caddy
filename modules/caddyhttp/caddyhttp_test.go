@@ -149,3 +149,79 @@ func TestCleanPath(t *testing.T) {
 		}
 	}
 }
+
+func TestUnmarshalRatio(t *testing.T) {
+	for i, tc := range []struct {
+		input  []byte
+		expect float64
+		errMsg string
+	}{
+		{
+			input:  []byte("null"),
+			expect: 0,
+		},
+		{
+			input:  []byte(`"1/3"`),
+			expect: float64(1) / float64(3),
+		},
+		{
+			input:  []byte(`"1/100"`),
+			expect: float64(1) / float64(100),
+		},
+		{
+			input:  []byte(`"3:2"`),
+			expect: 0.6,
+		},
+		{
+			input:  []byte(`"99:1"`),
+			expect: 0.99,
+		},
+		{
+			input:  []byte(`"1/100"`),
+			expect: float64(1) / float64(100),
+		},
+		{
+			input:  []byte(`0.1`),
+			expect: 0.1,
+		},
+		{
+			input:  []byte(`0.005`),
+			expect: 0.005,
+		},
+		{
+			input:  []byte(`0`),
+			expect: 0,
+		},
+		{
+			input:  []byte(`"0"`),
+			errMsg: `ratio string '0' did not contain a slash '/' or colon ':'`,
+		},
+		{
+			input:  []byte(`a`),
+			errMsg: `failed parsing ratio as float a: strconv.ParseFloat: parsing "a": invalid syntax`,
+		},
+		{
+			input:  []byte(`"a/1"`),
+			errMsg: `failed parsing numerator as integer a: strconv.Atoi: parsing "a": invalid syntax`,
+		},
+		{
+			input:  []byte(`"1/a"`),
+			errMsg: `failed parsing denominator as integer a: strconv.Atoi: parsing "a": invalid syntax`,
+		},
+	} {
+		ratio := Ratio(0)
+		err := ratio.UnmarshalJSON(tc.input)
+		if err != nil {
+			if tc.errMsg != "" {
+				if tc.errMsg != err.Error() {
+					t.Fatalf("Test %d: expected error: %v, got: %v", i, tc.errMsg, err)
+				}
+				continue
+			}
+			t.Fatalf("Test %d: invalid ratio: %v", i, err)
+		}
+		if ratio != Ratio(tc.expect) {
+			t.Fatalf("Test %d: expected %v, got %v", i, tc.expect, ratio)
+		}
+	}
+}
