@@ -29,16 +29,16 @@ jobs:
       contents: write
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
     - name: Install Go
       uses: actions/setup-go@v4
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
-
-    - name: Checkout code
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
 
     # Force fetch upstream tags -- because 65 minutes
     # tl;dr: actions/checkout@v3 runs this line:
@@ -94,18 +94,6 @@ jobs:
         # tags are only accepted if signed by Matt's key
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
-    - name: Cache the build cache
-      uses: actions/cache@v3
-      with:
-        # In order:
-        # * Module download cache
-        # * Build cache (Linux)
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: ${{ runner.os }}-go${{ matrix.go }}-release-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go${{ matrix.go }}-release
     - name: Install Cosign
       uses: sigstore/cosign-installer@main
     - name: Cosign version
