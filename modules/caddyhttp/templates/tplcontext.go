@@ -399,7 +399,7 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 // funcIsDir returns true if filename is a directory
 func (c TemplateContext) funcIsDir(name string) (bool, error) {
 	if c.Root == nil {
-		return nil, fmt.Errorf("root file system not specified")
+		return false, fmt.Errorf("root file system not specified")
 	}
 
 	dir, err := c.Root.Open(path.Clean(name))
