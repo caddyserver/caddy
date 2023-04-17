@@ -79,6 +79,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
+		"isDir":            c.isDir,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
@@ -393,6 +394,25 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// funcIsDir returns true if filename is a directory
+func (c TemplateContext) funcIsDir(name string) (bool, error) {
+	if c.Root == nil {
+		return nil, fmt.Errorf("root file system not specified")
+	}
+
+	dir, err := c.Root.Open(path.Clean(name))
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return nil, err
+	}
+	return stat.IsDir(), nil
 }
 
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
