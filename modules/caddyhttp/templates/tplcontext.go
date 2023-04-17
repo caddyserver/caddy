@@ -79,7 +79,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
-		"isDir":            c.isDir,
+		"isDir":            c.funcIsDir,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
