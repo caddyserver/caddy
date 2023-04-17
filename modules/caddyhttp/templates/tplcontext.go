@@ -404,13 +404,13 @@ func (c TemplateContext) funcIsDir(name string) (bool, error) {
 
 	dir, err := c.Root.Open(path.Clean(name))
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	defer dir.Close()
 
 	stat, err := dir.Stat()
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	return stat.IsDir(), nil
 }
