@@ -80,7 +80,6 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
-		"isDir":            c.funcIsDir,
 		"stat":             c.funcStat,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
@@ -396,25 +395,6 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-// funcIsDir returns true if filename is a directory
-func (c TemplateContext) funcIsDir(name string) (bool, error) {
-	if c.Root == nil {
-		return false, fmt.Errorf("root file system not specified")
-	}
-
-	dir, err := c.Root.Open(path.Clean(name))
-	if err != nil {
-		return false, err
-	}
-	defer dir.Close()
-
-	stat, err := dir.Stat()
-	if err != nil {
-		return false, err
-	}
-	return stat.IsDir(), nil
 }
 
 // funcStat returns Stat of a filename
