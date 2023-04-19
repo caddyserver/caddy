@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -80,6 +81,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
 		"isDir":            c.funcIsDir,
+		"stat":             c.funcStat,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
@@ -413,6 +415,21 @@ func (c TemplateContext) funcIsDir(name string) (bool, error) {
 		return false, err
 	}
 	return stat.IsDir(), nil
+}
+
+// funcStat returns Stat of a filename
+func (c TemplateContext) funcStat(filename string) (fs.FileInfo, error) {
+	if c.Root == nil {
+		return nil, fmt.Errorf("root file system not specified")
+	}
+
+	file, err := c.Root.Open(path.Clean(filename))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	return file.Stat()
 }
 
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
