@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -164,7 +165,7 @@ func (ws *WeakString) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// MarshalJSON marshals was a boolean if true or false,
+// MarshalJSON marshals as a boolean if true or false,
 // a number if an integer, or a string otherwise.
 func (ws WeakString) MarshalJSON() ([]byte, error) {
 	if ws == "true" {
@@ -202,6 +203,82 @@ func (ws WeakString) Bool() bool {
 // String returns ws as a string.
 func (ws WeakString) String() string {
 	return string(ws)
+}
+
+// Ratio is a type that unmarshals a valid numerical ratio string.
+// Valid formats are:
+// - a/b as a fraction (a / b)
+// - a:b as a ratio (a / a+b)
+// - a floating point number
+type Ratio float64
+
+// UnmarshalJSON satisfies json.Unmarshaler according to
+// this type's documentation.
+func (r *Ratio) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return io.EOF
+	}
+	if b[0] == byte('"') && b[len(b)-1] == byte('"') {
+		if !strings.Contains(string(b), "/") && !strings.Contains(string(b), ":") {
+			return fmt.Errorf("ratio string '%s' did not contain a slash '/' or colon ':'", string(b[1:len(b)-1]))
+		}
+		if strings.Contains(string(b), "/") {
+			left, right, _ := strings.Cut(string(b[1:len(b)-1]), "/")
+			num, err := strconv.Atoi(left)
+			if err != nil {
+				return fmt.Errorf("failed parsing numerator as integer %s: %v", left, err)
+			}
+			denom, err := strconv.Atoi(right)
+			if err != nil {
+				return fmt.Errorf("failed parsing denominator as integer %s: %v", right, err)
+			}
+			*r = Ratio(float64(num) / float64(denom))
+			return nil
+		}
+		if strings.Contains(string(b), ":") {
+			left, right, _ := strings.Cut(string(b[1:len(b)-1]), ":")
+			num, err := strconv.Atoi(left)
+			if err != nil {
+				return fmt.Errorf("failed parsing numerator as integer %s: %v", left, err)
+			}
+			denom, err := strconv.Atoi(right)
+			if err != nil {
+				return fmt.Errorf("failed parsing denominator as integer %s: %v", right, err)
+			}
+			*r = Ratio(float64(num) / (float64(num) + float64(denom)))
+			return nil
+		}
+		return fmt.Errorf("invalid ratio string '%s'", string(b[1:len(b)-1]))
+	}
+	if bytes.Equal(b, []byte("null")) {
+		return nil
+	}
+	float, err := strconv.ParseFloat(string(b), 64)
+	if err != nil {
+		return fmt.Errorf("failed parsing ratio as float %s: %v", b, err)
+	}
+	*r = Ratio(float)
+	return nil
+}
+
+func ParseRatio(r string) (Ratio, error) {
+	if strings.Contains(r, "/") {
+		left, right, _ := strings.Cut(r, "/")
+		num, err := strconv.Atoi(left)
+		if err != nil {
+			return 0, fmt.Errorf("failed parsing numerator as integer %s: %v", left, err)
+		}
+		denom, err := strconv.Atoi(right)
+		if err != nil {
+			return 0, fmt.Errorf("failed parsing denominator as integer %s: %v", right, err)
+		}
+		return Ratio(float64(num) / float64(denom)), nil
+	}
+	float, err := strconv.ParseFloat(r, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed parsing ratio as float %s: %v", r, err)
+	}
+	return Ratio(float), nil
 }
 
 // StatusCodeMatches returns true if a real HTTP status code matches

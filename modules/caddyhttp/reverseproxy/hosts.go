@@ -84,6 +84,15 @@ func (u *Upstream) Healthy() bool {
 	if healthy && u.healthCheckPolicy != nil {
 		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
 	}
+	if healthy && u.healthCheckPolicy != nil &&
+		u.healthCheckPolicy.MinSuccessRatio > 0 {
+		successes := u.Host.Successes()
+		if successes >= u.healthCheckPolicy.MinSuccesses {
+			fails := u.Host.Fails()
+			healthRatio := float64(fails) / float64(successes)
+			healthy = healthRatio < (1 - float64(u.healthCheckPolicy.MinSuccessRatio))
+		}
+	}
 	if healthy && u.cb != nil {
 		healthy = u.cb.OK()
 	}
@@ -136,12 +145,18 @@ func (u *Upstream) fillHost() {
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
 	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	successes   int64
 	fails       int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
 func (h *Host) NumRequests() int {
 	return int(atomic.LoadInt64(&h.numRequests))
+}
+
+// Successes returns the number of recent successes with the upstream.
+func (h *Host) Successes() int {
+	return int(atomic.LoadInt64(&h.successes))
 }
 
 // Fails returns the number of recent failures with the upstream.
@@ -153,6 +168,16 @@ func (h *Host) Fails() int {
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countRequest(delta int) error {
 	result := atomic.AddInt64(&h.numRequests, int64(delta))
+	if result < 0 {
+		return fmt.Errorf("count below 0: %d", result)
+	}
+	return nil
+}
+
+// countSuccess mutates the recent successes count by
+// delta. It returns an error if the adjustment fails.
+func (h *Host) countSuccess(delta int) error {
+	result := atomic.AddInt64(&h.successes, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}

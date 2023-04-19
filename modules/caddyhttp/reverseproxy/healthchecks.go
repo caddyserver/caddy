@@ -110,14 +110,30 @@ type ActiveHealthChecks struct {
 // health checks (that is, health checks which occur during
 // the normal flow of request proxying).
 type PassiveHealthChecks struct {
-	// How long to remember a failed request to a backend. A duration > 0
-	// enables passive health checking. Default is 0.
+	// How long to remember a failed request to a backend.
+	// A duration > 0 enables passive health checking. Default is 0.
 	FailDuration caddy.Duration `json:"fail_duration,omitempty"`
 
 	// The number of failed requests within the FailDuration window to
 	// consider a backend as "down". Must be >= 1; default is 1. Requires
 	// that FailDuration be > 0.
 	MaxFails int `json:"max_fails,omitempty"`
+
+	// How long to remember a successful request to a backend. Default is 0.
+	SuccessDuration caddy.Duration `json:"success_duration,omitempty"`
+
+	// The minimum ratio of successful to failed requests necessary to
+	// consider a backend as healthy. Both fail and success durations
+	// must be configured for those stats to be counted. Default is 0 (no ratio).
+	MinSuccessRatio caddyhttp.Ratio `json:"min_success_ratio,omitempty"`
+
+	// The minimum number of successful requests before considering the
+	// minimum success ratio. Default is 5. Requires MinSuccessRatio >= 0.
+	//
+	// If there are less than this many successful requests, then the ratio is
+	// ignored, because of a lack of data. This ensures that the upstream isn't
+	// prematurely considered unhealthy because no requests have happened yet.
+	MinSuccesses int `json:"min_successes,omitempty"`
 
 	// Limits the number of simultaneous requests to a backend by
 	// marking the backend as "down" if it has this many concurrent
@@ -360,6 +376,56 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	return nil
+}
+
+// countSuccess is used with passive health checks. It
+// remembers 1 success for upstream for the configured
+// duration. If passive health checks are disabled or
+// success expiry is 0, this is a no-op.
+func (h *Handler) countSuccess(upstream *Upstream) {
+	// only count successes if passive health checking is enabled
+	// and if successes are configured have a non-zero expiry
+	if h.HealthChecks == nil || h.HealthChecks.Passive == nil {
+		return
+	}
+	successDuration := time.Duration(h.HealthChecks.Passive.SuccessDuration)
+	if successDuration == 0 {
+		return
+	}
+
+	// count success immediately
+	err := upstream.Host.countSuccess(1)
+	if err != nil {
+		h.HealthChecks.Passive.logger.Error("could not count success",
+			zap.String("host", upstream.Dial),
+			zap.Error(err))
+		return
+	}
+
+	// forget it later
+	go func(host *Host, successDuration time.Duration) {
+		defer func() {
+			if err := recover(); err != nil {
+				h.HealthChecks.Passive.logger.Error("passive health check success forgetter panicked",
+					zap.Any("error", err),
+					zap.ByteString("stack", debug.Stack()))
+			}
+		}()
+		timer := time.NewTimer(successDuration)
+		select {
+		case <-h.ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+		}
+		err := host.countSuccess(-1)
+		if err != nil {
+			h.HealthChecks.Passive.logger.Error("could not forget success",
+				zap.String("host", upstream.Dial),
+				zap.Error(err))
+		}
+	}(upstream.Host, successDuration)
 }
 
 // countFailure is used with passive health checks. It

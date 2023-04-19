@@ -352,6 +352,10 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
 				h.HealthChecks.Passive.MaxFails = 1
 			}
+
+			if h.HealthChecks.Passive.MinSuccessRatio > 0 && h.HealthChecks.Passive.MinSuccesses == 0 {
+				h.HealthChecks.Passive.MinSuccesses = 5
+			}
 		}
 
 		// if active health checks are enabled, configure them and start a worker
@@ -562,6 +566,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
 	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
 	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.successes", upstream.Host.Successes())
 	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 	// mutate request headers according to this upstream;
@@ -580,6 +585,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
 		// context.Canceled happens when the downstream client
 		// cancels the request, which is not our failure
+		h.countSuccess(upstream)
 		return true, nil
 	}
 
@@ -588,6 +594,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// occur after the roundtrip if, for example, a response handler
 	// after the roundtrip returns an error)
 	if succ, ok := proxyErr.(roundtripSucceeded); ok {
+		h.countSuccess(upstream)
 		return true, succ.error
 	}
 

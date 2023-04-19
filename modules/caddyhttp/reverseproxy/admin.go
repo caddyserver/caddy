@@ -37,6 +37,7 @@ type upstreamStatus struct {
 	Address     string `json:"address"`
 	NumRequests int    `json:"num_requests"`
 	Fails       int    `json:"fails"`
+	Successes   int    `json:"successes"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -99,6 +100,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			Address:     address,
 			NumRequests: upstream.NumRequests(),
 			Fails:       upstream.Fails(),
+			Successes:   upstream.Successes(),
 		})
 		return true
 	})
