@@ -255,7 +255,10 @@ type celPkixName struct{ *pkix.Name }
 func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return pn.Name, nil
 }
-func (celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
+func (pn celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
+	if typeVal.TypeName() == "string" {
+		return types.String(pn.Name.String())
+	}
 	panic("not implemented")
 }
 func (pn celPkixName) Equal(other ref.Val) ref.Val {
