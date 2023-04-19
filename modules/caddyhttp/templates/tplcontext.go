@@ -80,7 +80,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"markdown":         c.funcMarkdown,
 		"splitFrontMatter": c.funcSplitFrontMatter,
 		"listFiles":        c.funcListFiles,
-		"stat":             c.funcStat,
+		"fileStat":         c.funcFileStat,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
 		"fileExists":       c.funcFileExists,
@@ -398,7 +398,7 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 }
 
 // funcStat returns Stat of a filename
-func (c TemplateContext) funcStat(filename string) (fs.FileInfo, error) {
+func (c TemplateContext) funcFileStat(filename string) (fs.FileInfo, error) {
 	if c.Root == nil {
 		return nil, fmt.Errorf("root file system not specified")
 	}
