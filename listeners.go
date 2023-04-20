@@ -306,8 +306,8 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	return ParseNetworkAddressWithDefaults(addr, "tcp", 0)
 }
 
-// ParseNetworkAddressWithDefaultNetworkPort is like ParseNetworkAddress
-// but allows the default network and port to be specified.
+// ParseNetworkAddressWithDefaults is like ParseNetworkAddress but allows
+// the default network and port to be specified.
 func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort uint) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
