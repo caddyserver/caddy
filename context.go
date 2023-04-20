@@ -480,6 +480,9 @@ func (ctx Context) Logger(module ...Module) *zap.Logger {
 	if len(module) > 0 {
 		mod = module[0]
 	}
+	if mod == nil {
+		return Log()
+	}
 	return ctx.cfg.Logging.Logger(mod)
 }
 
