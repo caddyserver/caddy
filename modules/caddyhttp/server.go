@@ -696,14 +696,11 @@ func (s *Server) logRequest(
 		reqBodyLength = bodyReader.Length
 	}
 
-	// preallocate fields with a capacity of 7 in case traceID is set
-	fieldCount := 6
-	traceID, haveTrace := GetVar(r.Context(), "traceID").(string)
-	if haveTrace {
-		fieldCount++
-	}
+	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
-	fields := make([]zapcore.Field, fieldCount)
+	// preallocate with the amount of known fields
+	fieldCount := 6
+	fields := make([]zapcore.Field, fieldCount+len(extra.fields))
 	fields[0] = zap.Int("bytes_read", reqBodyLength)
 	fields[1] = zap.String("user_id", userID)
 	fields[2] = zap.Duration("duration", *duration)
@@ -713,8 +710,10 @@ func (s *Server) logRequest(
 		Header:               wrec.Header(),
 		ShouldLogCredentials: shouldLogCredentials,
 	})
-	if haveTrace {
-		fields[6] = zap.String("traceID", traceID)
+
+	// add extra fields after the known fields
+	for i, field := range extra.fields {
+		fields[fieldCount+i] = field
 	}
 
 	log("handled request", fields...)
@@ -755,6 +754,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
+
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change

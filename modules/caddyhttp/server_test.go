@@ -47,6 +47,7 @@ func TestServer_LogRequest(t *testing.T) {
 	s := &Server{}
 
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	wrec := NewResponseRecorder(rec, nil, nil)
@@ -70,9 +71,9 @@ func TestServer_LogRequest(t *testing.T) {
 func TestServer_LogRequest_WithTraceID(t *testing.T) {
 	s := &Server{}
 
-	ctx := context.WithValue(context.Background(), VarsCtxKey, map[string]any{
-		"traceID": "1234567890abcdef",
-	})
+	extra := new(ExtraLogFields)
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
+	extra.Add(zap.String("traceID", "1234567890abcdef"))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -98,7 +99,8 @@ func TestServer_LogRequest_WithTraceID(t *testing.T) {
 func BenchmarkServer_LogRequest(b *testing.B) {
 	s := &Server{}
 
-	ctx := context.WithValue(context.Background(), VarsCtxKey, map[string]any{})
+	extra := new(ExtraLogFields)
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -121,9 +123,9 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
 	s := &Server{}
 
-	ctx := context.WithValue(context.Background(), VarsCtxKey, map[string]any{
-		"traceID": "1234567890abcdef",
-	})
+	extra := new(ExtraLogFields)
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
+	extra.Add(zap.String("traceID", "1234567890abcdef"))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
