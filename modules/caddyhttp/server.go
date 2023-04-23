@@ -355,61 +355,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) logRequest(
-	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
-	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
-) {
-	// this request may be flagged as omitted from the logs
-	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
-		return
-	}
-
-	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
-	repl.Set("http.response.size", wrec.Size())
-	repl.Set("http.response.duration", duration)
-	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	logger := accLog
-	if s.Logs != nil {
-		logger = s.Logs.wrapLogger(logger, r.Host)
-	}
-
-	log := logger.Info
-	if wrec.Status() >= 400 {
-		log = logger.Error
-	}
-
-	userID, _ := repl.GetString("http.auth.user.id")
-
-	reqBodyLength := 0
-	if bodyReader != nil {
-		reqBodyLength = bodyReader.Length
-	}
-
-	// preallocate fields with a capacity of 7 in case traceID is set
-	fieldCount := 6
-	traceID, haveTrace := GetVar(r.Context(), "traceID").(string)
-	if haveTrace {
-		fieldCount++
-	}
-
-	fields := make([]zapcore.Field, fieldCount)
-	fields[0] = zap.Int("bytes_read", reqBodyLength)
-	fields[1] = zap.String("user_id", userID)
-	fields[2] = zap.Duration("duration", *duration)
-	fields[3] = zap.Int("size", wrec.Size())
-	fields[4] = zap.Int("status", wrec.Status())
-	fields[5] = zap.Object("resp_headers", LoggableHTTPHeader{
-		Header:               wrec.Header(),
-		ShouldLogCredentials: shouldLogCredentials,
-	})
-	if haveTrace {
-		fields[6] = zap.String("traceID", traceID)
-	}
-
-	log("handled request", fields...)
-}
-
 // wrapPrimaryRoute wraps stack (a compiled middleware handler chain)
 // in s.enforcementHandler which performs crucial security checks, etc.
 func (s *Server) wrapPrimaryRoute(stack Handler) Handler {
@@ -717,6 +662,62 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	}
 	// if configured, this host is not mapped and thus must not be logged
 	return !s.Logs.SkipUnmappedHosts
+}
+
+// logRequest logs the request to access logs, unless skipped.
+func (s *Server) logRequest(
+	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
+	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
+) {
+	// this request may be flagged as omitted from the logs
+	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
+		return
+	}
+
+	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
+	repl.Set("http.response.size", wrec.Size())
+	repl.Set("http.response.duration", duration)
+	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	logger := accLog
+	if s.Logs != nil {
+		logger = s.Logs.wrapLogger(logger, r.Host)
+	}
+
+	log := logger.Info
+	if wrec.Status() >= 400 {
+		log = logger.Error
+	}
+
+	userID, _ := repl.GetString("http.auth.user.id")
+
+	reqBodyLength := 0
+	if bodyReader != nil {
+		reqBodyLength = bodyReader.Length
+	}
+
+	// preallocate fields with a capacity of 7 in case traceID is set
+	fieldCount := 6
+	traceID, haveTrace := GetVar(r.Context(), "traceID").(string)
+	if haveTrace {
+		fieldCount++
+	}
+
+	fields := make([]zapcore.Field, fieldCount)
+	fields[0] = zap.Int("bytes_read", reqBodyLength)
+	fields[1] = zap.String("user_id", userID)
+	fields[2] = zap.Duration("duration", *duration)
+	fields[3] = zap.Int("size", wrec.Size())
+	fields[4] = zap.Int("status", wrec.Status())
+	fields[5] = zap.Object("resp_headers", LoggableHTTPHeader{
+		Header:               wrec.Header(),
+		ShouldLogCredentials: shouldLogCredentials,
+	})
+	if haveTrace {
+		fields[6] = zap.String("traceID", traceID)
+	}
+
+	log("handled request", fields...)
 }
 
 // protocol returns true if the protocol proto is configured/enabled.
