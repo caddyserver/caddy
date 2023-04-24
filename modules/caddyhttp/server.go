@@ -698,23 +698,19 @@ func (s *Server) logRequest(
 
 	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
-	// preallocate with the amount of known fields
 	fieldCount := 6
-	fields := make([]zapcore.Field, fieldCount+len(extra.fields))
-	fields[0] = zap.Int("bytes_read", reqBodyLength)
-	fields[1] = zap.String("user_id", userID)
-	fields[2] = zap.Duration("duration", *duration)
-	fields[3] = zap.Int("size", wrec.Size())
-	fields[4] = zap.Int("status", wrec.Status())
-	fields[5] = zap.Object("resp_headers", LoggableHTTPHeader{
-		Header:               wrec.Header(),
-		ShouldLogCredentials: shouldLogCredentials,
-	})
-
-	// add extra fields after the known fields
-	for i, field := range extra.fields {
-		fields[fieldCount+i] = field
-	}
+	fields := make([]zapcore.Field, 0, fieldCount+len(extra.fields))
+	fields = append(fields,
+		zap.Int("bytes_read", reqBodyLength),
+		zap.String("user_id", userID),
+		zap.Duration("duration", *duration),
+		zap.Int("size", wrec.Size()),
+		zap.Int("status", wrec.Status()),
+		zap.Object("resp_headers", LoggableHTTPHeader{
+			Header:               wrec.Header(),
+			ShouldLogCredentials: shouldLogCredentials,
+		}))
+	fields = append(fields, extra.fields...)
 
 	log("handled request", fields...)
 }
