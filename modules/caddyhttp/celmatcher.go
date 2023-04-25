@@ -496,7 +496,7 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 	}
 }
 
-// celMatcherStringMacroExpander validates that the macro is called a single
+// celMatcherJSONMacroExpander validates that the macro is called a single
 // map literal argument.
 //
 // The following function call is returned: <funcName>(request, arg)
