@@ -397,7 +397,7 @@ func (c TemplateContext) funcFileExists(filename string) (bool, error) {
 	return false, nil
 }
 
-// funcStat returns Stat of a filename
+// funcFileStat returns Stat of a filename
 func (c TemplateContext) funcFileStat(filename string) (fs.FileInfo, error) {
 	if c.Root == nil {
 		return nil, fmt.Errorf("root file system not specified")
