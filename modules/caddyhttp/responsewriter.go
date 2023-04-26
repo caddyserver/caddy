@@ -72,6 +72,11 @@ func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
 	return io.Copy(rww.ResponseWriter, r)
 }
 
+// Unwrap returns the underlying ResponseWriter.
+func (rww *ResponseWriterWrapper) Unwrap() http.ResponseWriter {
+	return rww.ResponseWriter
+}
+
 // HTTPInterfaces mix all the interfaces that middleware ResponseWriters need to support.
 type HTTPInterfaces interface {
 	http.ResponseWriter
