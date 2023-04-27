@@ -282,46 +282,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
-		defer func() {
-			// this request may be flagged as omitted from the logs
-			if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
-				return
-			}
-
-			repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
-			repl.Set("http.response.size", wrec.Size())
-			repl.Set("http.response.duration", duration)
-			repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-			logger := accLog
-			if s.Logs != nil {
-				logger = s.Logs.wrapLogger(logger, r.Host)
-			}
-
-			log := logger.Info
-			if wrec.Status() >= 400 {
-				log = logger.Error
-			}
-
-			userID, _ := repl.GetString("http.auth.user.id")
-
-			reqBodyLength := 0
-			if bodyReader != nil {
-				reqBodyLength = bodyReader.Length
-			}
-
-			log("handled request",
-				zap.Int("bytes_read", reqBodyLength),
-				zap.String("user_id", userID),
-				zap.Duration("duration", duration),
-				zap.Int("size", wrec.Size()),
-				zap.Int("status", wrec.Status()),
-				zap.Object("resp_headers", LoggableHTTPHeader{
-					Header:               wrec.Header(),
-					ShouldLogCredentials: shouldLogCredentials,
-				}),
-			)
-		}()
+		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
 	}
 
 	start := time.Now()
@@ -703,6 +664,57 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	return !s.Logs.SkipUnmappedHosts
 }
 
+// logRequest logs the request to access logs, unless skipped.
+func (s *Server) logRequest(
+	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
+	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
+) {
+	// this request may be flagged as omitted from the logs
+	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
+		return
+	}
+
+	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
+	repl.Set("http.response.size", wrec.Size())
+	repl.Set("http.response.duration", duration)
+	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	logger := accLog
+	if s.Logs != nil {
+		logger = s.Logs.wrapLogger(logger, r.Host)
+	}
+
+	log := logger.Info
+	if wrec.Status() >= 400 {
+		log = logger.Error
+	}
+
+	userID, _ := repl.GetString("http.auth.user.id")
+
+	reqBodyLength := 0
+	if bodyReader != nil {
+		reqBodyLength = bodyReader.Length
+	}
+
+	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+
+	fieldCount := 6
+	fields := make([]zapcore.Field, 0, fieldCount+len(extra.fields))
+	fields = append(fields,
+		zap.Int("bytes_read", reqBodyLength),
+		zap.String("user_id", userID),
+		zap.Duration("duration", *duration),
+		zap.Int("size", wrec.Size()),
+		zap.Int("status", wrec.Status()),
+		zap.Object("resp_headers", LoggableHTTPHeader{
+			Header:               wrec.Header(),
+			ShouldLogCredentials: shouldLogCredentials,
+		}))
+	fields = append(fields, extra.fields...)
+
+	log("handled request", fields...)
+}
+
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
 	for _, p := range s.Protocols {
@@ -738,6 +750,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
+
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
