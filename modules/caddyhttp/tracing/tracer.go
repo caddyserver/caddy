@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -81,8 +82,15 @@ func newOpenTelemetryWrapper(
 
 // serveHTTP injects a tracing context and call the next handler.
 func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	ot.propagators.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
-	next := r.Context().Value(nextCallCtxKey).(*nextCall)
+	ctx := r.Context()
+	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
+			extra.Add(zap.String("traceID", spanCtx.TraceID().String()))
+		}
+	}
+	next := ctx.Value(nextCallCtxKey).(*nextCall)
 	next.err = next.next.ServeHTTP(w, r)
 }
 
