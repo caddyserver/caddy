@@ -161,556 +161,555 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return nil
 	}
 
-	for d.Next() {
-		for _, up := range d.RemainingArgs() {
-			err := appendUpstream(up)
+	d.Next() // consume the directive name
+	for _, up := range d.RemainingArgs() {
+		err := appendUpstream(up)
+		if err != nil {
+			return err
+		}
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		// if the subdirective has an "@" prefix then we
+		// parse it as a response matcher for use with "handle_response"
+		if strings.HasPrefix(d.Val(), matcherPrefix) {
+			err := caddyhttp.ParseNamedResponseMatcher(d.NewFromNextSegment(), h.responseMatchers)
 			if err != nil {
 				return err
 			}
+			continue
 		}
 
-		for d.NextBlock(0) {
-			// if the subdirective has an "@" prefix then we
-			// parse it as a response matcher for use with "handle_response"
-			if strings.HasPrefix(d.Val(), matcherPrefix) {
-				err := caddyhttp.ParseNamedResponseMatcher(d.NewFromNextSegment(), h.responseMatchers)
+		switch d.Val() {
+		case "to":
+			args := d.RemainingArgs()
+			if len(args) == 0 {
+				return d.ArgErr()
+			}
+			for _, up := range args {
+				err := appendUpstream(up)
 				if err != nil {
 					return err
 				}
-				continue
 			}
 
-			switch d.Val() {
-			case "to":
-				args := d.RemainingArgs()
-				if len(args) == 0 {
-					return d.ArgErr()
-				}
-				for _, up := range args {
-					err := appendUpstream(up)
-					if err != nil {
-						return err
-					}
-				}
+		case "dynamic":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.DynamicUpstreams != nil {
+				return d.Err("dynamic upstreams already specified")
+			}
+			dynModule := d.Val()
+			modID := "http.reverse_proxy.upstreams." + dynModule
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			source, ok := unm.(UpstreamSource)
+			if !ok {
+				return d.Errf("module %s (%T) is not an UpstreamSource", modID, unm)
+			}
+			h.DynamicUpstreamsRaw = caddyconfig.JSONModuleObject(source, "source", dynModule, nil)
 
-			case "dynamic":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.DynamicUpstreams != nil {
-					return d.Err("dynamic upstreams already specified")
-				}
-				dynModule := d.Val()
-				modID := "http.reverse_proxy.upstreams." + dynModule
-				unm, err := caddyfile.UnmarshalModule(d, modID)
-				if err != nil {
-					return err
-				}
-				source, ok := unm.(UpstreamSource)
-				if !ok {
-					return d.Errf("module %s (%T) is not an UpstreamSource", modID, unm)
-				}
-				h.DynamicUpstreamsRaw = caddyconfig.JSONModuleObject(source, "source", dynModule, nil)
+		case "lb_policy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
+				return d.Err("load balancing selection policy already specified")
+			}
+			name := d.Val()
+			modID := "http.reverse_proxy.selection_policies." + name
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			sel, ok := unm.(Selector)
+			if !ok {
+				return d.Errf("module %s (%T) is not a reverseproxy.Selector", modID, unm)
+			}
+			if h.LoadBalancing == nil {
+				h.LoadBalancing = new(LoadBalancing)
+			}
+			h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
 
-			case "lb_policy":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
-					return d.Err("load balancing selection policy already specified")
-				}
-				name := d.Val()
-				modID := "http.reverse_proxy.selection_policies." + name
-				unm, err := caddyfile.UnmarshalModule(d, modID)
-				if err != nil {
-					return err
-				}
-				sel, ok := unm.(Selector)
-				if !ok {
-					return d.Errf("module %s (%T) is not a reverseproxy.Selector", modID, unm)
-				}
-				if h.LoadBalancing == nil {
-					h.LoadBalancing = new(LoadBalancing)
-				}
-				h.LoadBalancing.SelectionPolicyRaw = caddyconfig.JSONModuleObject(sel, "policy", name, nil)
+		case "lb_retries":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			tries, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
+			}
+			if h.LoadBalancing == nil {
+				h.LoadBalancing = new(LoadBalancing)
+			}
+			h.LoadBalancing.Retries = tries
 
-			case "lb_retries":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				tries, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("bad lb_retries number '%s': %v", d.Val(), err)
-				}
-				if h.LoadBalancing == nil {
-					h.LoadBalancing = new(LoadBalancing)
-				}
-				h.LoadBalancing.Retries = tries
+		case "lb_try_duration":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.LoadBalancing == nil {
+				h.LoadBalancing = new(LoadBalancing)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad duration value %s: %v", d.Val(), err)
+			}
+			h.LoadBalancing.TryDuration = caddy.Duration(dur)
 
-			case "lb_try_duration":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.LoadBalancing == nil {
-					h.LoadBalancing = new(LoadBalancing)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad duration value %s: %v", d.Val(), err)
-				}
-				h.LoadBalancing.TryDuration = caddy.Duration(dur)
+		case "lb_try_interval":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.LoadBalancing == nil {
+				h.LoadBalancing = new(LoadBalancing)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad interval value '%s': %v", d.Val(), err)
+			}
+			h.LoadBalancing.TryInterval = caddy.Duration(dur)
 
-			case "lb_try_interval":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.LoadBalancing == nil {
-					h.LoadBalancing = new(LoadBalancing)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad interval value '%s': %v", d.Val(), err)
-				}
-				h.LoadBalancing.TryInterval = caddy.Duration(dur)
+		case "lb_retry_match":
+			matcherSet, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
+			if err != nil {
+				return d.Errf("failed to parse lb_retry_match: %v", err)
+			}
+			if h.LoadBalancing == nil {
+				h.LoadBalancing = new(LoadBalancing)
+			}
+			h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, matcherSet)
 
-			case "lb_retry_match":
-				matcherSet, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
-				if err != nil {
-					return d.Errf("failed to parse lb_retry_match: %v", err)
-				}
-				if h.LoadBalancing == nil {
-					h.LoadBalancing = new(LoadBalancing)
-				}
-				h.LoadBalancing.RetryMatchRaw = append(h.LoadBalancing.RetryMatchRaw, matcherSet)
+		case "health_uri":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.URI = d.Val()
 
-			case "health_uri":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				h.HealthChecks.Active.URI = d.Val()
+		case "health_path":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.Path = d.Val()
+			caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
 
-			case "health_path":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				h.HealthChecks.Active.Path = d.Val()
-				caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
+		case "health_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			portNum, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("bad port number '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Port = portNum
 
-			case "health_port":
-				if !d.NextArg() {
-					return d.ArgErr()
+		case "health_headers":
+			healthHeaders := make(http.Header)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				key := d.Val()
+				values := d.RemainingArgs()
+				if len(values) == 0 {
+					values = append(values, "")
 				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				portNum, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("bad port number '%s': %v", d.Val(), err)
-				}
-				h.HealthChecks.Active.Port = portNum
+				healthHeaders[key] = values
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.Headers = healthHeaders
 
-			case "health_headers":
-				healthHeaders := make(http.Header)
-				for nesting := d.Nesting(); d.NextBlock(nesting); {
-					key := d.Val()
-					values := d.RemainingArgs()
-					if len(values) == 0 {
-						values = append(values, "")
-					}
-					healthHeaders[key] = values
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				h.HealthChecks.Active.Headers = healthHeaders
+		case "health_interval":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad interval value %s: %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Interval = caddy.Duration(dur)
 
-			case "health_interval":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad interval value %s: %v", d.Val(), err)
-				}
-				h.HealthChecks.Active.Interval = caddy.Duration(dur)
+		case "health_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad timeout value %s: %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Timeout = caddy.Duration(dur)
 
-			case "health_timeout":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad timeout value %s: %v", d.Val(), err)
-				}
-				h.HealthChecks.Active.Timeout = caddy.Duration(dur)
+		case "health_status":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			val := d.Val()
+			if len(val) == 3 && strings.HasSuffix(val, "xx") {
+				val = val[:1]
+			}
+			statusNum, err := strconv.Atoi(val)
+			if err != nil {
+				return d.Errf("bad status value '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.ExpectStatus = statusNum
 
-			case "health_status":
-				if !d.NextArg() {
-					return d.ArgErr()
+		case "health_body":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.ExpectBody = d.Val()
+
+		case "max_fails":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Passive == nil {
+				h.HealthChecks.Passive = new(PassiveHealthChecks)
+			}
+			maxFails, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid maximum fail count '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Passive.MaxFails = maxFails
+
+		case "fail_duration":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Passive == nil {
+				h.HealthChecks.Passive = new(PassiveHealthChecks)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad duration value '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Passive.FailDuration = caddy.Duration(dur)
+
+		case "unhealthy_request_count":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Passive == nil {
+				h.HealthChecks.Passive = new(PassiveHealthChecks)
+			}
+			maxConns, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid maximum connection count '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Passive.UnhealthyRequestCount = maxConns
+
+		case "unhealthy_status":
+			args := d.RemainingArgs()
+			if len(args) == 0 {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Passive == nil {
+				h.HealthChecks.Passive = new(PassiveHealthChecks)
+			}
+			for _, arg := range args {
+				if len(arg) == 3 && strings.HasSuffix(arg, "xx") {
+					arg = arg[:1]
 				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				val := d.Val()
-				if len(val) == 3 && strings.HasSuffix(val, "xx") {
-					val = val[:1]
-				}
-				statusNum, err := strconv.Atoi(val)
+				statusNum, err := strconv.Atoi(arg)
 				if err != nil {
 					return d.Errf("bad status value '%s': %v", d.Val(), err)
 				}
-				h.HealthChecks.Active.ExpectStatus = statusNum
-
-			case "health_body":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Active == nil {
-					h.HealthChecks.Active = new(ActiveHealthChecks)
-				}
-				h.HealthChecks.Active.ExpectBody = d.Val()
-
-			case "max_fails":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Passive == nil {
-					h.HealthChecks.Passive = new(PassiveHealthChecks)
-				}
-				maxFails, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid maximum fail count '%s': %v", d.Val(), err)
-				}
-				h.HealthChecks.Passive.MaxFails = maxFails
-
-			case "fail_duration":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Passive == nil {
-					h.HealthChecks.Passive = new(PassiveHealthChecks)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad duration value '%s': %v", d.Val(), err)
-				}
-				h.HealthChecks.Passive.FailDuration = caddy.Duration(dur)
-
-			case "unhealthy_request_count":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Passive == nil {
-					h.HealthChecks.Passive = new(PassiveHealthChecks)
-				}
-				maxConns, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid maximum connection count '%s': %v", d.Val(), err)
-				}
-				h.HealthChecks.Passive.UnhealthyRequestCount = maxConns
-
-			case "unhealthy_status":
-				args := d.RemainingArgs()
-				if len(args) == 0 {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Passive == nil {
-					h.HealthChecks.Passive = new(PassiveHealthChecks)
-				}
-				for _, arg := range args {
-					if len(arg) == 3 && strings.HasSuffix(arg, "xx") {
-						arg = arg[:1]
-					}
-					statusNum, err := strconv.Atoi(arg)
-					if err != nil {
-						return d.Errf("bad status value '%s': %v", d.Val(), err)
-					}
-					h.HealthChecks.Passive.UnhealthyStatus = append(h.HealthChecks.Passive.UnhealthyStatus, statusNum)
-				}
-
-			case "unhealthy_latency":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.HealthChecks == nil {
-					h.HealthChecks = new(HealthChecks)
-				}
-				if h.HealthChecks.Passive == nil {
-					h.HealthChecks.Passive = new(PassiveHealthChecks)
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("bad duration value '%s': %v", d.Val(), err)
-				}
-				h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(dur)
-
-			case "flush_interval":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if fi, err := strconv.Atoi(d.Val()); err == nil {
-					h.FlushInterval = caddy.Duration(fi)
-				} else {
-					dur, err := caddy.ParseDuration(d.Val())
-					if err != nil {
-						return d.Errf("bad duration value '%s': %v", d.Val(), err)
-					}
-					h.FlushInterval = caddy.Duration(dur)
-				}
-
-			case "request_buffers", "response_buffers":
-				subdir := d.Val()
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				size, err := humanize.ParseBytes(d.Val())
-				if err != nil {
-					return d.Errf("invalid byte size '%s': %v", d.Val(), err)
-				}
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				if subdir == "request_buffers" {
-					h.RequestBuffers = int64(size)
-				} else if subdir == "response_buffers" {
-					h.ResponseBuffers = int64(size)
-
-				}
-
-			// TODO: These three properties are deprecated; remove them sometime after v2.6.4
-			case "buffer_requests": // TODO: deprecated
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_requests: use request_buffers instead (with a maximum buffer size)")
-				h.DeprecatedBufferRequests = true
-			case "buffer_responses": // TODO: deprecated
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_responses: use response_buffers instead (with a maximum buffer size)")
-				h.DeprecatedBufferResponses = true
-			case "max_buffer_size": // TODO: deprecated
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				size, err := humanize.ParseBytes(d.Val())
-				if err != nil {
-					return d.Errf("invalid byte size '%s': %v", d.Val(), err)
-				}
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: max_buffer_size: use request_buffers and/or response_buffers instead (with maximum buffer sizes)")
-				h.DeprecatedMaxBufferSize = int64(size)
-
-			case "trusted_proxies":
-				for d.NextArg() {
-					if d.Val() == "private_ranges" {
-						h.TrustedProxies = append(h.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
-						continue
-					}
-					h.TrustedProxies = append(h.TrustedProxies, d.Val())
-				}
-
-			case "header_up":
-				var err error
-
-				if h.Headers == nil {
-					h.Headers = new(headers.Handler)
-				}
-				if h.Headers.Request == nil {
-					h.Headers.Request = new(headers.HeaderOps)
-				}
-				args := d.RemainingArgs()
-
-				switch len(args) {
-				case 1:
-					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
-				case 2:
-					// some lint checks, I guess
-					if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass headers to the upstream")
-					}
-					if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
-						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
-					}
-					if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
-						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream")
-					}
-					if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-						caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
-					}
-					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
-				case 3:
-					err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
-				default:
-					return d.ArgErr()
-				}
-
-				if err != nil {
-					return d.Err(err.Error())
-				}
-
-			case "header_down":
-				var err error
-
-				if h.Headers == nil {
-					h.Headers = new(headers.Handler)
-				}
-				if h.Headers.Response == nil {
-					h.Headers.Response = &headers.RespHeaderOps{
-						HeaderOps: new(headers.HeaderOps),
-					}
-				}
-				args := d.RemainingArgs()
-				switch len(args) {
-				case 1:
-					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
-				case 2:
-					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
-				case 3:
-					err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
-				default:
-					return d.ArgErr()
-				}
-
-				if err != nil {
-					return d.Err(err.Error())
-				}
-
-			case "method":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.Rewrite == nil {
-					h.Rewrite = &rewrite.Rewrite{}
-				}
-				h.Rewrite.Method = d.Val()
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "rewrite":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.Rewrite == nil {
-					h.Rewrite = &rewrite.Rewrite{}
-				}
-				h.Rewrite.URI = d.Val()
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "transport":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				if h.TransportRaw != nil {
-					return d.Err("transport already specified")
-				}
-				transportModuleName = d.Val()
-				modID := "http.reverse_proxy.transport." + transportModuleName
-				unm, err := caddyfile.UnmarshalModule(d, modID)
-				if err != nil {
-					return err
-				}
-				rt, ok := unm.(http.RoundTripper)
-				if !ok {
-					return d.Errf("module %s (%T) is not a RoundTripper", modID, unm)
-				}
-				transport = rt
-
-			case "handle_response":
-				// delegate the parsing of handle_response to the caller,
-				// since we need the httpcaddyfile.Helper to parse subroutes.
-				// See h.FinalizeUnmarshalCaddyfile
-				h.handleResponseSegments = append(h.handleResponseSegments, d.NewFromNextSegment())
-
-			case "replace_status":
-				args := d.RemainingArgs()
-				if len(args) != 1 && len(args) != 2 {
-					return d.Errf("must have one or two arguments: an optional response matcher, and a status code")
-				}
-
-				responseHandler := caddyhttp.ResponseHandler{}
-
-				if len(args) == 2 {
-					if !strings.HasPrefix(args[0], matcherPrefix) {
-						return d.Errf("must use a named response matcher, starting with '@'")
-					}
-					foundMatcher, ok := h.responseMatchers[args[0]]
-					if !ok {
-						return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
-					}
-					responseHandler.Match = &foundMatcher
-					responseHandler.StatusCode = caddyhttp.WeakString(args[1])
-				} else if len(args) == 1 {
-					responseHandler.StatusCode = caddyhttp.WeakString(args[0])
-				}
-
-				// make sure there's no block, cause it doesn't make sense
-				if d.NextBlock(1) {
-					return d.Errf("cannot define routes for 'replace_status', use 'handle_response' instead.")
-				}
-
-				h.HandleResponse = append(
-					h.HandleResponse,
-					responseHandler,
-				)
-
-			default:
-				return d.Errf("unrecognized subdirective %s", d.Val())
+				h.HealthChecks.Passive.UnhealthyStatus = append(h.HealthChecks.Passive.UnhealthyStatus, statusNum)
 			}
+
+		case "unhealthy_latency":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Passive == nil {
+				h.HealthChecks.Passive = new(PassiveHealthChecks)
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad duration value '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(dur)
+
+		case "flush_interval":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if fi, err := strconv.Atoi(d.Val()); err == nil {
+				h.FlushInterval = caddy.Duration(fi)
+			} else {
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				}
+				h.FlushInterval = caddy.Duration(dur)
+			}
+
+		case "request_buffers", "response_buffers":
+			subdir := d.Val()
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(d.Val())
+			if err != nil {
+				return d.Errf("invalid byte size '%s': %v", d.Val(), err)
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if subdir == "request_buffers" {
+				h.RequestBuffers = int64(size)
+			} else if subdir == "response_buffers" {
+				h.ResponseBuffers = int64(size)
+
+			}
+
+		// TODO: These three properties are deprecated; remove them sometime after v2.6.4
+		case "buffer_requests": // TODO: deprecated
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_requests: use request_buffers instead (with a maximum buffer size)")
+			h.DeprecatedBufferRequests = true
+		case "buffer_responses": // TODO: deprecated
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: buffer_responses: use response_buffers instead (with a maximum buffer size)")
+			h.DeprecatedBufferResponses = true
+		case "max_buffer_size": // TODO: deprecated
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(d.Val())
+			if err != nil {
+				return d.Errf("invalid byte size '%s': %v", d.Val(), err)
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: max_buffer_size: use request_buffers and/or response_buffers instead (with maximum buffer sizes)")
+			h.DeprecatedMaxBufferSize = int64(size)
+
+		case "trusted_proxies":
+			for d.NextArg() {
+				if d.Val() == "private_ranges" {
+					h.TrustedProxies = append(h.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
+					continue
+				}
+				h.TrustedProxies = append(h.TrustedProxies, d.Val())
+			}
+
+		case "header_up":
+			var err error
+
+			if h.Headers == nil {
+				h.Headers = new(headers.Handler)
+			}
+			if h.Headers.Request == nil {
+				h.Headers.Request = new(headers.HeaderOps)
+			}
+			args := d.RemainingArgs()
+
+			switch len(args) {
+			case 1:
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
+			case 2:
+				// some lint checks, I guess
+				if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass headers to the upstream")
+				}
+				if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
+				}
+				if strings.EqualFold(args[0], "x-forwarded-proto") && (args[1] == "{scheme}" || args[1] == "{http.request.scheme}") {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Proto: the reverse proxy's default behavior is to pass headers to the upstream")
+				}
+				if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
+				}
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
+			case 3:
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
+			default:
+				return d.ArgErr()
+			}
+
+			if err != nil {
+				return d.Err(err.Error())
+			}
+
+		case "header_down":
+			var err error
+
+			if h.Headers == nil {
+				h.Headers = new(headers.Handler)
+			}
+			if h.Headers.Response == nil {
+				h.Headers.Response = &headers.RespHeaderOps{
+					HeaderOps: new(headers.HeaderOps),
+				}
+			}
+			args := d.RemainingArgs()
+			switch len(args) {
+			case 1:
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
+			case 2:
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
+			case 3:
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
+			default:
+				return d.ArgErr()
+			}
+
+			if err != nil {
+				return d.Err(err.Error())
+			}
+
+		case "method":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.Rewrite == nil {
+				h.Rewrite = &rewrite.Rewrite{}
+			}
+			h.Rewrite.Method = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "rewrite":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.Rewrite == nil {
+				h.Rewrite = &rewrite.Rewrite{}
+			}
+			h.Rewrite.URI = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "transport":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.TransportRaw != nil {
+				return d.Err("transport already specified")
+			}
+			transportModuleName = d.Val()
+			modID := "http.reverse_proxy.transport." + transportModuleName
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			rt, ok := unm.(http.RoundTripper)
+			if !ok {
+				return d.Errf("module %s (%T) is not a RoundTripper", modID, unm)
+			}
+			transport = rt
+
+		case "handle_response":
+			// delegate the parsing of handle_response to the caller,
+			// since we need the httpcaddyfile.Helper to parse subroutes.
+			// See h.FinalizeUnmarshalCaddyfile
+			h.handleResponseSegments = append(h.handleResponseSegments, d.NewFromNextSegment())
+
+		case "replace_status":
+			args := d.RemainingArgs()
+			if len(args) != 1 && len(args) != 2 {
+				return d.Errf("must have one or two arguments: an optional response matcher, and a status code")
+			}
+
+			responseHandler := caddyhttp.ResponseHandler{}
+
+			if len(args) == 2 {
+				if !strings.HasPrefix(args[0], matcherPrefix) {
+					return d.Errf("must use a named response matcher, starting with '@'")
+				}
+				foundMatcher, ok := h.responseMatchers[args[0]]
+				if !ok {
+					return d.Errf("no named response matcher defined with name '%s'", args[0][1:])
+				}
+				responseHandler.Match = &foundMatcher
+				responseHandler.StatusCode = caddyhttp.WeakString(args[1])
+			} else if len(args) == 1 {
+				responseHandler.StatusCode = caddyhttp.WeakString(args[0])
+			}
+
+			// make sure there's no block, cause it doesn't make sense
+			if d.NextBlock(1) {
+				return d.Errf("cannot define routes for 'replace_status', use 'handle_response' instead.")
+			}
+
+			h.HandleResponse = append(
+				h.HandleResponse,
+				responseHandler,
+			)
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
 	}
 

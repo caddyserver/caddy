@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -139,6 +140,21 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 	return
 }
 
-// Variable name used to indicate that this request
-// should be omitted from the access logs
-const SkipLogVar = "skip_log"
+// ExtraLogFields is a list of extra fields to log with every request.
+type ExtraLogFields struct {
+	fields []zapcore.Field
+}
+
+// Add adds a field to the list of extra fields to log.
+func (e *ExtraLogFields) Add(field zap.Field) {
+	e.fields = append(e.fields, field)
+}
+
+const (
+	// Variable name used to indicate that this request
+	// should be omitted from the access logs
+	SkipLogVar string = "skip_log"
+
+	// For adding additional fields to the access logs
+	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"
+)

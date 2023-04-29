@@ -95,6 +95,14 @@ func TestResponseWriterWrapperReadFrom(t *testing.T) {
 	}
 }
 
+func TestResponseWriterWrapperUnwrap(t *testing.T) {
+	w := &ResponseWriterWrapper{&baseRespWriter{}}
+
+	if _, ok := w.Unwrap().(*baseRespWriter); !ok {
+		t.Errorf("Unwrap() doesn't return the underlying ResponseWriter")
+	}
+}
+
 func TestResponseRecorderReadFrom(t *testing.T) {
 	tests := map[string]struct {
 		responseWriter responseWriterSpy
