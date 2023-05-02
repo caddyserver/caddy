@@ -171,6 +171,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		rwc:    conn,
 		reqID:  1,
 		logger: logger,
+		stderr: t.CaptureStderr,
 	}
 
 	// read/write timeouts
