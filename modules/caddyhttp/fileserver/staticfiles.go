@@ -636,6 +636,12 @@ func (wr statusOverrideResponseWriter) WriteHeader(int) {
 	wr.ResponseWriter.WriteHeader(wr.code)
 }
 
+// Unwrap returns the underlying ResponseWriter, necessary for
+// http.ResponseController to work correctly.
+func (wr statusOverrideResponseWriter) Unwrap() http.ResponseWriter {
+	return wr.ResponseWriter
+}
+
 // osFS is a simple fs.FS implementation that uses the local
 // file system. (We do not use os.DirFS because we do our own
 // rooting or path prefixing without being constrained to a single

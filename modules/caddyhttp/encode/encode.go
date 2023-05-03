@@ -299,6 +299,11 @@ func (rw *responseWriter) Close() error {
 	return err
 }
 
+// Unwrap returns the underlying ResponseWriter.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.HTTPInterfaces
+}
+
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
 	if rw.Header().Get("Content-Encoding") == "" && isEncodeAllowed(rw.Header()) &&
