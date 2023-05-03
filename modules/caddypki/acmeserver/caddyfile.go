@@ -29,8 +29,9 @@ func init() {
 // parseACMEServer sets up an ACME server handler from Caddyfile tokens.
 //
 //	acme_server [<matcher>] {
-//	    ca <id>
-//	    lifetime <duration>
+//		ca        <id>
+//		lifetime  <duration>
+//		resolvers <addresses...>
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
@@ -74,6 +75,12 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				}
 
 				acmeServer.Lifetime = caddy.Duration(dur)
+
+			case "resolvers":
+				acmeServer.Resolvers = h.RemainingArgs()
+				if len(acmeServer.Resolvers) == 0 {
+					return nil, h.Errf("must specify at least one resolver address")
+				}
 			}
 		}
 	}

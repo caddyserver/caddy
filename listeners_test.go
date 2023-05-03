@@ -175,47 +175,57 @@ func TestJoinNetworkAddress(t *testing.T) {
 
 func TestParseNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
-		input      string
-		expectAddr NetworkAddress
-		expectErr  bool
+		input          string
+		defaultNetwork string
+		defaultPort    uint
+		expectAddr     NetworkAddress
+		expectErr      bool
 	}{
 		{
 			input:     "",
 			expectErr: true,
 		},
 		{
-			input: ":",
+			input:          ":",
+			defaultNetwork: "udp",
 			expectAddr: NetworkAddress{
-				Network: "tcp",
+				Network: "udp",
 			},
 		},
 		{
-			input: "[::]",
+			input:          "[::]",
+			defaultNetwork: "udp",
+			defaultPort:    53,
 			expectAddr: NetworkAddress{
-				Network: "tcp",
-				Host:    "::",
+				Network:   "udp",
+				Host:      "::",
+				StartPort: 53,
+				EndPort:   53,
 			},
 		},
 		{
-			input: ":1234",
+			input:          ":1234",
+			defaultNetwork: "udp",
 			expectAddr: NetworkAddress{
-				Network:   "tcp",
+				Network:   "udp",
 				Host:      "",
 				StartPort: 1234,
 				EndPort:   1234,
 			},
 		},
 		{
-			input: "tcp/:1234",
+			input:          "udp/:1234",
+			defaultNetwork: "udp",
 			expectAddr: NetworkAddress{
-				Network:   "tcp",
+				Network:   "udp",
 				Host:      "",
 				StartPort: 1234,
 				EndPort:   1234,
 			},
 		},
 		{
-			input: "tcp6/:1234",
+			input:          "tcp6/:1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp6",
 				Host:      "",
@@ -224,7 +234,8 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input: "tcp4/localhost:1234",
+			input:          "tcp4/localhost:1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp4",
 				Host:      "localhost",
@@ -233,14 +244,16 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input: "unix//foo/bar",
+			input:          "unix//foo/bar",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network: "unix",
 				Host:    "/foo/bar",
 			},
 		},
 		{
-			input: "localhost:1234-1234",
+			input:          "localhost:1234-1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp",
 				Host:      "localhost",
@@ -249,11 +262,13 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input:     "localhost:2-1",
-			expectErr: true,
+			input:          "localhost:2-1",
+			defaultNetwork: "tcp",
+			expectErr:      true,
 		},
 		{
-			input: "localhost:0",
+			input:          "localhost:0",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp",
 				Host:      "localhost",
@@ -262,11 +277,138 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input:     "localhost:1-999999999999",
-			expectErr: true,
+			input:          "localhost:1-999999999999",
+			defaultNetwork: "tcp",
+			expectErr:      true,
 		},
 	} {
-		actualAddr, err := ParseNetworkAddress(tc.input)
+		actualAddr, err := ParseNetworkAddressWithDefaults(tc.input, tc.defaultNetwork, tc.defaultPort)
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d: Expected error but got: %v", i, err)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+		}
+
+		if actualAddr.Network != tc.expectAddr.Network {
+			t.Errorf("Test %d: Expected network '%v' but got '%v'", i, tc.expectAddr, actualAddr)
+		}
+		if !reflect.DeepEqual(tc.expectAddr, actualAddr) {
+			t.Errorf("Test %d: Expected addresses %v but got %v", i, tc.expectAddr, actualAddr)
+		}
+	}
+}
+
+func TestParseNetworkAddressWithDefaults(t *testing.T) {
+	for i, tc := range []struct {
+		input          string
+		defaultNetwork string
+		defaultPort    uint
+		expectAddr     NetworkAddress
+		expectErr      bool
+	}{
+		{
+			input:     "",
+			expectErr: true,
+		},
+		{
+			input:          ":",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network: "udp",
+			},
+		},
+		{
+			input:          "[::]",
+			defaultNetwork: "udp",
+			defaultPort:    53,
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "::",
+				StartPort: 53,
+				EndPort:   53,
+			},
+		},
+		{
+			input:          ":1234",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "udp/:1234",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "tcp6/:1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp6",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "tcp4/localhost:1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp4",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "unix//foo/bar",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network: "unix",
+				Host:    "/foo/bar",
+			},
+		},
+		{
+			input:          "localhost:1234-1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "localhost:2-1",
+			defaultNetwork: "tcp",
+			expectErr:      true,
+		},
+		{
+			input:          "localhost:0",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 0,
+				EndPort:   0,
+			},
+		},
+		{
+			input:          "localhost:1-999999999999",
+			defaultNetwork: "tcp",
+			expectErr:      true,
+		},
+	} {
+		actualAddr, err := ParseNetworkAddressWithDefaults(tc.input, tc.defaultNetwork, tc.defaultPort)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
