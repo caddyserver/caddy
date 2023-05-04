@@ -97,6 +97,9 @@ func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
 	}
 	conn, err := reconn.dial()
 	if err != nil {
+		if !nw.SoftStart {
+			return nil, err
+		}
 		// don't block config load if remote is down or some other external problem;
 		// we can dump logs to stderr for now (see issue #5520)
 		fmt.Fprintf(os.Stderr, "[ERROR] net log writer failed to connect: %v (will retry connection and print errors here in the meantime)\n", err)
