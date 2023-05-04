@@ -453,10 +453,16 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		if err != nil {
 			return nil, err
 		}
-		return &sharedQuicListener{EarlyListener: earlyLn, key: lnKey}, nil
+		return &sharedQuicListener{EarlyListener: earlyLn, tlsConf: tlsConf, key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	sql := sharedEarlyListener.(*sharedQuicListener)
+	// update GetConfigForClient field because both quic and caddy tls uses this field
+	if sql.tlsConf != tlsConf {
+		sql.tlsConf.GetConfigForClient = tlsConf.GetConfigForClient
 	}
 
 	// TODO: to serve QUIC over a unix socket, currently we need to hold onto
@@ -472,7 +478,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &fakeCloseQuicListener{
-		sharedQuicListener: sharedEarlyListener.(*sharedQuicListener),
+		sharedQuicListener: sql,
 		uc:                 unix,
 		context:            ctx,
 		contextCancel:      cancel,
@@ -488,7 +494,8 @@ func ListenerUsage(network, addr string) int {
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	quic.EarlyListener
-	key string
+	tlsConf *tls.Config
+	key     string
 }
 
 // Destruct closes the underlying QUIC listener.
