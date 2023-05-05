@@ -27,7 +27,6 @@ import (
 	"net/netip"
 	"net/textproto"
 	"net/url"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -355,56 +354,15 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 
 		// if active health checks are enabled, configure them and start a worker
-		if h.HealthChecks.Active != nil && (h.HealthChecks.Active.Path != "" ||
-			h.HealthChecks.Active.URI != "" ||
-			h.HealthChecks.Active.Port != 0) {
-
-			h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
-
-			timeout := time.Duration(h.HealthChecks.Active.Timeout)
-			if timeout == 0 {
-				timeout = 5 * time.Second
+		if h.HealthChecks.Active != nil {
+			err := h.HealthChecks.Active.Provision(ctx, h)
+			if err != nil {
+				return err
 			}
 
-			if h.HealthChecks.Active.Path != "" {
-				h.HealthChecks.Active.logger.Warn("the 'path' option is deprecated, please use 'uri' instead!")
+			if h.HealthChecks.Active.IsEnabled() {
+				go h.activeHealthChecker()
 			}
-
-			// parse the URI string (supports path and query)
-			if h.HealthChecks.Active.URI != "" {
-				parsedURI, err := url.Parse(h.HealthChecks.Active.URI)
-				if err != nil {
-					return err
-				}
-				h.HealthChecks.Active.uri = parsedURI
-			}
-
-			h.HealthChecks.Active.httpClient = &http.Client{
-				Timeout:   timeout,
-				Transport: h.Transport,
-			}
-
-			for _, upstream := range h.Upstreams {
-				// if there's an alternative port for health-check provided in the config,
-				// then use it, otherwise use the port of upstream.
-				if h.HealthChecks.Active.Port != 0 {
-					upstream.activeHealthCheckPort = h.HealthChecks.Active.Port
-				}
-			}
-
-			if h.HealthChecks.Active.Interval == 0 {
-				h.HealthChecks.Active.Interval = caddy.Duration(30 * time.Second)
-			}
-
-			if h.HealthChecks.Active.ExpectBody != "" {
-				var err error
-				h.HealthChecks.Active.bodyRegexp, err = regexp.Compile(h.HealthChecks.Active.ExpectBody)
-				if err != nil {
-					return fmt.Errorf("expect_body: compiling regular expression: %v", err)
-				}
-			}
-
-			go h.activeHealthChecker()
 		}
 	}
 
