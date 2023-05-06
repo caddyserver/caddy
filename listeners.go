@@ -440,7 +440,10 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(tlsConf), &quic.Config{
+		sqtc := newSqtc(tlsConf)
+		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
+		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
+		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
 			Allow0RTT: func(net.Addr) bool { return true },
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
 				var highLoad bool
@@ -453,17 +456,15 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		if err != nil {
 			return nil, err
 		}
-		return &sharedQuicListener{EarlyListener: earlyLn, tlsConf: tlsConf, key: lnKey}, nil
+		return &sharedQuicListener{EarlyListener: earlyLn, sqtc: sqtc, key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
-	// update GetConfigForClient field because both quic and caddy tls uses this field
-	if sql.tlsConf != tlsConf {
-		sql.tlsConf.GetConfigForClient = tlsConf.GetConfigForClient
-	}
+	// add current tls.Config to sqtc, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
+	ctx, cancel := sql.sqtc.addTlsConfig(tlsConf)
 
 	// TODO: to serve QUIC over a unix socket, currently we need to hold onto
 	// the underlying net.PacketConn (which we wrap as unixConn to keep count
@@ -476,7 +477,6 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		unix = uc
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
 		uc:                 unix,
@@ -491,11 +491,73 @@ func ListenerUsage(network, addr string) int {
 	return count
 }
 
+// contextAndCancelFunc groups context and its cancelFunc
+type contextAndCancelFunc struct {
+	context.Context
+	context.CancelFunc
+}
+
+// sharedQuicTlsConfig manages GetConfigForClient
+type sharedQuicTlsConfig struct {
+	rmu           sync.RWMutex
+	tlsConfs      map[*tls.Config]contextAndCancelFunc
+	activeTlsConf *tls.Config
+}
+
+// newSqtc creates a new sharedQuicTlsConfig
+func newSqtc(tlsConfig *tls.Config) *sharedQuicTlsConfig {
+	sqtc := &sharedQuicTlsConfig{
+		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
+		activeTlsConf: tlsConfig,
+	}
+	sqtc.addTlsConfig(tlsConfig)
+	return sqtc
+}
+
+func (sqtc *sharedQuicTlsConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
+	sqtc.rmu.RLock()
+	defer sqtc.rmu.RUnlock()
+	return sqtc.activeTlsConf.GetConfigForClient(ch)
+}
+
+func (sqtc *sharedQuicTlsConfig) addTlsConfig(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
+	sqtc.rmu.Lock()
+	defer sqtc.rmu.Unlock()
+
+	if cacc, ok := sqtc.tlsConfs[tlsConfig]; ok {
+		return cacc.Context, cacc.CancelFunc
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wrappedCancel := func() {
+		cancel()
+
+		sqtc.rmu.Lock()
+		defer sqtc.rmu.Unlock()
+
+		delete(sqtc.tlsConfs, tlsConfig)
+		if sqtc.activeTlsConf == tlsConfig {
+			// select another tls.Config, if there is none,
+			// related sharedQuicListener will be destroyed anyway
+			for tc := range sqtc.tlsConfs {
+				sqtc.activeTlsConf = tc
+				break
+			}
+		}
+	}
+	sqtc.tlsConfs[tlsConfig] = contextAndCancelFunc{ctx, wrappedCancel}
+	// there should be at most 2 tls.Configs
+	if len(sqtc.tlsConfs) > 2 {
+		Log().Warn("quic listener tls configs are more than 2", zap.Int("number of configs", len(sqtc.tlsConfs)))
+	}
+	return ctx, wrappedCancel
+}
+
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	quic.EarlyListener
-	tlsConf *tls.Config
-	key     string
+	sqtc *sharedQuicTlsConfig
+	key  string
 }
 
 // Destruct closes the underlying QUIC listener.
