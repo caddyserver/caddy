@@ -173,8 +173,8 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 // and reloads the config if the file was updated. This function
 // blocks indefinitely; it only quits if the poller has errors for
 // long enough time. The filename passed in must be the actual
-// config file used, not one to be discovered. 
-// Each second the config files is loaded and parsed into an object 
+// config file used, not one to be discovered.
+// Each second the config files is loaded and parsed into an object
 // and is compared to the last config object that was loaded
 func watchConfigFile(filename, adapterName string) {
 	defer func() {
