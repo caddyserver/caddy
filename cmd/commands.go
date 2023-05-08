@@ -104,7 +104,7 @@ using 'caddy run' instead to keep it in the foreground.
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
 			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
-			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically, check every 1s for a change")
+			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
 			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
 		},
@@ -143,7 +143,7 @@ The --resume flag will override the --config flag if there is a config auto-
 save file. It is not an error if --resume is used and no autosave file exists.
 
 If --watch is specified, the config file will be loaded automatically after
-changes (check every 1 second). ⚠️ This can make unintentional config changes easier; only use this
+changes. ⚠️ This can make unintentional config changes easier; only use this
 option in a local development environment.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -152,7 +152,7 @@ option in a local development environment.
 			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
 			cmd.Flags().BoolP("environ", "e", false, "Print environment")
 			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
-			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically, check every 1s for a change")
+			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
 			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.Flags().StringP("pingback", "", "", "Echo confirmation bytes to this address on success")
 			cmd.RunE = WrapCommandFuncForCobra(cmdRun)
