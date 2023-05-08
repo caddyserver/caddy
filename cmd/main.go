@@ -174,6 +174,8 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 // blocks indefinitely; it only quits if the poller has errors for
 // long enough time. The filename passed in must be the actual
 // config file used, not one to be discovered.
+// Each second the config files is loaded and parsed into an object
+// and is compared to the last config object that was loaded
 func watchConfigFile(filename, adapterName string) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -189,64 +191,37 @@ func watchConfigFile(filename, adapterName string) {
 			With(zap.String("config_file", filename))
 	}
 
-	// get the initial timestamp on the config file
-	info, err := os.Stat(filename)
+	// get current config
+	lastCfg, _, err := LoadConfig(filename, adapterName)
 	if err != nil {
-		logger().Error("cannot watch config file", zap.Error(err))
+		logger().Error("unable to load latest config", zap.Error(err))
 		return
 	}
-	lastModified := info.ModTime()
 
 	logger().Info("watching config file for changes")
-
-	// if the file disappears or something, we can
-	// stop polling if the error lasts long enough
-	var lastErr time.Time
-	finalError := func(err error) bool {
-		if lastErr.IsZero() {
-			lastErr = time.Now()
-			return false
-		}
-		if time.Since(lastErr) > 30*time.Second {
-			logger().Error("giving up watching config file; too many errors",
-				zap.Error(err))
-			return true
-		}
-		return false
-	}
 
 	// begin poller
 	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
-		// get the file info
-		info, err := os.Stat(filename)
-		if err != nil {
-			if finalError(err) {
-				return
-			}
-			continue
-		}
-		lastErr = time.Time{} // no error, so clear any memory of one
 
-		// if it hasn't changed, nothing to do
-		if !info.ModTime().After(lastModified) {
-			continue
-		}
-
-		logger().Info("config file changed; reloading")
-
-		// remember this timestamp
-		lastModified = info.ModTime()
-
-		// load the contents of the file
-		config, _, err := LoadConfig(filename, adapterName)
+		// get current config
+		newCfg, _, err := LoadConfig(filename, adapterName)
 		if err != nil {
 			logger().Error("unable to load latest config", zap.Error(err))
-			continue
+			return
 		}
 
+		// if it hasn't changed, nothing to do
+		if bytes.Equal(lastCfg, newCfg) {
+			continue
+		}
+		logger().Info("config file changed; reloading")
+
+		// remember the current config
+		lastCfg = newCfg
+
 		// apply the updated config
-		err = caddy.Load(config, false)
+		err = caddy.Load(lastCfg, false)
 		if err != nil {
 			logger().Error("applying latest config", zap.Error(err))
 			continue
