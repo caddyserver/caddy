@@ -200,7 +200,7 @@ func watchConfigFile(filename, adapterName string) {
 
 	// begin poller
 	//nolint:staticcheck
-	for range time.Tick(3 * time.Second) {
+	for range time.Tick(1 * time.Second) {
 
 		// get current config
 		newCfg, _, err := LoadConfig(filename, adapterName)
