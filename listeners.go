@@ -449,8 +449,9 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		sqtc := newSqtc(tlsConf)
+		sqtc := newSharedQUICTLSConfig(tlsConf)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
+		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
 		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
 			Allow0RTT: func(net.Addr) bool { return true },
@@ -473,7 +474,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
 	// add current tls.Config to sqtc, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
-	ctx, cancel := sql.sqtc.addTlsConfig(tlsConf)
+	ctx, cancel := sql.sqtc.addTLSConfig(tlsConf)
 
 	// TODO: to serve QUIC over a unix socket, currently we need to hold onto
 	// the underlying net.PacketConn (which we wrap as unixConn to keep count
@@ -506,30 +507,34 @@ type contextAndCancelFunc struct {
 	context.CancelFunc
 }
 
-// sharedQuicTlsConfig manages GetConfigForClient
-type sharedQuicTlsConfig struct {
+// sharedQUICTLSConfig manages GetConfigForClient
+// see issue: https://github.com/caddyserver/caddy/pull/4849
+type sharedQUICTLSConfig struct {
 	rmu           sync.RWMutex
 	tlsConfs      map[*tls.Config]contextAndCancelFunc
 	activeTlsConf *tls.Config
 }
 
-// newSqtc creates a new sharedQuicTlsConfig
-func newSqtc(tlsConfig *tls.Config) *sharedQuicTlsConfig {
-	sqtc := &sharedQuicTlsConfig{
+// newSharedQUICTLSConfig creates a new sharedQUICTLSConfig
+func newSharedQUICTLSConfig(tlsConfig *tls.Config) *sharedQUICTLSConfig {
+	sqtc := &sharedQUICTLSConfig{
 		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
 		activeTlsConf: tlsConfig,
 	}
-	sqtc.addTlsConfig(tlsConfig)
+	sqtc.addTLSConfig(tlsConfig)
 	return sqtc
 }
 
-func (sqtc *sharedQuicTlsConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
+// getConfigForClient is used as tls.Config's GetConfigForClient field
+func (sqtc *sharedQUICTLSConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
 	sqtc.rmu.RLock()
 	defer sqtc.rmu.RUnlock()
 	return sqtc.activeTlsConf.GetConfigForClient(ch)
 }
 
-func (sqtc *sharedQuicTlsConfig) addTlsConfig(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
+// addTLSConfig adds tls.Config to the map if not present and returns the corresponding context and its cancelFunc
+// so that when cancelled, the active tls.Config will change
+func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
 	sqtc.rmu.Lock()
 	defer sqtc.rmu.Unlock()
 
@@ -565,7 +570,7 @@ func (sqtc *sharedQuicTlsConfig) addTlsConfig(tlsConfig *tls.Config) (context.Co
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	quic.EarlyListener
-	sqtc *sharedQuicTlsConfig
+	sqtc *sharedQUICTLSConfig
 	key  string
 }
 
