@@ -33,6 +33,7 @@ func init() {
 	RegisterGlobalOption("grace_period", parseOptDuration)
 	RegisterGlobalOption("shutdown_delay", parseOptDuration)
 	RegisterGlobalOption("default_sni", parseOptSingleString)
+	RegisterGlobalOption("fallback_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
 	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
