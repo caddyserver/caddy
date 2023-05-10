@@ -18,6 +18,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	weakrand "math/rand"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -185,7 +187,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if (weakrand.Int() % count) == 0 { //nolint:gosec
+			if count > 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}
@@ -372,6 +374,10 @@ func (r *URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 type QueryHashSelection struct {
 	// The query key whose value is to be hashed and used for upstream selection.
 	Key string `json:"key,omitempty"`
+
+	// The fallback policy to use if the query key is not present. Defaults to `random`.
+	FallbackRaw json.RawMessage `json:"fallback,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
+	fallback    Selector
 }
 
 // CaddyModule returns the Caddy module information.
@@ -382,12 +388,24 @@ func (QueryHashSelection) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up the module.
+func (s *QueryHashSelection) Provision(ctx caddy.Context) error {
+	if s.Key == "" {
+		return fmt.Errorf("query key is required")
+	}
+	if s.FallbackRaw == nil {
+		s.FallbackRaw = caddyconfig.JSONModuleObject(RandomSelection{}, "policy", "random", nil)
+	}
+	mod, err := ctx.LoadModule(s, "FallbackRaw")
+	if err != nil {
+		return fmt.Errorf("loading fallback selection policy: %s", err)
+	}
+	s.fallback = mod.(Selector)
+	return nil
+}
+
 // Select returns an available host, if any.
 func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
-	if s.Key == "" {
-		return nil
-	}
-
 	// Since the query may have multiple values for the same key,
 	// we'll join them to avoid a problem where the user can control
 	// the upstream that the request goes to by sending multiple values
@@ -397,7 +415,7 @@ func (s QueryHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.
 	// different request, because the order of the values is significant.
 	vals := strings.Join(req.URL.Query()[s.Key], ",")
 	if vals == "" {
-		return RandomSelection{}.Select(pool, req, nil)
+		return s.fallback.Select(pool, req, nil)
 	}
 	return hostByHashing(pool, vals)
 }
@@ -410,6 +428,24 @@ func (s *QueryHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 		s.Key = d.Val()
 	}
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "fallback":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if s.FallbackRaw != nil {
+				return d.Err("fallback selection policy already specified")
+			}
+			mod, err := loadFallbackPolicy(d)
+			if err != nil {
+				return err
+			}
+			s.FallbackRaw = mod
+		default:
+			return d.Errf("unrecognized option '%s'", d.Val())
+		}
+	}
 	return nil
 }
 
@@ -418,6 +454,10 @@ func (s *QueryHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 type HeaderHashSelection struct {
 	// The HTTP header field whose value is to be hashed and used for upstream selection.
 	Field string `json:"field,omitempty"`
+
+	// The fallback policy to use if the header is not present. Defaults to `random`.
+	FallbackRaw json.RawMessage `json:"fallback,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
+	fallback    Selector
 }
 
 // CaddyModule returns the Caddy module information.
@@ -428,12 +468,24 @@ func (HeaderHashSelection) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision sets up the module.
+func (s *HeaderHashSelection) Provision(ctx caddy.Context) error {
+	if s.Field == "" {
+		return fmt.Errorf("header field is required")
+	}
+	if s.FallbackRaw == nil {
+		s.FallbackRaw = caddyconfig.JSONModuleObject(RandomSelection{}, "policy", "random", nil)
+	}
+	mod, err := ctx.LoadModule(s, "FallbackRaw")
+	if err != nil {
+		return fmt.Errorf("loading fallback selection policy: %s", err)
+	}
+	s.fallback = mod.(Selector)
+	return nil
+}
+
 // Select returns an available host, if any.
 func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.ResponseWriter) *Upstream {
-	if s.Field == "" {
-		return nil
-	}
-
 	// The Host header should be obtained from the req.Host field
 	// since net/http removes it from the header map.
 	if s.Field == "Host" && req.Host != "" {
@@ -442,7 +494,7 @@ func (s HeaderHashSelection) Select(pool UpstreamPool, req *http.Request, _ http
 
 	val := req.Header.Get(s.Field)
 	if val == "" {
-		return RandomSelection{}.Select(pool, req, nil)
+		return s.fallback.Select(pool, req, nil)
 	}
 	return hostByHashing(pool, val)
 }
@@ -455,6 +507,24 @@ func (s *HeaderHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 		s.Field = d.Val()
 	}
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "fallback":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if s.FallbackRaw != nil {
+				return d.Err("fallback selection policy already specified")
+			}
+			mod, err := loadFallbackPolicy(d)
+			if err != nil {
+				return err
+			}
+			s.FallbackRaw = mod
+		default:
+			return d.Errf("unrecognized option '%s'", d.Val())
+		}
+	}
 	return nil
 }
 
@@ -465,6 +535,10 @@ type CookieHashSelection struct {
 	Name string `json:"name,omitempty"`
 	// Secret to hash (Hmac256) chosen upstream in cookie
 	Secret string `json:"secret,omitempty"`
+
+	// The fallback policy to use if the cookie is not present. Defaults to `random`.
+	FallbackRaw json.RawMessage `json:"fallback,omitempty" caddy:"namespace=http.reverse_proxy.selection_policies inline_key=policy"`
+	fallback    Selector
 }
 
 // CaddyModule returns the Caddy module information.
@@ -475,15 +549,48 @@ func (CookieHashSelection) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Select returns an available host, if any.
-func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
+// Provision sets up the module.
+func (s *CookieHashSelection) Provision(ctx caddy.Context) error {
 	if s.Name == "" {
 		s.Name = "lb"
 	}
+	if s.FallbackRaw == nil {
+		s.FallbackRaw = caddyconfig.JSONModuleObject(RandomSelection{}, "policy", "random", nil)
+	}
+	mod, err := ctx.LoadModule(s, "FallbackRaw")
+	if err != nil {
+		return fmt.Errorf("loading fallback selection policy: %s", err)
+	}
+	s.fallback = mod.(Selector)
+	return nil
+}
+
+// Select returns an available host, if any.
+func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
+	// selects a new Host using the fallback policy (typically random)
+	// and write a sticky session cookie to the response.
+	selectNewHost := func() *Upstream {
+		upstream := s.fallback.Select(pool, req, w)
+		if upstream == nil {
+			return nil
+		}
+		sha, err := hashCookie(s.Secret, upstream.Dial)
+		if err != nil {
+			return upstream
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:   s.Name,
+			Value:  sha,
+			Path:   "/",
+			Secure: false,
+		})
+		return upstream
+	}
+
 	cookie, err := req.Cookie(s.Name)
-	// If there's no cookie, select new random host
+	// If there's no cookie, select a host using the fallback policy
 	if err != nil || cookie == nil {
-		return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
+		return selectNewHost()
 	}
 	// If the cookie is present, loop over the available upstreams until we find a match
 	cookieValue := cookie.Value
@@ -496,13 +603,15 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 			return upstream
 		}
 	}
-	// If there is no matching host, select new random host
-	return selectNewHostWithCookieHashSelection(pool, w, s.Secret, s.Name)
+	// If there is no matching host, select a host using the fallback policy
+	return selectNewHost()
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//	lb_policy cookie [<name> [<secret>]]
+//	lb_policy cookie [<name> [<secret>]] {
+//		fallback <policy>
+//	}
 //
 // By default name is `lb`
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -517,22 +626,25 @@ func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	default:
 		return d.ArgErr()
 	}
-	return nil
-}
-
-// Select a new Host randomly and add a sticky session cookie
-func selectNewHostWithCookieHashSelection(pool []*Upstream, w http.ResponseWriter, cookieSecret string, cookieName string) *Upstream {
-	randomHost := selectRandomHost(pool)
-
-	if randomHost != nil {
-		// Hash (HMAC with some key for privacy) the upstream.Dial string as the cookie value
-		sha, err := hashCookie(cookieSecret, randomHost.Dial)
-		if err == nil {
-			// write the cookie.
-			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: sha, Path: "/", Secure: false})
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "fallback":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if s.FallbackRaw != nil {
+				return d.Err("fallback selection policy already specified")
+			}
+			mod, err := loadFallbackPolicy(d)
+			if err != nil {
+				return err
+			}
+			s.FallbackRaw = mod
+		default:
+			return d.Errf("unrecognized option '%s'", d.Val())
 		}
 	}
-	return randomHost
+	return nil
 }
 
 // hashCookie hashes (HMAC 256) some data with the secret
@@ -595,6 +707,9 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	if len(best) == 0 {
 		return nil
 	}
+	if len(best) == 1 {
+		return best[0]
+	}
 	return best[weakrand.Intn(len(best))] //nolint:gosec
 }
 
@@ -625,6 +740,20 @@ func hash(s string) uint32 {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(s))
 	return h.Sum32()
+}
+
+func loadFallbackPolicy(d *caddyfile.Dispenser) (json.RawMessage, error) {
+	name := d.Val()
+	modID := "http.reverse_proxy.selection_policies." + name
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return nil, err
+	}
+	sel, ok := unm.(Selector)
+	if !ok {
+		return nil, d.Errf("module %s (%T) is not a reverseproxy.Selector", modID, unm)
+	}
+	return caddyconfig.JSONModuleObject(sel, "policy", name, nil), nil
 }
 
 // Interface guards

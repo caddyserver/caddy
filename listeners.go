@@ -303,13 +303,19 @@ func IsUnixNetwork(netw string) bool {
 // Network addresses are distinct from URLs and do not
 // use URL syntax.
 func ParseNetworkAddress(addr string) (NetworkAddress, error) {
+	return ParseNetworkAddressWithDefaults(addr, "tcp", 0)
+}
+
+// ParseNetworkAddressWithDefaults is like ParseNetworkAddress but allows
+// the default network and port to be specified.
+func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort uint) (NetworkAddress, error) {
 	var host, port string
 	network, host, port, err := SplitNetworkAddress(addr)
 	if err != nil {
 		return NetworkAddress{}, err
 	}
 	if network == "" {
-		network = "tcp"
+		network = defaultNetwork
 	}
 	if IsUnixNetwork(network) {
 		return NetworkAddress{
@@ -318,7 +324,10 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 		}, nil
 	}
 	var start, end uint64
-	if port != "" {
+	if port == "" {
+		start = uint64(defaultPort)
+		end = uint64(defaultPort)
+	} else {
 		before, after, found := strings.Cut(port, "-")
 		if !found {
 			after = before

@@ -7,7 +7,6 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - deadcode
     - errcheck
     - gofmt
     - goimports
@@ -18,11 +17,9 @@ linters:
     - misspell
     - prealloc
     - staticcheck
-    - structcheck
     - typecheck
     - unconvert
     - unused
-    - varcheck
   # these are implicitly disabled:
   # - asciicheck
   # - depguard

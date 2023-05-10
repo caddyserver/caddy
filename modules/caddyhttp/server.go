@@ -198,6 +198,7 @@ type Server struct {
 	server      *http.Server
 	h3server    *http3.Server
 	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
+	h2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
@@ -213,6 +214,16 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
+	// Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
+	if r.TLS == nil {
+		conn := r.Context().Value(ConnCtxKey).(net.Conn)
+		if csc, ok := conn.(connectionStateConn); ok {
+			r.TLS = new(tls.ConnectionState)
+			*r.TLS = csc.ConnectionState()
+		}
+	}
+
 	w.Header().Set("Server", "Caddy")
 
 	// advertise HTTP/3, if enabled
@@ -271,46 +282,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
-		defer func() {
-			// this request may be flagged as omitted from the logs
-			if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
-				return
-			}
-
-			repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
-			repl.Set("http.response.size", wrec.Size())
-			repl.Set("http.response.duration", duration)
-			repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-			logger := accLog
-			if s.Logs != nil {
-				logger = s.Logs.wrapLogger(logger, r.Host)
-			}
-
-			log := logger.Info
-			if wrec.Status() >= 400 {
-				log = logger.Error
-			}
-
-			userID, _ := repl.GetString("http.auth.user.id")
-
-			reqBodyLength := 0
-			if bodyReader != nil {
-				reqBodyLength = bodyReader.Length
-			}
-
-			log("handled request",
-				zap.Int("bytes_read", reqBodyLength),
-				zap.String("user_id", userID),
-				zap.Duration("duration", duration),
-				zap.Int("size", wrec.Size()),
-				zap.Int("status", wrec.Status()),
-				zap.Object("resp_headers", LoggableHTTPHeader{
-					Header:               wrec.Header(),
-					ShouldLogCredentials: shouldLogCredentials,
-				}),
-			)
-		}()
+		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
 	}
 
 	start := time.Now()
@@ -692,6 +664,57 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	return !s.Logs.SkipUnmappedHosts
 }
 
+// logRequest logs the request to access logs, unless skipped.
+func (s *Server) logRequest(
+	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
+	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
+) {
+	// this request may be flagged as omitted from the logs
+	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
+		return
+	}
+
+	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
+	repl.Set("http.response.size", wrec.Size())
+	repl.Set("http.response.duration", duration)
+	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	logger := accLog
+	if s.Logs != nil {
+		logger = s.Logs.wrapLogger(logger, r.Host)
+	}
+
+	log := logger.Info
+	if wrec.Status() >= 400 {
+		log = logger.Error
+	}
+
+	userID, _ := repl.GetString("http.auth.user.id")
+
+	reqBodyLength := 0
+	if bodyReader != nil {
+		reqBodyLength = bodyReader.Length
+	}
+
+	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+
+	fieldCount := 6
+	fields := make([]zapcore.Field, 0, fieldCount+len(extra.fields))
+	fields = append(fields,
+		zap.Int("bytes_read", reqBodyLength),
+		zap.String("user_id", userID),
+		zap.Duration("duration", *duration),
+		zap.Int("size", wrec.Size()),
+		zap.Int("status", wrec.Status()),
+		zap.Object("resp_headers", LoggableHTTPHeader{
+			Header:               wrec.Header(),
+			ShouldLogCredentials: shouldLogCredentials,
+		}))
+	fields = append(fields, extra.fields...)
+
+	log("handled request", fields...)
+}
+
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
 	for _, p := range s.Protocols {
@@ -727,6 +750,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 
 	var url2 url.URL // avoid letting this escape to the heap
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
+
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
@@ -869,6 +895,9 @@ const (
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
+
+	// For referencing underlying net.Conn
+	ConnCtxKey caddy.CtxKey = "conn"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"

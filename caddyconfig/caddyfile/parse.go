@@ -520,6 +520,9 @@ func (p *parser) directive() error {
 			if !p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
 				return p.Err("Unexpected next token after '{' on same line")
 			}
+			if p.isNewLine() {
+				return p.Err("Unexpected '{' on a new line; did you mean to place the '{' on the previous line?")
+			}
 		} else if p.Val() == "{}" {
 			if p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
 				return p.Err("Unexpected '{}' at end of line")

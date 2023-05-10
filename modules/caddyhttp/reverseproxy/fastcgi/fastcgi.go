@@ -171,6 +171,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		rwc:    conn,
 		reqID:  1,
 		logger: logger,
+		stderr: t.CaptureStderr,
 	}
 
 	// read/write timeouts
@@ -254,9 +255,7 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	// if we didn't get a split result here.
 	// See https://github.com/caddyserver/caddy/issues/3718
 	if pathInfo == "" {
-		if remainder, ok := repl.GetString("http.matchers.file.remainder"); ok {
-			pathInfo = remainder
-		}
+		pathInfo, _ = repl.GetString("http.matchers.file.remainder")
 	}
 
 	// SCRIPT_FILENAME is the absolute path of SCRIPT_NAME
@@ -286,10 +285,7 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		reqHost = r.Host
 	}
 
-	authUser := ""
-	if val, ok := repl.Get("http.auth.user.id"); ok {
-		authUser = val.(string)
-	}
+	authUser, _ := repl.GetString("http.auth.user.id")
 
 	// Some variables are unused but cleared explicitly to prevent
 	// the parent environment from interfering.
