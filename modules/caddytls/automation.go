@@ -95,9 +95,11 @@ type AutomationPolicy struct {
 	// Modules that can get a custom certificate to use for any
 	// given TLS handshake at handshake-time. Custom certificates
 	// can be useful if another entity is managing certificates
-	// and Caddy need only get it and serve it.
+	// and Caddy need only get it and serve it. Specifying a Manager
+	// enables on-demand TLS, i.e. it has the side-effect of setting
+	// the on_demand parameter to `true`.
 	//
-	// TODO: This is an EXPERIMENTAL feature. It is subject to change or removal.
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ManagersRaw []json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
 
 	// If true, certificates will be requested with MustStaple. Not all
@@ -233,15 +235,18 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 
 	// on-demand TLS
 	var ond *certmagic.OnDemandConfig
-	if ap.OnDemand {
+	if ap.OnDemand || len(ap.Managers) > 0 {
 		// ask endpoint is now required after a number of negligence cases causing abuse;
 		// but is still allowed for explicit subjects (non-wildcard, non-unbounded),
-		// and for the internal issuer since it doesn't cause ACME issuer pressure
+		// for the internal issuer since it doesn't cause ACME issuer pressure
 		if ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.Ask == "") {
 			return fmt.Errorf("on-demand TLS cannot be enabled without an 'ask' endpoint to prevent abuse; please refer to documentation for details")
 		}
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(name string) error {
+				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
+					return nil
+				}
 				if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, errAskDenied) {
@@ -264,6 +269,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				}
 				return nil
 			},
+			Managers: ap.Managers,
 		}
 	}
 
@@ -277,10 +283,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 			DisableStapling:    ap.DisableOCSPStapling,
 			ResponderOverrides: ap.OCSPOverrides,
 		},
-		Storage:  storage,
-		Issuers:  issuers,
-		Managers: ap.Managers,
-		Logger:   tlsApp.logger,
+		Storage: storage,
+		Issuers: issuers,
+		Logger:  tlsApp.logger,
 	}
 	ap.magic = certmagic.New(tlsApp.certCache, template)
 
