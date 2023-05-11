@@ -283,7 +283,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			break
 		}
 	}
-	if !alpnFound {
+	if !alpnFound && len(cfg.NextProtos) > 0 {
 		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
 
