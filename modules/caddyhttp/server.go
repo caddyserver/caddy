@@ -733,6 +733,9 @@ func (s *Server) protocol(proto string) bool {
 // EXPERIMENTAL: Subject to change or removal.
 func (s *Server) Listeners() []net.Listener { return s.listeners }
 
+// Name returns the server's name.
+func (s *Server) Name() string { return s.name }
+
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
