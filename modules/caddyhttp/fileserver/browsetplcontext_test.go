@@ -87,7 +87,6 @@ func TestBreadcrumbs(t *testing.T) {
 		{"/مجلد%2F1", []crumb{
 			{Link: "../", Text: "/"},
 			{Link: "", Text: "مجلد/1"},
-			//{Link: "", Text: "1%2Fمجلد",
 		}},
 	}
 
