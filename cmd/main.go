@@ -89,6 +89,10 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // and returns the resulting JSON config bytes along with
 // the name of the loaded config file (if any).
 func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
+	return loadConfigWithLogger(caddy.Log(), configFile, adapterName)
+}
+
+func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, error) {
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
 		return nil, "", fmt.Errorf("cannot adapt config without config file (use --config)")
@@ -107,9 +111,11 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 		if err != nil {
 			return nil, "", fmt.Errorf("reading config file: %v", err)
 		}
-		caddy.Log().Info("using provided configuration",
-			zap.String("config_file", configFile),
-			zap.String("config_adapter", adapterName))
+		if logger != nil {
+			logger.Info("using provided configuration",
+				zap.String("config_file", configFile),
+				zap.String("config_adapter", adapterName))
+		}
 	} else if adapterName == "" {
 		// as a special case when no config file or adapter
 		// is specified, see if the Caddyfile adapter is
@@ -126,7 +132,9 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
-				caddy.Log().Info("using adjacent Caddyfile")
+				if logger != nil {
+					logger.Info("using adjacent Caddyfile")
+				}
 			}
 		}
 	}
@@ -161,7 +169,9 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			caddy.Log().Warn(msg, zap.String("adapter", adapterName), zap.String("file", warn.File), zap.Int("line", warn.Line))
+			if logger != nil {
+				logger.Warn(msg, zap.String("adapter", adapterName), zap.String("file", warn.File), zap.Int("line", warn.Line))
+			}
 		}
 		config = adaptedConfig
 	}
@@ -192,7 +202,7 @@ func watchConfigFile(filename, adapterName string) {
 	}
 
 	// get current config
-	lastCfg, _, err := LoadConfig(filename, adapterName)
+	lastCfg, _, err := loadConfigWithLogger(nil, filename, adapterName)
 	if err != nil {
 		logger().Error("unable to load latest config", zap.Error(err))
 		return
@@ -203,7 +213,6 @@ func watchConfigFile(filename, adapterName string) {
 	// begin poller
 	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
-
 		// get current config
 		newCfg, _, err := LoadConfig(filename, adapterName)
 		if err != nil {
