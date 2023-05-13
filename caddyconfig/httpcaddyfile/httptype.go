@@ -983,7 +983,7 @@ func buildSubroute(routes []ConfigValue, groupCounter counter, needsSorting bool
 	if needsSorting {
 		for _, val := range routes {
 			if !directiveIsOrdered(val.directive) {
-				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here", val.directive)
+				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here - try placing within a route block or using the order global option", val.directive)
 			}
 		}
 
