@@ -164,6 +164,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		if parsedAddr.StartPort == 0 && parsedAddr.EndPort == 0 {
+			// unix networks don't have ports
 			h.Upstreams = append(h.Upstreams, &Upstream{
 				Dial: dialAddr,
 			})

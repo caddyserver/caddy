@@ -159,6 +159,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		}
 
 		if parsedAddr.StartPort == 0 && parsedAddr.EndPort == 0 {
+			// unix networks don't have ports
 			upstreamPool = append(upstreamPool, &Upstream{
 				Dial: toAddr,
 			})
