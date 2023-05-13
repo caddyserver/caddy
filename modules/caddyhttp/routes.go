@@ -167,8 +167,8 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 }
 
 // Compile prepares a middleware chain from the route list.
-// This should only be done once: after all the routes have
-// been provisioned, and before serving requests.
+// This should only be done once during the request, just
+// before the middleware chain is executed.
 func (r Route) Compile(next Handler) Handler {
 	return wrapRoute(r)(next)
 }
@@ -215,8 +215,9 @@ func (routes RouteList) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) e
 }
 
 // Compile prepares a middleware chain from the route list.
-// This should only be done once: after all the routes have
-// been provisioned, and before serving requests.
+// This should only be done either once during provisioning
+// for top-level routes, or on each request just before the
+// middleware chain is executed for subroutes.
 func (routes RouteList) Compile(next Handler) Handler {
 	mid := make([]Middleware, 0, len(routes))
 	for _, route := range routes {
