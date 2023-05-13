@@ -108,6 +108,8 @@ type Server struct {
 	// the handlers and matchers be only provisioned once, but used from
 	// many places. These routes are not executed unless they are invoked
 	// from another route.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
 	NamedRoutes map[string]*Route `json:"named_routes,omitempty"`
 
 	// How to handle TLS connections. At least one policy is

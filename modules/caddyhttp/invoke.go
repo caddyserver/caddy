@@ -27,6 +27,8 @@ func init() {
 
 // Invoke implements a handler that compiles and executes a
 // named route that was defined on the server.
+//
+// EXPERIMENTAL: Subject to change or removal.
 type Invoke struct {
 	// Name is the key of the named route to execute
 	Name string `json:"name,omitempty"`
