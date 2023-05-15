@@ -1,0 +1,67 @@
+:8884 {
+	# Port range
+	reverse_proxy localhost:8001-8002
+
+	# Port range with placeholder
+	reverse_proxy {host}:8001-8002
+
+	# Port range with scheme
+	reverse_proxy https://localhost:8001-8002
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "localhost:8001"
+										},
+										{
+											"dial": "localhost:8002"
+										}
+									]
+								},
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "{http.request.host}:8001"
+										},
+										{
+											"dial": "{http.request.host}:8002"
+										}
+									]
+								},
+								{
+									"handler": "reverse_proxy",
+									"transport": {
+										"protocol": "http",
+										"tls": {}
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:8001"
+										},
+										{
+											"dial": "localhost:8002"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
