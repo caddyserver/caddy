@@ -218,6 +218,10 @@ func (st ServerType) buildTLSApp(
 			if len(ap.Issuers) == 0 {
 				var internal, external []string
 				for _, s := range ap.SubjectsRaw {
+					// do not create Issuers for Tailscale domains; they will be given a Manager instead
+					if strings.HasSuffix(strings.ToLower(s), ".ts.net") {
+						continue
+					}
 					if !certmagic.SubjectQualifiesForCert(s) {
 						return nil, warnings, fmt.Errorf("subject does not qualify for certificate: '%s'", s)
 					}
