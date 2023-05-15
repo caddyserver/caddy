@@ -40,11 +40,10 @@ func TestSRVReverseProxy(t *testing.T) {
 								"handle": [
 									{
 										"handler": "reverse_proxy",
-										"upstreams": [
-											{
-												"lookup_srv": "srv.host.service.consul"
-											}
-										]
+										"dynamic_upstreams": {
+											"source": "srv",
+											"name": "srv.host.service.consul"
+										}
 									}
 								]
 							}
@@ -55,47 +54,6 @@ func TestSRVReverseProxy(t *testing.T) {
 		}
 	}
 	`, "json")
-}
-
-func TestSRVWithDial(t *testing.T) {
-	caddytest.AssertLoadError(t, `
-	{
-		"apps": {
-			"pki": {
-				"certificate_authorities": {
-					"local": {
-						"install_trust": false
-					}
-				}
-			},
-			"http": {
-				"grace_period": 1,
-				"servers": {
-					"srv0": {
-						"listen": [
-							":18080"
-						],
-						"routes": [
-							{
-								"handle": [
-									{
-										"handler": "reverse_proxy",
-										"upstreams": [
-											{
-												"dial": "tcp/address.to.upstream:80",
-												"lookup_srv": "srv.host.service.consul"
-											}
-										]
-									}
-								]
-							}
-						]
-					}
-				}
-			}
-		}
-	}
-	`, "json", `upstream: specifying dial address is incompatible with lookup_srv: 0: {\"dial\": \"tcp/address.to.upstream:80\", \"lookup_srv\": \"srv.host.service.consul\"}`)
 }
 
 func TestDialWithPlaceholderUnix(t *testing.T) {
@@ -367,51 +325,6 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 	}
 	req.Header.Set("X-Caddy-Upstream-Dial", "localhost")
 	tester.AssertResponse(req, 200, "Hello, World!")
-}
-
-func TestSRVWithActiveHealthcheck(t *testing.T) {
-	caddytest.AssertLoadError(t, `
-	{
-		"apps": {
-			"pki": {
-				"certificate_authorities" : {
-					"local" : {
-						"install_trust": false
-					}
-				}
-			},
-			"http": {
-				"grace_period": 1,
-				"servers": {
-					"srv0": {
-						"listen": [
-							":18080"
-						],
-						"routes": [
-							{
-								"handle": [
-									{
-										"handler": "reverse_proxy",
-										"health_checks": {
-											"active": {
-												"path": "/ok"
-											}
-										},
-										"upstreams": [
-											{
-												"lookup_srv": "srv.host.service.consul"
-											}
-										]
-									}
-								]
-							}
-						]
-					}
-				}
-			}
-		}
-	}
-	`, "json", `upstream: lookup_srv is incompatible with active health checks: 0: {\"dial\": \"\", \"lookup_srv\": \"srv.host.service.consul\"}`)
 }
 
 func TestReverseProxyHealthCheck(t *testing.T) {

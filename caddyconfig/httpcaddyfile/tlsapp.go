@@ -206,8 +206,8 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// associate our new automation policy with this server block's hosts
-			ap.Subjects = sblock.hostsFromKeysNotHTTP(httpPort)
-			sort.Strings(ap.Subjects) // solely for deterministic test results
+			ap.SubjectsRaw = sblock.hostsFromKeysNotHTTP(httpPort)
+			sort.Strings(ap.SubjectsRaw) // solely for deterministic test results
 
 			// if a combination of public and internal names were given
 			// for this same server block and no issuer was specified, we
@@ -217,7 +217,11 @@ func (st ServerType) buildTLSApp(
 			var ap2 *caddytls.AutomationPolicy
 			if len(ap.Issuers) == 0 {
 				var internal, external []string
-				for _, s := range ap.Subjects {
+				for _, s := range ap.SubjectsRaw {
+					// do not create Issuers for Tailscale domains; they will be given a Manager instead
+					if strings.HasSuffix(strings.ToLower(s), ".ts.net") {
+						continue
+					}
 					if !certmagic.SubjectQualifiesForCert(s) {
 						return nil, warnings, fmt.Errorf("subject does not qualify for certificate: '%s'", s)
 					}
@@ -235,10 +239,10 @@ func (st ServerType) buildTLSApp(
 					}
 				}
 				if len(external) > 0 && len(internal) > 0 {
-					ap.Subjects = external
+					ap.SubjectsRaw = external
 					apCopy := *ap
 					ap2 = &apCopy
-					ap2.Subjects = internal
+					ap2.SubjectsRaw = internal
 					ap2.IssuersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(caddytls.InternalIssuer{}, "module", "internal", &warnings)}
 				}
 			}
@@ -339,14 +343,14 @@ func (st ServerType) buildTLSApp(
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
-				internalAP.Subjects = append(internalAP.Subjects, h)
+				internalAP.SubjectsRaw = append(internalAP.SubjectsRaw, h)
 			}
 		}
 	}
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
 	}
-	if len(internalAP.Subjects) > 0 {
+	if len(internalAP.SubjectsRaw) > 0 {
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
@@ -412,7 +416,7 @@ func (st ServerType) buildTLSApp(
 		// for convenience)
 		automationHostSet := make(map[string]struct{})
 		for _, ap := range tlsApp.Automation.Policies {
-			for _, s := range ap.Subjects {
+			for _, s := range ap.SubjectsRaw {
 				if _, ok := automationHostSet[s]; ok {
 					return nil, warnings, fmt.Errorf("hostname appears in more than one automation policy, making certificate management ambiguous: %s", s)
 				}
@@ -533,7 +537,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 		if automationPolicyIsSubset(aps[j], aps[i]) {
 			return false
 		}
-		return len(aps[i].Subjects) > len(aps[j].Subjects)
+		return len(aps[i].SubjectsRaw) > len(aps[j].SubjectsRaw)
 	})
 
 	emptyAPCount := 0
@@ -541,7 +545,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	// compute the number of empty policies (disregarding subjects) - see #4128
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
-		emptyAP.Subjects = aps[i].Subjects
+		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
 		if reflect.DeepEqual(aps[i], emptyAP) {
 			emptyAPCount++
 			if !automationPolicyHasAllPublicNames(aps[i]) {
@@ -583,7 +587,7 @@ outer:
 				aps[i].KeyType == aps[j].KeyType &&
 				aps[i].OnDemand == aps[j].OnDemand &&
 				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio {
-				if len(aps[i].Subjects) > 0 && len(aps[j].Subjects) == 0 {
+				if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) == 0 {
 					// later policy (at j) has no subjects ("catch-all"), so we can
 					// remove the identical-but-more-specific policy that comes first
 					// AS LONG AS it is not shadowed by another policy before it; e.g.
@@ -598,9 +602,9 @@ outer:
 					}
 				} else {
 					// avoid repeated subjects
-					for _, subj := range aps[j].Subjects {
-						if !sliceContains(aps[i].Subjects, subj) {
-							aps[i].Subjects = append(aps[i].Subjects, subj)
+					for _, subj := range aps[j].SubjectsRaw {
+						if !sliceContains(aps[i].SubjectsRaw, subj) {
+							aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
 						}
 					}
 					aps = append(aps[:j], aps[j+1:]...)
@@ -616,15 +620,15 @@ outer:
 // automationPolicyIsSubset returns true if a's subjects are a subset
 // of b's subjects.
 func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
-	if len(b.Subjects) == 0 {
+	if len(b.SubjectsRaw) == 0 {
 		return true
 	}
-	if len(a.Subjects) == 0 {
+	if len(a.SubjectsRaw) == 0 {
 		return false
 	}
-	for _, aSubj := range a.Subjects {
+	for _, aSubj := range a.SubjectsRaw {
 		var inSuperset bool
-		for _, bSubj := range b.Subjects {
+		for _, bSubj := range b.SubjectsRaw {
 			if certmagic.MatchWildcard(aSubj, bSubj) {
 				inSuperset = true
 				break
@@ -662,7 +666,7 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 }
 
 func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
-	for _, subj := range ap.Subjects {
+	for _, subj := range ap.SubjectsRaw {
 		if !subjectQualifiesForPublicCert(ap, subj) {
 			return false
 		}

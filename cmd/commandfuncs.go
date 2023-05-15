@@ -208,6 +208,16 @@ func cmdRun(fl Flags) (int, error) {
 		}
 	}
 
+	// create pidfile now, in case loading config takes a while (issue #5477)
+	if runCmdPidfileFlag != "" {
+		err := caddy.PIDFile(runCmdPidfileFlag)
+		if err != nil {
+			caddy.Log().Error("unable to write PID file",
+				zap.String("pidfile", runCmdPidfileFlag),
+				zap.Error(err))
+		}
+	}
+
 	// run the initial config
 	err = caddy.Load(config, true)
 	if err != nil {
@@ -240,16 +250,6 @@ func cmdRun(fl Flags) (int, error) {
 	// (this better only be used in dev!)
 	if runCmdWatchFlag {
 		go watchConfigFile(configFile, runCmdConfigAdapterFlag)
-	}
-
-	// create pidfile
-	if runCmdPidfileFlag != "" {
-		err := caddy.PIDFile(runCmdPidfileFlag)
-		if err != nil {
-			caddy.Log().Error("unable to write PID file",
-				zap.String("pidfile", runCmdPidfileFlag),
-				zap.Error(err))
-		}
 	}
 
 	// warn if the environment does not provide enough information about the disk

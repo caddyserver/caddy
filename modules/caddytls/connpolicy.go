@@ -54,7 +54,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 		}
 
 		// enable HTTP/2 by default
-		if len(pol.ALPN) == 0 {
+		if pol.ALPN == nil {
 			pol.ALPN = append(pol.ALPN, defaultALPN...)
 		}
 
@@ -159,6 +159,18 @@ type ConnectionPolicy struct {
 	// is no policy configured for the empty SNI value.
 	DefaultSNI string `json:"default_sni,omitempty"`
 
+	// FallbackSNI becomes the ServerName in a ClientHello if
+	// the original ServerName doesn't match any certificates
+	// in the cache. The use cases for this are very niche;
+	// typically if a client is a CDN and passes through the
+	// ServerName of the downstream handshake but can accept
+	// a certificate with the origin's hostname instead, then
+	// you would set this to your origin's hostname. Note that
+	// Caddy must be managing a certificate for this name.
+	//
+	// This feature is EXPERIMENTAL and subject to change or removal.
+	FallbackSNI string `json:"fallback_sni,omitempty"`
+
 	// Also known as "SSLKEYLOGFILE", TLS secrets will be written to
 	// this file in NSS key log format which can then be parsed by
 	// Wireshark and other tools. This is INSECURE as it allows other
@@ -216,6 +228,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 				cfg.CertSelection = p.CertSelection
 			}
 			cfg.DefaultServerName = p.DefaultSNI
+			cfg.FallbackServerName = p.FallbackSNI
 			return cfg.GetCertificate(hello)
 		},
 		MinVersion: tls.VersionTLS12,
@@ -270,7 +283,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			break
 		}
 	}
-	if !alpnFound {
+	if !alpnFound && (cfg.NextProtos == nil || len(cfg.NextProtos) > 0) {
 		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
 

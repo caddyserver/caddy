@@ -24,7 +24,6 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -104,6 +103,76 @@ type ActiveHealthChecks struct {
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
 	logger     *zap.Logger
+}
+
+// Provision ensures that a is set up properly before use.
+func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
+	if !a.IsEnabled() {
+		return nil
+	}
+
+	// Canonicalize the header keys ahead of time, since
+	// JSON unmarshaled headers may be incorrect
+	cleaned := http.Header{}
+	for key, hdrs := range a.Headers {
+		for _, val := range hdrs {
+			cleaned.Add(key, val)
+		}
+	}
+	a.Headers = cleaned
+
+	h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
+
+	timeout := time.Duration(a.Timeout)
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+
+	if a.Path != "" {
+		a.logger.Warn("the 'path' option is deprecated, please use 'uri' instead!")
+	}
+
+	// parse the URI string (supports path and query)
+	if a.URI != "" {
+		parsedURI, err := url.Parse(a.URI)
+		if err != nil {
+			return err
+		}
+		a.uri = parsedURI
+	}
+
+	a.httpClient = &http.Client{
+		Timeout:   timeout,
+		Transport: h.Transport,
+	}
+
+	for _, upstream := range h.Upstreams {
+		// if there's an alternative port for health-check provided in the config,
+		// then use it, otherwise use the port of upstream.
+		if a.Port != 0 {
+			upstream.activeHealthCheckPort = a.Port
+		}
+	}
+
+	if a.Interval == 0 {
+		a.Interval = caddy.Duration(30 * time.Second)
+	}
+
+	if a.ExpectBody != "" {
+		var err error
+		a.bodyRegexp, err = regexp.Compile(a.ExpectBody)
+		if err != nil {
+			return fmt.Errorf("expect_body: compiling regular expression: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// IsEnabled checks if the active health checks have
+// the minimum config necessary to be enabled.
+func (a *ActiveHealthChecks) IsEnabled() bool {
+	return a.Path != "" || a.URI != "" || a.Port != 0
 }
 
 // PassiveHealthChecks holds configuration related to passive
@@ -203,7 +272,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				}
 				addr.StartPort, addr.EndPort = hcp, hcp
 			}
-			if upstream.LookupSRV == "" && addr.PortRangeSize() != 1 {
+			if addr.PortRangeSize() != 1 {
 				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
 					zap.String("address", networkAddr),
 				)
@@ -280,7 +349,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
 	req = req.WithContext(ctx)
 	for key, hdrs := range h.HealthChecks.Active.Headers {
-		if strings.ToLower(key) == "host" {
+		if key == "Host" {
 			req.Host = h.HealthChecks.Active.Headers.Get(key)
 		} else {
 			req.Header[key] = hdrs

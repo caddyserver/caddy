@@ -71,6 +71,11 @@ type AdminConfig struct {
 	// parsed by Caddy. Accepts placeholders.
 	// Default: the value of the `CADDY_ADMIN` environment variable,
 	// or `localhost:2019` otherwise.
+	//
+	// Remember: When changing this value through a config reload,
+	// be sure to use the `--address` CLI flag to specify the current
+	// admin address if the currently-running admin endpoint is not
+	// the default address.
 	Listen string `json:"listen,omitempty"`
 
 	// If true, CORS headers will be emitted, and requests to the

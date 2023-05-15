@@ -25,6 +25,45 @@ func TestBreadcrumbs(t *testing.T) {
 	}{
 		{"", []crumb{}},
 		{"/", []crumb{{Text: "/"}}},
+		{"/foo/", []crumb{
+			{Link: "../", Text: "/"},
+			{Link: "", Text: "foo"},
+		}},
+		{"/foo/bar/", []crumb{
+			{Link: "../../", Text: "/"},
+			{Link: "../", Text: "foo"},
+			{Link: "", Text: "bar"},
+		}},
+		{"/foo bar/", []crumb{
+			{Link: "../", Text: "/"},
+			{Link: "", Text: "foo bar"},
+		}},
+		{"/foo bar/baz/", []crumb{
+			{Link: "../../", Text: "/"},
+			{Link: "../", Text: "foo bar"},
+			{Link: "", Text: "baz"},
+		}},
+		{"/100%25 test coverage/is a lie/", []crumb{
+			{Link: "../../", Text: "/"},
+			{Link: "../", Text: "100% test coverage"},
+			{Link: "", Text: "is a lie"},
+		}},
+		{"/AC%2FDC/", []crumb{
+			{Link: "../", Text: "/"},
+			{Link: "", Text: "AC/DC"},
+		}},
+		{"/foo/%2e%2e%2f/bar", []crumb{
+			{Link: "../../../", Text: "/"},
+			{Link: "../../", Text: "foo"},
+			{Link: "../", Text: "../"},
+			{Link: "", Text: "bar"},
+		}},
+		{"/foo/../bar", []crumb{
+			{Link: "../../../", Text: "/"},
+			{Link: "../../", Text: "foo"},
+			{Link: "../", Text: ".."},
+			{Link: "", Text: "bar"},
+		}},
 		{"foo/bar/baz", []crumb{
 			{Link: "../../", Text: "foo"},
 			{Link: "../", Text: "bar"},
@@ -51,16 +90,16 @@ func TestBreadcrumbs(t *testing.T) {
 		}},
 	}
 
-	for _, d := range testdata {
+	for testNum, d := range testdata {
 		l := browseTemplateContext{Path: d.path}
 		actual := l.Breadcrumbs()
 		if len(actual) != len(d.expected) {
-			t.Errorf("wrong size output, got %d elements but expected %d", len(actual), len(d.expected))
+			t.Errorf("Test %d: Got %d components but expected %d; got: %+v", testNum, len(actual), len(d.expected), actual)
 			continue
 		}
 		for i, c := range actual {
 			if c != d.expected[i] {
-				t.Errorf("got %#v but expected %#v at index %d", c, d.expected[i], i)
+				t.Errorf("Test %d crumb %d: got %#v but expected %#v at index %d", testNum, i, c, d.expected[i], i)
 			}
 		}
 	}

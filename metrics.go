@@ -66,3 +66,9 @@ func (d *delegator) WriteHeader(code int) {
 	d.status = code
 	d.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap returns the underlying ResponseWriter, necessary for
+// http.ResponseController to work correctly.
+func (d *delegator) Unwrap() http.ResponseWriter {
+	return d.ResponseWriter
+}

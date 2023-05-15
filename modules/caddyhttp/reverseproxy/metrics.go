@@ -39,6 +39,8 @@ func newMetricsUpstreamsHealthyUpdater(handler *Handler) *metricsUpstreamsHealth
 		initReverseProxyMetrics(handler)
 	})
 
+	reverseProxyMetrics.upstreamsHealthy.Reset()
+
 	return &metricsUpstreamsHealthyUpdater{handler}
 }
 

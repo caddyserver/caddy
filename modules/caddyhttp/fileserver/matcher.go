@@ -558,7 +558,7 @@ func indexFold(haystack, needle string) int {
 	return -1
 }
 
-// isCELMapLiteral returns whether the expression resolves to a map literal containing
+// isCELTryFilesLiteral returns whether the expression resolves to a map literal containing
 // only string keys with or a placeholder call.
 func isCELTryFilesLiteral(e *exprpb.Expr) bool {
 	switch e.GetExprKind().(type) {

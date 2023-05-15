@@ -232,6 +232,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.trustedProxies = val.(IPRangeSource)
 		}
 
+		// set the default client IP header to read from
+		if srv.ClientIPHeaders == nil {
+			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
+		}
+
 		// process each listener address
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)
@@ -352,6 +357,14 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
+			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+				return context.WithValue(ctx, ConnCtxKey, c)
+			},
+		}
+		h2server := &http2.Server{
+			NewWriteScheduler: func() http2.WriteScheduler {
+				return http2.NewPriorityWriteScheduler(nil)
+			},
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
@@ -373,6 +386,9 @@ func (app *App) Start() error {
 					}
 				}
 			}
+		} else {
+			//nolint:errcheck
+			http2.ConfigureServer(srv.server, h2server)
 		}
 
 		// this TLS config is used by the std lib to choose the actual TLS config for connections
@@ -382,9 +398,6 @@ func (app *App) Start() error {
 
 		// enable H2C if configured
 		if srv.protocol("h2c") {
-			h2server := &http2.Server{
-				IdleTimeout: time.Duration(srv.IdleTimeout),
-			}
 			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
@@ -449,6 +462,17 @@ func (app *App) Start() error {
 				// finish wrapping listener where we left off before TLS
 				for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
 					ln = srv.listenerWrappers[i].WrapListener(ln)
+				}
+
+				// handle http2 if use tls listener wrapper
+				if useTLS {
+					http2lnWrapper := &http2Listener{
+						Listener: ln,
+						server:   srv.server,
+						h2server: h2server,
+					}
+					srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
+					ln = http2lnWrapper
 				}
 
 				// if binding to port 0, the OS chooses a port for us;
@@ -580,12 +604,25 @@ func (app *App) Stop() error {
 				zap.Strings("addresses", server.Listen))
 		}
 	}
+	stopH2Listener := func(server *Server) {
+		defer finishedShutdown.Done()
+		startedShutdown.Done()
+
+		for i, s := range server.h2listeners {
+			if err := s.Shutdown(ctx); err != nil {
+				app.logger.Error("http2 listener shutdown",
+					zap.Error(err),
+					zap.Int("index", i))
+			}
+		}
+	}
 
 	for _, server := range app.Servers {
-		startedShutdown.Add(2)
-		finishedShutdown.Add(2)
+		startedShutdown.Add(3)
+		finishedShutdown.Add(3)
 		go stopServer(server)
 		go stopH3Server(server)
+		go stopH2Listener(server)
 	}
 
 	// block until all the goroutines have been run by the scheduler;

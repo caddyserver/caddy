@@ -1,11 +1,14 @@
 *.example.com {
 	@foo host foo.example.com
 	handle @foo {
-		handle_path /strip* {
+		handle_path /strip {
 			respond "this should be first"
 		}
-		handle {
+		handle_path /strip* {
 			respond "this should be second"
+		}
+		handle {
+			respond "this should be last"
 		}
 	}
 	handle {
@@ -35,13 +38,13 @@
 									"handler": "subroute",
 									"routes": [
 										{
-											"group": "group5",
+											"group": "group6",
 											"handle": [
 												{
 													"handler": "subroute",
 													"routes": [
 														{
-															"group": "group2",
+															"group": "group3",
 															"handle": [
 																{
 																	"handler": "subroute",
@@ -68,13 +71,13 @@
 															"match": [
 																{
 																	"path": [
-																		"/strip*"
+																		"/strip"
 																	]
 																}
 															]
 														},
 														{
-															"group": "group2",
+															"group": "group3",
 															"handle": [
 																{
 																	"handler": "subroute",
@@ -82,7 +85,40 @@
 																		{
 																			"handle": [
 																				{
+																					"handler": "rewrite",
+																					"strip_path_prefix": "/strip"
+																				}
+																			]
+																		},
+																		{
+																			"handle": [
+																				{
 																					"body": "this should be second",
+																					"handler": "static_response"
+																				}
+																			]
+																		}
+																	]
+																}
+															],
+															"match": [
+																{
+																	"path": [
+																		"/strip*"
+																	]
+																}
+															]
+														},
+														{
+															"group": "group3",
+															"handle": [
+																{
+																	"handler": "subroute",
+																	"routes": [
+																		{
+																			"handle": [
+																				{
+																					"body": "this should be last",
 																					"handler": "static_response"
 																				}
 																			]
@@ -103,7 +139,7 @@
 											]
 										},
 										{
-											"group": "group5",
+											"group": "group6",
 											"handle": [
 												{
 													"handler": "subroute",

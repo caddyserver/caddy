@@ -1,7 +1,8 @@
 :80
 
 vars /foobar foo last
-vars /foo foo middle
+vars /foo foo middle-last
+vars /foo* foo middle-first
 vars * foo first
 ----------
 {
@@ -25,13 +26,28 @@ vars * foo first
 							"match": [
 								{
 									"path": [
+										"/foo*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"foo": "middle-first",
+									"handler": "vars"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
 										"/foo"
 									]
 								}
 							],
 							"handle": [
 								{
-									"foo": "middle",
+									"foo": "middle-last",
 									"handler": "vars"
 								}
 							]
