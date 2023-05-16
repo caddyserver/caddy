@@ -52,8 +52,10 @@ type ServerType struct {
 }
 
 // Setup makes a config from the tokens.
-func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
-	options map[string]any) (*caddy.Config, []caddyconfig.Warning, error) {
+func (st ServerType) Setup(
+	inputServerBlocks []caddyfile.ServerBlock,
+	options map[string]any,
+) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 	state := make(map[string]any)
@@ -75,6 +77,11 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 	// apply any global options
 	var err error
 	originalServerBlocks, err = st.evaluateGlobalOptionsBlock(originalServerBlocks, options)
+	if err != nil {
+		return nil, warnings, err
+	}
+
+	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -171,6 +178,18 @@ func (st ServerType) Setup(inputServerBlocks []caddyfile.ServerBlock,
 			for _, result := range results {
 				result.directive = dir
 				sb.pile[result.Class] = append(sb.pile[result.Class], result)
+			}
+
+			// specially handle named routes that were pulled out from
+			// the invoke directive, which could be nested anywhere within
+			// some subroutes in this directive; we add them to the pile
+			// for this server block
+			if state[namedRouteKey] != nil {
+				for name := range state[namedRouteKey].(map[string]struct{}) {
+					result := ConfigValue{Class: namedRouteKey, Value: name}
+					sb.pile[result.Class] = append(sb.pile[result.Class], result)
+				}
+				state[namedRouteKey] = nil
 			}
 		}
 	}
@@ -403,6 +422,77 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 	return serverBlocks[1:], nil
 }
 
+// extractNamedRoutes pulls out any named route server blocks
+// so they don't get parsed as sites, and stores them in options
+// for later.
+func (ServerType) extractNamedRoutes(
+	serverBlocks []serverBlock,
+	options map[string]any,
+	warnings *[]caddyconfig.Warning,
+) ([]serverBlock, error) {
+	namedRoutes := map[string]*caddyhttp.Route{}
+
+	gc := counter{new(int)}
+	state := make(map[string]any)
+
+	// copy the server blocks so we can
+	// splice out the named route ones
+	filtered := append([]serverBlock{}, serverBlocks...)
+	index := -1
+
+	for _, sb := range serverBlocks {
+		index++
+		if !sb.block.IsNamedRoute {
+			continue
+		}
+
+		// splice out this block, because we know it's not a real server
+		filtered = append(filtered[:index], filtered[index+1:]...)
+		index--
+
+		if len(sb.block.Segments) == 0 {
+			continue
+		}
+
+		// zip up all the segments since ParseSegmentAsSubroute
+		// was designed to take a directive+
+		wholeSegment := caddyfile.Segment{}
+		for _, segment := range sb.block.Segments {
+			wholeSegment = append(wholeSegment, segment...)
+		}
+
+		h := Helper{
+			Dispenser:    caddyfile.NewDispenser(wholeSegment),
+			options:      options,
+			warnings:     warnings,
+			matcherDefs:  nil,
+			parentBlock:  sb.block,
+			groupCounter: gc,
+			State:        state,
+		}
+
+		handler, err := ParseSegmentAsSubroute(h)
+		if err != nil {
+			return nil, err
+		}
+		subroute := handler.(*caddyhttp.Subroute)
+		route := caddyhttp.Route{}
+
+		if len(subroute.Routes) == 1 && len(subroute.Routes[0].MatcherSetsRaw) == 0 {
+			// if there's only one route with no matcher, then we can simplify
+			route.HandlersRaw = append(route.HandlersRaw, subroute.Routes[0].HandlersRaw[0])
+		} else {
+			// otherwise we need the whole subroute
+			route.HandlersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", subroute.CaddyModule().ID.Name(), h.warnings)}
+		}
+
+		namedRoutes[sb.block.Keys[0]] = &route
+	}
+	options["named_routes"] = namedRoutes
+
+	return filtered, nil
+}
+
 // serversFromPairings creates the servers for each pairing of addresses
 // to server blocks. Each pairing is essentially a server definition.
 func (st *ServerType) serversFromPairings(
@@ -539,6 +629,24 @@ func (st *ServerType) serversFromPairings(
 			if len(sblock.pile["custom_log"]) != 0 {
 				srv.Logs = new(caddyhttp.ServerLogConfig)
 				break
+			}
+		}
+
+		// add named routes to the server if 'invoke' was used inside of it
+		configuredNamedRoutes := options["named_routes"].(map[string]*caddyhttp.Route)
+		for _, sblock := range p.serverBlocks {
+			if len(sblock.pile[namedRouteKey]) == 0 {
+				continue
+			}
+			for _, value := range sblock.pile[namedRouteKey] {
+				if srv.NamedRoutes == nil {
+					srv.NamedRoutes = map[string]*caddyhttp.Route{}
+				}
+				name := value.Value.(string)
+				if configuredNamedRoutes[name] == nil {
+					return nil, fmt.Errorf("cannot invoke named route '%s', which was not defined", name)
+				}
+				srv.NamedRoutes[name] = configuredNamedRoutes[name]
 			}
 		}
 
@@ -1469,6 +1577,7 @@ type sbAddrAssociation struct {
 }
 
 const matcherPrefix = "@"
+const namedRouteKey = "named_route"
 
 // Interface guard
 var _ caddyfile.ServerType = (*ServerType)(nil)
