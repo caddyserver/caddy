@@ -60,6 +60,16 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "foo"),
 		},
 		{
+			rule:   Rewrite{URI: "{http.request.uri}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz?c=d"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz?c=d"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz"),
+		},
+		{
 			rule:   Rewrite{URI: "/foo{http.request.uri.path}"},
 			input:  newRequest(t, "GET", "/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
@@ -323,7 +333,7 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
 			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
 		},
-
+		
 		{
 			rule:   Rewrite{PathRegexp: []*regexReplacer{{Find: "/{2,}", Replace: "/"}}},
 			input:  newRequest(t, "GET", "/foo//bar///baz?a=b//c"),

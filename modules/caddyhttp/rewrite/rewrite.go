@@ -195,16 +195,10 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		var newPath, newQuery, newFrag string
 
 		if path != "" {
-			// Since the 'uri' placeholder performs a URL-encode,
-			// we need to intercept it so that it doesn't, because
-			// otherwise we risk a double-encode of the path.
-			uriPlaceholder := "{http.request.uri}"
-			if strings.Contains(path, uriPlaceholder) {
-				tmpUri := r.URL.Path
-				if r.URL.RawQuery != "" {
-					tmpUri += "?" + r.URL.RawQuery
-				}
-				path = strings.ReplaceAll(path, uriPlaceholder, tmpUri)
+			// replace the `path` placeholder to escaped path
+			pathPlaceholder := "{http.request.uri.path}"
+			if strings.Contains(path, pathPlaceholder) {
+				path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
 			}
 
 			newPath = repl.ReplaceAll(path, "")
@@ -232,7 +226,11 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		// update the URI with the new components
 		// only after building them
 		if pathStart >= 0 {
-			r.URL.Path = newPath
+			if path, err := url.PathUnescape(newPath); err != nil {
+				r.URL.Path = newPath
+			} else {
+				r.URL.Path = path
+			}
 		}
 		if qsStart >= 0 {
 			r.URL.RawQuery = newQuery
