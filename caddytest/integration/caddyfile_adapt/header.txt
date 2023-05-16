@@ -17,6 +17,7 @@
 		+Link "Foo"
 		+Link "Bar"
 	}
+	header >Set Defer
 }
 ----------
 {
@@ -133,6 +134,17 @@
 											"Link": [
 												"Foo",
 												"Bar"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"set": {
+											"Set": [
+												"Defer"
 											]
 										}
 									}
