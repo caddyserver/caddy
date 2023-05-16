@@ -293,9 +293,17 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.Errors != nil {
 			err := srv.Errors.Routes.Provision(ctx)
 			if err != nil {
-				return fmt.Errorf("server %s: setting up server error handling routes: %v", srvName, err)
+				return fmt.Errorf("server %s: setting up error handling routes: %v", srvName, err)
 			}
 			srv.errorHandlerChain = srv.Errors.Routes.Compile(errorEmptyHandler)
+		}
+
+		// provision the named routes (they get compiled at runtime)
+		for name, route := range srv.NamedRoutes {
+			err := route.Provision(ctx, srv.Metrics)
+			if err != nil {
+				return fmt.Errorf("server %s: setting up named route '%s' handlers: %v", name, srvName, err)
+			}
 		}
 
 		// prepare the TLS connection policies

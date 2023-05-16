@@ -1,0 +1,154 @@
+&(first) {
+	@first path /first
+	vars @first first 1
+	respond "first"
+}
+
+&(second) {
+	respond "second"
+}
+
+:8881 {
+	invoke first
+	route {
+		invoke second
+	}
+}
+
+:8882 {
+	handle {
+		invoke second
+	}
+}
+
+:8883 {
+	respond "no invoke"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "first"
+								},
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "invoke",
+													"name": "second"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					],
+					"named_routes": {
+						"first": {
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"first": 1,
+													"handler": "vars"
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/first"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"body": "first",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						"second": {
+							"handle": [
+								{
+									"body": "second",
+									"handler": "static_response"
+								}
+							]
+						}
+					}
+				},
+				"srv1": {
+					"listen": [
+						":8882"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "invoke",
+													"name": "second"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					],
+					"named_routes": {
+						"second": {
+							"handle": [
+								{
+									"body": "second",
+									"handler": "static_response"
+								}
+							]
+						}
+					}
+				},
+				"srv2": {
+					"listen": [
+						":8883"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "no invoke",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

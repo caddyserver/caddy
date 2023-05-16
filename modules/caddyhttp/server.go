@@ -102,6 +102,16 @@ type Server struct {
 	// The error routes work exactly like the normal routes.
 	Errors *HTTPErrorConfig `json:"errors,omitempty"`
 
+	// NamedRoutes describes a mapping of reusable routes that can be
+	// invoked by their name. This can be used to optimize memory usage
+	// when the same route is needed for many subroutes, by having
+	// the handlers and matchers be only provisioned once, but used from
+	// many places. These routes are not executed unless they are invoked
+	// from another route.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	NamedRoutes map[string]*Route `json:"named_routes,omitempty"`
+
 	// How to handle TLS connections. At least one policy is
 	// required to enable HTTPS on this server if automatic
 	// HTTPS is disabled or does not apply.
