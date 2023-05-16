@@ -850,11 +850,11 @@ footer {
 
 		<script>
 			const filterEl = document.getElementById('filter');
-			filterEl.focus({ preventScroll: true });
+			filterEl?.focus({ preventScroll: true });
 
 			function initPage() {
 				// populate and evaluate filter
-				if (!filterEl.value) {
+				if (!filterEl?.value) {
 					const filterParam = new URL(window.location.href).searchParams.get('filter');
 					if (filterParam) {
 						filterEl.value = filterParam;
@@ -874,6 +874,7 @@ footer {
 			}
 
 			function filter() {
+				if (!filterEl) return;
 				const q = filterEl.value.trim().toLowerCase();
 				document.querySelectorAll('tr.file').forEach(function(el) {
 					if (!q) {

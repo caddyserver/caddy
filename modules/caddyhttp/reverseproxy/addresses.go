@@ -40,7 +40,29 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 
 		toURL, err := url.Parse(upstreamAddr)
 		if err != nil {
-			return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+			// if the error seems to be due to a port range,
+			// try to replace the port range with a dummy
+			// single port so that url.Parse() will succeed
+			if strings.Contains(err.Error(), "invalid port") && strings.Contains(err.Error(), "-") {
+				index := strings.LastIndex(upstreamAddr, ":")
+				if index == -1 {
+					return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+				}
+				portRange := upstreamAddr[index+1:]
+				if strings.Count(portRange, "-") != 1 {
+					return "", "", fmt.Errorf("parsing upstream URL: parse \"%v\": port range invalid: %v", upstreamAddr, portRange)
+				}
+				toURL, err = url.Parse(strings.ReplaceAll(upstreamAddr, portRange, "0"))
+				if err != nil {
+					return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+				}
+				port = portRange
+			} else {
+				return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+			}
+		}
+		if port == "" {
+			port = toURL.Port()
 		}
 
 		// there is currently no way to perform a URL rewrite between choosing
@@ -51,30 +73,27 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		}
 
 		// ensure the port and scheme aren't in conflict
-		urlPort := toURL.Port()
-		if toURL.Scheme == "http" && urlPort == "443" {
+		if toURL.Scheme == "http" && port == "443" {
 			return "", "", fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
 		}
-		if toURL.Scheme == "https" && urlPort == "80" {
+		if toURL.Scheme == "https" && port == "80" {
 			return "", "", fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
 		}
-		if toURL.Scheme == "h2c" && urlPort == "443" {
+		if toURL.Scheme == "h2c" && port == "443" {
 			return "", "", fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
 		}
 
 		// if port is missing, attempt to infer from scheme
-		if toURL.Port() == "" {
-			var toPort string
+		if port == "" {
 			switch toURL.Scheme {
 			case "", "http", "h2c":
-				toPort = "80"
+				port = "80"
 			case "https":
-				toPort = "443"
+				port = "443"
 			}
-			toURL.Host = net.JoinHostPort(toURL.Hostname(), toPort)
 		}
 
-		scheme, host, port = toURL.Scheme, toURL.Hostname(), toURL.Port()
+		scheme, host = toURL.Scheme, toURL.Hostname()
 	} else {
 		var err error
 		network, host, port, err = caddy.SplitNetworkAddress(upstreamAddr)
