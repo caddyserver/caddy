@@ -32,19 +32,20 @@ func init() {
 // parseCaddyfile sets up the handler for response headers from
 // Caddyfile tokens. Syntax:
 //
-//	header [<matcher>] [[+|-|?]<field> [<value|regexp>] [<replacement>]] {
-//	    [+]<field> [<value|regexp> [<replacement>]]
-//	    ?<field> <default_value>
-//	    -<field>
-//	    [defer]
+//	header [<matcher>] [[+|-|?|>]<field> [<value|regexp>] [<replacement>]] {
+//		[+]<field> [<value|regexp> [<replacement>]]
+//		?<field> <default_value>
+//		-<field>
+//		><field>
+//		[defer]
 //	}
 //
 // Either a block can be opened or a single header field can be configured
 // in the first line, but not both in the same directive. Header operations
 // are deferred to write-time if any headers are being deleted or if the
 // 'defer' subdirective is used. + appends a header value, - deletes a field,
-// and ? conditionally sets a value only if the header field is not already
-// set.
+// ? conditionally sets a value only if the header field is not already set,
+// and > sets a field with defer enabled.
 func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
 		return nil, h.ArgErr()
@@ -257,6 +258,15 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 				Replace:      replacement,
 			},
 		)
+
+	case strings.HasPrefix(field, ">"): // set (overwrite) with defer
+		if ops.Set == nil {
+			ops.Set = make(http.Header)
+		}
+		ops.Set.Set(field[1:], value)
+		if respHeaderOps != nil {
+			respHeaderOps.Deferred = true
+		}
 
 	default: // set (overwrite)
 		if ops.Set == nil {
