@@ -173,6 +173,7 @@ func (h Helper) Caddyfiles() []string {
 	for file := range files {
 		filesSlice = append(filesSlice, file)
 	}
+	sort.Strings(filesSlice)
 	return filesSlice
 }
 
