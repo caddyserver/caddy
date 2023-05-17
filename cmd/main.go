@@ -214,7 +214,7 @@ func watchConfigFile(filename, adapterName string) {
 	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
 		// get current config
-		newCfg, _, err := LoadConfig(filename, adapterName)
+		newCfg, _, err := loadConfigWithLogger(nil, filename, adapterName)
 		if err != nil {
 			logger().Error("unable to load latest config", zap.Error(err))
 			return
