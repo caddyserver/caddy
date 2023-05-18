@@ -353,9 +353,6 @@ func (p *parser) doImport() error {
 	// grab remaining args as placeholder replacements
 	args := p.RemainingArgs()
 
-	// set up a replacer for non-variadic args replacement
-	repl := makeArgsReplacer(args)
-
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
 	tokensBefore := p.tokens[:p.cursor-1-len(args)]
@@ -443,6 +440,9 @@ func (p *parser) doImport() error {
 	// copy the tokens so we don't overwrite p.definedSnippets
 	tokensCopy := make([]Token, 0, len(importedTokens))
 
+	// set up a replacer for non-variadic args replacement
+	repl := makeArgsReplacer(args, importedTokens)
+
 	// run the argument replacer on the tokens
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
@@ -452,6 +452,14 @@ func (p *parser) doImport() error {
 			token.updateFile(fmt.Sprintf("%s:%d (import %s)", token.File, p.Line(), token.snippetName))
 		} else {
 			token.updateFile(fmt.Sprintf("%s:%d (import)", token.File, p.Line()))
+		}
+
+		// if snippet is in an imported file, snippetName is not set in the first pass.
+		// The token should be treated as is.
+		if token.snippetName == "" {
+			token.Text = repl.ReplaceKnown(token.Text, "")
+			tokensCopy = append(tokensCopy, token)
+			continue
 		}
 
 		foundVariadic, startIndex, endIndex := parseVariadic(token, len(args))
