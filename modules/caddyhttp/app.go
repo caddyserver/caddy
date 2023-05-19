@@ -599,7 +599,7 @@ func (app *App) Stop() error {
 		// written. In contrast, closing tcp listeners won't affect established connections.
 		// This have something to do with graceful shutdown when upstream implements it.
 		// 2, h3server will only close listeners it's registered (quic listeners). Closing
-		// listener first and these listners maybe unregistered thus won't be closed. caddy
+		// listener first and these listeners maybe unregistered thus won't be closed. caddy
 		// distinguishes quic-listener and underlying datagram sockets.
 
 		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
