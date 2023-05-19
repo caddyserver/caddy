@@ -11,6 +11,7 @@ Caddyfile.*
 # build artifacts and helpers
 cmd/caddy/caddy
 cmd/caddy/caddy.exe
+cmd/caddy/tmp/*.exe
 
 # mac specific
 .DS_Store
