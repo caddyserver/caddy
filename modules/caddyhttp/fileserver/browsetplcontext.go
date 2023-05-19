@@ -31,11 +31,16 @@ import (
 	"go.uber.org/zap"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	var dirCount, fileCount int
-	fileInfos := []fileInfo{}
+	name, _ := url.PathUnescape(urlPath)
+
+	tplCtx := &browseTemplateContext{
+		Name:    path.Base(name),
+		Path:    urlPath,
+		CanGoUp: canGoUp,
+	}
 
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
@@ -61,9 +66,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
 			name += "/"
-			dirCount++
+			tplCtx.NumDirs++
 		} else {
-			fileCount++
+			tplCtx.NumFiles++
 		}
 
 		size := info.Size()
@@ -82,7 +87,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
-		fileInfos = append(fileInfos, fileInfo{
+		tplCtx.Items = append(tplCtx.Items, fileInfo{
 			IsDir:     isDir,
 			IsSymlink: fileIsSymlink,
 			Name:      name,
@@ -90,17 +95,11 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			URL:       u.String(),
 			ModTime:   info.ModTime().UTC(),
 			Mode:      info.Mode(),
+			Tpl:       tplCtx, // a reference up to the template context is useful
 		})
 	}
-	name, _ := url.PathUnescape(urlPath)
-	return browseTemplateContext{
-		Name:     path.Base(name),
-		Path:     urlPath,
-		CanGoUp:  canGoUp,
-		Items:    fileInfos,
-		NumDirs:  dirCount,
-		NumFiles: fileCount,
-	}
+
+	return tplCtx
 }
 
 // browseTemplateContext provides the template context for directory listings.
@@ -230,6 +229,9 @@ type fileInfo struct {
 	Mode      os.FileMode `json:"mode"`
 	IsDir     bool        `json:"is_dir"`
 	IsSymlink bool        `json:"is_symlink"`
+
+	// a pointer to the template context is useful inside nested templates
+	Tpl *browseTemplateContext `json:"-"`
 }
 
 // HasExt returns true if the filename has any of the given suffixes, case-insensitive.
