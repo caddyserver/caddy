@@ -93,7 +93,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
-	fsrv.browseApplyQueryParams(w, r, &listing)
+	fsrv.browseApplyQueryParams(w, r, listing)
 
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -137,10 +137,10 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (browseTemplateContext, error) {
+func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
 	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
 	if err != nil && err != io.EOF {
-		return browseTemplateContext{}, err
+		return nil, err
 	}
 
 	// user can presumably browse "up" to parent folder if path is longer than "/"
@@ -237,7 +237,7 @@ func isSymlink(f fs.FileInfo) bool {
 // features.
 type templateContext struct {
 	templates.TemplateContext
-	browseTemplateContext
+	*browseTemplateContext
 }
 
 // bufPool is used to increase the efficiency of file listings.
