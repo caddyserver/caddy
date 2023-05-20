@@ -621,7 +621,12 @@ footer {
 	#filter {
 		max-width: 100px;
 	}
+
+	.grid .entry {
+		max-width: initial;
+	}
 }
+
 
 @media (prefers-color-scheme: dark) {
 	html {
@@ -644,6 +649,10 @@ footer {
 
 	h1 a,
 	th a {
+		color: white;
+	}
+
+	h1 {
 		color: white;
 	}
 
@@ -714,15 +723,16 @@ footer {
 		stroke: #ccc !important;
 	}
 }
+
 </style>
 {{- if eq .Layout "grid"}}
 <style>.wrapper { max-width: none; } main { margin-top: 1px; }</style>
 {{- end}}
-	</head>
-	<body onload="initPage()">
-		<header>
-			<div class="wrapper">
-				<div class="breadcrumbs">Folder Path</div>
+</head>
+<body onload="initPage()">
+	<header>
+		<div class="wrapper">
+			<div class="breadcrumbs">Folder Path</div>
 				<h1>
 					{{range $i, $crumb := .Breadcrumbs}}<a href="{{html $crumb.Link}}">{{html $crumb.Text}}</a>{{if ne $i 0}}/{{end}}{{end}}
 				</h1>
