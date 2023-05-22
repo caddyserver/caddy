@@ -120,6 +120,14 @@ func init() {
 // {{include "path/to/file.html" "arg1" 2 "value 3"}}  // with arguments
 // ```
 //
+// ##### `includeRaw`
+//
+// Includes the contents of another file, without rendering it as a template.
+//
+// ```
+// {{includeRaw "path/to/file.html"}}
+// ```
+//
 // ##### `listFiles`
 //
 // Returns a list of the files in the given directory, which is relative to the template context's file root.

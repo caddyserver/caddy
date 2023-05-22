@@ -74,6 +74,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 	// add our own library
 	c.tpl.Funcs(template.FuncMap{
 		"include":          c.funcInclude,
+		"includeRaw":       c.funcIncludeRaw,
 		"import":           c.funcImport,
 		"httpInclude":      c.funcHTTPInclude,
 		"stripHTML":        c.funcStripHTML,
@@ -116,6 +117,23 @@ func (c TemplateContext) funcInclude(filename string, args ...any) (string, erro
 	c.Args = args
 
 	err = c.executeTemplateInBuffer(filename, bodyBuf)
+	if err != nil {
+		return "", err
+	}
+
+	return bodyBuf.String(), nil
+}
+
+// funcIncludeRaw returns the contents of a filename relative to the site root.
+// Note that included files are NOT escaped, so you should only include
+// trusted files. If it is not trusted, be sure to use escaping functions
+// in your template.
+func (c TemplateContext) funcIncludeRaw(filename string) (string, error) {
+	bodyBuf := bufPool.Get().(*bytes.Buffer)
+	bodyBuf.Reset()
+	defer bufPool.Put(bodyBuf)
+
+	err := c.readFileToBuffer(filename, bodyBuf)
 	if err != nil {
 		return "", err
 	}
