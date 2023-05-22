@@ -1,0 +1,9 @@
+(t2) {
+    respond 200 {
+        body {args[:]}
+    }
+}
+
+:8082 {
+    import t2 false
+}

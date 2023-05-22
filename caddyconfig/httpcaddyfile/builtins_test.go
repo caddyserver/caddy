@@ -243,6 +243,27 @@ func TestImportErrorLine(t *testing.T) {
 				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1):2")
 			},
 		},
+		{
+			input: `
+				import testdata/import_variadic_snippet.txt
+				:8080 {
+					import t1 true
+				}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
+		{
+			input: `
+				import testdata/import_variadic_with_import.txt
+				:8080 {
+					import t1 true
+					import t2 true
+				}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
 	} {
 		adapter := caddyfile.Adapter{
 			ServerType: ServerType{},
