@@ -616,7 +616,11 @@ func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next ca
 // Prefix the etag with "W/" to convert it into a weak etag.
 // See: https://tools.ietf.org/html/rfc7232#section-2.3
 func calculateEtag(d os.FileInfo) string {
-	t := strconv.FormatInt(d.ModTime().Unix(), 36)
+	mtime := d.ModTime().Unix()
+	if mtime == 0 || mtime == 1 {
+		return "" // not useful anyway; see issue #5548
+	}
+	t := strconv.FormatInt(mtime, 36)
 	s := strconv.FormatInt(d.Size(), 36)
 	return `"` + t + s + `"`
 }
