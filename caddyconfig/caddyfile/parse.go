@@ -214,7 +214,7 @@ func (p *parser) addresses() error {
 
 		// special case: import directive replaces tokens during parse-time
 		if tkn == "import" && p.isNewLine() {
-			err := p.doImport()
+			err := p.doImport(0)
 			if err != nil {
 				return err
 			}
@@ -314,7 +314,7 @@ func (p *parser) directives() error {
 
 		// special case: import directive replaces tokens during parse-time
 		if p.Val() == "import" {
-			err := p.doImport()
+			err := p.doImport(1)
 			if err != nil {
 				return err
 			}
@@ -340,7 +340,7 @@ func (p *parser) directives() error {
 // is on the token before where the import directive was. In
 // other words, call Next() to access the first token that was
 // imported.
-func (p *parser) doImport() error {
+func (p *parser) doImport(nesting int) error {
 	// syntax checks
 	if !p.NextArg() {
 		return p.ArgErr()
@@ -443,15 +443,55 @@ func (p *parser) doImport() error {
 	// copy the tokens so we don't overwrite p.definedSnippets
 	tokensCopy := make([]Token, 0, len(importedTokens))
 
+	var (
+		maybeSnippet   bool
+		maybeSnippetId bool
+		index          int
+	)
+
 	// run the argument replacer on the tokens
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
-	for _, token := range importedTokens {
+	for i, token := range importedTokens {
 		// set the token's file to refer to import directive line number and snippet name
 		if token.snippetName != "" {
 			token.updateFile(fmt.Sprintf("%s:%d (import %s)", token.File, p.Line(), token.snippetName))
 		} else {
 			token.updateFile(fmt.Sprintf("%s:%d (import)", token.File, p.Line()))
+		}
+
+		// naive way of determine snippets, as snippets definition can only follow name + block
+		// format, won't check for nesting correctness or any other error, that's what parser does.
+		if !maybeSnippet && nesting == 0 {
+			// first of the line
+			if i == 0 || importedTokens[i-1].originalFile() != token.originalFile() || importedTokens[i-1].Line+importedTokens[i-1].NumLineBreaks() < token.Line {
+				index = 0
+			} else {
+				index++
+			}
+
+			if index == 0 && len(token.Text) >= 3 && strings.HasPrefix(token.Text, "(") && strings.HasSuffix(token.Text, ")") {
+				maybeSnippetId = true
+			}
+		}
+
+		switch token.Text {
+		case "{":
+			nesting++
+			if index == 1 && maybeSnippetId && nesting == 1 {
+				maybeSnippet = true
+				maybeSnippetId = false
+			}
+		case "}":
+			nesting--
+			if nesting == 0 && maybeSnippet {
+				maybeSnippet = false
+			}
+		}
+
+		if maybeSnippet {
+			tokensCopy = append(tokensCopy, token)
+			continue
 		}
 
 		foundVariadic, startIndex, endIndex := parseVariadic(token, len(args))
@@ -553,7 +593,7 @@ func (p *parser) directive() error {
 		} else if p.Val() == "}" && p.nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		} else if p.Val() == "import" && p.isNewLine() {
-			if err := p.doImport(); err != nil {
+			if err := p.doImport(1); err != nil {
 				return err
 			}
 			p.cursor-- // cursor is advanced when we continue, so roll back one more

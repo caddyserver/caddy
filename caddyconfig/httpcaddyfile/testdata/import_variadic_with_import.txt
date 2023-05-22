@@ -1,0 +1,15 @@
+(t1) {
+    respond 200 {
+        body {args[:]}
+    }
+}
+
+:8081 {
+    import t1 false
+}
+
+import import_variadic.txt
+
+:8083 {
+    import t2 true
+}
