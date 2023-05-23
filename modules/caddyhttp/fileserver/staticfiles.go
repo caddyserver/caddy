@@ -71,9 +71,14 @@ func init() {
 // modified the last component of the path (the filename).
 //
 // This handler sets the Etag and Last-Modified headers for static files.
+// Files with an mtime of 1 second past epoch do not get an Etag.
 // It does not perform MIME sniffing to determine Content-Type based on
 // contents, but does use the extension (if known); see the Go docs for
 // details: https://pkg.go.dev/mime#TypeByExtension
+//
+// Variables are set on request context to store the path of the file being
+// served (if serving a precompressed file, its name will be here), and a
+// fs.FileInfo struct with stat data.
 //
 // The file server properly handles requests with If-Match,
 // If-Unmodified-Since, If-Modified-Since, If-None-Match, Range, and
@@ -231,7 +236,8 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 }
 
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	ctx := r.Context()
+	repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	if runtime.GOOS == "windows" {
 		// reject paths with Alternate Data Streams (ADS)
@@ -302,6 +308,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			filename = indexPath
 			implicitIndexFile = true
 			fsrv.logger.Debug("located index file", zap.String("filename", filename))
+
+			caddyhttp.SetVar(ctx, StaticFileInfoVarKey, indexInfo)
+			caddyhttp.SetVar(ctx, StaticFilePathVarKey, indexPath)
 			break
 		}
 	}
@@ -394,6 +403,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			etag = calculateEtag(compressedInfo)
 		}
 
+		caddyhttp.SetVar(ctx, StaticFileInfoVarKey, compressedInfo)
+		caddyhttp.SetVar(ctx, StaticFilePathVarKey, compressedFilename)
 		break
 	}
 
@@ -415,6 +426,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if etag == "" {
 			etag = calculateEtag(info)
 		}
+
+		caddyhttp.SetVar(ctx, StaticFileInfoVarKey, info)
+		caddyhttp.SetVar(ctx, StaticFilePathVarKey, filename)
 	}
 
 	// at this point, we're serving a file; Go std lib supports only
@@ -674,6 +688,12 @@ var defaultIndexNames = []string{"index.html", "index.txt"}
 const (
 	minBackoff, maxBackoff = 2, 5
 	separator              = string(filepath.Separator)
+
+	// fs.FileInfo -- note that this contains only a basename, not a full path
+	StaticFileInfoVarKey = "handlers.file_server.info"
+
+	// string -- actual path used by caddy
+	StaticFilePathVarKey = "handlers.file_server.path"
 )
 
 // Interface guards
