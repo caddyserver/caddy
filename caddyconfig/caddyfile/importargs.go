@@ -39,7 +39,7 @@ func parseVariadic(token Token, argCount int) (bool, int, int) {
 	if argRange == "" {
 		caddy.Log().Named("caddyfile").Warn(
 			"Placeholder "+token.Text+" cannot have an empty index",
-			zap.String("file", token.File+":"+strconv.Itoa(token.Line)))
+			zap.String("file", token.File+":"+strconv.Itoa(token.Line)), zap.Strings("import chain", token.imports))
 		return false, 0, 0
 	}
 
@@ -61,7 +61,7 @@ func parseVariadic(token Token, argCount int) (bool, int, int) {
 		if err != nil {
 			caddy.Log().Named("caddyfile").Warn(
 				"Variadic placeholder "+token.Text+" has an invalid start index",
-				zap.String("file", token.File+":"+strconv.Itoa(token.Line)))
+				zap.String("file", token.File+":"+strconv.Itoa(token.Line)), zap.Strings("import chain", token.imports))
 			return false, 0, 0
 		}
 	}
@@ -70,7 +70,7 @@ func parseVariadic(token Token, argCount int) (bool, int, int) {
 		if err != nil {
 			caddy.Log().Named("caddyfile").Warn(
 				"Variadic placeholder "+token.Text+" has an invalid end index",
-				zap.String("file", token.File+":"+strconv.Itoa(token.Line)))
+				zap.String("file", token.File+":"+strconv.Itoa(token.Line)), zap.Strings("import chain", token.imports))
 			return false, 0, 0
 		}
 	}
@@ -79,7 +79,7 @@ func parseVariadic(token Token, argCount int) (bool, int, int) {
 	if startIndex < 0 || startIndex > endIndex || endIndex > argCount {
 		caddy.Log().Named("caddyfile").Warn(
 			"Variadic placeholder "+token.Text+" indices are out of bounds, only "+strconv.Itoa(argCount)+" argument(s) exist",
-			zap.String("file", token.File+":"+strconv.Itoa(token.Line)))
+			zap.String("file", token.File+":"+strconv.Itoa(token.Line)), zap.Strings("import chain", token.imports))
 		return false, 0, 0
 	}
 	return true, startIndex, endIndex
