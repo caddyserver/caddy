@@ -429,7 +429,7 @@ func (p *parser) doImport(nesting int) error {
 		nodes = matches
 	}
 
-	nodeName := p.Token().originalFile()
+	nodeName := p.File()
 	if p.Token().snippetName != "" {
 		nodeName += fmt.Sprintf(":%s", p.Token().snippetName)
 	}
@@ -453,18 +453,18 @@ func (p *parser) doImport(nesting int) error {
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for i, token := range importedTokens {
-		// set the token's file to refer to import directive line number and snippet name
+		// update the token's imports to refer to import directive filename, line number and snippet name if there is one
 		if token.snippetName != "" {
-			token.updateFile(fmt.Sprintf("%s:%d (import %s)", token.File, p.Line(), token.snippetName))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s)", p.File(), p.Line(), token.snippetName))
 		} else {
-			token.updateFile(fmt.Sprintf("%s:%d (import)", token.File, p.Line()))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import)", p.File(), p.Line()))
 		}
 
 		// naive way of determine snippets, as snippets definition can only follow name + block
 		// format, won't check for nesting correctness or any other error, that's what parser does.
 		if !maybeSnippet && nesting == 0 {
 			// first of the line
-			if i == 0 || importedTokens[i-1].originalFile() != token.originalFile() || importedTokens[i-1].Line+importedTokens[i-1].NumLineBreaks() < token.Line {
+			if i == 0 || importedTokens[i-1].File != token.File || importedTokens[i-1].Line+importedTokens[i-1].NumLineBreaks() < token.Line {
 				index = 0
 			} else {
 				index++
