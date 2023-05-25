@@ -39,7 +39,7 @@ type (
 	// Token represents a single parsable unit.
 	Token struct {
 		File          string
-		origFile      string
+		imports       []string
 		Line          int
 		Text          string
 		wasQuoted     rune // enclosing quote character, if any
@@ -319,23 +319,6 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 
 	// return the final value
 	return []rune(out), nil
-}
-
-// originalFile gets original filename before import modification.
-func (t Token) originalFile() string {
-	if t.origFile != "" {
-		return t.origFile
-	}
-	return t.File
-}
-
-// updateFile updates the token's source filename for error display
-// and remembers the original filename. Used during "import" processing.
-func (t *Token) updateFile(file string) {
-	if t.origFile == "" {
-		t.origFile = t.File
-	}
-	t.File = file
 }
 
 func (t Token) Quoted() bool {
