@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig/v3"
-	"github.com/alecthomas/chroma/v2/formatters/html"
+	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dustin/go-humanize"
@@ -74,7 +74,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 	// add our own library
 	c.tpl.Funcs(template.FuncMap{
 		"include":          c.funcInclude,
-		"includeRaw":       c.funcIncludeRaw,
+		"readFile":         c.funcReadFile,
 		"import":           c.funcImport,
 		"httpInclude":      c.funcHTTPInclude,
 		"stripHTML":        c.funcStripHTML,
@@ -124,11 +124,11 @@ func (c TemplateContext) funcInclude(filename string, args ...any) (string, erro
 	return bodyBuf.String(), nil
 }
 
-// funcIncludeRaw returns the contents of a filename relative to the site root.
+// funcReadFile returns the contents of a filename relative to the site root.
 // Note that included files are NOT escaped, so you should only include
 // trusted files. If it is not trusted, be sure to use escaping functions
 // in your template.
-func (c TemplateContext) funcIncludeRaw(filename string) (string, error) {
+func (c TemplateContext) funcReadFile(filename string) (string, error) {
 	bodyBuf := bufPool.Get().(*bytes.Buffer)
 	bodyBuf.Reset()
 	defer bufPool.Put(bodyBuf)
@@ -333,7 +333,7 @@ func (TemplateContext) funcMarkdown(input any) (string, error) {
 			extension.Footnote,
 			highlighting.NewHighlighting(
 				highlighting.WithFormatOptions(
-					html.WithClasses(true),
+					chromahtml.WithClasses(true),
 				),
 			),
 		),
