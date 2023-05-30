@@ -445,7 +445,7 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 //
 // TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
-func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (quic.EarlyListener, error) {
+func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
 	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -454,7 +454,7 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
 		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
-			Allow0RTT: func(net.Addr) bool { return true },
+			Allow0RTT: true,
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
 				var highLoad bool
 				if activeRequests != nil {
@@ -569,7 +569,7 @@ func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Co
 
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
-	quic.EarlyListener
+	*quic.EarlyListener
 	sqtc *sharedQUICTLSConfig
 	key  string
 }
