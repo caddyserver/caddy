@@ -306,6 +306,56 @@ the KEY=VALUE format will be loaded into the Caddy process.
 	})
 
 	RegisterCommand(Command{
+		Name:  "storage",
+		Short: "Commands for working with Caddy's storage (EXPERIMENTAL)",
+		Long: `
+Allows exporting and importing Caddy's storage contents. The two commands can be
+combined in a pipeline to transfer directly from one storage to another:
+
+$ caddy storage export --config Caddyfile.old --output - |
+> caddy storage import --config Caddyfile.new --input -
+
+The - argument refers to stdout and stdin, respectively.
+
+NOTE: When importing to or exporting from file_system storage (the default), the command
+should be run as the user that owns the associated root path.
+
+EXPERIMENTAL: May be changed or removed.
+`,
+		CobraFunc: func(cmd *cobra.Command) {
+			exportCmd := &cobra.Command{
+				Use:   "export --config <path> --output <path>",
+				Short: "Exports storage assets as a tarball",
+				Long: `
+The contents of the configured storage module (TLS certificates, etc)
+are exported via a tarball.
+
+--output is required, - can be given for stdout.
+`,
+				RunE: WrapCommandFuncForCobra(cmdExportStorage),
+			}
+			exportCmd.Flags().StringP("config", "c", "", "Input configuration file (required)")
+			exportCmd.Flags().StringP("output", "o", "", "Output path")
+			cmd.AddCommand(exportCmd)
+
+			importCmd := &cobra.Command{
+				Use:   "import --config <path> --input <path>",
+				Short: "Imports storage assets from a tarball.",
+				Long: `
+Imports storage assets to the configured storage module. The import file must be
+a tar archive.
+
+--input is required, - can be given for stdin.
+`,
+				RunE: WrapCommandFuncForCobra(cmdImportStorage),
+			}
+			importCmd.Flags().StringP("config", "c", "", "Configuration file to load (required)")
+			importCmd.Flags().StringP("input", "i", "", "Tar of assets to load (required)")
+			cmd.AddCommand(importCmd)
+		},
+	})
+
+	RegisterCommand(Command{
 		Name:  "fmt",
 		Usage: "[--overwrite] [--diff] [<path>]",
 		Short: "Formats a Caddyfile",
