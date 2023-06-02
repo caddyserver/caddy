@@ -63,15 +63,11 @@ func cmdImportStorage(fl Flags) (int, error) {
 	importStorageCmdConfigFlag := fl.String("config")
 	importStorageCmdImportFile := fl.String("input")
 
-	var err error
 	if importStorageCmdConfigFlag == "" {
-		err = errors.New("--config is required")
+		return caddy.ExitCodeFailedStartup, errors.New("--config is required")
 	}
 	if importStorageCmdImportFile == "" {
-		err = errors.Join(err, errors.New("--input is required"))
-	}
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
+		return caddy.ExitCodeFailedStartup, errors.New("--input is required")
 	}
 
 	// extract storage from config if possible
@@ -139,15 +135,11 @@ func cmdExportStorage(fl Flags) (int, error) {
 	exportStorageCmdConfigFlag := fl.String("config")
 	exportStorageCmdOutputFlag := fl.String("output")
 
-	var err error
 	if exportStorageCmdConfigFlag == "" {
-		err = errors.New("--config is required")
+		return caddy.ExitCodeFailedStartup, errors.New("--config is required")
 	}
 	if exportStorageCmdOutputFlag == "" {
-		err = errors.Join(err, errors.New("--output is required"))
-	}
-	if err != nil {
-		return caddy.ExitCodeFailedStartup, err
+		return caddy.ExitCodeFailedStartup, errors.New("--output is required")
 	}
 
 	// extract storage from config if possible
