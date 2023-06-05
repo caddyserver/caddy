@@ -547,17 +547,16 @@ td .go-up {
 }
 
 .grid {
-	display: flex;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(16em, 1fr));
+	justify-items: center;
+	align-items: start;
 	gap: 2px;
-	flex-wrap: wrap;
 }
 
 .grid .entry {
 	position: relative;
-	width: 20%;
-	min-width: 250px;
-	max-width: 400px;
-	flex: 1;
+	width: 100%;
 }
 
 .grid .entry a {
