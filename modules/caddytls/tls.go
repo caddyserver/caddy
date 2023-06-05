@@ -39,9 +39,16 @@ func init() {
 // TLS provides TLS facilities including certificate
 // loading and management, client auth, and more.
 type TLS struct {
-	// Caches certificates in memory for quick use during
+	// Certificates to load into memory for quick recall during
 	// TLS handshakes. Each key is the name of a certificate
-	// loader module. All loaded certificates get pooled
+	// loader module.
+	//
+	// The "automate" certificate loader module can be used to
+	// specify a list of subjects that need certificates to be
+	// managed automatically. The first matching automation
+	// policy will be applied to manage the certificate(s).
+	//
+	// All loaded certificates get pooled
 	// into the same cache and may be used to complete TLS
 	// handshakes for the relevant server names (SNI).
 	// Certificates loaded manually (anything other than
@@ -557,7 +564,9 @@ type Certificate struct {
 //
 // Technically, this is a no-op certificate loader module that is treated as
 // a special case: it uses this app's automation features to load certificates
-// for the list of hostnames, rather than loading certificates manually.
+// for the list of hostnames, rather than loading certificates manually. But
+// the end result is the same: certificates for these subject names will be
+// loaded into the in-memory cache and may then be used.
 type AutomateLoader []string
 
 // CaddyModule returns the Caddy module information.
