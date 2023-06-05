@@ -85,6 +85,13 @@ type AutomationConfig struct {
 // TLS app to properly provision a new policy.
 type AutomationPolicy struct {
 	// Which subjects (hostnames or IP addresses) this policy applies to.
+	//
+	// This list is a filter, not a command. In other words, it is used
+	// only to filter whether this policy should apply to a subject that
+	// needs a certificate; it does NOT command the TLS app to manage a
+	// certificate for that subject. To have Caddy automate a certificate
+	// or specific subjects, use the "automate" certificate loader module
+	// of the TLS app.
 	SubjectsRaw []string `json:"subjects,omitempty"`
 
 	// The modules that may issue certificates. Default: internal if all
