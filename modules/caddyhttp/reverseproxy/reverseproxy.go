@@ -211,8 +211,9 @@ type Handler struct {
 	handleResponseSegments []*caddyfile.Dispenser
 
 	// Stores upgraded requests (hijacked connections) for proper cleanup
-	connections   map[io.ReadWriteCloser]openConnection
-	connectionsMu *sync.Mutex
+	connections           map[io.ReadWriteCloser]openConnection
+	connectionsCloseTimer **time.Timer
+	connectionsMu         *sync.Mutex
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -238,6 +239,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.logger = ctx.Logger()
 	h.connections = make(map[io.ReadWriteCloser]openConnection)
 	h.connectionsMu = new(sync.Mutex)
+	h.connectionsCloseTimer = new(*time.Timer)
+	*h.connectionsCloseTimer = nil
 
 	// TODO: remove deprecated fields sometime after v2.6.4
 	if h.DeprecatedBufferRequests {
@@ -396,47 +399,51 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
 	// close hijacked connections (both to client and backend)
-	var err error
-	h.connectionsMu.Lock()
-	for _, oc := range h.connections {
-		if oc.gracefulClose != nil {
-			if h.StreamCloseDelay != 0 {
-				// this is non-blocking, so we can't acutally get the
-				// error from it, so the best we can do is log it;
-				// the timer may be cancelled if the connection is
-				// closed before the end of the delay.
-				oc.delayTimer = time.AfterFunc(time.Duration(h.StreamCloseDelay), func() {
-					gracefulErr := oc.gracefulClose()
-					if gracefulErr != nil {
-						h.logger.Error("failed to close connection gracefully",
-							zap.Error(gracefulErr),
-							zap.Duration("delay", time.Duration(h.StreamCloseDelay)))
-					}
+	closeConnections := func() error {
+		var err error
+		h.connectionsMu.Lock()
+		defer h.connectionsMu.Unlock()
 
-					closeErr := oc.conn.Close()
-					if closeErr != nil {
-						h.logger.Error("failed to close connection after grace",
-							zap.Error(closeErr),
-							zap.Duration("delay", time.Duration(h.StreamCloseDelay)))
-					}
-				})
-				continue
+		for _, oc := range h.connections {
+			if oc.gracefulClose != nil {
+				// this is potentially blocking while we have the lock on the connections
+				// map, but that should be OK since the server has in theory shut down
+				// and we are no longer using the connections map
+				gracefulErr := oc.gracefulClose()
+				if gracefulErr != nil && err == nil {
+					err = gracefulErr
+				}
 			}
-
-			// this is potentially blocking while we have the lock on the connections
-			// map, but that should be OK since the server has in theory shut down
-			// and we are no longer using the connections map
-			gracefulErr := oc.gracefulClose()
-			if gracefulErr != nil && err == nil {
-				err = gracefulErr
+			closeErr := oc.conn.Close()
+			if closeErr != nil && err == nil {
+				err = closeErr
 			}
 		}
-		closeErr := oc.conn.Close()
-		if closeErr != nil && err == nil {
-			err = closeErr
-		}
+		return err
 	}
-	h.connectionsMu.Unlock()
+
+	var err error
+	if h.StreamCloseDelay > 0 {
+		h.connectionsMu.Lock()
+		// the handler is shut down, no new connection can appear,
+		// so we can skip setting up the timer when there are no connections
+		if len(h.connections) > 0 {
+			delay := time.Duration(h.StreamCloseDelay)
+			*h.connectionsCloseTimer = time.AfterFunc(delay, func() {
+				h.logger.Debug("closing streaming connections after delay",
+					zap.Duration("delay", delay))
+				err := closeConnections()
+				if err != nil {
+					h.logger.Error("failed to closed connections after delay",
+						zap.Error(err),
+						zap.Duration("delay", delay))
+				}
+			})
+		}
+		h.connectionsMu.Unlock()
+	} else {
+		err = closeConnections()
+	}
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {

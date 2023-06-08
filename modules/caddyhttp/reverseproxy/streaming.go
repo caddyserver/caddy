@@ -22,7 +22,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -121,10 +120,12 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 
 	spc := switchProtocolCopier{user: conn, backend: backConn}
 
-	// If no timeout, set it to infinity
-	timeout := time.Duration(h.StreamTimeout)
-	if h.StreamTimeout == 0 {
-		timeout = math.MaxInt64
+	// setup the timeout if requested
+	var timeoutc <-chan time.Time
+	if h.StreamTimeout > 0 {
+		timer := time.NewTimer(time.Duration(h.StreamTimeout))
+		defer timer.Stop()
+		timeoutc = timer.C
 	}
 
 	errc := make(chan error, 1)
@@ -133,7 +134,7 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 	select {
 	case err := <-errc:
 		logger.Debug("streaming error", zap.Error(err))
-	case time := <-time.After(timeout):
+	case time := <-timeoutc:
 		logger.Debug("stream timed out", zap.Time("timeout", time))
 	}
 }
@@ -250,11 +251,19 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte) (int64, er
 // connection is done to remove it from memory.
 func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (del func()) {
 	h.connectionsMu.Lock()
-	h.connections[conn] = openConnection{conn, gracefulClose, nil}
+	h.connections[conn] = openConnection{conn, gracefulClose}
 	h.connectionsMu.Unlock()
 	return func() {
 		h.connectionsMu.Lock()
 		delete(h.connections, conn)
+		// if there is no connection left before the connections close timer fires
+		if len(h.connections) == 0 && *h.connectionsCloseTimer != nil {
+			// we release the timer that holds the reference to Handler
+			if (*h.connectionsCloseTimer).Stop() {
+				h.logger.Debug("stopped streaming connections close timer - all connections are already closed")
+			}
+			*h.connectionsCloseTimer = nil
+		}
 		h.connectionsMu.Unlock()
 	}
 }
@@ -376,17 +385,6 @@ func isWebsocket(r *http.Request) bool {
 type openConnection struct {
 	conn          io.ReadWriteCloser
 	gracefulClose func() error
-	delayTimer    *time.Timer
-}
-
-// Close closes the underlying connection, and cancels
-// the graceful close timer if set.
-func (c *openConnection) Close() error {
-	if c.delayTimer != nil {
-		c.delayTimer.Stop()
-		c.delayTimer = nil
-	}
-	return c.conn.Close()
 }
 
 type writeFlusher interface {
