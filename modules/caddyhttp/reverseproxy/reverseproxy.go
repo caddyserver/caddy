@@ -637,7 +637,13 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	addrPort, err := netip.ParseAddrPort(address)
 	if err != nil {
 		// OK; probably didn't have a port
-		addrPort, _ = netip.ParseAddrPort(address + ":0")
+		addr, err := netip.ParseAddr(address)
+		if err != nil {
+			// Doesn't seem like a valid ip address at all
+		} else {
+			// Ok, only the port was missing
+			addrPort = netip.AddrPortFrom(addr, 0)
+		}
 	}
 	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
 	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
