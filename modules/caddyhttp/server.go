@@ -520,17 +520,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	switch addr.Network {
-	case "unix":
-		addr.Network = "unixgram"
-	case "tcp4":
-		addr.Network = "udp4"
-	case "tcp6":
-		addr.Network = "udp6"
-	default:
-		addr.Network = "udp" // TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
-	}
-
+	addr.Network = getHTTP3Network(addr.Network)
 	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
 	if err != nil {
 		return err
@@ -918,3 +908,30 @@ const (
 	// For tracking the real client IP (affected by trusted_proxy)
 	ClientIPVarKey string = "client_ip"
 )
+
+var networkTypesHTTP3 = map[string]string{
+	"unix": "unixgram",
+	"tcp4": "udp4",
+	"tcp6": "udp6",
+}
+
+// RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
+// network. This should be called during init() and will panic if the network
+// type is standard, reserved, or already registered.
+//
+// EXPERIMENTAL: Subject to change.
+func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
+	if _, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]; ok {
+		panic("network type " + originalNetwork + " is already registered")
+	}
+	networkTypesHTTP3[originalNetwork] = h3Network
+}
+
+func getHTTP3Network(originalNetwork string) string {
+	h3Network, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]
+	if !ok {
+		// TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
+		return "udp"
+	}
+	return h3Network
+}
