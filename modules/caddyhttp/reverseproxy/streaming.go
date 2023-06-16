@@ -268,6 +268,58 @@ func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func
 	}
 }
 
+// closeConnections immediately closes all hijacked connections (both to client and backend).
+func (h *Handler) closeConnections() error {
+	var err error
+	h.connectionsMu.Lock()
+	defer h.connectionsMu.Unlock()
+
+	for _, oc := range h.connections {
+		if oc.gracefulClose != nil {
+			// this is potentially blocking while we have the lock on the connections
+			// map, but that should be OK since the server has in theory shut down
+			// and we are no longer using the connections map
+			gracefulErr := oc.gracefulClose()
+			if gracefulErr != nil && err == nil {
+				err = gracefulErr
+			}
+		}
+		closeErr := oc.conn.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+// cleanupConnections closes hijacked connections.
+// Depending on the value of StreamCloseDelay it does that either immediately
+// or sets up a timer that will do that later.
+func (h *Handler) cleanupConnections() error {
+	if h.StreamCloseDelay == 0 {
+		return h.closeConnections()
+	}
+
+	h.connectionsMu.Lock()
+	defer h.connectionsMu.Unlock()
+	// the handler is shut down, no new connection can appear,
+	// so we can skip setting up the timer when there are no connections
+	if len(h.connections) > 0 {
+		delay := time.Duration(h.StreamCloseDelay)
+		*h.connectionsCloseTimer = time.AfterFunc(delay, func() {
+			h.logger.Debug("closing streaming connections after delay",
+				zap.Duration("delay", delay))
+			err := h.closeConnections()
+			if err != nil {
+				h.logger.Error("failed to closed connections after delay",
+					zap.Error(err),
+					zap.Duration("delay", delay))
+			}
+		})
+	}
+	return nil
+}
+
 // writeCloseControl sends a best-effort Close control message to the given
 // WebSocket connection. Thanks to @pascaldekloe who provided inspiration
 // from his simple implementation of this I was able to learn from at:

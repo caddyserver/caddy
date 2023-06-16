@@ -398,52 +398,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	// close hijacked connections (both to client and backend)
-	closeConnections := func() error {
-		var err error
-		h.connectionsMu.Lock()
-		defer h.connectionsMu.Unlock()
-
-		for _, oc := range h.connections {
-			if oc.gracefulClose != nil {
-				// this is potentially blocking while we have the lock on the connections
-				// map, but that should be OK since the server has in theory shut down
-				// and we are no longer using the connections map
-				gracefulErr := oc.gracefulClose()
-				if gracefulErr != nil && err == nil {
-					err = gracefulErr
-				}
-			}
-			closeErr := oc.conn.Close()
-			if closeErr != nil && err == nil {
-				err = closeErr
-			}
-		}
-		return err
-	}
-
-	var err error
-	if h.StreamCloseDelay > 0 {
-		h.connectionsMu.Lock()
-		// the handler is shut down, no new connection can appear,
-		// so we can skip setting up the timer when there are no connections
-		if len(h.connections) > 0 {
-			delay := time.Duration(h.StreamCloseDelay)
-			*h.connectionsCloseTimer = time.AfterFunc(delay, func() {
-				h.logger.Debug("closing streaming connections after delay",
-					zap.Duration("delay", delay))
-				err := closeConnections()
-				if err != nil {
-					h.logger.Error("failed to closed connections after delay",
-						zap.Error(err),
-						zap.Duration("delay", delay))
-				}
-			})
-		}
-		h.connectionsMu.Unlock()
-	} else {
-		err = closeConnections()
-	}
+	err := h.cleanupConnections()
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
