@@ -88,7 +88,7 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	}
 	h = wrrPolicy.Select(pool, req, nil)
 	if h != pool[0] {
-		t.Error("Expected second weighted round robin host to be firest host in the pool.")
+		t.Error("Expected second weighted round robin host to be first host in the pool.")
 	}
 	// Third selected host is 1, because counter starts at 0
 	// and increments before host is selected
