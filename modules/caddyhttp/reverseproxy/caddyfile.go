@@ -83,10 +83,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    unhealthy_request_count <num>
 //
 //	    # streaming
-//	    flush_interval <duration>
+//	    flush_interval     <duration>
 //	    buffer_requests
 //	    buffer_responses
-//	    max_buffer_size <size>
+//	    max_buffer_size    <size>
+//	    stream_timeout     <duration>
+//	    stream_close_delay <duration>
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -570,6 +572,34 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			caddy.Log().Named("config.adapter.caddyfile").Warn("DEPRECATED: max_buffer_size: use request_buffers and/or response_buffers instead (with maximum buffer sizes)")
 			h.DeprecatedMaxBufferSize = int64(size)
+
+		case "stream_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if fi, err := strconv.Atoi(d.Val()); err == nil {
+				h.StreamTimeout = caddy.Duration(fi)
+			} else {
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				}
+				h.StreamTimeout = caddy.Duration(dur)
+			}
+
+		case "stream_close_delay":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if fi, err := strconv.Atoi(d.Val()); err == nil {
+				h.StreamCloseDelay = caddy.Duration(fi)
+			} else {
+				dur, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("bad duration value '%s': %v", d.Val(), err)
+				}
+				h.StreamCloseDelay = caddy.Duration(dur)
+			}
 
 		case "trusted_proxies":
 			for d.NextArg() {
