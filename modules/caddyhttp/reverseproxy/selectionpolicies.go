@@ -40,6 +40,7 @@ func init() {
 	caddy.RegisterModule(RandomChoiceSelection{})
 	caddy.RegisterModule(LeastConnSelection{})
 	caddy.RegisterModule(RoundRobinSelection{})
+	caddy.RegisterModule(WeightedRoundRobinSelection{})
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(ClientIPHashSelection{})
@@ -76,6 +77,84 @@ func (r *RandomSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// WeightedRoundRobinSelection is a policy that selects
+// a host based on weighted round-robin ordering.
+type WeightedRoundRobinSelection struct {
+	// The weight of each upstream in order.
+	Weights     []int `json:"weights,omitempty"`
+	index       uint32
+	totalWeight int
+}
+
+// CaddyModule returns the Caddy module information.
+func (WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "http.reverse_proxy.selection_policies.weighted_round_robin",
+		New: func() caddy.Module {
+			return new(WeightedRoundRobinSelection)
+		},
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		weightStr := d.Val()
+		weightStr = strings.ReplaceAll(weightStr, " ", "")
+
+		for _, weight := range strings.Split(weightStr, ",") {
+			weightInt, err := strconv.Atoi(weight)
+			if err != nil {
+				return d.Errf("invalid weight value '%s': %v", weight, err)
+			}
+			if weightInt < 1 {
+				return d.Errf("invalid weight value '%s': weight should be non-zero and positive", weight)
+			}
+			r.totalWeight += weightInt
+			r.Weights = append(r.Weights, weightInt)
+		}
+	}
+	return nil
+}
+
+// Select returns an available host, if any.
+func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
+	if len(pool) == 0 {
+		return nil
+	}
+	if len(r.Weights) < 2 {
+		return pool[0]
+	}
+	index := 0
+	totalWeight := 0
+	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
+	for i, weight := range r.Weights {
+		totalWeight += weight
+		if currentWeight < totalWeight {
+			index = i
+			break
+		}
+	}
+
+	upstreams := make([]*Upstream, 0, len(r.Weights))
+	for _, upstream := range pool {
+		if !upstream.Available() {
+			continue
+		}
+		upstreams = append(upstreams, upstream)
+		if len(upstreams) == cap(upstreams) {
+			break
+		}
+	}
+	if len(upstreams) == 0 {
+		return nil
+	}
+	return upstreams[index%len(upstreams)]
 }
 
 // RandomChoiceSelection is a policy that selects
@@ -762,6 +841,7 @@ var (
 	_ Selector = (*RandomChoiceSelection)(nil)
 	_ Selector = (*LeastConnSelection)(nil)
 	_ Selector = (*RoundRobinSelection)(nil)
+	_ Selector = (*WeightedRoundRobinSelection)(nil)
 	_ Selector = (*FirstSelection)(nil)
 	_ Selector = (*IPHashSelection)(nil)
 	_ Selector = (*ClientIPHashSelection)(nil)
