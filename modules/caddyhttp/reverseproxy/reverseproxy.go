@@ -157,6 +157,19 @@ type Handler struct {
 	// could be useful if the backend has tighter memory constraints.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
 
+	// If nonzero, streaming requests such as WebSockets will be
+	// forcibly closed at the end of the timeout. Default: no timeout.
+	StreamTimeout caddy.Duration `json:"stream_timeout,omitempty"`
+
+	// If nonzero, streaming requests such as WebSockets will not be
+	// closed when the proxy config is unloaded, and instead the stream
+	// will remain open until the delay is complete. In other words,
+	// enabling this prevents streams from closing when Caddy's config
+	// is reloaded. Enabling this may be a good idea to avoid a thundering
+	// herd of reconnecting clients which had their connections closed
+	// by the previous config closing. Default: no delay.
+	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -198,8 +211,9 @@ type Handler struct {
 	handleResponseSegments []*caddyfile.Dispenser
 
 	// Stores upgraded requests (hijacked connections) for proper cleanup
-	connections   map[io.ReadWriteCloser]openConnection
-	connectionsMu *sync.Mutex
+	connections           map[io.ReadWriteCloser]openConnection
+	connectionsCloseTimer *time.Timer
+	connectionsMu         *sync.Mutex
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -382,25 +396,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	// close hijacked connections (both to client and backend)
-	var err error
-	h.connectionsMu.Lock()
-	for _, oc := range h.connections {
-		if oc.gracefulClose != nil {
-			// this is potentially blocking while we have the lock on the connections
-			// map, but that should be OK since the server has in theory shut down
-			// and we are no longer using the connections map
-			gracefulErr := oc.gracefulClose()
-			if gracefulErr != nil && err == nil {
-				err = gracefulErr
-			}
-		}
-		closeErr := oc.conn.Close()
-		if closeErr != nil && err == nil {
-			err = closeErr
-		}
-	}
-	h.connectionsMu.Unlock()
+	err := h.cleanupConnections()
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
@@ -872,7 +868,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 		repl.Set("http.reverse_proxy.status_text", res.Status)
 
-		h.logger.Debug("handling response", zap.Int("handler", i))
+		logger.Debug("handling response", zap.Int("handler", i))
 
 		// we make some data available via request context to child routes
 		// so that they may inherit some options and functions from the
@@ -917,7 +913,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 }
 
 // finalizeResponse prepares and copies the response.
-func (h Handler) finalizeResponse(
+func (h *Handler) finalizeResponse(
 	rw http.ResponseWriter,
 	req *http.Request,
 	res *http.Response,
@@ -967,7 +963,7 @@ func (h Handler) finalizeResponse(
 		// there's nothing an error handler can do to recover at this point;
 		// the standard lib's proxy panics at this point, but we'll just log
 		// the error and abort the stream here
-		h.logger.Error("aborting with incomplete response", zap.Error(err))
+		logger.Error("aborting with incomplete response", zap.Error(err))
 		return nil
 	}
 
