@@ -212,7 +212,7 @@ type Handler struct {
 
 	// Stores upgraded requests (hijacked connections) for proper cleanup
 	connections           map[io.ReadWriteCloser]openConnection
-	connectionsCloseTimer **time.Timer
+	connectionsCloseTimer *time.Timer
 	connectionsMu         *sync.Mutex
 
 	ctx    caddy.Context
@@ -239,8 +239,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.logger = ctx.Logger()
 	h.connections = make(map[io.ReadWriteCloser]openConnection)
 	h.connectionsMu = new(sync.Mutex)
-	h.connectionsCloseTimer = new(*time.Timer)
-	*h.connectionsCloseTimer = nil
 
 	// TODO: remove deprecated fields sometime after v2.6.4
 	if h.DeprecatedBufferRequests {
@@ -909,7 +907,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 }
 
 // finalizeResponse prepares and copies the response.
-func (h Handler) finalizeResponse(
+func (h *Handler) finalizeResponse(
 	rw http.ResponseWriter,
 	req *http.Request,
 	res *http.Response,

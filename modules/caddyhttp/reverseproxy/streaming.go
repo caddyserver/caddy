@@ -33,7 +33,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
+func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 
@@ -257,12 +257,12 @@ func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func
 		h.connectionsMu.Lock()
 		delete(h.connections, conn)
 		// if there is no connection left before the connections close timer fires
-		if len(h.connections) == 0 && *h.connectionsCloseTimer != nil {
+		if len(h.connections) == 0 && h.connectionsCloseTimer != nil {
 			// we release the timer that holds the reference to Handler
 			if (*h.connectionsCloseTimer).Stop() {
 				h.logger.Debug("stopped streaming connections close timer - all connections are already closed")
 			}
-			*h.connectionsCloseTimer = nil
+			h.connectionsCloseTimer = nil
 		}
 		h.connectionsMu.Unlock()
 	}
@@ -306,7 +306,7 @@ func (h *Handler) cleanupConnections() error {
 	// so we can skip setting up the timer when there are no connections
 	if len(h.connections) > 0 {
 		delay := time.Duration(h.StreamCloseDelay)
-		*h.connectionsCloseTimer = time.AfterFunc(delay, func() {
+		h.connectionsCloseTimer = time.AfterFunc(delay, func() {
 			h.logger.Debug("closing streaming connections after delay",
 				zap.Duration("delay", delay))
 			err := h.closeConnections()
