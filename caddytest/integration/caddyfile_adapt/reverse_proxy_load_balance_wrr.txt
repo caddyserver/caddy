@@ -1,0 +1,71 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 127.0.0.1:35535 {
+	lb_policy weighted_round_robin 10 1
+	lb_retries 5
+	lb_try_duration 10s
+	lb_try_interval 500ms
+	lb_retry_match {
+		path /foo*
+		method POST
+	}
+	lb_retry_match path /bar*
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"retries": 5,
+										"retry_match": [
+											{
+												"method": [
+													"POST"
+												],
+												"path": [
+													"/foo*"
+												]
+											},
+											{
+												"path": [
+													"/bar*"
+												]
+											}
+										],
+										"selection_policy": {
+											"policy": "weighted_round_robin",
+											"weights": [
+												10,
+												1
+											]
+										},
+										"try_duration": 10000000000,
+										"try_interval": 500000000
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										},
+										{
+											"dial": "127.0.0.1:35535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
