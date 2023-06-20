@@ -82,7 +82,8 @@ func (r *RandomSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // WeightedRoundRobinSelection is a policy that selects
 // a host based on weighted round-robin ordering.
 type WeightedRoundRobinSelection struct {
-	// The weight of each upstream in order.
+	// The weight of each upstream in order,
+	// corresponding with the list of upstreams configured.
 	Weights     []int `json:"weights,omitempty"`
 	index       uint32
 	totalWeight int
@@ -114,7 +115,6 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 			if weightInt < 1 {
 				return d.Errf("invalid weight value '%s': weight should be non-zero and positive", weight)
 			}
-			r.totalWeight += weightInt
 			r.Weights = append(r.Weights, weightInt)
 		}
 	}
@@ -123,25 +123,8 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 
 // Provision sets up r.
 func (r *WeightedRoundRobinSelection) Provision(ctx caddy.Context) error {
-	if len(r.Weights) != 0 {
-		r.totalWeight = 0
-		for _, weight := range r.Weights {
-			r.totalWeight += weight
-		}
-	}
-	return nil
-}
-
-// Validate ensures that r's configuration is valid.
-func (r WeightedRoundRobinSelection) Validate() error {
-	if len(r.Weights) != 0 {
-		totalWeight := 0
-		for _, weight := range r.Weights {
-			totalWeight += weight
-		}
-		if r.totalWeight != totalWeight {
-			return fmt.Errorf("total weight miscalculated")
-		}
+	for _, weight := range r.Weights {
+		r.totalWeight += weight
 	}
 	return nil
 }
@@ -154,8 +137,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 	if len(r.Weights) < 2 {
 		return pool[0]
 	}
-	index := 0
-	totalWeight := 0
+	var index, totalWeight int
 	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
 	for i, weight := range r.Weights {
 		totalWeight += weight
@@ -875,7 +857,6 @@ var (
 	_ Selector = (*CookieHashSelection)(nil)
 
 	_ caddy.Validator = (*RandomChoiceSelection)(nil)
-	_ caddy.Validator = (*WeightedRoundRobinSelection)(nil)
 
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
 	_ caddy.Provisioner = (*WeightedRoundRobinSelection)(nil)
