@@ -121,6 +121,31 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 	return nil
 }
 
+// Provision sets up r.
+func (r *WeightedRoundRobinSelection) Provision(ctx caddy.Context) error {
+	if len(r.Weights) != 0 {
+		r.totalWeight = 0
+		for _, weight := range r.Weights {
+			r.totalWeight += weight
+		}
+	}
+	return nil
+}
+
+// Validate ensures that r's configuration is valid.
+func (r WeightedRoundRobinSelection) Validate() error {
+	if len(r.Weights) != 0 {
+		totalWeight := 0
+		for _, weight := range r.Weights {
+			totalWeight += weight
+		}
+		if r.totalWeight != totalWeight {
+			return fmt.Errorf("total weight miscalculated")
+		}
+	}
+	return nil
+}
+
 // Select returns an available host, if any.
 func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	if len(pool) == 0 {
@@ -849,8 +874,12 @@ var (
 	_ Selector = (*HeaderHashSelection)(nil)
 	_ Selector = (*CookieHashSelection)(nil)
 
-	_ caddy.Validator   = (*RandomChoiceSelection)(nil)
+	_ caddy.Validator = (*RandomChoiceSelection)(nil)
+	_ caddy.Validator = (*WeightedRoundRobinSelection)(nil)
+
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
+	_ caddy.Provisioner = (*WeightedRoundRobinSelection)(nil)
 
 	_ caddyfile.Unmarshaler = (*RandomChoiceSelection)(nil)
+	_ caddyfile.Unmarshaler = (*WeightedRoundRobinSelection)(nil)
 )
