@@ -101,13 +101,12 @@ func (WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		if !d.NextArg() {
+		args := d.RemainingArgs()
+		if len(args) == 0 {
 			return d.ArgErr()
 		}
-		weightStr := d.Val()
-		weightStr = strings.ReplaceAll(weightStr, " ", "")
 
-		for _, weight := range strings.Split(weightStr, ",") {
+		for _, weight := range args {
 			weightInt, err := strconv.Atoi(weight)
 			if err != nil {
 				return d.Errf("invalid weight value '%s': %v", weight, err)
