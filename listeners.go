@@ -186,19 +186,11 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
 	}
 
-	// if new listener is a unix socket, make sure we can reuse it later
-	// (we do our own "unlink on close" -- not required, but more tidy)
-	one := int32(1)
-	switch lnValue := ln.(type) {
-	case deleteListener:
-		if unix, ok := lnValue.Listener.(*net.UnixListener); ok {
-			unix.SetUnlinkOnClose(false)
-			ln = &unixListener{unix, lnKey, &one}
-			unixSockets[lnKey] = ln.(*unixListener)
-		}
-	case *net.UnixConn:
-		ln = &unixConn{lnValue, address, lnKey, &one}
-		unixSockets[lnKey] = ln.(*unixConn)
+	// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener in listen_unix.go, so...
+	if unix, ok := ln.(*net.UnixConn); ok {
+		one := int32(1)
+		ln = &unixConn{unix, address, lnKey, &one}
+		unixSockets[lnKey] = unix
 	}
 
 	return ln, nil
