@@ -17,7 +17,7 @@ require (
 	github.com/mastercactapus/proxyprotocol v0.0.4
 	github.com/mholt/acmez v1.1.1
 	github.com/prometheus/client_golang v1.14.0
-	github.com/quic-go/quic-go v0.35.1
+	github.com/quic-go/quic-go v0.36.0
 	github.com/smallstep/certificates v0.24.2
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.12.1
@@ -54,7 +54,7 @@ require (
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
-	github.com/onsi/ginkgo/v2 v2.2.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
@@ -87,10 +87,10 @@ require (
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-kit/kit v0.10.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
-	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
@@ -143,7 +143,7 @@ require (
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/sys v0.8.0
 	golang.org/x/text v0.9.0 // indirect
-	golang.org/x/tools v0.8.0 // indirect
+	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
