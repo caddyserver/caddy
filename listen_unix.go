@@ -138,6 +138,26 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 	})
 }
 
+type unixListener struct {
+	*net.UnixListener
+	mapKey string
+	count  *int32 // accessed atomically
+}
+
+func (uln *unixListener) Close() error {
+	newCount := atomic.AddInt32(uln.count, -1)
+	if newCount == 0 {
+		defer func() {
+			addr := uln.Addr().String()
+			unixSocketsMu.Lock()
+			delete(unixSockets, uln.mapKey)
+			unixSocketsMu.Unlock()
+			_ = syscall.Unlink(addr)
+		}()
+	}
+	return uln.UnixListener.Close()
+}
+
 // deleteListener is a type that simply deletes itself
 // from the listenerPool when it closes. It is used
 // solely for the purpose of reference counting (i.e.

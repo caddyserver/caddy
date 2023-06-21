@@ -694,26 +694,6 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkTypes[network] = getListener
 }
 
-type unixListener struct {
-	*net.UnixListener
-	mapKey string
-	count  *int32 // accessed atomically
-}
-
-func (uln *unixListener) Close() error {
-	newCount := atomic.AddInt32(uln.count, -1)
-	if newCount == 0 {
-		defer func() {
-			addr := uln.Addr().String()
-			unixSocketsMu.Lock()
-			delete(unixSockets, uln.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(addr)
-		}()
-	}
-	return uln.UnixListener.Close()
-}
-
 type unixConn struct {
 	*net.UnixConn
 	filename string
