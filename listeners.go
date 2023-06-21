@@ -189,13 +189,15 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	// if new listener is a unix socket, make sure we can reuse it later
 	// (we do our own "unlink on close" -- not required, but more tidy)
 	one := int32(1)
-	switch unix := ln.(type) {
-	case *net.UnixListener:
-		unix.SetUnlinkOnClose(false)
-		ln = &unixListener{unix, lnKey, &one}
-		unixSockets[lnKey] = ln.(*unixListener)
+	switch lnValue := ln.(type) {
+	case deleteListener:
+		if unix, ok := lnValue.Listener.(*net.UnixListener); ok {
+			unix.SetUnlinkOnClose(false)
+			ln = &unixListener{unix, lnKey, &one}
+			unixSockets[lnKey] = ln.(*unixListener)
+		}
 	case *net.UnixConn:
-		ln = &unixConn{unix, address, lnKey, &one}
+		ln = &unixConn{lnValue, address, lnKey, &one}
 		unixSockets[lnKey] = ln.(*unixConn)
 	}
 
