@@ -3,19 +3,19 @@ module github.com/caddyserver/caddy/v2
 go 1.19
 
 require (
-	github.com/BurntSushi/toml v1.2.1
+	github.com/BurntSushi/toml v1.3.2
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/alecthomas/chroma/v2 v2.7.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.17.3-0.20230511183644-8728b186fa68
+	github.com/caddyserver/certmagic v0.18.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.15.1
 	github.com/google/uuid v1.3.0
-	github.com/klauspost/compress v1.16.5
-	github.com/klauspost/cpuid/v2 v2.2.4
+	github.com/klauspost/compress v1.16.6
+	github.com/klauspost/cpuid/v2 v2.2.5
 	github.com/mastercactapus/proxyprotocol v0.0.4
-	github.com/mholt/acmez v1.1.1
+	github.com/mholt/acmez v1.2.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/quic-go/quic-go v0.36.0
 	github.com/smallstep/certificates v0.24.2
@@ -33,10 +33,10 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.16.0
 	go.opentelemetry.io/otel/sdk v1.16.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/crypto v0.9.0
-	golang.org/x/net v0.10.0
-	golang.org/x/sync v0.2.0
-	golang.org/x/term v0.8.0
+	golang.org/x/crypto v0.10.0
+	golang.org/x/net v0.11.0
+	golang.org/x/sync v0.3.0
+	golang.org/x/term v0.9.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -111,7 +111,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/micromdm/scep/v2 v2.1.0 // indirect
-	github.com/miekg/dns v1.1.54 // indirect
+	github.com/miekg/dns v1.1.55 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -140,10 +140,10 @@ require (
 	go.step.sm/linkedca v0.19.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/sys v0.8.0
-	golang.org/x/text v0.9.0 // indirect
-	golang.org/x/tools v0.9.1 // indirect
+	golang.org/x/mod v0.11.0 // indirect
+	golang.org/x/sys v0.9.0
+	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/tools v0.10.0 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
