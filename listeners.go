@@ -317,6 +317,8 @@ func IsUnixNetwork(netw string) bool {
 // can't be used as separator, as socket paths on Windows may
 // include a drive letter (e.g. `unix/c:\absolute\path.sock`).
 // Permission bits will default to 0200 if none are specified.
+// Throws an error, if the first carrying bit does not
+// include write perms (e.g. `0422` or `022`).
 // Symbolic permission representation (e.g. `u=w,g=w,o=w`)
 // is not supported and will throw an error for now!
 func splitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileMode, err error) {
@@ -329,6 +331,11 @@ func splitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileM
 			return "", 0, fmt.Errorf("could not parse octal permission bits in %s: %v", addr, err)
 		}
 		fileMode = fs.FileMode(fileModeUInt64)
+
+		// FileMode.String() returns a string like `-rwxr-xr--` for `u=rwx,g=rx,o=r` (`0754`)
+		if string(fileMode.String()[2]) != "w" {
+			return "", 0, fmt.Errorf("owner of the socket requires '-w-' (write, octal: '2') permissions at least; got '%s' in %s", fileMode.String()[1:4], addr)
+		}
 
 		return addrSplit[0], fileMode, nil
 	}

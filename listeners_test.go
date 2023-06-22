@@ -628,6 +628,11 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			input:     "./foo.socket|123456|0660",
 			expectErr: true,
 		},
+		{
+			// owner is missing write perms
+			input:     "./foo.socket|0522",
+			expectErr: true,
+		},
 	} {
 		actualPath, actualFileMode, err := splitUnixSocketPermissionsBits(tc.input)
 		if tc.expectErr && err == nil {
