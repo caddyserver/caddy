@@ -570,6 +570,11 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			expectFileMode: "--w-------",
 		},
 		{
+			input:          `.\relative\path.socket`,
+			expectPath:     `.\relative\path.socket`,
+			expectFileMode: "--w-------",
+		},
+		{
 			// literal colon in resulting address
 			// and defaulting to 0200 bits
 			input:          "./foo.socket:0666",
@@ -600,6 +605,11 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			input:          "/var/run/foo|666",
 			expectPath:     "/var/run/foo",
 			expectFileMode: "-rw-rw-rw-",
+		},
+		{
+			input:          `c:\absolute\path.socket|220`,
+			expectPath:     `c:\absolute\path.socket`,
+			expectFileMode: "--w--w----",
 		},
 		{
 			// symbolic permission representation is not supported for now
