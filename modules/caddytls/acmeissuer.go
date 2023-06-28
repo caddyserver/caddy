@@ -19,7 +19,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -488,39 +487,6 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 	}
-	return nil
-}
-
-// onDemandAskRequest makes a request to the ask URL
-// to see if a certificate can be obtained for name.
-// The certificate request should be denied if this
-// returns an error.
-func onDemandAskRequest(logger *zap.Logger, ask string, name string) error {
-	askURL, err := url.Parse(ask)
-	if err != nil {
-		return fmt.Errorf("parsing ask URL: %v", err)
-	}
-	qs := askURL.Query()
-	qs.Set("domain", name)
-	askURL.RawQuery = qs.Encode()
-
-	askURLString := askURL.String()
-	resp, err := onDemandAskClient.Get(askURLString)
-	if err != nil {
-		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
-			ask, name, err)
-	}
-	resp.Body.Close()
-
-	logger.Debug("response from ask endpoint",
-		zap.String("domain", name),
-		zap.String("url", askURLString),
-		zap.Int("status", resp.StatusCode))
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)
-	}
-
 	return nil
 }
 

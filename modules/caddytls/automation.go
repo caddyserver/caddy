@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -254,7 +256,8 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
 					return nil
 				}
-				if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
+
+				if err := onDemandAskAllowed(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, errAskDenied) {
 						tlsApp.logger.Debug("certificate issuance denied",
@@ -481,6 +484,85 @@ type RateLimit struct {
 
 	// How many times during an interval a certificate can be obtained.
 	Burst int `json:"burst,omitempty"`
+}
+
+// onDemandAskAllowed checks whether the given name is allowed to have a certificate
+// managed for it; first by checking the cache of recent queries, and if needed, a
+// fresh answer is obtained from making a GET request to askURL.
+func onDemandAskAllowed(logger *zap.Logger, askURL string, name string) error {
+	askCacheMu.RLock()
+	cachedResult, ok := askCache[name]
+	askCacheMu.RUnlock()
+	if ok && cachedResult.expires.After(time.Now()) {
+		logger.Debug("using cached 'ask' result",
+			zap.String("name", name),
+			zap.Time("expires", cachedResult.expires),
+			zap.Error(cachedResult.err))
+		return cachedResult.err
+	}
+
+	err := onDemandAskRequest(logger, askURL, name)
+
+	resultExpires := time.Now().Add(1 * time.Hour)
+
+	askCacheMu.Lock()
+	if len(askCache) >= 1000 {
+		// remove an entry from the cache to make room for this one;
+		// I know this is not normally distributed... not sure if I
+		// care unless we see measurable performance impact (this
+		// is very fast and simple)
+		for key := range askCache {
+			delete(askCache, key)
+			break
+		}
+	}
+	askCache[name] = askResult{err, resultExpires}
+	askCacheMu.Unlock()
+
+	return err
+}
+
+// onDemandAskRequest makes a request to the ask URL
+// to see if a certificate can be obtained for name.
+// The certificate request should be denied if this
+// returns an error.
+func onDemandAskRequest(logger *zap.Logger, ask string, name string) error {
+	askURL, err := url.Parse(ask)
+	if err != nil {
+		return fmt.Errorf("parsing ask URL: %v", err)
+	}
+	qs := askURL.Query()
+	qs.Set("domain", name)
+	askURL.RawQuery = qs.Encode()
+
+	askURLString := askURL.String()
+	resp, err := onDemandAskClient.Get(askURLString)
+	if err != nil {
+		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
+			ask, name, err)
+	}
+	resp.Body.Close()
+
+	logger.Debug("response from ask endpoint",
+		zap.String("domain", name),
+		zap.String("url", askURLString),
+		zap.Int("status", resp.StatusCode))
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)
+	}
+
+	return nil
+}
+
+var (
+	askCache   = make(map[string]askResult)
+	askCacheMu sync.RWMutex
+)
+
+type askResult struct {
+	err     error
+	expires time.Time
 }
 
 // ConfigSetter is implemented by certmagic.Issuers that
