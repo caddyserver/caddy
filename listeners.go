@@ -196,7 +196,8 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		if err != nil {
 			return nil, err
 		}
-		ln = &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}
+		spc := sharedPc.(*sharedPacketConn)
+		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
 	}
 	if strings.HasPrefix(na.Network, "ip") {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
@@ -668,35 +669,28 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 // socket is actually left open.
 var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
-// fakeClosePacketConn is like fakeCloseListener, but for PacketConns.
+// fakeClosePacketConn is like fakeCloseListener, but for PacketConns,
+// or more specifically, *net.UDPConn
 type fakeClosePacketConn struct {
-	closed            int32 // accessed atomically; belongs to this struct only
-	*sharedPacketConn       // embedded, so we also become a net.PacketConn
+	closed       int32             // accessed atomically; belongs to this struct only
+	spc          *sharedPacketConn // its key is used in Close
+	*net.UDPConn                   // embedded, so we also become a net.PacketConn and enable several other optimizations done by quic-go
 }
 
+// interface guard for extra optimizations
+// needed by QUIC implementation: https://github.com/caddyserver/caddy/issues/3998, https://github.com/caddyserver/caddy/issues/5605
+var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
+
+// https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires a net.PacketConn type assertable to a net.Conn,
+// but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
+var _ net.Conn = (*fakeClosePacketConn)(nil)
+
+// Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		_, _ = listenerPool.Delete(fcpc.sharedPacketConn.key)
+		_, _ = listenerPool.Delete(fcpc.spc.key)
 	}
 	return nil
-}
-
-// Supports QUIC implementation: https://github.com/caddyserver/caddy/issues/3998
-func (fcpc fakeClosePacketConn) SetReadBuffer(bytes int) error {
-	if conn, ok := fcpc.PacketConn.(interface{ SetReadBuffer(int) error }); ok {
-		return conn.SetReadBuffer(bytes)
-	}
-	return fmt.Errorf("SetReadBuffer() not implemented for %T", fcpc.PacketConn)
-}
-
-// Supports QUIC implementation: https://github.com/caddyserver/caddy/issues/3998
-func (fcpc fakeClosePacketConn) SyscallConn() (syscall.RawConn, error) {
-	if conn, ok := fcpc.PacketConn.(interface {
-		SyscallConn() (syscall.RawConn, error)
-	}); ok {
-		return conn.SyscallConn()
-	}
-	return nil, fmt.Errorf("SyscallConn() not implemented for %T", fcpc.PacketConn)
 }
 
 type fakeCloseQuicListener struct {
