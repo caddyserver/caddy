@@ -516,6 +516,26 @@ func cmdValidateConfig(fl Flags) (int, error) {
 		}
 	}
 
+	// if no input file was specified, try a default
+	// Caddyfile if the Caddyfile adapter is plugged in
+	if validateCmdConfigFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+		_, err := os.Stat("Caddyfile")
+		if err == nil {
+			// default Caddyfile exists
+			validateCmdConfigFlag = "Caddyfile"
+			validateCmdAdapterFlag = "caddyfile"
+			caddy.Log().Info("using adjacent Caddyfile")
+		} else if !os.IsNotExist(err) {
+			// default Caddyfile exists, but error accessing it
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
+		}
+	}
+
+	if validateCmdConfigFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	}
+
 	input, _, err := LoadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
