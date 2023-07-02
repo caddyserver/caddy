@@ -18,6 +18,7 @@
 		+Link "Bar"
 	}
 	header >Set Defer
+	header >Replace Deferred Replacement
 }
 ----------
 {
@@ -145,6 +146,20 @@
 										"set": {
 											"Set": [
 												"Defer"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"replace": {
+											"Replace": [
+												{
+													"replace": "Replacement",
+													"search_regexp": "Deferred"
+												}
 											]
 										}
 									}

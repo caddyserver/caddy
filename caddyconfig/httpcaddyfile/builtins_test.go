@@ -229,7 +229,7 @@ func TestImportErrorLine(t *testing.T) {
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:6 (import t1):2")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:6 (import t1)")
 			},
 		},
 		{
@@ -240,7 +240,28 @@ func TestImportErrorLine(t *testing.T) {
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1):2")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1)")
+			},
+		},
+		{
+			input: `
+				import testdata/import_variadic_snippet.txt
+				:8080 {
+					import t1 true
+				}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
+		{
+			input: `
+				import testdata/import_variadic_with_import.txt
+				:8080 {
+					import t1 true
+					import t2 true
+				}`,
+			errorFunc: func(err error) bool {
+				return err == nil
 			},
 		},
 	} {

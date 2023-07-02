@@ -306,14 +306,33 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 // the host's health status fails.
 func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
-	scheme := "http"
-	if ht, ok := h.Transport.(TLSTransport); ok && ht.TLSEnabled() {
-		// this is kind of a hacky way to know if we should use HTTPS, but whatever
-		scheme = "https"
-	}
 	u := &url.URL{
-		Scheme: scheme,
+		Scheme: "http",
 		Host:   hostAddr,
+	}
+
+	// split the host and port if possible, override the port if configured
+	host, port, err := net.SplitHostPort(hostAddr)
+	if err != nil {
+		host = hostAddr
+	}
+	if h.HealthChecks.Active.Port != 0 {
+		port := strconv.Itoa(h.HealthChecks.Active.Port)
+		u.Host = net.JoinHostPort(host, port)
+	}
+
+	// this is kind of a hacky way to know if we should use HTTPS, but whatever
+	if tt, ok := h.Transport.(TLSTransport); ok && tt.TLSEnabled() {
+		u.Scheme = "https"
+
+		// if the port is in the except list, flip back to HTTP
+		if ht, ok := h.Transport.(*HTTPTransport); ok {
+			for _, exceptPort := range ht.TLS.ExceptPorts {
+				if exceptPort == port {
+					u.Scheme = "http"
+				}
+			}
+		}
 	}
 
 	// if we have a provisioned uri, use that, otherwise use
@@ -323,16 +342,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		u.RawQuery = h.HealthChecks.Active.uri.RawQuery
 	} else {
 		u.Path = h.HealthChecks.Active.Path
-	}
-
-	// adjust the port, if configured to be different
-	if h.HealthChecks.Active.Port != 0 {
-		portStr := strconv.Itoa(h.HealthChecks.Active.Port)
-		host, _, err := net.SplitHostPort(hostAddr)
-		if err != nil {
-			host = hostAddr
-		}
-		u.Host = net.JoinHostPort(host, portStr)
 	}
 
 	// attach dialing information to this request, as well as context values that

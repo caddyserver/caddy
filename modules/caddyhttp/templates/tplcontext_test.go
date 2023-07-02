@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -221,21 +220,21 @@ func TestNestedInclude(t *testing.T) {
 		// create files and for test case
 		if test.parentFile != "" {
 			absFilePath = filepath.Join(fmt.Sprintf("%s", context.Root), test.parentFile)
-			if err := ioutil.WriteFile(absFilePath, []byte(test.parent), os.ModePerm); err != nil {
+			if err := os.WriteFile(absFilePath, []byte(test.parent), os.ModePerm); err != nil {
 				os.Remove(absFilePath)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
 		}
 		if test.childFile != "" {
 			absFilePath0 = filepath.Join(fmt.Sprintf("%s", context.Root), test.childFile)
-			if err := ioutil.WriteFile(absFilePath0, []byte(test.child), os.ModePerm); err != nil {
+			if err := os.WriteFile(absFilePath0, []byte(test.child), os.ModePerm); err != nil {
 				os.Remove(absFilePath0)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}
 		}
 		if test.child2File != "" {
 			absFilePath1 = filepath.Join(fmt.Sprintf("%s", context.Root), test.child2File)
-			if err := ioutil.WriteFile(absFilePath1, []byte(test.child2), os.ModePerm); err != nil {
+			if err := os.WriteFile(absFilePath1, []byte(test.child2), os.ModePerm); err != nil {
 				os.Remove(absFilePath0)
 				t.Fatalf("Test %d: Expected no error creating file, got: '%s'", i, err.Error())
 			}

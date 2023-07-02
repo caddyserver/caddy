@@ -88,7 +88,11 @@ func init() {
 //
 // ##### `httpInclude`
 //
-// Includes the contents of another file by making a virtual HTTP request (also known as a sub-request). The URI path must exist on the same virtual server because the request does not use sockets; instead, the request is crafted in memory and the handler is invoked directly for increased efficiency.
+// Includes the contents of another file, and renders it in-place,
+// by making a virtual HTTP request (also known as a sub-request).
+// The URI path must exist on the same virtual server because the
+// request does not use sockets; instead, the request is crafted in
+// memory and the handler is invoked directly for increased efficiency.
 //
 // ```
 // {{httpInclude "/foo/bar?q=val"}}
@@ -96,7 +100,13 @@ func init() {
 //
 // ##### `import`
 //
-// Imports the contents of another file and adds any template definitions to the template stack. If there are no defitions, the filepath will be the defition name. Any {{ define }} blocks will be accessible by {{ template }} or {{ block }}. Imports must happen before the template or block action is called
+// Reads and returns the contents of another file, and parses it
+// as a template, adding any template definitions to the template
+// stack. If there are no definitions, the filepath will be the
+// definition name. Any {{ define }} blocks will be accessible by
+// {{ template }} or {{ block }}. Imports must happen before the
+// template or block action is called. Note that the contents are
+// NOT escaped, so you should only import trusted template files.
 //
 // **filename.html**
 // ```
@@ -113,11 +123,24 @@ func init() {
 //
 // ##### `include`
 //
-// Includes the contents of another file and renders in-place. Optionally can pass key-value pairs as arguments to be accessed by the included file.
+// Includes the contents of another file, rendering it in-place.
+// Optionally can pass key-value pairs as arguments to be accessed
+// by the included file. Note that the contents are NOT escaped,
+// so you should only include trusted template files.
 //
 // ```
 // {{include "path/to/file.html"}}  // no arguments
 // {{include "path/to/file.html" "arg1" 2 "value 3"}}  // with arguments
+// ```
+//
+// ##### `readFile`
+//
+// Reads and returns the contents of another file, as-is.
+// Note that the contents are NOT escaped, so you should
+// only read trusted files.
+//
+// ```
+// {{readFile "path/to/file.html"}}
 // ```
 //
 // ##### `listFiles`
@@ -130,10 +153,10 @@ func init() {
 //
 // ##### `markdown`
 //
-// Renders the given Markdown text as HTML. This uses the
+// Renders the given Markdown text as HTML and returns it. This uses the
 // [Goldmark](https://github.com/yuin/goldmark) library,
-// which is CommonMark compliant. It also has these plugins
-// enabled: Github Flavored Markdown, Footnote and syntax
+// which is CommonMark compliant. It also has these extensions
+// enabled: Github Flavored Markdown, Footnote, and syntax
 // highlighting provided by [Chroma](https://github.com/alecthomas/chroma).
 //
 // ```
