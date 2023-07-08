@@ -50,11 +50,7 @@ func (a *adminAPI) Provision(ctx caddy.Context) error {
 	a.log = ctx.Logger(a) // TODO: passing in 'a' is a hack until the admin API is officially extensible (see #5032)
 
 	// Avoid initializing PKI if it wasn't configured
-	pkiApp, err := a.ctx.AppIfConfigured("pki")
-	if err != nil {
-		return err
-	}
-	if pkiApp != nil {
+	if pkiApp := a.ctx.AppIfConfigured("pki"); pkiApp != nil {
 		a.pkiApp = pkiApp.(*PKI)
 	}
 

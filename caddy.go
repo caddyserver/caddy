@@ -959,8 +959,9 @@ func Version() (simple, full string) {
 // This function is experimental and might be changed
 // or removed in the future.
 func ActiveContext() Context {
-	currentCtxMu.RLock()
-	defer currentCtxMu.RUnlock()
+	// TODO: This locking might still be needed; more investigation is required.
+	// currentCtxMu.RLock()
+	// defer currentCtxMu.RUnlock()
 	return currentCtx
 }
 
