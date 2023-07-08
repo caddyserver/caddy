@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -254,11 +255,6 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
-			match:  MatchPath{"*.php"},
-			input:  "/foo/index.php. .",
-			expect: true,
-		},
-		{
 			match:  MatchPath{"/foo/bar.txt"},
 			input:  "/foo/BAR.txt",
 			expect: true,
@@ -435,8 +431,10 @@ func TestPathMatcher(t *testing.T) {
 
 func TestPathMatcherWindows(t *testing.T) {
 	// only Windows has this bug where it will ignore
-	// trailing dots and spaces in a filename, but we
-	// test for it on all platforms to be more consistent
+	// trailing dots and spaces in a filename
+	if runtime.GOOS != "windows" {
+		return
+	}
 
 	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
 	repl := caddy.NewReplacer()
