@@ -555,3 +555,98 @@ func TestExpand(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitUnixSocketPermissionsBits(t *testing.T) {
+	for i, tc := range []struct {
+		input          string
+		expectNetwork  string
+		expectPath     string
+		expectFileMode string
+		expectErr      bool
+	}{
+		{
+			input:          "./foo.socket",
+			expectPath:     "./foo.socket",
+			expectFileMode: "--w-------",
+		},
+		{
+			input:          `.\relative\path.socket`,
+			expectPath:     `.\relative\path.socket`,
+			expectFileMode: "--w-------",
+		},
+		{
+			// literal colon in resulting address
+			// and defaulting to 0200 bits
+			input:          "./foo.socket:0666",
+			expectPath:     "./foo.socket:0666",
+			expectFileMode: "--w-------",
+		},
+		{
+			input:          "./foo.socket|0220",
+			expectPath:     "./foo.socket",
+			expectFileMode: "--w--w----",
+		},
+		{
+			input:          "/var/run/foo|222",
+			expectPath:     "/var/run/foo",
+			expectFileMode: "--w--w--w-",
+		},
+		{
+			input:          "./foo.socket|0660",
+			expectPath:     "./foo.socket",
+			expectFileMode: "-rw-rw----",
+		},
+		{
+			input:          "./foo.socket|0666",
+			expectPath:     "./foo.socket",
+			expectFileMode: "-rw-rw-rw-",
+		},
+		{
+			input:          "/var/run/foo|666",
+			expectPath:     "/var/run/foo",
+			expectFileMode: "-rw-rw-rw-",
+		},
+		{
+			input:          `c:\absolute\path.socket|220`,
+			expectPath:     `c:\absolute\path.socket`,
+			expectFileMode: "--w--w----",
+		},
+		{
+			// symbolic permission representation is not supported for now
+			input:     "./foo.socket|u=rw,g=rw,o=rw",
+			expectErr: true,
+		},
+		{
+			// octal (base-8) permission representation has to be between
+			// `0` for no read, no write, no exec (`---`) and
+			// `7` for read (4), write (2), exec (1) (`rwx` => `4+2+1 = 7`)
+			input:     "./foo.socket|888",
+			expectErr: true,
+		},
+		{
+			// too many colons in address
+			input:     "./foo.socket|123456|0660",
+			expectErr: true,
+		},
+		{
+			// owner is missing write perms
+			input:     "./foo.socket|0522",
+			expectErr: true,
+		},
+	} {
+		actualPath, actualFileMode, err := splitUnixSocketPermissionsBits(tc.input)
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d: Expected error but got: %v", i, err)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+		}
+		if actualPath != tc.expectPath {
+			t.Errorf("Test %d: Expected path '%s' but got '%s'", i, tc.expectPath, actualPath)
+		}
+		// fileMode.Perm().String() parses 0 to "----------"
+		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
+			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
+		}
+	}
+}

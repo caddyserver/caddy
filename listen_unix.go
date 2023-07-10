@@ -108,6 +108,15 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 		listenerPool.LoadOrStore(lnKey, nil)
 	}
 
+	// if new listener is a unix socket, make sure we can reuse it later
+	// (we do our own "unlink on close" -- not required, but more tidy)
+	one := int32(1)
+	if unix, ok := ln.(*net.UnixListener); ok {
+		unix.SetUnlinkOnClose(false)
+		ln = &unixListener{unix, lnKey, &one}
+		unixSockets[lnKey] = ln.(*unixListener)
+	}
+
 	// lightly wrap the listener so that when it is closed,
 	// we can decrement the usage pool counter
 	return deleteListener{ln, lnKey}, err
@@ -119,7 +128,7 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 		return nil
 	}
 	return conn.Control(func(descriptor uintptr) {
-		if err := unix.SetsockoptInt(int(descriptor), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1); err != nil {
+		if err := unix.SetsockoptInt(int(descriptor), unix.SOL_SOCKET, unixSOREUSEPORT, 1); err != nil {
 			Log().Error("setting SO_REUSEPORT",
 				zap.String("network", network),
 				zap.String("address", address),
@@ -127,6 +136,26 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 				zap.Error(err))
 		}
 	})
+}
+
+type unixListener struct {
+	*net.UnixListener
+	mapKey string
+	count  *int32 // accessed atomically
+}
+
+func (uln *unixListener) Close() error {
+	newCount := atomic.AddInt32(uln.count, -1)
+	if newCount == 0 {
+		defer func() {
+			addr := uln.Addr().String()
+			unixSocketsMu.Lock()
+			delete(unixSockets, uln.mapKey)
+			unixSocketsMu.Unlock()
+			_ = syscall.Unlink(addr)
+		}()
+	}
+	return uln.UnixListener.Close()
 }
 
 // deleteListener is a type that simply deletes itself

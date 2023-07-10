@@ -247,10 +247,14 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 		respHeaderOps.Set.Set(field, value)
 
 	case replacement != "": // replace
+		// allow defer shortcut for replace syntax
+		if strings.HasPrefix(field, ">") && respHeaderOps != nil {
+			respHeaderOps.Deferred = true
+		}
 		if ops.Replace == nil {
 			ops.Replace = make(map[string][]Replacement)
 		}
-		field = strings.TrimLeft(field, "+-?")
+		field = strings.TrimLeft(field, "+-?>")
 		ops.Replace[field] = append(
 			ops.Replace[field],
 			Replacement{

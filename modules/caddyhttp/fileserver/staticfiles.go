@@ -356,7 +356,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
-	var etag string
+
+	// etag is usually unset, but if the user knows what they're doing, let them override it
+	etag := w.Header().Get("Etag")
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -388,7 +390,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// don't assign info = compressedInfo because sidecars are kind
 		// of transparent; however we do need to set the Etag:
 		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
-		etag = calculateEtag(compressedInfo)
+		if etag == "" {
+			etag = calculateEtag(compressedInfo)
+		}
 
 		break
 	}
@@ -408,7 +412,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 
-		etag = calculateEtag(info)
+		if etag == "" {
+			etag = calculateEtag(info)
+		}
 	}
 
 	// at this point, we're serving a file; Go std lib supports only
@@ -421,7 +427,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// set the Etag - note that a conditional If-None-Match request is handled
 	// by http.ServeContent below, which checks against this Etag value
-	w.Header().Set("Etag", etag)
+	if etag != "" {
+		w.Header().Set("Etag", etag)
+	}
 
 	if w.Header().Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
@@ -608,7 +616,11 @@ func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next ca
 // Prefix the etag with "W/" to convert it into a weak etag.
 // See: https://tools.ietf.org/html/rfc7232#section-2.3
 func calculateEtag(d os.FileInfo) string {
-	t := strconv.FormatInt(d.ModTime().Unix(), 36)
+	mtime := d.ModTime().Unix()
+	if mtime == 0 || mtime == 1 {
+		return "" // not useful anyway; see issue #5548
+	}
+	t := strconv.FormatInt(mtime, 36)
 	s := strconv.FormatInt(d.Size(), 36)
 	return `"` + t + s + `"`
 }

@@ -74,6 +74,63 @@ func TestRoundRobinPolicy(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinPolicy(t *testing.T) {
+	pool := testPool()
+	wrrPolicy := WeightedRoundRobinSelection{
+		Weights:     []int{3, 2, 1},
+		totalWeight: 6,
+	}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	h := wrrPolicy.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected first weighted round robin host to be first host in the pool.")
+	}
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected second weighted round robin host to be first host in the pool.")
+	}
+	// Third selected host is 1, because counter starts at 0
+	// and increments before host is selected
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected third weighted round robin host to be second host in the pool.")
+	}
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected fourth weighted round robin host to be second host in the pool.")
+	}
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[2] {
+		t.Error("Expected fifth weighted round robin host to be third host in the pool.")
+	}
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected sixth weighted round robin host to be first host in the pool.")
+	}
+
+	// mark host as down
+	pool[0].setHealthy(false)
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[1] {
+		t.Error("Expected to skip down host.")
+	}
+	// mark host as up
+	pool[0].setHealthy(true)
+
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[0] {
+		t.Error("Expected to select first host on availablity.")
+	}
+	// mark host as full
+	pool[1].countRequest(1)
+	pool[1].MaxRequests = 1
+	h = wrrPolicy.Select(pool, req, nil)
+	if h != pool[2] {
+		t.Error("Expected to skip full host.")
+	}
+}
+
 func TestLeastConnPolicy(t *testing.T) {
 	pool := testPool()
 	lcPolicy := LeastConnSelection{}
