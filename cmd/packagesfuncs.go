@@ -174,6 +174,13 @@ func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+func getModPkgPath(iface any) string {
+	if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
+		iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
+	}
+	return reflect.TypeOf(iface).PkgPath()
+}
+
 func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -195,10 +202,15 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// not sure why), and since New() should return a pointer
 		// value, we need to dereference it first
 		iface := any(modInfo.New())
-		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
-			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
+		modPkgPath := getModPkgPath(iface)
+
+		// Unwrap config adapters to get the underlying adapter modules, as config adapter modules are hacks anyway. https://github.com/caddyserver/caddy/issues/5621
+		// this method will only be called if it's from the built-in module to prevent abuse
+		if strings.HasPrefix(modPkgPath, caddy.ImportPath) {
+			if unwrapper, ok := iface.(interface{ UnwrapAdapter() any }); ok {
+				modPkgPath = getModPkgPath(unwrapper.UnwrapAdapter())
+			}
 		}
-		modPkgPath := reflect.TypeOf(iface).PkgPath()
 
 		// now we find the Go module that the Caddy module's package
 		// belongs to; we assume the Caddy module package path will

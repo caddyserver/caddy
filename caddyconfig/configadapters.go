@@ -135,4 +135,11 @@ func (am adapterModule) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnwrapAdapter return the original Adapter, this method must be exported
+// to be type-assertable 🤷
+// hack, https://github.com/caddyserver/caddy/issues/5621
+func (am adapterModule) UnwrapAdapter() any {
+	return am.Adapter
+}
+
 var configAdapters = make(map[string]Adapter)
