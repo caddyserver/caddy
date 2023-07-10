@@ -346,7 +346,7 @@ func (t *TLS) Cleanup() error {
 		}
 		for hash := range t.loaded {
 			if _, ok := nextTLSApp.loaded[hash]; !ok {
-				noLongerManaged = append(noLongerLoaded, hash)
+				noLongerLoaded = append(noLongerLoaded, hash)
 			}
 		}
 
@@ -504,9 +504,22 @@ func AllMatchingCertificates(san string) []certmagic.Certificate {
 }
 
 func (t *TLS) HasCertificateForSubject(subject string) bool {
-	// TODO: check manually-loaded certificates, too
-	_, ok := t.managing[subject]
-	return ok
+	certCacheMu.RLock()
+	allMatchingCerts := certCache.AllMatchingCertificates(subject)
+	certCacheMu.RUnlock()
+	for _, cert := range allMatchingCerts {
+		// check if the cert is manually loaded by this config
+		if _, ok := t.loaded[cert.Hash()]; ok {
+			return true
+		}
+		// check if the cert is automatically managed by this config
+		for _, name := range cert.Names {
+			if _, ok := t.managing[name]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // keepStorageClean starts a goroutine that immediately cleans up all

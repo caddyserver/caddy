@@ -959,7 +959,7 @@ func Version() (simple, full string) {
 // This function is experimental and might be changed
 // or removed in the future.
 func ActiveContext() Context {
-	// TODO: This locking might still be needed; more investigation is required.
+	// TODO: This locking might still be needed; more investigation is required (deadlock during Cleanup for the caddytls.TLS module).
 	// currentCtxMu.RLock()
 	// defer currentCtxMu.RUnlock()
 	return currentCtx
