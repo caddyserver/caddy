@@ -416,30 +416,38 @@ func cmdEnviron(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdAdaptConfig(fl Flags) (int, error) {
-	adaptCmdInputFlag := fl.String("config")
-	adaptCmdAdapterFlag := fl.String("adapter")
-	adaptCmdPrettyFlag := fl.Bool("pretty")
-	adaptCmdValidateFlag := fl.Bool("validate")
-
+func detectAdjacentCaddyfile(configFlag string) (int, error) {
 	// if no input file was specified, try a default
 	// Caddyfile if the Caddyfile adapter is plugged in
-	if adaptCmdInputFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+	if configFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
 		_, err := os.Stat("Caddyfile")
 		if err == nil {
 			// default Caddyfile exists
-			adaptCmdInputFlag = "Caddyfile"
-			caddy.Log().Info("using adjacent Caddyfile")
+			return caddy.ExitCodeSuccess, nil
 		} else if !os.IsNotExist(err) {
 			// default Caddyfile exists, but error accessing it
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
 		}
 	}
 
-	if adaptCmdInputFlag == "" {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	return caddy.ExitCodeSuccess, nil
+}
+
+func cmdAdaptConfig(fl Flags) (int, error) {
+	adaptCmdInputFlag := fl.String("config")
+	adaptCmdAdapterFlag := fl.String("adapter")
+	adaptCmdPrettyFlag := fl.Bool("pretty")
+	adaptCmdValidateFlag := fl.Bool("validate")
+
+	adjacent, err := detectAdjacentCaddyfile(adaptCmdInputFlag)
+	if adjacent != caddy.ExitCodeSuccess {
+		return adjacent, err
+	} else {
+		if adaptCmdInputFlag == "" {
+			adaptCmdInputFlag = "Caddyfile"
+		}
 	}
+
 	if adaptCmdAdapterFlag == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("adapter name is required (use --adapt flag or leave unspecified for default)")
@@ -516,18 +524,12 @@ func cmdValidateConfig(fl Flags) (int, error) {
 		}
 	}
 
-	// if no input file was specified, try a default
-	// Caddyfile if the Caddyfile adapter is plugged in
-	if validateCmdConfigFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
-		_, err := os.Stat("Caddyfile")
-		if err == nil {
-			// default Caddyfile exists
+	adjacent, err := detectAdjacentCaddyfile(validateCmdConfigFlag)
+	if adjacent != caddy.ExitCodeSuccess {
+		return adjacent, err
+	} else {
+		if validateCmdConfigFlag == "" {
 			validateCmdConfigFlag = "Caddyfile"
-			validateCmdAdapterFlag = "caddyfile"
-			caddy.Log().Info("using adjacent Caddyfile")
-		} else if !os.IsNotExist(err) {
-			// default Caddyfile exists, but error accessing it
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
 		}
 	}
 
