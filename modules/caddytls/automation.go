@@ -294,7 +294,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		Issuers: issuers,
 		Logger:  tlsApp.logger,
 	}
-	ap.magic = certmagic.New(tlsApp.certCache, template)
+	certCacheMu.RLock()
+	ap.magic = certmagic.New(certCache, template)
+	certCacheMu.RUnlock()
 
 	// sometimes issuers may need the parent certmagic.Config in
 	// order to function properly (for example, ACMEIssuer needs
