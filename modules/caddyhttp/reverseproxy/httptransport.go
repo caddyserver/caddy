@@ -525,7 +525,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			return nil, fmt.Errorf("managing client certificate: %v", err)
 		}
 		cfg.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			certs := tlsApp.AllMatchingCertificates(t.ClientCertificateAutomate)
+			certs := caddytls.AllMatchingCertificates(t.ClientCertificateAutomate)
 			var err error
 			for _, cert := range certs {
 				err = cri.SupportsCertificate(&cert.Certificate)
