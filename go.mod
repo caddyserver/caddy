@@ -17,7 +17,7 @@ require (
 	github.com/mastercactapus/proxyprotocol v0.0.4
 	github.com/mholt/acmez v1.2.0
 	github.com/prometheus/client_golang v1.14.0
-	github.com/quic-go/quic-go v0.36.1
+	github.com/quic-go/quic-go v0.36.2
 	github.com/smallstep/certificates v0.24.2
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.12.1
