@@ -163,7 +163,8 @@ type Handler struct {
 
 	// If nonzero, streaming requests such as WebSockets will not be
 	// closed when the proxy config is unloaded, and instead the stream
-	// will remain open until the delay is complete. In other words,
+	// will remain open until the delay is complete. If explicitly set
+	// to -1, the stream will not be closed. In other words,
 	// enabling this prevents streams from closing when Caddy's config
 	// is reloaded. Enabling this may be a good idea to avoid a thundering
 	// herd of reconnecting clients which had their connections closed

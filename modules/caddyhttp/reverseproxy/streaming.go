@@ -304,7 +304,8 @@ func (h *Handler) cleanupConnections() error {
 	defer h.connectionsMu.Unlock()
 	// the handler is shut down, no new connection can appear,
 	// so we can skip setting up the timer when there are no connections
-	if len(h.connections) > 0 {
+	// or if explicitly configured not to close streams
+	if len(h.connections) > 0 || h.StreamCloseDelay != -1 {
 		delay := time.Duration(h.StreamCloseDelay)
 		h.connectionsCloseTimer = time.AfterFunc(delay, func() {
 			h.logger.Debug("closing streaming connections after delay",
