@@ -441,6 +441,12 @@ func (ctx Context) App(name string) (any, error) {
 // or stop App modules. The caller is expected to assert to the
 // concrete type.
 func (ctx Context) AppIfConfigured(name string) any {
+	if ctx.cfg == nil {
+		// this can happen if the currently-active context
+		// is being accessed, but no config has successfully
+		// been loaded yet
+		return nil
+	}
 	return ctx.cfg.apps[name]
 }
 
