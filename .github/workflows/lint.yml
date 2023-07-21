@@ -42,6 +42,9 @@ jobs:
         with:
           version: v1.53
 
+          # Workaround for https://github.com/golangci/golangci-lint-action/issues/135
+          skip-pkg-cache: true
+
           # Windows times out frequently after about 5m50s if we don't set a longer timeout.
           args: --timeout 10m
 
