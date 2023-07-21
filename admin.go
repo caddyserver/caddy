@@ -1016,9 +1016,9 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	id := parts[2]
 
 	// map the ID to the expanded path
-	currentCtxMu.RLock()
+	rawCfgMu.RLock()
 	expanded, ok := rawCfgIndex[id]
-	currentCtxMu.RUnlock()
+	rawCfgMu.RUnlock()
 	if !ok {
 		return APIError{
 			HTTPStatus: http.StatusNotFound,
