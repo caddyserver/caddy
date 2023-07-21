@@ -770,12 +770,20 @@ func (st *ServerType) serversFromPairings(
 			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
-				if sblock.hasHostCatchAllKey() {
+				if sblock.hasHostCatchAllKey() && len(ncl.hostnames) == 0 {
 					// all requests for hosts not able to be listed should use
 					// this log because it's a catch-all-hosts server block
 					srv.Logs.DefaultLoggerName = ncl.name
+				} else if len(ncl.hostnames) > 0 {
+					// if the logger overrides the hostnames, map that to the logger name
+					for _, h := range ncl.hostnames {
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]string)
+						}
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				} else {
-					// map each host to the user's desired logger name
+					// otherwise, map each host to the logger name
 					for _, h := range sblockLogHosts {
 						if srv.Logs.LoggerNames == nil {
 							srv.Logs.LoggerNames = make(map[string]string)
@@ -1564,8 +1572,9 @@ func (c counter) nextGroup() string {
 }
 
 type namedCustomLog struct {
-	name string
-	log  *caddy.CustomLog
+	name      string
+	hostnames []string
+	log       *caddy.CustomLog
 }
 
 // sbAddrAssociation is a mapping from a list of

@@ -789,6 +789,7 @@ func parseInvoke(h Helper) (caddyhttp.MiddlewareHandler, error) {
 // parseLog parses the log directive. Syntax:
 //
 //	log {
+//	    hostnames <hostnames...>
 //	    output <writer_module> ...
 //	    format <encoder_module> ...
 //	    level  <level>
@@ -842,8 +843,23 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 		cl := new(caddy.CustomLog)
 
+		// allow overriding the current site block's hostnames for this logger;
+		// this is useful for setting up loggers per subdomain in a site block
+		// with a wildcard domain
+		customHostnames := []string{}
+
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "hostnames":
+				if parseAsGlobalOption {
+					return nil, h.Err("hostnames is not allowed in the log global options")
+				}
+				args := h.RemainingArgs()
+				if len(args) == 0 {
+					return nil, h.ArgErr()
+				}
+				customHostnames = append(customHostnames, args...)
+
 			case "output":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -902,18 +918,16 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				}
 
 			case "include":
-				// This configuration is only allowed in the global options
 				if !parseAsGlobalOption {
-					return nil, h.ArgErr()
+					return nil, h.Err("include is not allowed in the log directive")
 				}
 				for h.NextArg() {
 					cl.Include = append(cl.Include, h.Val())
 				}
 
 			case "exclude":
-				// This configuration is only allowed in the global options
 				if !parseAsGlobalOption {
-					return nil, h.ArgErr()
+					return nil, h.Err("exclude is not allowed in the log directive")
 				}
 				for h.NextArg() {
 					cl.Exclude = append(cl.Exclude, h.Val())
@@ -925,6 +939,8 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 		}
 
 		var val namedCustomLog
+		val.hostnames = customHostnames
+
 		// Skip handling of empty logging configs
 		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
 			if parseAsGlobalOption {
