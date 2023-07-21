@@ -20,14 +20,9 @@ import (
 	"path"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
-
-func init() {
-	weakrand.Seed(time.Now().UnixNano())
-}
 
 // Error is a convenient way for a Handler to populate the
 // essential fields of a HandlerError. If err is itself a
