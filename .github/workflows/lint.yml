@@ -22,20 +22,31 @@ jobs:
     name: lint
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: 
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '~1.19.6'
+          go-version: '~1.20.6'
           check-latest: true
+
+          # Workaround for https://github.com/golangci/golangci-lint-action/issues/135
+          skip-pkg-cache: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.50
+          version: v1.53
+
+          # Workaround for https://github.com/golangci/golangci-lint-action/issues/135
+          skip-pkg-cache: true
+
           # Windows times out frequently after about 5m50s if we don't set a longer timeout.
           args: --timeout 10m
+
           # Optional: show only new issues if it's a pull request. The default value is `false`.
           # only-new-issues: true

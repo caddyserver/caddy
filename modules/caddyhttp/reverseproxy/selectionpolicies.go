@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -48,8 +47,6 @@ func init() {
 	caddy.RegisterModule(QueryHashSelection{})
 	caddy.RegisterModule(HeaderHashSelection{})
 	caddy.RegisterModule(CookieHashSelection{})
-
-	weakrand.Seed(time.Now().UTC().UnixNano())
 }
 
 // RandomSelection is a policy that selects

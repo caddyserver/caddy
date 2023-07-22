@@ -29,7 +29,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -38,8 +37,6 @@ import (
 )
 
 func init() {
-	weakrand.Seed(time.Now().UnixNano())
-
 	caddy.RegisterModule(FileServer{})
 }
 

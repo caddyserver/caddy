@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/sync/singleflight"
@@ -31,8 +30,6 @@ import (
 
 func init() {
 	caddy.RegisterModule(HTTPBasicAuth{})
-
-	weakrand.Seed(time.Now().UnixNano())
 }
 
 // HTTPBasicAuth facilitates HTTP basic authentication.
