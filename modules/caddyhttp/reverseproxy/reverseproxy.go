@@ -27,7 +27,6 @@ import (
 	"net/netip"
 	"net/textproto"
 	"net/url"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,13 +42,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-var supports1xx bool
-
 func init() {
-	// Caddy requires at least Go 1.18, but Early Hints requires Go 1.19; thus we can simply check for 1.18 in version string
-	// TODO: remove this once our minimum Go version is 1.19
-	supports1xx = !strings.Contains(runtime.Version(), "go1.18")
-
 	caddy.RegisterModule(Handler{})
 }
 
@@ -752,25 +745,23 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
-	if supports1xx {
-		// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
-		trace := &httptrace.ClientTrace{
-			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
-				h := rw.Header()
-				copyHeader(h, http.Header(header))
-				rw.WriteHeader(code)
+	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			h := rw.Header()
+			copyHeader(h, http.Header(header))
+			rw.WriteHeader(code)
 
-				// Clear headers coming from the backend
-				// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
-				for k := range header {
-					delete(h, k)
-				}
+			// Clear headers coming from the backend
+			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
+			for k := range header {
+				delete(h, k)
+			}
 
-				return nil
-			},
-		}
-		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+			return nil
+		},
 	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
 	// if FlushInterval is explicitly configured to -1 (i.e. flush continuously to achieve
 	// low-latency streaming), don't let the transport cancel the request if the client

@@ -87,7 +87,7 @@ See [our online documentation](https://caddyserver.com/docs/install) for other i
 
 Requirements:
 
-- [Go 1.19 or newer](https://golang.org/dl/)
+- [Go 1.20 or newer](https://golang.org/dl/)
 
 ### For development
 

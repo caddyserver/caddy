@@ -1,6 +1,6 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.19
+go 1.20
 
 require (
 	github.com/BurntSushi/toml v1.3.2
@@ -17,7 +17,7 @@ require (
 	github.com/mastercactapus/proxyprotocol v0.0.4
 	github.com/mholt/acmez v1.2.0
 	github.com/prometheus/client_golang v1.14.0
-	github.com/quic-go/quic-go v0.36.2
+	github.com/quic-go/quic-go v0.37.0
 	github.com/smallstep/certificates v0.24.2
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.12.1
@@ -57,8 +57,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
-	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
+	github.com/quic-go/qtls-go1-20 v0.3.0 // indirect
 	github.com/smallstep/go-attestation v0.4.4-0.20230509120429-e17291421738 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/blake3 v0.2.3 // indirect

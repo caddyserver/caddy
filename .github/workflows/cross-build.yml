@@ -15,14 +15,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goos: ['android', 'linux', 'solaris', 'illumos', 'dragonfly', 'freebsd', 'openbsd', 'plan9', 'windows', 'darwin', 'netbsd']
-        go: [ '1.20' ]
+        goos: 
+          - 'android'
+          - 'linux'
+          - 'solaris'
+          - 'illumos'
+          - 'dragonfly'
+          - 'freebsd'
+          - 'openbsd'
+          - 'plan9'
+          - 'windows'
+          - 'darwin'
+          - 'netbsd'
+        go: 
+          - '1.20'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
         - go: '1.20'
-          GO_SEMVER: '~1.20.1'
+          GO_SEMVER: '~1.20.6'
 
     runs-on: ubuntu-latest
     continue-on-error: true
