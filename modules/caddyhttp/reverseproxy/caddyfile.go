@@ -1449,7 +1449,7 @@ func (u *AUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				if u.Versions == nil {
-					u.Versions = &ipVersions{}
+					u.Versions = &IPVersions{}
 				}
 
 				trueBool := true
