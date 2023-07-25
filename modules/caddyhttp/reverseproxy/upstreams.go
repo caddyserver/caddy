@@ -212,7 +212,7 @@ func (sl srvLookup) isFresh() bool {
 	return time.Since(sl.freshness) < time.Duration(sl.srvUpstreams.Refresh)
 }
 
-type ipVersions struct {
+type IPVersions struct {
 	IPv4 *bool `json:"ipv4,omitempty"`
 	IPv6 *bool `json:"ipv6,omitempty"`
 }
@@ -247,7 +247,7 @@ type AUpstreams struct {
 	// The IP versions to resolve for. By default, both
 	// "ipv4" and "ipv6" will be enabled, which
 	// correspond to A and AAAA records respectively.
-	Versions *ipVersions `json:"versions,omitempty"`
+	Versions *IPVersions `json:"versions,omitempty"`
 
 	resolver *net.Resolver
 }
