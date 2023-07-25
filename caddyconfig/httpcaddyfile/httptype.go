@@ -30,6 +30,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 func init() {
@@ -325,6 +326,9 @@ func (st ServerType) Setup(
 			}
 		}
 		for _, ncl := range customLogs {
+			if ncl.log == nil {
+				continue
+			}
 			if ncl.name != "" {
 				cfg.Logging.Logs[ncl.name] = ncl.log
 			}
@@ -338,7 +342,15 @@ func (st ServerType) Setup(
 					cfg.Logging.Logs[caddy.DefaultLoggerName] = defaultLog
 				}
 				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
+
+				// avoid duplicates by sorting + compacting
+				slices.Sort[string](defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
 			}
+		}
+		// we may have not actually added anything, so remove if empty
+		if len(cfg.Logging.Logs) == 0 {
+			cfg.Logging = nil
 		}
 	}
 
