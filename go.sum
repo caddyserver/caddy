@@ -170,8 +170,8 @@ github.com/bketelsen/crypt v0.0.3-0.20200106085610-5cbc8cc4026c/go.mod h1:MKsuJm
 github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb/go.mod h1:PkYb9DJNAwrSvRx5DYA+gUcOIgTGVMNkfSCbZM8cWpI=
 github.com/boltdb/bolt v1.3.1/go.mod h1:clJnj/oiGkjum5o1McbSZDSLxVThjynRyGBgiAx27Ps=
 github.com/caarlos0/ctrlc v1.0.0/go.mod h1:CdXpj4rmq0q/1Eb44M9zi2nKB0QraNKuRGYGrrHhcQw=
-github.com/caddyserver/certmagic v0.19.0 h1:HuJ1Yf1H1jAfmBGrSSQN1XRkafnWcpDtyIiyMV6vmpM=
-github.com/caddyserver/certmagic v0.19.0/go.mod h1:fsL01NomQ6N+kE2j37ZCnig2MFosG+MIO4ztnmG/zz8=
+github.com/caddyserver/certmagic v0.19.1 h1:4jyOYm2DHvQI8YM0sk6qm62Gl5XznHxiMBMWjMTlQkw=
+github.com/caddyserver/certmagic v0.19.1/go.mod h1:fsL01NomQ6N+kE2j37ZCnig2MFosG+MIO4ztnmG/zz8=
 github.com/campoy/unique v0.0.0-20180121183637-88950e537e7e/go.mod h1:9IOqJGCPMSc6E5ydlp5NIonxObaeu/Iub/X03EKPVYo=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e/go.mod h1:oDpT4efm8tSYHXV5tHSdRvBet/b/QzxZ+XyyPehvm3A=
