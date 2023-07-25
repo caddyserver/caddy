@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"errors"
 	"fmt"
 	weakrand "math/rand"
 	"path"
@@ -30,7 +31,8 @@ import (
 // set will be populated.
 func Error(statusCode int, err error) HandlerError {
 	const idLen = 9
-	if he, ok := err.(HandlerError); ok {
+	var he HandlerError
+	if errors.As(err, &he) {
 		if he.ID == "" {
 			he.ID = randString(idLen, true)
 		}
