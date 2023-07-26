@@ -207,6 +207,7 @@ func (rw *responseWriter) Flush() {
 		// to rw.Write (see bug in #4314)
 		return
 	}
+	//nolint:bodyclose
 	http.NewResponseController(rw).Flush()
 }
 
@@ -219,6 +220,7 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		}
 		rw.wroteHeader = true
 	}
+	//nolint:bodyclose
 	return http.NewResponseController(rw).Hijack()
 }
 

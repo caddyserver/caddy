@@ -962,6 +962,7 @@ func (h *Handler) finalizeResponse(
 		// Force chunking if we saw a response trailer.
 		// This prevents net/http from calculating the length for short
 		// bodies and adding a Content-Length.
+		//nolint:bodyclose
 		http.NewResponseController(rw).Flush()
 	}
 

@@ -231,6 +231,7 @@ func (rr *responseRecorder) WriteResponse() error {
 }
 
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
 	if err != nil {
 		return nil, nil, err

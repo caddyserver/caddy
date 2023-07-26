@@ -58,6 +58,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		return
 	}
 
+	//nolint:bodyclose
 	conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
 	if errors.Is(hijackErr, http.ErrNotSupported) {
 		h.logger.Sugar().Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw)
@@ -187,7 +188,8 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 
 	if flushInterval != 0 {
 		mlw := &maxLatencyWriter{
-			dst:     dst,
+			dst: dst,
+			//nolint:bodyclose
 			flush:   http.NewResponseController(dst).Flush,
 			latency: flushInterval,
 		}
@@ -456,6 +458,7 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 	defer m.mu.Unlock()
 	n, err = m.dst.Write(p)
 	if m.latency < 0 {
+		//nolint:errcheck
 		m.flush()
 		return
 	}
@@ -477,6 +480,7 @@ func (m *maxLatencyWriter) delayedFlush() {
 	if !m.flushPending { // if stop was called but AfterFunc already started this goroutine
 		return
 	}
+	//nolint:errcheck
 	m.flush()
 	m.flushPending = false
 }
