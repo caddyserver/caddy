@@ -610,7 +610,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	}
 	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
-		origin = "http://unixsocket" // hack so that http.NewRequest() is happy
+		origin = "http://127.0.0.1" // bogus host is a hack so that http.NewRequest() is happy
 	}
 
 	// form the request
@@ -619,20 +619,24 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		return nil, fmt.Errorf("making request: %v", err)
 	}
 	if parsedAddr.IsUnixNetwork() {
-		// When listening on a unix socket, the admin endpoint doesn't
-		// accept any Host header because there is no host:port for
-		// a unix socket's address. The server's host check is fairly
-		// strict for security reasons, so we don't allow just any
-		// Host header. For unix sockets, the Host header must be
-		// empty. Unfortunately, Go makes it impossible to make HTTP
-		// requests with an empty Host header... except with this one
-		// weird trick. (Hopefully they don't fix it. It's already
-		// hard enough to use HTTP over unix sockets.)
+		// We used to conform to RFC 2616 Section 14.26 which requires
+		// an empty host header when there is no host, as is the case
+		// with unix sockets. However, Go required a Host value so we
+		// used a hack of a space character as the host (it would see
+		// the Host was non-empty, then trim the space later). As of
+		// Go 1.20.6 (July 2023), this hack no longer works. See:
+		// https://github.com/golang/go/issues/60374
+		// See also the discussion here:
+		// https://github.com/golang/go/issues/61431
 		//
-		// An equivalent curl command would be something like:
-		// $ curl --unix-socket caddy.sock http:/:$REQUEST_URI
-		req.URL.Host = " "
-		req.Host = ""
+		// After that, we now require a Host value of either 127.0.0.1
+		// or ::1 if one is set. Above I choose to use 127.0.0.1. Even
+		// though the value should be completely irrelevant (it could be
+		// "srldkjfsd"), if for some reason the Host *is* used, at least
+		// we can have some reasonable assurance it will stay on the local
+		// machine and that browsers, if they ever allow access to unix
+		// sockets, can still enforce CORS, ensuring it is still coming
+		// from the local machine.
 	} else {
 		req.Header.Set("Origin", origin)
 	}
