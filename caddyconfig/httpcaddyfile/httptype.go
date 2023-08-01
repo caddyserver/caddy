@@ -242,7 +242,7 @@ func (st ServerType) Setup(
 		if ncl.name == caddy.DefaultLoggerName {
 			hasDefaultLog = true
 		}
-		if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+		if _, ok := options["debug"]; ok && ncl.log != nil && ncl.log.Level == "" {
 			ncl.log.Level = zap.DebugLevel.CapitalString()
 		}
 		customLogs = append(customLogs, ncl)
@@ -325,8 +325,19 @@ func (st ServerType) Setup(
 				Logs: make(map[string]*caddy.CustomLog),
 			}
 		}
+
+		// Add the default log first if defined, so that it doesn't
+		// accidentally get re-created below due to the Exclude logic
 		for _, ncl := range customLogs {
-			if ncl.log == nil {
+			if ncl.name == caddy.DefaultLoggerName && ncl.log != nil {
+				cfg.Logging.Logs[caddy.DefaultLoggerName] = ncl.log
+				break
+			}
+		}
+
+		// Add the rest of the custom logs
+		for _, ncl := range customLogs {
+			if ncl.log == nil || ncl.name == caddy.DefaultLoggerName {
 				continue
 			}
 			if ncl.name != "" {
