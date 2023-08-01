@@ -1399,8 +1399,12 @@ type handleResponseContext struct {
 // intended for use when doing a RoundTrip where you don't
 // want a client disconnection to cancel the request during
 // the roundtrip.
-// This can be replaced with context.WithoutCancel once
-// the minimum required required version of Go is 1.21.
+// This context clears cancellation, error, and deadline methods,
+// but still allows values to pass through from its embedded
+// context.
+//
+// TODO: This can be replaced with context.WithoutCancel once
+// the minimum required version of Go is 1.21.
 type ignoreClientGoneContext struct {
 	context.Context
 }
