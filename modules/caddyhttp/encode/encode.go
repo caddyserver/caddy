@@ -167,7 +167,11 @@ func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter
 // initResponseWriter initializes the responseWriter instance
 // allocated in openResponseWriter, enabling mid-stack inlining.
 func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
-	rw.ResponseWriter = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	if rww, ok := wrappedRW.(*caddyhttp.ResponseWriterWrapper); ok {
+		rw.ResponseWriter = rww
+	} else {
+		rw.ResponseWriter = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	}
 	rw.encodingName = encodingName
 	rw.config = enc
 
