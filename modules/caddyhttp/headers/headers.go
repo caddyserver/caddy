@@ -371,5 +371,5 @@ func (rww *responseWriterWrapper) Write(d []byte) (int, error) {
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
-	_ caddyhttp.HTTPInterfaces    = (*responseWriterWrapper)(nil)
+	_ http.ResponseWriter         = (*responseWriterWrapper)(nil)
 )

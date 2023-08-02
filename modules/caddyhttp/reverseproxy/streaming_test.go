@@ -2,6 +2,7 @@ package reverseproxy
 
 import (
 	"bytes"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -13,12 +14,15 @@ func TestHandlerCopyResponse(t *testing.T) {
 		strings.Repeat("a", defaultBufferSize),
 		strings.Repeat("123456789 123456789 123456789 12", 3000),
 	}
+
 	dst := bytes.NewBuffer(nil)
+	recorder := httptest.NewRecorder()
+	recorder.Body = dst
 
 	for _, d := range testdata {
 		src := bytes.NewBuffer([]byte(d))
 		dst.Reset()
-		err := h.copyResponse(dst, src, 0)
+		err := h.copyResponse(recorder, src, 0)
 		if err != nil {
 			t.Errorf("failed with error: %v", err)
 		}

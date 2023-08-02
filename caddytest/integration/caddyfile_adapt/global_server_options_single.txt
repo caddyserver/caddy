@@ -11,6 +11,7 @@
 			idle 30s
 		}
 		max_header_size 100MB
+		enable_full_duplex
 		log_credentials
 		protocols h1 h2 h2c h3
 		strict_sni_host
@@ -45,6 +46,7 @@ foo.com {
 					"write_timeout": 30000000000,
 					"idle_timeout": 30000000000,
 					"max_header_bytes": 100000000,
+					"enable_full_duplex": true,
 					"routes": [
 						{
 							"match": [
