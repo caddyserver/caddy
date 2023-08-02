@@ -41,6 +41,7 @@ type serverOptions struct {
 	IdleTimeout          caddy.Duration
 	KeepAliveInterval    caddy.Duration
 	MaxHeaderBytes       int
+	EnableFullDuplex     bool
 	Protocols            []string
 	StrictSNIHost        *bool
 	TrustedProxiesRaw    json.RawMessage
@@ -156,6 +157,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					return nil, d.Errf("parsing max_header_size: %v", err)
 				}
 				serverOpts.MaxHeaderBytes = int(size)
+
+			case "enable_full_duplex":
+				if d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				serverOpts.EnableFullDuplex = true
 
 			case "log_credentials":
 				if d.NextArg() {
@@ -327,6 +334,7 @@ func applyServerOptions(
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
+		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
