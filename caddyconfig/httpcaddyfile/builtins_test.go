@@ -52,12 +52,13 @@ func TestLogDirectiveSyntax(t *testing.T) {
 		},
 		{
 			input: `:8080 {
-				log invalid {
+				log name-override {
 					output file foo.log
 				}
 			}
 			`,
-			expectError: true,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.name-override"]},"name-override":{"writer":{"filename":"foo.log","output":"file"},"include":["http.log.access.name-override"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"name-override"}}}}}}`,
+			expectError: false,
 		},
 	} {
 
