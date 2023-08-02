@@ -30,6 +30,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 func init() {
@@ -241,7 +242,7 @@ func (st ServerType) Setup(
 		if ncl.name == caddy.DefaultLoggerName {
 			hasDefaultLog = true
 		}
-		if _, ok := options["debug"]; ok && ncl.log.Level == "" {
+		if _, ok := options["debug"]; ok && ncl.log != nil && ncl.log.Level == "" {
 			ncl.log.Level = zap.DebugLevel.CapitalString()
 		}
 		customLogs = append(customLogs, ncl)
@@ -324,7 +325,21 @@ func (st ServerType) Setup(
 				Logs: make(map[string]*caddy.CustomLog),
 			}
 		}
+
+		// Add the default log first if defined, so that it doesn't
+		// accidentally get re-created below due to the Exclude logic
 		for _, ncl := range customLogs {
+			if ncl.name == caddy.DefaultLoggerName && ncl.log != nil {
+				cfg.Logging.Logs[caddy.DefaultLoggerName] = ncl.log
+				break
+			}
+		}
+
+		// Add the rest of the custom logs
+		for _, ncl := range customLogs {
+			if ncl.log == nil || ncl.name == caddy.DefaultLoggerName {
+				continue
+			}
 			if ncl.name != "" {
 				cfg.Logging.Logs[ncl.name] = ncl.log
 			}
@@ -338,7 +353,15 @@ func (st ServerType) Setup(
 					cfg.Logging.Logs[caddy.DefaultLoggerName] = defaultLog
 				}
 				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
+
+				// avoid duplicates by sorting + compacting
+				slices.Sort[string](defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
 			}
+		}
+		// we may have not actually added anything, so remove if empty
+		if len(cfg.Logging.Logs) == 0 {
+			cfg.Logging = nil
 		}
 	}
 
@@ -770,12 +793,20 @@ func (st *ServerType) serversFromPairings(
 			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
-				if sblock.hasHostCatchAllKey() {
+				if sblock.hasHostCatchAllKey() && len(ncl.hostnames) == 0 {
 					// all requests for hosts not able to be listed should use
 					// this log because it's a catch-all-hosts server block
 					srv.Logs.DefaultLoggerName = ncl.name
+				} else if len(ncl.hostnames) > 0 {
+					// if the logger overrides the hostnames, map that to the logger name
+					for _, h := range ncl.hostnames {
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]string)
+						}
+						srv.Logs.LoggerNames[h] = ncl.name
+					}
 				} else {
-					// map each host to the user's desired logger name
+					// otherwise, map each host to the logger name
 					for _, h := range sblockLogHosts {
 						if srv.Logs.LoggerNames == nil {
 							srv.Logs.LoggerNames = make(map[string]string)
@@ -1564,8 +1595,9 @@ func (c counter) nextGroup() string {
 }
 
 type namedCustomLog struct {
-	name string
-	log  *caddy.CustomLog
+	name      string
+	hostnames []string
+	log       *caddy.CustomLog
 }
 
 // sbAddrAssociation is a mapping from a list of
