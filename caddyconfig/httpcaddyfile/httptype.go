@@ -355,7 +355,7 @@ func (st ServerType) Setup(
 				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
 
 				// avoid duplicates by sorting + compacting
-				slices.Sort[string](defaultLog.Exclude)
+				sort.Strings(defaultLog.Exclude)
 				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
 			}
 		}
