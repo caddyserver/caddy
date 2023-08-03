@@ -58,10 +58,22 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		return
 	}
 
+	// write header first, response headers should not be counted in size
+	// like the rest of handler chain.
+	copyHeader(rw.Header(), res.Header)
+	rw.WriteHeader(res.StatusCode)
+
+	logger.Debug("upgrading connection")
+
 	//nolint:bodyclose
 	conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
 	if errors.Is(hijackErr, http.ErrNotSupported) {
 		h.logger.Sugar().Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw)
+		return
+	}
+
+	if hijackErr != nil {
+		h.logger.Error("hijack failed on protocol switch", zap.Error(hijackErr))
 		return
 	}
 
@@ -77,17 +89,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		backConn.Close()
 	}()
 	defer close(backConnCloseCh)
-
-	// write header first, response headers should not be counted in size
-	// like the rest of handler chain.
-	copyHeader(rw.Header(), res.Header)
-	rw.WriteHeader(res.StatusCode)
-
-	logger.Debug("upgrading connection")
-	if hijackErr != nil {
-		h.logger.Error("hijack failed on protocol switch", zap.Error(hijackErr))
-		return
-	}
 
 	start := time.Now()
 	defer func() {
