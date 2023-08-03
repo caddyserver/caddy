@@ -212,7 +212,7 @@ func (rw *responseWriter) Flush() {
 		return
 	}
 	//nolint:bodyclose
-	http.NewResponseController(rw).Flush()
+	http.NewResponseController(rw.ResponseWriter).Flush()
 }
 
 // Hijack implements http.Hijacker. It will flush status code if set. We don't track actual hijacked
@@ -225,7 +225,7 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		rw.wroteHeader = true
 	}
 	//nolint:bodyclose
-	return http.NewResponseController(rw).Hijack()
+	return http.NewResponseController(rw.ResponseWriter).Hijack()
 }
 
 // Write writes to the response. If the response qualifies,
