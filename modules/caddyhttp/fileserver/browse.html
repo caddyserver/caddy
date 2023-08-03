@@ -11,7 +11,7 @@
 		<path d="M9 7l4 0"></path>
 		<path d="M9 11l4 0"></path>
 	</svg>
-	{{- else if .HasExt ".jpg" ".jpeg" ".png" ".gif" ".webp" ".tiff" ".bmp" ".heif" ".heic"}}
+	{{- else if .HasExt ".jpg" ".jpeg" ".png" ".gif" ".webp" ".tiff" ".bmp" ".heif" ".heic" ".svg"}}
 		{{- if eq .Tpl.Layout "grid"}}
 		<img loading="lazy" src="{{html .Name}}">
 		{{- else}}
