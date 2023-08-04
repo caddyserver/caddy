@@ -93,6 +93,11 @@ func makeArgsReplacer(args []string) *caddy.Replacer {
 		// TODO: Remove the deprecated {args.*} placeholder
 		// support at some point in the future
 		if matches := argsRegexpIndexDeprecated.FindStringSubmatch(key); len(matches) > 0 {
+			// What's matched may be a substring of the key
+			if matches[0] != key {
+				return nil, false
+			}
+
 			value, err := strconv.Atoi(matches[1])
 			if err != nil {
 				caddy.Log().Named("caddyfile").Warn(
@@ -111,6 +116,11 @@ func makeArgsReplacer(args []string) *caddy.Replacer {
 
 		// Handle args[*] form
 		if matches := argsRegexpIndex.FindStringSubmatch(key); len(matches) > 0 {
+			// What's matched may be a substring of the key
+			if matches[0] != key {
+				return nil, false
+			}
+
 			if strings.Contains(matches[1], ":") {
 				caddy.Log().Named("caddyfile").Warn(
 					"Variadic placeholder {args[" + matches[1] + "]} must be a token on its own")

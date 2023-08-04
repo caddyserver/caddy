@@ -718,6 +718,36 @@ func TestEnvironmentReplacement(t *testing.T) {
 	}
 }
 
+func TestImportReplacementInJSONWithBrace(t *testing.T) {
+	for i, test := range []struct {
+		args   []string
+		input  string
+		expect string
+	}{
+		{
+			args:   []string{"123"},
+			input:  "{args[0]}",
+			expect: "123",
+		},
+		{
+			args:   []string{"123"},
+			input:  `{"key":"{args[0]}"}`,
+			expect: `{"key":"123"}`,
+		},
+		{
+			args:   []string{"123", "123"},
+			input:  `{"key":[{args[0]},{args[1]}]}`,
+			expect: `{"key":[123,123]}`,
+		},
+	} {
+		repl := makeArgsReplacer(test.args)
+		actual := repl.ReplaceKnown(test.input, "")
+		if actual != test.expect {
+			t.Errorf("Test %d: Expected: '%s' but got '%s'", i, test.expect, actual)
+		}
+	}
+}
+
 func TestSnippets(t *testing.T) {
 	p := testParser(`
 		(common) {
