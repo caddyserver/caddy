@@ -589,7 +589,22 @@ func newSharedQUICTLSConfig(tlsConfig *tls.Config) *sharedQUICTLSConfig {
 func (sqtc *sharedQUICTLSConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
 	sqtc.rmu.RLock()
 	defer sqtc.rmu.RUnlock()
-	return sqtc.activeTlsConf.GetConfigForClient(ch)
+
+	// TODO: hack for solving nil net.Conn in ClientHelloInfo in quic
+	// upstream issue: https://github.com/golang/go/issues/61639
+	config, err := sqtc.activeTlsConf.GetConfigForClient(ch)
+	if err != nil {
+		return nil, err
+	}
+
+	conn := ch.Conn
+	gc := config.GetCertificate
+	config = config.Clone()
+	config.GetCertificate = func(ch *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		ch.Conn = conn
+		return gc(ch)
+	}
+	return config, nil
 }
 
 // addTLSConfig adds tls.Config to the map if not present and returns the corresponding context and its cancelFunc
