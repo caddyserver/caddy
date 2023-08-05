@@ -25,11 +25,11 @@ import (
 
 type parsedAddr struct {
 	network, scheme, host, port string
-	rejected                    bool
+	valid                       bool
 }
 
 func (p parsedAddr) dialAddr() string {
-	if p.rejected {
+	if !p.valid {
 		return ""
 	}
 	// for simplest possible config, we only need to include
@@ -67,7 +67,7 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		// so we return a more user-friendly error message instead
 		// to explain what to do instead
 		if strings.Contains(upstreamAddr, "{") {
-			return parsedAddr{rejected: true}, fmt.Errorf("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
+			return parsedAddr{}, fmt.Errorf("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
 		}
 
 		toURL, err := url.Parse(upstreamAddr)
@@ -78,19 +78,19 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 			if strings.Contains(err.Error(), "invalid port") && strings.Contains(err.Error(), "-") {
 				index := strings.LastIndex(upstreamAddr, ":")
 				if index == -1 {
-					return parsedAddr{rejected: true}, fmt.Errorf("parsing upstream URL: %v", err)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 				}
 				portRange := upstreamAddr[index+1:]
 				if strings.Count(portRange, "-") != 1 {
-					return parsedAddr{rejected: true}, fmt.Errorf("parsing upstream URL: parse \"%v\": port range invalid: %v", upstreamAddr, portRange)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: parse \"%v\": port range invalid: %v", upstreamAddr, portRange)
 				}
 				toURL, err = url.Parse(strings.ReplaceAll(upstreamAddr, portRange, "0"))
 				if err != nil {
-					return parsedAddr{rejected: true}, fmt.Errorf("parsing upstream URL: %v", err)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 				}
 				port = portRange
 			} else {
-				return parsedAddr{rejected: true}, fmt.Errorf("parsing upstream URL: %v", err)
+				return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 			}
 		}
 		if port == "" {
@@ -101,18 +101,18 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		// a backend and proxying to it, so we cannot allow extra components
 		// in backend URLs
 		if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
-			return parsedAddr{rejected: true}, fmt.Errorf("for now, URLs for proxy upstreams only support scheme, host, and port components")
+			return parsedAddr{}, fmt.Errorf("for now, URLs for proxy upstreams only support scheme, host, and port components")
 		}
 
 		// ensure the port and scheme aren't in conflict
 		if toURL.Scheme == "http" && port == "443" {
-			return parsedAddr{rejected: true}, fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
 		}
 		if toURL.Scheme == "https" && port == "80" {
-			return parsedAddr{rejected: true}, fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
 		}
 		if toURL.Scheme == "h2c" && port == "443" {
-			return parsedAddr{rejected: true}, fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
 		}
 
 		// if port is missing, attempt to infer from scheme
@@ -144,5 +144,5 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		network = "unix"
 		scheme = "h2c"
 	}
-	return parsedAddr{network, scheme, host, port, false}, nil
+	return parsedAddr{network, scheme, host, port, true}, nil
 }
