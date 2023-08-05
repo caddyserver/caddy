@@ -146,7 +146,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// appendUpstream creates an upstream for address and adds
 	// it to the list.
 	appendUpstream := func(address string) error {
-		dialAddr, scheme, err := parseUpstreamDialAddress(address)
+		pa, err := parseUpstreamDialAddress(address)
 		if err != nil {
 			return d.WrapErr(err)
 		}
@@ -154,21 +154,27 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
-		if commonScheme != "" && scheme != commonScheme {
+		if commonScheme != "" && pa.scheme != commonScheme {
 			return d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
-				commonScheme, scheme)
+				commonScheme, pa.scheme)
 		}
-		commonScheme = scheme
+		commonScheme = pa.scheme
 
-		parsedAddr, err := caddy.ParseNetworkAddress(dialAddr)
+		// if the port of upstream address contains a placeholder, only wrap it with the `Upstream` struct,
+		// delaying actual resolution of the address until request time.
+		if pa.replaceablePort() {
+			h.Upstreams = append(h.Upstreams, &Upstream{Dial: pa.dialAddr()})
+			return nil
+		}
+		parsedAddr, err := caddy.ParseNetworkAddress(pa.dialAddr())
 		if err != nil {
 			return d.WrapErr(err)
 		}
 
-		if parsedAddr.StartPort == 0 && parsedAddr.EndPort == 0 {
+		if pa.isUnix() || !pa.rangedPort() {
 			// unix networks don't have ports
 			h.Upstreams = append(h.Upstreams, &Upstream{
-				Dial: dialAddr,
+				Dial: pa.dialAddr(),
 			})
 		} else {
 			// expand a port range into multiple upstreams
