@@ -49,7 +49,7 @@ func (p parsedAddr) rangedPort() bool {
 	return strings.Contains(p.port, "-")
 }
 func (p parsedAddr) replaceablePort() bool {
-	return strings.HasPrefix(p.port, "{") && strings.HasSuffix(p.port, "}")
+	return strings.Contains(p.port, "{") && strings.Contains(p.port, "}")
 }
 func (p parsedAddr) isUnix() bool {
 	return caddy.IsUnixNetwork(p.network)

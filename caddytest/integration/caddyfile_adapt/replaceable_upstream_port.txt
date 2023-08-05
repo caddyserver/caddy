@@ -1,9 +1,9 @@
 *.sandbox.localhost {
 	@sandboxPort {
-		header_regexp first_label Host ^([0-9]{3})\.sandbox\.
+		header_regexp port Host ^([0-9]{3})\.sandbox\.
 	}
 	handle @sandboxPort {
-		reverse_proxy {re.first_label.1}
+		reverse_proxy app:{re.port.1}
 	}
 	handle {
 		redir {scheme}://application.localhost
@@ -44,7 +44,7 @@
 																	"handler": "reverse_proxy",
 																	"upstreams": [
 																		{
-																			"dial": "{http.regexp.first_label.1}"
+																			"dial": "app:{http.regexp.port.1}"
 																		}
 																	]
 																}
@@ -57,7 +57,7 @@
 												{
 													"header_regexp": {
 														"Host": {
-															"name": "first_label",
+															"name": "port",
 															"pattern": "^([0-9]{3})\\.sandbox\\."
 														}
 													}
