@@ -5,12 +5,12 @@ import (
 	"strconv"
 )
 
-func SanitizeCode(s int) string {
-	switch s {
+func SanitizeCode(statusCode int) string {
+	switch statusCode {
 	case 0, 200:
 		return "200"
 	default:
-		return strconv.Itoa(s)
+		return strconv.Itoa(statusCode)
 	}
 }
 
