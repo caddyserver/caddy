@@ -157,7 +157,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	// is independent of permissions bits
 	if na.IsUnixNetwork() {
 		var err error
-		address, unixFileMode, err = splitUnixSocketPermissionsBits(na.Host)
+		address, unixFileMode, err = SplitUnixSocketPermissionsBits(na.Host)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +329,7 @@ func IsUnixNetwork(netw string) bool {
 // include write perms (e.g. `0422` or `022`).
 // Symbolic permission representation (e.g. `u=w,g=w,o=w`)
 // is not supported and will throw an error for now!
-func splitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileMode, err error) {
+func SplitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileMode, err error) {
 	addrSplit := strings.SplitN(addr, "|", 2)
 
 	if len(addrSplit) == 2 {
@@ -377,7 +377,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		network = defaultNetwork
 	}
 	if IsUnixNetwork(network) {
-		_, _, err := splitUnixSocketPermissionsBits(host)
+		_, _, err := SplitUnixSocketPermissionsBits(host)
 		return NetworkAddress{
 			Network: network,
 			Host:    host,

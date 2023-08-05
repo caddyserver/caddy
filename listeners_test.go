@@ -634,7 +634,7 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			expectErr: true,
 		},
 	} {
-		actualPath, actualFileMode, err := splitUnixSocketPermissionsBits(tc.input)
+		actualPath, actualFileMode, err := SplitUnixSocketPermissionsBits(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
