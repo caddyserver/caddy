@@ -23,11 +23,43 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+type parsedAddr struct {
+	network, scheme, host, port string
+	valid                       bool
+}
+
+func (p parsedAddr) dialAddr() string {
+	if !p.valid {
+		return ""
+	}
+	// for simplest possible config, we only need to include
+	// the network portion if the user specified one
+	if p.network != "" {
+		return caddy.JoinNetworkAddress(p.network, p.host, p.port)
+	}
+
+	// if the host is a placeholder, then we don't want to join with an empty port,
+	// because that would just append an extra ':' at the end of the address.
+	if p.port == "" && strings.Contains(p.host, "{") {
+		return p.host
+	}
+	return net.JoinHostPort(p.host, p.port)
+}
+func (p parsedAddr) rangedPort() bool {
+	return strings.Contains(p.port, "-")
+}
+func (p parsedAddr) replaceablePort() bool {
+	return strings.Contains(p.port, "{") && strings.Contains(p.port, "}")
+}
+func (p parsedAddr) isUnix() bool {
+	return caddy.IsUnixNetwork(p.network)
+}
+
 // parseUpstreamDialAddress parses configuration inputs for
 // the dial address, including support for a scheme in front
 // as a shortcut for the port number, and a network type,
 // for example 'unix' to dial a unix socket.
-func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
+func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 	var network, scheme, host, port string
 
 	if strings.Contains(upstreamAddr, "://") {
@@ -35,7 +67,7 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		// so we return a more user-friendly error message instead
 		// to explain what to do instead
 		if strings.Contains(upstreamAddr, "{") {
-			return "", "", fmt.Errorf("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
+			return parsedAddr{}, fmt.Errorf("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
 		}
 
 		toURL, err := url.Parse(upstreamAddr)
@@ -46,19 +78,19 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 			if strings.Contains(err.Error(), "invalid port") && strings.Contains(err.Error(), "-") {
 				index := strings.LastIndex(upstreamAddr, ":")
 				if index == -1 {
-					return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 				}
 				portRange := upstreamAddr[index+1:]
 				if strings.Count(portRange, "-") != 1 {
-					return "", "", fmt.Errorf("parsing upstream URL: parse \"%v\": port range invalid: %v", upstreamAddr, portRange)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: parse \"%v\": port range invalid: %v", upstreamAddr, portRange)
 				}
 				toURL, err = url.Parse(strings.ReplaceAll(upstreamAddr, portRange, "0"))
 				if err != nil {
-					return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+					return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 				}
 				port = portRange
 			} else {
-				return "", "", fmt.Errorf("parsing upstream URL: %v", err)
+				return parsedAddr{}, fmt.Errorf("parsing upstream URL: %v", err)
 			}
 		}
 		if port == "" {
@@ -69,18 +101,18 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		// a backend and proxying to it, so we cannot allow extra components
 		// in backend URLs
 		if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
-			return "", "", fmt.Errorf("for now, URLs for proxy upstreams only support scheme, host, and port components")
+			return parsedAddr{}, fmt.Errorf("for now, URLs for proxy upstreams only support scheme, host, and port components")
 		}
 
 		// ensure the port and scheme aren't in conflict
 		if toURL.Scheme == "http" && port == "443" {
-			return "", "", fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
 		}
 		if toURL.Scheme == "https" && port == "80" {
-			return "", "", fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
 		}
 		if toURL.Scheme == "h2c" && port == "443" {
-			return "", "", fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
 		}
 
 		// if port is missing, attempt to infer from scheme
@@ -112,18 +144,5 @@ func parseUpstreamDialAddress(upstreamAddr string) (string, string, error) {
 		network = "unix"
 		scheme = "h2c"
 	}
-
-	// for simplest possible config, we only need to include
-	// the network portion if the user specified one
-	if network != "" {
-		return caddy.JoinNetworkAddress(network, host, port), scheme, nil
-	}
-
-	// if the host is a placeholder, then we don't want to join with an empty port,
-	// because that would just append an extra ':' at the end of the address.
-	if port == "" && strings.Contains(host, "{") {
-		return host, scheme, nil
-	}
-
-	return net.JoinHostPort(host, port), scheme, nil
+	return parsedAddr{network, scheme, host, port, true}, nil
 }
