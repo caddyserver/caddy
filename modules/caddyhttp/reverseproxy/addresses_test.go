@@ -265,18 +265,21 @@ func TestParseUpstreamDialAddress(t *testing.T) {
 			expectScheme:   "h2c",
 		},
 	} {
-		actualHostPort, actualScheme, err := parseUpstreamDialAddress(tc.input)
+		actualHostPort, err := parseUpstreamDialAddress(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got %v", i, err)
 		}
 		if !tc.expectErr && err != nil {
 			t.Errorf("Test %d: Expected no error but got %v", i, err)
 		}
-		if actualHostPort != tc.expectHostPort {
-			t.Errorf("Test %d: Expected host and port '%s' but got '%s'", i, tc.expectHostPort, actualHostPort)
+		if actualHostPort.dialAddr() != tc.expectHostPort {
+			t.Errorf("Test %d: input %s: Expected host and port '%s' but got '%s'", i, tc.input, tc.expectHostPort, actualHostPort.dialAddr())
 		}
-		if actualScheme != tc.expectScheme {
-			t.Errorf("Test %d: Expected scheme '%s' but got '%s'", i, tc.expectScheme, actualScheme)
+		// if actualHostPort != tc.expectHostPort {
+		// 	t.Errorf("Test %d: Expected host and port '%s' but got '%s'", i, tc.expectHostPort, actualHostPort)
+		// }
+		if actualHostPort.scheme != tc.expectScheme {
+			t.Errorf("Test %d: Expected scheme '%s' but got '%s'", i, tc.expectScheme, actualHostPort.scheme)
 		}
 	}
 }
