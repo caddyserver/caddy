@@ -54,9 +54,6 @@ func (p parsedAddr) replaceablePort() bool {
 func (p parsedAddr) isUnix() bool {
 	return caddy.IsUnixNetwork(p.network)
 }
-func (p parsedAddr) networkAddressString() string {
-	return caddy.JoinNetworkAddress(p.network, p.host, p.port)
-}
 
 // parseUpstreamDialAddress parses configuration inputs for
 // the dial address, including support for a scheme in front
