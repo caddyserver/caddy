@@ -44,6 +44,7 @@ func TestStaticResponseHandler(t *testing.T) {
 	}
 
 	resp := w.Result()
+	resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusNotFound {

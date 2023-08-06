@@ -20,7 +20,8 @@ func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	resp := tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	resp.Body.Close()
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
@@ -36,7 +37,9 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	resp := tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	resp.Body.Close()
+	resp.Body.Close()
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T) {
@@ -52,7 +55,8 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost:1234/", http.StatusPermanentRedirect)
+	resp := tester.AssertRedirect("http://localhost:9080/", "https://localhost:1234/", http.StatusPermanentRedirect)
+	resp.Body.Close()
 }
 
 func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {

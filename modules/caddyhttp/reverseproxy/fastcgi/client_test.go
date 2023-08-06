@@ -134,6 +134,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 			length = len(data)
 			rd := bytes.NewReader(data)
 			resp, err = fcgi.Post(fcgiParams, "", "", rd, int64(rd.Len()))
+			resp.Body.Close()
 		} else if len(posts) > 0 {
 			values := url.Values{}
 			for k, v := range posts {
@@ -141,9 +142,11 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 				length += len(k) + 2 + len(v)
 			}
 			resp, err = fcgi.PostForm(fcgiParams, values)
+			resp.Body.Close()
 		} else {
 			rd := bytes.NewReader(data)
 			resp, err = fcgi.Get(fcgiParams, rd, int64(rd.Len()))
+			resp.Body.Close()
 		}
 
 	default:
@@ -158,6 +161,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 			length += len(k) + int(fi.Size())
 		}
 		resp, err = fcgi.PostFile(fcgiParams, values, files)
+		resp.Body.Close()
 	}
 
 	if err != nil {

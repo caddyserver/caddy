@@ -128,5 +128,6 @@ func TestReplIndex(t *testing.T) {
   `, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/", 200, "")
+	resp, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "")
+	resp.Body.Close()
 }
