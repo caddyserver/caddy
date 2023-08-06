@@ -8,6 +8,7 @@ linters:
   enable:
     - bodyclose
     - errcheck
+    - gci
     - gofumpt
     - gosec
     - gosimple
