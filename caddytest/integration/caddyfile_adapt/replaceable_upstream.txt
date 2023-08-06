@@ -1,0 +1,100 @@
+*.sandbox.localhost {
+	@sandboxPort {
+		header_regexp first_label Host ^([0-9]{3})\.sandbox\.
+	}
+	handle @sandboxPort {
+		reverse_proxy {re.first_label.1}
+	}
+	handle {
+		redir {scheme}://application.localhost
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.sandbox.localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"handler": "reverse_proxy",
+																	"upstreams": [
+																		{
+																			"dial": "{http.regexp.first_label.1}"
+																		}
+																	]
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"header_regexp": {
+														"Host": {
+															"name": "first_label",
+															"pattern": "^([0-9]{3})\\.sandbox\\."
+														}
+													}
+												}
+											]
+										},
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"handler": "static_response",
+																	"headers": {
+																		"Location": [
+																			"{http.request.scheme}://application.localhost"
+																		]
+																	},
+																	"status_code": 302
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
