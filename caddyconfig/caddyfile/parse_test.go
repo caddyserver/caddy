@@ -403,13 +403,13 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import recursive_import_test2`), 0o644)
+		import recursive_import_test2`), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(recursiveFile1)
 
-	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0o644)
+	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
