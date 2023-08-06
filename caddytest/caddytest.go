@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"github.com/aryann/difflib"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	// plug in Caddy modules here
