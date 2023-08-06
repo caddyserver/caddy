@@ -64,6 +64,7 @@ type Tester struct {
 
 // NewTester will create a new testing client with an attached cookie jar
 func NewTester(t *testing.T) *Tester {
+	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("failed to create cookiejar: %s", err)
@@ -230,6 +231,7 @@ const initConfig = `{
 // validateTestPrerequisites ensures the certificates are available in the
 // designated path and Caddy sub-process is running.
 func validateTestPrerequisites(t *testing.T) error {
+	t.Helper()
 	// check certificates are found
 	for _, certName := range Default.Certifcates {
 		if _, err := os.Stat(getIntegrationDir() + certName); os.IsNotExist(err) {
@@ -327,6 +329,7 @@ func CreateTestingTransport() *http.Transport {
 
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
+	t.Helper()
 	tc := NewTester(t)
 
 	err := tc.initServer(rawConfig, configType)
@@ -374,6 +377,7 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 
 // CompareAdapt adapts a config and then compares it against an expected result
 func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, expectedResponse string) bool {
+	t.Helper()
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
 		t.Logf("unrecognized config adapter '%s'", adapterName)
@@ -433,6 +437,7 @@ func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, 
 
 // AssertAdapt adapts a config and then tests it against an expected result
 func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+	t.Helper()
 	ok := CompareAdapt(t, "Caddyfile", rawConfig, adapterName, expectedResponse)
 	if !ok {
 		t.Fail()
@@ -442,6 +447,7 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 // Generic request functions
 
 func applyHeaders(t *testing.T, req *http.Request, requestHeaders []string) {
+	t.Helper()
 	requestContentType := ""
 	for _, requestHeader := range requestHeaders {
 		arr := strings.SplitAfterN(requestHeader, ":", 2)

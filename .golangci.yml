@@ -31,6 +31,7 @@ linters:
     - prealloc
     - revive
     - staticcheck
+    - thelper
     - typecheck
     - unconvert
     - unused
@@ -52,7 +53,6 @@ linters:
   # - godot
   # - godox
   # - goerr113
-  # - gofumpt
   # - goheader
   # - golint
   # - gomnd
