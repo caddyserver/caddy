@@ -20,6 +20,6 @@ import (
 	"net/http"
 )
 
-func enableFullDuplex(w http.ResponseWriter) {
+func enableFullDuplex(_ http.ResponseWriter) {
 	// Do nothing, Go 1.20 and earlier do not support full duplex
 }

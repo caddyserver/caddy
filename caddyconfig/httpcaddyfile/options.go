@@ -59,7 +59,7 @@ func init() {
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 }
 
-func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
+func parseOptTrue(_ *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
 func parseOptHTTPPort(d *caddyfile.Dispenser, _ any) (any, error) {
 	var httpPort int

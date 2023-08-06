@@ -118,7 +118,7 @@ func (hcg *HTTPCertGetter) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (hcg HTTPCertGetter) GetCertificate(_ context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	sigs := make([]string, len(hello.SignatureSchemes))
 	for i, sig := range hello.SignatureSchemes {
 		sigs[i] = fmt.Sprintf("%x", uint16(sig)) // you won't believe what %x uses if the val is a Stringer

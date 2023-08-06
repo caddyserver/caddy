@@ -629,7 +629,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if err != nil {
 		// OK; probably didn't have a port
 		addr, err := netip.ParseAddr(address)
-		if err != nil {
+		if err != nil { //nolint:revive
 			// Doesn't seem like a valid ip address at all
 		} else {
 			// Ok, only the port was missing

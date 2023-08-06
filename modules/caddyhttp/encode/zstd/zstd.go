@@ -38,7 +38,7 @@ func (Zstd) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
-func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (z *Zstd) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 

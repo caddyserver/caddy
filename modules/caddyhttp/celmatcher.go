@@ -232,11 +232,11 @@ func (cr celHTTPRequest) Parent() interpreter.Activation {
 	return nil
 }
 
-func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (any, error) {
+func (cr celHTTPRequest) ConvertToNative(_ reflect.Type) (any, error) {
 	return cr.Request, nil
 }
 
-func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
+func (celHTTPRequest) ConvertToType(_ ref.Type) ref.Val {
 	panic("not implemented")
 }
 
@@ -255,7 +255,7 @@ var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
-func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
+func (pn celPkixName) ConvertToNative(_ reflect.Type) (any, error) {
 	return pn.Name, nil
 }
 
@@ -442,7 +442,7 @@ func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.Int
 
 // CELMatcherRuntimeFunction creates a function binding for when the input to the matcher
 // is dynamically resolved rather than a set of static constant values.
-func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions.BinaryOp {
+func CELMatcherRuntimeFunction(_ string, fac CELMatcherFactory) functions.BinaryOp {
 	return func(celReq, matcherData ref.Val) ref.Val {
 		matcher, err := fac(matcherData)
 		if err != nil {

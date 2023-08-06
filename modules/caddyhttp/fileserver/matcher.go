@@ -181,7 +181,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			root = values["root"][0]
 		}
 
-		var try_policy string
+		var tryPolicy string
 		if len(values["try_policy"]) > 0 {
 			root = values["try_policy"][0]
 		}
@@ -189,7 +189,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		m := MatchFile{
 			Root:      root,
 			TryFiles:  values["try_files"],
-			TryPolicy: try_policy,
+			TryPolicy: tryPolicy,
 			SplitPath: values["split_path"],
 		}
 

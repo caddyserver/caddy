@@ -294,7 +294,7 @@ func (tlsPlaceholderWrapper) CaddyModule() caddy.ModuleInfo {
 
 func (tlsPlaceholderWrapper) WrapListener(ln net.Listener) net.Listener { return ln }
 
-func (tlsPlaceholderWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error { return nil }
+func (tlsPlaceholderWrapper) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error { return nil }
 
 const (
 	// DefaultHTTPPort is the default port for HTTP.

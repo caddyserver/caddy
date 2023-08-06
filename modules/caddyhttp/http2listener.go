@@ -40,7 +40,7 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 		if csc, ok := conn.(connectionStateConn); ok {
 			// *tls.Conn will return empty string because it's only populated after handshake is complete
 			if csc.ConnectionState().NegotiatedProtocol == http2.NextProtoTLS {
-				go h.serveHttp2(csc)
+				go h.serveHTTP2(csc)
 				continue
 			}
 		}
@@ -49,7 +49,7 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 	}
 }
 
-func (h *http2Listener) serveHttp2(csc connectionStateConn) {
+func (h *http2Listener) serveHTTP2(csc connectionStateConn) {
 	atomic.AddUint64(&h.cnt, 1)
 	h.runHook(csc, http.StateNew)
 	defer func() {

@@ -100,7 +100,7 @@ func (iss InternalIssuer) IssuerKey() string {
 }
 
 // Issue issues a certificate to satisfy the CSR.
-func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
+func (iss InternalIssuer) Issue(_ context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
 	// prepare the signing authority
 	authCfg := caddypki.AuthorityConfig{
 		SignWithRoot: iss.SignWithRoot,

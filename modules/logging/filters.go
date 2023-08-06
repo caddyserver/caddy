@@ -62,7 +62,7 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (DeleteFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (HashFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *HashFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -198,7 +198,7 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision parses m's IP masks, from integers.
-func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
+func (m *IPMaskFilter) Provision(_ caddy.Context) error {
 	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
 		if rawField == 0 {
 			return nil
@@ -566,7 +566,7 @@ func (f *RegexpFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision compiles m's regexp.
-func (f *RegexpFilter) Provision(ctx caddy.Context) error {
+func (f *RegexpFilter) Provision(_ caddy.Context) error {
 	r, err := regexp.Compile(f.RawRegexp)
 	if err != nil {
 		return err

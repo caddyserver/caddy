@@ -1022,7 +1022,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func handleConfigID(w http.ResponseWriter, r *http.Request) error {
+func handleConfigID(_ http.ResponseWriter, r *http.Request) error {
 	idPath := r.URL.Path
 
 	parts := strings.Split(idPath, "/")
@@ -1058,7 +1058,7 @@ func handleConfigID(w http.ResponseWriter, r *http.Request) error {
 	return errInternalRedir
 }
 
-func handleStop(w http.ResponseWriter, r *http.Request) error {
+func handleStop(_ http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
