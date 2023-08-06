@@ -418,8 +418,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// GET and HEAD, which is sensible for a static file server - reject
 	// any other methods (see issue #5166)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Add("Allow", "GET, HEAD")
-		return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+		// if we're in an error context, then it doesn't make sense
+		// to repeat the error; just continue because we're probably
+		// trying to write an error page response (see issue #5703)
+		if _, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); !ok {
+			w.Header().Add("Allow", "GET, HEAD")
+			return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+		}
 	}
 
 	// set the Etag - note that a conditional If-None-Match request is handled
