@@ -15,13 +15,13 @@
 package reverseproxy
 
 import (
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"

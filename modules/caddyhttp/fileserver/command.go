@@ -15,14 +15,14 @@
 package fileserver
 
 import (
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"encoding/json"
 	"io"
 	"log"
 	"os"
 	"strconv"
 	"time"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/cobra"

@@ -15,14 +15,14 @@
 package caddyauth
 
 import (
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"bufio"
 	"bytes"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"

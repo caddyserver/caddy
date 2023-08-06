@@ -1,8 +1,6 @@
 package caddytest
 
 import (
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -22,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/aryann/difflib"
 

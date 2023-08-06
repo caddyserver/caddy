@@ -15,8 +15,6 @@
 package caddypki
 
 import (
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -24,6 +22,8 @@ import (
 	"net/http"
 	"os"
 	"path"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/smallstep/truststore"
 	"github.com/spf13/cobra"
