@@ -15,6 +15,8 @@
 package caddyauth
 
 import (
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
 	"bufio"
 	"bytes"
 	"encoding/base64"
@@ -22,10 +24,10 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/caddyserver/caddy/v2"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

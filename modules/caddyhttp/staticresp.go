@@ -15,6 +15,8 @@
 package caddyhttp
 
 import (
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -27,12 +29,12 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 )
 
 func init() {

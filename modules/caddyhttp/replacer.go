@@ -39,9 +39,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/google/uuid"
 )
 
 // NewTestReplacer creates a replacer for an http.Request
