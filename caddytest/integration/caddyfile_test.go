@@ -9,7 +9,6 @@ import (
 )
 
 func TestRespond(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
@@ -32,7 +31,6 @@ func TestRespond(t *testing.T) {
 }
 
 func TestRedirect(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
@@ -61,7 +59,6 @@ func TestRedirect(t *testing.T) {
 }
 
 func TestDuplicateHosts(t *testing.T) {
-
 	// act and assert
 	caddytest.AssertLoadError(t,
 		`
@@ -76,7 +73,6 @@ func TestDuplicateHosts(t *testing.T) {
 }
 
 func TestReadCookie(t *testing.T) {
-
 	localhost, _ := url.Parse("http://localhost")
 	cookie := http.Cookie{
 		Name:  "clientname",
@@ -110,7 +106,6 @@ func TestReadCookie(t *testing.T) {
 }
 
 func TestReplIndex(t *testing.T) {
-
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
   {

@@ -120,7 +120,7 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 
 	h = wrrPolicy.Select(pool, req, nil)
 	if h != pool[0] {
-		t.Error("Expected to select first host on availablity.")
+		t.Error("Expected to select first host on availability.")
 	}
 	// mark host as full
 	pool[1].countRequest(1)
@@ -629,7 +629,6 @@ func TestRandomChoicePolicy(t *testing.T) {
 	if h == pool[0] {
 		t.Error("RandomChoicePolicy should not choose pool[0]")
 	}
-
 }
 
 func TestCookieHashPolicy(t *testing.T) {

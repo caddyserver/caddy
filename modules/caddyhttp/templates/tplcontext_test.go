@@ -30,8 +30,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-type handle struct {
-}
+type handle struct{}
 
 func (h *handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Accept-Encoding") == "identity" {
@@ -176,7 +175,6 @@ func TestImport(t *testing.T) {
 		} else if !templateWasDefined && actual != "" {
 			// template should be defined, return value should be an empty string
 			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
-
 		}
 
 		if absFilePath != "" {
@@ -255,7 +253,6 @@ func TestNestedInclude(t *testing.T) {
 		} else if buf.String() != test.expect {
 			//
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, buf.String())
-
 		}
 
 		if absFilePath != "" {
@@ -342,7 +339,6 @@ func TestInclude(t *testing.T) {
 			t.Errorf("Test %d: Expected error but had none", i)
 		} else if actual != test.expect {
 			t.Errorf("Test %d: Expected %s but got %s", i, test.expect, actual)
-
 		}
 
 		if absFilePath != "" {
@@ -602,7 +598,6 @@ title = "Welcome"
 			t.Errorf("Test %d: Expected body %s, found %s. Input was SplitFrontMatter(%s)", i, test.body, result.Body, test.input)
 		}
 	}
-
 }
 
 func TestHumanize(t *testing.T) {
