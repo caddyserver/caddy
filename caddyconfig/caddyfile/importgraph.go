@@ -34,6 +34,7 @@ func (i *importGraph) addNode(name string) {
 	}
 	i.nodes[name] = true
 }
+
 func (i *importGraph) addNodes(names []string) {
 	for _, name := range names {
 		i.addNode(name)
@@ -43,6 +44,7 @@ func (i *importGraph) addNodes(names []string) {
 func (i *importGraph) removeNode(name string) {
 	delete(i.nodes, name)
 }
+
 func (i *importGraph) removeNodes(names []string) {
 	for _, name := range names {
 		i.removeNode(name)
@@ -73,6 +75,7 @@ func (i *importGraph) addEdge(from, to string) error {
 	i.edges[from] = append(i.edges[from], to)
 	return nil
 }
+
 func (i *importGraph) addEdges(from string, tos []string) error {
 	for _, to := range tos {
 		err := i.addEdge(from, to)

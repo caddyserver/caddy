@@ -284,7 +284,8 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	var false bool
 	cfg := &caddy.Config{
-		Admin: &caddy.AdminConfig{Disabled: true,
+		Admin: &caddy.AdminConfig{
+			Disabled: true,
 			Config: &caddy.ConfigSettings{
 				Persist: &false,
 			},

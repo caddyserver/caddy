@@ -200,7 +200,7 @@ func cmdExportStorage(fl Flags) (int, error) {
 
 			hdr := &tar.Header{
 				Name: k,
-				Mode: 0600,
+				Mode: 0o600,
 				Size: int64(len(v)),
 			}
 

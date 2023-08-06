@@ -126,7 +126,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	}
 
 	// otherwise just open a regular file
-	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:

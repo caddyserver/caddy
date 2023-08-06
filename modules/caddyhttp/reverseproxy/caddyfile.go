@@ -549,7 +549,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.RequestBuffers = int64(size)
 			} else if subdir == "response_buffers" {
 				h.ResponseBuffers = int64(size)
-
 			}
 
 		// TODO: These three properties are deprecated; remove them sometime after v2.6.4

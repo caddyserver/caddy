@@ -1346,7 +1346,7 @@ var (
 // will get deleted before the process gracefully exits.
 func PIDFile(filename string) error {
 	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	err := os.WriteFile(filename, pid, 0600)
+	err := os.WriteFile(filename, pid, 0o600)
 	if err != nil {
 		return err
 	}

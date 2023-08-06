@@ -45,12 +45,15 @@ func (p parsedAddr) dialAddr() string {
 	}
 	return net.JoinHostPort(p.host, p.port)
 }
+
 func (p parsedAddr) rangedPort() bool {
 	return strings.Contains(p.port, "-")
 }
+
 func (p parsedAddr) replaceablePort() bool {
 	return strings.Contains(p.port, "{") && strings.Contains(p.port, "}")
 }
+
 func (p parsedAddr) isUnix() bool {
 	return caddy.IsUnixNetwork(p.network)
 }

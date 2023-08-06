@@ -356,13 +356,13 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 			newCfg.Admin.Config.Persist == nil ||
 			*newCfg.Admin.Config.Persist) {
 		dir := filepath.Dir(ConfigAutosavePath)
-		err := os.MkdirAll(dir, 0700)
+		err := os.MkdirAll(dir, 0o700)
 		if err != nil {
 			Log().Error("unable to create folder for config autosave",
 				zap.String("dir", dir),
 				zap.Error(err))
 		} else {
-			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0o600)
 			if err == nil {
 				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
@@ -831,7 +831,7 @@ func InstanceID() (uuid.UUID, error) {
 		if err != nil {
 			return uuid, err
 		}
-		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
+		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0o600)
 		return uuid, err
 	} else if err != nil {
 		return [16]byte{}, err
