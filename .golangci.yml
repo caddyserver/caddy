@@ -30,6 +30,7 @@ linters:
     - misspell
     - prealloc
     - staticcheck
+    - thelper
     - typecheck
     - unconvert
     - unused
@@ -51,7 +52,6 @@ linters:
   # - godot
   # - godox
   # - goerr113
-  # - gofumpt
   # - goheader
   # - golint
   # - gomnd
