@@ -388,6 +388,7 @@ func TestRewrite(t *testing.T) {
 }
 
 func newRequest(t *testing.T, method, uri string) *http.Request {
+	t.Helper()
 	req, err := http.NewRequest(method, uri, nil)
 	if err != nil {
 		t.Fatalf("error creating request: %v", err)

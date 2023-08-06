@@ -427,6 +427,7 @@ EOF same-line-arg
 }
 
 func lexerCompare(t *testing.T, n int, expected, actual []Token) {
+	t.Helper()
 	if len(expected) != len(actual) {
 		t.Fatalf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
 	}

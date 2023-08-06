@@ -437,7 +437,7 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import `+recursiveFile2), 0o644)
+		import `+recursiveFile2), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestDirectiveImport(t *testing.T) {
 	}
 
 	err = os.WriteFile(directiveFile, []byte(`prop1 1
-	prop2 2`), 0o644)
+	prop2 2`), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,6 +780,7 @@ func TestSnippets(t *testing.T) {
 }
 
 func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
+	t.Helper()
 	file, err := os.CreateTemp("", t.Name())
 	if err != nil {
 		panic(err) // get a stack trace so we know where this was called from.

@@ -11,7 +11,10 @@ import (
 
 func TestIPMaskSingleValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{String: "255.255.255.255"})
 	if out.String != "255.255.0.0" {
@@ -31,7 +34,10 @@ func TestIPMaskSingleValue(t *testing.T) {
 
 func TestIPMaskCommaValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{String: "255.255.255.255, 244.244.244.244"})
 	if out.String != "255.255.0.0, 244.244.0.0" {
@@ -51,7 +57,10 @@ func TestIPMaskCommaValue(t *testing.T) {
 
 func TestIPMaskMultiValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
 		"255.255.255.255",
@@ -156,7 +165,10 @@ func TestValidateCookieFilter(t *testing.T) {
 
 func TestRegexpFilterSingleValue(t *testing.T) {
 	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{String: "foo-secret-bar"})
 	if out.String != "foo-REDACTED-bar" {
@@ -166,7 +178,10 @@ func TestRegexpFilterSingleValue(t *testing.T) {
 
 func TestRegexpFilterMultiValue(t *testing.T) {
 	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{"foo-secret-bar", "bar-secret-foo"}})
 	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)

@@ -650,6 +650,7 @@ func TestHumanize(t *testing.T) {
 }
 
 func getContextOrFail(t *testing.T) TemplateContext {
+	t.Helper()
 	tplContext, err := initTestContext()
 	t.Cleanup(func() {
 		os.RemoveAll(string(tplContext.Root.(http.Dir)))
