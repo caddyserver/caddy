@@ -105,7 +105,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		}
 	}
 
-	resp, err := doHttpCallWithRetries(ctx, client, req)
+	resp, err := doHTTPCallWithRetries(ctx, client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 	return result, nil
 }
 
-func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response, error) {
+func attemptHTTPCall(client *http.Client, request *http.Request) (*http.Response, error) {
 	resp, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("problem calling http loader url: %v", err)
@@ -146,13 +146,13 @@ func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response
 	return resp, nil
 }
 
-func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request) (*http.Response, error) {
+func doHTTPCallWithRetries(ctx caddy.Context, client *http.Client, request *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 	const maxAttempts = 10
 
 	for i := 0; i < maxAttempts; i++ {
-		resp, err = attemptHttpCall(client, request)
+		resp, err = attemptHTTPCall(client, request)
 		if err != nil && i < maxAttempts-1 {
 			select {
 			case <-time.After(time.Millisecond * 500):

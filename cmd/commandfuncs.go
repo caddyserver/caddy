@@ -630,7 +630,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}
-	if parsedAddr.IsUnixNetwork() {
+	if parsedAddr.IsUnixNetwork() { //nolint:revive
 		// We used to conform to RFC 2616 Section 14.26 which requires
 		// an empty host header when there is no host, as is the case
 		// with unix sockets. However, Go required a Host value so we

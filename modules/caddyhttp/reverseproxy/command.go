@@ -284,12 +284,12 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		appsRaw["tls"] = caddyconfig.JSON(tlsApp, nil)
 	}
 
-	var false bool
+	var falseBool bool
 	cfg := &caddy.Config{
 		Admin: &caddy.AdminConfig{
 			Disabled: true,
 			Config: &caddy.ConfigSettings{
-				Persist: &false,
+				Persist: &falseBool,
 			},
 		},
 		AppsRaw: appsRaw,

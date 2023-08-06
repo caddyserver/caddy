@@ -770,7 +770,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		return nil
 	}
 	var best []*Upstream
-	var bestReqs int = -1
+	bestReqs := -1
 	for _, upstream := range upstreams {
 		if upstream == nil {
 			continue

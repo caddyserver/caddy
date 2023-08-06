@@ -86,16 +86,16 @@ func (s *StaticIPRange) GetIPRanges(_ *http.Request) []netip.Prefix {
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (m *StaticIPRange) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *StaticIPRange) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
 		return nil
 	}
 	for d.NextArg() {
 		if d.Val() == "private_ranges" {
-			m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+			f.Ranges = append(f.Ranges, PrivateRangesCIDR()...)
 			continue
 		}
-		m.Ranges = append(m.Ranges, d.Val())
+		f.Ranges = append(f.Ranges, d.Val())
 	}
 	return nil
 }

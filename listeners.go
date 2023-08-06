@@ -479,8 +479,8 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		sqtc := newSharedQUICTLSConfig(tlsConf)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
+		quicTLSConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
+		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTLSConfig), &quic.Config{
 			Allow0RTT: true,
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
 				var highLoad bool
@@ -539,14 +539,14 @@ type contextAndCancelFunc struct {
 type sharedQUICTLSConfig struct {
 	rmu           sync.RWMutex
 	tlsConfs      map[*tls.Config]contextAndCancelFunc
-	activeTlsConf *tls.Config
+	activeTLSConf *tls.Config
 }
 
 // newSharedQUICTLSConfig creates a new sharedQUICTLSConfig
 func newSharedQUICTLSConfig(tlsConfig *tls.Config) *sharedQUICTLSConfig {
 	sqtc := &sharedQUICTLSConfig{
 		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
-		activeTlsConf: tlsConfig,
+		activeTLSConf: tlsConfig,
 	}
 	sqtc.addTLSConfig(tlsConfig)
 	return sqtc
@@ -556,7 +556,7 @@ func newSharedQUICTLSConfig(tlsConfig *tls.Config) *sharedQUICTLSConfig {
 func (sqtc *sharedQUICTLSConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
 	sqtc.rmu.RLock()
 	defer sqtc.rmu.RUnlock()
-	return sqtc.activeTlsConf.GetConfigForClient(ch)
+	return sqtc.activeTLSConf.GetConfigForClient(ch)
 }
 
 // addTLSConfig adds tls.Config to the map if not present and returns the corresponding context and its cancelFunc
@@ -577,11 +577,11 @@ func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Co
 		defer sqtc.rmu.Unlock()
 
 		delete(sqtc.tlsConfs, tlsConfig)
-		if sqtc.activeTlsConf == tlsConfig {
+		if sqtc.activeTLSConf == tlsConfig {
 			// select another tls.Config, if there is none,
 			// related sharedQuicListener will be destroyed anyway
 			for tc := range sqtc.tlsConfs {
-				sqtc.activeTlsConf = tc
+				sqtc.activeTLSConf = tc
 				break
 			}
 		}

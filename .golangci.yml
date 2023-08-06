@@ -29,6 +29,7 @@ linters:
     - ineffassign
     - misspell
     - prealloc
+    - revive
     - staticcheck
     - typecheck
     - unconvert

@@ -269,9 +269,8 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 
 	if rw.w != nil {
 		return rw.w.Write(p)
-	} else {
-		return rw.ResponseWriter.Write(p)
 	}
+	return rw.ResponseWriter.Write(p)
 }
 
 // Close writes any remaining buffered response and

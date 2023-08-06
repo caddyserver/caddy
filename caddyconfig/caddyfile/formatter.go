@@ -81,10 +81,10 @@ func Format(input []byte) []byte {
 				space = true
 				nextLine()
 				continue
-			} else {
-				write(ch)
-				continue
 			}
+			write(ch)
+			continue
+
 		}
 
 		if !escaped && ch == '\\' {
