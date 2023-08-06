@@ -883,11 +883,11 @@ func Version() (simple, full string) {
 		if CustomVersion != "" {
 			full = CustomVersion
 			simple = CustomVersion
-			return
+			return full, simple
 		}
 		full = "unknown"
 		simple = "unknown"
-		return
+		return full, simple
 	}
 	// find the Caddy module in the dependency list
 	for _, dep := range bi.Deps {
@@ -967,7 +967,7 @@ func Version() (simple, full string) {
 		}
 	}
 
-	return
+	return simple, full
 }
 
 // ActiveContext returns the currently-active context.

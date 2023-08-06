@@ -405,7 +405,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		for _, pattern := range m.TryFiles {
 			if err := parseErrorCode(pattern); err != nil {
 				caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
-				return
+				return false
 			}
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
@@ -479,7 +479,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		return true
 	}
 
-	return
+	return false
 }
 
 // parseErrorCode checks if the input is a status

@@ -178,7 +178,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		err = fmt.Errorf("no build info")
-		return
+		return standard, nonstandard, unknown, err
 	}
 
 	for _, modID := range caddy.Modules() {
@@ -221,7 +221,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 			nonstandard = append(nonstandard, caddyModGoMod)
 		}
 	}
-	return
+	return standard, nonstandard, unknown, nil
 }
 
 func listModules(path string) error {

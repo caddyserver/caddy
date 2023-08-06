@@ -142,13 +142,13 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 
 	err = writer.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	writer.recType = Params
 	err = writer.writePairs(p)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	writer.recType = Stdin
@@ -164,7 +164,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	}
 
 	r = &streamReader{c: c}
-	return
+	return r, nil
 }
 
 // clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
@@ -198,7 +198,7 @@ func (f clientCloser) Close() error {
 func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
 	r, err := c.Do(p, req)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	rb := bufio.NewReader(r)
@@ -208,7 +208,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	// Parse the response headers.
 	mimeHeader, err := tp.ReadMIMEHeader()
 	if err != nil && err != io.EOF {
-		return
+		return nil, err
 	}
 	resp.Header = http.Header(mimeHeader)
 
@@ -216,7 +216,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		statusNumber, statusInfo, statusIsCut := strings.Cut(resp.Header.Get("Status"), " ")
 		resp.StatusCode, err = strconv.Atoi(statusNumber)
 		if err != nil {
-			return
+			return nil, err
 		}
 		if statusIsCut {
 			resp.Status = statusInfo
@@ -246,7 +246,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	}
 	resp.Body = closer
 
-	return
+	return resp, nil
 }
 
 // Get issues a GET request to the fcgi responder.
@@ -315,7 +315,7 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 		for _, v0 := range val {
 			err = writer.WriteField(key, v0)
 			if err != nil {
-				return
+				return nil, err
 			}
 		}
 	}
@@ -333,13 +333,13 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 		}
 		_, err = io.Copy(part, fd)
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
 
 	err = writer.Close()
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	return c.Post(p, "POST", bodyType, buf, int64(buf.Len()))

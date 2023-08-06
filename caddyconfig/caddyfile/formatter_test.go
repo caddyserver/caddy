@@ -375,7 +375,7 @@ block {
 
 		if string(actual) != tc.expect {
 			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
-				i, tc.description, string(tc.expect), string(actual))
+				i, tc.description, tc.expect, string(actual))
 		}
 	}
 }

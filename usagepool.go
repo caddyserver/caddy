@@ -106,7 +106,7 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 		}
 		upv.Unlock()
 	}
-	return
+	return value, loaded, err
 }
 
 // LoadOrStore loads the value associated with key from the pool if it
