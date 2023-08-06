@@ -35,6 +35,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 	"go.uber.org/zap"
 )
 
@@ -616,7 +617,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		// unix socket permissions, which are part of the address/host.
 		// those need to be removed first, as they aren't part of the
 		// resulting unix file path
-		addr, _, err := caddy.SplitUnixSocketPermissionsBits(parsedAddr.Host)
+		addr, _, err := internal.SplitUnixSocketPermissionsBits(parsedAddr.Host)
 		if err != nil {
 			return nil, err
 		}
