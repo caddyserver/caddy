@@ -25,10 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 )
 
 func init() {
@@ -608,7 +609,7 @@ func (t *TLS) storageCleanInterval() time.Duration {
 }
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.
-func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+func (t *TLS) onEvent(_ context.Context, eventName string, data map[string]any) error {
 	evt := t.events.Emit(t.ctx, eventName, data)
 	return evt.Aborted
 }

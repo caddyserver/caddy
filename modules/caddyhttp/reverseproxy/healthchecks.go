@@ -26,9 +26,10 @@ import (
 	"strconv"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.uber.org/zap"
 )
 
 // HealthChecks configures active and passive health checks.
@@ -106,7 +107,7 @@ type ActiveHealthChecks struct {
 }
 
 // Provision ensures that a is set up properly before use.
-func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
+func (a *ActiveHealthChecks) Provision(_ caddy.Context, h *Handler) error {
 	if !a.IsEnabled() {
 		return nil
 	}

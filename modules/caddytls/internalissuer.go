@@ -21,12 +21,13 @@ import (
 	"encoding/pem"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/caddyserver/certmagic"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddypki"
 )
 
 func init() {
@@ -99,7 +100,7 @@ func (iss InternalIssuer) IssuerKey() string {
 }
 
 // Issue issues a certificate to satisfy the CSR.
-func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
+func (iss InternalIssuer) Issue(_ context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
 	// prepare the signing authority
 	authCfg := caddypki.AuthorityConfig{
 		SignWithRoot: iss.SignWithRoot,

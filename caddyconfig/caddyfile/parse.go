@@ -22,8 +22,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // Parse parses the input just enough to group tokens, in
@@ -445,7 +446,7 @@ func (p *parser) doImport(nesting int) error {
 
 	var (
 		maybeSnippet   bool
-		maybeSnippetId bool
+		maybeSnippetID bool
 		index          int
 	)
 
@@ -471,16 +472,16 @@ func (p *parser) doImport(nesting int) error {
 			}
 
 			if index == 0 && len(token.Text) >= 3 && strings.HasPrefix(token.Text, "(") && strings.HasSuffix(token.Text, ")") {
-				maybeSnippetId = true
+				maybeSnippetID = true
 			}
 		}
 
 		switch token.Text {
 		case "{":
 			nesting++
-			if index == 1 && maybeSnippetId && nesting == 1 {
+			if index == 1 && maybeSnippetID && nesting == 1 {
 				maybeSnippet = true
-				maybeSnippetId = false
+				maybeSnippetID = false
 			}
 		case "}":
 			nesting--

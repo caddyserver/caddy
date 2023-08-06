@@ -236,8 +236,8 @@ func (d *Dispenser) ScalarVal() any {
 	if num, err := strconv.ParseFloat(text, 64); err == nil {
 		return num
 	}
-	if bool, err := strconv.ParseBool(text); err == nil {
-		return bool
+	if boolean, err := strconv.ParseBool(text); err == nil {
+		return boolean
 	}
 	return text
 }

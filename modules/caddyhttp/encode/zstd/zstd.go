@@ -15,10 +15,11 @@
 package caddyzstd
 
 import (
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
-	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
@@ -37,7 +38,7 @@ func (Zstd) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
-func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (z *Zstd) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 

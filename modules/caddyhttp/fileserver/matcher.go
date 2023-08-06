@@ -26,9 +26,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/operators"
@@ -36,6 +33,10 @@ import (
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {
@@ -180,7 +181,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			root = values["root"][0]
 		}
 
-		var try_policy string
+		var tryPolicy string
 		if len(values["try_policy"]) > 0 {
 			root = values["try_policy"][0]
 		}
@@ -188,7 +189,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		m := MatchFile{
 			Root:      root,
 			TryFiles:  values["try_files"],
-			TryPolicy: try_policy,
+			TryPolicy: tryPolicy,
 			SplitPath: values["split_path"],
 		}
 

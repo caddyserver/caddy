@@ -22,10 +22,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/dustin/go-humanize"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -72,7 +73,7 @@ func (FileWriter) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the module
-func (fw *FileWriter) Provision(ctx caddy.Context) error {
+func (fw *FileWriter) Provision(caddy.Context) error {
 	// Replace placeholder in filename
 	repl := caddy.NewReplacer()
 	filename, err := repl.ReplaceOrErr(fw.Filename, true, true)

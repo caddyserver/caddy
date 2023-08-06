@@ -25,10 +25,11 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -61,7 +62,7 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (DeleteFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -92,7 +93,7 @@ func (HashFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *HashFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -197,7 +198,7 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision parses m's IP masks, from integers.
-func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
+func (m *IPMaskFilter) Provision(_ caddy.Context) error {
 	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
 		if rawField == 0 {
 			return nil
@@ -321,7 +322,7 @@ func (QueryFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
 			qfa := queryFilterAction{}
@@ -359,21 +360,21 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
 
-			m.Actions = append(m.Actions, qfa)
+			f.Actions = append(f.Actions, qfa)
 		}
 	}
 	return nil
 }
 
 // Filter filters the input field.
-func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
+func (f QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	u, err := url.Parse(in.String)
 	if err != nil {
 		return in
 	}
 
 	q := u.Query()
-	for _, a := range m.Actions {
+	for _, a := range f.Actions {
 		switch a.Type {
 		case replaceAction:
 			for i := range q[a.Parameter] {
@@ -441,7 +442,7 @@ func (CookieFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
 			cfa := cookieFilterAction{}
@@ -479,14 +480,14 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("unrecognized subdirective %s", d.Val())
 			}
 
-			m.Actions = append(m.Actions, cfa)
+			f.Actions = append(f.Actions, cfa)
 		}
 	}
 	return nil
 }
 
 // Filter filters the input field.
-func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
+func (f CookieFilter) Filter(in zapcore.Field) zapcore.Field {
 	cookiesSlice, ok := in.Interface.(caddyhttp.LoggableStringArray)
 	if !ok {
 		return in
@@ -499,7 +500,7 @@ func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
 
 OUTER:
 	for _, c := range cookies {
-		for _, a := range m.Actions {
+		for _, a := range f.Actions {
 			if c.Name != a.Name {
 				continue
 			}
@@ -565,13 +566,13 @@ func (f *RegexpFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision compiles m's regexp.
-func (m *RegexpFilter) Provision(ctx caddy.Context) error {
-	r, err := regexp.Compile(m.RawRegexp)
+func (f *RegexpFilter) Provision(_ caddy.Context) error {
+	r, err := regexp.Compile(f.RawRegexp)
 	if err != nil {
 		return err
 	}
 
-	m.regexp = r
+	f.regexp = r
 
 	return nil
 }

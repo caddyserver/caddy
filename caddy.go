@@ -34,10 +34,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/notify"
 	"github.com/caddyserver/certmagic"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2/notify"
 )
 
 // Config is the top (or beginning) of the Caddy configuration structure.

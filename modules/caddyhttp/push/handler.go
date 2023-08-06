@@ -19,10 +19,11 @@ import (
 	"net/http"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
-	"go.uber.org/zap"
 )
 
 func init() {
@@ -121,11 +122,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	}
 
 	// serve only after pushing!
-	if err := next.ServeHTTP(lp, r); err != nil {
-		return err
-	}
-
-	return nil
+	err := next.ServeHTTP(lp, r)
+	return err
 }
 
 func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) http.Header {

@@ -27,12 +27,14 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 )
 
 func init() {
@@ -392,12 +394,12 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	}
 
 	// finish building the config
-	var false bool
+	var falseBool bool
 	cfg := &caddy.Config{
 		Admin: &caddy.AdminConfig{
 			Disabled: true,
 			Config: &caddy.ConfigSettings{
-				Persist: &false,
+				Persist: &falseBool,
 			},
 		},
 		AppsRaw: caddy.ModuleMap{

@@ -19,8 +19,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/mastercactapus/proxyprotocol"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // ListenerWrapper provides PROXY protocol support to Caddy by implementing
@@ -42,7 +43,7 @@ type ListenerWrapper struct {
 }
 
 // Provision sets up the listener wrapper.
-func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
+func (pp *ListenerWrapper) Provision(_ caddy.Context) error {
 	rules := make([]proxyprotocol.Rule, 0, len(pp.Allow))
 	for _, s := range pp.Allow {
 		_, n, err := net.ParseCIDR(s)

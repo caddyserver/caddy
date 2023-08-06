@@ -32,14 +32,15 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
-	"go.uber.org/zap"
-	"golang.org/x/net/http/httpguts"
 )
 
 func init() {
@@ -628,7 +629,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if err != nil {
 		// OK; probably didn't have a port
 		addr, err := netip.ParseAddr(address)
-		if err != nil {
+		if err != nil { //nolint:revive
 			// Doesn't seem like a valid ip address at all
 		} else {
 			// Ok, only the port was missing

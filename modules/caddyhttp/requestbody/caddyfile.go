@@ -15,9 +15,10 @@
 package requestbody
 
 import (
+	"github.com/dustin/go-humanize"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/dustin/go-humanize"
 )
 
 func init() {

@@ -17,12 +17,13 @@ package httpcaddyfile
 import (
 	"strconv"
 
+	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/acme"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
 )
 
 func init() {
@@ -58,7 +59,7 @@ func init() {
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 }
 
-func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
+func parseOptTrue(_ *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
 func parseOptHTTPPort(d *caddyfile.Dispenser, _ any) (any, error) {
 	var httpPort int

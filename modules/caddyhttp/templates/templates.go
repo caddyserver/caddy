@@ -324,7 +324,7 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision provisions t.
-func (t *Templates) Provision(ctx caddy.Context) error {
+func (t *Templates) Provision(_ caddy.Context) error {
 	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
 	customFuncs := make([]template.FuncMap, 0, len(fnModInfos))
 	for _, modInfo := range fnModInfos {

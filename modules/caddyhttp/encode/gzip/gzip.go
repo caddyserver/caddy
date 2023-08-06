@@ -18,10 +18,11 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/klauspost/compress/gzip"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
-	"github.com/klauspost/compress/gzip"
 )
 
 func init() {
@@ -58,7 +59,7 @@ func (g *Gzip) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision provisions g's configuration.
-func (g *Gzip) Provision(ctx caddy.Context) error {
+func (g *Gzip) Provision(_ caddy.Context) error {
 	if g.Level == 0 {
 		g.Level = defaultGzipLevel
 	}
