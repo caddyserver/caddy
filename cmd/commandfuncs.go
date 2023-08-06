@@ -35,6 +35,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 	"go.uber.org/zap"
 )
 
@@ -611,6 +612,16 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
 		origin = "http://127.0.0.1" // bogus host is a hack so that http.NewRequest() is happy
+
+		// the unix address at this point might still contain the optional
+		// unix socket permissions, which are part of the address/host.
+		// those need to be removed first, as they aren't part of the
+		// resulting unix file path
+		addr, _, err := internal.SplitUnixSocketPermissionsBits(parsedAddr.Host)
+		if err != nil {
+			return nil, err
+		}
+		parsedAddr.Host = addr
 	}
 
 	// form the request

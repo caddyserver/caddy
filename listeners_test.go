@@ -17,6 +17,8 @@ package caddy
 import (
 	"reflect"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func TestSplitNetworkAddress(t *testing.T) {
@@ -634,7 +636,7 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			expectErr: true,
 		},
 	} {
-		actualPath, actualFileMode, err := splitUnixSocketPermissionsBits(tc.input)
+		actualPath, actualFileMode, err := internal.SplitUnixSocketPermissionsBits(tc.input)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
