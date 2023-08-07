@@ -152,7 +152,7 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, dir fs.ReadDi
 
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
-func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
+func (*FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
 	layoutParam := r.URL.Query().Get("layout")
 	sortParam := r.URL.Query().Get("sort")
 	orderParam := r.URL.Query().Get("order")

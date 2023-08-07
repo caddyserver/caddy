@@ -915,7 +915,7 @@ func (h adminHandler) checkOrigin(r *http.Request) (string, error) {
 	return origin.String(), nil
 }
 
-func (h adminHandler) getOrigin(r *http.Request) (string, *url.URL) {
+func (adminHandler) getOrigin(r *http.Request) (string, *url.URL) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		origin = r.Header.Get("Referer")

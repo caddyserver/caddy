@@ -68,7 +68,7 @@ type AutoHTTPSConfig struct {
 
 // Skipped returns true if name is in skipSlice, which
 // should be either the Skip or SkipCerts field on ahc.
-func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
+func (AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
 	for _, n := range skipSlice {
 		if name == n {
 			return true

@@ -116,7 +116,7 @@ func (p *PKI) Start() error {
 }
 
 // Stop stops the PKI app.
-func (p *PKI) Stop() error {
+func (*PKI) Stop() error {
 	return nil
 }
 

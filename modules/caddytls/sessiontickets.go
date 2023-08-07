@@ -216,7 +216,7 @@ func (s SessionTicketService) RotateSTEKs(keys [][32]byte) ([][32]byte, error) {
 
 // generateSTEK generates key material suitable for use as a
 // session ticket ephemeral key.
-func (s *SessionTicketService) generateSTEK() ([32]byte, error) {
+func (*SessionTicketService) generateSTEK() ([32]byte, error) {
 	var newTicketKey [32]byte
 	_, err := io.ReadFull(rand.Reader, newTicketKey[:])
 	return newTicketKey, err

@@ -40,7 +40,7 @@ func (AdminMetrics) CaddyModule() caddy.ModuleInfo {
 }
 
 // Routes returns a route for the /metrics endpoint.
-func (m *AdminMetrics) Routes() []caddy.AdminRoute {
+func (*AdminMetrics) Routes() []caddy.AdminRoute {
 	metricsHandler := createMetricsHandler(nil, false)
 	h := caddy.AdminHandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		metricsHandler.ServeHTTP(w, r)

@@ -156,7 +156,7 @@ func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) ht
 // resources described by them. If a resource has the "nopush"
 // attribute or describes an external entity (meaning, the resource
 // URI includes a scheme), it will not be pushed.
-func (h Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, resources []string) {
+func (Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, resources []string) {
 	for _, resource := range resources {
 		for _, resource := range parseLinkHeader(resource) {
 			if _, ok := resource.params["nopush"]; ok {

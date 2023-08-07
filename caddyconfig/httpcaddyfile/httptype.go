@@ -1284,7 +1284,7 @@ func matcherSetFromMatcherToken(
 	return nil, false, nil
 }
 
-func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.ModuleMap, error) {
+func (*ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.ModuleMap, error) {
 	type hostPathPair struct {
 		hostm caddyhttp.MatchHost
 		pathm caddyhttp.MatchPath

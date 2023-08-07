@@ -627,7 +627,7 @@ func (DiscardWriter) OpenWriter() (io.WriteCloser, error) {
 // notClosable is an io.WriteCloser that can't be closed.
 type notClosable struct{ io.Writer }
 
-func (fc notClosable) Close() error { return nil }
+func (notClosable) Close() error { return nil }
 
 type defaultCustomLog struct {
 	*CustomLog

@@ -38,7 +38,7 @@ func (Zstd) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
-func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -47,7 +47,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (Zstd) AcceptEncoding() string { return "zstd" }
 
 // NewEncoder returns a new Zstandard writer.
-func (z Zstd) NewEncoder() encode.Encoder {
+func (Zstd) NewEncoder() encode.Encoder {
 	// The default of 8MB for the window is
 	// too large for many clients, so we limit
 	// it to 128K to lighten their load.

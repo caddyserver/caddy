@@ -169,7 +169,7 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 	return pki, nil
 }
 
-func (st ServerType) buildPKIApp(
+func (ServerType) buildPKIApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
 	warnings []caddyconfig.Warning,
