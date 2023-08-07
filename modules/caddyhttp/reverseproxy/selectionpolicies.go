@@ -415,7 +415,7 @@ func (ClientIPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
