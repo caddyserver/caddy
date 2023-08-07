@@ -52,5 +52,5 @@ func SplitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileM
 
 	// default to 0200 (symbolic: `u=w,g=,o=`)
 	// if no permission bits are specified
-	return addr, 0200, nil
+	return addr, 0o200, nil
 }

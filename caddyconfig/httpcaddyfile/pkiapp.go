@@ -174,7 +174,6 @@ func (st ServerType) buildPKIApp(
 	options map[string]any,
 	warnings []caddyconfig.Warning,
 ) (*caddypki.PKI, []caddyconfig.Warning, error) {
-
 	skipInstallTrust := false
 	if _, ok := options["skip_install_trust"]; ok {
 		skipInstallTrust = true
