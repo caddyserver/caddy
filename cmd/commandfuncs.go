@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -416,36 +417,16 @@ func cmdEnviron(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func detectAdjacentCaddyfile(configFlag string) (int, error) {
-	// if no input file was specified, try a default
-	// Caddyfile if the Caddyfile adapter is plugged in
-	if configFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
-		_, err := os.Stat("Caddyfile")
-		if err == nil {
-			// default Caddyfile exists
-			return caddy.ExitCodeSuccess, nil
-		} else if !os.IsNotExist(err) {
-			// default Caddyfile exists, but error accessing it
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
-		}
-	}
-
-	return caddy.ExitCodeSuccess, nil
-}
-
 func cmdAdaptConfig(fl Flags) (int, error) {
 	adaptCmdInputFlag := fl.String("config")
 	adaptCmdAdapterFlag := fl.String("adapter")
 	adaptCmdPrettyFlag := fl.Bool("pretty")
 	adaptCmdValidateFlag := fl.Bool("validate")
 
-	if adaptCmdInputFlag == "" {
-		adjacent, err := detectAdjacentCaddyfile(adaptCmdInputFlag)
-		if adjacent != caddy.ExitCodeSuccess {
-			return adjacent, err
-		} else {
-			adaptCmdInputFlag = "Caddyfile"
-		}
+	var err error
+	adaptCmdInputFlag, err = configFileWithRespectToDefault(caddy.Log(), adaptCmdInputFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	if adaptCmdAdapterFlag == "" {
@@ -524,15 +505,12 @@ func cmdValidateConfig(fl Flags) (int, error) {
 		}
 	}
 
-	adjacent, err := detectAdjacentCaddyfile(validateCmdConfigFlag)
-	if adjacent != caddy.ExitCodeSuccess {
-		return adjacent, err
-	} else {
-		if validateCmdConfigFlag == "" {
-			validateCmdConfigFlag = "Caddyfile"
-		}
+	// use default config and ensure a config file is specified
+	var err error
+	validateCmdConfigFlag, err = configFileWithRespectToDefault(caddy.Log(), validateCmdConfigFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
-
 	if validateCmdConfigFlag == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
@@ -741,6 +719,31 @@ func DetermineAdminAPIAddress(address string, config []byte, configFile, configA
 
 	// Fallback to the default listen address otherwise
 	return caddy.DefaultAdminListen, nil
+}
+
+// configFileWithRespectToDefault returns the filename to use for loading the config, based
+// on whether a config file is already specified and a supported default config file exists.
+func configFileWithRespectToDefault(logger *zap.Logger, configFile string) (string, error) {
+	const defaultCaddyfile = "Caddyfile"
+
+	// if no input file was specified, try a default Caddyfile if the Caddyfile adapter is plugged in
+	if configFile == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+		_, err := os.Stat(defaultCaddyfile)
+		if err == nil {
+			// default Caddyfile exists
+			if logger != nil {
+				logger.Info("using adjacent Caddyfile")
+			}
+			return defaultCaddyfile, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			// problem checking
+			return configFile, fmt.Errorf("checking if default Caddyfile exists: %v", err)
+		}
+	}
+
+	// default config file does not exist or is irrelevant
+	return configFile, nil
 }
 
 type moduleInfo struct {
