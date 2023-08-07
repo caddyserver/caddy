@@ -51,7 +51,7 @@ func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
+func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 

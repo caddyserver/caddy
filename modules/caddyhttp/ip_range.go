@@ -69,7 +69,7 @@ func (StaticIPRange) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (s *StaticIPRange) Provision(_ caddy.Context) error {
+func (s *StaticIPRange) Provision(ctx caddy.Context) error {
 	for _, str := range s.Ranges {
 		prefix, err := CIDRExpressionToPrefix(str)
 		if err != nil {
@@ -86,16 +86,16 @@ func (s *StaticIPRange) GetIPRanges(_ *http.Request) []netip.Prefix {
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (s *StaticIPRange) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (f *StaticIPRange) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
 		return nil
 	}
 	for d.NextArg() {
 		if d.Val() == "private_ranges" {
-			s.Ranges = append(s.Ranges, PrivateRangesCIDR()...)
+			f.Ranges = append(f.Ranges, PrivateRangesCIDR()...)
 			continue
 		}
-		s.Ranges = append(s.Ranges, d.Val())
+		f.Ranges = append(f.Ranges, d.Val())
 	}
 	return nil
 }

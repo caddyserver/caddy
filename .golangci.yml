@@ -89,8 +89,6 @@ output:
   print-linter-name: true
 
 issues:
-  max-issues-per-linter: 10000
-  max-same-issues: 10000
   exclude-rules:
     # we aren't calling unknown URL
     - text: 'G107' # G107: Url provided to HTTP request as taint input

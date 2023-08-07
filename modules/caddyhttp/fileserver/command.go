@@ -131,12 +131,12 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		Servers: map[string]*caddyhttp.Server{"static": server},
 	}
 
-	var falseBool bool
+	var false bool
 	cfg := &caddy.Config{
 		Admin: &caddy.AdminConfig{
 			Disabled: true,
 			Config: &caddy.ConfigSettings{
-				Persist: &falseBool,
+				Persist: &false,
 			},
 		},
 		AppsRaw: caddy.ModuleMap{
