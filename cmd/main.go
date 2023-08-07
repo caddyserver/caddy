@@ -116,7 +116,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				zap.String("config_file", configFile),
 				zap.String("config_adapter", adapterName))
 		}
-	} else {
+	} else if adapterName == "" {
 		// if the Caddyfile adapter is plugged in, we can try using an
 		// adjacent Caddyfile by default
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
