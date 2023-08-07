@@ -439,11 +439,11 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 	adaptCmdPrettyFlag := fl.Bool("pretty")
 	adaptCmdValidateFlag := fl.Bool("validate")
 
-	adjacent, err := detectAdjacentCaddyfile(adaptCmdInputFlag)
-	if adjacent != caddy.ExitCodeSuccess {
-		return adjacent, err
-	} else {
-		if adaptCmdInputFlag == "" {
+	if adaptCmdInputFlag == "" {
+		adjacent, err := detectAdjacentCaddyfile(adaptCmdInputFlag)
+		if adjacent != caddy.ExitCodeSuccess {
+			return adjacent, err
+		} else {
 			adaptCmdInputFlag = "Caddyfile"
 		}
 	}
