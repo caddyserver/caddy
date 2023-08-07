@@ -234,9 +234,11 @@ func (cr celHTTPRequest) Parent() interpreter.Activation {
 func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return cr.Request, nil
 }
+
 func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
 	panic("not implemented")
 }
+
 func (cr celHTTPRequest) Equal(other ref.Val) ref.Val {
 	if o, ok := other.Value().(celHTTPRequest); ok {
 		return types.Bool(o.Request == cr.Request)
@@ -255,12 +257,14 @@ type celPkixName struct{ *pkix.Name }
 func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return pn.Name, nil
 }
+
 func (pn celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
 	if typeVal.TypeName() == "string" {
 		return types.String(pn.Name.String())
 	}
 	panic("not implemented")
 }
+
 func (pn celPkixName) Equal(other ref.Val) ref.Val {
 	if o, ok := other.Value().(string); ok {
 		return types.Bool(pn.Name.String() == o)

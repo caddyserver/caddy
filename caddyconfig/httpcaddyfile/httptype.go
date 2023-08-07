@@ -49,8 +49,7 @@ type App struct {
 }
 
 // ServerType can set up a config from an HTTP Caddyfile.
-type ServerType struct {
-}
+type ServerType struct{}
 
 // Setup makes a config from the tokens.
 func (st ServerType) Setup(
@@ -1059,8 +1058,8 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 	subroute *caddyhttp.Subroute,
 	matcherSetsEnc []caddy.ModuleMap,
 	p sbAddrAssociation,
-	warnings *[]caddyconfig.Warning) caddyhttp.RouteList {
-
+	warnings *[]caddyconfig.Warning,
+) caddyhttp.RouteList {
 	// nothing to do if... there's nothing to do
 	if len(matcherSetsEnc) == 0 && len(subroute.Routes) == 0 && subroute.Errors == nil {
 		return routeList
@@ -1608,8 +1607,10 @@ type sbAddrAssociation struct {
 	serverBlocks []serverBlock
 }
 
-const matcherPrefix = "@"
-const namedRouteKey = "named_route"
+const (
+	matcherPrefix = "@"
+	namedRouteKey = "named_route"
+)
 
 // Interface guard
 var _ caddyfile.ServerType = (*ServerType)(nil)

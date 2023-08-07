@@ -307,5 +307,7 @@ const (
 const separator = string(filepath.Separator)
 
 // Interface guard
-var _ caddy.ListenerWrapper = (*tlsPlaceholderWrapper)(nil)
-var _ caddyfile.Unmarshaler = (*tlsPlaceholderWrapper)(nil)
+var (
+	_ caddy.ListenerWrapper = (*tlsPlaceholderWrapper)(nil)
+	_ caddyfile.Unmarshaler = (*tlsPlaceholderWrapper)(nil)
+)

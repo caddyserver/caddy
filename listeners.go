@@ -174,7 +174,6 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 			if err := os.Chmod(address, unixFileMode); err != nil {
 				return nil, fmt.Errorf("unable to set permissions (%s) on %s: %v", unixFileMode, address, err)
 			}
-
 		}
 		return socket, err
 	}

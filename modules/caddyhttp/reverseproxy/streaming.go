@@ -522,5 +522,7 @@ var streamingBufPool = sync.Pool{
 	},
 }
 
-const defaultBufferSize = 32 * 1024
-const wordSize = int(unsafe.Sizeof(uintptr(0)))
+const (
+	defaultBufferSize = 32 * 1024
+	wordSize          = int(unsafe.Sizeof(uintptr(0)))
+)

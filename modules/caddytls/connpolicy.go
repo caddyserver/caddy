@@ -316,7 +316,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			return err
 		}
 		logFile, _, err := secretsLogPool.LoadOrNew(filename, func() (caddy.Destructor, error) {
-			w, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+			w, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 			return destructableWriter{w}, err
 		})
 		if err != nil {

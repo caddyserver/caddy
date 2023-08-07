@@ -36,7 +36,6 @@ func (st ServerType) buildTLSApp(
 	options map[string]any,
 	warnings []caddyconfig.Warning,
 ) (*caddytls.TLS, []caddyconfig.Warning, error) {
-
 	tlsApp := &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)}
 	var certLoaders []caddytls.CertificateLoader
 
