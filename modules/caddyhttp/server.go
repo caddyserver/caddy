@@ -245,12 +245,14 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
+	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
 	if r.TLS == nil {
-		conn := r.Context().Value(ConnCtxKey).(net.Conn)
-		if csc, ok := conn.(connectionStateConn); ok {
-			r.TLS = new(tls.ConnectionState)
-			*r.TLS = csc.ConnectionState()
+		// not all requests have a conn (like virtual requests) - see #5698
+		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
+			if csc, ok := conn.(connectionStateConn); ok {
+				r.TLS = new(tls.ConnectionState)
+				*r.TLS = csc.ConnectionState()
+			}
 		}
 	}
 
