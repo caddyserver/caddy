@@ -34,7 +34,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 	switch network {
 	case "udp", "udp4", "udp6", "unixgram":
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, na.Network, address)
+			pc, err := config.ListenPacket(ctx, network, address)
 			if err != nil {
 				return nil, err
 			}
