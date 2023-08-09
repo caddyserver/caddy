@@ -148,11 +148,13 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 }
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
-	var ln any
-	var err error
-	var address string
-	var unixFileMode fs.FileMode
-	var isAbtractUnixSocket bool
+	var (
+		ln                  any
+		err                 error
+		address             string
+		unixFileMode        fs.FileMode
+		isAbtractUnixSocket bool
+	)
 
 	// split unix socket addr early so lnKey
 	// is independent of permissions bits
@@ -180,27 +182,10 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 
 	lnKey := listenerKey(na.Network, address)
 
-	switch na.Network {
-	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		ln, err = listenTCPOrUnix(ctx, lnKey, na.Network, address, config)
-	case "unixgram":
-		ln, err = config.ListenPacket(ctx, na.Network, address)
-	case "udp", "udp4", "udp6":
-		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, na.Network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		spc := sharedPc.(*sharedPacketConn)
-		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
-	}
 	if strings.HasPrefix(na.Network, "ip") {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
+	} else {
+		ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
 	}
 	if err != nil {
 		return nil, err
@@ -643,17 +628,50 @@ type fakeClosePacketConn struct {
 	*net.UDPConn                   // embedded, so we also become a net.PacketConn and enable several other optimizations done by quic-go
 }
 
-// interface guard for extra optimizations
-// needed by QUIC implementation: https://github.com/caddyserver/caddy/issues/3998, https://github.com/caddyserver/caddy/issues/5605
-var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
+// Interface guards for extra optimizations
+// needed by QUIC implementation:
+// https://github.com/caddyserver/caddy/issues/3998
+// https://github.com/caddyserver/caddy/issues/5605
+var (
+	_ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
 
-// https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires a net.PacketConn type assertable to a net.Conn,
-// but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
-var _ net.Conn = (*fakeClosePacketConn)(nil)
+	// https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires
+	// a net.PacketConn type assertable to a net.Conn, but doesn't actually use these methods;
+	// the only methods needed are `ReadMsgUDP` and `SyscallConn`.
+	_ net.Conn = (*fakeClosePacketConn)(nil)
+)
+
+func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	// if the listener is already "closed", return error
+	if atomic.LoadInt32(&fcpc.closed) == 1 {
+		return 0, nil, &net.OpError{
+			Op:   "readfrom",
+			Net:  fcpc.LocalAddr().Network(),
+			Addr: fcpc.LocalAddr(),
+			Err:  errFakeClosed,
+		}
+	}
+
+	// call underlying readfrom
+	n, addr, err = fcpc.spc.ReadFrom(p)
+	if err != nil {
+		// this server was stopped, so clear the deadline and let
+		// any new server continue reading; but we will exit
+		if atomic.LoadInt32(&fcpc.closed) == 1 {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				fcpc.SetReadDeadline(time.Time{})
+			}
+		}
+		return
+	}
+
+	return
+}
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
+		fcpc.SetReadDeadline(time.Now()) // unblock ReadFrom() calls to kick old servers out of their loops
 		_, _ = listenerPool.Delete(fcpc.spc.key)
 	}
 	return nil

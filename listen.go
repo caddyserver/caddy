@@ -30,18 +30,35 @@ func reuseUnixSocket(network, addr string) (any, error) {
 	return nil, nil
 }
 
-func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (net.Listener, error) {
-	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		ln, err := config.Listen(ctx, network, address)
+func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
+	switch network {
+	case "udp", "udp4", "udp6", "unixgram":
+		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+			pc, err := config.ListenPacket(ctx, na.Network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		return &sharedListener{Listener: ln, key: lnKey}, nil
-	})
-	if err != nil {
-		return nil, err
+		spc := sharedPc.(*sharedPacketConn)
+		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
+
+	default:
+		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+			ln, err := config.Listen(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &sharedListener{Listener: ln, key: lnKey}, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 	}
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -98,7 +115,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		// so that it's clear in the code that side-effects are shared with other
 		// users of this listener, not just our own reference to it; we also don't
 		// do anything with the error because all we could do is log it, but we
-		// expliclty assign it to nothing so we don't forget it's there if needed
+		// explicitly assign it to nothing so we don't forget it's there if needed
 		_ = fcl.sharedListener.clearDeadline()
 
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
