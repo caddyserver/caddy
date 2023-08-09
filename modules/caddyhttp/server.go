@@ -291,7 +291,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.EnableFullDuplex {
 		// TODO: Remove duplex_go12*.go abstraction once our
 		// minimum Go version is 1.21 or later
-		enableFullDuplex(w)
+		err := enableFullDuplex(w)
+		if err != nil {
+			s.accessLogger.Warn("failed to enable full duplex", zap.Error(err))
+		}
 	}
 
 	// encode the request for logging purposes before
