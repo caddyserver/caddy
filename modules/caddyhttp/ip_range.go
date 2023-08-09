@@ -40,7 +40,7 @@ func init() {
 // so that it's ready to be used when requests start getting handled.
 // A read lock should probably be used to get the cached value if the
 // ranges can change at runtime (e.g. periodically refreshed).
-// Using a `caddy.UsagePool` may be a good idea to avoid having refetch
+// Using a `caddy.UsagePoolOf` may be a good idea to avoid having refetch
 // the values when a config reload occurs, which would waste time.
 //
 // If the list of IP ranges cannot be sourced, then provisioning SHOULD

@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 )
 
-// UsagePool is a thread-safe map that pools values
+// UsagePoolOf is a thread-safe map that pools values
 // based on usage (reference counting). Values are
 // only inserted if they do not already exist. There
 // are two ways to add values to the pool:
@@ -47,23 +47,24 @@ import (
 // was stored. Deleting too many times will panic.
 //
 // The implementation does not use a sync.Pool because
-// UsagePool needs additional atomicity to run the
+// UsagePoolOf needs additional atomicity to run the
 // constructor functions when creating a new value when
 // LoadOrNew is used. (We could probably use sync.Pool
 // but we'd still have to layer our own additional locks
 // on top.)
 //
-// An empty UsagePool is NOT safe to use; always call
-// NewUsagePool() to make a new one.
-type UsagePool struct {
+// An empty UsagePoolOf is NOT safe to use; always call
+// NewUsagePoolOf() to make a new one.
+type UsagePoolOf[K comparable, V any] struct {
 	sync.RWMutex
-	pool map[any]*usagePoolVal
+	pool map[K]*usagePoolVal[V]
 }
 
-// NewUsagePool returns a new usage pool that is ready to use.
-func NewUsagePool() *UsagePool {
-	return &UsagePool{
-		pool: make(map[any]*usagePoolVal),
+// NewUsagePoolOf returns a new usage pool with comparable key type K and Destructor
+// interface type V that is ready to use.
+func NewUsagePoolOf[K comparable, V any]() *UsagePoolOf[K, V] {
+	return &UsagePoolOf[K, V]{
+		pool: make(map[K]*usagePoolVal[V]),
 	}
 }
 
@@ -74,8 +75,8 @@ func NewUsagePool() *UsagePool {
 // or constructed value is returned. The loaded return value is true
 // if the value already existed and was loaded, or false if it was
 // newly constructed.
-func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loaded bool, err error) {
-	var upv *usagePoolVal
+func (up *UsagePoolOf[K, V]) LoadOrNew(key K, construct Constructor) (value V, loaded bool, err error) {
+	var upv *usagePoolVal[V]
 	up.Lock()
 	upv, loaded = up.pool[key]
 	if loaded {
@@ -86,11 +87,12 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 		err = upv.err
 		upv.RUnlock()
 	} else {
-		upv = &usagePoolVal{refs: 1}
+		upv = &usagePoolVal[V]{refs: 1}
 		upv.Lock()
 		up.pool[key] = upv
 		up.Unlock()
-		value, err = construct()
+		destructable, err := construct()
+		value = destructable.(V)
 		if err == nil {
 			upv.value = value
 		} else {
@@ -113,8 +115,8 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 // already exists, or stores it if it does not exist. It returns the
 // value that was either loaded or stored, and true if the value already
 // existed and was
-func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
-	var upv *usagePoolVal
+func (up *UsagePoolOf[K, V]) LoadOrStore(key K, val V) (value V, loaded bool) {
+	var upv *usagePoolVal[V]
 	up.Lock()
 	upv, loaded = up.pool[key]
 	if loaded {
@@ -129,7 +131,7 @@ func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 		}
 		upv.Unlock()
 	} else {
-		upv = &usagePoolVal{refs: 1, value: val}
+		upv = &usagePoolVal[V]{refs: 1, value: val}
 		up.pool[key] = upv
 		up.Unlock()
 		value = val
@@ -144,7 +146,7 @@ func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 // This method is somewhat naive and acquires a read lock on the
 // entire pool during iteration, so do your best to make f() really
 // fast, m'kay?
-func (up *UsagePool) Range(f func(key, value any) bool) {
+func (up *UsagePoolOf[K, V]) Range(f func(key K, value V) bool) {
 	up.RLock()
 	defer up.RUnlock()
 	for key, upv := range up.pool {
@@ -166,7 +168,7 @@ func (up *UsagePool) Range(f func(key, value any) bool) {
 // true if the usage count reached 0 and the value was deleted.
 // It panics if the usage count drops below 0; always call
 // Delete precisely as many times as LoadOrStore.
-func (up *UsagePool) Delete(key any) (deleted bool, err error) {
+func (up *UsagePoolOf[K, V]) Delete(key K) (deleted bool, err error) {
 	up.Lock()
 	upv, ok := up.pool[key]
 	if !ok {
@@ -180,7 +182,7 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 		upv.RLock()
 		val := upv.value
 		upv.RUnlock()
-		if destructor, ok := val.(Destructor); ok {
+		if destructor, ok := any(val).(Destructor); ok {
 			err = destructor.Destruct()
 		}
 		deleted = true
@@ -196,13 +198,13 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 
 // References returns the number of references (count of usages) to a
 // key in the pool, and true if the key exists, or false otherwise.
-func (up *UsagePool) References(key any) (int, bool) {
+func (up *UsagePoolOf[K, V]) References(key K) (int, bool) {
 	up.RLock()
 	upv, loaded := up.pool[key]
 	up.RUnlock()
 	if loaded {
 		// I wonder if it'd be safer to read this value during
-		// our lock on the UsagePool... guess we'll see...
+		// our lock on the UsagePoolOf... guess we'll see...
 		refs := atomic.LoadInt32(&upv.refs)
 		return int(refs), true
 	}
@@ -219,9 +221,19 @@ type Destructor interface {
 	Destruct() error
 }
 
-type usagePoolVal struct {
+type usagePoolVal[V any] struct {
 	refs  int32 // accessed atomically; must be 64-bit aligned for 32-bit systems
-	value any
+	value V
 	err   error
 	sync.RWMutex
+}
+
+// UsagePool is DEPRECATED: Use UsagePoolOf instead. This type will likely be changed or removed in the future.
+type UsagePool = UsagePoolOf[any, any]
+
+// NewUsagePool is DEPRECATED: Use NewUsagePoolOf instead. This type will likely be changed or removed in the future.
+func NewUsagePool() *UsagePool {
+	return &UsagePool{
+		pool: make(map[any]*usagePoolVal[any]),
+	}
 }

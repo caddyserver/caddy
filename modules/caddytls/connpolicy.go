@@ -20,7 +20,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -324,7 +323,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		}
 		ctx.OnCancel(func() { _, _ = secretsLogPool.Delete(filename) })
 
-		cfg.KeyLogWriter = logFile.(io.Writer)
+		cfg.KeyLogWriter = logFile
 
 		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
 			zap.String("log_filename", filename))
@@ -598,4 +597,4 @@ type destructableWriter struct{ *os.File }
 
 func (d destructableWriter) Destruct() error { return d.Close() }
 
-var secretsLogPool = caddy.NewUsagePool()
+var secretsLogPool = caddy.NewUsagePoolOf[string, destructableWriter]()

@@ -105,7 +105,7 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 	// whether to enforce shutdown delays, for example (see #5393).
 	ln, err := config.Listen(ctx, network, address)
 	if err == nil {
-		listenerPool.LoadOrStore(lnKey, nil)
+		listenerPool.LoadOrStore(lnKey, deleteListener{})
 	}
 
 	// if new listener is a unix socket, make sure we can reuse it later
@@ -170,4 +170,8 @@ type deleteListener struct {
 func (dl deleteListener) Close() error {
 	_, _ = listenerPool.Delete(dl.lnKey)
 	return dl.Listener.Close()
+}
+
+func (dl deleteListener) Destruct() error {
+	return nil
 }

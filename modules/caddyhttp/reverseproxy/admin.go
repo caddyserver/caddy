@@ -76,25 +76,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 
 	// Iterate over the upstream pool (needs to be fast)
 	var rangeErr error
-	hosts.Range(func(key, val any) bool {
-		address, ok := key.(string)
-		if !ok {
-			rangeErr = caddy.APIError{
-				HTTPStatus: http.StatusInternalServerError,
-				Err:        fmt.Errorf("could not type assert upstream address"),
-			}
-			return false
-		}
-
-		upstream, ok := val.(*Host)
-		if !ok {
-			rangeErr = caddy.APIError{
-				HTTPStatus: http.StatusInternalServerError,
-				Err:        fmt.Errorf("could not type assert upstream struct"),
-			}
-			return false
-		}
-
+	hosts.Range(func(address string, upstream *Host) bool {
 		results = append(results, upstreamStatus{
 			Address:     address,
 			NumRequests: upstream.NumRequests(),

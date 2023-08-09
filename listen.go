@@ -167,7 +167,7 @@ func (sl *sharedListener) setDeadline() error {
 	return err
 }
 
-// Destruct is called by the UsagePool when the listener is
+// Destruct is called by UsagePoolOf when the listener is
 // finally not being used anymore. It closes the socket.
 func (sl *sharedListener) Destruct() error {
 	return sl.Listener.Close()

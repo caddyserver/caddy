@@ -241,7 +241,7 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 
 		err := os.MkdirAll(dbFolder, 0o755)
 		if err != nil {
-			return nil, fmt.Errorf("making folder for CA database: %v", err)
+			return databaseCloser{}, fmt.Errorf("making folder for CA database: %v", err)
 		}
 
 		dbConfig := &db.Config{
@@ -256,7 +256,7 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 		ash.logger.Debug("loaded preexisting CA database", zap.String("db_key", key))
 	}
 
-	return database.(databaseCloser).DB, err
+	return database.DB, err
 }
 
 // makeClient creates an ACME client which will use a custom
@@ -312,7 +312,7 @@ const defaultPathPrefix = "/acme/"
 
 var (
 	keyCleaner   = regexp.MustCompile(`[^\w.-_]`)
-	databasePool = caddy.NewUsagePool()
+	databasePool = caddy.NewUsagePoolOf[string, databaseCloser]()
 )
 
 type databaseCloser struct {

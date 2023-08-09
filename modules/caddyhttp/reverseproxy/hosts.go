@@ -128,7 +128,7 @@ func (u *Upstream) fillHost() {
 	host := new(Host)
 	existingHost, loaded := hosts.LoadOrStore(u.String(), host)
 	if loaded {
-		host = existingHost.(*Host)
+		host = existingHost
 	}
 	u.Host = host
 }
@@ -138,6 +138,10 @@ func (u *Upstream) fillHost() {
 type Host struct {
 	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails       int64
+}
+
+func (h *Host) Destruct() error {
+	return nil
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -229,7 +233,7 @@ func GetDialInfo(ctx context.Context) (DialInfo, bool) {
 // currently in use by active configuration(s). This
 // allows the state of remote hosts to be preserved
 // through config reloads.
-var hosts = caddy.NewUsagePool()
+var hosts = caddy.NewUsagePoolOf[string, *Host]()
 
 // dialInfoVarKey is the key used for the variable that holds
 // the dial info for the upstream connection.

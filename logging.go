@@ -690,7 +690,12 @@ var (
 	defaultLoggerMu  sync.RWMutex
 )
 
-var writers = NewUsagePool()
+type DestructableWriter interface {
+	Destructor
+	io.Writer
+}
+
+var writers = NewUsagePoolOf[string, DestructableWriter]()
 
 const DefaultLoggerName = "default"
 

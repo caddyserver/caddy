@@ -787,7 +787,7 @@ type ListenerWrapper interface {
 }
 
 // listenerPool stores and allows reuse of active listeners.
-var listenerPool = NewUsagePool()
+var listenerPool = NewUsagePoolOf[string, Destructor]()
 
 const maxPortSpan = 65535
 
