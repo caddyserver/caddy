@@ -659,7 +659,9 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 		// any new server continue reading; but we will exit
 		if atomic.LoadInt32(&fcpc.closed) == 1 {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				fcpc.SetReadDeadline(time.Time{})
+				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
+					return
+				}
 			}
 		}
 		return
@@ -671,7 +673,10 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		fcpc.SetReadDeadline(time.Now()) // unblock ReadFrom() calls to kick old servers out of their loops
+		// unblock ReadFrom() calls to kick old servers out of their loops
+		if err := fcpc.SetReadDeadline(time.Now()); err != nil {
+			return err
+		}
 		_, _ = listenerPool.Delete(fcpc.spc.key)
 	}
 	return nil
