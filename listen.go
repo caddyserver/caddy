@@ -44,7 +44,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			return nil, err
 		}
 		spc := sharedPc.(*sharedPacketConn)
-		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
+		return &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}, nil
 
 	default:
 		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
