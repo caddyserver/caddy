@@ -376,15 +376,19 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) 
 func (ca CA) storageKeyCAPrefix() string {
 	return path.Join("pki", "authorities", certmagic.StorageKeys.Safe(ca.ID))
 }
+
 func (ca CA) storageKeyRootCert() string {
 	return path.Join(ca.storageKeyCAPrefix(), "root.crt")
 }
+
 func (ca CA) storageKeyRootKey() string {
 	return path.Join(ca.storageKeyCAPrefix(), "root.key")
 }
+
 func (ca CA) storageKeyIntermediateCert() string {
 	return path.Join(ca.storageKeyCAPrefix(), "intermediate.crt")
 }
+
 func (ca CA) storageKeyIntermediateKey() string {
 	return path.Join(ca.storageKeyCAPrefix(), "intermediate.key")
 }

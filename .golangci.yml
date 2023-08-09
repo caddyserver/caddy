@@ -8,8 +8,7 @@ linters:
   enable:
     - bodyclose
     - errcheck
-    - gofmt
-    - goimports
+    - gofumpt
     - gosec
     - gosimple
     - govet

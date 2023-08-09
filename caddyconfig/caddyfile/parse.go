@@ -565,7 +565,6 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 // are loaded into the current server block for later use
 // by directive setup functions.
 func (p *parser) directive() error {
-
 	// a segment is a list of tokens associated with this directive
 	var segment Segment
 

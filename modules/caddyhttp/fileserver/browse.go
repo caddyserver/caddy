@@ -113,7 +113,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
 		}
 
-		var tplCtx = &templateContext{
+		tplCtx := &templateContext{
 			TemplateContext: templates.TemplateContext{
 				Root:       fs,
 				Req:        r,

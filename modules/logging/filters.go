@@ -81,8 +81,7 @@ func hash(s string) string {
 // of the SHA-256 hash of the content. Operates
 // on string fields, or on arrays of strings
 // where each string is hashed.
-type HashFilter struct {
-}
+type HashFilter struct{}
 
 // CaddyModule returns the Caddy module information.
 func (HashFilter) CaddyModule() caddy.ModuleInfo {

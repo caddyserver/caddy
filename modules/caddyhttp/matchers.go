@@ -1392,9 +1392,7 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	return matcherSet, nil
 }
 
-var (
-	wordRE = regexp.MustCompile(`\w+`)
-)
+var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
 
