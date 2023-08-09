@@ -21,5 +21,6 @@ import (
 )
 
 func enableFullDuplex(w http.ResponseWriter) error {
+	//nolint:bodyclose
 	return http.NewResponseController(w).EnableFullDuplex()
 }
