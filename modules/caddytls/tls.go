@@ -36,6 +36,11 @@ func init() {
 	caddy.RegisterModule(AutomateLoader{})
 }
 
+var (
+	certCache   *certmagic.Cache
+	certCacheMu sync.RWMutex
+)
+
 // TLS provides TLS facilities including certificate
 // loading and management, client auth, and more.
 type TLS struct {
@@ -77,12 +82,15 @@ type TLS struct {
 
 	certificateLoaders []CertificateLoader
 	automateNames      []string
-	certCache          *certmagic.Cache
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
 	logger             *zap.Logger
 	events             *caddyevents.App
+
+	// set of subjects with managed certificates,
+	// and hashes of manually-loaded certificates
+	managing, loaded map[string]struct{}
 }
 
 // CaddyModule returns the Caddy module information.
@@ -103,6 +111,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
+	t.managing, t.loaded = make(map[string]struct{}), make(map[string]struct{})
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -121,7 +130,14 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if cacheOpts.Capacity <= 0 {
 		cacheOpts.Capacity = 10000
 	}
-	t.certCache = certmagic.NewCache(cacheOpts)
+
+	certCacheMu.Lock()
+	if certCache == nil {
+		certCache = certmagic.NewCache(cacheOpts)
+	} else {
+		certCache.SetOptions(cacheOpts)
+	}
+	certCacheMu.Unlock()
 
 	// certificate loaders
 	val, err := ctx.LoadModule(t, "CertificatesRaw")
@@ -209,7 +225,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// provision so that other apps (such as http) can know which
 	// certificates have been manually loaded, and also so that
 	// commands like validate can be a better test
-	magic := certmagic.New(t.certCache, certmagic.Config{
+	certCacheMu.RLock()
+	magic := certmagic.New(certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
 		OnEvent: t.onEvent,
@@ -217,16 +234,18 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			DisableStapling: t.DisableOCSPStapling,
 		},
 	})
+	certCacheMu.RUnlock()
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
 		if err != nil {
 			return fmt.Errorf("loading certificates: %v", err)
 		}
 		for _, cert := range certs {
-			err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
+			hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
 			if err != nil {
 				return fmt.Errorf("caching unmanaged certificate: %v", err)
 			}
+			t.loaded[hash] = struct{}{}
 		}
 	}
 
@@ -305,14 +324,42 @@ func (t *TLS) Stop() error {
 
 // Cleanup frees up resources allocated during Provision.
 func (t *TLS) Cleanup() error {
-	// stop the certificate cache
-	if t.certCache != nil {
-		t.certCache.Stop()
-	}
-
 	// stop the session ticket rotation goroutine
 	if t.SessionTickets != nil {
 		t.SessionTickets.stop()
+	}
+
+	// if a new TLS app was loaded, remove certificates from the cache that are no longer
+	// being managed or loaded by the new config; if there is no more TLS app running,
+	// then stop cert maintenance and let the cert cache be GC'ed
+	if nextTLS := caddy.ActiveContext().AppIfConfigured("tls"); nextTLS != nil {
+		nextTLSApp := nextTLS.(*TLS)
+
+		// compute which certificates were managed or loaded into the cert cache by this
+		// app instance (which is being stopped) that are not managed or loaded by the
+		// new app instance (which just started), and remove them from the cache
+		var noLongerManaged, noLongerLoaded []string
+		for subj := range t.managing {
+			if _, ok := nextTLSApp.managing[subj]; !ok {
+				noLongerManaged = append(noLongerManaged, subj)
+			}
+		}
+		for hash := range t.loaded {
+			if _, ok := nextTLSApp.loaded[hash]; !ok {
+				noLongerLoaded = append(noLongerLoaded, hash)
+			}
+		}
+
+		certCacheMu.RLock()
+		certCache.RemoveManaged(noLongerManaged)
+		certCache.Remove(noLongerLoaded)
+		certCacheMu.RUnlock()
+	} else {
+		// no more TLS app running, so delete in-memory cert cache
+		certCache.Stop()
+		certCacheMu.Lock()
+		certCache = nil
+		certCacheMu.Unlock()
 	}
 
 	return nil
@@ -338,6 +385,9 @@ func (t *TLS) Manage(names []string) error {
 		err := ap.magic.ManageAsync(t.ctx.Context, names)
 		if err != nil {
 			return fmt.Errorf("automate: manage %v: %v", names, err)
+		}
+		for _, name := range names {
+			t.managing[name] = struct{}{}
 		}
 	}
 
@@ -449,8 +499,27 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 
 // AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
-func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
-	return t.certCache.AllMatchingCertificates(san)
+func AllMatchingCertificates(san string) []certmagic.Certificate {
+	return certCache.AllMatchingCertificates(san)
+}
+
+func (t *TLS) HasCertificateForSubject(subject string) bool {
+	certCacheMu.RLock()
+	allMatchingCerts := certCache.AllMatchingCertificates(subject)
+	certCacheMu.RUnlock()
+	for _, cert := range allMatchingCerts {
+		// check if the cert is manually loaded by this config
+		if _, ok := t.loaded[cert.Hash()]; ok {
+			return true
+		}
+		// check if the cert is automatically managed by this config
+		for _, name := range cert.Names {
+			if _, ok := t.managing[name]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // keepStorageClean starts a goroutine that immediately cleans up all

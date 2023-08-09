@@ -52,12 +52,13 @@ func TestLogDirectiveSyntax(t *testing.T) {
 		},
 		{
 			input: `:8080 {
-				log invalid {
+				log name-override {
 					output file foo.log
 				}
 			}
 			`,
-			expectError: true,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.name-override"]},"name-override":{"writer":{"filename":"foo.log","output":"file"},"include":["http.log.access.name-override"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"name-override"}}}}}}`,
+			expectError: false,
 		},
 	} {
 
@@ -260,6 +261,79 @@ func TestImportErrorLine(t *testing.T) {
 					import t1 true
 					import t2 true
 				}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
+	} {
+		adapter := caddyfile.Adapter{
+			ServerType: ServerType{},
+		}
+
+		_, _, err := adapter.Adapt([]byte(tc.input), nil)
+
+		if !tc.errorFunc(err) {
+			t.Errorf("Test %d error expectation failed, got %s", i, err)
+			continue
+		}
+	}
+}
+
+func TestNestedImport(t *testing.T) {
+	for i, tc := range []struct {
+		input     string
+		errorFunc func(err error) bool
+	}{
+		{
+			input: `(t1) {
+						respond {args[0]} {args[1]}
+					}
+					
+					(t2) {
+						import t1 {args[0]} 202
+					}
+					
+					:8080 {
+						handle {
+							import t2 "foobar"
+						}
+					}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
+		{
+			input: `(t1) {
+						respond {args[:]}
+					}
+					
+					(t2) {
+						import t1 {args[0]} {args[1]}
+					}
+					
+					:8080 {
+						handle {
+							import t2 "foobar" 202
+						}
+					}`,
+			errorFunc: func(err error) bool {
+				return err == nil
+			},
+		},
+		{
+			input: `(t1) {
+						respond {args[0]} {args[1]}
+					}
+					
+					(t2) {
+						import t1 {args[:]}
+					}
+					
+					:8080 {
+						handle {
+							import t2 "foobar" 202
+						}
+					}`,
 			errorFunc: func(err error) bool {
 				return err == nil
 			},

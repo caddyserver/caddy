@@ -410,6 +410,11 @@ func (ctx Context) loadModuleInline(moduleNameKey, moduleScope string, raw json.
 // called during the Provision/Validate phase to reference a
 // module's own host app (since the parent app module is still
 // in the process of being provisioned, it is not yet ready).
+//
+// We return any type instead of the App type because it is NOT
+// intended for the caller of this method to be the one to start
+// or stop App modules. The caller is expected to assert to the
+// concrete type.
 func (ctx Context) App(name string) (any, error) {
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
@@ -428,18 +433,21 @@ func (ctx Context) App(name string) (any, error) {
 
 // AppIfConfigured returns an app by its name if it has been
 // configured. Can be called instead of App() to avoid
-// instantiating an empty app when that's not desirable.
-func (ctx Context) AppIfConfigured(name string) (any, error) {
-	app, ok := ctx.cfg.apps[name]
-	if !ok || app == nil {
-		return nil, nil
+// instantiating an empty app when that's not desirable. If
+// the app has not been loaded, nil is returned.
+//
+// We return any type instead of the App type because it is not
+// intended for the caller of this method to be the one to start
+// or stop App modules. The caller is expected to assert to the
+// concrete type.
+func (ctx Context) AppIfConfigured(name string) any {
+	if ctx.cfg == nil {
+		// this can happen if the currently-active context
+		// is being accessed, but no config has successfully
+		// been loaded yet
+		return nil
 	}
-
-	appModule, err := ctx.App(name)
-	if err != nil {
-		return nil, err
-	}
-	return appModule, nil
+	return ctx.cfg.apps[name]
 }
 
 // Storage returns the configured Caddy storage implementation.

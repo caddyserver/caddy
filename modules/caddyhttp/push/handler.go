@@ -251,5 +251,6 @@ const pushedLink = "http.handlers.push.pushed_link"
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
-	_ caddyhttp.HTTPInterfaces    = (*linkPusher)(nil)
+	_ http.ResponseWriter         = (*linkPusher)(nil)
+	_ http.Pusher                 = (*linkPusher)(nil)
 )

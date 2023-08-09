@@ -176,9 +176,7 @@ func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
 
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(200)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+		http.NewResponseController(w).Flush()
 
 		buf := make([]byte, 4*1024)
 

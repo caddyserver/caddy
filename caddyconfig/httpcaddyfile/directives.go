@@ -217,7 +217,8 @@ func (h Helper) ExtractMatcherSet() (caddy.ModuleMap, error) {
 
 // NewRoute returns config values relevant to creating a new HTTP route.
 func (h Helper) NewRoute(matcherSet caddy.ModuleMap,
-	handler caddyhttp.MiddlewareHandler) []ConfigValue {
+	handler caddyhttp.MiddlewareHandler,
+) []ConfigValue {
 	mod, err := caddy.GetModule(caddy.GetModuleID(handler))
 	if err != nil {
 		*h.warnings = append(*h.warnings, caddyconfig.Warning{

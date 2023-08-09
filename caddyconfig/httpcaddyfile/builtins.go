@@ -788,7 +788,8 @@ func parseInvoke(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 // parseLog parses the log directive. Syntax:
 //
-//	log {
+//	log <logger_name> {
+//	    hostnames <hostnames...>
 //	    output <writer_module> ...
 //	    format <encoder_module> ...
 //	    level  <level>
@@ -809,11 +810,13 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	var configValues []ConfigValue
 	for h.Next() {
 		// Logic below expects that a name is always present when a
-		// global option is being parsed.
-		var globalLogName string
+		// global option is being parsed; or an optional override
+		// is supported for access logs.
+		var logName string
+
 		if parseAsGlobalOption {
 			if h.NextArg() {
-				globalLogName = h.Val()
+				logName = h.Val()
 
 				// Only a single argument is supported.
 				if h.NextArg() {
@@ -824,26 +827,47 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				// reference the default logger. See the
 				// setupNewDefault function in the logging
 				// package for where this is configured.
-				globalLogName = caddy.DefaultLoggerName
+				logName = caddy.DefaultLoggerName
 			}
 
 			// Verify this name is unused.
-			_, used := globalLogNames[globalLogName]
+			_, used := globalLogNames[logName]
 			if used {
-				return nil, h.Err("duplicate global log option for: " + globalLogName)
+				return nil, h.Err("duplicate global log option for: " + logName)
 			}
-			globalLogNames[globalLogName] = struct{}{}
+			globalLogNames[logName] = struct{}{}
 		} else {
-			// No arguments are supported for the server block log directive
+			// An optional override of the logger name can be provided;
+			// otherwise a default will be used, like "log0", "log1", etc.
 			if h.NextArg() {
-				return nil, h.ArgErr()
+				logName = h.Val()
+
+				// Only a single argument is supported.
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
 			}
 		}
 
 		cl := new(caddy.CustomLog)
 
+		// allow overriding the current site block's hostnames for this logger;
+		// this is useful for setting up loggers per subdomain in a site block
+		// with a wildcard domain
+		customHostnames := []string{}
+
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "hostnames":
+				if parseAsGlobalOption {
+					return nil, h.Err("hostnames is not allowed in the log global options")
+				}
+				args := h.RemainingArgs()
+				if len(args) == 0 {
+					return nil, h.ArgErr()
+				}
+				customHostnames = append(customHostnames, args...)
+
 			case "output":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -902,18 +926,16 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				}
 
 			case "include":
-				// This configuration is only allowed in the global options
 				if !parseAsGlobalOption {
-					return nil, h.ArgErr()
+					return nil, h.Err("include is not allowed in the log directive")
 				}
 				for h.NextArg() {
 					cl.Include = append(cl.Include, h.Val())
 				}
 
 			case "exclude":
-				// This configuration is only allowed in the global options
 				if !parseAsGlobalOption {
-					return nil, h.ArgErr()
+					return nil, h.Err("exclude is not allowed in the log directive")
 				}
 				for h.NextArg() {
 					cl.Exclude = append(cl.Exclude, h.Val())
@@ -925,24 +947,34 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 		}
 
 		var val namedCustomLog
+		val.hostnames = customHostnames
+
+		isEmptyConfig := reflect.DeepEqual(cl, new(caddy.CustomLog))
+
 		// Skip handling of empty logging configs
-		if !reflect.DeepEqual(cl, new(caddy.CustomLog)) {
-			if parseAsGlobalOption {
-				// Use indicated name for global log options
-				val.name = globalLogName
-				val.log = cl
-			} else {
+
+		if parseAsGlobalOption {
+			// Use indicated name for global log options
+			val.name = logName
+		} else {
+			if logName != "" {
+				val.name = logName
+			} else if !isEmptyConfig {
 				// Construct a log name for server log streams
 				logCounter, ok := h.State["logCounter"].(int)
 				if !ok {
 					logCounter = 0
 				}
 				val.name = fmt.Sprintf("log%d", logCounter)
-				cl.Include = []string{"http.log.access." + val.name}
-				val.log = cl
 				logCounter++
 				h.State["logCounter"] = logCounter
 			}
+			if val.name != "" {
+				cl.Include = []string{"http.log.access." + val.name}
+			}
+		}
+		if !isEmptyConfig {
+			val.log = cl
 		}
 		configValues = append(configValues, ConfigValue{
 			Class: "custom_log",

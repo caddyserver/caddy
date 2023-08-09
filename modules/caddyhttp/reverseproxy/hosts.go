@@ -63,9 +63,10 @@ type Upstream struct {
 	unhealthy             int32 // accessed atomically; status from active health checker
 }
 
-func (u Upstream) String() string {
-	return u.Dial
-}
+// (pointer receiver necessary to avoid a race condition, since
+// copying the Upstream reads the 'unhealthy' field which is
+// accessed atomically)
+func (u *Upstream) String() string { return u.Dial }
 
 // Available returns true if the remote host
 // is available to receive requests. This is

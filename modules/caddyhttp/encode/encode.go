@@ -167,10 +167,10 @@ func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter
 // initResponseWriter initializes the responseWriter instance
 // allocated in openResponseWriter, enabling mid-stack inlining.
 func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
-	if httpInterfaces, ok := wrappedRW.(caddyhttp.HTTPInterfaces); ok {
-		rw.HTTPInterfaces = httpInterfaces
+	if rww, ok := wrappedRW.(*caddyhttp.ResponseWriterWrapper); ok {
+		rw.ResponseWriter = rww
 	} else {
-		rw.HTTPInterfaces = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+		rw.ResponseWriter = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
 	}
 	rw.encodingName = encodingName
 	rw.config = enc
@@ -182,7 +182,7 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 // using the encoding represented by encodingName and
 // configured by config.
 type responseWriter struct {
-	caddyhttp.HTTPInterfaces
+	http.ResponseWriter
 	encodingName string
 	w            Encoder
 	config       *Encode
@@ -211,7 +211,8 @@ func (rw *responseWriter) Flush() {
 		// to rw.Write (see bug in #4314)
 		return
 	}
-	rw.HTTPInterfaces.Flush()
+	//nolint:bodyclose
+	http.NewResponseController(rw.ResponseWriter).Flush()
 }
 
 // Hijack implements http.Hijacker. It will flush status code if set. We don't track actual hijacked
@@ -219,11 +220,12 @@ func (rw *responseWriter) Flush() {
 func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !rw.wroteHeader {
 		if rw.statusCode != 0 {
-			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+			rw.ResponseWriter.WriteHeader(rw.statusCode)
 		}
 		rw.wroteHeader = true
 	}
-	return rw.HTTPInterfaces.Hijack()
+	//nolint:bodyclose
+	return http.NewResponseController(rw.ResponseWriter).Hijack()
 }
 
 // Write writes to the response. If the response qualifies,
@@ -260,7 +262,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	// by the standard library
 	if !rw.wroteHeader {
 		if rw.statusCode != 0 {
-			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+			rw.ResponseWriter.WriteHeader(rw.statusCode)
 		}
 		rw.wroteHeader = true
 	}
@@ -268,7 +270,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	if rw.w != nil {
 		return rw.w.Write(p)
 	} else {
-		return rw.HTTPInterfaces.Write(p)
+		return rw.ResponseWriter.Write(p)
 	}
 }
 
@@ -284,7 +286,7 @@ func (rw *responseWriter) Close() error {
 
 		// issue #5059, don't write status code if not set explicitly.
 		if rw.statusCode != 0 {
-			rw.HTTPInterfaces.WriteHeader(rw.statusCode)
+			rw.ResponseWriter.WriteHeader(rw.statusCode)
 		}
 		rw.wroteHeader = true
 	}
@@ -301,7 +303,7 @@ func (rw *responseWriter) Close() error {
 
 // Unwrap returns the underlying ResponseWriter.
 func (rw *responseWriter) Unwrap() http.ResponseWriter {
-	return rw.HTTPInterfaces
+	return rw.ResponseWriter
 }
 
 // init should be called before we write a response, if rw.buf has contents.
@@ -310,7 +312,7 @@ func (rw *responseWriter) init() {
 		rw.config.Match(rw) {
 
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
-		rw.w.Reset(rw.HTTPInterfaces)
+		rw.w.Reset(rw.ResponseWriter)
 		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
 		rw.Header().Set("Content-Encoding", rw.encodingName)
 		rw.Header().Add("Vary", "Accept-Encoding")
@@ -429,5 +431,4 @@ var (
 	_ caddy.Provisioner           = (*Encode)(nil)
 	_ caddy.Validator             = (*Encode)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Encode)(nil)
-	_ caddyhttp.HTTPInterfaces    = (*responseWriter)(nil)
 )

@@ -10,7 +10,8 @@ jobs:
     name: Release Published
     strategy:
       matrix:
-        os: [ ubuntu-latest ]
+        os: 
+          - ubuntu-latest
     runs-on: ${{ matrix.os }}
 
     steps:

@@ -24,32 +24,12 @@ import (
 )
 
 // ResponseWriterWrapper wraps an underlying ResponseWriter and
-// promotes its Pusher/Flusher/Hijacker methods as well. To use
-// this type, embed a pointer to it within your own struct type
-// that implements the http.ResponseWriter interface, then call
-// methods on the embedded value. You can make sure your type
-// wraps correctly by asserting that it implements the
-// HTTPInterfaces interface.
+// promotes its Pusher method as well. To use this type, embed
+// a pointer to it within your own struct type that implements
+// the http.ResponseWriter interface, then call methods on the
+// embedded value.
 type ResponseWriterWrapper struct {
 	http.ResponseWriter
-}
-
-// Hijack implements http.Hijacker. It simply calls the underlying
-// ResponseWriter's Hijack method if there is one, or returns
-// ErrNotImplemented otherwise.
-func (rww *ResponseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := rww.ResponseWriter.(http.Hijacker); ok {
-		return hj.Hijack()
-	}
-	return nil, nil, ErrNotImplemented
-}
-
-// Flush implements http.Flusher. It simply calls the underlying
-// ResponseWriter's Flush method if there is one.
-func (rww *ResponseWriterWrapper) Flush() {
-	if f, ok := rww.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
 }
 
 // Push implements http.Pusher. It simply calls the underlying
@@ -62,27 +42,16 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
-// ReadFrom implements io.ReaderFrom. It simply calls the underlying
-// ResponseWriter's ReadFrom method if there is one, otherwise it defaults
-// to io.Copy.
+// ReadFrom implements io.ReaderFrom. It simply calls io.Copy,
+// which uses io.ReaderFrom if available.
 func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
-	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
-		return rf.ReadFrom(r)
-	}
 	return io.Copy(rww.ResponseWriter, r)
 }
 
-// Unwrap returns the underlying ResponseWriter.
+// Unwrap returns the underlying ResponseWriter, necessary for
+// http.ResponseController to work correctly.
 func (rww *ResponseWriterWrapper) Unwrap() http.ResponseWriter {
 	return rww.ResponseWriter
-}
-
-// HTTPInterfaces mix all the interfaces that middleware ResponseWriters need to support.
-type HTTPInterfaces interface {
-	http.ResponseWriter
-	http.Pusher
-	http.Flusher
-	http.Hijacker
 }
 
 // ErrNotImplemented is returned when an underlying
@@ -262,7 +231,8 @@ func (rr *responseRecorder) WriteResponse() error {
 }
 
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	conn, brw, err := rr.ResponseWriterWrapper.Hijack()
+	//nolint:bodyclose
+	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -294,7 +264,7 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 // responses instead of writing them to the client. See
 // docs for NewResponseRecorder for proper usage.
 type ResponseRecorder interface {
-	HTTPInterfaces
+	http.ResponseWriter
 	Status() int
 	Buffer() *bytes.Buffer
 	Buffered() bool
@@ -309,12 +279,13 @@ type ShouldBufferFunc func(status int, header http.Header) bool
 
 // Interface guards
 var (
-	_ HTTPInterfaces   = (*ResponseWriterWrapper)(nil)
-	_ ResponseRecorder = (*responseRecorder)(nil)
+	_ http.ResponseWriter = (*ResponseWriterWrapper)(nil)
+	_ ResponseRecorder    = (*responseRecorder)(nil)
 
 	// Implementing ReaderFrom can be such a significant
 	// optimization that it should probably be required!
 	// see PR #5022 (25%-50% speedup)
 	_ io.ReaderFrom = (*ResponseWriterWrapper)(nil)
 	_ io.ReaderFrom = (*responseRecorder)(nil)
+	_ io.ReaderFrom = (*hijackedConn)(nil)
 )

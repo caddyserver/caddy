@@ -156,8 +156,8 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 		return fmt.Errorf("method not allowed")
 	}
 
-	currentCtxMu.Lock()
-	defer currentCtxMu.Unlock()
+	rawCfgMu.Lock()
+	defer rawCfgMu.Unlock()
 
 	if ifMatchHeader != "" {
 		// expect the first and last character to be quotes
@@ -257,8 +257,8 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 // readConfig traverses the current config to path
 // and writes its JSON encoding to out.
 func readConfig(path string, out io.Writer) error {
-	currentCtxMu.RLock()
-	defer currentCtxMu.RUnlock()
+	rawCfgMu.RLock()
+	defer rawCfgMu.RUnlock()
 	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
 }
 
@@ -305,7 +305,7 @@ func indexConfigObjects(ptr any, configPath string, index map[string]string) err
 // it as the new config, replacing any other current config.
 // It does NOT update the raw config state, as this is a
 // lower-level function; most callers will want to use Load
-// instead. A write lock on currentCtxMu is required! If
+// instead. A write lock on rawCfgMu is required! If
 // allowPersist is false, it will not be persisted to disk,
 // even if it is configured to.
 func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
@@ -340,8 +340,10 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 	}
 
 	// swap old context (including its config) with the new one
+	currentCtxMu.Lock()
 	oldCtx := currentCtx
 	currentCtx = ctx
+	currentCtxMu.Unlock()
 
 	// Stop, Cleanup each old app
 	unsyncedStop(oldCtx)
@@ -354,13 +356,13 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 			newCfg.Admin.Config.Persist == nil ||
 			*newCfg.Admin.Config.Persist) {
 		dir := filepath.Dir(ConfigAutosavePath)
-		err := os.MkdirAll(dir, 0700)
+		err := os.MkdirAll(dir, 0o700)
 		if err != nil {
 			Log().Error("unable to create folder for config autosave",
 				zap.String("dir", dir),
 				zap.Error(err))
 		} else {
-			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0600)
+			err := os.WriteFile(ConfigAutosavePath, cfgJSON, 0o600)
 			if err == nil {
 				Log().Info("autosaved config (load with --resume flag)", zap.String("file", ConfigAutosavePath))
 			} else {
@@ -627,22 +629,35 @@ type ConfigLoader interface {
 // stop the others. Stop should only be called
 // if not replacing with a new config.
 func Stop() error {
+	currentCtxMu.RLock()
+	ctx := currentCtx
+	currentCtxMu.RUnlock()
+
+	rawCfgMu.Lock()
+	unsyncedStop(ctx)
+
 	currentCtxMu.Lock()
-	defer currentCtxMu.Unlock()
-	unsyncedStop(currentCtx)
 	currentCtx = Context{}
+	currentCtxMu.Unlock()
+
 	rawCfgJSON = nil
 	rawCfgIndex = nil
 	rawCfg[rawConfigKey] = nil
+	rawCfgMu.Unlock()
+
 	return nil
 }
 
-// unsyncedStop stops cfg from running, but has
-// no locking around cfg. It is a no-op if cfg is
-// nil. If any app returns an error when stopping,
+// unsyncedStop stops ctx from running, but has
+// no locking around ctx. It is a no-op if ctx has a
+// nil cfg. If any app returns an error when stopping,
 // it is logged and the function continues stopping
 // the next app. This function assumes all apps in
-// cfg were successfully started first.
+// ctx were successfully started first.
+//
+// A lock on rawCfgMu is required, even though this
+// function does not access rawCfg, that lock
+// synchronizes the stop/start of apps.
 func unsyncedStop(ctx Context) {
 	if ctx.cfg == nil {
 		return
@@ -816,7 +831,7 @@ func InstanceID() (uuid.UUID, error) {
 		if err != nil {
 			return uuid, err
 		}
-		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0600)
+		err = os.WriteFile(uuidFilePath, []byte(uuid.String()), 0o600)
 		return uuid, err
 	} else if err != nil {
 		return [16]byte{}, err
@@ -969,14 +984,12 @@ type CtxKey string
 
 // This group of variables pertains to the current configuration.
 var (
-	// currentCtxMu protects everything in this var block.
-	currentCtxMu sync.RWMutex
-
 	// currentCtx is the root context for the currently-running
 	// configuration, which can be accessed through this value.
 	// If the Config contained in this value is not nil, then
 	// a config is currently active/running.
-	currentCtx Context
+	currentCtx   Context
+	currentCtxMu sync.RWMutex
 
 	// rawCfg is the current, generic-decoded configuration;
 	// we initialize it as a map with one field ("config")
@@ -994,6 +1007,10 @@ var (
 	// rawCfgIndex is the map of user-assigned ID to expanded
 	// path, for converting /id/ paths to /config/ paths.
 	rawCfgIndex map[string]string
+
+	// rawCfgMu protects all the rawCfg fields and also
+	// essentially synchronizes config changes/reloads.
+	rawCfgMu sync.RWMutex
 )
 
 // errSameConfig is returned if the new config is the same

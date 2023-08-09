@@ -132,14 +132,14 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	toAddresses := make([]string, len(to))
 	var toScheme string
 	for i, toLoc := range to {
-		addr, scheme, err := parseUpstreamDialAddress(toLoc)
+		addr, err := parseUpstreamDialAddress(toLoc)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", toLoc, err)
 		}
-		if scheme != "" && toScheme == "" {
-			toScheme = scheme
+		if addr.scheme != "" && toScheme == "" {
+			toScheme = addr.scheme
 		}
-		toAddresses[i] = addr
+		toAddresses[i] = addr.dialAddr()
 	}
 
 	// proceed to build the handler and server
@@ -284,7 +284,8 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	var false bool
 	cfg := &caddy.Config{
-		Admin: &caddy.AdminConfig{Disabled: true,
+		Admin: &caddy.AdminConfig{
+			Disabled: true,
 			Config: &caddy.ConfigSettings{
 				Persist: &false,
 			},

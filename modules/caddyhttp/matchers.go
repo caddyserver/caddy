@@ -25,6 +25,7 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -395,7 +396,9 @@ func (m MatchPath) Match(r *http.Request) bool {
 	// security risk (cry) if PHP files end up being served
 	// as static files, exposing the source code, instead of
 	// being matched by *.php to be treated as PHP scripts.
-	reqPath = strings.TrimRight(reqPath, ". ")
+	if runtime.GOOS == "windows" { // issue #5613
+		reqPath = strings.TrimRight(reqPath, ". ")
+	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -1389,9 +1392,7 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	return matcherSet, nil
 }
 
-var (
-	wordRE = regexp.MustCompile(`\w+`)
-)
+var wordRE = regexp.MustCompile(`\w+`)
 
 const regexpPlaceholderPrefix = "http.regexp"
 

@@ -27,7 +27,6 @@ import (
 	"net/netip"
 	"net/textproto"
 	"net/url"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,13 +42,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-var supports1xx bool
-
 func init() {
-	// Caddy requires at least Go 1.18, but Early Hints requires Go 1.19; thus we can simply check for 1.18 in version string
-	// TODO: remove this once our minimum Go version is 1.19
-	supports1xx = !strings.Contains(runtime.Version(), "go1.18")
-
 	caddy.RegisterModule(Handler{})
 }
 
@@ -457,7 +450,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
 func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time, retries int,
-	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler) (bool, error) {
+	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler,
+) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
@@ -752,25 +746,23 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
-	if supports1xx {
-		// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
-		trace := &httptrace.ClientTrace{
-			Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
-				h := rw.Header()
-				copyHeader(h, http.Header(header))
-				rw.WriteHeader(code)
+	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			h := rw.Header()
+			copyHeader(h, http.Header(header))
+			rw.WriteHeader(code)
 
-				// Clear headers coming from the backend
-				// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
-				for k := range header {
-					delete(h, k)
-				}
+			// Clear headers coming from the backend
+			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
+			for k := range header {
+				delete(h, k)
+			}
 
-				return nil
-			},
-		}
-		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+			return nil
+		},
 	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
 	// if FlushInterval is explicitly configured to -1 (i.e. flush continuously to achieve
 	// low-latency streaming), don't let the transport cancel the request if the client
@@ -778,7 +770,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// regardless, and we should expect client disconnection in low-latency streaming
 	// scenarios (see issue #4922)
 	if h.FlushInterval == -1 {
-		req = req.WithContext(ignoreClientGoneContext{req.Context(), h.ctx.Done()})
+		req = req.WithContext(ignoreClientGoneContext{req.Context()})
 	}
 
 	// do the round-trip; emit debug log with values we know are
@@ -971,9 +963,8 @@ func (h *Handler) finalizeResponse(
 		// Force chunking if we saw a response trailer.
 		// This prevents net/http from calculating the length for short
 		// bodies and adding a Content-Length.
-		if fl, ok := rw.(http.Flusher); ok {
-			fl.Flush()
-		}
+		//nolint:bodyclose
+		http.NewResponseController(rw).Flush()
 	}
 
 	// total duration spent proxying, including writing response body
@@ -1407,15 +1398,28 @@ type handleResponseContext struct {
 // ignoreClientGoneContext is a special context.Context type
 // intended for use when doing a RoundTrip where you don't
 // want a client disconnection to cancel the request during
-// the roundtrip. Set its done field to a Done() channel
-// of a context that doesn't get canceled when the client
-// disconnects, such as caddy.Context.Done() instead.
+// the roundtrip.
+// This context clears cancellation, error, and deadline methods,
+// but still allows values to pass through from its embedded
+// context.
+//
+// TODO: This can be replaced with context.WithoutCancel once
+// the minimum required version of Go is 1.21.
 type ignoreClientGoneContext struct {
 	context.Context
-	done <-chan struct{}
 }
 
-func (c ignoreClientGoneContext) Done() <-chan struct{} { return c.done }
+func (c ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
+	return
+}
+
+func (c ignoreClientGoneContext) Done() <-chan struct{} {
+	return nil
+}
+
+func (c ignoreClientGoneContext) Err() error {
+	return nil
+}
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
 // so that handle_response routes can inherit some config options

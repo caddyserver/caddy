@@ -16,7 +16,9 @@ package fileserver
 
 import (
 	"encoding/json"
+	"io"
 	"log"
+	"os"
 	"strconv"
 	"time"
 
@@ -57,6 +59,15 @@ respond with a file listing.`,
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
+			cmd.AddCommand(&cobra.Command{
+				Use:     "export-template",
+				Short:   "Exports the default file browser template",
+				Example: "caddy file-server export-template > browse.html",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					_, err := io.WriteString(os.Stdout, defaultBrowseTemplate)
+					return err
+				},
+			})
 		},
 	})
 }

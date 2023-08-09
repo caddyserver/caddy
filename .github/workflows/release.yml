@@ -10,14 +10,16 @@ jobs:
     name: Release
     strategy:
       matrix:
-        os: [ ubuntu-latest ]
-        go: [ '1.20' ]
+        os: 
+          - ubuntu-latest
+        go: 
+          - '1.21'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.20'
-          GO_SEMVER: '~1.20.1'
+        - go: '1.21'
+          GO_SEMVER: '~1.21.0'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
@@ -107,7 +109,7 @@ jobs:
       uses: goreleaser/goreleaser-action@v4
       with:
         version: latest
-        args: release --rm-dist --timeout 60m
+        args: release --clean --timeout 60m
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
