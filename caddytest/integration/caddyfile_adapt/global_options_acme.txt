@@ -78,11 +78,11 @@
 					}
 				],
 				"on_demand": {
+					"ask": "https://example.com",
 					"rate_limit": {
 						"interval": 30000000000,
 						"burst": 20
-					},
-					"ask": "https://example.com"
+					}
 				},
 				"ocsp_interval": 172800000000000,
 				"renew_interval": 86400000000000,

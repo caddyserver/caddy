@@ -69,11 +69,11 @@
 					}
 				],
 				"on_demand": {
+					"ask": "https://example.com",
 					"rate_limit": {
 						"interval": 30000000000,
 						"burst": 20
-					},
-					"ask": "https://example.com"
+					}
 				}
 			},
 			"disable_ocsp_stapling": true
