@@ -20,6 +20,6 @@ import (
 	"net/http"
 )
 
-func enableFullDuplex(w http.ResponseWriter) {
-	http.NewResponseController(w).EnableFullDuplex()
+func enableFullDuplex(w http.ResponseWriter) error {
+	return http.NewResponseController(w).EnableFullDuplex()
 }
