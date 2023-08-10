@@ -734,6 +734,17 @@ footer {
 							(of which only <b>{{.Limit}}</b> are displayed)
 						</span>
 						{{- end}}
+            <span>
+              <label for="fileOpener">File scheme:</label>
+              <select id="fileOpener" onchange="fileOpenerOnChange()">
+                <option>mpv:</option>
+                <option>potplayer:</option>
+                <option value="download"><i>Download</i></option>
+                <option value="custom"><i>Custom</i></option>
+              </select>
+              <label for="customFileOpener">Custom scheme:</label>
+              <input id="customFileOpener" onchange="customFileOpenerOnChange()"/>
+            </span>
 					</div>
 					<a href="javascript:queryParam('layout', '')" id="layout-list" class='layout{{if eq $.Layout "list" ""}}current{{end}}'>
 						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-list" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -1075,6 +1086,48 @@ footer {
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);
+
+      function open_file(relative_url) {
+        // get scheme
+        const fileOpener = document.getElementById('fileOpener').value;
+        var scheme = '';
+        switch(fileOpener) {
+          case 'download':
+            scheme = '';
+            break;
+          case 'custom':
+            custom_scheme = document.getElementById('customFileOpener').value;
+            scheme = custom_scheme + '//';
+            break;
+          default:
+            scheme = fileOpener + '//';
+        }
+        const url = new URL(relative_url, window.location.href);
+        const custom_url = scheme + url.href;
+        console.log(custom_url);
+        // window.open(custom_url);
+        location.href = custom_url;
+      }
+      function fileOpenerOnChange() {
+        const fileOpener = document.getElementById('fileOpener').value;
+        localStorage.setItem('file_opener', fileOpener);
+      }
+      function customFileOpenerOnChange() {
+        const customFileOpener = document.getElementById('customFileOpener').value;
+        localStorage.setItem('custom_file_opener', customFileOpener);
+      }
+      const fileOpener = localStorage.getItem('file_opener');
+      if (fileOpener) {
+        const fileOpenerSelect = document.getElementById('fileOpener');
+        fileOpenerSelect.value = fileOpener;
+      }
+      if (fileOpener == 'custom') {
+        const customFileOpener = localStorage.getItem('custom_file_opener');
+        if (customFileOpener) {
+          const customFileOpenerInput = document.getElementById('customFileOpener');
+          customFileOpenerInput.value = customFileOpener;
+        }
+      }
 		</script>
 	</body>
 </html>
