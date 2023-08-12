@@ -5,3 +5,12 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-dependencies:
+        patterns:
+        - "*"
+    open-pull-requests-limit: 5
