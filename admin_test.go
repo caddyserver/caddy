@@ -131,7 +131,7 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 
 // TestLoadConcurrent exercises Load under concurrent conditions
 // and is most useful under test with `-race` enabled.
-func TestLoadConcurrent(_ *testing.T) {
+func TestLoadConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < 100; i++ {

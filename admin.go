@@ -1060,7 +1060,7 @@ func handleConfigID(_ http.ResponseWriter, r *http.Request) error {
 	return errInternalRedir
 }
 
-func handleStop(_ http.ResponseWriter, r *http.Request) error {
+func handleStop(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
