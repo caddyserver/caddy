@@ -62,7 +62,7 @@ func (DeleteFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (DeleteFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
+func (DeleteFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (HashFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (*HashFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
+func (*HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
