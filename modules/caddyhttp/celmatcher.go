@@ -236,7 +236,7 @@ func (cr celHTTPRequest) ConvertToNative(_ reflect.Type) (any, error) {
 	return cr.Request, nil
 }
 
-func (celHTTPRequest) ConvertToType(_ ref.Type) ref.Val {
+func (celHTTPRequest) ConvertToType(typeVal ref.Type) ref.Val {
 	panic("not implemented")
 }
 
