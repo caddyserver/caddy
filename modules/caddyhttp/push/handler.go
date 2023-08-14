@@ -122,8 +122,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	}
 
 	// serve only after pushing!
-	err := next.ServeHTTP(lp, r)
-	return err
+	return next.ServeHTTP(lp, r)
 }
 
 func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) http.Header {
