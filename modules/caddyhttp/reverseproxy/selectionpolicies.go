@@ -220,7 +220,7 @@ func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.Intn(i + 1) 
+		j := weakrand.Intn(i + 1)
 		if j < k {
 			choices[j] = upstream
 		}
@@ -269,7 +269,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if count > 1 || (weakrand.Int()%count) == 0 { 
+			if count > 1 || (weakrand.Int()%count) == 0 {
 				bestHost = host
 			}
 		}
@@ -753,7 +753,7 @@ func selectRandomHost(pool []*Upstream) *Upstream {
 		// upstream will always be chosen if there is at
 		// least one available
 		count++
-		if (weakrand.Int() % count) == 0 { 
+		if (weakrand.Int() % count) == 0 {
 			randomHost = upstream
 		}
 	}
@@ -792,7 +792,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	if len(best) == 1 {
 		return best[0]
 	}
-	return best[weakrand.Intn(len(best))] 
+	return best[weakrand.Intn(len(best))]
 }
 
 // hostByHashing returns an available host from pool based on a hashable string s.
