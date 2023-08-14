@@ -21,6 +21,7 @@ linters:
   enable:
     - bodyclose
     - errcheck
+    - gocritic
     - gci
     - gofumpt
     - gosec
