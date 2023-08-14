@@ -257,104 +257,109 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("request_path", r.URL.Path),
 		zap.String("result", filename))
 
-	// get information about the file
-	info, err := fs.Stat(fsrv.fileSystem, filename)
-	if err != nil {
-		err = fsrv.mapDirOpenError(err, filename)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+	if !fsrv.PreferPrecompressed {
+		// get information about the file
+		info, err := fs.Stat(fsrv.fileSystem, filename)
+		if err != nil {
+			err = fsrv.mapDirOpenError(err, filename)
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+				return fsrv.notFound(w, r, next)
+			} else if errors.Is(err, fs.ErrPermission) {
+				return caddyhttp.Error(http.StatusForbidden, err)
+			}
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		// if the request mapped to a directory, see if
+		// there is an index file we can serve
+		var implicitIndexFile bool
+		if info.IsDir() && len(fsrv.IndexNames) > 0 {
+			for _, indexPage := range fsrv.IndexNames {
+				indexPage := repl.ReplaceAll(indexPage, "")
+				indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
+				if fileHidden(indexPath, filesToHide) {
+					// pretend this file doesn't exist
+					fsrv.logger.Debug("hiding index file",
+						zap.String("filename", indexPath),
+						zap.Strings("files_to_hide", filesToHide))
+					continue
+				}
+
+				indexInfo, err := fs.Stat(fsrv.fileSystem, indexPath)
+				if err != nil {
+					continue
+				}
+
+				// don't rewrite the request path to append
+				// the index file, because we might need to
+				// do a canonical-URL redirect below based
+				// on the URL as-is
+
+				// we've chosen to use this index file,
+				// so replace the last file info and path
+				// with that of the index file
+				info = indexInfo
+				filename = indexPath
+				implicitIndexFile = true
+				fsrv.logger.Debug("located index file", zap.String("filename", filename))
+				break
+			}
+		}
+
+		// if still referencing a directory, delegate
+		// to browse or return an error
+		if info.IsDir() {
+			fsrv.logger.Debug("no index file in directory",
+				zap.String("path", filename),
+				zap.Strings("index_filenames", fsrv.IndexNames))
+			if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
+				return fsrv.serveBrowse(root, filename, w, r, next)
+			}
 			return fsrv.notFound(w, r, next)
-		} else if errors.Is(err, fs.ErrPermission) {
-			return caddyhttp.Error(http.StatusForbidden, err)
 		}
-		return caddyhttp.Error(http.StatusInternalServerError, err)
-	}
 
-	// if the request mapped to a directory, see if
-	// there is an index file we can serve
-	var implicitIndexFile bool
-	if info.IsDir() && len(fsrv.IndexNames) > 0 {
-		for _, indexPage := range fsrv.IndexNames {
-			indexPage := repl.ReplaceAll(indexPage, "")
-			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
-			if fileHidden(indexPath, filesToHide) {
-				// pretend this file doesn't exist
-				fsrv.logger.Debug("hiding index file",
-					zap.String("filename", indexPath),
-					zap.Strings("files_to_hide", filesToHide))
-				continue
-			}
-
-			indexInfo, err := fs.Stat(fsrv.fileSystem, indexPath)
-			if err != nil {
-				continue
-			}
-
-			// don't rewrite the request path to append
-			// the index file, because we might need to
-			// do a canonical-URL redirect below based
-			// on the URL as-is
-
-			// we've chosen to use this index file,
-			// so replace the last file info and path
-			// with that of the index file
-			info = indexInfo
-			filename = indexPath
-			implicitIndexFile = true
-			fsrv.logger.Debug("located index file", zap.String("filename", filename))
-			break
+		// one last check to ensure the file isn't hidden (we might
+		// have changed the filename from when we last checked)
+		if fileHidden(filename, filesToHide) {
+			fsrv.logger.Debug("hiding file",
+				zap.String("filename", filename),
+				zap.Strings("files_to_hide", filesToHide))
+			return fsrv.notFound(w, r, next)
 		}
-	}
 
-	// if still referencing a directory, delegate
-	// to browse or return an error
-	if info.IsDir() {
-		fsrv.logger.Debug("no index file in directory",
-			zap.String("path", filename),
-			zap.Strings("index_filenames", fsrv.IndexNames))
-		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
-			return fsrv.serveBrowse(root, filename, w, r, next)
-		}
-		return fsrv.notFound(w, r, next)
-	}
-
-	// one last check to ensure the file isn't hidden (we might
-	// have changed the filename from when we last checked)
-	if fileHidden(filename, filesToHide) {
-		fsrv.logger.Debug("hiding file",
-			zap.String("filename", filename),
-			zap.Strings("files_to_hide", filesToHide))
-		return fsrv.notFound(w, r, next)
-	}
-
-	// if URL canonicalization is enabled, we need to enforce trailing
-	// slash convention: if a directory, trailing slash; if a file, no
-	// trailing slash - not enforcing this can break relative hrefs
-	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
-	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
-		// Only redirect if the last element of the path (the filename) was not
-		// rewritten; if the admin wanted to rewrite to the canonical path, they
-		// would have, and we have to be very careful not to introduce unwanted
-		// redirects and especially redirect loops!
-		// See https://github.com/caddyserver/caddy/issues/4205.
-		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
-		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
-			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path + "/"
-				fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
-				return redirect(w, r, to)
-			} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path[:len(origReq.URL.Path)-1]
-				fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
-				return redirect(w, r, to)
+		// if URL canonicalization is enabled, we need to enforce trailing
+		// slash convention: if a directory, trailing slash; if a file, no
+		// trailing slash - not enforcing this can break relative hrefs
+		// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
+		if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
+			// Only redirect if the last element of the path (the filename) was not
+			// rewritten; if the admin wanted to rewrite to the canonical path, they
+			// would have, and we have to be very careful not to introduce unwanted
+			// redirects and especially redirect loops!
+			// See https://github.com/caddyserver/caddy/issues/4205.
+			origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+			if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
+				if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
+					to := origReq.URL.Path + "/"
+					fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to))
+					return redirect(w, r, to)
+				} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
+					to := origReq.URL.Path[:len(origReq.URL.Path)-1]
+					fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to))
+					return redirect(w, r, to)
+				}
 			}
 		}
 	}
 
 	var file fs.File
+	var err error
+	var info fs.FileInfo
+	var compressedInfo fs.FileInfo
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
 	etag := w.Header().Get("Etag")
@@ -366,7 +371,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err := fs.Stat(fsrv.fileSystem, compressedFilename)
+		compressedInfo, err = fs.Stat(fsrv.fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
 			continue
@@ -478,7 +483,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// that errors generated by ServeContent are written immediately
 	// to the response, so we cannot handle them (but errors there
 	// are rare)
-	http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
+
+	if fsrv.PreferPrecompressed {
+		http.ServeContent(w, r, compressedInfo.Name(), compressedInfo.ModTime(), file.(io.ReadSeeker))
+	} else {
+		http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
+	}
 
 	return nil
 }
