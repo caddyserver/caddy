@@ -272,7 +272,7 @@ func (h Helper) GroupRoutes(vals []ConfigValue) {
 
 // NewBindAddresses returns config values relevant to adding
 // listener bind addresses to the config.
-func (h Helper) NewBindAddresses(addrs []string) []ConfigValue {
+func (Helper) NewBindAddresses(addrs []string) []ConfigValue {
 	return []ConfigValue{{Class: "bind", Value: addrs}}
 }
 

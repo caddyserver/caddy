@@ -62,12 +62,12 @@ func (RandomSelection) CaddyModule() caddy.ModuleInfo {
 }
 
 // Select returns an available host, if any.
-func (r RandomSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
+func (RandomSelection) Select(pool UpstreamPool, req *http.Request, res http.ResponseWriter) *Upstream {
 	return selectRandomHost(pool)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *RandomSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*RandomSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -279,7 +279,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -319,7 +319,7 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *RoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*RoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -351,7 +351,7 @@ func (FirstSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Response
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *FirstSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*FirstSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -382,7 +382,7 @@ func (IPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.Respo
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *IPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*IPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -415,7 +415,7 @@ func (ClientIPHashSelection) Select(pool UpstreamPool, req *http.Request, _ http
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*ClientIPHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()
@@ -442,7 +442,7 @@ func (URIHashSelection) Select(pool UpstreamPool, req *http.Request, _ http.Resp
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (r *URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*URIHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.NextArg() {
 			return d.ArgErr()

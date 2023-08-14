@@ -150,7 +150,7 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 // entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
-func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]serverBlock) []sbAddrAssociation {
+func (*ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]serverBlock) []sbAddrAssociation {
 	sbaddrs := make([]sbAddrAssociation, 0, len(addrToServerBlocks))
 	for addr, sblocks := range addrToServerBlocks {
 		// we start with knowing that at least this address
@@ -188,7 +188,7 @@ func (st *ServerType) consolidateAddrMappings(addrToServerBlocks map[string][]se
 
 // listenerAddrsForServerBlockKey essentially converts the Caddyfile
 // site addresses to Caddy listener addresses for each server block.
-func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
+func (*ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key string,
 	options map[string]any,
 ) ([]string, error) {
 	addr, err := ParseAddress(key)

@@ -430,7 +430,7 @@ func (c TemplateContext) funcFileStat(filename string) (fs.FileInfo, error) {
 
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
 // Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
-func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
+func (TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
@@ -442,7 +442,7 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 // Time inputs are parsed using the given layout (default layout is RFC1123Z)
 // and are formatted as a relative time, such as "2 weeks ago".
 // See https://pkg.go.dev/time#pkg-constants for time layout docs.
-func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
+func (TemplateContext) funcHumanize(formatType, data string) (string, error) {
 	// The format type can optionally be followed
 	// by a colon to provide arguments for the format
 	parts := strings.Split(formatType, ":")

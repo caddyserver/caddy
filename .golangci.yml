@@ -58,6 +58,7 @@ linters-settings:
           - 'server.Serve'
           - 'http.ListenAndServe'
           - 'conn.Close'
+          - 'w.buf.Write'
           - 'sb.WriteString'
           - 'buf.WriteString'
           - 'out.WriteRune'

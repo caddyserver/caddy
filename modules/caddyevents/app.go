@@ -156,7 +156,7 @@ func (app *App) Start() error {
 }
 
 // Stop gracefully shuts down the app.
-func (app *App) Stop() error {
+func (*App) Stop() error {
 	return nil
 }
 

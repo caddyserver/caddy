@@ -93,12 +93,12 @@ func (HashFilter) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (f *HashFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
+func (*HashFilter) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
 // Filter filters the input field with the replacement value.
-func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
+func (*HashFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
 		for i, s := range array {
 			array[i] = hash(s)

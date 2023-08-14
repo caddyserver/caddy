@@ -52,7 +52,7 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
-func (ts Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (bool, error) {
+func (Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (bool, error) {
 	if !strings.HasSuffix(strings.ToLower(hello.ServerName), tailscaleDomainAliasEnding) {
 		return false, nil
 	}
@@ -103,7 +103,7 @@ type HTTPCertGetter struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (hcg HTTPCertGetter) CaddyModule() caddy.ModuleInfo {
+func (HTTPCertGetter) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "tls.get_certificate.http",
 		New: func() caddy.Module { return new(HTTPCertGetter) },

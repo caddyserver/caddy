@@ -107,12 +107,12 @@ func (ot *openTelemetryWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request
 }
 
 // cleanup flush all remaining data and shutdown a tracerProvider
-func (ot *openTelemetryWrapper) cleanup(logger *zap.Logger) error {
+func (*openTelemetryWrapper) cleanup(logger *zap.Logger) error {
 	return globalTracerProvider.cleanupTracerProvider(logger)
 }
 
 // newResource creates a resource that describe current handler instance and merge it with a default attributes value.
-func (ot *openTelemetryWrapper) newResource(
+func (*openTelemetryWrapper) newResource(
 	webEngineName,
 	webEngineVersion string,
 ) (*resource.Resource, error) {
@@ -123,6 +123,6 @@ func (ot *openTelemetryWrapper) newResource(
 }
 
 // spanNameFormatter performs the replacement of placeholders in the span name
-func (ot *openTelemetryWrapper) spanNameFormatter(operation string, r *http.Request) string {
+func (*openTelemetryWrapper) spanNameFormatter(operation string, r *http.Request) string {
 	return r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer).ReplaceAll(operation, "")
 }

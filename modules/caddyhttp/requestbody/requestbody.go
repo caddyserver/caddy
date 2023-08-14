@@ -62,7 +62,7 @@ func (ew errorWrapper) Read(p []byte) (n int, err error) {
 	if err != nil && err.Error() == "http: request body too large" {
 		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
 	}
-	return
+	return n, err
 }
 
 // Interface guard

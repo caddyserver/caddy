@@ -1097,7 +1097,7 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 // then returns a reader for the buffer along with how many bytes were buffered. Always close
 // the return value when done with it, just like if it was the original body! If limit is 0
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
-func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
+func (Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
 	if limit == 0 {
 		return originalBody, 0
 	}
@@ -1410,15 +1410,15 @@ type ignoreClientGoneContext struct {
 	context.Context
 }
 
-func (c ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
+func (ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
 	return
 }
 
-func (c ignoreClientGoneContext) Done() <-chan struct{} {
+func (ignoreClientGoneContext) Done() <-chan struct{} {
 	return nil
 }
 
-func (c ignoreClientGoneContext) Err() error {
+func (ignoreClientGoneContext) Err() error {
 	return nil
 }
 

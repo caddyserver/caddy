@@ -392,11 +392,11 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	}
 	if IsUnixNetwork(network) {
 		host = a
-		return
+		return network, host, port, nil
 	}
 	host, port, err = net.SplitHostPort(a)
 	if err == nil || a == "" {
-		return
+		return network, host, port, err
 	}
 	// in general, if there was an error, it was likely "missing port",
 	// so try adding a bogus port to take advantage of standard library's

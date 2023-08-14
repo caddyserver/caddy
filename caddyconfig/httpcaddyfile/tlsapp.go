@@ -32,7 +32,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
-func (st ServerType) buildTLSApp(
+func (ServerType) buildTLSApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
 	warnings []caddyconfig.Warning,

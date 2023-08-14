@@ -228,7 +228,7 @@ func (cr celHTTPRequest) ResolveName(name string) (any, bool) {
 	return nil, false
 }
 
-func (cr celHTTPRequest) Parent() interpreter.Activation {
+func (celHTTPRequest) Parent() interpreter.Activation {
 	return nil
 }
 

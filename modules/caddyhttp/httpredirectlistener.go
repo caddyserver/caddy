@@ -51,11 +51,11 @@ func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
+func (*HTTPRedirectListenerWrapper) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
+func (*HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
 	return &httpRedirectListener{l}
 }
 
