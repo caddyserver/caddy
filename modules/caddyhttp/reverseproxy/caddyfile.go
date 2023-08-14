@@ -866,7 +866,11 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 			withMatchers = append(withMatchers, hr)
 		}
 	}
-	h.HandleResponse = append(withMatchers, withoutMatchers...)
+	h.HandleResponse = make([]caddyhttp.ResponseHandler, 0, len(h.HandleResponse))
+	h.HandleResponse = append(h.HandleResponse, withMatchers...)
+	h.HandleResponse = append(h.HandleResponse, withoutMatchers...)
+	h.HandleResponse = append(h.HandleResponse, withMatchers...)
+	h.HandleResponse = append(h.HandleResponse, withoutMatchers...)
 
 	// clean up the bits we only needed for adapting
 	h.handleResponseSegments = nil

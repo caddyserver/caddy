@@ -204,10 +204,9 @@ func (l *lexer) next() (bool, error) {
 					val = append(val, '\\')
 				}
 				escaped = false
-			} else {
-				if (quoted && ch == '"') || (btQuoted && ch == '`') {
-					return makeToken(ch), nil
-				}
+			} else if (quoted && ch == '"') || (btQuoted && ch == '`') {
+				return makeToken(ch), nil
+
 			}
 			// allow quoted text to wrap continue on multiple lines
 			if ch == '\n' {

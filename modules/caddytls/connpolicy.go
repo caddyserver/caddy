@@ -366,7 +366,7 @@ type ClientAuthentication struct {
 	// these CA certificates will be rejected.
 	TrustedCACertPEMFiles []string `json:"trusted_ca_certs_pem_files,omitempty"`
 
-	// DEPRECATED: This field is deprecated and will be removed in
+	// Deprecated: This field is deprecated and will be removed in
 	// a future version. Please use the `validators` field instead
 	// with the tls.client_auth.leaf module instead.
 	//

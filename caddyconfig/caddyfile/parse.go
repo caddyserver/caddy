@@ -573,7 +573,8 @@ func (p *parser) directive() error {
 	segment = append(segment, p.Token())
 
 	for p.Next() {
-		if p.Val() == "{" {
+		switch p.Val() {
+		case "{":
 			p.nesting++
 			if !p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
 				return p.Err("Unexpected next token after '{' on same line")
@@ -581,25 +582,35 @@ func (p *parser) directive() error {
 			if p.isNewLine() {
 				return p.Err("Unexpected '{' on a new line; did you mean to place the '{' on the previous line?")
 			}
-		} else if p.Val() == "{}" {
+		case "{}":
 			if p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
 				return p.Err("Unexpected '{}' at end of line")
 			}
-		} else if p.isNewLine() && p.nesting == 0 {
+		case "import":
+			if p.isNewLine() {
+				if err := p.doImport(1); err != nil {
+					return err
+				}
+				p.cursor-- // cursor is advanced when we continue, so roll back one more
+				continue
+			}
+		case "}":
+			if p.nesting > 0 {
+				p.nesting--
+			} else {
+				return p.Err("Unexpected '}' because no matching opening brace")
+			}
+		default:
+			if p.isNewLine() && p.nesting == 0 {
+				p.cursor-- // read too far
+				break
+			}
+			segment = append(segment, p.Token())
+		}
+		if p.isNewLine() && p.nesting == 0 {
 			p.cursor-- // read too far
 			break
-		} else if p.Val() == "}" && p.nesting > 0 {
-			p.nesting--
-		} else if p.Val() == "}" && p.nesting == 0 {
-			return p.Err("Unexpected '}' because no matching opening brace")
-		} else if p.Val() == "import" && p.isNewLine() {
-			if err := p.doImport(1); err != nil {
-				return err
-			}
-			p.cursor-- // cursor is advanced when we continue, so roll back one more
-			continue
 		}
-
 		segment = append(segment, p.Token())
 	}
 

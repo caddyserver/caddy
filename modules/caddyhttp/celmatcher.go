@@ -599,13 +599,8 @@ func isCELStringExpr(e *exprpb.Expr) bool {
 
 // isCELStringLiteral returns whether the expression is a CEL string literal.
 func isCELStringLiteral(e *exprpb.Expr) bool {
-	switch e.GetExprKind().(type) {
-	case *exprpb.Expr_ConstExpr:
-		constant := e.GetConstExpr()
-		switch constant.GetConstantKind().(type) {
-		case *exprpb.Constant_StringValue:
-			return true
-		}
+	if _, ok := e.GetConstExpr().GetConstantKind().(*exprpb.Constant_StringValue); ok {
+		return true
 	}
 	return false
 }
