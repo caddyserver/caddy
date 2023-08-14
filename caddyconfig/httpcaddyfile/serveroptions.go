@@ -284,7 +284,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 func applyServerOptions(
 	servers map[string]*caddyhttp.Server,
 	options map[string]any,
-	_ *[]caddyconfig.Warning,
+	warnings *[]caddyconfig.Warning,
 ) error {
 	serverOpts, ok := options["servers"].([]serverOptions)
 	if !ok {

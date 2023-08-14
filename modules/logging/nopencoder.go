@@ -26,79 +26,79 @@ type nopEncoder struct{}
 
 // AddArray is part of the zapcore.ObjectEncoder interface.
 // Array elements do not get filtered.
-func (nopEncoder) AddArray(_ string, _ zapcore.ArrayMarshaler) error { return nil }
+func (nopEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) error { return nil }
 
 // AddObject is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddObject(_ string, _ zapcore.ObjectMarshaler) error { return nil }
+func (nopEncoder) AddObject(key string, marshaler zapcore.ObjectMarshaler) error { return nil }
 
 // AddBinary is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddBinary(_ string, _ []byte) {}
+func (nopEncoder) AddBinary(key string, value []byte) {}
 
 // AddByteString is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddByteString(_ string, _ []byte) {}
+func (nopEncoder) AddByteString(key string, value []byte) {}
 
 // AddBool is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddBool(_ string, _ bool) {}
+func (nopEncoder) AddBool(key string, value bool) {}
 
 // AddComplex128 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddComplex128(_ string, _ complex128) {}
+func (nopEncoder) AddComplex128(key string, value complex128) {}
 
 // AddComplex64 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddComplex64(_ string, _ complex64) {}
+func (nopEncoder) AddComplex64(key string, value complex64) {}
 
 // AddDuration is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddDuration(_ string, _ time.Duration) {}
+func (nopEncoder) AddDuration(key string, value time.Duration) {}
 
 // AddFloat64 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddFloat64(_ string, _ float64) {}
+func (nopEncoder) AddFloat64(key string, value float64) {}
 
 // AddFloat32 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddFloat32(_ string, _ float32) {}
+func (nopEncoder) AddFloat32(key string, value float32) {}
 
 // AddInt is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddInt(_ string, _ int) {}
+func (nopEncoder) AddInt(key string, value int) {}
 
 // AddInt64 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddInt64(_ string, _ int64) {}
+func (nopEncoder) AddInt64(key string, value int64) {}
 
 // AddInt32 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddInt32(_ string, _ int32) {}
+func (nopEncoder) AddInt32(key string, value int32) {}
 
 // AddInt16 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddInt16(_ string, _ int16) {}
+func (nopEncoder) AddInt16(key string, value int16) {}
 
 // AddInt8 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddInt8(_ string, _ int8) {}
+func (nopEncoder) AddInt8(key string, value int8) {}
 
 // AddString is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddString(_, _ string) {}
+func (nopEncoder) AddString(key, value string) {}
 
 // AddTime is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddTime(_ string, _ time.Time) {}
+func (nopEncoder) AddTime(key string, value time.Time) {}
 
 // AddUint is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUint(_ string, _ uint) {}
+func (nopEncoder) AddUint(key string, value uint) {}
 
 // AddUint64 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUint64(_ string, _ uint64) {}
+func (nopEncoder) AddUint64(key string, value uint64) {}
 
 // AddUint32 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUint32(_ string, _ uint32) {}
+func (nopEncoder) AddUint32(key string, value uint32) {}
 
 // AddUint16 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUint16(_ string, _ uint16) {}
+func (nopEncoder) AddUint16(key string, value uint16) {}
 
 // AddUint8 is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUint8(_ string, _ uint8) {}
+func (nopEncoder) AddUint8(key string, value uint8) {}
 
 // AddUintptr is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddUintptr(_ string, _ uintptr) {}
+func (nopEncoder) AddUintptr(key string, value uintptr) {}
 
 // AddReflected is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) AddReflected(_ string, _ any) error { return nil }
+func (nopEncoder) AddReflected(key string, value any) error { return nil }
 
 // OpenNamespace is part of the zapcore.ObjectEncoder interface.
-func (nopEncoder) OpenNamespace(_ string) {}
+func (nopEncoder) OpenNamespace(key string) {}
 
 // Clone is part of the zapcore.ObjectEncoder interface.
 // We don't use it as of Oct 2019 (v2 beta 7), I'm not
@@ -106,7 +106,7 @@ func (nopEncoder) OpenNamespace(_ string) {}
 func (ne nopEncoder) Clone() zapcore.Encoder { return ne }
 
 // EncodeEntry partially implements the zapcore.Encoder interface.
-func (nopEncoder) EncodeEntry(_ zapcore.Entry, _ []zapcore.Field) (*buffer.Buffer, error) {
+func (nopEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
 	return bufferpool.Get(), nil
 }
 

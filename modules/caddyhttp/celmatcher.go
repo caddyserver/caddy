@@ -442,7 +442,7 @@ func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.Int
 
 // CELMatcherRuntimeFunction creates a function binding for when the input to the matcher
 // is dynamically resolved rather than a set of static constant values.
-func CELMatcherRuntimeFunction(_ string, fac CELMatcherFactory) functions.BinaryOp {
+func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions.BinaryOp {
 	return func(celReq, matcherData ref.Val) ref.Val {
 		matcher, err := fac(matcherData)
 		if err != nil {
