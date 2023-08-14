@@ -97,6 +97,7 @@ linters:
     - gosimple
     - govet
     - ineffassign
+    - nolintlint
     - misspell
     - prealloc
     - revive

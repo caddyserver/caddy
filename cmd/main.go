@@ -211,7 +211,6 @@ func watchConfigFile(filename, adapterName string) {
 	logger().Info("watching config file for changes")
 
 	// begin poller
-	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
 		// get current config
 		newCfg, _, err := loadConfigWithLogger(nil, filename, adapterName)
