@@ -132,6 +132,8 @@ type FileServer struct {
 	// clobbering the explicit rewrite with implicit behavior.
 	CanonicalURIs *bool `json:"canonical_uris,omitempty"`
 
+	PreferPrecompressed bool `json:"prefer_precompressed,omitempty"`
+
 	// Override the status code written when successfully serving a file.
 	// Particularly useful when explicitly serving a file as display for
 	// an error, like a 404 page. A placeholder may be used. By default,
