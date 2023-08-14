@@ -161,7 +161,7 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 
 	// pre-compile the middleware handler chain
 	for _, midhandler := range r.Handlers {
-		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, metrics))
+		r.middleware = append(r.middleware, wrapMiddleware(midhandler, metrics))
 	}
 	return nil
 }
@@ -311,7 +311,7 @@ func wrapRoute(route Route) Middleware {
 // we need to pull this particular MiddlewareHandler
 // pointer into its own stack frame to preserve it so it
 // won't be overwritten in future loop iterations.
-func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
+func wrapMiddleware(mh MiddlewareHandler, metrics *Metrics) Middleware {
 	handlerToUse := mh
 	if metrics != nil {
 		// wrap the middleware with metrics instrumentation

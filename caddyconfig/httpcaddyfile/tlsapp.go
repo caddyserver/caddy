@@ -78,7 +78,7 @@ func (st ServerType) buildTLSApp(
 	// a catch-all automation policy is used as a "default" for all subjects that
 	// don't have custom configuration explicitly associated with them; this
 	// is only to add if the global settings or defaults are non-empty
-	catchAllAP, err := newBaseAutomationPolicy(options, warnings, false)
+	catchAllAP, err := newBaseAutomationPolicy(options, false)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -103,7 +103,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// get values that populate an automation policy for this block
-			ap, err := newBaseAutomationPolicy(options, warnings, true)
+			ap, err := newBaseAutomationPolicy(options, true)
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -390,13 +390,10 @@ func (st ServerType) buildTLSApp(
 
 	// finalize and verify policies; do cleanup
 	if tlsApp.Automation != nil {
-		for i, ap := range tlsApp.Automation.Policies {
+		for _, ap := range tlsApp.Automation.Policies {
 			// ensure all issuers have global defaults filled in
-			for j, issuer := range ap.Issuers {
-				err := fillInGlobalACMEDefaults(issuer, options)
-				if err != nil {
-					return nil, warnings, fmt.Errorf("filling in global issuer defaults for AP %d, issuer %d: %v", i, j, err)
-				}
+			for _, issuer := range ap.Issuers {
+				fillInGlobalACMEDefaults(issuer, options)
 			}
 
 			// encode all issuer values we created, so they will be rendered in the output
@@ -438,15 +435,10 @@ func (st ServerType) buildTLSApp(
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
 
-func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) error {
-	acmeWrapper, ok := issuer.(acmeCapable)
-	if !ok {
-		return nil
-	}
+func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) {
+	acmeWrapper, _ := issuer.(acmeCapable)
+
 	acmeIssuer := acmeWrapper.GetACMEIssuer()
-	if acmeIssuer == nil {
-		return nil
-	}
 
 	globalEmail := options["email"]
 	globalACMECA := options["acme_ca"]
@@ -477,7 +469,6 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
 		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
 	}
-	return nil
 }
 
 // newBaseAutomationPolicy returns a new TLS automation policy that gets
@@ -485,7 +476,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 // for any other automation policies. A nil policy (and no error) will be
 // returned if there are no default/global options. However, if always is
 // true, a non-nil value will always be returned (unless there is an error).
-func newBaseAutomationPolicy(options map[string]any, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
+func newBaseAutomationPolicy(options map[string]any, always bool) (*caddytls.AutomationPolicy, error) {
 	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]

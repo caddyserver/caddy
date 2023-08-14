@@ -192,6 +192,7 @@ func (logging *Logging) closeLogs() error {
 		_, err := writers.Delete(key)
 		if err != nil {
 			log.Printf("[ERROR] Closing log writer %v: %v", key, err)
+			return err
 		}
 	}
 	return nil

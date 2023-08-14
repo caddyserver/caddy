@@ -173,7 +173,7 @@ func (st ServerType) buildPKIApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
 	warnings []caddyconfig.Warning,
-) (*caddypki.PKI, []caddyconfig.Warning, error) {
+) (*caddypki.PKI, []caddyconfig.Warning) {
 	skipInstallTrust := false
 	if _, ok := options["skip_install_trust"]; ok {
 		skipInstallTrust = true
@@ -225,5 +225,5 @@ func (st ServerType) buildPKIApp(
 		pkiApp.CAs[ca.ID] = ca
 	}
 
-	return pkiApp, warnings, nil
+	return pkiApp, warnings
 }

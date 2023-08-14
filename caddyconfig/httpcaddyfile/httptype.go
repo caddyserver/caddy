@@ -227,10 +227,7 @@ func (st ServerType) Setup(
 	}
 
 	// then make the PKI app
-	pkiApp, warnings, err := st.buildPKIApp(pairings, options, warnings)
-	if err != nil {
-		return nil, warnings, err
-	}
+	pkiApp, warnings := st.buildPKIApp(pairings, options, warnings)
 
 	// extract any custom logs, and enforce configured levels
 	var customLogs []namedCustomLog
@@ -863,7 +860,7 @@ func (st *ServerType) serversFromPairings(
 		servers[fmt.Sprintf("srv%d", i)] = srv
 	}
 
-	err := applyServerOptions(servers, options, warnings)
+	err := applyServerOptions(servers, options)
 	if err != nil {
 		return nil, fmt.Errorf("applying global server options: %v", err)
 	}

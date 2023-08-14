@@ -168,16 +168,12 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	var err error
-	iss.template, err = iss.makeIssuerTemplate()
-	if err != nil {
-		return err
-	}
+	iss.template = iss.makeIssuerTemplate()
 
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+func (iss *ACMEIssuer) makeIssuerTemplate() certmagic.ACMEIssuer {
 	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
@@ -212,7 +208,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		}
 	}
 
-	return template, nil
+	return template
 }
 
 // SetConfig sets the associated certmagic config for this issuer.

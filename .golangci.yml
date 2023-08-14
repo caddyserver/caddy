@@ -33,6 +33,7 @@ linters:
     - typecheck
     - unconvert
     - unused
+    - unparam
   # these are implicitly disabled:
   # - asciicheck
   # - depguard
