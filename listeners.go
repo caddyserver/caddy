@@ -408,7 +408,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		err = nil
 		port = ""
 	}
-	return
+	return network, host, port, err
 }
 
 // JoinNetworkAddress combines network, host, and port into a single

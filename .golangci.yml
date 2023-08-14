@@ -44,29 +44,31 @@ linters-settings:
         disabled: true
       - name: unnecessary-stmt
         disabled: true
+      - name: import-shadowing
+        disabled: true
       - name: defer
+        disabled: true
+      - name: confusing-naming
         disabled: true
       - name: nested-structs
         disabled: true
       - name: unhandled-error
-        disabled: false
+        disabled: true
         # Arguments added below do not trigger the rule.
+        #           arguments =["os\.(Create|WriteFile|Chmod)", "fmt\.Print", "myFunction", "net\..*", "bytes\.Buffer\.Write"]
         arguments:
-          - 'fmt.Printf'
+          - 'fmt\..*'
           - 'c.Conn.Close'
-          - 'w.Write'
           - 'server.Serve'
           - 'http.ListenAndServe'
           - 'conn.Close'
-          - 'w.buf.Write'
-          - 'sb.WriteString'
-          - 'buf.WriteString'
+          - 'os.Stderr.Write'
+          - 'buf\.(WriteString|Write)'
+          - 'csc.Close'
+          - 'cl.Close'
           - 'out.WriteRune'
-          - 'fmt.Print'
-          - 'fmt.Println'
-          - 'fmt.Printf'
-          - 'fmt.Fprint'
-          - 'sb.WriteRune'
+          - 'sb\.(WriteRune|WriteString)'
+          - 'reconn.Conn.Close'
   errcheck:
     ignore: fmt:.*,go.uber.org/zap/zapcore:^Add.*
     ignoretests: true

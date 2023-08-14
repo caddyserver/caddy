@@ -961,9 +961,11 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// Set the ETag as a trailer header.
 		// The alternative is to write the config to a buffer, and
 		// then hash that.
+
 		w.Header().Set("Trailer", "ETag")
 
 		hash := etagHasher()
+
 		configWriter := io.MultiWriter(w, hash)
 		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {

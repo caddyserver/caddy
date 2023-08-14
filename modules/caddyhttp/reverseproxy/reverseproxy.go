@@ -1411,7 +1411,7 @@ type ignoreClientGoneContext struct {
 }
 
 func (ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
-	return
+	return deadline, ok
 }
 
 func (ignoreClientGoneContext) Done() <-chan struct{} {
