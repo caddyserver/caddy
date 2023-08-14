@@ -232,7 +232,7 @@ func (celHTTPRequest) Parent() interpreter.Activation {
 	return nil
 }
 
-func (cr celHTTPRequest) ConvertToNative(_ reflect.Type) (any, error) {
+func (cr celHTTPRequest) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return cr.Request, nil
 }
 
@@ -255,7 +255,7 @@ var pkixNameCELType = types.NewTypeValue("pkix.Name", traits.ReceiverType)
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
-func (pn celPkixName) ConvertToNative(_ reflect.Type) (any, error) {
+func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 	return pn.Name, nil
 }
 

@@ -95,7 +95,7 @@ func (e *StaticError) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (e StaticError) ServeHTTP(_ http.ResponseWriter, r *http.Request, _ Handler) error {
+func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, h Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	statusCode := http.StatusInternalServerError
