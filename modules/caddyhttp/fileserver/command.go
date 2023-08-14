@@ -22,14 +22,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddytpl "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	caddytpl "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 )
 
 func init() {
