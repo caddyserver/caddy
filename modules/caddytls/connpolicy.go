@@ -81,7 +81,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 
 // TLSConfig returns a standard-lib-compatible TLS configuration which
 // selects the first matching policy based on the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
+func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies

@@ -234,7 +234,7 @@ func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision sets up and validates m, including making it more efficient for large lists.
-func (m MatchHost) Provision(_ caddy.Context) error {
+func (m MatchHost) Provision(ctx caddy.Context) error {
 	// check for duplicates; they are nonsensical and reduce efficiency
 	// (we could just remove them, but the user should know their config is erroneous)
 	seen := make(map[string]int)
@@ -370,7 +370,7 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision lower-cases the paths in m to ensure case-insensitive matching.
-func (m MatchPath) Provision(_ caddy.Context) error {
+func (m MatchPath) Provision(ctx caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
 			// will always match, so just put it first
@@ -740,7 +740,7 @@ func (m MatchMethod) Match(r *http.Request) bool {
 // Example:
 //
 //	expression method('PUT', 'POST')
-func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
+func (MatchMethod) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"method",
 		"method_request_list",
@@ -827,7 +827,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 // Example:
 //
 //	expression query({'sort': 'asc'}) || query({'foo': ['*bar*', 'baz']})
-func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
+func (MatchQuery) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"query",
 		"query_matcher_request_map",
@@ -904,7 +904,7 @@ func (m MatchHeader) Match(r *http.Request) bool {
 //
 //	expression header({'content-type': 'image/png'})
 //	expression header({'foo': ['bar', 'baz']}) // match bar or baz
-func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
+func (MatchHeader) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"header",
 		"header_matcher_request_map",
@@ -1169,7 +1169,7 @@ func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Example:
 //
 //	expression protocol('https')
-func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
+func (MatchProtocol) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
 		"protocol",
 		"protocol_request_string",

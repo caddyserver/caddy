@@ -59,7 +59,7 @@ func (g *Gzip) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // Provision provisions g's configuration.
-func (g *Gzip) Provision(_ caddy.Context) error {
+func (g *Gzip) Provision(ctx caddy.Context) error {
 	if g.Level == 0 {
 		g.Level = defaultGzipLevel
 	}

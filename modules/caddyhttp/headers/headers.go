@@ -132,7 +132,7 @@ type HeaderOps struct {
 }
 
 // Provision sets up the header operations.
-func (ops *HeaderOps) Provision(_ caddy.Context) error {
+func (ops *HeaderOps) Provision(ctx caddy.Context) error {
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
 			if r.SearchRegexp != "" {

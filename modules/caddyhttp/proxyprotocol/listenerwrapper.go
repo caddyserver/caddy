@@ -43,7 +43,7 @@ type ListenerWrapper struct {
 }
 
 // Provision sets up the listener wrapper.
-func (pp *ListenerWrapper) Provision(_ caddy.Context) error {
+func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
 	rules := make([]proxyprotocol.Rule, 0, len(pp.Allow))
 	for _, s := range pp.Allow {
 		_, n, err := net.ParseCIDR(s)

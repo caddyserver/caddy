@@ -45,7 +45,7 @@ func (ConsoleEncoder) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the encoder.
-func (ce *ConsoleEncoder) Provision(_ caddy.Context) error {
+func (ce *ConsoleEncoder) Provision(ctx caddy.Context) error {
 	if ce.LevelFormat == "" {
 		ce.LevelFormat = "color"
 	}
@@ -92,7 +92,7 @@ func (JSONEncoder) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the encoder.
-func (je *JSONEncoder) Provision(_ caddy.Context) error {
+func (je *JSONEncoder) Provision(ctx caddy.Context) error {
 	je.Encoder = zapcore.NewJSONEncoder(je.ZapcoreEncoderConfig())
 	return nil
 }

@@ -69,7 +69,7 @@ func (StaticIPRange) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (s *StaticIPRange) Provision(_ caddy.Context) error {
+func (s *StaticIPRange) Provision(ctx caddy.Context) error {
 	for _, str := range s.Ranges {
 		prefix, err := CIDRExpressionToPrefix(str)
 		if err != nil {

@@ -57,7 +57,7 @@ func (NetWriter) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision sets up the module.
-func (nw *NetWriter) Provision(_ caddy.Context) error {
+func (nw *NetWriter) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
 	address, err := repl.ReplaceOrErr(nw.Address, true, true)
 	if err != nil {

@@ -261,7 +261,7 @@ func (AUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (au *AUpstreams) Provision(_ caddy.Context) error {
+func (au *AUpstreams) Provision(ctx caddy.Context) error {
 	if au.Refresh == 0 {
 		au.Refresh = caddy.Duration(time.Minute)
 	}

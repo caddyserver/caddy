@@ -119,7 +119,7 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 }
 
 // Provision sets up r.
-func (r *WeightedRoundRobinSelection) Provision(_ caddy.Context) error {
+func (r *WeightedRoundRobinSelection) Provision(ctx caddy.Context) error {
 	for _, weight := range r.Weights {
 		r.totalWeight += weight
 	}
@@ -194,7 +194,7 @@ func (r *RandomChoiceSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 }
 
 // Provision sets up r.
-func (r *RandomChoiceSelection) Provision(_ caddy.Context) error {
+func (r *RandomChoiceSelection) Provision(ctx caddy.Context) error {
 	if r.Choose == 0 {
 		r.Choose = 2
 	}
