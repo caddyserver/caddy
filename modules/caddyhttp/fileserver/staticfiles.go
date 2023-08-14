@@ -257,9 +257,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("request_path", r.URL.Path),
 		zap.String("result", filename))
 
+	var info fs.FileInfo
+	var err error
+
 	if !fsrv.PreferPrecompressed {
 		// get information about the file
-		info, err := fs.Stat(fsrv.fileSystem, filename)
+		info, err = fs.Stat(fsrv.fileSystem, filename)
 		if err != nil {
 			err = fsrv.mapDirOpenError(err, filename)
 			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
@@ -357,9 +360,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
-	var err error
-	var info fs.FileInfo
-	var compressedInfo fs.FileInfo
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
 	etag := w.Header().Get("Etag")
@@ -371,8 +371,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err = fs.Stat(fsrv.fileSystem, compressedFilename)
-		if err != nil || compressedInfo.IsDir() {
+		info, err = fs.Stat(fsrv.fileSystem, compressedFilename)
+		if err != nil || info.IsDir() {
 			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
 			continue
 		}
@@ -395,7 +395,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// of transparent; however we do need to set the Etag:
 		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
 		if etag == "" {
-			etag = calculateEtag(compressedInfo)
+			etag = calculateEtag(info)
 		}
 
 		break
@@ -403,9 +403,18 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// no precompressed file found, use the actual file
 	if file == nil {
-		fsrv.logger.Debug("opening file", zap.String("filename", filename))
-
 		// open the file
+		info, err = fs.Stat(fsrv.fileSystem, filename)
+		if err != nil {
+			err = fsrv.mapDirOpenError(err, filename)
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+				return fsrv.notFound(w, r, next)
+			} else if errors.Is(err, fs.ErrPermission) {
+				return caddyhttp.Error(http.StatusForbidden, err)
+			}
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
 		file, err = fsrv.openFile(filename, w)
 		if err != nil {
 			if herr, ok := err.(caddyhttp.HandlerError); ok &&
@@ -484,11 +493,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// to the response, so we cannot handle them (but errors there
 	// are rare)
 
-	if fsrv.PreferPrecompressed {
-		http.ServeContent(w, r, compressedInfo.Name(), compressedInfo.ModTime(), file.(io.ReadSeeker))
-	} else {
-		http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
-	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
 
 	return nil
 }
