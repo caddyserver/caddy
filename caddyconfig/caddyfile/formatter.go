@@ -125,13 +125,13 @@ func Format(input []byte) []byte {
 		spacePrior := space
 		space = false
 
-		//////////////////////////////////////////////////////////
+		// ////////////////////////////////////////////////////////
 		// I find it helpful to think of the formatting loop in two
 		// main sections; by the time we reach this point, we
 		// know we are in a "regular" part of the file: we know
 		// the character is not a space, not in a literal segment
 		// like a comment or quoted, it's not escaped, etc.
-		//////////////////////////////////////////////////////////
+		// ////////////////////////////////////////////////////////
 
 		if ch == '#' {
 			comment = true

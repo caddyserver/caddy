@@ -134,11 +134,11 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 			zap.String("err_id", handlerErr.ID),
 			zap.String("err_trace", handlerErr.Trace),
 		}
-		return
+		return status, msg, fields
 	}
 	status = http.StatusInternalServerError
 	msg = err.Error()
-	return
+	return status, msg, fields
 }
 
 // ExtraLogFields is a list of extra fields to log with every request.

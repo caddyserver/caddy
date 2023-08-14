@@ -1,4 +1,71 @@
 linters-settings:
+  revive:
+    enable-all-rules: true
+    # Do NOT whine about the following, full explanation found in:
+    # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#description-of-available-rules
+    rules:
+      - name: use-any
+        disabled: true
+      - name: if-return
+        disabled: true
+      - name: max-public-structs
+        disabled: true
+      - name: cognitive-complexity
+        disabled: true
+      - name: argument-limit
+        disabled: true
+      - name: cyclomatic
+        disabled: true
+      - name: file-header
+        disabled: true
+      - name: function-length
+        disabled: true
+      - name: function-result-limit
+        disabled: true
+      - name: line-length-limit
+        disabled: true
+      - name: flag-parameter
+        disabled: true
+      - name: add-constant
+        disabled: true
+      - name: empty-lines
+        disabled: true
+      - name: banned-characters
+        disabled: true
+      - name: deep-exit
+        disabled: true
+      - name: confusing-results
+        disabled: true
+      - name: unused-parameter
+        disabled: true
+      - name: modifies-value-receiver
+        disabled: true
+      - name: early-return
+        disabled: true
+      - name: unnecessary-stmt
+        disabled: true
+      - name: defer
+        disabled: true
+      - name: nested-structs
+        disabled: true
+      - name: unhandled-error
+        disabled: false
+        # Arguments added below do not trigger the rule.
+        arguments:
+          - 'fmt.Printf'
+          - 'c.Conn.Close'
+          - 'w.Write'
+          - 'server.Serve'
+          - 'http.ListenAndServe'
+          - 'conn.Close'
+          - 'sb.WriteString'
+          - 'buf.WriteString'
+          - 'out.WriteRune'
+          - 'fmt.Print'
+          - 'fmt.Println'
+          - 'fmt.Printf'
+          - 'fmt.Fprint'
+          - 'sb.WriteRune'
   errcheck:
     ignore: fmt:.*,go.uber.org/zap/zapcore:^Add.*
     ignoretests: true
@@ -27,7 +94,6 @@ linters:
     - gosimple
     - govet
     - ineffassign
-    - nakedret
     - misspell
     - prealloc
     - revive
@@ -81,7 +147,7 @@ run:
   # concurrency: 4 # explicitly omit this value to fully utilize available resources.
   deadline: 5m
   issues-exit-code: 1
-  tests: true
+  tests: false
 
 # output configuration options
 output:
@@ -90,8 +156,8 @@ output:
   print-linter-name: true
 
 issues:
-  max-issues-per-linter: 10000
-  max-same-issues: 10000
+  max-issues-per-linter: 0
+  max-same-issues: 0
   exclude-rules:
     # we aren't calling unknown URL
     - text: 'G107' # G107: Url provided to HTTP request as taint input
