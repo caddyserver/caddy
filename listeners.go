@@ -481,7 +481,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 
 		ln := lnAny.(net.PacketConn)
 
-		var h3ln = ln
+		h3ln := ln
 		// retrieve the underlying socket, so quic-go can optimize.
 		if unwrapper, ok := ln.(interface{ Unwrap() any }); ok {
 			h3ln = unwrapper.Unwrap().(net.PacketConn)
@@ -507,10 +507,10 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		// using the original net.PacketConn to close them properly
 		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqtc: sqtc, key: lnKey}, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
+
 	sql := sharedEarlyListener.(*sharedQuicListener)
 	// add current tls.Config to sqtc, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
 	ctx, cancel := sql.sqtc.addTLSConfig(tlsConf)
