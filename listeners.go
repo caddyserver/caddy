@@ -470,7 +470,65 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // unixgram will be used; otherwise, udp will be used).
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
+	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
+
+	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+		lnAny, err := na.Listen(ctx, portOffset, config)
+		if err != nil {
+			return nil, err
+		}
+
+		ln := lnAny.(net.PacketConn)
+
+		var h3ln = ln
+		// retrieve the underlying socket, so quic-go can optimize.
+		if unwrapper, ok := ln.(interface{ Unwrap() any }); ok {
+			h3ln = unwrapper.Unwrap().(net.PacketConn)
+		}
+
+		sqtc := newSharedQUICTLSConfig(tlsConf)
+		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
+		//nolint:gosec
+		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
+		earlyLn, err := quic.ListenEarly(h3ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
+			Allow0RTT: true,
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				var highLoad bool
+				if activeRequests != nil {
+					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
+				}
+				return highLoad
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		// using the original net.PacketConn to close them properly
+		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqtc: sqtc, key: lnKey}, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	sql := sharedEarlyListener.(*sharedQuicListener)
+	// add current tls.Config to sqtc, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
+	ctx, cancel := sql.sqtc.addTLSConfig(tlsConf)
+
+	return &fakeCloseQuicListener{
+		sharedQuicListener: sql,
+		context:            ctx,
+		contextCancel:      cancel,
+	}, nil
+}
+
+// ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
+// The network will be transformed into a QUIC-compatible type (if unix, then
+// unixgram will be used; otherwise, udp will be used).
 //
+// NOTE: This API is EXPERIMENTAL and may be changed or removed.
+//
+// DEPRECATED: Use NetworkAddress.ListenQUIC instead. This function will likely be changed or removed in the future.
 // TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
 func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
 	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
@@ -597,13 +655,17 @@ func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Co
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	*quic.EarlyListener
-	sqtc *sharedQUICTLSConfig
-	key  string
+	packetConn net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
+	sqtc       *sharedQUICTLSConfig
+	key        string
 }
 
-// Destruct closes the underlying QUIC listener.
+// Destruct closes the underlying QUIC listener and its associated net.PacketConn.
 func (sql *sharedQuicListener) Destruct() error {
-	return sql.EarlyListener.Close()
+	// close EarlyListener first to stop any operations being done to the net.PacketConn
+	_ = sql.EarlyListener.Close()
+	// then close the net.PacketConn
+	return sql.packetConn.Close()
 }
 
 // sharedPacketConn is like sharedListener, but for net.PacketConns.
@@ -651,6 +713,11 @@ var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
 // https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires a net.PacketConn type assertable to a net.Conn,
 // but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
 var _ net.Conn = (*fakeClosePacketConn)(nil)
+
+// Unwrap returns the underlying net.UDPConn for quic-go optimization
+func (fcpc *fakeClosePacketConn) Unwrap() any {
+	return fcpc.UDPConn
+}
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
 func (fcpc *fakeClosePacketConn) Close() error {
