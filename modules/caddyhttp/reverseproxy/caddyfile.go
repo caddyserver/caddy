@@ -155,12 +155,16 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
-		if pa.scheme == "wss" {
-			return d.Errf("Please use https instead of wss at %s", address)
-		} else if pa.scheme == "ws" {
-			return d.Errf("Please use http instead of ws at %s", address)
-		} else if pa.scheme != "" && pa.scheme != "https" && pa.scheme != "http" && pa.scheme != "h2c" {
-			return d.Errf("Unsupported URL Scheme/Prefix at %s", address)
+
+		switch pa.scheme {
+		case "wss":
+			return d.Errf("please use https instead of wss at %s", address)
+		case "ws":
+			return d.Errf("please use http instead of ws at %s", address)
+		case "https", "http", "h2c", "":
+			// Do nothing or handle the valid schemes
+		default:
+			return d.Errf("unsupported URL Scheme/Prefix at %s", address)
 		}
 
 		if commonScheme != "" && pa.scheme != commonScheme {

@@ -258,6 +258,26 @@ func (p *parser) addresses() error {
 				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", tkn)
 			}
 
+			pa, err := parseUpstreamDialAddress(tkn)
+			if err != nil {
+				return p.WrapErr(err)
+			}
+
+			// the underlying JSON does not yet support different
+			// transports (protocols or schemes) to each backend,
+			// so we remember the last one we see and compare them
+
+			switch pa.scheme {
+			case "wss":
+				return p.Errf("please use https instead of wss at %s", tkn)
+			case "ws":
+				return p.Errf("please use http instead of ws at %s", tkn)
+			case "https", "http", "":
+				// Do nothing or handle the valid schemes
+			default:
+				return p.Errf("unsupported URL Scheme/Prefix at %s", tkn)
+			}
+
 			p.block.Keys = append(p.block.Keys, tkn)
 		}
 
