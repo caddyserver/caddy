@@ -155,6 +155,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
+		if pa.scheme != "http" && pa.scheme != "https" && pa.scheme != "" {
+			return d.Errf("Invalid URL Prefix in the address %s", address)
+		}
+
 		if commonScheme != "" && pa.scheme != commonScheme {
 			return d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
 				commonScheme, pa.scheme)
