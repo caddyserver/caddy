@@ -135,3 +135,48 @@ func TestReplIndex(t *testing.T) {
 	// act and assert
 	tester.AssertGetResponse("http://localhost:9080/", 200, "")
 }
+
+func TestInvalidPrefix(t *testing.T) {
+	type testCase struct {
+		config, expectedError string
+	}
+
+	failureCases := []testCase{
+		{
+			config:        `wss://localhost`,
+			expectedError: `please use https instead of wss`,
+		},
+		{
+			config:        `ws://localhost`,
+			expectedError: `please use http instead of ws`,
+		},
+		{
+			config:        `someInvalidPrefix://localhost`,
+			expectedError: "unsupported URL scheme/prefix",
+		},
+		{
+			config:        `h2c://localhost`,
+			expectedError: `unsupported URL scheme/prefix`,
+		},
+		{
+			config:        `localhost, wss://localhost`,
+			expectedError: `please use https instead of wss`,
+		},
+		{
+			config: `localhost {
+  							  reverse_proxy ws://localhost"
+                     }`,
+			expectedError: `please use http instead of ws`,
+		},
+		{
+			config: `localhost {
+  							  reverse_proxy someInvalidPrefix://localhost"
+							}`,
+			expectedError: `unsupported URL scheme/prefix`,
+		},
+	}
+
+	for _, failureCase := range failureCases {
+		caddytest.AssertLoadError(t, failureCase.config, "caddyfile", failureCase.expectedError)
+	}
+}
