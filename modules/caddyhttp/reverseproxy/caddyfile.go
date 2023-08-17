@@ -164,7 +164,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "https", "http", "h2c", "":
 			// Do nothing or handle the valid schemes
 		default:
-			return d.Errf("unsupported URL Scheme/Prefix at %s", address)
+			return d.Errf("unsupported URL scheme/prefix at %s", address)
 		}
 
 		if commonScheme != "" && pa.scheme != commonScheme {
