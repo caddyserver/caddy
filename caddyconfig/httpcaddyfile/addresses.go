@@ -205,7 +205,7 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	case "https", "http", "":
 		// Do nothing or handle the valid schemes
 	default:
-		return nil, fmt.Errorf("unsupported URL Scheme/Prefix at %s", addr)
+		return nil, fmt.Errorf("unsupported URL scheme/prefix at %s", addr)
 	}
 
 	// figure out the HTTP and HTTPS ports; either
