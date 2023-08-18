@@ -60,7 +60,23 @@ func init() {
 // requested directory does not have an index file, Caddy writes a
 // 404 response. Alternatively, file browsing can be enabled with
 // the "browse" parameter which shows a list of files when directories
-// are requested if no index file is present.
+// are requested if no index file is present. If "browse" is enabled,
+// Caddy may serve a JSON array of the dirctory listing when the `Accept`
+// header mentions `application/json` with the following structure:
+//
+//	[{
+//		"name": "",
+//		"size": 0,
+//		"url": "",
+//		"mod_time": "",
+//		"mode": 0,
+//		"is_dir": false,
+//		"is_symlink": false
+//	}]
+//
+// with the `url` being relative to the request path and `mod_time` in the RFC 3339 format
+// with sub-second precision. For any other value for the `Accept` header, the
+// respective browse template is executed with `Content-Type: text/html`.
 //
 // By default, this handler will canonicalize URIs so that requests to
 // directories end with a slash, but requests to regular files do not.
