@@ -155,6 +155,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
+
+		switch pa.scheme {
+		case "wss":
+			return d.Errf("the scheme wss:// is only supported in browsers; use https:// instead")
+		case "ws":
+			return d.Errf("the scheme ws:// is only supported in browsers; use http:// instead")
+		case "https", "http", "h2c", "":
+			// Do nothing or handle the valid schemes
+		default:
+			return d.Errf("unsupported URL scheme %s://", pa.scheme)
+		}
+
 		if commonScheme != "" && pa.scheme != commonScheme {
 			return d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
 				commonScheme, pa.scheme)
@@ -193,7 +205,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for _, up := range d.RemainingArgs() {
 		err := appendUpstream(up)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing upstream '%s': %w", up, err)
 		}
 	}
 
@@ -217,7 +229,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			for _, up := range args {
 				err := appendUpstream(up)
 				if err != nil {
-					return err
+					return fmt.Errorf("parsing upstream '%s': %w", up, err)
 				}
 			}
 

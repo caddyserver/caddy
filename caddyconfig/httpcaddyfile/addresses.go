@@ -197,6 +197,17 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 	}
 	addr = addr.Normalize()
 
+	switch addr.Scheme {
+	case "wss":
+		return nil, fmt.Errorf("the scheme wss:// is only supported in browsers; use https:// instead")
+	case "ws":
+		return nil, fmt.Errorf("the scheme ws:// is only supported in browsers; use http:// instead")
+	case "https", "http", "":
+		// Do nothing or handle the valid schemes
+	default:
+		return nil, fmt.Errorf("unsupported URL scheme %s://", addr.Scheme)
+	}
+
 	// figure out the HTTP and HTTPS ports; either
 	// use defaults, or override with user config
 	httpPort, httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPPort), strconv.Itoa(caddyhttp.DefaultHTTPSPort)
