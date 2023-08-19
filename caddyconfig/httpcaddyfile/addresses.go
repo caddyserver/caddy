@@ -199,13 +199,13 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 
 	switch addr.Scheme {
 	case "wss":
-		return nil, fmt.Errorf("please use https instead of wss at %s", addr)
+		return nil, fmt.Errorf("the scheme wss:// is only supported in browsers; use https:// instead")
 	case "ws":
-		return nil, fmt.Errorf("please use http instead of ws at %s", addr)
+		return nil, fmt.Errorf("the scheme ws:// is only supported in browsers; use http:// instead")
 	case "https", "http", "":
 		// Do nothing or handle the valid schemes
 	default:
-		return nil, fmt.Errorf("unsupported URL scheme/prefix at %s", addr)
+		return nil, fmt.Errorf("unsupported URL scheme %s://", addr.Scheme)
 	}
 
 	// figure out the HTTP and HTTPS ports; either

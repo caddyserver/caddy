@@ -158,13 +158,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		switch pa.scheme {
 		case "wss":
-			return d.Errf("please use https instead of wss at %s", address)
+			return d.Errf("the scheme wss:// is only supported in browsers; use https:// instead")
 		case "ws":
-			return d.Errf("please use http instead of ws at %s", address)
+			return d.Errf("the scheme ws:// is only supported in browsers; use http:// instead")
 		case "https", "http", "h2c", "":
 			// Do nothing or handle the valid schemes
 		default:
-			return d.Errf("unsupported URL scheme/prefix at %s", address)
+			return d.Errf("unsupported URL scheme %s://", pa.scheme)
 		}
 
 		if commonScheme != "" && pa.scheme != commonScheme {
@@ -205,7 +205,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for _, up := range d.RemainingArgs() {
 		err := appendUpstream(up)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing upstream '%s': %w", up, err)
 		}
 	}
 
@@ -229,7 +229,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			for _, up := range args {
 				err := appendUpstream(up)
 				if err != nil {
-					return err
+					return fmt.Errorf("parsing upstream '%s': %w", up, err)
 				}
 			}
 

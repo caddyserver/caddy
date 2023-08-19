@@ -144,35 +144,35 @@ func TestInvalidPrefix(t *testing.T) {
 	failureCases := []testCase{
 		{
 			config:        `wss://localhost`,
-			expectedError: `please use https instead of wss`,
+			expectedError: `the scheme wss:// is only supported in browsers; use https:// instead`,
 		},
 		{
 			config:        `ws://localhost`,
-			expectedError: `please use http instead of ws`,
+			expectedError: `the scheme ws:// is only supported in browsers; use http:// instead`,
 		},
 		{
 			config:        `someInvalidPrefix://localhost`,
-			expectedError: "unsupported URL scheme/prefix",
+			expectedError: "unsupported URL scheme someinvalidprefix://",
 		},
 		{
 			config:        `h2c://localhost`,
-			expectedError: `unsupported URL scheme/prefix`,
+			expectedError: `unsupported URL scheme h2c://`,
 		},
 		{
 			config:        `localhost, wss://localhost`,
-			expectedError: `please use https instead of wss`,
+			expectedError: `the scheme wss:// is only supported in browsers; use https:// instead`,
 		},
 		{
 			config: `localhost {
-  							  reverse_proxy ws://localhost"
-                     }`,
-			expectedError: `please use http instead of ws`,
+  				reverse_proxy ws://localhost"
+            }`,
+			expectedError: `the scheme ws:// is only supported in browsers; use http:// instead`,
 		},
 		{
 			config: `localhost {
-  							  reverse_proxy someInvalidPrefix://localhost"
-							}`,
-			expectedError: `unsupported URL scheme/prefix`,
+  				reverse_proxy someInvalidPrefix://localhost"
+			}`,
+			expectedError: `unsupported URL scheme someinvalidprefix://`,
 		},
 	}
 
