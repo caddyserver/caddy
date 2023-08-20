@@ -410,6 +410,11 @@ EOF same-line-arg
 			},
 		},
 		{
+			input:        []byte("not-a-heredoc <<\n"),
+			expectErr:    true,
+			errorMessage: "missing opening heredoc marker on line #1; must contain only alpha-numeric characters, dashes and underscores; got empty string",
+		},
+		{
 			input: []byte(`heredoc <<<EOF
 	content
 	EOF same-line-arg

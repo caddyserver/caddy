@@ -154,6 +154,10 @@ func (l *lexer) next() (bool, error) {
 			// we reset the val because the heredoc is syntax we don't
 			// want to keep.
 			if ch == '\n' {
+				if len(val) == 2 {
+					return false, fmt.Errorf("missing opening heredoc marker on line #%d; must contain only alpha-numeric characters, dashes and underscores; got empty string", l.line)
+				}
+
 				// check if there's too many <
 				if string(val[:3]) == "<<<" {
 					return false, fmt.Errorf("too many '<' for heredoc on line #%d; only use two, for example <<END", l.line)
