@@ -391,22 +391,22 @@ func (d *Dispenser) Reset() {
 // an argument.
 func (d *Dispenser) ArgErr() error {
 	if d.Val() == "{" {
-		return d.Err("Unexpected token '{', expecting argument")
+		return d.Err("unexpected token '{', expecting argument")
 	}
-	return d.Errf("Wrong argument count or unexpected line ending after '%s'", d.Val())
+	return d.Errf("wrong argument count or unexpected line ending after '%s'", d.Val())
 }
 
 // SyntaxErr creates a generic syntax error which explains what was
 // found and what was expected.
 func (d *Dispenser) SyntaxErr(expected string) error {
-	msg := fmt.Sprintf("%s:%d - Syntax error: Unexpected token '%s', expecting '%s', import chain: ['%s']", d.File(), d.Line(), d.Val(), expected, strings.Join(d.Token().imports, "','"))
+	msg := fmt.Sprintf("syntax error: unexpected token '%s', expecting '%s', at %s:%d import chain: ['%s']", d.Val(), expected, d.File(), d.Line(), strings.Join(d.Token().imports, "','"))
 	return errors.New(msg)
 }
 
 // EOFErr returns an error indicating that the dispenser reached
 // the end of the input when searching for the next token.
 func (d *Dispenser) EOFErr() error {
-	return d.Errf("Unexpected EOF")
+	return d.Errf("unexpected EOF")
 }
 
 // Err generates a custom parse-time error with a message of msg.
@@ -421,7 +421,10 @@ func (d *Dispenser) Errf(format string, args ...any) error {
 
 // WrapErr takes an existing error and adds the Caddyfile file and line number.
 func (d *Dispenser) WrapErr(err error) error {
-	return fmt.Errorf("%s:%d - Error during parsing: %w, import chain: ['%s']", d.File(), d.Line(), err, strings.Join(d.Token().imports, "','"))
+	if len(d.Token().imports) > 0 {
+		return fmt.Errorf("%w, at %s:%d import chain ['%s']", err, d.File(), d.Line(), strings.Join(d.Token().imports, "','"))
+	}
+	return fmt.Errorf("%w, at %s:%d", err, d.File(), d.Line())
 }
 
 // Delete deletes the current token and returns the updated slice
