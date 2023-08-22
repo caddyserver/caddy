@@ -319,6 +319,9 @@ func globalDefaultReplacements(key string) (any, bool) {
 	case "time.now":
 		return nowFunc(), true
 	case "time.now.http":
+		// According to the comment for http.TimeFormat, the timezone must be in UTC
+		// to generate the correct format.
+		// https://github.com/caddyserver/caddy/issues/5773
 		return nowFunc().UTC().Format(http.TimeFormat), true
 	case "time.now.common_log":
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
