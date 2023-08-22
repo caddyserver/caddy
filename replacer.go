@@ -319,7 +319,7 @@ func globalDefaultReplacements(key string) (any, bool) {
 	case "time.now":
 		return nowFunc(), true
 	case "time.now.http":
-		return nowFunc().Format(http.TimeFormat), true
+		return nowFunc().UTC().Format(http.TimeFormat), true
 	case "time.now.common_log":
 		return nowFunc().Format("02/Jan/2006:15:04:05 -0700"), true
 	case "time.now.year":
