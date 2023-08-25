@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"go.uber.org/zap"
@@ -28,6 +29,12 @@ import (
 func init() {
 	caddy.RegisterModule(adminAPI{})
 }
+
+var (
+	caInfoPathPattern     = regexp.MustCompile(`^ca/[^/]+$`)
+	getCertPathPattern    = regexp.MustCompile(`^ca/[^/]+/certificates$`)
+	produceCSRPathPattern = regexp.MustCompile(`^ca/[^/]+/csr$`)
+)
 
 // adminAPI is a module that serves PKI endpoints to retrieve
 // information about the CAs being managed by Caddy.
@@ -71,12 +78,13 @@ func (a *adminAPI) Routes() []caddy.AdminRoute {
 // handleAPIEndpoints routes API requests within adminPKIEndpointBase.
 func (a *adminAPI) handleAPIEndpoints(w http.ResponseWriter, r *http.Request) error {
 	uri := strings.TrimPrefix(r.URL.Path, "/pki/")
-	parts := strings.Split(uri, "/")
 	switch {
-	case len(parts) == 2 && parts[0] == "ca" && parts[1] != "":
+	case caInfoPathPattern.MatchString(uri):
 		return a.handleCAInfo(w, r)
-	case len(parts) == 3 && parts[0] == "ca" && parts[1] != "" && parts[2] == "certificates":
+	case getCertPathPattern.MatchString(uri):
 		return a.handleCACerts(w, r)
+	case produceCSRPathPattern.MatchString(uri):
+		return a.handleCSRGeneration(w, r)
 	}
 	return caddy.APIError{
 		HTTPStatus: http.StatusNotFound,
@@ -165,6 +173,66 @@ func (a *adminAPI) handleCACerts(w http.ResponseWriter, r *http.Request) error {
 		_, _ = w.Write(rootCert)
 	}
 
+	return nil
+}
+
+type csrRequest struct {
+	// SANs is a list of subject alternative names for the certificate.
+	SANs []string `json:"sans"`
+}
+
+func (a *adminAPI) handleCSRGeneration(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		return caddy.APIError{
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed: %v", r.Method),
+		}
+	}
+
+	ca, err := a.getCAFromAPIRequestPath(r)
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        err,
+		}
+	}
+
+	// Decode the CSR request from the request body
+	var csrReq csrRequest
+	if err := json.NewDecoder(r.Body).Decode(&csrReq); err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("failed to decode CSR request: %v", err),
+		}
+	}
+	// Generate the CSR
+	csr, err := ca.generateCSR(csrReq.SANs)
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        fmt.Errorf("failed to generate CSR: %v", err),
+		}
+	}
+	if r.Header.Get("Accept") != "application/pkcs10" {
+		return caddy.APIError{
+			HTTPStatus: http.StatusNotAcceptable,
+			Err:        fmt.Errorf("only accept application/pkcs10"),
+		}
+	}
+	bs, err := pemEncode("CERTIFICATE REQUEST", csr.Raw)
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        fmt.Errorf("failed to encode CSR to PEM: %v", err),
+		}
+	}
+	w.Header().Set("Content-Type", "application/pkcs10")
+	if _, err := w.Write(bs); err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        fmt.Errorf("failed to write CSR response: %v", err),
+		}
+	}
 	return nil
 }
 

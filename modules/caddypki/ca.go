@@ -29,6 +29,8 @@ import (
 	"github.com/smallstep/certificates/authority"
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/truststore"
+	"go.step.sm/crypto/keyutil"
+	"go.step.sm/crypto/x509util"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -394,6 +396,10 @@ func (ca CA) storageKeyIntermediateKey() string {
 	return path.Join(ca.storageKeyCAPrefix(), "intermediate.key")
 }
 
+func (ca CA) storageKeyCSRKey() string {
+	return path.Join(ca.storageKeyCAPrefix(), "csr.key")
+}
+
 func (ca CA) newReplacer() *caddy.Replacer {
 	repl := caddy.NewReplacer()
 	repl.Set("pki.ca.name", ca.Name)
@@ -419,6 +425,40 @@ func (ca CA) installRoot() error {
 		truststore.WithFirefox(),
 		truststore.WithJava(),
 	)
+}
+
+func (ca CA) generateCSR(sans []string) (csr *x509.CertificateRequest, err error) {
+	var signer crypto.Signer
+	csrKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyCSRKey())
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("loading csr key: %v", err)
+		}
+
+		signer, err = keyutil.GenerateDefaultSigner()
+		if err != nil {
+			return nil, err
+		}
+		csrKeyPEM, err = certmagic.PEMEncodePrivateKey(signer)
+		if err != nil {
+			return nil, fmt.Errorf("encoding csr key: %v", err)
+		}
+		if err := ca.storage.Store(ca.ctx, ca.storageKeyCSRKey(), csrKeyPEM); err != nil {
+			return nil, fmt.Errorf("saving csr key: %v", err)
+		}
+	}
+	if signer == nil {
+		signer, err = certmagic.PEMDecodePrivateKey(csrKeyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("decoding root key: %v", err)
+		}
+	}
+
+	csr, err = x509util.CreateCertificateRequest("", sans, signer)
+	if err != nil {
+		return nil, err
+	}
+	return csr, nil
 }
 
 // AuthorityConfig is used to help a CA configure
