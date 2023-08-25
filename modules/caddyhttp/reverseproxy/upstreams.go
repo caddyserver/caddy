@@ -114,7 +114,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	cached := srvs[suAddr]
 	srvsMu.RUnlock()
 	if cached.isFresh() {
-		return cached.upstreams, nil
+		return allNew(cached.upstreams), nil
 	}
 
 	// otherwise, obtain a write-lock to update the cached value
@@ -126,7 +126,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// have refreshed it in the meantime before we re-obtained our lock
 	cached = srvs[suAddr]
 	if cached.isFresh() {
-		return cached.upstreams, nil
+		return allNew(cached.upstreams), nil
 	}
 
 	su.logger.Debug("refreshing SRV upstreams",
@@ -145,7 +145,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		su.logger.Warn("SRV records filtered", zap.Error(err))
 	}
 
-	upstreams := make([]*Upstream, len(records))
+	upstreams := make([]Upstream, len(records))
 	for i, rec := range records {
 		su.logger.Debug("discovered SRV record",
 			zap.String("target", rec.Target),
@@ -153,7 +153,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 			zap.Uint16("priority", rec.Priority),
 			zap.Uint16("weight", rec.Weight))
 		addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
-		upstreams[i] = &Upstream{Dial: addr}
+		upstreams[i] = Upstream{Dial: addr}
 	}
 
 	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
@@ -170,7 +170,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams:    upstreams,
 	}
 
-	return upstreams, nil
+	return allNew(upstreams), nil
 }
 
 func (su SRVUpstreams) String() string {
@@ -206,7 +206,7 @@ func (SRVUpstreams) formattedAddr(service, proto, name string) string {
 type srvLookup struct {
 	srvUpstreams SRVUpstreams
 	freshness    time.Time
-	upstreams    []*Upstream
+	upstreams    []Upstream
 }
 
 func (sl srvLookup) isFresh() bool {
@@ -325,7 +325,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	cached := aAaaa[auStr]
 	aAaaaMu.RUnlock()
 	if cached.isFresh() {
-		return cached.upstreams, nil
+		return allNew(cached.upstreams), nil
 	}
 
 	// otherwise, obtain a write-lock to update the cached value
@@ -337,7 +337,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// have refreshed it in the meantime before we re-obtained our lock
 	cached = aAaaa[auStr]
 	if cached.isFresh() {
-		return cached.upstreams, nil
+		return allNew(cached.upstreams), nil
 	}
 
 	name := repl.ReplaceAll(au.Name, "")
@@ -348,15 +348,15 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		return nil, err
 	}
 
-	upstreams := make([]*Upstream, len(ips))
+	upstreams := make([]Upstream, len(ips))
 	for i, ip := range ips {
-		upstreams[i] = &Upstream{
+		upstreams[i] = Upstream{
 			Dial: net.JoinHostPort(ip.String(), port),
 		}
 	}
 
 	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(srvs) >= 100 {
+	if cached.freshness.IsZero() && len(aAaaa) >= 100 {
 		for randomKey := range aAaaa {
 			delete(aAaaa, randomKey)
 			break
@@ -369,7 +369,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		upstreams:  upstreams,
 	}
 
-	return upstreams, nil
+	return allNew(upstreams), nil
 }
 
 func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port) }
@@ -377,7 +377,7 @@ func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port)
 type aLookup struct {
 	aUpstreams AUpstreams
 	freshness  time.Time
-	upstreams  []*Upstream
+	upstreams  []Upstream
 }
 
 func (al aLookup) isFresh() bool {
@@ -481,6 +481,14 @@ func (u *UpstreamResolver) ParseAddresses() error {
 		u.netAddrs = append(u.netAddrs, addr)
 	}
 	return nil
+}
+
+func allNew(upstreams []Upstream) []*Upstream {
+	results := make([]*Upstream, len(upstreams))
+	for i := range upstreams {
+		results[i] = &Upstream{Dial: upstreams[i].Dial}
+	}
+	return results
 }
 
 var (

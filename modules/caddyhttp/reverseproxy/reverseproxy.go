@@ -356,6 +356,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.HealthChecks != nil {
 		// set defaults on passive health checks, if necessary
 		if h.HealthChecks.Passive != nil {
+			h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
 			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
 				h.HealthChecks.Passive.MaxFails = 1
 			}
@@ -1077,12 +1078,11 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 	// without MaxRequests), copy the value into this upstream, since the
 	// value in the upstream (MaxRequests) is what is used during
 	// availability checks
-	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-		h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
-		if h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
-			upstream.MaxRequests == 0 {
-			upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
-		}
+	if h.HealthChecks != nil &&
+		h.HealthChecks.Passive != nil &&
+		h.HealthChecks.Passive.UnhealthyRequestCount > 0 &&
+		upstream.MaxRequests == 0 {
+		upstream.MaxRequests = h.HealthChecks.Passive.UnhealthyRequestCount
 	}
 
 	// upstreams need independent access to the passive
