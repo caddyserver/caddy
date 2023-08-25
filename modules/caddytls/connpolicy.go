@@ -301,8 +301,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// client authentication
 	if p.ClientAuthentication != nil {
-		err := p.ClientAuthentication.ConfigureTLSConfig(cfg)
-		if err != nil {
+		if err := p.ClientAuthentication.provision(ctx); err != nil {
+			return fmt.Errorf("provisioning client CA: %v", err)
+		}
+		if err := p.ClientAuthentication.ConfigureTLSConfig(cfg); err != nil {
 			return fmt.Errorf("configuring TLS client authentication: %v", err)
 		}
 	}
@@ -354,6 +356,9 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
+	CARaw json.RawMessage `json:"ca" caddy:"namespace=tls.client_auth.ca inline_key=provider"`
+	ca    CA
+
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
@@ -399,13 +404,38 @@ type ClientAuthentication struct {
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
 }
 
+func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
+	if len(clientauth.CARaw) > 0 && (len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0) {
+		return fmt.Errorf("conflicting config for client authentication trust CA")
+	}
+	if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0 {
+		clientauth.ca = FileCAPool{
+			TrustedCACerts:        clientauth.TrustedCACerts,
+			TrustedCACertPEMFiles: clientauth.TrustedCACertPEMFiles,
+		}
+		return nil
+	}
+	if clientauth.CARaw == nil {
+		return nil
+	}
+	caRaw, err := ctx.LoadModule(clientauth, "CARaw")
+	if err != nil {
+		return err
+	}
+	ca := caRaw.(CA)
+	clientauth.ca = ca
+
+	return nil
+}
+
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
 	return len(clientauth.TrustedCACerts) > 0 ||
 		len(clientauth.TrustedCACertPEMFiles) > 0 ||
 		len(clientauth.TrustedLeafCerts) > 0 || // TODO: DEPRECATED
 		len(clientauth.VerifiersRaw) > 0 ||
-		len(clientauth.Mode) > 0
+		len(clientauth.Mode) > 0 ||
+		clientauth.CARaw != nil
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
@@ -434,7 +464,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		// otherwise, set a safe default mode
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
-			len(clientauth.TrustedLeafCerts) > 0 {
+			len(clientauth.TrustedLeafCerts) > 0 ||
+			clientauth.CARaw != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -442,23 +473,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
-	if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0 {
-		caPool := x509.NewCertPool()
-		for _, clientCAString := range clientauth.TrustedCACerts {
-			clientCA, err := decodeBase64DERCert(clientCAString)
-			if err != nil {
-				return fmt.Errorf("parsing certificate: %v", err)
-			}
-			caPool.AddCert(clientCA)
-		}
-		for _, pemFile := range clientauth.TrustedCACertPEMFiles {
-			pemContents, err := os.ReadFile(pemFile)
-			if err != nil {
-				return fmt.Errorf("reading %s: %v", pemFile, err)
-			}
-			caPool.AppendCertsFromPEM(pemContents)
-		}
-		cfg.ClientCAs = caPool
+	if clientauth.ca != nil {
+		cfg.ClientCAs = clientauth.ca.CertPool()
 	}
 
 	// TODO: DEPRECATED: Only here for backwards compatibility.
