@@ -73,6 +73,7 @@ jobs:
 
     - name: Print Go version and environment
       id: vars
+      shell: bash
       run: |
         printf "Using go at: $(which go)\n"
         printf "Go version: $(go version)\n"
