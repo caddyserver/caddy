@@ -113,7 +113,7 @@ archives:
       {{- with .Mips }}_{{ . }}{{ end }}
       {{- if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
   
-  # packge the 'caddy-build' directory into a tarball,
+  # package the 'caddy-build' directory into a tarball,
   # allowing users to build the exact same set of files as ours.
   - id: source
     meta: true

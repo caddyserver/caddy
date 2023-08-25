@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/alecthomas/chroma/v2 v2.7.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.19.1
+	github.com/caddyserver/certmagic v0.19.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/google/cel-go v0.15.1
@@ -17,7 +17,7 @@ require (
 	github.com/mastercactapus/proxyprotocol v0.0.4
 	github.com/mholt/acmez v1.2.0
 	github.com/prometheus/client_golang v1.14.0
-	github.com/quic-go/quic-go v0.37.4
+	github.com/quic-go/quic-go v0.38.0
 	github.com/smallstep/certificates v0.24.3-rc.5
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.12.1
@@ -58,7 +58,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-20 v0.3.1 // indirect
+	github.com/quic-go/qtls-go1-20 v0.3.2 // indirect
 	github.com/smallstep/go-attestation v0.4.4-0.20230509120429-e17291421738 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/blake3 v0.2.3 // indirect
