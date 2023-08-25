@@ -356,7 +356,7 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
-	CARaw json.RawMessage `json:"ca" caddy:"namespace=tls.client_auth.ca inline_key=provider"`
+	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.client_auth.ca inline_key=provider"`
 	ca    CA
 
 	// A list of base64 DER-encoded CA certificates
