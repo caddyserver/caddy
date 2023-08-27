@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -369,10 +370,11 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Filter filters the input field.
 func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		for i, s := range array {
-			array[i] = m.processQueryString(s)
+	newArray := slices.Clone(array)
+		for i, s := range newArray {
+			newArray[i] = m.processQueryString(s)
 		}
-	} else {
+		in.Interface = newArray	} else {
 		in.String = m.processQueryString(in.String)
 	}
 
