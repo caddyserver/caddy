@@ -66,7 +66,7 @@ respond with a file listing.`,
 				Short:   "Exports the default file browser template",
 				Example: "caddy file-server export-template > browse.html",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					_, err := io.WriteString(os.Stdout, defaultBrowseTemplate)
+					_, err := io.WriteString(os.Stdout, BrowseTemplate)
 					return err
 				},
 			})
