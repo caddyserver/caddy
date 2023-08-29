@@ -100,12 +100,15 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = hash(s)
+			newArray[i] = hash(s)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = hash(in.String)
 	}
+
 	return in
 }
 
@@ -219,9 +222,11 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = m.mask(s)
+			newArray[i] = m.mask(s)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = m.mask(in.String)
 	}
@@ -580,9 +585,11 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = f.regexp.ReplaceAllString(s, f.Value)
+			newArray[i] = f.regexp.ReplaceAllString(s, f.Value)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = f.regexp.ReplaceAllString(in.String, f.Value)
 	}
