@@ -373,9 +373,23 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
-	u, err := url.Parse(in.String)
+	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
+		for i, s := range array {
+			newArray[i] = m.processQueryString(s)
+		}
+		in.Interface = newArray
+	} else {
+		in.String = m.processQueryString(in.String)
+	}
+
+	return in
+}
+
+func (m QueryFilter) processQueryString(s string) string {
+	u, err := url.Parse(s)
 	if err != nil {
-		return in
+		return s
 	}
 
 	q := u.Query()
@@ -397,9 +411,7 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	}
 
 	u.RawQuery = q.Encode()
-	in.String = u.String()
-
-	return in
+	return u.String()
 }
 
 type cookieFilterAction struct {
