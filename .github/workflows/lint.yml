@@ -36,6 +36,9 @@ jobs:
 
           # Workaround for https://github.com/golangci/golangci-lint-action/issues/135
           skip-pkg-cache: true
+      
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3

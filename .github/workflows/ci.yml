@@ -61,12 +61,6 @@ jobs:
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
-    
-    - name: Run govulncheck   
-      uses: golang/govulncheck-action@v1
-      with:
-        go-version-input: ${{ matrix.GO_SEMVER }}
-        go-package: ./...
 
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
