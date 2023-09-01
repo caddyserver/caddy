@@ -92,14 +92,7 @@ func (st ServerType) Setup(
 
 	for _, sb := range originalServerBlocks {
 		for _, segment := range sb.block.Segments {
-			for i := 0; i < len(segment); i++ {
-				// simple string replacements
-				segment[i].Text = replacer.simple.Replace(segment[i].Text)
-				// complex regexp replacements
-				for _, r := range replacer.complex {
-					segment[i].Text = r.search.ReplaceAllString(segment[i].Text, r.replace)
-				}
-			}
+			replacer.ReplaceSegmentsWithFullPlaceholder(&segment)
 		}
 
 		if len(sb.block.Keys) == 0 {
@@ -459,14 +452,7 @@ func (ServerType) extractNamedRoutes(
 		wholeSegment := caddyfile.Segment{}
 		for _, segment := range sb.block.Segments {
 			// Replace user-defined placeholder shorthands in extracted named routes
-			for i := 0; i < len(segment); i++ {
-				// simple string replacements
-				segment[i].Text = replacer.simple.Replace(segment[i].Text)
-				// complex regexp replacements
-				for _, r := range replacer.complex {
-					segment[i].Text = r.search.ReplaceAllString(segment[i].Text, r.replace)
-				}
-			}
+			replacer.ReplaceSegmentsWithFullPlaceholder(&segment)
 
 			// zip up all the segments since ParseSegmentAsSubroute
 			// was designed to take a directive+
