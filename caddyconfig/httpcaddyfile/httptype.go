@@ -112,6 +112,18 @@ func (st ServerType) Setup(
 		{regexp.MustCompile(`{file_match\.([\w-]*)}`), "{http.matchers.file.$1}"},
 	}
 
+	// Replace placeholder shorthands in extracted named routes
+	for _, namedRoutes := range options["named_routes"].(map[string]*caddyhttp.Route) {
+		for i := 0; i < len(namedRoutes.HandlersRaw); i++ {
+			// simple string replacements
+			namedRoutes.HandlersRaw[i] = []byte(replacer.Replace(string(namedRoutes.HandlersRaw[i])))
+			// complex regexp replacements
+			for _, r := range regexpReplacements {
+				namedRoutes.HandlersRaw[i] = []byte(r.search.ReplaceAllString(string(namedRoutes.HandlersRaw[i]), r.replace))
+			}
+		}
+	}
+
 	for _, sb := range originalServerBlocks {
 		for _, segment := range sb.block.Segments {
 			for i := 0; i < len(segment); i++ {
