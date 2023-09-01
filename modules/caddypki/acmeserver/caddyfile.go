@@ -32,6 +32,7 @@ func init() {
 //		ca        <id>
 //		lifetime  <duration>
 //		resolvers <addresses...>
+//		challenges <challenges...>
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	if !h.Next() {
@@ -81,6 +82,10 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				if len(acmeServer.Resolvers) == 0 {
 					return nil, h.Errf("must specify at least one resolver address")
 				}
+			case "challenges":
+				acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
+			default:
+				return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
 			}
 		}
 	}
