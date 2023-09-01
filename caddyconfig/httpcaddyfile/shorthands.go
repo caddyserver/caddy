@@ -3,6 +3,8 @@ package httpcaddyfile
 import (
 	"regexp"
 	"strings"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 type ComplexShorthandReplacer struct {
@@ -72,5 +74,20 @@ func placeholderShorthands() []string {
 		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
 		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
 		"{client_ip}", "{http.vars.client_ip}",
+	}
+}
+
+// ReplaceSegmentsWithFullPlaceholder replaces shorthand placeholder to its full placeholder, understandable by Caddy.
+func (s ShorthandReplacer) ReplaceSegmentsWithFullPlaceholder(segment *caddyfile.Segment) {
+	if segment != nil {
+		for i := 0; i < len(*segment); i++ {
+			// simple string replacements
+			// (*segment)[i].Text
+			(*segment)[i].Text = s.simple.Replace((*segment)[i].Text)
+			// complex regexp replacements
+			for _, r := range s.complex {
+				(*segment)[i].Text = r.search.ReplaceAllString((*segment)[i].Text, r.replace)
+			}
+		}
 	}
 }
