@@ -977,9 +977,11 @@ func (h Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
+	logger.Debug("wrote header")
 
-	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
+	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	logger.Debug("closed response body from upstream", zap.Error(errClose))
 	if err != nil {
 		// we're streaming the response and we've already written headers, so
 		// there's nothing an error handler can do to recover at this point;
@@ -1013,6 +1015,8 @@ func (h Handler) finalizeResponse(
 			rw.Header().Add(k, v)
 		}
 	}
+
+	logger.Debug("response finalized")
 
 	return nil
 }
