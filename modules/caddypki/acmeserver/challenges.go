@@ -31,7 +31,7 @@ func (c *ACMEChallenge) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	*c = ACMEChallenge(strings.ToLower(s))
+	*c = ACMEChallenge(strings.ToLower(strings.TrimSpace(s)))
 	return nil
 }
 
@@ -51,6 +51,7 @@ func (c ACMEChallenges) validate() error {
 	}
 	return nil
 }
+
 func (c ACMEChallenges) toSmallstepType() []provisioner.ACMEChallenge {
 	if len(c) == 0 {
 		return nil
@@ -61,6 +62,7 @@ func (c ACMEChallenges) toSmallstepType() []provisioner.ACMEChallenge {
 	}
 	return ac
 }
+
 func stringToChallenges(chs []string) ACMEChallenges {
 	challenges := make(ACMEChallenges, len(chs))
 	for i, ch := range chs {
