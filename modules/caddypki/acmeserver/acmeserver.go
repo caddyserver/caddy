@@ -93,7 +93,7 @@ type Handler struct {
 
 	Challenges ACMEChallenges `json:"challenges,omitempty"`
 
-	Policy Policy `json:"policy,omitempty"`
+	Policy *Policy `json:"policy,omitempty"`
 
 	logger    *zap.Logger
 	resolvers []caddy.NetworkAddress

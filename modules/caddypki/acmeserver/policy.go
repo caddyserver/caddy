@@ -18,8 +18,8 @@ type Policy struct {
 	AllowWildcardNames bool  `json:"allow_wildcard_names,omitempty"`
 }
 
-func (p Policy) normalizeAllowRules() *policy.X509NameOptions {
-	if (p.Allow == nil) || (len(p.Allow.CommonNames) == 0 && len(p.Allow.DNSDomains) == 0 && len(p.Allow.IPRanges) == 0 && len(p.Allow.URIDomains) == 0) {
+func (p *Policy) normalizeAllowRules() *policy.X509NameOptions {
+	if (p == nil) || (p.Allow == nil) || (len(p.Allow.CommonNames) == 0 && len(p.Allow.DNSDomains) == 0 && len(p.Allow.IPRanges) == 0 && len(p.Allow.URIDomains) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
@@ -30,8 +30,8 @@ func (p Policy) normalizeAllowRules() *policy.X509NameOptions {
 	}
 }
 
-func (p Policy) normalizeDenyRules() *policy.X509NameOptions {
-	if (p.Deny == nil) || (len(p.Deny.CommonNames) == 0 && len(p.Deny.DNSDomains) == 0 && len(p.Deny.IPRanges) == 0 && len(p.Deny.URIDomains) == 0) {
+func (p *Policy) normalizeDenyRules() *policy.X509NameOptions {
+	if (p == nil) || (p.Deny == nil) || (len(p.Deny.CommonNames) == 0 && len(p.Deny.DNSDomains) == 0 && len(p.Deny.IPRanges) == 0 && len(p.Deny.URIDomains) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
@@ -42,11 +42,11 @@ func (p Policy) normalizeDenyRules() *policy.X509NameOptions {
 	}
 }
 
-func (p Policy) normalizeRules() *provisioner.X509Options {
+func (p *Policy) normalizeRules() *provisioner.X509Options {
 	allow := p.normalizeAllowRules()
 	deny := p.normalizeDenyRules()
 
-	if allow == nil && deny == nil && !p.AllowWildcardNames {
+	if p == nil || allow == nil && deny == nil && !p.AllowWildcardNames {
 		return nil
 	}
 
