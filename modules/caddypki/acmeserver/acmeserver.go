@@ -93,6 +93,8 @@ type Handler struct {
 
 	Challenges ACMEChallenges `json:"challenges,omitempty"`
 
+	Policy Policy `json:"policy,omitempty"`
+
 	logger    *zap.Logger
 	resolvers []caddy.NetworkAddress
 	ctx       caddy.Context
@@ -162,7 +164,10 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 				&provisioner.ACME{
 					Name:       ash.CA,
 					Challenges: ash.Challenges.toSmallstepType(),
-					Type:       provisioner.TypeACME.String(),
+					Options: &provisioner.Options{
+						X509: ash.Policy.normalizeRules(),
+					},
+					Type: provisioner.TypeACME.String(),
 					Claims: &provisioner.Claims{
 						MinTLSDur:     &provisioner.Duration{Duration: 5 * time.Minute},
 						MaxTLSDur:     &provisioner.Duration{Duration: 24 * time.Hour * 365},
