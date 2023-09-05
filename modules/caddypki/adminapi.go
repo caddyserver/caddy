@@ -24,6 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/google/uuid"
 )
 
 func init() {
@@ -177,6 +178,29 @@ func (a *adminAPI) handleCACerts(w http.ResponseWriter, r *http.Request) error {
 }
 
 type csrRequest struct {
+	// Custom name assigned to the CSR key. If empty, UUID is generated and assigned.
+	ID string `json:"id,omitempty"`
+
+	// Customization knobs of the generated/loaded key, if desired.
+	// If empty, sane defaults will be managed internally without exposing their details
+	// to the user. At the moment, the default parameters are:
+	// {
+	// 	"type": "EC",
+	// 	"curve": "P-256"
+	// }
+	Key *struct {
+		// The key type to be used for signing the CSR. The possible types are:
+		// EC, RSA, and OKP.
+		Type string `json:"type"`
+
+		// The curve to use with key types EC and OKP.
+		// If the Type is OKP, then acceptable curves are: Ed25519, or X25519
+		// If the Type is EC, then acceptable curves are: P-256, P-384, or P-521
+		Curve string `json:"curve,omitempty"`
+
+		// Only used with RSA keys and accepts minimum of 2048.
+		Size int `json:"size,omitempty"`
+	} `json:"key,omitempty"`
 	// SANs is a list of subject alternative names for the certificate.
 	SANs []string `json:"sans"`
 }
@@ -205,8 +229,13 @@ func (a *adminAPI) handleCSRGeneration(w http.ResponseWriter, r *http.Request) e
 			Err:        fmt.Errorf("failed to decode CSR request: %v", err),
 		}
 	}
+	csrReq.ID = strings.TrimSpace(csrReq.ID)
+	if len(csrReq.ID) == 0 {
+		csrReq.ID = uuid.New().String()
+	}
+
 	// Generate the CSR
-	csr, err := ca.generateCSR(csrReq.SANs)
+	csr, err := ca.generateCSR(csrReq)
 	if err != nil {
 		return caddy.APIError{
 			HTTPStatus: http.StatusInternalServerError,
@@ -227,6 +256,8 @@ func (a *adminAPI) handleCSRGeneration(w http.ResponseWriter, r *http.Request) e
 		}
 	}
 	w.Header().Set("Content-Type", "application/pkcs10")
+	w.Header().Set("content-disposition", fmt.Sprintf(`attachment; filename="%s"`, csrReq.ID))
+
 	if _, err := w.Write(bs); err != nil {
 		return caddy.APIError{
 			HTTPStatus: http.StatusInternalServerError,
