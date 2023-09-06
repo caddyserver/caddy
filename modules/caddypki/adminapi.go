@@ -21,10 +21,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/google/uuid"
 )
 
 func init() {
