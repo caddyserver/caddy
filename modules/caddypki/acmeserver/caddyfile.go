@@ -84,6 +84,61 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				}
 			case "challenges":
 				acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
+			case "allow_wildcard_names":
+				if acmeServer.Policy == nil {
+					acmeServer.Policy = &Policy{}
+				}
+				acmeServer.Policy.AllowWildcardNames = true
+			case "allow":
+				r := &Rule{}
+				for h.Next() {
+					for h.NextBlock(h.Nesting() - 1) {
+						if h.CountRemainingArgs() == 0 {
+							return nil, h.ArgErr() // TODO:
+						}
+						switch h.Val() {
+						case "common_names":
+							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
+						case "domains":
+							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
+						case "ip_ranges":
+							r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+						case "uri_domains":
+							r.URIDomains = append(r.URIDomains, h.RemainingArgs()...)
+						default:
+							return nil, h.Errf("unrecognized 'allow' subdirective: %s", h.Val())
+						}
+					}
+				}
+				if acmeServer.Policy == nil {
+					acmeServer.Policy = &Policy{}
+				}
+				acmeServer.Policy.Allow = r
+			case "deny":
+				r := &Rule{}
+				for h.Next() {
+					for h.NextBlock(h.Nesting() - 1) {
+						if h.CountRemainingArgs() == 0 {
+							return nil, h.ArgErr() // TODO:
+						}
+						switch h.Val() {
+						case "common_names":
+							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
+						case "domains":
+							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
+						case "ip_ranges":
+							r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+						case "uri_domains":
+							r.URIDomains = append(r.URIDomains, h.RemainingArgs()...)
+						default:
+							return nil, h.Errf("unrecognized 'deny' subdirective: %s", h.Val())
+						}
+					}
+				}
+				if acmeServer.Policy == nil {
+					acmeServer.Policy = &Policy{}
+				}
+				acmeServer.Policy.Deny = r
 			default:
 				return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
 			}
