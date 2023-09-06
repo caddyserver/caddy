@@ -300,8 +300,12 @@ func loadEnvFromFile(envFile string) error {
 	}
 
 	for k, v := range envMap {
-		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("setting environment variables: %v", err)
+		// do not overwrite existing environment variables
+		_, exists := os.LookupEnv(k)
+		if !exists {
+			if err := os.Setenv(k, v); err != nil {
+				return fmt.Errorf("setting environment variables: %v", err)
+			}
 		}
 	}
 
@@ -373,11 +377,7 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 			val = strings.TrimSuffix(val, quote)
 		}
 
-		// do not overwrite existing environment variables
-		_, exists := os.LookupEnv(key)
-		if !exists {
-			envMap[key] = val
-		}
+		envMap[key] = val
 	}
 
 	if err := scanner.Err(); err != nil {
