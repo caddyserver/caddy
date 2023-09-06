@@ -160,15 +160,15 @@ func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")
-	runCmdLoadEnvfileFlag := fl.String("envfile")
+	runCmdLoadEnvfileFlag, _ := fl.GetStringSlice("envfile")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdWatchFlag := fl.Bool("watch")
 	runCmdPidfileFlag := fl.String("pidfile")
 	runCmdPingbackFlag := fl.String("pingback")
 
 	// load all additional envs as soon as possible
-	if runCmdLoadEnvfileFlag != "" {
-		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
+	for _, envFile := range runCmdLoadEnvfileFlag {
+		if err := loadEnvFromFile(envFile); err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("loading additional environment variables: %v", err)
 		}
@@ -497,11 +497,11 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
-	runCmdLoadEnvfileFlag := fl.String("envfile")
+	runCmdLoadEnvfileFlag, _ := fl.GetStringSlice("envfile")
 
 	// load all additional envs as soon as possible
-	if runCmdLoadEnvfileFlag != "" {
-		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
+	for _, envFile := range runCmdLoadEnvfileFlag {
+		if err := loadEnvFromFile(envFile); err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("loading additional environment variables: %v", err)
 		}
