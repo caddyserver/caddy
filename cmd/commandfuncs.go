@@ -160,11 +160,18 @@ func cmdRun(fl Flags) (int, error) {
 	runCmdConfigFlag := fl.String("config")
 	runCmdConfigAdapterFlag := fl.String("adapter")
 	runCmdResumeFlag := fl.Bool("resume")
-	runCmdLoadEnvfileFlag, _ := fl.GetStringSlice("envfile")
 	runCmdPrintEnvFlag := fl.Bool("environ")
 	runCmdWatchFlag := fl.Bool("watch")
 	runCmdPidfileFlag := fl.String("pidfile")
 	runCmdPingbackFlag := fl.String("pingback")
+
+	var err error
+	var runCmdLoadEnvfileFlag []string
+	runCmdLoadEnvfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading envfile flag: %v", err)
+	}
 
 	// load all additional envs as soon as possible
 	for _, envFile := range runCmdLoadEnvfileFlag {
@@ -181,7 +188,6 @@ func cmdRun(fl Flags) (int, error) {
 
 	// load the config, depending on flags
 	var config []byte
-	var err error
 	if runCmdResumeFlag {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if os.IsNotExist(err) {
@@ -497,7 +503,14 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 func cmdValidateConfig(fl Flags) (int, error) {
 	validateCmdConfigFlag := fl.String("config")
 	validateCmdAdapterFlag := fl.String("adapter")
-	runCmdLoadEnvfileFlag, _ := fl.GetStringSlice("envfile")
+
+	var err error
+	var runCmdLoadEnvfileFlag []string
+	runCmdLoadEnvfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading envfile flag: %v", err)
+	}
 
 	// load all additional envs as soon as possible
 	for _, envFile := range runCmdLoadEnvfileFlag {
@@ -508,7 +521,6 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	}
 
 	// use default config and ensure a config file is specified
-	var err error
 	validateCmdConfigFlag, err = configFileWithRespectToDefault(caddy.Log(), validateCmdConfigFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
