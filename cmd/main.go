@@ -373,7 +373,11 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 			val = strings.TrimSuffix(val, quote)
 		}
 
-		envMap[key] = val
+		// do not overwrite existing environment variables
+		_, exists := os.LookupEnv(key)
+		if !exists {
+			envMap[key] = val
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
