@@ -144,3 +144,68 @@ func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
+func TestServer_TrustedRealClientIP_NoTrustedHeaders(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	ip := trustedRealClientIP(req, []string{}, "192.0.2.1")
+
+	assert.Equal(t, ip, "192.0.2.1")
+}
+
+func TestServer_TrustedRealClientIP_OneTrustedHeaderEmpty(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "192.0.2.1")
+}
+
+func TestServer_TrustedRealClientIP_OneTrustedHeaderInvalid(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("X-Forwarded-For", "not, an, ip")
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "192.0.2.1")
+}
+
+func TestServer_TrustedRealClientIP_OneTrustedHeaderValid(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "10.0.0.1")
+}
+
+func TestServer_TrustedRealClientIP_OneTrustedHeaderValidArray(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("X-Forwarded-For", "1.1.1.1, 2.2.2.2, 3.3.3.3")
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "1.1.1.1")
+}
+
+func TestServer_TrustedRealClientIP_SkipsInvalidIps(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("X-Forwarded-For", "not an ip, bad bad, 10.0.0.1")
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "10.0.0.1")
+}
+
+func TestServer_TrustedRealClientIP_MultipleTrustedHeaderValidArray(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("Real-Client-IP", "1.1.1.1, 2.2.2.2, 3.3.3.3")
+	req.Header.Set("X-Forwarded-For", "3.3.3.3, 4.4.4.4")
+	ip1 := trustedRealClientIP(req, []string{"X-Forwarded-For", "Real-Client-IP"}, "192.0.2.1")
+	ip2 := trustedRealClientIP(req, []string{"Real-Client-IP", "X-Forwarded-For"}, "192.0.2.1")
+	ip3 := trustedRealClientIP(req, []string{"Missing-Header-IP", "Real-Client-IP", "X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip1, "3.3.3.3")
+	assert.Equal(t, ip2, "1.1.1.1")
+	assert.Equal(t, ip3, "1.1.1.1")
+}
