@@ -104,7 +104,7 @@ using 'caddy run' instead to keep it in the foreground.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
 			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
@@ -150,7 +150,7 @@ option in a local development environment.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("environ", "e", false, "Print environment")
 			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
 			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
@@ -301,7 +301,7 @@ the KEY=VALUE format will be loaded into the Caddy process.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Input configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdValidateConfig)
 		},
 	})
@@ -402,7 +402,7 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are 
+added. Retains existing packages. Returns an error if the any of packages are
 already included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -417,8 +417,8 @@ already included. EXPERIMENTAL: May be changed or removed.
 		Usage: "<packages...>",
 		Short: "Removes Caddy packages (EXPERIMENTAL)",
 		Long: `
-Downloads an updated Caddy binaries without the specified packages (module/plugin). 
-Returns an error if any of the packages are not included. 
+Downloads an updated Caddy binaries without the specified packages (module/plugin).
+Returns an error if any of the packages are not included.
 EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -464,40 +464,40 @@ argument of --directory. If the directory does not exist, it will be created.
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate completion script",
 		Long: fmt.Sprintf(`To load completions:
-	
+
 	Bash:
-	
+
 	  $ source <(%[1]s completion bash)
-	
+
 	  # To load completions for each session, execute once:
 	  # Linux:
 	  $ %[1]s completion bash > /etc/bash_completion.d/%[1]s
 	  # macOS:
 	  $ %[1]s completion bash > $(brew --prefix)/etc/bash_completion.d/%[1]s
-	
+
 	Zsh:
-	
+
 	  # If shell completion is not already enabled in your environment,
 	  # you will need to enable it.  You can execute the following once:
-	
+
 	  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-	
+
 	  # To load completions for each session, execute once:
 	  $ %[1]s completion zsh > "${fpath[1]}/_%[1]s"
-	
+
 	  # You will need to start a new shell for this setup to take effect.
-	
+
 	fish:
-	
+
 	  $ %[1]s completion fish | source
-	
+
 	  # To load completions for each session, execute once:
 	  $ %[1]s completion fish > ~/.config/fish/completions/%[1]s.fish
-	
+
 	PowerShell:
-	
+
 	  PS> %[1]s completion powershell | Out-String | Invoke-Expression
-	
+
 	  # To load completions for every new session, run:
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
