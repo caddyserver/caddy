@@ -329,3 +329,23 @@ func TestServer_DetermineTrustedProxy_MultipleTrustedClientHeaders(t *testing.T)
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "1.1.1.1")
 }
+
+func TestServer_DetermineTrustedProxy_SkipTrustedPrivateHops(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{localPrivatePrefix},
+		},
+		ClientIPHeaders: []string{"X-Forwarded-For"},
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "30.30.30.30, 45.54.45.54, 10.0.0.1")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "45.54.45.54")
+}
