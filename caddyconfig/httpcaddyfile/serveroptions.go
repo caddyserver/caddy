@@ -34,21 +34,22 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
-	Name                 string
-	ListenerWrappersRaw  []json.RawMessage
-	ReadTimeout          caddy.Duration
-	ReadHeaderTimeout    caddy.Duration
-	WriteTimeout         caddy.Duration
-	IdleTimeout          caddy.Duration
-	KeepAliveInterval    caddy.Duration
-	MaxHeaderBytes       int
-	EnableFullDuplex     bool
-	Protocols            []string
-	StrictSNIHost        *bool
-	TrustedProxiesRaw    json.RawMessage
-	ClientIPHeaders      []string
-	ShouldLogCredentials bool
-	Metrics              *caddyhttp.Metrics
+	Name                   string
+	ListenerWrappersRaw    []json.RawMessage
+	ReadTimeout            caddy.Duration
+	ReadHeaderTimeout      caddy.Duration
+	WriteTimeout           caddy.Duration
+	IdleTimeout            caddy.Duration
+	KeepAliveInterval      caddy.Duration
+	MaxHeaderBytes         int
+	EnableFullDuplex       bool
+	Protocols              []string
+	StrictSNIHost          *bool
+	TrustedProxiesRaw      json.RawMessage
+	EnableStrictXffParsing bool
+	ClientIPHeaders        []string
+	ShouldLogCredentials   bool
+	Metrics                *caddyhttp.Metrics
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -217,6 +218,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				)
 				serverOpts.TrustedProxiesRaw = jsonSource
 
+			case "enable_strict_xff_parsing":
+				if d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				serverOpts.EnableStrictXffParsing = true
+
 			case "client_ip_headers":
 				headers := d.RemainingArgs()
 				for _, header := range headers {
@@ -340,6 +347,7 @@ func applyServerOptions(
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.ClientIPHeaders = opts.ClientIPHeaders
+		server.EnableStrictXffParsing = opts.EnableStrictXffParsing
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {

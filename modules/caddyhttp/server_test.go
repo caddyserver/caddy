@@ -330,7 +330,7 @@ func TestServer_DetermineTrustedProxy_MultipleTrustedClientHeaders(t *testing.T)
 	assert.Equal(t, clientIP, "1.1.1.1")
 }
 
-func TestServer_DetermineTrustedProxy_SkipTrustedPrivateHops(t *testing.T) {
+func TestServer_DetermineTrustedProxy_MatchLeftMostValidIp(t *testing.T) {
 	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
 
 	server := &Server{
@@ -347,5 +347,92 @@ func TestServer_DetermineTrustedProxy_SkipTrustedPrivateHops(t *testing.T) {
 	trusted, clientIP := determineTrustedProxy(req, server)
 
 	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "30.30.30.30")
+}
+
+func TestServer_DetermineTrustedProxy_MatchRightMostUntrusted(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{localPrivatePrefix},
+		},
+		ClientIPHeaders:        []string{"X-Forwarded-For"},
+		EnableStrictXffParsing: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "30.30.30.30, 45.54.45.54, 10.0.0.1")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "45.54.45.54")
+}
+
+func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingEmpty(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{localPrivatePrefix},
+		},
+		ClientIPHeaders:        []string{"Missing-Header", "CF-Connecting-IP", "X-Forwarded-For"},
+		EnableStrictXffParsing: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("CF-Connecting-IP", "not a real IP")
+	req.Header.Set("X-Forwarded-For", "30.30.30.30, bad, 45.54.45.54, not real")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "45.54.45.54")
+}
+
+func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingTrusted(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{localPrivatePrefix},
+		},
+		ClientIPHeaders:        []string{"CF-Connecting-IP", "X-Forwarded-For"},
+		EnableStrictXffParsing: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("CF-Connecting-IP", "10.0.0.1, 10.0.0.2, 10.0.0.3")
+	req.Header.Set("X-Forwarded-For", "30.30.30.30, 45.54.45.54, 10.0.0.4")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "45.54.45.54")
+}
+
+func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{localPrivatePrefix},
+		},
+		ClientIPHeaders:        []string{"CF-Connecting-IP", "X-Forwarded-For"},
+		EnableStrictXffParsing: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("CF-Connecting-IP", "10.0.0.1, 90.100.110.120, 10.0.0.2, 10.0.0.3")
+	req.Header.Set("X-Forwarded-For", "30.30.30.30, 45.54.45.54, 10.0.0.4")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "90.100.110.120")
 }
