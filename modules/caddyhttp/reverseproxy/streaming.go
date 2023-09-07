@@ -496,8 +496,8 @@ func (m *maxLatencyWriter) delayedFlush() {
 		m.logger.Debug("delayed flush is not pending")
 		return
 	}
-	//nolint:errcheck
 	m.logger.Debug("delayed flush")
+	//nolint:errcheck
 	m.flush()
 	m.flushPending = false
 }
