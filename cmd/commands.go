@@ -104,7 +104,7 @@ using 'caddy run' instead to keep it in the foreground.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
 			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
@@ -150,7 +150,7 @@ option in a local development environment.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("environ", "e", false, "Print environment")
 			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
 			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
@@ -301,7 +301,7 @@ the KEY=VALUE format will be loaded into the Caddy process.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Input configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter")
-			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdValidateConfig)
 		},
 	})
