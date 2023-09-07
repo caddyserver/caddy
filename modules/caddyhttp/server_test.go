@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -208,4 +209,80 @@ func TestServer_TrustedRealClientIP_MultipleTrustedHeaderValidArray(t *testing.T
 	assert.Equal(t, ip1, "3.3.3.3")
 	assert.Equal(t, ip2, "1.1.1.1")
 	assert.Equal(t, ip3, "1.1.1.1")
+}
+
+func TestServer_DetermineTrustedProxy_NoConfig(t *testing.T) {
+	server := &Server{}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.False(t, trusted)
+	assert.Equal(t, clientIP, "192.0.2.1")
+}
+
+func TestServer_DetermineTrustedProxy_NoConfigIpv6(t *testing.T) {
+	server := &Server{}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "[::1]:12345"
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.False(t, trusted)
+	assert.Equal(t, clientIP, "::1")
+}
+
+func TestServer_DetermineTrustedProxy_NoConfigIpv6Zones(t *testing.T) {
+	server := &Server{}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "[::1%eth2]:12345"
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.False(t, trusted)
+	assert.Equal(t, clientIP, "::1")
+}
+
+func TestServer_DetermineTrustedProxy_TrustedLoopback(t *testing.T) {
+	loopbackPrefix, _ := netip.ParsePrefix("127.0.0.1/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{loopbackPrefix},
+		},
+		ClientIPHeaders: []string{"X-Forwarded-For"},
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "31.40.0.10")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, clientIP, "31.40.0.10")
+}
+
+func TestServer_DetermineTrustedProxy_UntrustedPrefix(t *testing.T) {
+	loopbackPrefix, _ := netip.ParsePrefix("127.0.0.1/8")
+
+	server := &Server{
+		trustedProxies: &StaticIPRange{
+			ranges: []netip.Prefix{loopbackPrefix},
+		},
+		ClientIPHeaders: []string{"X-Forwarded-For"},
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "31.40.0.10")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.False(t, trusted)
+	assert.Equal(t, clientIP, "10.0.0.1")
 }
