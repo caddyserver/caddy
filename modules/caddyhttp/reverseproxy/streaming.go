@@ -470,8 +470,8 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 	n, err = m.dst.Write(p)
 	m.logger.Debug("wrote bytes", zap.Int("n", n), zap.Error(err))
 	if m.latency < 0 {
-		//nolint:errcheck
 		m.logger.Debug("flushing immediately")
+		//nolint:errcheck
 		m.flush()
 		return
 	}
