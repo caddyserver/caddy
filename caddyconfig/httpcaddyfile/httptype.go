@@ -451,7 +451,7 @@ func (ServerType) extractNamedRoutes(
 
 		wholeSegment := caddyfile.Segment{}
 		for _, segment := range sb.block.Segments {
-			// Replace user-defined placeholder shorthands in extracted named routes
+			// replace user-defined placeholder shorthands in extracted named routes
 			replacer.ReplaceSegmentsWithFullPlaceholder(&segment)
 
 			// zip up all the segments since ParseSegmentAsSubroute
