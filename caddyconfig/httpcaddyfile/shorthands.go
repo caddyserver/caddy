@@ -82,7 +82,6 @@ func (s ShorthandReplacer) ReplaceSegmentsWithFullPlaceholder(segment *caddyfile
 	if segment != nil {
 		for i := 0; i < len(*segment); i++ {
 			// simple string replacements
-			// (*segment)[i].Text
 			(*segment)[i].Text = s.simple.Replace((*segment)[i].Text)
 			// complex regexp replacements
 			for _, r := range s.complex {
