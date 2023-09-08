@@ -77,8 +77,8 @@ func placeholderShorthands() []string {
 	}
 }
 
-// ReplaceSegmentsWithFullPlaceholder replaces shorthand placeholder to its full placeholder, understandable by Caddy.
-func (s ShorthandReplacer) ReplaceSegmentsWithFullPlaceholder(segment *caddyfile.Segment) {
+// ApplyToSegment replaces shorthand placeholder to its full placeholder, understandable by Caddy.
+func (s ShorthandReplacer) ApplyToSegment(segment *caddyfile.Segment) {
 	if segment != nil {
 		for i := 0; i < len(*segment); i++ {
 			// simple string replacements
