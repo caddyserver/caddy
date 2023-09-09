@@ -55,7 +55,7 @@ func TestServer_LogRequest(t *testing.T) {
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
+	bodyReader := &LengthReader{Source: req.Body}
 	shouldLogCredentials := false
 
 	buf := bytes.Buffer{}
@@ -82,7 +82,7 @@ func TestServer_LogRequest_WithTraceID(t *testing.T) {
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
+	bodyReader := &LengthReader{Source: req.Body}
 	shouldLogCredentials := false
 
 	buf := bytes.Buffer{}
@@ -109,7 +109,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
+	bodyReader := &LengthReader{Source: req.Body}
 
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
@@ -134,7 +134,7 @@ func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
+	bodyReader := &LengthReader{Source: req.Body}
 
 	buf := io.Discard
 	accLog := testLogger(buf.Write)

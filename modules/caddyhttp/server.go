@@ -329,9 +329,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// wrap the request body in a LengthReader
 		// so we can track the number of bytes read from it
-		var bodyReader *lengthReader
+		var bodyReader *LengthReader
 		if r.Body != nil {
-			bodyReader = &lengthReader{Source: r.Body}
+			bodyReader = &LengthReader{Source: r.Body}
 			r.Body = bodyReader
 		}
 
@@ -705,7 +705,7 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 // logRequest logs the request to access logs, unless skipped.
 func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
-	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
+	repl *caddy.Replacer, bodyReader *LengthReader, shouldLogCredentials bool,
 ) {
 	// this request may be flagged as omitted from the logs
 	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
@@ -942,20 +942,20 @@ func cloneURL(from, to *url.URL) {
 	}
 }
 
-// lengthReader is an io.ReadCloser that keeps track of the
+// LengthReader is an io.ReadCloser that keeps track of the
 // number of bytes read from the request body.
-type lengthReader struct {
+type LengthReader struct {
 	Source io.ReadCloser
 	Length int
 }
 
-func (r *lengthReader) Read(b []byte) (int, error) {
+func (r *LengthReader) Read(b []byte) (int, error) {
 	n, err := r.Source.Read(b)
 	r.Length += n
 	return n, err
 }
 
-func (r *lengthReader) Close() error {
+func (r *LengthReader) Close() error {
 	return r.Source.Close()
 }
 
