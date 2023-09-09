@@ -716,10 +716,16 @@ func (st *ServerType) serversFromPairings(
 					}
 				}
 
+				// If TLS is specified as directive, it will also result in 1 or more connection policy being created
+				// Thus, catch-all address with non-standard port, e.g. :8443, can have TLS enabled without
+				// specifying prefix "https://"
+				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
+				hasTLSDirectiveSpecified := ok && len(createdTLSConnPolicies) > 0
+
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
 				if addr.Scheme == "https" ||
-					(addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort) {
+					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSDirectiveSpecified) {
 					addressQualifiesForTLS = true
 				}
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
