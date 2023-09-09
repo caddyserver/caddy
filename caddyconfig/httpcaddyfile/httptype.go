@@ -720,7 +720,7 @@ func (st *ServerType) serversFromPairings(
 				// Thus, catch-all address with non-standard port, e.g. :8443, can have TLS enabled without
 				// specifying prefix "https://"
 				// Second part of the condition is to allow creating TLS conn policy even though `auto_https` has been disabled
-				// ensuring compability with behavior described in below link
+				// ensuring compatibility with behavior described in below link
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
 				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
 				hasTLSDirectiveSpecified := (ok && len(createdTLSConnPolicies) > 0) ||
