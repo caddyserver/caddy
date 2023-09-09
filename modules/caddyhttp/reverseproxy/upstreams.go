@@ -297,8 +297,8 @@ func (au *AUpstreams) Provision(_ caddy.Context) error {
 func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	resolveIpv4 := au.Versions.IPv4 == nil || *au.Versions.IPv4
-	resolveIpv6 := au.Versions.IPv6 == nil || *au.Versions.IPv6
+	resolveIpv4 := au.Versions == nil || au.Versions.IPv4 == nil || *au.Versions.IPv4
+	resolveIpv6 := au.Versions == nil || au.Versions.IPv6 == nil || *au.Versions.IPv6
 
 	// Map ipVersion early, so we can use it as part of the cache-key.
 	// This should be fairly inexpensive and comes and the upside of
