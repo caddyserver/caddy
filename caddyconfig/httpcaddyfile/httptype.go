@@ -723,13 +723,13 @@ func (st *ServerType) serversFromPairings(
 				// ensuring compatibility with behavior described in below link
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
 				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
-				hasTLSDirectiveSpecified := (ok && len(createdTLSConnPolicies) > 0) ||
+				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
 					(addr.Host != "" && srv.AutoHTTPS != nil && !sliceContains(srv.AutoHTTPS.Skip, addr.Host))
 
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
 				if addr.Scheme == "https" ||
-					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSDirectiveSpecified) {
+					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
 				}
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
