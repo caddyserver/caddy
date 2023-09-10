@@ -1083,11 +1083,11 @@ footer {
 				});
 				document.querySelectorAll('.size').forEach(el => {
 					const size = Number(el.dataset.size);
-                    const sizebar = el.querySelector('.sizebar-bar');
-                    if (sizebar) {
-                        sizebar.style.width = `${size/largest * 100}%`;
-                    }
-                });
+					const sizebar = el.querySelector('.sizebar-bar');
+					if (sizebar) {
+						sizebar.style.width = `${size/largest * 100}%`;
+					}
+				});
 			}
 
 			function filter() {
