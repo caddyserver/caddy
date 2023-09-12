@@ -183,7 +183,7 @@ type Server struct {
 	//
 	// This depends on `trusted_proxies` being configured.
 	// This option is disabled by default.
-	EnableStrictXffParsing bool `json:"enable_strict_xff_parsing,omitempty"`
+	TrustedProxiesStrict bool `json:"trusted_proxies_strict,omitempty"`
 
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
@@ -853,7 +853,7 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	}
 
 	if isTrustedClientIP(ipAddr, s.trustedProxies.GetIPRanges(r)) {
-		if s.EnableStrictXffParsing {
+		if s.TrustedProxiesStrict {
 			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String())
 		}
 		return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
