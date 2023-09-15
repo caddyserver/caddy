@@ -201,6 +201,7 @@ type csrRequest struct {
 		// Only used with RSA keys and accepts minimum of 2048.
 		Size int `json:"size,omitempty"`
 	} `json:"key,omitempty"`
+
 	// SANs is a list of subject alternative names for the certificate.
 	SANs []string `json:"sans"`
 }
