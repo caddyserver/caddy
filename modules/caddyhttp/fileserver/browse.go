@@ -36,12 +36,18 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 )
 
+// BrowseTemplate is the default template document to use for
+// file listings. By default, its default value is an embedded
+// document. You can override this value at program start, or
+// if you are running Caddy via config, you can specify a
+// custom template_file in the browse configuration.
+//
 //go:embed browse.html
-var defaultBrowseTemplate string
+var BrowseTemplate string
 
 // Browse configures directory browsing.
 type Browse struct {
-	// Use this template file instead of the default browse template.
+	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
 }
 
@@ -205,7 +211,7 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 		}
 	} else {
 		tpl = tplCtx.NewTemplate("default_listing")
-		tpl, err = tpl.Parse(defaultBrowseTemplate)
+		tpl, err = tpl.Parse(BrowseTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("parsing default browse template: %v", err)
 		}
