@@ -440,7 +440,7 @@ func (ca CA) generateCSR(csrReq csrRequest) (csr *x509.CertificateRequest, err e
 				return nil, err
 			}
 		} else {
-			signer, err = keyutil.GenerateSigner(csrReq.Key.Type, csrReq.Key.Curve, csrReq.Key.Size)
+			signer, err = keyutil.GenerateSigner(csrReq.Key.Type.String(), csrReq.Key.Curve.String(), csrReq.Key.Size)
 			if err != nil {
 				return nil, err
 			}
