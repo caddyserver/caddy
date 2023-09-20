@@ -551,17 +551,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			size, err := humanize.ParseBytes(d.Val())
-			if err != nil {
-				return d.Errf("invalid byte size '%s': %v", d.Val(), err)
+			val := d.Val()
+			var size int64
+			if val == "unlimited" {
+				size = -1
+			} else {
+				usize, err := humanize.ParseBytes(val)
+				if err != nil {
+					return d.Errf("invalid byte size '%s': %v", val, err)
+				}
+				size = int64(usize)
 			}
 			if d.NextArg() {
 				return d.ArgErr()
 			}
 			if subdir == "request_buffers" {
-				h.RequestBuffers = int64(size)
+				h.RequestBuffers = size
 			} else if subdir == "response_buffers" {
-				h.ResponseBuffers = int64(size)
+				h.ResponseBuffers = size
 			}
 
 		// TODO: These three properties are deprecated; remove them sometime after v2.6.4
