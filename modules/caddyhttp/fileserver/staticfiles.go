@@ -32,7 +32,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
@@ -162,7 +161,7 @@ type FileServer struct {
 	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
 	precompressors     map[string]encode.Precompressed
 
-	fsmap *filesystems.FilesystemMap
+	fsmap caddy.FileSystems
 
 	logger *zap.Logger
 }

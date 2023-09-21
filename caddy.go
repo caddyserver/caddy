@@ -87,7 +87,7 @@ type Config struct {
 	cancelFunc context.CancelFunc
 
 	// filesystems is a dict of filesystems that will later be loaded from and added to.
-	filesystems filesystems.FilesystemMap
+	filesystems FileSystems
 }
 
 // App is a thing that Caddy runs.
@@ -450,6 +450,9 @@ func run(newCfg *Config, start bool) (Context, error) {
 			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
 		}
 	}
+
+	// create the new filesystem map
+	newCfg.filesystems = &filesystems.FilesystemMap{}
 
 	// prepare the new config for use
 	newCfg.apps = make(map[string]App)

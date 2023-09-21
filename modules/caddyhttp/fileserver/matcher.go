@@ -35,7 +35,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -107,7 +106,7 @@ type MatchFile struct {
 	// component in order to be used as a split delimiter.
 	SplitPath []string `json:"split_path,omitempty"`
 
-	fsmap *filesystems.FilesystemMap
+	fsmap caddy.FileSystems
 
 	logger *zap.Logger
 }

@@ -21,7 +21,6 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -84,8 +83,8 @@ func (ctx *Context) OnCancel(f func()) {
 }
 
 // Filesystems returns a ref to the FilesystemMap
-func (ctx *Context) Filesystems() *filesystems.FilesystemMap {
-	return &ctx.cfg.filesystems
+func (ctx *Context) Filesystems() FileSystems {
+	return ctx.cfg.filesystems
 }
 
 // LoadModule loads the Caddy module(s) from the specified field of the parent struct
