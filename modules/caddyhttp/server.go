@@ -920,6 +920,9 @@ const (
 	// For the request's variable table
 	VarsCtxKey caddy.CtxKey = "vars"
 
+	// for the request's filesystem
+	FsCtxKey caddy.CtxKey = "fs"
+
 	// For a partial copy of the unmodified request that
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"

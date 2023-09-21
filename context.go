@@ -21,6 +21,7 @@ import (
 	"log"
 	"reflect"
 
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -37,6 +38,7 @@ import (
 // not actually need to do this).
 type Context struct {
 	context.Context
+
 	moduleInstances map[string][]Module
 	cfg             *Config
 	cleanupFuncs    []func()
@@ -79,6 +81,11 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // OnCancel executes f when ctx is canceled.
 func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
+}
+
+// Filesystems returns a ref to the FilesystemMap
+func (ctx *Context) Filesystems() *filesystems.FilesystemMap {
+	return &ctx.cfg.filesystems
 }
 
 // LoadModule loads the Caddy module(s) from the specified field of the parent struct

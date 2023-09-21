@@ -40,6 +40,7 @@ import (
 func init() {
 	RegisterDirective("bind", parseBind)
 	RegisterDirective("tls", parseTLS)
+	RegisterHandlerDirective("fs", parseFilesystem)
 	RegisterHandlerDirective("root", parseRoot)
 	RegisterHandlerDirective("vars", parseVars)
 	RegisterHandlerDirective("redir", parseRedir)
@@ -656,6 +657,23 @@ func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 	return caddyhttp.VarsMiddleware{"root": root}, nil
+}
+
+// parseFilesystem parses the fs directive. Syntax:
+//
+//	fs <filesystem>
+func parseFilesystem(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var name string
+	for h.Next() {
+		if !h.NextArg() {
+			return nil, h.ArgErr()
+		}
+		name = h.Val()
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return caddyhttp.VarsMiddleware{"fs": name}, nil
 }
 
 // parseVars parses the vars directive. See its UnmarshalCaddyfile method for syntax.

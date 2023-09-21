@@ -39,6 +39,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/notify"
 )
 
@@ -84,6 +85,9 @@ type Config struct {
 	storage certmagic.Storage
 
 	cancelFunc context.CancelFunc
+
+	// filesystems is a dict of filesystems that will later be loaded from and added to.
+	filesystems filesystems.FilesystemMap
 }
 
 // App is a thing that Caddy runs.
