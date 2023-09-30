@@ -41,7 +41,7 @@ func init() {
 	RegisterDirective("bind", parseBind)
 	RegisterDirective("tls", parseTLS)
 	RegisterHandlerDirective("fs", parseFilesystem)
-	RegisterHandlerDirective("root", parseRoot)
+	RegisterDirective("root", parseRoot)
 	RegisterHandlerDirective("vars", parseVars)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
@@ -645,18 +645,45 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 // parseRoot parses the root directive. Syntax:
 //
 //	root [<matcher>] <path>
-func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	var root string
-	for h.Next() {
+func parseRoot(h Helper) ([]ConfigValue, error) {
+	// consume directive name
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+
+	// count the tokens to determine what to do
+	argsCount := h.CountRemainingArgs()
+	if argsCount == 0 {
+		return nil, h.Errf("too few arguments; must have at least a root path")
+	}
+	if argsCount > 2 {
+		return nil, h.Errf("too many arguments; should only be a matcher and a path")
+	}
+
+	// with only one arg, assume it's a root path with no matcher token
+	if argsCount == 1 {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		root = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
+		return h.NewRoute(nil, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
 	}
-	return caddyhttp.VarsMiddleware{"root": root}, nil
+
+	// parse the matcher token into a matcher set
+	userMatcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+
+	// consume directive name, again, because extracting matcher does a reset
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	// advance to the root path
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	// make the route with the matcher
+	return h.NewRoute(userMatcherSet, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
 }
 
 // parseFilesystem parses the fs directive. Syntax:
