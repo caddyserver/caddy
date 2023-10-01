@@ -183,20 +183,30 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	buf.Reset()
 	defer bufPool.Put(buf)
 
+	// Create a new virtual request
 	virtReq, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		return "", err
 	}
+
+	// Set the Host header to the original request's Host
 	virtReq.Host = c.Req.Host
+
+	// Clone the original request's headers and add X-Forwarded-For
 	virtReq.Header = c.Req.Header.Clone()
-	virtReq.Header.Set("Accept-Encoding", "identity") // https://github.com/caddyserver/caddy/issues/4352
+	clientIP := c.RemoteIP() // Get the client's IP address
+	virtReq.Header.Add("X-Forwarded-For", clientIP)
+
+	// Set other headers as needed
+	virtReq.Header.Set("Accept-Encoding", "identity")
 	virtReq.Trailer = c.Req.Trailer.Clone()
 	virtReq.Header.Set(recursionPreventionHeader, strconv.Itoa(recursionCount))
 
+	// Perform the virtual request
 	vrw := &virtualResponseWriter{body: buf, header: make(http.Header)}
 	server := c.Req.Context().Value(caddyhttp.ServerCtxKey).(http.Handler)
-
 	server.ServeHTTP(vrw, virtReq)
+
 	if vrw.status >= 400 {
 		return "", fmt.Errorf("http %d", vrw.status)
 	}
