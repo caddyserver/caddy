@@ -320,6 +320,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var bodyReader *lengthReader
 		if r.Body != nil {
 			bodyReader = getLengthReader(r.Body)
+			defer putLengthReader(bodyReader)
 			r.Body = bodyReader
 		}
 
@@ -728,7 +729,6 @@ func (s *Server) logRequest(
 	reqBodyLength := 0
 	if bodyReader != nil {
 		reqBodyLength = bodyReader.Length
-		putLengthReader(bodyReader)
 	}
 
 	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
