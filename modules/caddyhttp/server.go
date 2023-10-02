@@ -921,12 +921,12 @@ var lengthReaderPool = sync.Pool{
 func getLengthReader(source io.ReadCloser) *lengthReader {
 	reader := lengthReaderPool.Get().(*lengthReader)
 	reader.Source = source
-	reader.Length = 0
 	return reader
 }
 
 func putLengthReader(reader *lengthReader) {
 	reader.Source = nil
+	reader.Length = 0
 	lengthReaderPool.Put(reader)
 }
 
