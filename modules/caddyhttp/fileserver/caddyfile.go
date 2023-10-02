@@ -31,116 +31,23 @@ func init() {
 	httpcaddyfile.RegisterDirective("try_files", parseTryFiles)
 }
 
-// parseCaddyfile parses the file_server directive. It enables the static file
-// server and configures it with this syntax:
-//
-//	file_server [<matcher>] [browse] {
-//	    fs            <filesystem>
-//	    root          <path>
-//	    hide          <files...>
-//	    index         <files...>
-//	    browse        [<template_file>]
-//	    precompressed <formats...>
-//	    status        <status>
-//	    disable_canonical_uris
-//	}
+// parseCaddyfile parses the file_server directive.
+// See UnmarshalCaddyfile for the syntax.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var fsrv FileServer
-
-	for h.Next() {
-		args := h.RemainingArgs()
-		switch len(args) {
-		case 0:
-		case 1:
-			if args[0] != "browse" {
-				return nil, h.ArgErr()
-			}
-			fsrv.Browse = new(Browse)
-		default:
-			return nil, h.ArgErr()
-		}
-
-		for h.NextBlock(0) {
-			switch h.Val() {
-			case "fs":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				if fsrv.FileSystem != "" {
-					return nil, h.Err("file system already specified")
-				}
-				fsrv.FileSystem = h.Val()
-			case "hide":
-				fsrv.Hide = h.RemainingArgs()
-				if len(fsrv.Hide) == 0 {
-					return nil, h.ArgErr()
-				}
-
-			case "index":
-				fsrv.IndexNames = h.RemainingArgs()
-				if len(fsrv.IndexNames) == 0 {
-					return nil, h.ArgErr()
-				}
-
-			case "root":
-				if !h.Args(&fsrv.Root) {
-					return nil, h.ArgErr()
-				}
-
-			case "browse":
-				if fsrv.Browse != nil {
-					return nil, h.Err("browsing is already configured")
-				}
-				fsrv.Browse = new(Browse)
-				h.Args(&fsrv.Browse.TemplateFile)
-
-			case "precompressed":
-				var order []string
-				for h.NextArg() {
-					modID := "http.precompressed." + h.Val()
-					mod, err := caddy.GetModule(modID)
-					if err != nil {
-						return nil, h.Errf("getting module named '%s': %v", modID, err)
-					}
-					inst := mod.New()
-					precompress, ok := inst.(encode.Precompressed)
-					if !ok {
-						return nil, h.Errf("module %s is not a precompressor; is %T", modID, inst)
-					}
-					if fsrv.PrecompressedRaw == nil {
-						fsrv.PrecompressedRaw = make(caddy.ModuleMap)
-					}
-					fsrv.PrecompressedRaw[h.Val()] = caddyconfig.JSON(precompress, nil)
-					order = append(order, h.Val())
-				}
-				fsrv.PrecompressedOrder = order
-
-			case "status":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				fsrv.StatusCode = caddyhttp.WeakString(h.Val())
-
-			case "disable_canonical_uris":
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				falseBool := false
-				fsrv.CanonicalURIs = &falseBool
-
-			case "pass_thru":
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				fsrv.PassThru = true
-
-			default:
-				return nil, h.Errf("unknown subdirective '%s'", h.Val())
-			}
-		}
+	fsrv := new(FileServer)
+	err := fsrv.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return fsrv, err
 	}
 
-	// hide the Caddyfile (and any imported Caddyfiles)
+	// Hide the Caddyfile (and any imported Caddyfiles).
+	// This needs to be done in here instead of UnmarshalCaddyfile
+	// because UnmarshalCaddyfile only has access to the dispenser
+	// and not the helper, and only the helper has access to the
+	// Caddyfiles function. This does mean that Caddyfiles will
+	// only be hidden when the directive is used directly, and not
+	// if used in some embedded fashion (e.g. via another directive
+	// as a shortcut).
 	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
 		for _, file := range configFiles {
 			file = filepath.Clean(file)
@@ -156,7 +63,128 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		}
 	}
 
-	return &fsrv, nil
+	return fsrv, err
+}
+
+// UnmarshalCaddyfile parses the file_server directive. It enables
+// the static file server and configures it with this syntax:
+//
+//	file_server [<matcher>] [browse] {
+//	    fs            <filesystem>
+//	    root          <path>
+//	    hide          <files...>
+//	    index         <files...>
+//	    browse        [<template_file>]
+//	    precompressed <formats...>
+//	    status        <status>
+//	    disable_canonical_uris
+//	}
+func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume directive name
+
+	args := d.RemainingArgs()
+	switch len(args) {
+	case 0:
+	case 1:
+		if args[0] != "browse" {
+			return d.ArgErr()
+		}
+		fsrv.Browse = new(Browse)
+	default:
+		return d.ArgErr()
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "fs":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if fsrv.FileSystemRaw != nil {
+				return d.Err("file system module already specified")
+			}
+			name := d.Val()
+			modID := "caddy.fs." + name
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			fsys, ok := unm.(fs.FS)
+			if !ok {
+				return d.Errf("module %s (%T) is not a supported file system implementation (requires fs.FS)", modID, unm)
+			}
+			fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(fsys, "backend", name, nil)
+
+		case "hide":
+			fsrv.Hide = d.RemainingArgs()
+			if len(fsrv.Hide) == 0 {
+				return d.ArgErr()
+			}
+
+		case "index":
+			fsrv.IndexNames = d.RemainingArgs()
+			if len(fsrv.IndexNames) == 0 {
+				return d.ArgErr()
+			}
+
+		case "root":
+			if !d.Args(&fsrv.Root) {
+				return d.ArgErr()
+			}
+
+		case "browse":
+			if fsrv.Browse != nil {
+				return d.Err("browsing is already configured")
+			}
+			fsrv.Browse = new(Browse)
+			d.Args(&fsrv.Browse.TemplateFile)
+
+		case "precompressed":
+			var order []string
+			for d.NextArg() {
+				modID := "http.precompressed." + d.Val()
+				mod, err := caddy.GetModule(modID)
+				if err != nil {
+					return d.Errf("getting module named '%s': %v", modID, err)
+				}
+				inst := mod.New()
+				precompress, ok := inst.(encode.Precompressed)
+				if !ok {
+					return d.Errf("module %s is not a precompressor; is %T", modID, inst)
+				}
+				if fsrv.PrecompressedRaw == nil {
+					fsrv.PrecompressedRaw = make(caddy.ModuleMap)
+				}
+				fsrv.PrecompressedRaw[d.Val()] = caddyconfig.JSON(precompress, nil)
+				order = append(order, d.Val())
+			}
+			fsrv.PrecompressedOrder = order
+
+		case "status":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.StatusCode = caddyhttp.WeakString(d.Val())
+
+		case "disable_canonical_uris":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			falseBool := false
+			fsrv.CanonicalURIs = &falseBool
+
+		case "pass_thru":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.PassThru = true
+
+		default:
+			return d.Errf("unknown subdirective '%s'", d.Val())
+		}
+	}
+
+	return nil
 }
 
 // parseTryFiles parses the try_files directive. It combines a file matcher
@@ -257,3 +285,5 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 
 	return result, nil
 }
+
+var _ caddyfile.Unmarshaler = (*FileServer)(nil)
