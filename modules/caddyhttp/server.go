@@ -319,7 +319,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// so we can track the number of bytes read from it
 		var bodyReader *lengthReader
 		if r.Body != nil {
-			bodyReader = &lengthReader{Source: r.Body}
+			bodyReader = getLengthReader(r.Body)
 			r.Body = bodyReader
 		}
 
@@ -728,6 +728,7 @@ func (s *Server) logRequest(
 	reqBodyLength := 0
 	if bodyReader != nil {
 		reqBodyLength = bodyReader.Length
+		putLengthReader(bodyReader)
 	}
 
 	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
@@ -909,6 +910,24 @@ func cloneURL(from, to *url.URL) {
 type lengthReader struct {
 	Source io.ReadCloser
 	Length int
+}
+
+var lengthReaderPool = sync.Pool{
+	New: func() interface{} {
+		return &lengthReader{}
+	},
+}
+
+func getLengthReader(source io.ReadCloser) *lengthReader {
+	reader := lengthReaderPool.Get().(*lengthReader)
+	reader.Source = source
+	reader.Length = 0
+	return reader
+}
+
+func putLengthReader(reader *lengthReader) {
+	reader.Source = nil
+	lengthReaderPool.Put(reader)
 }
 
 func (r *lengthReader) Read(b []byte) (int, error) {
