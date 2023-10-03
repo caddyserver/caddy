@@ -39,30 +39,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	if err != nil {
 		return fsrv, err
 	}
-
-	// Hide the Caddyfile (and any imported Caddyfiles).
-	// This needs to be done in here instead of UnmarshalCaddyfile
-	// because UnmarshalCaddyfile only has access to the dispenser
-	// and not the helper, and only the helper has access to the
-	// Caddyfiles function. This does mean that Caddyfiles will
-	// only be hidden when the directive is used directly, and not
-	// if used in some embedded fashion (e.g. via another directive
-	// as a shortcut).
-	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
-		for _, file := range configFiles {
-			file = filepath.Clean(file)
-			if !fileHidden(file, fsrv.Hide) {
-				// if there's no path separator, the file server module will hide all
-				// files by that name, rather than a specific one; but we want to hide
-				// only this specific file, so ensure there's always a path separator
-				if !strings.Contains(file, separator) {
-					file = "." + separator + file
-				}
-				fsrv.Hide = append(fsrv.Hide, file)
-			}
-		}
+	err = fsrv.FinalizeUnmarshalCaddyfile(h)
+	if err != nil {
+		return nil, err
 	}
-
 	return fsrv, err
 }
 
@@ -79,6 +59,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    status        <status>
 //	    disable_canonical_uris
 //	}
+//
+// The FinalizeUnmarshalCaddyfile method should be called after this
+// to finalize setup of hidden Caddyfiles.
 func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume directive name
 
@@ -184,6 +167,31 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 
+	return nil
+}
+
+// FinalizeUnmarshalCaddyfile finalizes the Caddyfile parsing which
+// requires having an httpcaddyfile.Helper to function, to setup hidden Caddyfiles.
+func (fsrv *FileServer) FinalizeUnmarshalCaddyfile(h httpcaddyfile.Helper) error {
+	// Hide the Caddyfile (and any imported Caddyfiles).
+	// This needs to be done in here instead of UnmarshalCaddyfile
+	// because UnmarshalCaddyfile only has access to the dispenser
+	// and not the helper, and only the helper has access to the
+	// Caddyfiles function.
+	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
+		for _, file := range configFiles {
+			file = filepath.Clean(file)
+			if !fileHidden(file, fsrv.Hide) {
+				// if there's no path separator, the file server module will hide all
+				// files by that name, rather than a specific one; but we want to hide
+				// only this specific file, so ensure there's always a path separator
+				if !strings.Contains(file, separator) {
+					file = "." + separator + file
+				}
+				fsrv.Hide = append(fsrv.Hide, file)
+			}
+		}
+	}
 	return nil
 }
 
