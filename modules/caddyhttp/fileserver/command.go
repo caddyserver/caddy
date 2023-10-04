@@ -31,6 +31,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 	caddytpl "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 )
 
@@ -60,6 +61,7 @@ respond with a file listing.`,
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
+			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
 				Use:     "export-template",
@@ -84,8 +86,33 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
 	debug := fs.Bool("debug")
+	compress := !fs.Bool("no-compress")
 
 	var handlers []json.RawMessage
+
+	if compress {
+		encodings := make(caddy.ModuleMap, 2)
+		prefer := make([]string, 0, 2)
+
+		gzip, err := caddy.GetModule("http.encoders.gzip")
+		if err != nil {
+			return 0, err
+		}
+		encodings["gzip"] = caddyconfig.JSON(gzip.New(), nil)
+		prefer = append(prefer, "gzip")
+
+		zstd, err := caddy.GetModule("http.encoders.zstd")
+		if err != nil {
+			return 0, err
+		}
+		encodings["zstd"] = caddyconfig.JSON(zstd.New(), nil)
+		prefer = append(prefer, "zstd")
+
+		handlers = append(handlers, caddyconfig.JSONModuleObject(encode.Encode{
+			EncodingsRaw: encodings,
+			Prefer:       prefer,
+		}, "handler", "encode", nil))
+	}
 
 	if templates {
 		handler := caddytpl.Templates{FileRoot: root}
