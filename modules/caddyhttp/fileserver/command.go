@@ -93,12 +93,12 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	if compress {
 		zstd, err := caddy.GetModule("http.encoders.zstd")
 		if err != nil {
-			return 0, err
+			return caddy.ExitCodeFailedStartup, err
 		}
 
 		gzip, err := caddy.GetModule("http.encoders.gzip")
 		if err != nil {
-			return 0, err
+			return caddy.ExitCodeFailedStartup, err
 		}
 
 		handlers = append(handlers, caddyconfig.JSONModuleObject(encode.Encode{
