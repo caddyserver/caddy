@@ -55,7 +55,7 @@ respond with a file listing.`,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("domain", "d", "", "Domain name at which to serve the files")
 			cmd.Flags().StringP("root", "r", "", "The path to the root of the site")
-			cmd.Flags().StringP("listen", "", "", "The address to which to bind the listener")
+			cmd.Flags().StringP("listen", "l", "", "The address to which to bind the listener")
 			cmd.Flags().BoolP("browse", "b", false, "Enable directory browsing")
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
