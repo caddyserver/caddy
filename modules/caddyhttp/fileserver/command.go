@@ -91,26 +91,22 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	var handlers []json.RawMessage
 
 	if compress {
-		encodings := make(caddy.ModuleMap, 2)
-		prefer := make([]string, 0, 2)
+		zstd, err := caddy.GetModule("http.encoders.zstd")
+		if err != nil {
+			return 0, err
+		}
 
 		gzip, err := caddy.GetModule("http.encoders.gzip")
 		if err != nil {
 			return 0, err
 		}
-		encodings["gzip"] = caddyconfig.JSON(gzip.New(), nil)
-		prefer = append(prefer, "gzip")
-
-		zstd, err := caddy.GetModule("http.encoders.zstd")
-		if err != nil {
-			return 0, err
-		}
-		encodings["zstd"] = caddyconfig.JSON(zstd.New(), nil)
-		prefer = append(prefer, "zstd")
 
 		handlers = append(handlers, caddyconfig.JSONModuleObject(encode.Encode{
-			EncodingsRaw: encodings,
-			Prefer:       prefer,
+			EncodingsRaw: caddy.ModuleMap{
+				"zstd": caddyconfig.JSON(zstd.New(), nil),
+				"gzip": caddyconfig.JSON(gzip.New(), nil),
+			},
+			Prefer: []string{"zstd", "gzip"},
 		}, "handler", "encode", nil))
 	}
 
