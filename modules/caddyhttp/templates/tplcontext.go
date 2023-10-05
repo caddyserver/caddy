@@ -192,12 +192,10 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 	// Set the Host header to the original request's Host
 	virtReq.Host = c.Req.Host
 
+	virtReq.RemoteAddr = "127.0.0.1"
+
 	// Clone the original request's headers and add X-Forwarded-For
 	virtReq.Header = c.Req.Header.Clone()
-	clientIP := c.RemoteIP() // Get the client's IP address
-	virtReq.Header.Add("X-Forwarded-For", clientIP)
-
-	// Set other headers as needed
 	virtReq.Header.Set("Accept-Encoding", "identity")
 	virtReq.Trailer = c.Req.Trailer.Clone()
 	virtReq.Header.Set(recursionPreventionHeader, strconv.Itoa(recursionCount))
