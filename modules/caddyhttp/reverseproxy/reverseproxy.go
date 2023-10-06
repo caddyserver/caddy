@@ -848,12 +848,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			break
 		}
 
-		// otherwise, if there are any routes configured, execute those as the
-		// actual response instead of what we got from the proxy backend
-		if len(rh.Routes) == 0 {
-			continue
-		}
-
 		// set up the replacer so that parts of the original response can be
 		// used for routing decisions
 		for field, value := range res.Header {
