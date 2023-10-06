@@ -372,7 +372,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(values) == 0 {
 					values = append(values, "")
 				}
-				healthHeaders[key] = values
+				healthHeaders[key] = append(healthHeaders[key], values...)
 			}
 			if h.HealthChecks == nil {
 				h.HealthChecks = new(HealthChecks)
