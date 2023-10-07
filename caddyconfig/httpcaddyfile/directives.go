@@ -154,15 +154,15 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // to ('before' or 'after') a directive included in Caddy's
 // standard distribution. It cannot be relative to another
 // plugin's directive.
-func RegisterDirectiveOrder(dir string, position string, standardDir string) {
+func RegisterDirectiveOrder(dir string, position Positional, standardDir string) {
 	// check if directive was already ordered
 	if directiveIsOrdered(dir) {
 		panic("directive '" + dir + "' already ordered")
 	}
 
 	switch position {
-	case "before":
-	case "after":
+	case Before:
+	case After:
 	default:
 		panic("the 2nd argument must be either 'before' or 'after', got '" + position + "'")
 	}
@@ -186,9 +186,9 @@ func RegisterDirectiveOrder(dir string, position string, standardDir string) {
 		if d != standardDir {
 			continue
 		}
-		if position == "before" {
+		if position == Before {
 			newOrder = append(newOrder[:i], append([]string{dir}, newOrder[i:]...)...)
-		} else if position == "after" {
+		} else if position == After {
 			newOrder = append(newOrder[:i+1], append([]string{dir}, newOrder[i+1:]...)...)
 		}
 		break
@@ -619,6 +619,16 @@ func (sb serverBlock) isAllHTTP() bool {
 	}
 	return true
 }
+
+// Positional are the supported modes for ordering directives.
+type Positional string
+
+const (
+	Before Positional = "before"
+	After  Positional = "after"
+	First  Positional = "first"
+	Last   Positional = "last"
+)
 
 type (
 	// UnmarshalFunc is a function which can unmarshal Caddyfile
