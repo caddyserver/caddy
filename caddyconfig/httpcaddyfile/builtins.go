@@ -650,8 +650,12 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	switch code {
 	case "permanent":
 		code = "301"
+	case "permanent-strict":
+		code = "308"
 	case "temporary", "":
 		code = "302"
+	case "temporary-strict":
+		code = "307"
 	case "html":
 		// Script tag comes first since that will better imitate a redirect in the browser's
 		// history, but the meta tag is a fallback for most non-JS clients.
