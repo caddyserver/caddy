@@ -11,6 +11,7 @@ encode gzip zstd {
 		header Content-Type application/xhtml+xml*
 		header Content-Type application/atom+xml*
 		header Content-Type application/rss+xml*
+		header Content-Type application/wasm*
 		header Content-Type image/svg+xml*
 	}
 }
@@ -47,6 +48,7 @@ encode {
 												"application/xhtml+xml*",
 												"application/atom+xml*",
 												"application/rss+xml*",
+												"application/wasm*",
 												"image/svg+xml*"
 											]
 										},
