@@ -774,7 +774,6 @@ footer {
 <body onload="initPage()">
 	<header>
 		<div class="wrapper">
-			<a href="//{{.Host}}" alt="Home">&nbsp;{{.Host}}</a>
 			<div class="breadcrumbs">Folder Path</div>
 				<h1>
 					{{range $i, $crumb := .Breadcrumbs}}<a href="{{html $crumb.Link}}">{{html $crumb.Text}}</a>{{if ne $i 0}}/{{end}}{{end}}
