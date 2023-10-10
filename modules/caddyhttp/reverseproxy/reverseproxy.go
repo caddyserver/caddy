@@ -357,7 +357,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		// set defaults on passive health checks, if necessary
 		if h.HealthChecks.Passive != nil {
 			h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
-			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
+			if h.HealthChecks.Passive.MaxFails == 0 {
 				h.HealthChecks.Passive.MaxFails = 1
 			}
 		}
@@ -480,7 +480,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("no upstreams available"))
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, noUpstreamsAvailable)
 		}
 		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
@@ -1010,17 +1010,23 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// should be safe to retry, since without a connection, no
 	// HTTP request can be transmitted; but if the error is not
 	// specifically a dialer error, we need to be careful
-	if _, ok := proxyErr.(DialError); proxyErr != nil && !ok {
+	if proxyErr != nil {
+		_, isDialError := proxyErr.(DialError)
+		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
+
 		// if the error occurred after a connection was established,
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if lb.RetryMatch == nil && req.Method != "GET" {
-			// by default, don't retry requests if they aren't GET
-			return false
-		}
-		if !lb.RetryMatch.AnyMatch(req) {
-			return false
+		if !isDialError && !(isHandlerError && errors.Is(herr, noUpstreamsAvailable)) {
+			if lb.RetryMatch == nil && req.Method != "GET" {
+				// by default, don't retry requests if they aren't GET
+				return false
+			}
+
+			if !lb.RetryMatch.AnyMatch(req) {
+				return false
+			}
 		}
 	}
 
@@ -1420,6 +1426,8 @@ func (c ignoreClientGoneContext) Err() error {
 // so that handle_response routes can inherit some config options
 // from the proxy handler.
 const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
+
+var noUpstreamsAvailable = fmt.Errorf("no upstreams available")
 
 // Interface guards
 var (
