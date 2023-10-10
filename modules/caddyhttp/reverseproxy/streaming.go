@@ -188,12 +188,18 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 	var w io.Writer = dst
 
 	if flushInterval != 0 {
+		var mlwLogger *zap.Logger
+		if h.TraceLogs {
+			mlwLogger = logger.Named("max_latency_writer")
+		} else {
+			mlwLogger = zap.NewNop()
+		}
 		mlw := &maxLatencyWriter{
 			dst: dst,
 			//nolint:bodyclose
 			flush:   http.NewResponseController(dst).Flush,
 			latency: flushInterval,
-			logger:  logger.Named("max_latency_writer"),
+			logger:  mlwLogger,
 		}
 		defer mlw.stop()
 
@@ -206,7 +212,15 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 
 	buf := streamingBufPool.Get().(*[]byte)
 	defer streamingBufPool.Put(buf)
-	_, err := h.copyBuffer(w, src, *buf, logger)
+
+	var copyLogger *zap.Logger
+	if h.TraceLogs {
+		copyLogger = logger
+	} else {
+		copyLogger = zap.NewNop()
+	}
+
+	_, err := h.copyBuffer(w, src, *buf, copyLogger)
 	return err
 }
 
