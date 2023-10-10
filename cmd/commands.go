@@ -221,6 +221,25 @@ documentation: https://go.dev/doc/modules/version-numbers
 	})
 
 	RegisterCommand(Command{
+		Name:  "-v",
+		Short: "Prints the version",
+		Long: `
+Prints the version of this Caddy binary.
+
+Version information must be embedded into the binary at compile-time in
+order for Caddy to display anything useful with this command. If Caddy
+is built from within a version control repository, the Go command will
+embed the revision hash if available. However, if Caddy is built in the
+way specified by our online documentation (or by using xcaddy), more
+detailed version information is printed as given by Go modules.
+
+For more details about the full version string, see the Go module
+documentation: https://go.dev/doc/modules/version-numbers
+`,
+		Func: cmdVersion,
+	})
+
+	RegisterCommand(Command{
 		Name:  "list-modules",
 		Usage: "[--packages] [--versions] [--skip-standard]",
 		Short: "Lists the installed Caddy modules",
