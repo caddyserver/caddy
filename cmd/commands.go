@@ -264,7 +264,7 @@ Environments may contain sensitive data.
 
 	RegisterCommand(Command{
 		Name:  "adapt",
-		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
+		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate] [--envfile <path>]",
 		Short: "Adapts a configuration to Caddy's native JSON",
 		Long: `
 Adapts a configuration to Caddy's native JSON format and writes the
@@ -276,12 +276,16 @@ for human readability.
 If --validate is used, the adapted config will be checked for validity.
 If the config is invalid, an error will be printed to stderr and a non-
 zero exit status will be returned.
+
+If --envfile is specified, an environment file with environment variables in
+the KEY=VALUE format will be loaded into the Caddy process.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
 			cmd.Flags().StringP("adapter", "a", "caddyfile", "Name of config adapter")
 			cmd.Flags().BoolP("pretty", "p", false, "Format the output for human readability")
 			cmd.Flags().BoolP("validate", "", false, "Validate the output")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdAdaptConfig)
 		},
 	})

@@ -445,6 +445,21 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
+	var envfileFlag []string
+	envfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading envfile flag: %v", err)
+	}
+
+	// load all additional envs as soon as possible
+	for _, envfile := range envfileFlag {
+		if err := loadEnvFromFile(envfile); err != nil {
+			return caddy.ExitCodeFailedStartup,
+				fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
+
 	if adapterFlag == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("adapter name is required (use --adapt flag or leave unspecified for default)")
