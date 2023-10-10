@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 var rootCmd = &cobra.Command{
@@ -97,13 +99,20 @@ https://caddyserver.com/docs/running
 	// kind of annoying to have all the help text printed out if
 	// caddy has an error provisioning its modules, for instance...
 	SilenceUsage: true,
+	Version:      onlyVersionText(),
 }
 
 const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
 
 func init() {
+	rootCmd.SetVersionTemplate("{{.Version}}")
 	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
+}
+
+func onlyVersionText() string {
+	_, f := caddy.Version()
+	return f
 }
 
 func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
