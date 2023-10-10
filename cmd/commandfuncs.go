@@ -102,7 +102,8 @@ func cmdStart(fl Flags) (int, error) {
 	expect := make([]byte, 32)
 	_, err = rand.Read(expect)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("generating random confirmation bytes: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("generating random confirmation bytes: %v", err)
 	}
 
 	// begin writing the confirmation bytes to the child's
@@ -117,7 +118,8 @@ func cmdStart(fl Flags) (int, error) {
 	// start the process
 	err = cmd.Start()
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("starting caddy process: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("starting caddy process: %v", err)
 	}
 
 	// there are two ways we know we're done: either
@@ -173,20 +175,10 @@ func cmdRun(fl Flags) (int, error) {
 	pidfileFlag := fl.String("pidfile")
 	pingbackFlag := fl.String("pingback")
 
-	var err error
-	var envfileFlag []string
-	envfileFlag, err = fl.GetStringSlice("envfile")
-	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("reading envfile flag: %v", err)
-	}
-
 	// load all additional envs as soon as possible
-	for _, envfile := range envfileFlag {
-		if err := loadEnvFromFile(envfile); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// if we are supposed to print the environment, do that first
@@ -428,7 +420,13 @@ func cmdListModules(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdEnviron(_ Flags) (int, error) {
+func cmdEnviron(fl Flags) (int, error) {
+	// load all additional envs as soon as possible
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
 	printEnvironment()
 	return caddy.ExitCodeSuccess, nil
 }
@@ -445,19 +443,10 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	var envfileFlag []string
-	envfileFlag, err = fl.GetStringSlice("envfile")
-	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("reading envfile flag: %v", err)
-	}
-
 	// load all additional envs as soon as possible
-	for _, envfile := range envfileFlag {
-		if err := loadEnvFromFile(envfile); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
+	err = handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	if adapterFlag == "" {
@@ -527,20 +516,10 @@ func cmdValidateConfig(fl Flags) (int, error) {
 	configFlag := fl.String("config")
 	adapterFlag := fl.String("adapter")
 
-	var err error
-	var envfileFlag []string
-	envfileFlag, err = fl.GetStringSlice("envfile")
-	if err != nil {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("reading envfile flag: %v", err)
-	}
-
 	// load all additional envs as soon as possible
-	for _, envfile := range envfileFlag {
-		if err := loadEnvFromFile(envfile); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// use default config and ensure a config file is specified
@@ -633,6 +612,25 @@ func cmdFmt(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+// handleEnvFileFlag loads the environment variables from the given --envfile
+// flag if specified. This should be called as early in the command function.
+func handleEnvFileFlag(fl Flags) error {
+	var err error
+	var envfileFlag []string
+	envfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return fmt.Errorf("reading envfile flag: %v", err)
+	}
+
+	for _, envfile := range envfileFlag {
+		if err := loadEnvFromFile(envfile); err != nil {
+			return fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // AdminAPIRequest makes an API request according to the CLI flags given,
