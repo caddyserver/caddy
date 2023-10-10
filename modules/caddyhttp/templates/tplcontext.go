@@ -188,6 +188,7 @@ func (c TemplateContext) funcHTTPInclude(uri string) (string, error) {
 		return "", err
 	}
 	virtReq.Host = c.Req.Host
+	virtReq.RemoteAddr = "127.0.0.1:10000" // https://github.com/caddyserver/caddy/issues/5835
 	virtReq.Header = c.Req.Header.Clone()
 	virtReq.Header.Set("Accept-Encoding", "identity") // https://github.com/caddyserver/caddy/issues/4352
 	virtReq.Trailer = c.Req.Trailer.Clone()
