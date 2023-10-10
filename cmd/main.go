@@ -52,6 +52,7 @@ func init() {
 	// (very important, as Caddy is often non-interactive
 	// and thus ACME account creation will fail!)
 	certmagic.DefaultACME.Agreed = true
+	flag.BoolVar(&versionFlag, "v", false, "show version and exit")
 }
 
 // Main implements the main function of the caddy command.
@@ -60,6 +61,12 @@ func Main() {
 	if len(os.Args) == 0 {
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
+	}
+	
+	if versionFlag {
+		_, version := caddy.Version()
+		fmt.Printf("Caddy %s\n", version)
+		os.Exit(0)
 	}
 
 	if err := rootCmd.Execute(); err != nil {

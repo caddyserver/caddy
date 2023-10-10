@@ -91,6 +91,11 @@ https://caddyserver.com/docs/running
   $ caddy run --config caddy.json
   $ caddy reload --config caddy.json
   $ caddy stop`,
+  Run: func(cmd *cobra.Command, args []string) {
+	if versionFlag {
+		displayVersion()
+		return
+	}
 
 	// kind of annoying to have all the help text printed out if
 	// caddy has an error provisioning its modules, for instance...
@@ -101,6 +106,7 @@ const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
 
 func init() {
+	rootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "display version information")
 	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
 }
 
