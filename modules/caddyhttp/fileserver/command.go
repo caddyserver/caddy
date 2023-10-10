@@ -51,6 +51,9 @@ will be changed to the HTTPS port and the server will use HTTPS. If using
 a public domain, ensure A/AAAA records are properly configured before
 using this option.
 
+By default, Zstandard and Gzip compression are enabled. Use --no-compress
+to disable compression.
+
 If --browse is enabled, requests for folders without an index file will
 respond with a file listing.`,
 		CobraFunc: func(cmd *cobra.Command) {
