@@ -94,8 +94,8 @@ func init() {
 Starts the Caddy process, optionally bootstrapped with an initial config file.
 This command unblocks after the server starts running or fails to run.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 On Windows, the spawned child process will remain attached to the terminal, so
 closing the window will forcefully stop Caddy; to avoid forgetting this, try
@@ -133,8 +133,8 @@ As a special case, if the current working directory has a file called
 that file will be loaded and used to configure Caddy, even without any command
 line flags.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
@@ -240,6 +240,7 @@ documentation: https://go.dev/doc/modules/version-numbers
 
 	RegisterCommand(Command{
 		Name:  "environ",
+		Usage: "[--envfile <path>]",
 		Short: "Prints the environment",
 		Long: `
 Prints the environment as seen by this Caddy process.
@@ -248,6 +249,9 @@ The environment includes variables set in the system. If your Caddy
 configuration uses environment variables (e.g. "{env.VARIABLE}") then
 this command can be useful for verifying that the variables will have
 the values you expect in your config.
+
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 Note that environments may be different depending on how you run Caddy.
 Environments for Caddy instances started by service managers such as
@@ -259,12 +263,15 @@ by adding the "--environ" flag.
 
 Environments may contain sensitive data.
 `,
-		Func: cmdEnviron,
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
+			cmd.RunE = WrapCommandFuncForCobra(cmdEnviron)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "adapt",
-		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
+		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate] [--envfile <path>]",
 		Short: "Adapts a configuration to Caddy's native JSON",
 		Long: `
 Adapts a configuration to Caddy's native JSON format and writes the
@@ -276,12 +283,16 @@ for human readability.
 If --validate is used, the adapted config will be checked for validity.
 If the config is invalid, an error will be printed to stderr and a non-
 zero exit status will be returned.
+
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
 			cmd.Flags().StringP("adapter", "a", "caddyfile", "Name of config adapter")
 			cmd.Flags().BoolP("pretty", "p", false, "Format the output for human readability")
 			cmd.Flags().BoolP("validate", "", false, "Validate the output")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdAdaptConfig)
 		},
 	})
@@ -295,8 +306,8 @@ Loads and provisions the provided config, but does not start running it.
 This reveals any errors with the configuration through the loading and
 provisioning stages.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Input configuration file")
