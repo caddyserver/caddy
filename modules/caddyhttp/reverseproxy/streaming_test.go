@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestHandlerCopyResponse(t *testing.T) {
@@ -22,7 +24,7 @@ func TestHandlerCopyResponse(t *testing.T) {
 	for _, d := range testdata {
 		src := bytes.NewBuffer([]byte(d))
 		dst.Reset()
-		err := h.copyResponse(recorder, src, 0)
+		err := h.copyResponse(recorder, src, 0, caddy.Log())
 		if err != nil {
 			t.Errorf("failed with error: %v", err)
 		}
