@@ -191,6 +191,13 @@ type Handler struct {
 	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
+	// If set, the proxy will write very detailed logs about its
+	// inner workings. Enable this only when debugging, as it
+	// will produce a lot of output.
+	//
+	// EXPERIMENTAL: This feature is subject to change or removal.
+	VerboseLogs bool `json:"verbose_logs,omitempty"`
+
 	Transport        http.RoundTripper `json:"-"`
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
@@ -943,9 +950,15 @@ func (h *Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
+	if h.VerboseLogs {
+		logger.Debug("wrote header")
+	}
 
-	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
+	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if h.VerboseLogs || errClose != nil {
+		logger.Debug("closed response body from upstream", zap.Error(errClose))
+	}
 	if err != nil {
 		// we're streaming the response and we've already written headers, so
 		// there's nothing an error handler can do to recover at this point;
@@ -977,6 +990,10 @@ func (h *Handler) finalizeResponse(
 		for _, v := range vv {
 			rw.Header().Add(k, v)
 		}
+	}
+
+	if h.VerboseLogs {
+		logger.Debug("response finalized")
 	}
 
 	return nil
