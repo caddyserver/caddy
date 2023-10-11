@@ -194,7 +194,9 @@ type Handler struct {
 	// If set, the proxy will write very detailed logs about its
 	// inner workings. Enable this only when debugging, as it
 	// will produce a lot of output.
-	TraceLogs bool `json:"trace_logs,omitempty"`
+	//
+	// EXPERIMENTAL: This feature is subject to change or removal.
+	VerboseLogs bool `json:"verbose_logs,omitempty"`
 
 	Transport        http.RoundTripper `json:"-"`
 	CB               CircuitBreaker    `json:"-"`
@@ -948,13 +950,13 @@ func (h *Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
-	if h.TraceLogs {
+	if h.VerboseLogs {
 		logger.Debug("wrote header")
 	}
 
 	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
-	if h.TraceLogs || errClose != nil {
+	if h.VerboseLogs || errClose != nil {
 		logger.Debug("closed response body from upstream", zap.Error(errClose))
 	}
 	if err != nil {
@@ -990,7 +992,7 @@ func (h *Handler) finalizeResponse(
 		}
 	}
 
-	if h.TraceLogs {
+	if h.VerboseLogs {
 		logger.Debug("response finalized")
 	}
 

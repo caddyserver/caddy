@@ -783,11 +783,11 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				responseHandler,
 			)
 
-		case "trace_logs":
-			if h.TraceLogs {
-				return d.Err("trace logs already specified")
+		case "verbose_logs":
+			if h.VerboseLogs {
+				return d.Err("verbose_logs already specified")
 			}
-			h.TraceLogs = true
+			h.VerboseLogs = true
 
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())

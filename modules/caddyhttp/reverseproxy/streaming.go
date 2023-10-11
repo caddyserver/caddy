@@ -189,7 +189,7 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 
 	if flushInterval != 0 {
 		var mlwLogger *zap.Logger
-		if h.TraceLogs {
+		if h.VerboseLogs {
 			mlwLogger = logger.Named("max_latency_writer")
 		} else {
 			mlwLogger = zap.NewNop()
@@ -214,7 +214,7 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 	defer streamingBufPool.Put(buf)
 
 	var copyLogger *zap.Logger
-	if h.TraceLogs {
+	if h.VerboseLogs {
 		copyLogger = logger
 	} else {
 		copyLogger = zap.NewNop()
