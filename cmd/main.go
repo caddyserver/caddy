@@ -17,6 +17,7 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -63,6 +64,10 @@ func Main() {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
+		var exitError *exitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode)
+		}
 		os.Exit(1)
 	}
 }

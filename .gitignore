@@ -12,6 +12,7 @@ Caddyfile.*
 cmd/caddy/caddy
 cmd/caddy/caddy.exe
 cmd/caddy/tmp/*.exe
+cmd/caddy/.env
 
 # mac specific
 .DS_Store
