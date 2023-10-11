@@ -76,6 +76,12 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 			expect: `{"foo": "jet", "bar": {"aa": "bb"}, "list": ["a", "b", "c"]}`,
 		},
 		{
+			method:    "DELETE",
+			path:      "/bar/qq",
+			expect:    `{"foo": "jet", "bar": {"aa": "bb"}, "list": ["a", "b", "c"]}`,
+			shouldErr: true,
+		},
+		{
 			method:  "POST",
 			path:    "/list",
 			payload: `"e"`,
