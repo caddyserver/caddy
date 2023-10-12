@@ -649,7 +649,7 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config, activeRequests *int6
 		delete(sqs.tlsConfs, tlsConfig)
 		delete(sqs.requestCounters, tlsConfig)
 		if sqs.activeTlsConf == tlsConfig {
-			// select another tls.Config, if there is none,
+			// select another tls.Config and request counter, if there is none,
 			// related sharedQuicListener will be destroyed anyway
 			for tc, counter := range sqs.requestCounters {
 				sqs.activeTlsConf = tc
