@@ -484,8 +484,8 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		h3ln := ln
 		for {
 			// retrieve the underlying socket, so quic-go can optimize.
-			if unwrapper, ok := ln.(interface{ Unwrap() any }); ok {
-				h3ln = unwrapper.Unwrap().(net.PacketConn)
+			if unwrapper, ok := ln.(interface{ Unwrap() net.PacketConn }); ok {
+				h3ln = unwrapper.Unwrap()
 			} else {
 				break
 			}
