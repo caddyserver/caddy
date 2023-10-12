@@ -90,6 +90,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    max_buffer_size    <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
+//	    trace_logs
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -155,6 +156,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		// the underlying JSON does not yet support different
 		// transports (protocols or schemes) to each backend,
 		// so we remember the last one we see and compare them
+
+		switch pa.scheme {
+		case "wss":
+			return d.Errf("the scheme wss:// is only supported in browsers; use https:// instead")
+		case "ws":
+			return d.Errf("the scheme ws:// is only supported in browsers; use http:// instead")
+		case "https", "http", "h2c", "":
+			// Do nothing or handle the valid schemes
+		default:
+			return d.Errf("unsupported URL scheme %s://", pa.scheme)
+		}
+
 		if commonScheme != "" && pa.scheme != commonScheme {
 			return d.Errf("for now, all proxy upstreams must use the same scheme (transport protocol); expecting '%s://' but got '%s://'",
 				commonScheme, pa.scheme)
@@ -193,7 +206,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for _, up := range d.RemainingArgs() {
 		err := appendUpstream(up)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing upstream '%s': %w", up, err)
 		}
 	}
 
@@ -217,7 +230,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			for _, up := range args {
 				err := appendUpstream(up)
 				if err != nil {
-					return err
+					return fmt.Errorf("parsing upstream '%s': %w", up, err)
 				}
 			}
 
@@ -360,7 +373,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if len(values) == 0 {
 					values = append(values, "")
 				}
-				healthHeaders[key] = values
+				healthHeaders[key] = append(healthHeaders[key], values...)
 			}
 			if h.HealthChecks == nil {
 				h.HealthChecks = new(HealthChecks)
@@ -539,17 +552,24 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			size, err := humanize.ParseBytes(d.Val())
-			if err != nil {
-				return d.Errf("invalid byte size '%s': %v", d.Val(), err)
+			val := d.Val()
+			var size int64
+			if val == "unlimited" {
+				size = -1
+			} else {
+				usize, err := humanize.ParseBytes(val)
+				if err != nil {
+					return d.Errf("invalid byte size '%s': %v", val, err)
+				}
+				size = int64(usize)
 			}
 			if d.NextArg() {
 				return d.ArgErr()
 			}
 			if subdir == "request_buffers" {
-				h.RequestBuffers = int64(size)
+				h.RequestBuffers = size
 			} else if subdir == "response_buffers" {
-				h.ResponseBuffers = int64(size)
+				h.ResponseBuffers = size
 			}
 
 		// TODO: These three properties are deprecated; remove them sometime after v2.6.4
@@ -762,6 +782,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HandleResponse,
 				responseHandler,
 			)
+
+		case "verbose_logs":
+			if h.VerboseLogs {
+				return d.Err("verbose_logs already specified")
+			}
+			h.VerboseLogs = true
 
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())

@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -42,7 +43,11 @@ func init() {
 //
 // This listener wrapper must be placed BEFORE the "tls" listener
 // wrapper, for it to work properly.
-type HTTPRedirectListenerWrapper struct{}
+type HTTPRedirectListenerWrapper struct {
+	// MaxHeaderBytes is the maximum size to parse from a client's
+	// HTTP request headers. Default: 1 MB
+	MaxHeaderBytes int64 `json:"max_header_bytes,omitempty"`
+}
 
 func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -56,7 +61,7 @@ func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 }
 
 func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
-	return &httpRedirectListener{l}
+	return &httpRedirectListener{l, h.MaxHeaderBytes}
 }
 
 // httpRedirectListener is listener that checks the first few bytes
@@ -64,6 +69,7 @@ func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener 
 // to respond to an HTTP request with a redirect.
 type httpRedirectListener struct {
 	net.Listener
+	maxHeaderBytes int64
 }
 
 // Accept waits for and returns the next connection to the listener,
@@ -74,9 +80,14 @@ func (l *httpRedirectListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
+	maxHeaderBytes := l.maxHeaderBytes
+	if maxHeaderBytes == 0 {
+		maxHeaderBytes = 1024 * 1024
+	}
+
 	return &httpRedirectConn{
 		Conn: c,
-		r:    bufio.NewReader(c),
+		r:    bufio.NewReader(io.LimitReader(c, maxHeaderBytes)),
 	}, nil
 }
 

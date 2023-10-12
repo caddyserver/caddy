@@ -55,10 +55,10 @@ respond with a file listing.`,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("domain", "d", "", "Domain name at which to serve the files")
 			cmd.Flags().StringP("root", "r", "", "The path to the root of the site")
-			cmd.Flags().StringP("listen", "", "", "The address to which to bind the listener")
+			cmd.Flags().StringP("listen", "l", "", "The address to which to bind the listener")
 			cmd.Flags().BoolP("browse", "b", false, "Enable directory browsing")
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
-			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
+			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
@@ -66,7 +66,7 @@ respond with a file listing.`,
 				Short:   "Exports the default file browser template",
 				Example: "caddy file-server export-template > browse.html",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					_, err := io.WriteString(os.Stdout, defaultBrowseTemplate)
+					_, err := io.WriteString(os.Stdout, BrowseTemplate)
 					return err
 				},
 			})

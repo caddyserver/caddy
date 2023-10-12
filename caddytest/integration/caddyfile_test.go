@@ -135,3 +135,352 @@ func TestReplIndex(t *testing.T) {
 	// act and assert
 	tester.AssertGetResponse("http://localhost:9080/", 200, "")
 }
+
+func TestInvalidPrefix(t *testing.T) {
+	type testCase struct {
+		config, expectedError string
+	}
+
+	failureCases := []testCase{
+		{
+			config:        `wss://localhost`,
+			expectedError: `the scheme wss:// is only supported in browsers; use https:// instead`,
+		},
+		{
+			config:        `ws://localhost`,
+			expectedError: `the scheme ws:// is only supported in browsers; use http:// instead`,
+		},
+		{
+			config:        `someInvalidPrefix://localhost`,
+			expectedError: "unsupported URL scheme someinvalidprefix://",
+		},
+		{
+			config:        `h2c://localhost`,
+			expectedError: `unsupported URL scheme h2c://`,
+		},
+		{
+			config:        `localhost, wss://localhost`,
+			expectedError: `the scheme wss:// is only supported in browsers; use https:// instead`,
+		},
+		{
+			config: `localhost {
+  				reverse_proxy ws://localhost"
+            }`,
+			expectedError: `the scheme ws:// is only supported in browsers; use http:// instead`,
+		},
+		{
+			config: `localhost {
+  				reverse_proxy someInvalidPrefix://localhost"
+			}`,
+			expectedError: `unsupported URL scheme someinvalidprefix://`,
+		},
+	}
+
+	for _, failureCase := range failureCases {
+		caddytest.AssertLoadError(t, failureCase.config, "caddyfile", failureCase.expectedError)
+	}
+}
+
+func TestValidPrefix(t *testing.T) {
+	type testCase struct {
+		rawConfig, expectedResponse string
+	}
+
+	successCases := []testCase{
+		{
+			"localhost",
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			"https://localhost",
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			"http://localhost",
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			`localhost {
+			reverse_proxy http://localhost:3000
+		 }`,
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"upstreams": [
+														{
+															"dial": "localhost:3000"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			`localhost {
+			reverse_proxy https://localhost:3000
+		 }`,
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"transport": {
+														"protocol": "http",
+														"tls": {}
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:3000"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			`localhost {
+			reverse_proxy h2c://localhost:3000
+		 }`,
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"transport": {
+														"protocol": "http",
+														"versions": [
+															"h2c",
+															"2"
+														]
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:3000"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+		{
+			`localhost {
+			reverse_proxy localhost:3000
+		 }`,
+			`{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"upstreams": [
+														{
+															"dial": "localhost:3000"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}`,
+		},
+	}
+
+	for _, successCase := range successCases {
+		caddytest.AssertAdapt(t, successCase.rawConfig, "caddyfile", successCase.expectedResponse)
+	}
+}

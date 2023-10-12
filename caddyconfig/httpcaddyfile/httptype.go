@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,46 +81,18 @@ func (st ServerType) Setup(
 		return nil, warnings, err
 	}
 
-	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings)
+	// this will replace both static and user-defined placeholder shorthands
+	// with actual identifiers used by Caddy
+	replacer := NewShorthandReplacer()
+
+	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer)
 	if err != nil {
 		return nil, warnings, err
 	}
 
-	// replace shorthand placeholders (which are convenient
-	// when writing a Caddyfile) with their actual placeholder
-	// identifiers or variable names
-	replacer := strings.NewReplacer(placeholderShorthands()...)
-
-	// these are placeholders that allow a user-defined final
-	// parameters, but we still want to provide a shorthand
-	// for those, so we use a regexp to replace
-	regexpReplacements := []struct {
-		search  *regexp.Regexp
-		replace string
-	}{
-		{regexp.MustCompile(`{header\.([\w-]*)}`), "{http.request.header.$1}"},
-		{regexp.MustCompile(`{cookie\.([\w-]*)}`), "{http.request.cookie.$1}"},
-		{regexp.MustCompile(`{labels\.([\w-]*)}`), "{http.request.host.labels.$1}"},
-		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
-		{regexp.MustCompile(`{file\.([\w-]*)}`), "{http.request.uri.path.file.$1}"},
-		{regexp.MustCompile(`{query\.([\w-]*)}`), "{http.request.uri.query.$1}"},
-		{regexp.MustCompile(`{re\.([\w-]*)\.([\w-]*)}`), "{http.regexp.$1.$2}"},
-		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
-		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
-		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
-		{regexp.MustCompile(`{file_match\.([\w-]*)}`), "{http.matchers.file.$1}"},
-	}
-
 	for _, sb := range originalServerBlocks {
-		for _, segment := range sb.block.Segments {
-			for i := 0; i < len(segment); i++ {
-				// simple string replacements
-				segment[i].Text = replacer.Replace(segment[i].Text)
-				// complex regexp replacements
-				for _, r := range regexpReplacements {
-					segment[i].Text = r.search.ReplaceAllString(segment[i].Text, r.replace)
-				}
-			}
+		for i := range sb.block.Segments {
+			replacer.ApplyToSegment(&sb.block.Segments[i])
 		}
 
 		if len(sb.block.Keys) == 0 {
@@ -452,6 +423,7 @@ func (ServerType) extractNamedRoutes(
 	serverBlocks []serverBlock,
 	options map[string]any,
 	warnings *[]caddyconfig.Warning,
+	replacer ShorthandReplacer,
 ) ([]serverBlock, error) {
 	namedRoutes := map[string]*caddyhttp.Route{}
 
@@ -477,11 +449,14 @@ func (ServerType) extractNamedRoutes(
 			continue
 		}
 
-		// zip up all the segments since ParseSegmentAsSubroute
-		// was designed to take a directive+
 		wholeSegment := caddyfile.Segment{}
-		for _, segment := range sb.block.Segments {
-			wholeSegment = append(wholeSegment, segment...)
+		for i := range sb.block.Segments {
+			// replace user-defined placeholder shorthands in extracted named routes
+			replacer.ApplyToSegment(&sb.block.Segments[i])
+
+			// zip up all the segments since ParseSegmentAsSubroute
+			// was designed to take a directive+
+			wholeSegment = append(wholeSegment, sb.block.Segments[i]...)
 		}
 
 		h := Helper{
@@ -710,6 +685,7 @@ func (st *ServerType) serversFromPairings(
 					}
 
 					if len(hosts) > 0 {
+						slices.Sort(hosts) // for deterministic JSON output
 						cp.MatchersRaw = caddy.ModuleMap{
 							"sni": caddyconfig.JSON(hosts, warnings), // make sure to match all hosts, not just auto-HTTPS-qualified ones
 						}
@@ -741,10 +717,20 @@ func (st *ServerType) serversFromPairings(
 					}
 				}
 
+				// If TLS is specified as directive, it will also result in 1 or more connection policy being created
+				// Thus, catch-all address with non-standard port, e.g. :8443, can have TLS enabled without
+				// specifying prefix "https://"
+				// Second part of the condition is to allow creating TLS conn policy even though `auto_https` has been disabled
+				// ensuring compatibility with behavior described in below link
+				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
+				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
+				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
+					(addr.Host != "" && srv.AutoHTTPS != nil && !sliceContains(srv.AutoHTTPS.Skip, addr.Host))
+
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
 				if addr.Scheme == "https" ||
-					(addr.Scheme != "http" && addr.Host != "" && addr.Port != httpPort) {
+					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
 				}
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
@@ -1447,37 +1433,6 @@ func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.Modul
 		msEncoded[matcherName] = jsonBytes
 	}
 	return msEncoded, nil
-}
-
-// placeholderShorthands returns a slice of old-new string pairs,
-// where the left of the pair is a placeholder shorthand that may
-// be used in the Caddyfile, and the right is the replacement.
-func placeholderShorthands() []string {
-	return []string{
-		"{dir}", "{http.request.uri.path.dir}",
-		"{file}", "{http.request.uri.path.file}",
-		"{host}", "{http.request.host}",
-		"{hostport}", "{http.request.hostport}",
-		"{port}", "{http.request.port}",
-		"{method}", "{http.request.method}",
-		"{path}", "{http.request.uri.path}",
-		"{query}", "{http.request.uri.query}",
-		"{remote}", "{http.request.remote}",
-		"{remote_host}", "{http.request.remote.host}",
-		"{remote_port}", "{http.request.remote.port}",
-		"{scheme}", "{http.request.scheme}",
-		"{uri}", "{http.request.uri}",
-		"{tls_cipher}", "{http.request.tls.cipher_suite}",
-		"{tls_version}", "{http.request.tls.version}",
-		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
-		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
-		"{tls_client_serial}", "{http.request.tls.client.serial}",
-		"{tls_client_subject}", "{http.request.tls.client.subject}",
-		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
-		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
-		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
-		"{client_ip}", "{http.vars.client_ip}",
-	}
 }
 
 // WasReplacedPlaceholderShorthand checks if a token string was

@@ -358,11 +358,17 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
 	req = req.WithContext(ctx)
-	for key, hdrs := range h.HealthChecks.Active.Headers {
+
+	// set headers, using a replacer with only globals (env vars, system info, etc.)
+	repl := caddy.NewReplacer()
+	for key, vals := range h.HealthChecks.Active.Headers {
+		key = repl.ReplaceAll(key, "")
 		if key == "Host" {
-			req.Host = h.HealthChecks.Active.Headers.Get(key)
-		} else {
-			req.Header[key] = hdrs
+			req.Host = repl.ReplaceAll(h.HealthChecks.Active.Headers.Get(key), "")
+			continue
+		}
+		for _, val := range vals {
+			req.Header.Add(key, repl.ReplaceKnown(val, ""))
 		}
 	}
 
