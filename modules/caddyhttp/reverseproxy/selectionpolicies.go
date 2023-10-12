@@ -269,7 +269,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if count > 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
+			if count == 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}

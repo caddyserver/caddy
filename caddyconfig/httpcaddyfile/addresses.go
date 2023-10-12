@@ -24,10 +24,11 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/caddyserver/certmagic"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/certmagic"
 )
 
 // mapAddressToServerBlocks returns a map of listener address to list of server
@@ -195,6 +196,17 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 		return nil, fmt.Errorf("parsing key: %v", err)
 	}
 	addr = addr.Normalize()
+
+	switch addr.Scheme {
+	case "wss":
+		return nil, fmt.Errorf("the scheme wss:// is only supported in browsers; use https:// instead")
+	case "ws":
+		return nil, fmt.Errorf("the scheme ws:// is only supported in browsers; use http:// instead")
+	case "https", "http", "":
+		// Do nothing or handle the valid schemes
+	default:
+		return nil, fmt.Errorf("unsupported URL scheme %s://", addr.Scheme)
+	}
 
 	// figure out the HTTP and HTTPS ports; either
 	// use defaults, or override with user config

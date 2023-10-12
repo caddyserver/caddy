@@ -22,9 +22,10 @@ import (
 	"time"
 
 	"github.com/aryann/difflib"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
+
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	// plug in Caddy modules here
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
@@ -466,7 +467,7 @@ func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) 
 	}
 
 	if expectedStatusCode != resp.StatusCode {
-		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.RequestURI, expectedStatusCode, resp.StatusCode)
+		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.URL.RequestURI(), expectedStatusCode, resp.StatusCode)
 	}
 
 	return resp

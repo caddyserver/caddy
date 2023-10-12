@@ -30,10 +30,11 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
-	"go.uber.org/zap"
 )
 
 func init() {
@@ -59,7 +60,23 @@ func init() {
 // requested directory does not have an index file, Caddy writes a
 // 404 response. Alternatively, file browsing can be enabled with
 // the "browse" parameter which shows a list of files when directories
-// are requested if no index file is present.
+// are requested if no index file is present. If "browse" is enabled,
+// Caddy may serve a JSON array of the dirctory listing when the `Accept`
+// header mentions `application/json` with the following structure:
+//
+//	[{
+//		"name": "",
+//		"size": 0,
+//		"url": "",
+//		"mod_time": "",
+//		"mode": 0,
+//		"is_dir": false,
+//		"is_symlink": false
+//	}]
+//
+// with the `url` being relative to the request path and `mod_time` in the RFC 3339 format
+// with sub-second precision. For any other value for the `Accept` header, the
+// respective browse template is executed with `Content-Type: text/html`.
 //
 // By default, this handler will canonicalize URIs so that requests to
 // directories end with a slash, but requests to regular files do not.
@@ -418,8 +435,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// GET and HEAD, which is sensible for a static file server - reject
 	// any other methods (see issue #5166)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Add("Allow", "GET, HEAD")
-		return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+		// if we're in an error context, then it doesn't make sense
+		// to repeat the error; just continue because we're probably
+		// trying to write an error page response (see issue #5703)
+		if _, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); !ok {
+			w.Header().Add("Allow", "GET, HEAD")
+			return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+		}
 	}
 
 	// set the Etag - note that a conditional If-None-Match request is handled

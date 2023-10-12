@@ -17,6 +17,7 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -30,11 +31,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
 func init() {
@@ -62,6 +64,10 @@ func Main() {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
+		var exitError *exitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode)
+		}
 		os.Exit(1)
 	}
 }
@@ -117,9 +123,8 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				zap.String("config_adapter", adapterName))
 		}
 	} else if adapterName == "" {
-		// as a special case when no config file or adapter
-		// is specified, see if the Caddyfile adapter is
-		// plugged in, and if so, try using a default Caddyfile
+		// if the Caddyfile adapter is plugged in, we can try using an
+		// adjacent Caddyfile by default
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
 			config, err = os.ReadFile("Caddyfile")
@@ -300,8 +305,12 @@ func loadEnvFromFile(envFile string) error {
 	}
 
 	for k, v := range envMap {
-		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("setting environment variables: %v", err)
+		// do not overwrite existing environment variables
+		_, exists := os.LookupEnv(k)
+		if !exists {
+			if err := os.Setenv(k, v); err != nil {
+				return fmt.Errorf("setting environment variables: %v", err)
+			}
 		}
 	}
 

@@ -28,12 +28,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/mastercactapus/proxyprotocol"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -528,7 +529,8 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			certs := caddytls.AllMatchingCertificates(t.ClientCertificateAutomate)
 			var err error
 			for _, cert := range certs {
-				err = cri.SupportsCertificate(&cert.Certificate)
+				certCertificate := cert.Certificate // avoid taking address of iteration variable (gosec warning)
+				err = cri.SupportsCertificate(&certCertificate)
 				if err == nil {
 					return &cert.Certificate, nil
 				}

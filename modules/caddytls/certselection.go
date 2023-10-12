@@ -58,7 +58,8 @@ nextChoice:
 		if len(p.SerialNumber) > 0 {
 			var found bool
 			for _, sn := range p.SerialNumber {
-				if cert.Leaf.SerialNumber.Cmp(&sn.Int) == 0 {
+				snInt := sn.Int // avoid taking address of iteration variable (gosec warning)
+				if cert.Leaf.SerialNumber.Cmp(&snInt) == 0 {
 					found = true
 					break
 				}

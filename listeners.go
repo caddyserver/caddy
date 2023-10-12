@@ -31,10 +31,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // NetworkAddress represents one or more network addresses.

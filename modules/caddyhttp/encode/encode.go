@@ -93,6 +93,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/xhtml+xml*",
 					"application/atom+xml*",
 					"application/rss+xml*",
+					"application/wasm*",
 					"image/svg+xml*",
 				},
 			},

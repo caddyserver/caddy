@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -32,19 +33,27 @@ import (
 	"strings"
 
 	"github.com/aryann/difflib"
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/internal"
-	"go.uber.org/zap"
 )
 
 func cmdStart(fl Flags) (int, error) {
-	startCmdConfigFlag := fl.String("config")
-	startCmdConfigAdapterFlag := fl.String("adapter")
-	startCmdPidfileFlag := fl.String("pidfile")
-	startCmdWatchFlag := fl.Bool("watch")
-	startCmdEnvfileFlag := fl.String("envfile")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
+	pidfileFlag := fl.String("pidfile")
+	watchFlag := fl.Bool("watch")
+
+	var err error
+	var envfileFlag []string
+	envfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("reading envfile flag: %v", err)
+	}
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
@@ -65,22 +74,23 @@ func cmdStart(fl Flags) (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
-	if startCmdConfigFlag != "" {
-		cmd.Args = append(cmd.Args, "--config", startCmdConfigFlag)
+	if configFlag != "" {
+		cmd.Args = append(cmd.Args, "--config", configFlag)
 	}
-	if startCmdEnvfileFlag != "" {
-		cmd.Args = append(cmd.Args, "--envfile", startCmdEnvfileFlag)
+
+	for _, envfile := range envfileFlag {
+		cmd.Args = append(cmd.Args, "--envfile", envfile)
 	}
-	if startCmdConfigAdapterFlag != "" {
-		cmd.Args = append(cmd.Args, "--adapter", startCmdConfigAdapterFlag)
+	if configAdapterFlag != "" {
+		cmd.Args = append(cmd.Args, "--adapter", configAdapterFlag)
 	}
-	if startCmdWatchFlag {
+	if watchFlag {
 		cmd.Args = append(cmd.Args, "--watch")
 	}
-	if startCmdPidfileFlag != "" {
-		cmd.Args = append(cmd.Args, "--pidfile", startCmdPidfileFlag)
+	if pidfileFlag != "" {
+		cmd.Args = append(cmd.Args, "--pidfile", pidfileFlag)
 	}
-	stdinpipe, err := cmd.StdinPipe()
+	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("creating stdin pipe: %v", err)
@@ -92,7 +102,8 @@ func cmdStart(fl Flags) (int, error) {
 	expect := make([]byte, 32)
 	_, err = rand.Read(expect)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("generating random confirmation bytes: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("generating random confirmation bytes: %v", err)
 	}
 
 	// begin writing the confirmation bytes to the child's
@@ -100,14 +111,15 @@ func cmdStart(fl Flags) (int, error) {
 	// started yet, and writing synchronously would result
 	// in a deadlock
 	go func() {
-		_, _ = stdinpipe.Write(expect)
-		stdinpipe.Close()
+		_, _ = stdinPipe.Write(expect)
+		stdinPipe.Close()
 	}()
 
 	// start the process
 	err = cmd.Start()
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("starting caddy process: %v", err)
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("starting caddy process: %v", err)
 	}
 
 	// there are two ways we know we're done: either
@@ -155,41 +167,37 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
-	runCmdConfigFlag := fl.String("config")
-	runCmdConfigAdapterFlag := fl.String("adapter")
-	runCmdResumeFlag := fl.Bool("resume")
-	runCmdLoadEnvfileFlag := fl.String("envfile")
-	runCmdPrintEnvFlag := fl.Bool("environ")
-	runCmdWatchFlag := fl.Bool("watch")
-	runCmdPidfileFlag := fl.String("pidfile")
-	runCmdPingbackFlag := fl.String("pingback")
+	configFlag := fl.String("config")
+	configAdapterFlag := fl.String("adapter")
+	resumeFlag := fl.Bool("resume")
+	printEnvFlag := fl.Bool("environ")
+	watchFlag := fl.Bool("watch")
+	pidfileFlag := fl.String("pidfile")
+	pingbackFlag := fl.String("pingback")
 
 	// load all additional envs as soon as possible
-	if runCmdLoadEnvfileFlag != "" {
-		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
 	// if we are supposed to print the environment, do that first
-	if runCmdPrintEnvFlag {
+	if printEnvFlag {
 		printEnvironment()
 	}
 
 	// load the config, depending on flags
 	var config []byte
-	var err error
-	if runCmdResumeFlag {
+	if resumeFlag {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if os.IsNotExist(err) {
 			// not a bad error; just can't resume if autosave file doesn't exist
 			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
-			runCmdResumeFlag = false
+			resumeFlag = false
 		} else if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		} else {
-			if runCmdConfigFlag == "" {
+			if configFlag == "" {
 				caddy.Log().Info("resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			} else {
@@ -202,19 +210,19 @@ func cmdRun(fl Flags) (int, error) {
 	}
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
 	var configFile string
-	if !runCmdResumeFlag {
-		config, configFile, err = LoadConfig(runCmdConfigFlag, runCmdConfigAdapterFlag)
+	if !resumeFlag {
+		config, configFile, err = LoadConfig(configFlag, configAdapterFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		}
 	}
 
 	// create pidfile now, in case loading config takes a while (issue #5477)
-	if runCmdPidfileFlag != "" {
-		err := caddy.PIDFile(runCmdPidfileFlag)
+	if pidfileFlag != "" {
+		err := caddy.PIDFile(pidfileFlag)
 		if err != nil {
 			caddy.Log().Error("unable to write PID file",
-				zap.String("pidfile", runCmdPidfileFlag),
+				zap.String("pidfile", pidfileFlag),
 				zap.Error(err))
 		}
 	}
@@ -228,13 +236,13 @@ func cmdRun(fl Flags) (int, error) {
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
-	if runCmdPingbackFlag != "" {
+	if pingbackFlag != "" {
 		confirmationBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("reading confirmation bytes from stdin: %v", err)
 		}
-		conn, err := net.Dial("tcp", runCmdPingbackFlag)
+		conn, err := net.Dial("tcp", pingbackFlag)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("dialing confirmation address: %v", err)
@@ -243,14 +251,14 @@ func cmdRun(fl Flags) (int, error) {
 		_, err = conn.Write(confirmationBytes)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("writing confirmation bytes to %s: %v", runCmdPingbackFlag, err)
+				fmt.Errorf("writing confirmation bytes to %s: %v", pingbackFlag, err)
 		}
 	}
 
 	// if enabled, reload config file automatically on changes
 	// (this better only be used in dev!)
-	if runCmdWatchFlag {
-		go watchConfigFile(configFile, runCmdConfigAdapterFlag)
+	if watchFlag {
+		go watchConfigFile(configFile, configAdapterFlag)
 	}
 
 	// warn if the environment does not provide enough information about the disk
@@ -276,11 +284,11 @@ func cmdRun(fl Flags) (int, error) {
 }
 
 func cmdStop(fl Flags) (int, error) {
-	addrFlag := fl.String("address")
+	addressFlag := fl.String("address")
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, nil, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addressFlag, nil, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -298,7 +306,7 @@ func cmdStop(fl Flags) (int, error) {
 func cmdReload(fl Flags) (int, error) {
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
-	addrFlag := fl.String("address")
+	addressFlag := fl.String("address")
 	forceFlag := fl.Bool("force")
 
 	// get the config in caddy's native format
@@ -310,7 +318,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addrFlag, config, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -412,60 +420,60 @@ func cmdListModules(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
-func cmdEnviron(_ Flags) (int, error) {
+func cmdEnviron(fl Flags) (int, error) {
+	// load all additional envs as soon as possible
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+
 	printEnvironment()
 	return caddy.ExitCodeSuccess, nil
 }
 
 func cmdAdaptConfig(fl Flags) (int, error) {
-	adaptCmdInputFlag := fl.String("config")
-	adaptCmdAdapterFlag := fl.String("adapter")
-	adaptCmdPrettyFlag := fl.Bool("pretty")
-	adaptCmdValidateFlag := fl.Bool("validate")
+	inputFlag := fl.String("config")
+	adapterFlag := fl.String("adapter")
+	prettyFlag := fl.Bool("pretty")
+	validateFlag := fl.Bool("validate")
 
-	// if no input file was specified, try a default
-	// Caddyfile if the Caddyfile adapter is plugged in
-	if adaptCmdInputFlag == "" && caddyconfig.GetAdapter("caddyfile") != nil {
-		_, err := os.Stat("Caddyfile")
-		if err == nil {
-			// default Caddyfile exists
-			adaptCmdInputFlag = "Caddyfile"
-			caddy.Log().Info("using adjacent Caddyfile")
-		} else if !os.IsNotExist(err) {
-			// default Caddyfile exists, but error accessing it
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("accessing default Caddyfile: %v", err)
-		}
+	var err error
+	inputFlag, err = configFileWithRespectToDefault(caddy.Log(), inputFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if adaptCmdInputFlag == "" {
-		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	// load all additional envs as soon as possible
+	err = handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
-	if adaptCmdAdapterFlag == "" {
+
+	if adapterFlag == "" {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("adapter name is required (use --adapt flag or leave unspecified for default)")
 	}
 
-	cfgAdapter := caddyconfig.GetAdapter(adaptCmdAdapterFlag)
+	cfgAdapter := caddyconfig.GetAdapter(adapterFlag)
 	if cfgAdapter == nil {
 		return caddy.ExitCodeFailedStartup,
-			fmt.Errorf("unrecognized config adapter: %s", adaptCmdAdapterFlag)
+			fmt.Errorf("unrecognized config adapter: %s", adapterFlag)
 	}
 
-	input, err := os.ReadFile(adaptCmdInputFlag)
+	input, err := os.ReadFile(inputFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]any{"filename": adaptCmdInputFlag}
+	opts := map[string]any{"filename": inputFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if adaptCmdPrettyFlag {
+	if prettyFlag {
 		var prettyBuf bytes.Buffer
 		err = json.Indent(&prettyBuf, adaptedConfig, "", "\t")
 		if err != nil {
@@ -483,13 +491,13 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 		if warn.Directive != "" {
 			msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 		}
-		caddy.Log().Named(adaptCmdAdapterFlag).Warn(msg,
+		caddy.Log().Named(adapterFlag).Warn(msg,
 			zap.String("file", warn.File),
 			zap.Int("line", warn.Line))
 	}
 
 	// validate output if requested
-	if adaptCmdValidateFlag {
+	if validateFlag {
 		var cfg *caddy.Config
 		err = caddy.StrictUnmarshalJSON(adaptedConfig, &cfg)
 		if err != nil {
@@ -505,19 +513,26 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 }
 
 func cmdValidateConfig(fl Flags) (int, error) {
-	validateCmdConfigFlag := fl.String("config")
-	validateCmdAdapterFlag := fl.String("adapter")
-	runCmdLoadEnvfileFlag := fl.String("envfile")
+	configFlag := fl.String("config")
+	adapterFlag := fl.String("adapter")
 
 	// load all additional envs as soon as possible
-	if runCmdLoadEnvfileFlag != "" {
-		if err := loadEnvFromFile(runCmdLoadEnvfileFlag); err != nil {
-			return caddy.ExitCodeFailedStartup,
-				fmt.Errorf("loading additional environment variables: %v", err)
-		}
+	err := handleEnvFileFlag(fl)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
 	}
 
-	input, _, err := LoadConfig(validateCmdConfigFlag, validateCmdAdapterFlag)
+	// use default config and ensure a config file is specified
+	configFlag, err = configFileWithRespectToDefault(caddy.Log(), configFlag)
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, err
+	}
+	if configFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
+	}
+
+	input, _, err := LoadConfig(configFlag, adapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -540,13 +555,13 @@ func cmdValidateConfig(fl Flags) (int, error) {
 }
 
 func cmdFmt(fl Flags) (int, error) {
-	formatCmdConfigFile := fl.Arg(0)
-	if formatCmdConfigFile == "" {
-		formatCmdConfigFile = "Caddyfile"
+	configFile := fl.Arg(0)
+	if configFile == "" {
+		configFile = "Caddyfile"
 	}
 
 	// as a special case, read from stdin if the file name is "-"
-	if formatCmdConfigFile == "-" {
+	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
@@ -556,7 +571,7 @@ func cmdFmt(fl Flags) (int, error) {
 		return caddy.ExitCodeSuccess, nil
 	}
 
-	input, err := os.ReadFile(formatCmdConfigFile)
+	input, err := os.ReadFile(configFile)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
@@ -565,7 +580,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := os.WriteFile(formatCmdConfigFile, output, 0o600); err != nil {
+		if err := os.WriteFile(configFile, output, 0o600); err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
 		return caddy.ExitCodeSuccess, nil
@@ -589,7 +604,7 @@ func cmdFmt(fl Flags) (int, error) {
 		fmt.Print(string(output))
 	}
 
-	if warning, diff := caddyfile.FormattingDifference(formatCmdConfigFile, input); diff {
+	if warning, diff := caddyfile.FormattingDifference(configFile, input); diff {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf(`%s:%d: Caddyfile input is not formatted; Tip: use '--overwrite' to update your Caddyfile in-place instead of previewing it. Consult '--help' for more options`,
 			warning.File,
 			warning.Line,
@@ -597,6 +612,25 @@ func cmdFmt(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+// handleEnvFileFlag loads the environment variables from the given --envfile
+// flag if specified. This should be called as early in the command function.
+func handleEnvFileFlag(fl Flags) error {
+	var err error
+	var envfileFlag []string
+	envfileFlag, err = fl.GetStringSlice("envfile")
+	if err != nil {
+		return fmt.Errorf("reading envfile flag: %v", err)
+	}
+
+	for _, envfile := range envfileFlag {
+		if err := loadEnvFromFile(envfile); err != nil {
+			return fmt.Errorf("loading additional environment variables: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // AdminAPIRequest makes an API request according to the CLI flags given,
@@ -734,6 +768,31 @@ func DetermineAdminAPIAddress(address string, config []byte, configFile, configA
 
 	// Fallback to the default listen address otherwise
 	return caddy.DefaultAdminListen, nil
+}
+
+// configFileWithRespectToDefault returns the filename to use for loading the config, based
+// on whether a config file is already specified and a supported default config file exists.
+func configFileWithRespectToDefault(logger *zap.Logger, configFile string) (string, error) {
+	const defaultCaddyfile = "Caddyfile"
+
+	// if no input file was specified, try a default Caddyfile if the Caddyfile adapter is plugged in
+	if configFile == "" && caddyconfig.GetAdapter("caddyfile") != nil {
+		_, err := os.Stat(defaultCaddyfile)
+		if err == nil {
+			// default Caddyfile exists
+			if logger != nil {
+				logger.Info("using adjacent Caddyfile")
+			}
+			return defaultCaddyfile, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			// problem checking
+			return configFile, fmt.Errorf("checking if default Caddyfile exists: %v", err)
+		}
+	}
+
+	// default config file does not exist or is irrelevant
+	return configFile, nil
 }
 
 type moduleInfo struct {

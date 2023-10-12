@@ -26,14 +26,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/acme"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
-	"go.uber.org/zap/zapcore"
 )
 
 func init() {
@@ -180,17 +181,17 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			case "protocols":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
-					return nil, h.SyntaxErr("one or two protocols")
+					return nil, h.Errf("protocols requires one or two arguments")
 				}
 				if len(args) > 0 {
 					if _, ok := caddytls.SupportedProtocols[args[0]]; !ok {
-						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[0])
+						return nil, h.Errf("wrong protocol name or protocol not supported: '%s'", args[0])
 					}
 					cp.ProtocolMin = args[0]
 				}
 				if len(args) > 1 {
 					if _, ok := caddytls.SupportedProtocols[args[1]]; !ok {
-						return nil, h.Errf("Wrong protocol name or protocol not supported: '%s'", args[1])
+						return nil, h.Errf("wrong protocol name or protocol not supported: '%s'", args[1])
 					}
 					cp.ProtocolMax = args[1]
 				}
@@ -198,7 +199,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			case "ciphers":
 				for h.NextArg() {
 					if !caddytls.CipherSuiteNameSupported(h.Val()) {
-						return nil, h.Errf("Wrong cipher suite name or cipher suite not supported: '%s'", h.Val())
+						return nil, h.Errf("wrong cipher suite name or cipher suite not supported: '%s'", h.Val())
 					}
 					cp.CipherSuites = append(cp.CipherSuites, h.Val())
 				}
