@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -645,34 +644,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkTypes[network] = getListener
 }
 
-type unixConn struct {
-	*net.UnixConn
-	filename string
-	mapKey   string
-	count    *int32 // accessed atomically
-}
-
-func (uc *unixConn) Close() error {
-	newCount := atomic.AddInt32(uc.count, -1)
-	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uc.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(uc.filename)
-		}()
-	}
-	return uc.UnixConn.Close()
-}
-
-// unixSockets keeps track of the currently-active unix sockets
-// so we can transfer their FDs gracefully during reloads.
-var (
-	unixSockets = make(map[string]interface {
-		File() (*os.File, error)
-	})
-	unixSocketsMu sync.Mutex
-)
+var unixSocketsMu sync.Mutex
 
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if

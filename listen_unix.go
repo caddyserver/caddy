@@ -25,6 +25,7 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"os"
 	"sync/atomic"
 	"syscall"
 
@@ -179,6 +180,32 @@ func (uln *unixListener) Close() error {
 	}
 	return uln.UnixListener.Close()
 }
+
+type unixConn struct {
+	*net.UnixConn
+	filename string
+	mapKey   string
+	count    *int32 // accessed atomically
+}
+
+func (uc *unixConn) Close() error {
+	newCount := atomic.AddInt32(uc.count, -1)
+	if newCount == 0 {
+		defer func() {
+			unixSocketsMu.Lock()
+			delete(unixSockets, uc.mapKey)
+			unixSocketsMu.Unlock()
+			_ = syscall.Unlink(uc.filename)
+		}()
+	}
+	return uc.UnixConn.Close()
+}
+
+// unixSockets keeps track of the currently-active unix sockets
+// so we can transfer their FDs gracefully during reloads.
+var unixSockets = make(map[string]interface {
+	File() (*os.File, error)
+})
 
 // deleteListener is a type that simply deletes itself
 // from the listenerPool when it closes. It is used
