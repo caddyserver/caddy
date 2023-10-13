@@ -125,6 +125,12 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		unixSockets[lnKey] = ln.(*unixListener)
 	}
 
+	// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener in listen_unix.go, so...
+	if unix, ok := ln.(*net.UnixConn); ok {
+		ln = &unixConn{unix, address, lnKey, &one}
+		unixSockets[lnKey] = ln.(*unixConn)
+	}
+
 	// lightly wrap the listener so that when it is closed,
 	// we can decrement the usage pool counter
 	switch specificLn := ln.(type) {
@@ -198,4 +204,8 @@ type deletePacketConn struct {
 func (dl deletePacketConn) Close() error {
 	_, _ = listenerPool.Delete(dl.lnKey)
 	return dl.PacketConn.Close()
+}
+
+func (dl deletePacketConn) Unwrap() net.PacketConn {
+	return dl.PacketConn
 }
