@@ -201,6 +201,10 @@ func (uc *unixConn) Close() error {
 	return uc.UnixConn.Close()
 }
 
+func (uc *unixConn) Unwrap() net.PacketConn {
+	return uc.UnixConn
+}
+
 // unixSockets keeps track of the currently-active unix sockets
 // so we can transfer their FDs gracefully during reloads.
 var unixSockets = make(map[string]interface {
