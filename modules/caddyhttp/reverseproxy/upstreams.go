@@ -251,6 +251,8 @@ type AUpstreams struct {
 	Versions *IPVersions `json:"versions,omitempty"`
 
 	resolver *net.Resolver
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -261,7 +263,8 @@ func (AUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (au *AUpstreams) Provision(_ caddy.Context) error {
+func (au *AUpstreams) Provision(ctx caddy.Context) error {
+	au.logger = ctx.Logger()
 	if au.Refresh == 0 {
 		au.Refresh = caddy.Duration(time.Minute)
 	}
@@ -343,6 +346,11 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
+	au.logger.Debug("refreshing A upstreams",
+		zap.String("version", ipVersion),
+		zap.String("name", name),
+		zap.String("port", port))
+
 	ips, err := au.resolver.LookupIP(r.Context(), ipVersion, name)
 	if err != nil {
 		return nil, err
@@ -350,6 +358,8 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 
 	upstreams := make([]Upstream, len(ips))
 	for i, ip := range ips {
+		au.logger.Debug("discovered A record",
+			zap.String("ip", ip.String()))
 		upstreams[i] = Upstream{
 			Dial: net.JoinHostPort(ip.String(), port),
 		}
