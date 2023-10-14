@@ -374,8 +374,8 @@ func TestReplacerMap(t *testing.T) {
 func TestReplacerNew(t *testing.T) {
 	rep := NewReplacer()
 
-	if len(rep.providers) != 2 {
-		t.Errorf("Expected providers length '%v' got length '%v'", 2, len(rep.providers))
+	if len(rep.providers) != 3 {
+		t.Errorf("Expected providers length '%v' got length '%v'", 3, len(rep.providers))
 	} else {
 		// test if default global replacements are added  as the first provider
 		hostname, _ := os.Hostname()
