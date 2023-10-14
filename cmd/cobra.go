@@ -106,7 +106,7 @@ const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
 
 func init() {
-	rootCmd.SetVersionTemplate("{{.Version}}")
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
 }
 
