@@ -345,7 +345,7 @@ func fileReplacements(key string) (any, bool) {
 			zap.Error(err))
 		return nil, true
 	}
-	return body, true
+	return string(body), true
 }
 
 // globalDefaultReplacements handles replacements that can

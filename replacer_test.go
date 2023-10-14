@@ -372,53 +372,101 @@ func TestReplacerMap(t *testing.T) {
 }
 
 func TestReplacerNew(t *testing.T) {
-	rep := NewReplacer()
+	repl := NewReplacer()
 
-	if len(rep.providers) != 3 {
-		t.Errorf("Expected providers length '%v' got length '%v'", 3, len(rep.providers))
-	} else {
-		// test if default global replacements are added  as the first provider
-		hostname, _ := os.Hostname()
-		wd, _ := os.Getwd()
-		os.Setenv("CADDY_REPLACER_TEST", "envtest")
-		defer os.Setenv("CADDY_REPLACER_TEST", "")
+	if len(repl.providers) != 3 {
+		t.Errorf("Expected providers length '%v' got length '%v'", 3, len(repl.providers))
+	}
 
-		for _, tc := range []struct {
-			variable string
-			value    string
-		}{
-			{
-				variable: "system.hostname",
-				value:    hostname,
-			},
-			{
-				variable: "system.slash",
-				value:    string(filepath.Separator),
-			},
-			{
-				variable: "system.os",
-				value:    runtime.GOOS,
-			},
-			{
-				variable: "system.arch",
-				value:    runtime.GOARCH,
-			},
-			{
-				variable: "system.wd",
-				value:    wd,
-			},
-			{
-				variable: "env.CADDY_REPLACER_TEST",
-				value:    "envtest",
-			},
-		} {
-			if val, ok := rep.providers[0](tc.variable); ok {
-				if val != tc.value {
-					t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
-				}
-			} else {
-				t.Errorf("Expected key '%s' to be recognized by first provider", tc.variable)
+	// test if default global replacements are added as the first provider
+	hostname, _ := os.Hostname()
+	wd, _ := os.Getwd()
+	os.Setenv("CADDY_REPLACER_TEST", "envtest")
+	defer os.Setenv("CADDY_REPLACER_TEST", "")
+
+	for _, tc := range []struct {
+		variable string
+		value    string
+	}{
+		{
+			variable: "system.hostname",
+			value:    hostname,
+		},
+		{
+			variable: "system.slash",
+			value:    string(filepath.Separator),
+		},
+		{
+			variable: "system.os",
+			value:    runtime.GOOS,
+		},
+		{
+			variable: "system.arch",
+			value:    runtime.GOARCH,
+		},
+		{
+			variable: "system.wd",
+			value:    wd,
+		},
+		{
+			variable: "env.CADDY_REPLACER_TEST",
+			value:    "envtest",
+		},
+	} {
+		if val, ok := repl.providers[0](tc.variable); ok {
+			if val != tc.value {
+				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 			}
+		} else {
+			t.Errorf("Expected key '%s' to be recognized by first provider", tc.variable)
+		}
+	}
+
+	// test if file provider is added as the second provider
+	for _, tc := range []struct {
+		variable string
+		value    string
+	}{
+		{
+			variable: "file.caddytest/integration/testdata/foo.txt",
+			value:    "foo",
+		},
+	} {
+		if val, ok := repl.providers[1](tc.variable); ok {
+			if val != tc.value {
+				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
+			}
+		} else {
+			t.Errorf("Expected key '%s' to be recognized by second provider", tc.variable)
+		}
+	}
+}
+
+func TestReplacerNewWithoutFile(t *testing.T) {
+	repl := NewReplacer().WithoutFile()
+
+	for _, tc := range []struct {
+		variable  string
+		value     string
+		expectNil bool
+	}{
+		{
+			variable:  "file.caddytest/integration/testdata/foo.txt",
+			expectNil: true,
+		},
+		{
+			variable: "system.os",
+			value:    runtime.GOOS,
+		},
+	} {
+		if val, ok := repl.Get(tc.variable); ok {
+			if tc.expectNil && val != nil {
+				t.Errorf("Expected nil for key '%s' got '%v'", tc.variable, val)
+			} else if !tc.expectNil && val != tc.value {
+				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
+			}
+		} else {
+			t.Errorf("Expected key '%s' to be recognized by second provider", tc.variable)
 		}
 	}
 }
