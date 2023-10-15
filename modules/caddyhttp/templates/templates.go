@@ -46,7 +46,8 @@ func init() {
 //
 // ##### `.Args`
 //
-// A slice of arguments passed to this page/context, for example as the result of a `include`.
+// A slice of arguments passed to this page/context, for example
+// as the result of a [`include`](#include).
 //
 // ```
 // {{index .Args 0}} // first argument
@@ -103,8 +104,8 @@ func init() {
 // Reads and returns the contents of another file, and parses it
 // as a template, adding any template definitions to the template
 // stack. If there are no definitions, the filepath will be the
-// definition name. Any {{ define }} blocks will be accessible by
-// {{ template }} or {{ block }}. Imports must happen before the
+// definition name. Any `{{ define }}` blocks will be accessible by
+// `{{ template }}` or `{{ block }}`. Imports must happen before the
 // template or block action is called. Note that the contents are
 // NOT escaped, so you should only import trusted template files.
 //
@@ -146,7 +147,8 @@ func init() {
 //
 // ##### `listFiles`
 //
-// Returns a list of the files in the given directory, which is relative to the template context's file root.
+// Returns a list of the files in the given directory, which is relative
+// to the template context's file root.
 //
 // ```
 // {{listFiles "/mydir"}}
@@ -166,10 +168,19 @@ func init() {
 //
 // ##### `.RemoteIP`
 //
-// Returns the client's IP address.
+// Returns the connection's IP address.
 //
 // ```
 // {{.RemoteIP}}
+// ```
+//
+// ##### `.ClientIP`
+//
+// Returns the real client's IP address, if `trusted_proxies` was configured,
+// otherwise returns the connection's IP address.
+//
+// ```
+// {{.ClientIP}}
 // ```
 //
 // ##### `.Req`
@@ -187,7 +198,8 @@ func init() {
 //
 // ##### `.OriginalReq`
 //
-// Like .Req, except it accesses the original HTTP request before rewrites or other internal modifications.
+// Like [`.Req`](#req), except it accesses the original HTTP
+// request before rewrites or other internal modifications.
 //
 // ##### `.RespHeader.Add`
 //
@@ -223,11 +235,13 @@ func init() {
 //
 // ##### `splitFrontMatter`
 //
-// Splits front matter out from the body. Front matter is metadata that appears at the very beginning of a file or string. Front matter can be in YAML, TOML, or JSON formats:
+// Splits front matter out from the body. Front matter is metadata that
+// appears at the very beginning of a file or string. Front matter can
+// be in YAML, TOML, or JSON formats:
 //
 // **TOML** front matter starts and ends with `+++`:
 //
-// ```
+// ```toml
 // +++
 // template = "blog"
 // title = "Blog Homepage"
@@ -237,7 +251,7 @@ func init() {
 //
 // **YAML** is surrounded by `---`:
 //
-// ```
+// ```yaml
 // ---
 // template: blog
 // title: Blog Homepage
@@ -247,14 +261,12 @@ func init() {
 //
 // **JSON** is simply `{` and `}`:
 //
-// ```
-//
-//	{
-//		"template": "blog",
-//		"title": "Blog Homepage",
-//		"sitename": "A Caddy site"
-//	}
-//
+// ```json
+// {
+// "template": "blog",
+// "title": "Blog Homepage",
+// "sitename": "A Caddy site"
+// }
 // ```
 //
 // The resulting front matter will be made available like so:

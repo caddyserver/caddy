@@ -265,13 +265,25 @@ func (c TemplateContext) Cookie(name string) string {
 	return ""
 }
 
-// RemoteIP gets the IP address of the client making the request.
+// RemoteIP gets the IP address of the connection's remote IP.
 func (c TemplateContext) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(c.Req.RemoteAddr)
 	if err != nil {
 		return c.Req.RemoteAddr
 	}
 	return ip
+}
+
+// ClientIP gets the IP address of the real client making the request
+// if the request is trusted (see trusted_proxies), otherwise returns
+// the connection's remote IP.
+func (c TemplateContext) ClientIP() string {
+	address := caddyhttp.GetVar(c.Req.Context(), caddyhttp.ClientIPVarKey).(string)
+	clientIP, _, err := net.SplitHostPort(address)
+	if err != nil {
+		clientIP = address // no port
+	}
+	return clientIP
 }
 
 // Host returns the hostname portion of the Host header
