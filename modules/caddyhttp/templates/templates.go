@@ -125,12 +125,13 @@ func init() {
 //
 // Includes the contents of another file, rendering it in-place.
 // Optionally can pass key-value pairs as arguments to be accessed
-// by the included file. Note that the contents are NOT escaped,
-// so you should only include trusted template files.
+// by the included file. Use [`.Args N`](#args) to access the N-th
+// argument, 0-indexed. Note that the contents are NOT escaped, so
+// you should only include trusted template files.
 //
 // ```
 // {{include "path/to/file.html"}}  // no arguments
-// {{include "path/to/file.html" "arg1" 2 "value 3"}}  // with arguments
+// {{include "path/to/file.html" "arg0" 1 "value 2"}}  // with arguments
 // ```
 //
 // ##### `readFile`
