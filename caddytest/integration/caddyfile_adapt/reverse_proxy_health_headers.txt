@@ -6,6 +6,9 @@ reverse_proxy 127.0.0.1:65535 {
 		X-Header-Key 95ca39e3cbe7
 		X-Header-Keys VbG4NZwWnipo 335Q9/MhqcNU3s2TO
 		X-Empty-Value
+		Same-Key 1
+		Same-Key 2
+		X-System-Hostname {system.hostname}
 	}
 	health_uri /health
 }
@@ -29,6 +32,10 @@ reverse_proxy 127.0.0.1:65535 {
 												"Host": [
 													"example.com"
 												],
+												"Same-Key": [
+													"1",
+													"2"
+												],
 												"X-Empty-Value": [
 													""
 												],
@@ -38,6 +45,9 @@ reverse_proxy 127.0.0.1:65535 {
 												"X-Header-Keys": [
 													"VbG4NZwWnipo",
 													"335Q9/MhqcNU3s2TO"
+												],
+												"X-System-Hostname": [
+													"{system.hostname}"
 												]
 											},
 											"uri": "/health"

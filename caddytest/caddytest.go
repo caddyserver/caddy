@@ -467,7 +467,7 @@ func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) 
 	}
 
 	if expectedStatusCode != resp.StatusCode {
-		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.RequestURI, expectedStatusCode, resp.StatusCode)
+		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.URL.RequestURI(), expectedStatusCode, resp.StatusCode)
 	}
 
 	return resp
