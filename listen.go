@@ -43,7 +43,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		if err != nil {
 			return nil, err
 		}
-		return &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}, nil
+		return &fakeClosePacketConn{spc: sharedPc.(*sharedPacketConn)}, nil
 
 	default:
 		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -187,67 +187,6 @@ func (sl *sharedListener) setDeadline() error {
 // finally not being used anymore. It closes the socket.
 func (sl *sharedListener) Destruct() error {
 	return sl.Listener.Close()
-}
-
-// fakeClosePacketConn is like fakeCloseListener, but for PacketConns
-type fakeClosePacketConn struct {
-	closed            int32 // accessed atomically; belongs to this struct only
-	*sharedPacketConn       // embedded, so we also become a net.PacketConn
-}
-
-func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	// if the listener is already "closed", return error
-	if atomic.LoadInt32(&fcpc.closed) == 1 {
-		return 0, nil, &net.OpError{
-			Op:   "readfrom",
-			Net:  fcpc.LocalAddr().Network(),
-			Addr: fcpc.LocalAddr(),
-			Err:  errFakeClosed,
-		}
-	}
-
-	// call underlying readfrom
-	n, addr, err = fcpc.sharedPacketConn.ReadFrom(p)
-	if err != nil {
-		// this server was stopped, so clear the deadline and let
-		// any new server continue reading; but we will exit
-		if atomic.LoadInt32(&fcpc.closed) == 1 {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
-					return
-				}
-			}
-		}
-		return
-	}
-
-	return
-}
-
-// Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
-func (fcpc *fakeClosePacketConn) Close() error {
-	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		// unblock ReadFrom() calls to kick old servers out of their loops
-		_ = fcpc.SetReadDeadline(time.Now())
-		_, _ = listenerPool.Delete(fcpc.key)
-	}
-	return nil
-}
-
-// sharedPacketConn is like sharedListener, but for net.PacketConns.
-type sharedPacketConn struct {
-	net.PacketConn
-	key string
-}
-
-// Destruct closes the underlying socket.
-func (spc *sharedPacketConn) Destruct() error {
-	return spc.PacketConn.Close()
-}
-
-// Unwrap returns the underlying socket
-func (spc *sharedPacketConn) Unwrap() net.PacketConn {
-	return spc.PacketConn
 }
 
 // Interface guards (see https://github.com/caddyserver/caddy/issues/3998)

@@ -677,14 +677,44 @@ var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
 // but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
 var _ net.Conn = (*fakeClosePacketConn)(nil)
 
+func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	// if the listener is already "closed", return error
+	if atomic.LoadInt32(&fcpc.closed) == 1 {
+		return 0, nil, &net.OpError{
+			Op:   "readfrom",
+			Net:  fcpc.LocalAddr().Network(),
+			Addr: fcpc.LocalAddr(),
+			Err:  errFakeClosed,
+		}
+	}
+
+	// call underlying readfrom
+	n, addr, err = fcpc.spc.ReadFrom(p)
+	if err != nil {
+		// this server was stopped, so clear the deadline and let
+		// any new server continue reading; but we will exit
+		if atomic.LoadInt32(&fcpc.closed) == 1 {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
+					return
+				}
+			}
+		}
+		return
+	}
+
+	return
+}
+
 // Unwrap returns the underlying net.UDPConn for quic-go optimization
-func (fcpc *fakeClosePacketConn) Unwrap() any {
+func (fcpc *fakeClosePacketConn) Unwrap() net.PacketConn {
 	return fcpc.UDPConn
 }
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
+		_ = fcpc.SetReadDeadline(time.Now()) // unblock ReadFrom() calls to kick old servers out of their loops
 		_, _ = listenerPool.Delete(fcpc.spc.key)
 	}
 	return nil
