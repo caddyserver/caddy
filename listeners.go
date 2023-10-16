@@ -690,6 +690,22 @@ func (fcpc *fakeClosePacketConn) Close() error {
 	return nil
 }
 
+// sharedPacketConn is like sharedListener, but for net.PacketConns.
+type sharedPacketConn struct {
+	net.PacketConn
+	key string
+}
+
+// Destruct closes the underlying socket.
+func (spc *sharedPacketConn) Destruct() error {
+	return spc.PacketConn.Close()
+}
+
+// Unwrap returns the underlying socket
+func (spc *sharedPacketConn) Unwrap() net.PacketConn {
+	return spc.PacketConn
+}
+
 type fakeCloseQuicListener struct {
 	closed              int32 // accessed atomically; belongs to this struct only
 	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
