@@ -524,12 +524,6 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 	}, nil
 }
 
-// ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
-// The network will be transformed into a QUIC-compatible type (if unix, then
-// unixgram will be used; otherwise, udp will be used).
-//
-// NOTE: This API is EXPERIMENTAL and may be changed or removed.
-//
 // DEPRECATED: Use NetworkAddress.ListenQUIC instead. This function will likely be changed or removed in the future.
 // TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
 func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
