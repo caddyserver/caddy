@@ -240,9 +240,9 @@ func TestReplacerSet(t *testing.T) {
 func TestReplacerReplaceKnown(t *testing.T) {
 	rep := Replacer{
 		mapMutex: &sync.RWMutex{},
-		providers: []ReplacerFunc{
+		providers: []replacementProvider{
 			// split our possible vars to two functions (to test if both functions are called)
-			func(key string) (val any, ok bool) {
+			ReplacerFunc(func(key string) (val any, ok bool) {
 				switch key {
 				case "test1":
 					return "val1", true
@@ -255,8 +255,8 @@ func TestReplacerReplaceKnown(t *testing.T) {
 				default:
 					return "NOOO", false
 				}
-			},
-			func(key string) (val any, ok bool) {
+			}),
+			ReplacerFunc(func(key string) (val any, ok bool) {
 				switch key {
 				case "1":
 					return "test-123", true
@@ -267,7 +267,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 				default:
 					return "NOOO", false
 				}
-			},
+			}),
 		},
 	}
 
@@ -413,7 +413,7 @@ func TestReplacerNew(t *testing.T) {
 			value:    "envtest",
 		},
 	} {
-		if val, ok := repl.providers[0](tc.variable); ok {
+		if val, ok := repl.providers[0].replace(tc.variable); ok {
 			if val != tc.value {
 				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 			}
@@ -432,7 +432,7 @@ func TestReplacerNew(t *testing.T) {
 			value:    "foo",
 		},
 	} {
-		if val, ok := repl.providers[1](tc.variable); ok {
+		if val, ok := repl.providers[1].replace(tc.variable); ok {
 			if val != tc.value {
 				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 			}
@@ -446,27 +446,25 @@ func TestReplacerNewWithoutFile(t *testing.T) {
 	repl := NewReplacer().WithoutFile()
 
 	for _, tc := range []struct {
-		variable  string
-		value     string
-		expectNil bool
+		variable string
+		value    string
+		notFound bool
 	}{
 		{
-			variable:  "file.caddytest/integration/testdata/foo.txt",
-			expectNil: true,
+			variable: "file.caddytest/integration/testdata/foo.txt",
+			notFound: true,
 		},
 		{
 			variable: "system.os",
 			value:    runtime.GOOS,
 		},
 	} {
-		if val, ok := repl.Get(tc.variable); ok {
-			if tc.expectNil && val != nil {
-				t.Errorf("Expected nil for key '%s' got '%v'", tc.variable, val)
-			} else if !tc.expectNil && val != tc.value {
+		if val, ok := repl.Get(tc.variable); ok && !tc.notFound {
+			if val != tc.value {
 				t.Errorf("Expected value '%s' for key '%s' got '%s'", tc.value, tc.variable, val)
 			}
-		} else {
-			t.Errorf("Expected key '%s' to be recognized by second provider", tc.variable)
+		} else if !tc.notFound {
+			t.Errorf("Expected key '%s' to be recognized", tc.variable)
 		}
 	}
 }
@@ -512,7 +510,7 @@ func BenchmarkReplacer(b *testing.B) {
 
 func testReplacer() Replacer {
 	return Replacer{
-		providers: make([]ReplacerFunc, 0),
+		providers: make([]replacementProvider, 0),
 		static:    make(map[string]any),
 		mapMutex:  &sync.RWMutex{},
 	}
