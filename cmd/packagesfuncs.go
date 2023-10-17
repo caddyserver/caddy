@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -102,6 +103,15 @@ func upgradeBuild(pluginPkgs map[string]struct{}, fl Flags) (int, error) {
 	thisExecStat, err := os.Stat(thisExecPath)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("retrieving current executable permission bits: %v", err)
+	}
+	if thisExecStat.Mode()&os.ModeSymlink == os.ModeSymlink {
+		symSource := thisExecPath
+		// we are a symlink; resolve it
+		thisExecPath, err = filepath.EvalSymlinks(thisExecPath)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("resolving current executable symlink: %v", err)
+		}
+		l.Info("this executable is a symlink", zap.String("source", symSource), zap.String("target", thisExecPath))
 	}
 	l.Info("this executable will be replaced", zap.String("path", thisExecPath))
 

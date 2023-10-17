@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -149,11 +148,13 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 }
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
-	var ln any
-	var err error
-	var address string
-	var unixFileMode fs.FileMode
-	var isAbtractUnixSocket bool
+	var (
+		ln                  any
+		err                 error
+		address             string
+		unixFileMode        fs.FileMode
+		isAbtractUnixSocket bool
+	)
 
 	// split unix socket addr early so lnKey
 	// is independent of permissions bits
@@ -181,40 +182,16 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 
 	lnKey := listenerKey(na.Network, address)
 
-	switch na.Network {
-	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		ln, err = listenTCPOrUnix(ctx, lnKey, na.Network, address, config)
-	case "unixgram":
-		ln, err = config.ListenPacket(ctx, na.Network, address)
-	case "udp", "udp4", "udp6":
-		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, na.Network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		spc := sharedPc.(*sharedPacketConn)
-		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
-	}
 	if strings.HasPrefix(na.Network, "ip") {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
+	} else {
+		ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
 	}
 	if err != nil {
 		return nil, err
 	}
 	if ln == nil {
 		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
-	}
-
-	// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener in listen_unix.go, so...
-	if unix, ok := ln.(*net.UnixConn); ok {
-		one := int32(1)
-		ln = &unixConn{unix, address, lnKey, &one}
-		unixSockets[lnKey] = unix
 	}
 
 	if IsUnixNetwork(na.Network) {
@@ -470,53 +447,93 @@ func ListenPacket(network, addr string) (net.PacketConn, error) {
 // unixgram will be used; otherwise, udp will be used).
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-//
-// TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
-func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
-	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
+	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		sqtc := newSharedQUICTLSConfig(tlsConf)
+		lnAny, err := na.Listen(ctx, portOffset, config)
+		if err != nil {
+			return nil, err
+		}
+
+		ln := lnAny.(net.PacketConn)
+
+		h3ln := ln
+		for {
+			// retrieve the underlying socket, so quic-go can optimize.
+			if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
+				h3ln = unwrapper.Unwrap()
+			} else {
+				break
+			}
+		}
+
+		sqs := newSharedQUICState(tlsConf, activeRequests)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqtc.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
+		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		earlyLn, err := quic.ListenEarly(h3ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
 			Allow0RTT: true,
 			RequireAddressValidation: func(clientAddr net.Addr) bool {
-				var highLoad bool
-				if activeRequests != nil {
-					highLoad = atomic.LoadInt64(activeRequests) > 1000 // TODO: make tunable?
-				}
-				return highLoad
+				// TODO: make tunable?
+				return sqs.getActiveRequests() > 1000
 			},
 		})
 		if err != nil {
 			return nil, err
 		}
-		return &sharedQuicListener{EarlyListener: earlyLn, sqtc: sqtc, key: lnKey}, nil
+		// using the original net.PacketConn to close them properly
+		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqs: sqs, key: lnKey}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
-	// add current tls.Config to sqtc, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
-	ctx, cancel := sql.sqtc.addTLSConfig(tlsConf)
-
-	// TODO: to serve QUIC over a unix socket, currently we need to hold onto
-	// the underlying net.PacketConn (which we wrap as unixConn to keep count
-	// of closes) because closing the quic.EarlyListener doesn't actually close
-	// the underlying PacketConn, but we need to for unix sockets since we dup
-	// the file descriptor and thus need to close the original; track issue:
-	// https://github.com/quic-go/quic-go/issues/3560#issuecomment-1258959608
-	var unix *unixConn
-	if uc, ok := ln.(*unixConn); ok {
-		unix = uc
-	}
+	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
+	// and the request counter will reflect current http server
+	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
 
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
-		uc:                 unix,
+		context:            ctx,
+		contextCancel:      cancel,
+	}, nil
+}
+
+// DEPRECATED: Use NetworkAddress.ListenQUIC instead. This function will likely be changed or removed in the future.
+// TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
+func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
+	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
+
+	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+		sqs := newSharedQUICState(tlsConf, activeRequests)
+		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
+		//nolint:gosec
+		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
+			Allow0RTT: true,
+			RequireAddressValidation: func(clientAddr net.Addr) bool {
+				// TODO: make tunable?
+				return sqs.getActiveRequests() > 1000
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &sharedQuicListener{EarlyListener: earlyLn, sqs: sqs, key: lnKey}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sql := sharedEarlyListener.(*sharedQuicListener)
+	// add current tls.Config and request counter to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
+	// and the request counter will reflect current http server
+	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
+
+	return &fakeCloseQuicListener{
+		sharedQuicListener: sql,
 		context:            ctx,
 		contextCancel:      cancel,
 	}, nil
@@ -534,38 +551,50 @@ type contextAndCancelFunc struct {
 	context.CancelFunc
 }
 
-// sharedQUICTLSConfig manages GetConfigForClient
+// sharedQUICState manages GetConfigForClient and current number of active requests
 // see issue: https://github.com/caddyserver/caddy/pull/4849
-type sharedQUICTLSConfig struct {
-	rmu           sync.RWMutex
-	tlsConfs      map[*tls.Config]contextAndCancelFunc
-	activeTlsConf *tls.Config
+type sharedQUICState struct {
+	rmu                   sync.RWMutex
+	tlsConfs              map[*tls.Config]contextAndCancelFunc
+	requestCounters       map[*tls.Config]*int64
+	activeTlsConf         *tls.Config
+	activeRequestsCounter *int64
 }
 
-// newSharedQUICTLSConfig creates a new sharedQUICTLSConfig
-func newSharedQUICTLSConfig(tlsConfig *tls.Config) *sharedQUICTLSConfig {
-	sqtc := &sharedQUICTLSConfig{
-		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
-		activeTlsConf: tlsConfig,
+// newSharedQUICState creates a new sharedQUICState
+func newSharedQUICState(tlsConfig *tls.Config, activeRequests *int64) *sharedQUICState {
+	sqtc := &sharedQUICState{
+		tlsConfs:              make(map[*tls.Config]contextAndCancelFunc),
+		requestCounters:       make(map[*tls.Config]*int64),
+		activeTlsConf:         tlsConfig,
+		activeRequestsCounter: activeRequests,
 	}
-	sqtc.addTLSConfig(tlsConfig)
+	sqtc.addState(tlsConfig, activeRequests)
 	return sqtc
 }
 
 // getConfigForClient is used as tls.Config's GetConfigForClient field
-func (sqtc *sharedQUICTLSConfig) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
-	sqtc.rmu.RLock()
-	defer sqtc.rmu.RUnlock()
-	return sqtc.activeTlsConf.GetConfigForClient(ch)
+func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Config, error) {
+	sqs.rmu.RLock()
+	defer sqs.rmu.RUnlock()
+	return sqs.activeTlsConf.GetConfigForClient(ch)
 }
 
-// addTLSConfig adds tls.Config to the map if not present and returns the corresponding context and its cancelFunc
-// so that when cancelled, the active tls.Config will change
-func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
-	sqtc.rmu.Lock()
-	defer sqtc.rmu.Unlock()
+// getActiveRequests returns the number of active requests
+func (sqs *sharedQUICState) getActiveRequests() int64 {
+	// Prevent a race when a context is cancelled and active request counter is being changed
+	sqs.rmu.RLock()
+	defer sqs.rmu.RUnlock()
+	return atomic.LoadInt64(sqs.activeRequestsCounter)
+}
 
-	if cacc, ok := sqtc.tlsConfs[tlsConfig]; ok {
+// addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
+// so that when cancelled, the active tls.Config and request counter will change
+func (sqs *sharedQUICState) addState(tlsConfig *tls.Config, activeRequests *int64) (context.Context, context.CancelFunc) {
+	sqs.rmu.Lock()
+	defer sqs.rmu.Unlock()
+
+	if cacc, ok := sqs.tlsConfs[tlsConfig]; ok {
 		return cacc.Context, cacc.CancelFunc
 	}
 
@@ -573,23 +602,26 @@ func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Co
 	wrappedCancel := func() {
 		cancel()
 
-		sqtc.rmu.Lock()
-		defer sqtc.rmu.Unlock()
+		sqs.rmu.Lock()
+		defer sqs.rmu.Unlock()
 
-		delete(sqtc.tlsConfs, tlsConfig)
-		if sqtc.activeTlsConf == tlsConfig {
-			// select another tls.Config, if there is none,
+		delete(sqs.tlsConfs, tlsConfig)
+		delete(sqs.requestCounters, tlsConfig)
+		if sqs.activeTlsConf == tlsConfig {
+			// select another tls.Config and request counter, if there is none,
 			// related sharedQuicListener will be destroyed anyway
-			for tc := range sqtc.tlsConfs {
-				sqtc.activeTlsConf = tc
+			for tc, counter := range sqs.requestCounters {
+				sqs.activeTlsConf = tc
+				sqs.activeRequestsCounter = counter
 				break
 			}
 		}
 	}
-	sqtc.tlsConfs[tlsConfig] = contextAndCancelFunc{ctx, wrappedCancel}
+	sqs.tlsConfs[tlsConfig] = contextAndCancelFunc{ctx, wrappedCancel}
+	sqs.requestCounters[tlsConfig] = activeRequests
 	// there should be at most 2 tls.Configs
-	if len(sqtc.tlsConfs) > 2 {
-		Log().Warn("quic listener tls configs are more than 2", zap.Int("number of configs", len(sqtc.tlsConfs)))
+	if len(sqs.tlsConfs) > 2 {
+		Log().Warn("quic listener tls configs are more than 2", zap.Int("number of configs", len(sqs.tlsConfs)))
 	}
 	return ctx, wrappedCancel
 }
@@ -597,24 +629,17 @@ func (sqtc *sharedQUICTLSConfig) addTLSConfig(tlsConfig *tls.Config) (context.Co
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	*quic.EarlyListener
-	sqtc *sharedQUICTLSConfig
-	key  string
+	packetConn net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
+	sqs        *sharedQUICState
+	key        string
 }
 
-// Destruct closes the underlying QUIC listener.
+// Destruct closes the underlying QUIC listener and its associated net.PacketConn.
 func (sql *sharedQuicListener) Destruct() error {
-	return sql.EarlyListener.Close()
-}
-
-// sharedPacketConn is like sharedListener, but for net.PacketConns.
-type sharedPacketConn struct {
-	net.PacketConn
-	key string
-}
-
-// Destruct closes the underlying socket.
-func (spc *sharedPacketConn) Destruct() error {
-	return spc.PacketConn.Close()
+	// close EarlyListener first to stop any operations being done to the net.PacketConn
+	_ = sql.EarlyListener.Close()
+	// then close the net.PacketConn
+	return sql.packetConn.Close()
 }
 
 // fakeClosedErr returns an error value that is not temporary
@@ -636,34 +661,9 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 // socket is actually left open.
 var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
-// fakeClosePacketConn is like fakeCloseListener, but for PacketConns,
-// or more specifically, *net.UDPConn
-type fakeClosePacketConn struct {
-	closed       int32             // accessed atomically; belongs to this struct only
-	spc          *sharedPacketConn // its key is used in Close
-	*net.UDPConn                   // embedded, so we also become a net.PacketConn and enable several other optimizations done by quic-go
-}
-
-// interface guard for extra optimizations
-// needed by QUIC implementation: https://github.com/caddyserver/caddy/issues/3998, https://github.com/caddyserver/caddy/issues/5605
-var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
-
-// https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires a net.PacketConn type assertable to a net.Conn,
-// but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
-var _ net.Conn = (*fakeClosePacketConn)(nil)
-
-// Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
-func (fcpc *fakeClosePacketConn) Close() error {
-	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		_, _ = listenerPool.Delete(fcpc.spc.key)
-	}
-	return nil
-}
-
 type fakeCloseQuicListener struct {
-	closed              int32     // accessed atomically; belongs to this struct only
-	*sharedQuicListener           // embedded, so we also become a quic.EarlyListener
-	uc                  *unixConn // underlying unix socket, if UDS
+	closed              int32 // accessed atomically; belongs to this struct only
+	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
 	context             context.Context
 	contextCancel       context.CancelFunc
 }
@@ -690,11 +690,6 @@ func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
 		fcql.contextCancel()
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
-		if fcql.uc != nil {
-			// unix sockets need to be closed ourselves because we dup() the file
-			// descriptor when we reuse them, so this avoids a resource leak
-			fcql.uc.Close()
-		}
 	}
 	return nil
 }
@@ -720,34 +715,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkTypes[network] = getListener
 }
 
-type unixConn struct {
-	*net.UnixConn
-	filename string
-	mapKey   string
-	count    *int32 // accessed atomically
-}
-
-func (uc *unixConn) Close() error {
-	newCount := atomic.AddInt32(uc.count, -1)
-	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uc.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(uc.filename)
-		}()
-	}
-	return uc.UnixConn.Close()
-}
-
-// unixSockets keeps track of the currently-active unix sockets
-// so we can transfer their FDs gracefully during reloads.
-var (
-	unixSockets = make(map[string]interface {
-		File() (*os.File, error)
-	})
-	unixSocketsMu sync.Mutex
-)
+var unixSocketsMu sync.Mutex
 
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
@@ -791,11 +759,3 @@ type ListenerWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
-
-// Interface guards (see https://github.com/caddyserver/caddy/issues/3998)
-var (
-	_ (interface{ SetReadBuffer(int) error }) = (*fakeClosePacketConn)(nil)
-	_ (interface {
-		SyscallConn() (syscall.RawConn, error)
-	}) = (*fakeClosePacketConn)(nil)
-)

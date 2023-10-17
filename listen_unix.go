@@ -22,8 +22,10 @@ package caddy
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"net"
+	"os"
 	"sync/atomic"
 	"syscall"
 
@@ -87,7 +89,7 @@ func reuseUnixSocket(network, addr string) (any, error) {
 	return nil, nil
 }
 
-func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (net.Listener, error) {
+func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
 	oldControl := config.Control
 	config.Control = func(network, address string, c syscall.RawConn) error {
@@ -103,7 +105,14 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 	// we still put it in the listenerPool so we can count how many
 	// configs are using this socket; necessary to ensure we can know
 	// whether to enforce shutdown delays, for example (see #5393).
-	ln, err := config.Listen(ctx, network, address)
+	var ln io.Closer
+	var err error
+	switch network {
+	case "udp", "udp4", "udp6", "unixgram":
+		ln, err = config.ListenPacket(ctx, network, address)
+	default:
+		ln, err = config.Listen(ctx, network, address)
+	}
 	if err == nil {
 		listenerPool.LoadOrStore(lnKey, nil)
 	}
@@ -117,9 +126,23 @@ func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string,
 		unixSockets[lnKey] = ln.(*unixListener)
 	}
 
+	// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener in listen_unix.go, so...
+	if unix, ok := ln.(*net.UnixConn); ok {
+		ln = &unixConn{unix, address, lnKey, &one}
+		unixSockets[lnKey] = ln.(*unixConn)
+	}
+
 	// lightly wrap the listener so that when it is closed,
 	// we can decrement the usage pool counter
-	return deleteListener{ln, lnKey}, err
+	switch specificLn := ln.(type) {
+	case net.Listener:
+		return deleteListener{specificLn, lnKey}, err
+	case net.PacketConn:
+		return deletePacketConn{specificLn, lnKey}, err
+	}
+
+	// other types, I guess we just return them directly
+	return ln, err
 }
 
 // reusePort sets SO_REUSEPORT. Ineffective for unix sockets.
@@ -158,6 +181,36 @@ func (uln *unixListener) Close() error {
 	return uln.UnixListener.Close()
 }
 
+type unixConn struct {
+	*net.UnixConn
+	filename string
+	mapKey   string
+	count    *int32 // accessed atomically
+}
+
+func (uc *unixConn) Close() error {
+	newCount := atomic.AddInt32(uc.count, -1)
+	if newCount == 0 {
+		defer func() {
+			unixSocketsMu.Lock()
+			delete(unixSockets, uc.mapKey)
+			unixSocketsMu.Unlock()
+			_ = syscall.Unlink(uc.filename)
+		}()
+	}
+	return uc.UnixConn.Close()
+}
+
+func (uc *unixConn) Unwrap() net.PacketConn {
+	return uc.UnixConn
+}
+
+// unixSockets keeps track of the currently-active unix sockets
+// so we can transfer their FDs gracefully during reloads.
+var unixSockets = make(map[string]interface {
+	File() (*os.File, error)
+})
+
 // deleteListener is a type that simply deletes itself
 // from the listenerPool when it closes. It is used
 // solely for the purpose of reference counting (i.e.
@@ -170,4 +223,20 @@ type deleteListener struct {
 func (dl deleteListener) Close() error {
 	_, _ = listenerPool.Delete(dl.lnKey)
 	return dl.Listener.Close()
+}
+
+// deletePacketConn is like deleteListener, but
+// for net.PacketConns.
+type deletePacketConn struct {
+	net.PacketConn
+	lnKey string
+}
+
+func (dl deletePacketConn) Close() error {
+	_, _ = listenerPool.Delete(dl.lnKey)
+	return dl.PacketConn.Close()
+}
+
+func (dl deletePacketConn) Unwrap() net.PacketConn {
+	return dl.PacketConn
 }

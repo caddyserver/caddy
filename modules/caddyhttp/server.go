@@ -228,7 +228,6 @@ type Server struct {
 
 	server      *http.Server
 	h3server    *http3.Server
-	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	h2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
 
@@ -319,7 +318,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// so we can track the number of bytes read from it
 		var bodyReader *lengthReader
 		if r.Body != nil {
-			bodyReader = &lengthReader{Source: r.Body}
+			bodyReader = getLengthReader(r.Body)
+			defer putLengthReader(bodyReader)
 			r.Body = bodyReader
 		}
 
@@ -555,13 +555,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	addr.Network = getHTTP3Network(addr.Network)
-	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
-	if err != nil {
-		return err
-	}
-	ln := lnAny.(net.PacketConn)
-
-	h3ln, err := caddy.ListenQUIC(ln, tlsCfg, &s.activeRequests)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, &s.activeRequests)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -578,8 +572,6 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			},
 		}
 	}
-
-	s.h3listeners = append(s.h3listeners, ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
@@ -909,6 +901,24 @@ func cloneURL(from, to *url.URL) {
 type lengthReader struct {
 	Source io.ReadCloser
 	Length int
+}
+
+var lengthReaderPool = sync.Pool{
+	New: func() interface{} {
+		return &lengthReader{}
+	},
+}
+
+func getLengthReader(source io.ReadCloser) *lengthReader {
+	reader := lengthReaderPool.Get().(*lengthReader)
+	reader.Source = source
+	return reader
+}
+
+func putLengthReader(reader *lengthReader) {
+	reader.Source = nil
+	reader.Length = 0
+	lengthReaderPool.Put(reader)
 }
 
 func (r *lengthReader) Read(b []byte) (int, error) {
