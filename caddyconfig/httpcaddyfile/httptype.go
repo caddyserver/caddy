@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"reflect"
 	"sort"
 	"strconv"
@@ -797,7 +798,12 @@ func (st *ServerType) serversFromPairings(
 						if srv.Logs.LoggerNames == nil {
 							srv.Logs.LoggerNames = make(map[string]string)
 						}
-						srv.Logs.LoggerNames[h] = ncl.name
+						// strip the port from the host, if any
+						host, _, err := net.SplitHostPort(h)
+						if err != nil {
+							host = h
+						}
+						srv.Logs.LoggerNames[host] = ncl.name
 					}
 				}
 			}
