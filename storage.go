@@ -38,10 +38,12 @@ type StorageConverter interface {
 // which returns "/sdcard".
 func HomeDir() string {
 	home := homeDirUnsafe()
-	if home == "" && runtime.GOOS == "android" {
-		home = "/sdcard"
+	if home != "" {
+		return home
 	}
-	if home == "" {
+	if runtime.GOOS == "android" {
+		home = "/sdcard"
+	} else {
 		home = "."
 	}
 	return home
@@ -55,7 +57,10 @@ func HomeDir() string {
 // may end up using the root of the file system.
 func homeDirUnsafe() string {
 	home := os.Getenv("HOME")
-	if home == "" && runtime.GOOS == "windows" {
+	if home != "" {
+		return home
+	}
+	if runtime.GOOS == "windows" {
 		drive := os.Getenv("HOMEDRIVE")
 		path := os.Getenv("HOMEPATH")
 		home = drive + path
@@ -63,7 +68,7 @@ func homeDirUnsafe() string {
 			home = os.Getenv("USERPROFILE")
 		}
 	}
-	if home == "" && runtime.GOOS == "plan9" {
+	if runtime.GOOS == "plan9" {
 		home = os.Getenv("home")
 	}
 	return home
