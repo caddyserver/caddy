@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -149,11 +148,13 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 }
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
-	var ln any
-	var err error
-	var address string
-	var unixFileMode fs.FileMode
-	var isAbtractUnixSocket bool
+	var (
+		ln                  any
+		err                 error
+		address             string
+		unixFileMode        fs.FileMode
+		isAbtractUnixSocket bool
+	)
 
 	// split unix socket addr early so lnKey
 	// is independent of permissions bits
@@ -181,40 +182,16 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 
 	lnKey := listenerKey(na.Network, address)
 
-	switch na.Network {
-	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		ln, err = listenTCPOrUnix(ctx, lnKey, na.Network, address, config)
-	case "unixgram":
-		ln, err = config.ListenPacket(ctx, na.Network, address)
-	case "udp", "udp4", "udp6":
-		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, na.Network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		spc := sharedPc.(*sharedPacketConn)
-		ln = &fakeClosePacketConn{spc: spc, UDPConn: spc.PacketConn.(*net.UDPConn)}
-	}
 	if strings.HasPrefix(na.Network, "ip") {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
+	} else {
+		ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
 	}
 	if err != nil {
 		return nil, err
 	}
 	if ln == nil {
 		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
-	}
-
-	// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener in listen_unix.go, so...
-	if unix, ok := ln.(*net.UnixConn); ok {
-		one := int32(1)
-		ln = &unixConn{unix, address, lnKey, &one}
-		unixSockets[lnKey] = unix
 	}
 
 	if IsUnixNetwork(na.Network) {
@@ -555,20 +532,8 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 	// and the request counter will reflect current http server
 	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
 
-	// TODO: to serve QUIC over a unix socket, currently we need to hold onto
-	// the underlying net.PacketConn (which we wrap as unixConn to keep count
-	// of closes) because closing the quic.EarlyListener doesn't actually close
-	// the underlying PacketConn, but we need to for unix sockets since we dup
-	// the file descriptor and thus need to close the original; track issue:
-	// https://github.com/quic-go/quic-go/issues/3560#issuecomment-1258959608
-	var unix *unixConn
-	if uc, ok := ln.(*unixConn); ok {
-		unix = uc
-	}
-
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
-		uc:                 unix,
 		context:            ctx,
 		contextCancel:      cancel,
 	}, nil
@@ -677,17 +642,6 @@ func (sql *sharedQuicListener) Destruct() error {
 	return sql.packetConn.Close()
 }
 
-// sharedPacketConn is like sharedListener, but for net.PacketConns.
-type sharedPacketConn struct {
-	net.PacketConn
-	key string
-}
-
-// Destruct closes the underlying socket.
-func (spc *sharedPacketConn) Destruct() error {
-	return spc.PacketConn.Close()
-}
-
 // fakeClosedErr returns an error value that is not temporary
 // nor a timeout, suitable for making the caller think the
 // listener is actually closed
@@ -707,39 +661,9 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 // socket is actually left open.
 var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
 
-// fakeClosePacketConn is like fakeCloseListener, but for PacketConns,
-// or more specifically, *net.UDPConn
-type fakeClosePacketConn struct {
-	closed       int32             // accessed atomically; belongs to this struct only
-	spc          *sharedPacketConn // its key is used in Close
-	*net.UDPConn                   // embedded, so we also become a net.PacketConn and enable several other optimizations done by quic-go
-}
-
-// interface guard for extra optimizations
-// needed by QUIC implementation: https://github.com/caddyserver/caddy/issues/3998, https://github.com/caddyserver/caddy/issues/5605
-var _ quic.OOBCapablePacketConn = (*fakeClosePacketConn)(nil)
-
-// https://pkg.go.dev/golang.org/x/net/ipv4#NewPacketConn is used by quic-go and requires a net.PacketConn type assertable to a net.Conn,
-// but doesn't actually use these methods, the only methods needed are `ReadMsgUDP` and `SyscallConn`.
-var _ net.Conn = (*fakeClosePacketConn)(nil)
-
-// Unwrap returns the underlying net.UDPConn for quic-go optimization
-func (fcpc *fakeClosePacketConn) Unwrap() any {
-	return fcpc.UDPConn
-}
-
-// Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
-func (fcpc *fakeClosePacketConn) Close() error {
-	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
-		_, _ = listenerPool.Delete(fcpc.spc.key)
-	}
-	return nil
-}
-
 type fakeCloseQuicListener struct {
-	closed              int32     // accessed atomically; belongs to this struct only
-	*sharedQuicListener           // embedded, so we also become a quic.EarlyListener
-	uc                  *unixConn // underlying unix socket, if UDS
+	closed              int32 // accessed atomically; belongs to this struct only
+	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
 	context             context.Context
 	contextCancel       context.CancelFunc
 }
@@ -766,11 +690,6 @@ func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
 		fcql.contextCancel()
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
-		if fcql.uc != nil {
-			// unix sockets need to be closed ourselves because we dup() the file
-			// descriptor when we reuse them, so this avoids a resource leak
-			fcql.uc.Close()
-		}
 	}
 	return nil
 }
@@ -796,34 +715,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkTypes[network] = getListener
 }
 
-type unixConn struct {
-	*net.UnixConn
-	filename string
-	mapKey   string
-	count    *int32 // accessed atomically
-}
-
-func (uc *unixConn) Close() error {
-	newCount := atomic.AddInt32(uc.count, -1)
-	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uc.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(uc.filename)
-		}()
-	}
-	return uc.UnixConn.Close()
-}
-
-// unixSockets keeps track of the currently-active unix sockets
-// so we can transfer their FDs gracefully during reloads.
-var (
-	unixSockets = make(map[string]interface {
-		File() (*os.File, error)
-	})
-	unixSocketsMu sync.Mutex
-)
+var unixSocketsMu sync.Mutex
 
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
@@ -867,11 +759,3 @@ type ListenerWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
-
-// Interface guards (see https://github.com/caddyserver/caddy/issues/3998)
-var (
-	_ (interface{ SetReadBuffer(int) error }) = (*fakeClosePacketConn)(nil)
-	_ (interface {
-		SyscallConn() (syscall.RawConn, error)
-	}) = (*fakeClosePacketConn)(nil)
-)
