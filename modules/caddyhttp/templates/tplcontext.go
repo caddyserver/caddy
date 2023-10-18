@@ -444,6 +444,14 @@ func (c TemplateContext) funcFileStat(filename string) (fs.FileInfo, error) {
 // funcHTTPError returns a structured HTTP handler error. EXPERIMENTAL; SUBJECT TO CHANGE.
 // Example usage: `{{if not (fileExists $includeFile)}}{{httpError 404}}{{end}}`
 func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
+	// Delete some headers that may have been set by the underlying
+	// handler (such as file_server) which may break the error response.
+	c.RespHeader.Header.Del("Content-Length")
+	c.RespHeader.Header.Del("Content-Type")
+	c.RespHeader.Header.Del("Etag")
+	c.RespHeader.Header.Del("Last-Modified")
+	c.RespHeader.Header.Del("Accept-Ranges")
+
 	return false, caddyhttp.Error(statusCode, nil)
 }
 
