@@ -73,7 +73,7 @@ func init() {
 // `{http.request.remote.host}` | The host (IP) part of the remote client's address
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
-// `{http.request.scheme}` | The request scheme
+// `{http.request.scheme}` | The request scheme, typically `http` or `https`
 // `{http.request.tls.version}` | The TLS version name
 // `{http.request.tls.cipher_suite}` | The TLS cipher suite
 // `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
