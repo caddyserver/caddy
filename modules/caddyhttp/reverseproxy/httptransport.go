@@ -215,7 +215,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				},
 			}
 			// The src and dst have to be of the same address family. As we don't know the original
-			// dst address (it's kind of impossible to know) and this address is generelly of very
+			// dst address (it's kind of impossible to know) and this address is generally of very
 			// little interest, we just set it to all zeros.
 			switch {
 			case proxyProtocolInfo.AddrPort.Addr().Is4():
