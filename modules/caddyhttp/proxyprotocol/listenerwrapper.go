@@ -15,11 +15,10 @@
 package proxyprotocol
 
 import (
-	"fmt"
 	"net"
 	"time"
 
-	"github.com/mastercactapus/proxyprotocol"
+	goproxy "github.com/pires/go-proxyproto"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -39,31 +38,29 @@ type ListenerWrapper struct {
 	// allow/require PROXY headers from.
 	Allow []string `json:"allow,omitempty"`
 
-	rules []proxyprotocol.Rule
+	policies []goproxy.PolicyFunc
 }
 
 // Provision sets up the listener wrapper.
 func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
-	rules := make([]proxyprotocol.Rule, 0, len(pp.Allow))
-	for _, s := range pp.Allow {
-		_, n, err := net.ParseCIDR(s)
+	if len(pp.Allow) > 0 {
+		allowlist, err := goproxy.LaxWhiteListPolicy(pp.Allow)
 		if err != nil {
-			return fmt.Errorf("invalid subnet '%s': %w", s, err)
+			return err
 		}
-		rules = append(rules, proxyprotocol.Rule{
-			Timeout: time.Duration(pp.Timeout),
-			Subnet:  n,
-		})
+		pp.policies = append(pp.policies, allowlist)
 	}
-
-	pp.rules = rules
-
 	return nil
 }
 
 // WrapListener adds PROXY protocol support to the listener.
 func (pp *ListenerWrapper) WrapListener(l net.Listener) net.Listener {
-	pl := proxyprotocol.NewListener(l, time.Duration(pp.Timeout))
-	pl.SetFilter(pp.rules)
+	pl := &goproxy.Listener{
+		Listener:          l,
+		ReadHeaderTimeout: time.Duration(pp.Timeout),
+	}
+	if len(pp.policies) > 0 {
+		pl.Policy = pp.policies[0]
+	}
 	return pl
 }
