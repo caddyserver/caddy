@@ -112,7 +112,7 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 // LoadOrStore loads the value associated with key from the pool if it
 // already exists, or stores it if it does not exist. It returns the
 // value that was either loaded or stored, and true if the value already
-// existed and was
+// existed and was loaded, false if the value didn't exist and was stored.
 func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 	var upv *usagePoolVal
 	up.Lock()
