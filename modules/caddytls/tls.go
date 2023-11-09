@@ -570,14 +570,13 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// avoid cleaning same storage more than once per cleaning cycle
-	storagesCleaned := make(map[string]struct{})
+	storagesCleaned := make(map[interface{}]struct{})
 
 	// start with the default/global storage
 	storage := t.ctx.Storage()
-	storageStr := fmt.Sprintf("%v", storage)
-	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
+	t.logger.Info("cleaning storage unit", zap.Any("description", storage))
 	certmagic.CleanStorage(t.ctx, storage, options)
-	storagesCleaned[storageStr] = struct{}{}
+	storagesCleaned[storage] = struct{}{}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
@@ -585,13 +584,12 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			storageStr := fmt.Sprintf("%v", ap.storage)
-			if _, ok := storagesCleaned[storageStr]; ok {
+			if _, ok := storagesCleaned[storage]; ok {
 				continue
 			}
-			t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
+			t.logger.Info("cleaning storage unit", zap.Any("description", storage))
 			certmagic.CleanStorage(t.ctx, ap.storage, options)
-			storagesCleaned[storageStr] = struct{}{}
+			storagesCleaned[storage] = struct{}{}
 		}
 	}
 
