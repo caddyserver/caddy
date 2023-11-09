@@ -570,7 +570,7 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// avoid cleaning same storage more than once per cleaning cycle
-	storagesCleaned := make(map[interface{}]struct{})
+	storagesCleaned := make(map[certmagic.Storage]struct{})
 
 	// start with the default/global storage
 	storage := t.ctx.Storage()
