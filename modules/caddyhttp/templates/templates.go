@@ -319,6 +319,10 @@ type Templates struct {
 	// the opening and closing delimiters. Default: `["{{", "}}"]`
 	Delimiters []string `json:"delimiters,omitempty"`
 
+	// Extensions adds functions to the template's func map. These often
+	// act as components on web pages, for example.
+	ExtensionsRaw caddy.ModuleMap `json:"match,omitempty" caddy:"namespace=http.handlers.templates.functions"`
+
 	customFuncs []template.FuncMap
 }
 
@@ -338,17 +342,13 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
-	fnModInfos := caddy.GetModules("http.handlers.templates.functions")
-	customFuncs := make([]template.FuncMap, 0, len(fnModInfos))
-	for _, modInfo := range fnModInfos {
-		mod := modInfo.New()
-		fnMod, ok := mod.(CustomFunctions)
-		if !ok {
-			return fmt.Errorf("module %q does not satisfy the CustomFunctions interface", modInfo.ID)
-		}
-		customFuncs = append(customFuncs, fnMod.CustomTemplateFunctions())
+	mods, err := ctx.LoadModule(t, "ExtensionsRaw")
+	if err != nil {
+		return fmt.Errorf("loading template extensions: %v", err)
 	}
-	t.customFuncs = customFuncs
+	for _, modIface := range mods.(map[string]any) {
+		t.customFuncs = append(t.customFuncs, modIface.(CustomFunctions).CustomTemplateFunctions())
+	}
 
 	if t.MIMETypes == nil {
 		t.MIMETypes = defaultMIMETypes
