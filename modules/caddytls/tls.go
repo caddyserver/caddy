@@ -563,21 +563,24 @@ func (t *TLS) cleanStorageUnits() {
 		return
 	}
 
+	id, err := caddy.InstanceID()
+	if err != nil {
+		t.logger.Warn("unable to get instance ID; storage clean stamps will be incomplete", zap.Error(err))
+	}
 	options := certmagic.CleanStorageOptions{
+		Logger:                 t.logger,
+		InstanceID:             id.String(),
+		Interval:               t.storageCleanInterval(),
 		OCSPStaples:            true,
 		ExpiredCerts:           true,
 		ExpiredCertGracePeriod: 24 * time.Hour * 14,
 	}
-
-	// avoid cleaning same storage more than once per cleaning cycle
-	storagesCleaned := make(map[string]struct{})
 
 	// start with the default/global storage
 	storage := t.ctx.Storage()
 	storageStr := fmt.Sprintf("%v", storage)
 	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
 	certmagic.CleanStorage(t.ctx, storage, options)
-	storagesCleaned[storageStr] = struct{}{}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
@@ -585,13 +588,7 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			storageStr := fmt.Sprintf("%v", ap.storage)
-			if _, ok := storagesCleaned[storageStr]; ok {
-				continue
-			}
-			t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
 			certmagic.CleanStorage(t.ctx, ap.storage, options)
-			storagesCleaned[storageStr] = struct{}{}
 		}
 	}
 
