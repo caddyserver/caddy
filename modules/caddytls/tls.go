@@ -551,6 +551,10 @@ func (t *TLS) cleanStorageUnits() {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
 
+	// TODO: This check might not be needed anymore now that CertMagic syncs
+	// and throttles storage cleaning globally across the cluster.
+	// The original comment below might be outdated:
+	//
 	// If storage was cleaned recently, don't do it again for now. Although the ticker
 	// calling this function drops missed ticks for us, config reloads discard the old
 	// ticker and replace it with a new one, possibly invoking a cleaning to happen again
@@ -577,10 +581,12 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// start with the default/global storage
-	storage := t.ctx.Storage()
-	storageStr := fmt.Sprintf("%v", storage)
-	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
-	certmagic.CleanStorage(t.ctx, storage, options)
+	err = certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
+	if err != nil {
+		// probably don't want to return early, since we should still
+		// see if any other storages can get cleaned up
+		t.logger.Error("could not clean default/global storage", zap.Error(err))
+	}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
@@ -588,7 +594,9 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			certmagic.CleanStorage(t.ctx, ap.storage, options)
+			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
+				t.logger.Error("could not clean storage configured in automation policy", zap.Error(err))
+			}
 		}
 	}
 
