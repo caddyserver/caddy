@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -519,7 +520,7 @@ func onDemandAskRequest(ctx context.Context, logger *zap.Logger, ask string, nam
 	var clientIP string
 	if hello, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && hello != nil {
 		if remote := hello.Conn.RemoteAddr(); remote != nil {
-			clientIP = remote.String()
+			clientIP, _, _ = net.SplitHostPort(remote.String())
 		}
 	}
 
