@@ -2,7 +2,9 @@ package caddypki
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 // The key type to be used for signing the CSR. The possible types are:
@@ -150,10 +152,44 @@ type csrRequest struct {
 	// The values are case-sensitive.
 	Key *keyParameters `json:"key,omitempty"`
 
-	// SANs is a list of subject alternative names for the certificate.
-	SANs []string `json:"sans"`
+	Request *requestParameters `json:"request,omitempty"`
 }
 
 func (c csrRequest) validate() error {
+	if !c.Request.valid() {
+		return errors.New("the 'request' field is not valid")
+	}
 	return c.Key.validate()
+}
+
+type requestParameters struct {
+	Subject *subject `json:"subject,omitempty"`
+
+	// SANs is a list of subject alternative names for the certificate.
+	SANs []string `json:"sans,omitempty"`
+}
+
+type subject struct {
+	CommonName         string   `json:"cn,omitempty"`
+	Country            []string `json:"c,omitempty"`
+	Organization       []string `json:"o,omitempty"`
+	OrganizationalUnit []string `json:"ou,omitempty"`
+	Locality           []string `json:"l,omitempty"`
+	Province           []string `json:"s,omitempty"`
+	StreetAddress      []string `json:"street_address,omitempty"`
+	PostalCode         []string `json:"postal_code,omitempty"`
+}
+
+func (rp *requestParameters) valid() bool {
+	if rp == nil || (len(rp.SANs) == 0 && rp.Subject == nil) {
+		return false
+	}
+	if len(rp.SANs) > 0 {
+		for _, san := range rp.SANs {
+			if strings.TrimSpace(san) == "" {
+				return false
+			}
+		}
+	}
+	return rp.Subject == nil || (rp.Subject != nil && len(strings.TrimSpace(rp.Subject.CommonName)) > 0)
 }

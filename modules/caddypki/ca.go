@@ -16,7 +16,9 @@ package caddypki
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -432,40 +434,61 @@ func (ca CA) generateCSR(csrReq csrRequest) (csr *x509.CertificateRequest, err e
 	csrKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyCSRKey(csrReq.ID))
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("loading csr key '%s': %v", csrReq.ID, err)
+			return csr, fmt.Errorf("loading csr key '%s': %v", csrReq.ID, err)
 		}
 		if csrReq.Key == nil {
 			signer, err = keyutil.GenerateDefaultSigner()
 			if err != nil {
-				return nil, err
+				return csr, err
 			}
 		} else {
 			signer, err = keyutil.GenerateSigner(csrReq.Key.Type.String(), csrReq.Key.Curve.String(), csrReq.Key.Size)
 			if err != nil {
-				return nil, err
+				return csr, err
 			}
 		}
 
 		csrKeyPEM, err = certmagic.PEMEncodePrivateKey(signer)
 		if err != nil {
-			return nil, fmt.Errorf("encoding csr key: %v", err)
+			return csr, fmt.Errorf("encoding csr key: %v", err)
 		}
 		if err := ca.storage.Store(ca.ctx, ca.storageKeyCSRKey(csrReq.ID), csrKeyPEM); err != nil {
-			return nil, fmt.Errorf("saving csr key: %v", err)
+			return csr, fmt.Errorf("saving csr key: %v", err)
 		}
 	}
 	if signer == nil {
 		signer, err = certmagic.PEMDecodePrivateKey(csrKeyPEM)
 		if err != nil {
-			return nil, fmt.Errorf("decoding csr key: %v", err)
+			return csr, fmt.Errorf("decoding csr key: %v", err)
 		}
 	}
 
-	csr, err = x509util.CreateCertificateRequest("", csrReq.SANs, signer)
-	if err != nil {
-		return nil, err
+	var subject pkix.Name
+	if csrReq.Request != nil && csrReq.Request.Subject != nil {
+		subject = pkix.Name{
+			Country:            csrReq.Request.Subject.Country,
+			Organization:       csrReq.Request.Subject.Organization,
+			OrganizationalUnit: csrReq.Request.Subject.OrganizationalUnit,
+			Locality:           csrReq.Request.Subject.Locality,
+			Province:           csrReq.Request.Subject.Province,
+			StreetAddress:      csrReq.Request.Subject.StreetAddress,
+			PostalCode:         csrReq.Request.Subject.PostalCode,
+			CommonName:         csrReq.Request.Subject.CommonName,
+		}
 	}
-	return csr, nil
+	dnsNames, ips, emails, uris := x509util.SplitSANs(csrReq.Request.SANs)
+
+	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:        subject,
+		DNSNames:       dnsNames,
+		IPAddresses:    ips,
+		EmailAddresses: emails,
+		URIs:           uris,
+	}, signer)
+	if err != nil {
+		return csr, err
+	}
+	return x509.ParseCertificateRequest(csrBytes)
 }
 
 // AuthorityConfig is used to help a CA configure
