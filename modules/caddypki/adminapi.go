@@ -219,12 +219,6 @@ func (a *adminAPI) handleCSRGeneration(w http.ResponseWriter, r *http.Request) e
 			Err:        fmt.Errorf("failed to generate CSR: %v", err),
 		}
 	}
-	if r.Header.Get("Accept") != "application/pkcs10" {
-		return caddy.APIError{
-			HTTPStatus: http.StatusNotAcceptable,
-			Err:        fmt.Errorf("only accept application/pkcs10"),
-		}
-	}
 	bs, err := pemEncode("CERTIFICATE REQUEST", csr.Raw)
 	if err != nil {
 		return caddy.APIError{
@@ -233,7 +227,7 @@ func (a *adminAPI) handleCSRGeneration(w http.ResponseWriter, r *http.Request) e
 		}
 	}
 	w.Header().Set("Content-Type", "application/pkcs10")
-	w.Header().Set("content-disposition", fmt.Sprintf(`attachment; filename="%s"`, csrReq.ID))
+	w.Header().Set("content-disposition", fmt.Sprintf(`attachment; filename="%s.csr"`, csrReq.ID))
 
 	if _, err := w.Write(bs); err != nil {
 		return caddy.APIError{
