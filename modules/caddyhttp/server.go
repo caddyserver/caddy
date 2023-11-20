@@ -253,6 +253,7 @@ type Server struct {
 	connStateFuncs   []func(net.Conn, http.ConnState)
 	connContextFuncs []func(ctx context.Context, c net.Conn) context.Context
 	onShutdownFuncs  []func()
+	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
 // ServeHTTP is the entry point for all HTTP requests.
@@ -630,9 +631,16 @@ func (s *Server) RegisterConnContext(f func(ctx context.Context, c net.Conn) con
 	s.connContextFuncs = append(s.connContextFuncs, f)
 }
 
-// RegisterOnShutdown registers f to be invoked on server shutdown.
+// RegisterOnShutdown registers f to be invoked when the server begins to shut down.
 func (s *Server) RegisterOnShutdown(f func()) {
 	s.onShutdownFuncs = append(s.onShutdownFuncs, f)
+}
+
+// RegisterOnStop registers f to be invoked after the server has shut down completely.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) RegisterOnStop(f func(context.Context) error) {
+	s.onStopFuncs = append(s.onStopFuncs, f)
 }
 
 // HTTPErrorConfig determines how to handle errors
