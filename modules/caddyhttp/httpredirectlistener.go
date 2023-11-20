@@ -117,9 +117,8 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 
 	// If the request doesn't look like HTTP, then it's probably
 	// TLS bytes, and we don't need to do anything.
-	// 0, nil are valid return values - caller most likely will try again.
 	if !firstBytesLookLikeHTTP(firstBytes) {
-		return 0, nil
+		return c.r.Read(p)
 	}
 
 	// From now on, we can be almost certain the request is HTTP.
