@@ -962,10 +962,12 @@ func (h *Handler) finalizeResponse(
 	if err != nil {
 		// we're streaming the response and we've already written headers, so
 		// there's nothing an error handler can do to recover at this point;
-		// the standard lib's proxy panics at this point, but we'll just log
-		// the error and abort the stream here
+		// we'll just log the error and abort the stream here and panic just as
+		// the standard lib's proxy to propagate the stream error.
+		// see issue https://github.com/caddyserver/caddy/issues/5951
 		logger.Error("aborting with incomplete response", zap.Error(err))
-		return nil
+		// no extra logging from stdlib
+		panic(http.ErrAbortHandler)
 	}
 
 	if len(res.Trailer) > 0 {
