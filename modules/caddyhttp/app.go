@@ -378,11 +378,7 @@ func (app *App) Start() error {
 				return context.WithValue(ctx, ConnCtxKey, c)
 			},
 		}
-		h2server := &http2.Server{
-			NewWriteScheduler: func() http2.WriteScheduler {
-				return http2.NewPriorityWriteScheduler(nil)
-			},
-		}
+		h2server := new(http2.Server)
 
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
