@@ -25,6 +25,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -324,6 +325,7 @@ type Templates struct {
 	ExtensionsRaw caddy.ModuleMap `json:"match,omitempty" caddy:"namespace=http.handlers.templates.functions"`
 
 	customFuncs []template.FuncMap
+	logger      *zap.Logger
 }
 
 // Customfunctions is the interface for registering custom template functions.
@@ -342,6 +344,7 @@ func (Templates) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions t.
 func (t *Templates) Provision(ctx caddy.Context) error {
+	t.logger = ctx.Logger()
 	mods, err := ctx.LoadModule(t, "ExtensionsRaw")
 	if err != nil {
 		return fmt.Errorf("loading template extensions: %v", err)
