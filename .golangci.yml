@@ -23,6 +23,7 @@ linters:
     - asciicheck
     - bidichk
     - bodyclose
+    - decorder
     - dogsled
     - dupl
     - errcheck
@@ -41,6 +42,7 @@ linters:
   # these are implicitly disabled:
   # - containedctx
   # - contextcheck
+  # - cyclop
   # - depguard
   # - exhaustive
   # - exportloopref
