@@ -38,6 +38,8 @@ linters:
     - unconvert
     - unused
   # these are implicitly disabled:
+  # - containedctx
+  # - contextcheck
   # - depguard
   # - dupl
   # - exhaustive
