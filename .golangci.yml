@@ -27,6 +27,7 @@ linters:
     - dogsled
     - dupl
     - dupword
+    - durationcheck
     - errcheck
     - gci
     - gofumpt
