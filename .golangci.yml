@@ -20,6 +20,7 @@ linters:
   disable-all: true
   enable:
     - asciicheck
+    - bidichk
     - bodyclose
     - errcheck
     - gci
