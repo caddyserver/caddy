@@ -24,6 +24,7 @@ linters:
     - bidichk
     - bodyclose
     - dogsled
+    - dupl
     - errcheck
     - gci
     - gofumpt
@@ -41,7 +42,6 @@ linters:
   # - containedctx
   # - contextcheck
   # - depguard
-  # - dupl
   # - exhaustive
   # - exportloopref
   # - funlen
@@ -114,3 +114,6 @@ issues:
       text: 'G404' # G404: Insecure random number source (rand)
       linters:
         - gosec
+    - path: modules/logging/filters.go
+      linters:
+        - dupl
