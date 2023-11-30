@@ -23,6 +23,7 @@ linters:
     - asciicheck
     - bidichk
     - bodyclose
+    - dogsled
     - errcheck
     - gci
     - gofumpt
@@ -38,7 +39,6 @@ linters:
     - unused
   # these are implicitly disabled:
   # - depguard
-  # - dogsled
   # - dupl
   # - exhaustive
   # - exportloopref
