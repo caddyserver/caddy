@@ -504,7 +504,7 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 	// append a dot so that partial names don't match
 	// (i.e. we don't want "foo.b" to match "foo.bar"); we
 	// will also have to append a dot when we do HasPrefix
-	// below to compensate for when when namespaces are equal
+	// below to compensate for when namespaces are equal
 	if name != "" && name != "*" && name != "." {
 		name += "."
 	}

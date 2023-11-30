@@ -1093,7 +1093,7 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 
 	// if the passive health checker has a non-zero UnhealthyRequestCount
 	// but the upstream has no MaxRequests set (they are the same thing,
-	// but the passive health checker is a default value for for upstreams
+	// but the passive health checker is a default value for upstreams
 	// without MaxRequests), copy the value into this upstream, since the
 	// value in the upstream (MaxRequests) is what is used during
 	// availability checks

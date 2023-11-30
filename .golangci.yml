@@ -26,6 +26,7 @@ linters:
     - decorder
     - dogsled
     - dupl
+    - dupword
     - errcheck
     - gci
     - gofumpt
