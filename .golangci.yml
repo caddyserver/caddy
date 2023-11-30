@@ -46,6 +46,7 @@ linters:
   # - contextcheck
   # - cyclop
   # - depguard
+  # - errchkjson
   # - exhaustive
   # - exportloopref
   # - funlen
