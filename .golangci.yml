@@ -19,6 +19,7 @@ linters-settings:
 linters:
   disable-all: true
   enable:
+    - asciicheck
     - bodyclose
     - errcheck
     - gci
@@ -34,7 +35,6 @@ linters:
     - unconvert
     - unused
   # these are implicitly disabled:
-  # - asciicheck
   # - depguard
   # - dogsled
   # - dupl
