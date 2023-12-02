@@ -46,6 +46,7 @@ linters:
     - unconvert
     - unused
     - whitespace
+    - zerologlint
   # these are implicitly disabled:
   # - containedctx
   # - contextcheck
