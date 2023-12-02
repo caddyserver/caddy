@@ -45,6 +45,7 @@ linters:
     - typecheck
     - unconvert
     - unused
+    - wastedassign
     - whitespace
     - zerologlint
   # these are implicitly disabled:
@@ -85,6 +86,7 @@ linters:
   # - stylecheck
   # - testpackage
   # - unparam
+  # - wrapcheck
   # - wsl
 
 run:
