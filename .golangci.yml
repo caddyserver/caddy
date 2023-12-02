@@ -32,6 +32,7 @@ linters:
     - durationcheck
     - errcheck
     - exhaustive
+    - exportloopref
     - gci
     - gofumpt
     - gosec
@@ -50,7 +51,7 @@ linters:
   # - cyclop
   # - depguard
   # - errchkjson
-  # - exportloopref
+  # - exhaustruct
   # - funlen
   # - gci
   # - gochecknoglobals
