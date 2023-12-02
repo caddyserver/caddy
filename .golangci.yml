@@ -45,6 +45,7 @@ linters:
     - typecheck
     - unconvert
     - unused
+    - whitespace
   # these are implicitly disabled:
   # - containedctx
   # - contextcheck
@@ -83,7 +84,6 @@ linters:
   # - stylecheck
   # - testpackage
   # - unparam
-  # - whitespace
   # - wsl
 
 run:
