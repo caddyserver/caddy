@@ -55,11 +55,18 @@ linters:
   # - cyclop
   # - depguard
   # - errchkjson
+  # - errorlint
   # - exhaustruct
+  # - execinquery
+  # - exhaustruct
+  # - forbidigo
+  # - forcetypeassert
   # - funlen
-  # - gci
+  # - ginkgolinter
+  # - gocheckcompilerdirectives
   # - gochecknoglobals
   # - gochecknoinits
+  # - gochecksumtype
   # - gocognit
   # - goconst
   # - gocritic
@@ -67,26 +74,56 @@ linters:
   # - godot
   # - godox
   # - goerr113
-  # - gofumpt
+  # - gofmt
   # - goheader
-  # - golint
+  # - goimports
   # - gomnd
+  # - gomoddirectives
   # - gomodguard
   # - goprintffuncname
-  # - interfacer
+  # - gosmopolitan
+  # - grouper
+  # - importas
+  # - inamedparam
+  # - interfacebloat
+  # - ireturn
   # - lll
-  # - maligned
+  # - loggercheck
+  # - maintidx
+  # - makezero
+  # - mirror
+  # - musttag
   # - nakedret
   # - nestif
+  # - nilerr
+  # - nilnil
   # - nlreturn
   # - noctx
   # - nolintlint
+  # - nonamedreturns
+  # - nosprintfhostport
+  # - paralleltest
+  # - perfsprint
+  # - predeclared
+  # - promlinter
+  # - protogetter
+  # - reassign
+  # - revive
   # - rowserrcheck
-  # - scopelint
+  # - sloglint
   # - sqlclosecheck
   # - stylecheck
+  # - tagalign
+  # - tagliatelle
+  # - tenv
+  # - testableexamples
+  # - testifylint
   # - testpackage
+  # - thelper
+  # - tparallel
   # - unparam
+  # - usestdlibvars
+  # - varnamelen
   # - wrapcheck
   # - wsl
 
