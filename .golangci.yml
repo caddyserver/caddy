@@ -16,7 +16,7 @@ linters-settings:
     # Default: false
     custom-order: true
   exhaustive:
-    ignore-enum-types: reflect.Kind
+    ignore-enum-types: reflect.Kind|svc.Cmd
 
 linters:
   disable-all: true
