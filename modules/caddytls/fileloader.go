@@ -107,5 +107,7 @@ func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 // Interface guard
-var _ CertificateLoader = (FileLoader)(nil)
-var _ caddy.Provisioner = (FileLoader)(nil)
+var (
+	_ CertificateLoader = (FileLoader)(nil)
+	_ caddy.Provisioner = (FileLoader)(nil)
+)

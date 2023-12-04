@@ -88,5 +88,7 @@ func (pl PEMLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 // Interface guard
-var _ CertificateLoader = (PEMLoader)(nil)
-var _ caddy.Provisioner = (PEMLoader)(nil)
+var (
+	_ CertificateLoader = (PEMLoader)(nil)
+	_ caddy.Provisioner = (PEMLoader)(nil)
+)
