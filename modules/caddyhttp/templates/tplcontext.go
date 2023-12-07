@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
+	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -57,7 +59,7 @@ type TemplateContext struct {
 // NewTemplate returns a new template intended to be evaluated with this
 // context, as it is initialized with configuration from this context.
 func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
-	c.tpl = template.New(tplName)
+	c.tpl = template.New(tplName).Option("missingkey=zero")
 
 	// customize delimiters, if applicable
 	if c.config != nil && len(c.config.Delimiters) == 2 {
@@ -88,6 +90,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
 		"humanize":         c.funcHumanize,
+		"maybe":            c.funcMaybe,
 	})
 	return c.tpl
 }
@@ -490,6 +493,51 @@ func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no know function was given")
+}
+
+// funcMaybe invokes the plugged-in function named functionName if it is plugged in
+// (is a module in the 'http.handlers.templates.functions' namespace). If it is not
+// available, a log message is emitted.
+//
+// The first argument is the function name, and the rest of the arguments are
+// passed on to the actual function.
+//
+// This function is useful for executing templates that use components that may be
+// considered as optional in some cases (like during local development) where you do
+// not want to require everyone to have a custom Caddy build to be able to execute
+// your template.
+//
+// NOTE: This function is EXPERIMENTAL and subject to change or removal.
+func (c TemplateContext) funcMaybe(functionName string, args ...any) (any, error) {
+	for _, funcMap := range c.CustomFuncs {
+		if fn, ok := funcMap[functionName]; ok {
+			val := reflect.ValueOf(fn)
+			if val.Kind() != reflect.Func {
+				continue
+			}
+			argVals := make([]reflect.Value, len(args))
+			for i, arg := range args {
+				argVals[i] = reflect.ValueOf(arg)
+			}
+			returnVals := val.Call(argVals)
+			switch len(returnVals) {
+			case 0:
+				return "", nil
+			case 1:
+				return returnVals[0].Interface(), nil
+			case 2:
+				var err error
+				if !returnVals[1].IsNil() {
+					err = returnVals[1].Interface().(error)
+				}
+				return returnVals[0].Interface(), err
+			default:
+				return nil, fmt.Errorf("maybe %s: invalid number of return values: %d", functionName, len(returnVals))
+			}
+		}
+	}
+	c.config.logger.Named("maybe").Warn("template function could not be found; ignoring invocation", zap.String("name", functionName))
+	return "", nil
 }
 
 // WrappedHeader wraps niladic functions so that they
