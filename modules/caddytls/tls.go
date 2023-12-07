@@ -551,6 +551,10 @@ func (t *TLS) cleanStorageUnits() {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
 
+	// TODO: This check might not be needed anymore now that CertMagic syncs
+	// and throttles storage cleaning globally across the cluster.
+	// The original comment below might be outdated:
+	//
 	// If storage was cleaned recently, don't do it again for now. Although the ticker
 	// calling this function drops missed ticks for us, config reloads discard the old
 	// ticker and replace it with a new one, possibly invoking a cleaning to happen again
@@ -563,21 +567,26 @@ func (t *TLS) cleanStorageUnits() {
 		return
 	}
 
+	id, err := caddy.InstanceID()
+	if err != nil {
+		t.logger.Warn("unable to get instance ID; storage clean stamps will be incomplete", zap.Error(err))
+	}
 	options := certmagic.CleanStorageOptions{
+		Logger:                 t.logger,
+		InstanceID:             id.String(),
+		Interval:               t.storageCleanInterval(),
 		OCSPStaples:            true,
 		ExpiredCerts:           true,
 		ExpiredCertGracePeriod: 24 * time.Hour * 14,
 	}
 
-	// avoid cleaning same storage more than once per cleaning cycle
-	storagesCleaned := make(map[string]struct{})
-
 	// start with the default/global storage
-	storage := t.ctx.Storage()
-	storageStr := fmt.Sprintf("%v", storage)
-	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
-	certmagic.CleanStorage(t.ctx, storage, options)
-	storagesCleaned[storageStr] = struct{}{}
+	err = certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
+	if err != nil {
+		// probably don't want to return early, since we should still
+		// see if any other storages can get cleaned up
+		t.logger.Error("could not clean default/global storage", zap.Error(err))
+	}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
@@ -585,13 +594,9 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			storageStr := fmt.Sprintf("%v", ap.storage)
-			if _, ok := storagesCleaned[storageStr]; ok {
-				continue
+			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
+				t.logger.Error("could not clean storage configured in automation policy", zap.Error(err))
 			}
-			t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
-			certmagic.CleanStorage(t.ctx, ap.storage, options)
-			storagesCleaned[storageStr] = struct{}{}
 		}
 	}
 
