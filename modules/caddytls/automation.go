@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,7 +252,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 			return fmt.Errorf("on-demand TLS cannot be enabled without an 'ask' endpoint to prevent abuse; please refer to documentation for details")
 		}
 		ond = &certmagic.OnDemandConfig{
-			DecisionFunc: func(name string) error {
+			DecisionFunc: func(ctx context.Context, name string) error {
 				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
 					return nil
 				}
