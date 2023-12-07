@@ -256,7 +256,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
 					return nil
 				}
-				if err := onDemandAskRequest(tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
+				if err := onDemandAskRequest(ctx, tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, errAskDenied) {
 						tlsApp.logger.Debug("certificate issuance denied",
