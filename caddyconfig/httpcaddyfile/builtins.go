@@ -844,7 +844,6 @@ func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 }
 
 func parseHandleErrors(h Helper) ([]ConfigValue, error) {
-
 	h.Next()
 	args := h.RemainingArgs()
 	expression := ""
@@ -865,17 +864,16 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 		if len(codes) > 0 {
 			if expression != "" {
 				expression += " || "
-			} else {
-				expression += "{http.error.status_code} in [" + strings.Join(codes, ", ") + "]"
 			}
+			expression += "{http.error.status_code} in [" + strings.Join(codes, ", ") + "]"
 		}
-		//Reset cursor position to get ready for ParseSegmentAsSubroute
+		// Reset cursor position to get ready for ParseSegmentAsSubroute
 		h.Reset()
 		h.Next()
 		h.RemainingArgs()
 		h.Prev()
 	} else {
-		//If no arguments present reset the cursor position to get ready for ParseSegmentAsSubroute
+		// If no arguments present reset the cursor position to get ready for ParseSegmentAsSubroute
 		h.Prev()
 	}
 
