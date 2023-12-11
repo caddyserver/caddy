@@ -851,15 +851,26 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 		expression = ""
 		codes := []string{}
 		for _, val := range args {
+			if len(val) != 3 {
+				return nil, h.Errf("bad status value '%s'", val)
+			}
 			if strings.HasSuffix(val, "xx") {
 				val = val[:1]
+				_, err := strconv.Atoi(val)
+				if err != nil {
+					return nil, h.Errf("bad status value '%s': %v", val, err)
+				}
 				if expression != "" {
 					expression += " || "
 				}
 				expression += fmt.Sprintf("{http.error.status_code} >= %s00 && {http.error.status_code} <= %s99", val, val)
-			} else {
-				codes = append(codes, val)
+				continue
 			}
+			_, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, h.Errf("bad status value '%s': %v", val, err)
+			}
+			codes = append(codes, val)
 		}
 		if len(codes) > 0 {
 			if expression != "" {

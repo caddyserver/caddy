@@ -781,15 +781,12 @@ func (st *ServerType) serversFromPairings(
 					}
 					return true
 				})
+				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
 					sr := val.Value.(*caddyhttp.Subroute)
-					routeMatcherSet := sr.Routes[0].MatcherSetsRaw
-					sr.Routes[0].MatcherSetsRaw = []caddy.ModuleMap{}
-					if routeMatcherSet == nil {
-						routeMatcherSet = matcherSetsEnc
-					}
-					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, routeMatcherSet, p, warnings)
+					errorsSubroute.Routes = append(errorsSubroute.Routes, sr.Routes...)
 				}
+				srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, errorsSubroute, matcherSetsEnc, p, warnings)
 			}
 
 			// add log associations

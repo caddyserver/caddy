@@ -70,7 +70,6 @@ var directiveOrder = []string{
 	"handle",
 	"handle_path",
 	"route",
-	"handle_errors",
 
 	// handlers that typically respond to requests
 	"abort",

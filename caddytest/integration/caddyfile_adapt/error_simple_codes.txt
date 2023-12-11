@@ -84,7 +84,9 @@ localhost:3010 {
 							{
 								"match": [
 									{
-										"expression": "{http.error.status_code} in [404, 410]"
+										"host": [
+											"localhost"
+										]
 									}
 								],
 								"handle": [
@@ -96,6 +98,11 @@ localhost:3010 {
 													{
 														"body": "404 or 410 error",
 														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [404, 410]"
 													}
 												]
 											}

@@ -104,7 +104,9 @@ localhost:2099 {
 							{
 								"match": [
 									{
-										"expression": "{http.error.status_code} \u003e= 400 \u0026\u0026 {http.error.status_code} \u003c= 499"
+										"host": [
+											"localhost"
+										]
 									}
 								],
 								"handle": [
@@ -117,28 +119,23 @@ localhost:2099 {
 														"body": "Error in the [400 .. 499] range",
 														"handler": "static_response"
 													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 400 \u0026\u0026 {http.error.status_code} \u003c= 499"
+													}
 												]
-											}
-										]
-									}
-								],
-								"terminal": true
-							},
-							{
-								"match": [
-									{
-										"expression": "{http.error.status_code} \u003e= 300 \u0026\u0026 {http.error.status_code} \u003c= 399 || {http.error.status_code} in [500]"
-									}
-								],
-								"handle": [
-									{
-										"handler": "subroute",
-										"routes": [
+											},
 											{
 												"handle": [
 													{
 														"body": "Error code is equal to 500 or in the [300..399] range",
 														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 300 \u0026\u0026 {http.error.status_code} \u003c= 399 || {http.error.status_code} in [500]"
 													}
 												]
 											}
