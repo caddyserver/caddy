@@ -16,6 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         goos: 
+          - 'aix'
           - 'android'
           - 'linux'
           - 'solaris'
@@ -62,11 +63,12 @@ jobs:
         env:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goos == 'aix' && 'ppc64' || 'amd64' }}
         shell: bash
         continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
-          GOOS=$GOOS go build -trimpath -o caddy-"$GOOS"-amd64 2> /dev/null
+          GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
           if [ $? -ne 0 ]; then
             echo "::warning ::$GOOS Build Failed"
             exit 0
