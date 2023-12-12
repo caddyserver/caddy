@@ -50,6 +50,8 @@ var BrowseTemplate string
 type Browse struct {
 	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
+	// Determines whether or not targets of symlinks should be revealed.
+	RevealSymlinks bool `json:"reveal_symlinks,omitempty"`
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
