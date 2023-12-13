@@ -15,11 +15,11 @@
 package proxyprotocol
 
 import (
-	"fmt"
 	"net"
+	"net/netip"
 	"time"
 
-	"github.com/mastercactapus/proxyprotocol"
+	goproxy "github.com/pires/go-proxyproto"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -38,32 +38,74 @@ type ListenerWrapper struct {
 	// Allow is an optional list of CIDR ranges to
 	// allow/require PROXY headers from.
 	Allow []string `json:"allow,omitempty"`
+	allow []netip.Prefix
 
-	rules []proxyprotocol.Rule
+	// Denby is an optional list of CIDR ranges to
+	// deny PROXY headers from.
+	Deny []string `json:"deny,omitempty"`
+	deny []netip.Prefix
+
+	// Accepted values are: ignore, use, reject, require, skip
+	// default: ignore
+	// Policy definitions are here: https://pkg.go.dev/github.com/pires/go-proxyproto@v0.7.0#Policy
+	FallbackPolicy Policy `json:"fallback_policy,omitempty"`
+
+	policy goproxy.PolicyFunc
 }
 
 // Provision sets up the listener wrapper.
 func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
-	rules := make([]proxyprotocol.Rule, 0, len(pp.Allow))
-	for _, s := range pp.Allow {
-		_, n, err := net.ParseCIDR(s)
+	for _, cidr := range pp.Allow {
+		ipnet, err := netip.ParsePrefix(cidr)
 		if err != nil {
-			return fmt.Errorf("invalid subnet '%s': %w", s, err)
+			return err
 		}
-		rules = append(rules, proxyprotocol.Rule{
-			Timeout: time.Duration(pp.Timeout),
-			Subnet:  n,
-		})
+		pp.allow = append(pp.allow, ipnet)
 	}
+	for _, cidr := range pp.Deny {
+		ipnet, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			return err
+		}
+		pp.deny = append(pp.deny, ipnet)
+	}
+	pp.policy = func(upstream net.Addr) (goproxy.Policy, error) {
+		// trust unix sockets
+		if network := upstream.Network(); caddy.IsUnixNetwork(network) {
+			return goproxy.USE, nil
+		}
+		ret := pp.FallbackPolicy
+		host, _, err := net.SplitHostPort(upstream.String())
+		if err != nil {
+			return goproxy.REJECT, err
+		}
 
-	pp.rules = rules
-
+		ip, err := netip.ParseAddr(host)
+		if err != nil {
+			return goproxy.REJECT, err
+		}
+		for _, ipnet := range pp.deny {
+			if ipnet.Contains(ip) {
+				return goproxy.REJECT, nil
+			}
+		}
+		for _, ipnet := range pp.allow {
+			if ipnet.Contains(ip) {
+				ret = PolicyUSE
+				break
+			}
+		}
+		return policyToGoProxyPolicy[ret], nil
+	}
 	return nil
 }
 
 // WrapListener adds PROXY protocol support to the listener.
 func (pp *ListenerWrapper) WrapListener(l net.Listener) net.Listener {
-	pl := proxyprotocol.NewListener(l, time.Duration(pp.Timeout))
-	pl.SetFilter(pp.rules)
+	pl := &goproxy.Listener{
+		Listener:          l,
+		ReadHeaderTimeout: time.Duration(pp.Timeout),
+	}
+	pl.Policy = pp.policy
 	return pl
 }
