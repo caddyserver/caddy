@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
@@ -157,9 +158,17 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.duration_ms":
 				start := GetVar(req.Context(), "start_time").(time.Time)
 				return time.Since(start).Seconds() * 1e3, true // multiply seconds to preserve decimal (see #4666)
+
 			case "http.request.uuid":
+				// fetch the UUID for this request
 				id := GetVar(req.Context(), "uuid").(*requestID)
+
+				// set it to this request's access log
+				extra := req.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+				extra.Set(zap.String("uuid", id.String()))
+
 				return id.String(), true
+
 			case "http.request.body":
 				if req.Body == nil {
 					return "", true
