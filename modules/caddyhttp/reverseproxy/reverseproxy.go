@@ -46,16 +46,16 @@ import (
 func init() {
 	caddy.RegisterModule(Handler{})
 
-	caddy.RegisterType("http.reverse_proxy.circuit_breakers", []interface{}{
+	caddy.RegisterNamespace("http.reverse_proxy.circuit_breakers", []interface{}{
 		(*CircuitBreaker)(nil),
 	})
-	caddy.RegisterType("http.reverse_proxy.selection_policies", []interface{}{
+	caddy.RegisterNamespace("http.reverse_proxy.selection_policies", []interface{}{
 		(*Selector)(nil),
 	})
-	caddy.RegisterType("http.reverse_proxy.transport", []interface{}{
+	caddy.RegisterNamespace("http.reverse_proxy.transport", []interface{}{
 		(*http.RoundTripper)(nil),
 	})
-	caddy.RegisterType("http.reverse_proxy.upstreams", []interface{}{
+	caddy.RegisterNamespace("http.reverse_proxy.upstreams", []interface{}{
 		(*UpstreamSource)(nil),
 	})
 }

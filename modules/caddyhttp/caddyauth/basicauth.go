@@ -32,10 +32,10 @@ import (
 func init() {
 	caddy.RegisterModule(HTTPBasicAuth{})
 
-	caddy.RegisterType("http.authentication.hashes", []interface{}{
+	caddy.RegisterNamespace("http.authentication.hashes", []interface{}{
 		(*Comparer)(nil),
 	})
-	caddy.RegisterType("http.authentication.providers", []interface{}{
+	caddy.RegisterNamespace("http.authentication.providers", []interface{}{
 		(*Authenticator)(nil),
 	})
 }

@@ -33,10 +33,10 @@ func init() {
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
 	RegisterModule(DiscardWriter{})
-	RegisterType("caddy.logging.encoders", []interface{}{
+	RegisterNamespace("caddy.logging.encoders", []interface{}{
 		(*zapcore.Encoder)(nil),
 	})
-	RegisterType("caddy.logging.writers", []interface{}{
+	RegisterNamespace("caddy.logging.writers", []interface{}{
 		(*WriterOpener)(nil),
 	})
 }

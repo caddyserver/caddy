@@ -31,13 +31,13 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("dns.provider", []interface{}{
+	caddy.RegisterNamespace("dns.provider", []interface{}{
 		(*acmez.Solver)(nil),
 	})
-	caddy.RegisterType("tls.get_certificate", []interface{}{
+	caddy.RegisterNamespace("tls.get_certificate", []interface{}{
 		(*certmagic.Manager)(nil),
 	})
-	caddy.RegisterType("tls.issuance", []interface{}{
+	caddy.RegisterNamespace("tls.issuance", []interface{}{
 		(*certmagic.Issuer)(nil),
 	})
 }

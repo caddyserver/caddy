@@ -36,7 +36,7 @@ func init() {
 	caddy.RegisterModule(TLS{})
 	caddy.RegisterModule(AutomateLoader{})
 
-	caddy.RegisterType("tls.certificates", []interface{}{
+	caddy.RegisterNamespace("tls.certificates", []interface{}{
 		(*CertificateLoader)(nil),
 	})
 }

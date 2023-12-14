@@ -37,7 +37,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(Encode{})
-	caddy.RegisterType("http.encoders", []interface{}{
+	caddy.RegisterNamespace("http.encoders", []interface{}{
 		(*Encoding)(nil),
 	})
 }

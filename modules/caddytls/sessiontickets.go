@@ -29,7 +29,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("tls.stek", []interface{}{
+	caddy.RegisterNamespace("tls.stek", []interface{}{
 		(*STEKProvider)(nil),
 	})
 }

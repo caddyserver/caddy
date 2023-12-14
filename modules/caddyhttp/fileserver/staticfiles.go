@@ -38,7 +38,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("http.precompressed", []interface{}{
+	caddy.RegisterNamespace("http.precompressed", []interface{}{
 		(*encode.Precompressed)(nil),
 	})
 

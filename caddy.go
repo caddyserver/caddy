@@ -42,10 +42,10 @@ import (
 )
 
 func init() {
-	RegisterType("", []interface{}{
+	RegisterNamespace("", []interface{}{
 		(*App)(nil),
 	})
-	RegisterType("caddy.storage", []interface{}{
+	RegisterNamespace("caddy.storage", []interface{}{
 		(*StorageConverter)(nil),
 	})
 }

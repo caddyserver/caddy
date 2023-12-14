@@ -7,7 +7,7 @@ import (
 
 var namespaceTypes map[string][]reflect.Type = make(map[string][]reflect.Type)
 
-func RegisterType(namespace string, vals []interface{}) {
+func RegisterNamespace(namespace string, vals []interface{}) {
 	var types []reflect.Type
 	for _, v := range vals {
 		reflect.TypeOf(v).Elem()

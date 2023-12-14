@@ -38,7 +38,7 @@ import (
 )
 
 func init() {
-	RegisterType("caddy.listeners", []interface{}{
+	RegisterNamespace("caddy.listeners", []interface{}{
 		(*ListenerWrapper)(nil),
 	})
 }

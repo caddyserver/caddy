@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterType("http.handlers", []interface{}{
+	caddy.RegisterNamespace("http.handlers", []interface{}{
 		(*MiddlewareHandler)(nil),
 	})
 }

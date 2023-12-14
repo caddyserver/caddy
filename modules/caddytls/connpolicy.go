@@ -33,7 +33,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(LeafCertClientAuth{})
-	caddy.RegisterType("tls.handshake_match", []interface{}{
+	caddy.RegisterNamespace("tls.handshake_match", []interface{}{
 		(*ConnectionMatcher)(nil),
 	})
 }
