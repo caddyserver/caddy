@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/sync/singleflight"
 
@@ -39,8 +38,6 @@ func init() {
 	caddy.RegisterType("http.authentication.providers", []interface{}{
 		(*Authenticator)(nil),
 	})
-
-	weakrand.Seed(time.Now().UnixNano())
 }
 
 // HTTPBasicAuth facilitates HTTP basic authentication.

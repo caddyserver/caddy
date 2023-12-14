@@ -29,7 +29,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -39,8 +38,6 @@ import (
 )
 
 func init() {
-	weakrand.Seed(time.Now().UnixNano())
-
 	caddy.RegisterType("http.precompressed", []interface{}{
 		(*encode.Precompressed)(nil),
 	})
