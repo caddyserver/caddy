@@ -29,6 +29,26 @@ func init() {
 // FileLoader loads certificates and their associated keys from disk.
 type FileLoader []CertKeyFilePair
 
+// Provision implements caddy.Provisioner.
+func (fl FileLoader) Provision(ctx caddy.Context) error {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+	}
+	for k, pair := range fl {
+		for i, tag := range pair.Tags {
+			pair.Tags[i] = repl.ReplaceKnown(tag, "")
+		}
+		fl[k] = CertKeyFilePair{
+			Certificate: repl.ReplaceKnown(pair.Certificate, ""),
+			Key:         repl.ReplaceKnown(pair.Key, ""),
+			Format:      repl.ReplaceKnown(pair.Format, ""),
+			Tags:        pair.Tags,
+		}
+	}
+	return nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (FileLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -87,4 +107,7 @@ func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 // Interface guard
-var _ CertificateLoader = (FileLoader)(nil)
+var (
+	_ CertificateLoader = (FileLoader)(nil)
+	_ caddy.Provisioner = (FileLoader)(nil)
+)

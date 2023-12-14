@@ -35,6 +35,8 @@ func (ListenerWrapper) CaddyModule() caddy.ModuleInfo {
 //	proxy_protocol {
 //		timeout <duration>
 //		allow <IPs...>
+//		deny <IPs...>
+//		fallback_policy <policy>
 //	}
 func (w *ListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
@@ -57,7 +59,17 @@ func (w *ListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			case "allow":
 				w.Allow = append(w.Allow, d.RemainingArgs()...)
-
+			case "deny":
+				w.Deny = append(w.Deny, d.RemainingArgs()...)
+			case "fallback_policy":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				p, err := parsePolicy(d.Val())
+				if err != nil {
+					return d.WrapErr(err)
+				}
+				w.FallbackPolicy = p
 			default:
 				return d.ArgErr()
 			}
