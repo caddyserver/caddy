@@ -128,8 +128,7 @@ func (fe *FilterEncoder) ConfigureDefaultFormat(wo caddy.WriterOpener) error {
 	if caddy.IsWriterStandardStream(wo) && term.IsTerminal(int(os.Stderr.Fd())) {
 		fe.wrapped = &ConsoleEncoder{}
 		if p, ok := fe.wrapped.(caddy.Provisioner); ok {
-			err := p.Provision(fe.ctx)
-			if err != nil {
+			if err := p.Provision(fe.ctx) ; err != nil {
 				return fmt.Errorf("provisioning fallback encoder module: %v", err)
 			}
 		}
