@@ -52,6 +52,9 @@ will be changed to the HTTPS port and the server will use HTTPS. If using
 a public domain, ensure A/AAAA records are properly configured before
 using this option.
 
+By default, Zstandard and Gzip compression are enabled. Use --no-compress
+to disable compression.
+
 If --browse is enabled, requests for folders without an index file will
 respond with a file listing.`,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -62,6 +65,7 @@ respond with a file listing.`,
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
 			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
+			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
 			cmd.Flags().StringSliceP("precompressed", "p", []string{}, "Specify precompression file extensions. Compression preference implied from flag order.")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
@@ -87,12 +91,33 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
 	debug := fs.Bool("debug")
+	compress := !fs.Bool("no-compress")
 	precompressed, err := fs.GetStringSlice("precompressed")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid precompressed flag: %v", err)
 	}
 
 	var handlers []json.RawMessage
+
+	if compress {
+		zstd, err := caddy.GetModule("http.encoders.zstd")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+
+		gzip, err := caddy.GetModule("http.encoders.gzip")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, err
+		}
+
+		handlers = append(handlers, caddyconfig.JSONModuleObject(encode.Encode{
+			EncodingsRaw: caddy.ModuleMap{
+				"zstd": caddyconfig.JSON(zstd.New(), nil),
+				"gzip": caddyconfig.JSON(gzip.New(), nil),
+			},
+			Prefer: []string{"zstd", "gzip"},
+		}, "handler", "encode", nil))
+	}
 
 	if templates {
 		handler := caddytpl.Templates{FileRoot: root}
