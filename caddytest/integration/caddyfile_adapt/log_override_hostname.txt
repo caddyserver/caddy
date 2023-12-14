@@ -8,6 +8,12 @@
 		output file /baz.txt
 	}
 }
+
+example.com:8443 {
+	log {
+		output file /port.txt
+	}
+}
 ----------
 {
 	"logging": {
@@ -15,7 +21,8 @@
 			"default": {
 				"exclude": [
 					"http.log.access.log0",
-					"http.log.access.log1"
+					"http.log.access.log1",
+					"http.log.access.log2"
 				]
 			},
 			"log0": {
@@ -34,6 +41,15 @@
 				},
 				"include": [
 					"http.log.access.log1"
+				]
+			},
+			"log2": {
+				"writer": {
+					"filename": "/port.txt",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log2"
 				]
 			}
 		}
@@ -62,6 +78,28 @@
 							"bar.example.com": "log0",
 							"baz.example.com": "log1",
 							"foo.example.com": "log0"
+						}
+					}
+				},
+				"srv1": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"example.com": "log2"
 						}
 					}
 				}

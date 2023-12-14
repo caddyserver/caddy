@@ -52,6 +52,13 @@ func parseVariadic(token Token, argCount int) (bool, int, int) {
 		return false, 0, 0
 	}
 
+	// A valid token may contain several placeholders, and
+	// they may be separated by ":". It's not variadic.
+	// https://github.com/caddyserver/caddy/issues/5716
+	if strings.Contains(start, "}") || strings.Contains(end, "{") {
+		return false, 0, 0
+	}
+
 	var (
 		startIndex = 0
 		endIndex   = argCount

@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -38,7 +39,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
-		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--access-log]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--access-log] [--precompressed]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -59,12 +60,13 @@ respond with a file listing.`,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("domain", "d", "", "Domain name at which to serve the files")
 			cmd.Flags().StringP("root", "r", "", "The path to the root of the site")
-			cmd.Flags().StringP("listen", "", "", "The address to which to bind the listener")
+			cmd.Flags().StringP("listen", "l", "", "The address to which to bind the listener")
 			cmd.Flags().BoolP("browse", "b", false, "Enable directory browsing")
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
-			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
+			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
-			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
+      cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
+			cmd.Flags().StringSliceP("precompressed", "p", []string{}, "Specify precompression file extensions. Compression preference implied from flag order.")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
 				Use:     "export-template",
@@ -90,6 +92,10 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	accessLog := fs.Bool("access-log")
 	debug := fs.Bool("debug")
 	compress := !fs.Bool("no-compress")
+	precompressed, err := fs.GetStringSlice("precompressed")
+	if err != nil {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid precompressed flag: %v", err)
+	}
 
 	var handlers []json.RawMessage
 
@@ -119,6 +125,30 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 
 	handler := FileServer{Root: root}
+
+	if len(precompressed) != 0 {
+		// logic mirrors modules/caddyhttp/fileserver/caddyfile.go case "precompressed"
+		var order []string
+		for _, compression := range precompressed {
+			modID := "http.precompressed." + compression
+			mod, err := caddy.GetModule(modID)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("getting module named '%s': %v", modID, err)
+			}
+			inst := mod.New()
+			precompress, ok := inst.(encode.Precompressed)
+			if !ok {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("module %s is not a precompressor; is %T", modID, inst)
+			}
+			if handler.PrecompressedRaw == nil {
+				handler.PrecompressedRaw = make(caddy.ModuleMap)
+			}
+			handler.PrecompressedRaw[compression] = caddyconfig.JSON(precompress, nil)
+			order = append(order, compression)
+		}
+		handler.PrecompressedOrder = order
+	}
+
 	if browse {
 		handler.Browse = new(Browse)
 	}
@@ -180,7 +210,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		}
 	}
 
-	err := caddy.Run(cfg)
+	err = caddy.Run(cfg)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}

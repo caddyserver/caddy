@@ -15,6 +15,9 @@
 package templates
 
 import (
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -48,6 +51,29 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			case "root":
 				if !h.Args(&t.FileRoot) {
 					return nil, h.ArgErr()
+				}
+			case "extensions":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				if t.ExtensionsRaw != nil {
+					return nil, h.Err("extensions already specified")
+				}
+				for nesting := h.Nesting(); h.NextBlock(nesting); {
+					extensionModuleName := h.Val()
+					modID := "http.handlers.templates.functions." + extensionModuleName
+					unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+					if err != nil {
+						return nil, err
+					}
+					cf, ok := unm.(CustomFunctions)
+					if !ok {
+						return nil, h.Errf("module %s (%T) does not provide template functions", modID, unm)
+					}
+					if t.ExtensionsRaw == nil {
+						t.ExtensionsRaw = make(caddy.ModuleMap)
+					}
+					t.ExtensionsRaw[extensionModuleName] = caddyconfig.JSON(cf, nil)
 				}
 			}
 		}

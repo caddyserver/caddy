@@ -191,6 +191,13 @@ type Handler struct {
 	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
+	// If set, the proxy will write very detailed logs about its
+	// inner workings. Enable this only when debugging, as it
+	// will produce a lot of output.
+	//
+	// EXPERIMENTAL: This feature is subject to change or removal.
+	VerboseLogs bool `json:"verbose_logs,omitempty"`
+
 	Transport        http.RoundTripper `json:"-"`
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
@@ -357,7 +364,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		// set defaults on passive health checks, if necessary
 		if h.HealthChecks.Passive != nil {
 			h.HealthChecks.Passive.logger = h.logger.Named("health_checker.passive")
-			if h.HealthChecks.Passive.FailDuration > 0 && h.HealthChecks.Passive.MaxFails == 0 {
+			if h.HealthChecks.Passive.MaxFails == 0 {
 				h.HealthChecks.Passive.MaxFails = 1
 			}
 		}
@@ -480,7 +487,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, fmt.Errorf("no upstreams available"))
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, noUpstreamsAvailable)
 		}
 		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
@@ -848,12 +855,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			break
 		}
 
-		// otherwise, if there are any routes configured, execute those as the
-		// actual response instead of what we got from the proxy backend
-		if len(rh.Routes) == 0 {
-			continue
-		}
-
 		// set up the replacer so that parts of the original response can be
 		// used for routing decisions
 		for field, value := range res.Header {
@@ -949,16 +950,24 @@ func (h *Handler) finalizeResponse(
 	}
 
 	rw.WriteHeader(res.StatusCode)
+	if h.VerboseLogs {
+		logger.Debug("wrote header")
+	}
 
-	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res))
-	res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
+	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
+	if h.VerboseLogs || errClose != nil {
+		logger.Debug("closed response body from upstream", zap.Error(errClose))
+	}
 	if err != nil {
 		// we're streaming the response and we've already written headers, so
 		// there's nothing an error handler can do to recover at this point;
-		// the standard lib's proxy panics at this point, but we'll just log
-		// the error and abort the stream here
+		// we'll just log the error and abort the stream here and panic just as
+		// the standard lib's proxy to propagate the stream error.
+		// see issue https://github.com/caddyserver/caddy/issues/5951
 		logger.Error("aborting with incomplete response", zap.Error(err))
-		return nil
+		// no extra logging from stdlib
+		panic(http.ErrAbortHandler)
 	}
 
 	if len(res.Trailer) > 0 {
@@ -983,6 +992,10 @@ func (h *Handler) finalizeResponse(
 		for _, v := range vv {
 			rw.Header().Add(k, v)
 		}
+	}
+
+	if h.VerboseLogs {
+		logger.Debug("response finalized")
 	}
 
 	return nil
@@ -1016,17 +1029,23 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// should be safe to retry, since without a connection, no
 	// HTTP request can be transmitted; but if the error is not
 	// specifically a dialer error, we need to be careful
-	if _, ok := proxyErr.(DialError); proxyErr != nil && !ok {
+	if proxyErr != nil {
+		_, isDialError := proxyErr.(DialError)
+		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
+
 		// if the error occurred after a connection was established,
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if lb.RetryMatch == nil && req.Method != "GET" {
-			// by default, don't retry requests if they aren't GET
-			return false
-		}
-		if !lb.RetryMatch.AnyMatch(req) {
-			return false
+		if !isDialError && !(isHandlerError && errors.Is(herr, noUpstreamsAvailable)) {
+			if lb.RetryMatch == nil && req.Method != "GET" {
+				// by default, don't retry requests if they aren't GET
+				return false
+			}
+
+			if !lb.RetryMatch.AnyMatch(req) {
+				return false
+			}
 		}
 	}
 
@@ -1426,6 +1445,8 @@ func (c ignoreClientGoneContext) Err() error {
 // so that handle_response routes can inherit some config options
 // from the proxy handler.
 const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
+
+var noUpstreamsAvailable = fmt.Errorf("no upstreams available")
 
 // Interface guards
 var (

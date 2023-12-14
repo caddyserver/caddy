@@ -91,6 +91,10 @@ func TestParseVariadic(t *testing.T) {
 			input:  "{args[0:10]}",
 			result: true,
 		},
+		{
+			input:  "{args[0]}:{args[1]}:{args[2]}",
+			result: false,
+		},
 	} {
 		token := Token{
 			File: "test",

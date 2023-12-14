@@ -582,6 +582,7 @@ outer:
 			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
 			if reflect.DeepEqual(aps[i].IssuersRaw, aps[j].IssuersRaw) &&
+				reflect.DeepEqual(aps[i].ManagersRaw, aps[j].ManagersRaw) &&
 				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
 				aps[i].MustStaple == aps[j].MustStaple &&
 				aps[i].KeyType == aps[j].KeyType &&
