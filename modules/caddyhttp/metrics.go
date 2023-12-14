@@ -2,6 +2,7 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -153,8 +154,9 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 
 	if err != nil {
-		if handlerError, ok := err.(HandlerError); ok {
-			observeRequest(handlerError.StatusCode)
+		var handlerErr HandlerError
+		if errors.As(err, &handlerErr) {
+			observeRequest(handlerErr.StatusCode)
 		}
 
 		httpMetrics.requestErrors.With(labels).Inc()
