@@ -357,8 +357,7 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 		// the correct default to use for a nested encoder, we
 		// pass it down as a secondary provisioning step
 		if cfd, ok := mod.(ConfiguresFormatterDefault); ok {
-			err := cfd.ConfigureDefaultFormat(cl.writerOpener)
-			if err != nil {
+			if err := cfd.ConfigureDefaultFormat(cl.writerOpener); err != nil {
 				return fmt.Errorf("configuring default format for encoder module: %v", err)
 			}
 		}
