@@ -84,8 +84,7 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 		// if wrap is not specified, default to JSON
 		fe.wrapped = &JSONEncoder{}
 		if p, ok := fe.wrapped.(caddy.Provisioner); ok {
-			err := p.Provision(ctx)
-			if err != nil {
+			if err := p.Provision(ctx); err != nil {
 				return fmt.Errorf("provisioning fallback encoder module: %v", err)
 			}
 		}
