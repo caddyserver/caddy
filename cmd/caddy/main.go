@@ -29,14 +29,21 @@
 package main
 
 import (
+	"github.com/caddyserver/caddy/v2"
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
-	_ "go.uber.org/automaxprocs"
+	"go.uber.org/automaxprocs/maxprocs"
+	"go.uber.org/zap"
 
 	// plug in Caddy modules here
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
 func main() {
+	undo, err := maxprocs.Set()
+	defer undo()
+	if err != nil {
+		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
 	caddycmd.Main()
 }
