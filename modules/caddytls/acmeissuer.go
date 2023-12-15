@@ -88,6 +88,16 @@ type ACMEIssuer struct {
 	// will be selected.
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
+	// The validity period to ask the CA to issue a certificate for.
+	// Default: 0 (don't ask a custom lifetime to the CA)
+	// This value is used to compute the "notAfter" field of the ACME order,
+	// therefore the system must have a reasonably synchronized clock.
+	// Important : Let's Encrypt and ZeroSSL don't allow custom
+	// validity period and will refuse to issue a certicate if this is set.
+	// For CAs that support it, there are often limits
+	// on the allowed validity periods. Please refer to your CA documentation.
+	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
+
 	rootPool *x509.CertPool
 	logger   *zap.Logger
 
@@ -178,6 +188,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
+		NotAfter:          time.Duration(iss.CertificateLifetime),
 		Logger:            iss.logger,
 	}
 
@@ -349,6 +360,17 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "lifetime":
+			var lifetimeStr string
+			if !d.AllArgs(&lifetimeStr) {
+				return d.ArgErr()
+			}
+			lifetime, err := caddy.ParseDuration(lifetimeStr)
+			if err != nil {
+				return d.Errf("invalid lifetime %s: %v", lifetimeStr, err)
+			}
+			// TODO: Add check that valid lifetime must be >= 0
+			iss.CertificateLifetime = caddy.Duration(lifetime)
 		case "dir":
 			if iss.CA != "" {
 				return d.Errf("directory is already specified: %s", iss.CA)

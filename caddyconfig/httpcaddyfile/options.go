@@ -54,6 +54,7 @@ func init() {
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
 	RegisterGlobalOption("servers", parseServerOptions)
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
+	RegisterGlobalOption("cert_lifetime", parseOptDuration)
 	RegisterGlobalOption("log", parseLogOptions)
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
