@@ -29,8 +29,11 @@ func TestReloadConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
+		wg.Add(1)
+
 		go func() {
-			wg.Add(1)
+			defer wg.Done()
+
 			resp1, err := tester.Client.Get(configURL)
 			if err != nil {
 				t.Errorf("cannot get app config %s", err)
@@ -58,8 +61,6 @@ func TestReloadConcurrent(t *testing.T) {
 
 				return
 			}
-
-			wg.Done()
 		}()
 	}
 	wg.Wait()
