@@ -2,6 +2,7 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -137,22 +138,33 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	err := h.mh.ServeHTTP(wrec, r, next)
 	dur := time.Since(start).Seconds()
 	httpMetrics.requestCount.With(labels).Inc()
+
+	observeRequest := func(status int) {
+		// If the code hasn't been set yet, and we didn't encounter an error, we're
+		// probably falling through with an empty handler.
+		if statusLabels["code"] == "" {
+			// we still sanitize it, even though it's likely to be 0. A 200 is
+			// returned on fallthrough so we want to reflect that.
+			statusLabels["code"] = metrics.SanitizeCode(status)
+		}
+
+		httpMetrics.requestDuration.With(statusLabels).Observe(dur)
+		httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
+		httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
+	}
+
 	if err != nil {
+		var handlerErr HandlerError
+		if errors.As(err, &handlerErr) {
+			observeRequest(handlerErr.StatusCode)
+		}
+
 		httpMetrics.requestErrors.With(labels).Inc()
+
 		return err
 	}
 
-	// If the code hasn't been set yet, and we didn't encounter an error, we're
-	// probably falling through with an empty handler.
-	if statusLabels["code"] == "" {
-		// we still sanitize it, even though it's likely to be 0. A 200 is
-		// returned on fallthrough so we want to reflect that.
-		statusLabels["code"] = metrics.SanitizeCode(wrec.Status())
-	}
-
-	httpMetrics.requestDuration.With(statusLabels).Observe(dur)
-	httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
-	httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
+	observeRequest(wrec.Status())
 
 	return nil
 }
