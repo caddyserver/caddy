@@ -77,20 +77,18 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	if actual := w.Result().Header; len(actual) != 0 {
 		t.Errorf("Not empty: expected headers to be empty, but got %#v", actual)
 	}
-}
 
-func TestHandlerErrorObservesMetrics(t *testing.T) {
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	// handler returning an error with an HTTP status
+	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih := newMetricsInstrumentedHandler("foo", mh)
+	ih = newMetricsInstrumentedHandler("foo", mh)
 
-	r := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "/", nil)
+	w = httptest.NewRecorder()
 
-	err := ih.ServeHTTP(w, r, nil)
-	if err == nil {
+	if err := ih.ServeHTTP(w, r, nil); err == nil {
 		t.Errorf("expected error to be propagated")
 	}
 
@@ -112,6 +110,28 @@ func TestHandlerErrorObservesMetrics(t *testing.T) {
 	caddy_http_request_duration_seconds_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
 	# HELP caddy_http_request_size_bytes Total size of the request. Includes body
 	# TYPE caddy_http_request_size_bytes histogram
+	caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="256"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1024"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4096"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="16384"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="65536"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="262144"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="+Inf"} 1
+    caddy_http_request_size_bytes_sum{code="200",handler="bar",method="GET",server="UNKNOWN"} 23
+    caddy_http_request_size_bytes_count{code="200",handler="bar",method="GET",server="UNKNOWN"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="256"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1024"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4096"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="16384"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="65536"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="262144"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="+Inf"} 1
+    caddy_http_request_size_bytes_sum{code="200",handler="empty",method="GET",server="UNKNOWN"} 23
+    caddy_http_request_size_bytes_count{code="200",handler="empty",method="GET",server="UNKNOWN"} 1
 	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="256"} 1
 	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1024"} 1
 	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4096"} 1
@@ -125,6 +145,28 @@ func TestHandlerErrorObservesMetrics(t *testing.T) {
 	caddy_http_request_size_bytes_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
 	# HELP caddy_http_response_size_bytes Size of the returned response.
 	# TYPE caddy_http_response_size_bytes histogram
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_response_size_bytes_sum{code="200",handler="bar",method="GET",server="UNKNOWN"} 12
+	caddy_http_response_size_bytes_count{code="200",handler="bar",method="GET",server="UNKNOWN"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_response_size_bytes_sum{code="200",handler="empty",method="GET",server="UNKNOWN"} 0
+	caddy_http_response_size_bytes_count{code="200",handler="empty",method="GET",server="UNKNOWN"} 1
 	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="256"} 1
 	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1024"} 1
 	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4096"} 1
@@ -138,9 +180,9 @@ func TestHandlerErrorObservesMetrics(t *testing.T) {
 	caddy_http_response_size_bytes_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
 	# HELP caddy_http_request_errors_total Number of requests resulting in middleware errors.
 	# TYPE caddy_http_request_errors_total counter
+	caddy_http_request_errors_total{handler="bar",server="UNKNOWN"} 1
 	caddy_http_request_errors_total{handler="foo",server="UNKNOWN"} 1
 	`
-
 	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected),
 		"caddy_http_request_size_bytes",
 		"caddy_http_response_size_bytes",
