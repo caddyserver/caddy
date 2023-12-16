@@ -821,7 +821,9 @@ func (st *ServerType) serversFromPairings(
 		}
 
 		// sort for deterministic JSON output
-		slices.Sort(srv.Logs.SkipHosts)
+		if srv.Logs != nil {
+				slices.Sort(srv.Logs.SkipHosts)
+		}
 
 		// a server cannot (natively) serve both HTTP and HTTPS at the
 		// same time, so make sure the configuration isn't in conflict
