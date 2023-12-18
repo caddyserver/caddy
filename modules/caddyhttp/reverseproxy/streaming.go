@@ -68,7 +68,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	//nolint:bodyclose
 	conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
 	if errors.Is(hijackErr, http.ErrNotSupported) {
-		h.logger.Sugar().Errorf("can't switch protocols using non-Hijacker ResponseWriter type %T", rw)
+		h.logger.Error("can't switch protocols using non-Hijacker ResponseWriter", zap.String("type", fmt.Sprintf("%T", rw)))
 		return
 	}
 
