@@ -29,11 +29,12 @@
 package main
 
 import (
-	"github.com/caddyserver/caddy/v2"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+
+	"github.com/caddyserver/caddy/v2"
 	// plug in Caddy modules here
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
