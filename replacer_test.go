@@ -69,7 +69,7 @@ func TestReplacer(t *testing.T) {
 		},
 		{
 			input:  `\}`,
-			expect: `\}`,
+			expect: `}`,
 		},
 		{
 			input:  "{}",
