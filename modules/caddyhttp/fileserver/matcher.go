@@ -324,7 +324,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 
 	fileSystem, ok := m.fsmap.Get(fsName)
 	if !ok {
-		m.logger.Error("use of unregistered filesystem", zap.String("fs", "fsName"))
+		m.logger.Error("use of unregistered filesystem", zap.String("fs", fsName))
 		return false
 	}
 	type matchCandidate struct {

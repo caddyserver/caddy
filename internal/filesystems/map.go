@@ -2,6 +2,7 @@ package filesystems
 
 import (
 	"io/fs"
+	"strings"
 	"sync"
 )
 
@@ -60,7 +61,7 @@ func (f *FilesystemMap) Unregister(k string) {
 // Get will get a filesystem with a given key
 func (f *FilesystemMap) Get(k string) (v fs.FS, ok bool) {
 	k = f.key(k)
-	c, ok := f.m.Load(k)
+	c, ok := f.m.Load(strings.TrimSpace(k))
 	if !ok {
 		if k == DefaultFilesystemKey {
 			f.m.Store(k, DefaultFilesystem)
@@ -68,7 +69,7 @@ func (f *FilesystemMap) Get(k string) (v fs.FS, ok bool) {
 		}
 		return nil, ok
 	}
-	return c.(fs.FS), false
+	return c.(fs.FS), true
 }
 
 // Default will get the default filesystem in the filesystem map
