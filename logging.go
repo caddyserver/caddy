@@ -150,12 +150,18 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 		logging.Logs[DefaultLoggerName] = newDefault.CustomLog
 	}
 
-	// set up this new log
-	err := newDefault.CustomLog.provision(ctx, logging)
+	// options for the default logger
+	options, err := newDefault.CustomLog.buildOptions()
 	if err != nil {
 		return fmt.Errorf("setting up default log: %v", err)
 	}
-	newDefault.logger = zap.New(newDefault.CustomLog.core)
+
+	// set up this new log
+	err = newDefault.CustomLog.provision(ctx, logging)
+	if err != nil {
+		return fmt.Errorf("setting up default log: %v", err)
+	}
+	newDefault.logger = zap.New(newDefault.CustomLog.core, options...)
 
 	// redirect the default caddy logs
 	defaultLoggerMu.Lock()
@@ -201,6 +207,7 @@ func (logging *Logging) closeLogs() error {
 func (logging *Logging) Logger(mod Module) *zap.Logger {
 	modID := string(mod.CaddyModule().ID)
 	var cores []zapcore.Core
+	var options []zap.Option
 
 	if logging != nil {
 		for _, l := range logging.Logs {
@@ -209,6 +216,13 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 					cores = append(cores, l.core)
 					continue
 				}
+				if len(options) == 0 {
+					newOptions, err := l.buildOptions()
+					if err != nil {
+						Log().Error("building options for logger", zap.String("module", modID), zap.Error(err))
+					}
+					options = newOptions
+				}
 				cores = append(cores, &filteringCore{Core: l.core, cl: l})
 			}
 		}
@@ -216,7 +230,7 @@ func (logging *Logging) Logger(mod Module) *zap.Logger {
 
 	multiCore := zapcore.NewTee(cores...)
 
-	return zap.New(multiCore).Named(modID)
+	return zap.New(multiCore, options...).Named(modID)
 }
 
 // openWriter opens a writer using opener, and returns true if
@@ -277,6 +291,20 @@ type BaseLog struct {
 	// servers.
 	Sampling *LogSampling `json:"sampling,omitempty"`
 
+	// If true, the log entry will include the caller's
+	// file name and line number. Default off.
+	WithCaller bool `json:"with_caller,omitempty"`
+
+	// If non-zero, and `with_caller` is true, this many
+	// stack frames will be skipped when determining the
+	// caller. Default 0.
+	WithCallerSkip int `json:"with_caller_skip,omitempty"`
+
+	// If not empty, the log entry will include a stack trace
+	// for all logs at the given level or higher. See `level`
+	// for possible values. Default off.
+	WithStacktrace string `json:"with_stacktrace,omitempty"`
+
 	writerOpener WriterOpener
 	writer       io.WriteCloser
 	encoder      zapcore.Encoder
@@ -301,29 +329,10 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
 	}
 
-	repl := NewReplacer()
-	level, err := repl.ReplaceOrErr(cl.Level, true, true)
-	if err != nil {
-		return fmt.Errorf("invalid log level: %v", err)
-	}
-	level = strings.ToLower(level)
-
 	// set up the log level
-	switch level {
-	case "debug":
-		cl.levelEnabler = zapcore.DebugLevel
-	case "", "info":
-		cl.levelEnabler = zapcore.InfoLevel
-	case "warn":
-		cl.levelEnabler = zapcore.WarnLevel
-	case "error":
-		cl.levelEnabler = zapcore.ErrorLevel
-	case "panic":
-		cl.levelEnabler = zapcore.PanicLevel
-	case "fatal":
-		cl.levelEnabler = zapcore.FatalLevel
-	default:
-		return fmt.Errorf("unrecognized log level: %s", cl.Level)
+	cl.levelEnabler, err = parseLevel(cl.Level)
+	if err != nil {
+		return err
 	}
 
 	if cl.EncoderRaw != nil {
@@ -376,6 +385,24 @@ func (cl *BaseLog) buildCore() {
 	cl.core = c
 }
 
+func (cl *BaseLog) buildOptions() ([]zap.Option, error) {
+	var options []zap.Option
+	if cl.WithCaller {
+		options = append(options, zap.AddCaller())
+		if cl.WithCallerSkip != 0 {
+			options = append(options, zap.AddCallerSkip(cl.WithCallerSkip))
+		}
+	}
+	if cl.WithStacktrace != "" {
+		levelEnabler, err := parseLevel(cl.WithStacktrace)
+		if err != nil {
+			return options, fmt.Errorf("setting up default Caddy log: %v", err)
+		}
+		options = append(options, zap.AddStacktrace(levelEnabler))
+	}
+	return options, nil
+}
+
 // SinkLog configures the default Go standard library
 // global logger in the log package. This is necessary because
 // module dependencies which are not built specifically for
@@ -389,7 +416,14 @@ func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 	if err := sll.provisionCommon(ctx, logging); err != nil {
 		return err
 	}
-	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(zap.New(sll.core)))
+
+	options, err := sll.buildOptions()
+	if err != nil {
+		return err
+	}
+
+	logger := zap.New(sll.core, options...)
+	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(logger))
 	return nil
 }
 
@@ -676,6 +710,33 @@ func newDefaultProductionLogEncoder(colorize bool) zapcore.Encoder {
 		return zapcore.NewConsoleEncoder(encCfg)
 	}
 	return zapcore.NewJSONEncoder(encCfg)
+}
+
+func parseLevel(levelInput string) (zapcore.LevelEnabler, error) {
+	repl := NewReplacer()
+	level, err := repl.ReplaceOrErr(levelInput, true, true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid log level: %v", err)
+	}
+	level = strings.ToLower(level)
+
+	// set up the log level
+	switch level {
+	case "debug":
+		return zapcore.DebugLevel, nil
+	case "", "info":
+		return zapcore.InfoLevel, nil
+	case "warn":
+		return zapcore.WarnLevel, nil
+	case "error":
+		return zapcore.ErrorLevel, nil
+	case "panic":
+		return zapcore.PanicLevel, nil
+	case "fatal":
+		return zapcore.FatalLevel, nil
+	default:
+		return nil, fmt.Errorf("unrecognized log level: %s", level)
+	}
 }
 
 // Log returns the current default logger.

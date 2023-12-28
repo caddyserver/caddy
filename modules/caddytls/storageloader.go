@@ -52,6 +52,22 @@ func (StorageLoader) CaddyModule() caddy.ModuleInfo {
 func (sl *StorageLoader) Provision(ctx caddy.Context) error {
 	sl.storage = ctx.Storage()
 	sl.ctx = ctx
+
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+	}
+	for k, pair := range sl.Pairs {
+		for i, tag := range pair.Tags {
+			pair.Tags[i] = repl.ReplaceKnown(tag, "")
+		}
+		sl.Pairs[k] = CertKeyFilePair{
+			Certificate: repl.ReplaceKnown(pair.Certificate, ""),
+			Key:         repl.ReplaceKnown(pair.Key, ""),
+			Format:      repl.ReplaceKnown(pair.Format, ""),
+			Tags:        pair.Tags,
+		}
+	}
 	return nil
 }
 

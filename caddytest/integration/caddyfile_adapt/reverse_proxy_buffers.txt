@@ -1,0 +1,58 @@
+https://example.com {
+	reverse_proxy https://localhost:54321 {
+		request_buffers unlimited
+		response_buffers unlimited
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"request_buffers": -1,
+													"response_buffers": -1,
+													"transport": {
+														"protocol": "http",
+														"tls": {}
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:54321"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

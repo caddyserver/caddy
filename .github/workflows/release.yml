@@ -32,7 +32,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -43,7 +43,7 @@ jobs:
         check-latest: true
 
     # Force fetch upstream tags -- because 65 minutes
-    # tl;dr: actions/checkout@v3 runs this line:
+    # tl;dr: actions/checkout@v4 runs this line:
     #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
     # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
     #   git fetch --prune --unshallow
@@ -106,7 +106,7 @@ jobs:
       run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v4
+      uses: goreleaser/goreleaser-action@v5
       with:
         version: latest
         args: release --clean --timeout 60m

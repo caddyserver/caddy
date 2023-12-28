@@ -30,18 +30,34 @@ func reuseUnixSocket(network, addr string) (any, error) {
 	return nil, nil
 }
 
-func listenTCPOrUnix(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (net.Listener, error) {
-	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		ln, err := config.Listen(ctx, network, address)
+func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
+	switch network {
+	case "udp", "udp4", "udp6", "unixgram":
+		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+			pc, err := config.ListenPacket(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &sharedPacketConn{PacketConn: pc, key: lnKey}, nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		return &sharedListener{Listener: ln, key: lnKey}, nil
-	})
-	if err != nil {
-		return nil, err
+		return &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}, nil
+
+	default:
+		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+			ln, err := config.Listen(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &sharedListener{Listener: ln, key: lnKey}, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 	}
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -98,7 +114,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		// so that it's clear in the code that side-effects are shared with other
 		// users of this listener, not just our own reference to it; we also don't
 		// do anything with the error because all we could do is log it, but we
-		// expliclty assign it to nothing so we don't forget it's there if needed
+		// explicitly assign it to nothing so we don't forget it's there if needed
 		_ = fcl.sharedListener.clearDeadline()
 
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -172,3 +188,75 @@ func (sl *sharedListener) setDeadline() error {
 func (sl *sharedListener) Destruct() error {
 	return sl.Listener.Close()
 }
+
+// fakeClosePacketConn is like fakeCloseListener, but for PacketConns,
+// or more specifically, *net.UDPConn
+type fakeClosePacketConn struct {
+	closed            int32 // accessed atomically; belongs to this struct only
+	*sharedPacketConn       // embedded, so we also become a net.PacketConn; its key is used in Close
+}
+
+func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	// if the listener is already "closed", return error
+	if atomic.LoadInt32(&fcpc.closed) == 1 {
+		return 0, nil, &net.OpError{
+			Op:   "readfrom",
+			Net:  fcpc.LocalAddr().Network(),
+			Addr: fcpc.LocalAddr(),
+			Err:  errFakeClosed,
+		}
+	}
+
+	// call underlying readfrom
+	n, addr, err = fcpc.sharedPacketConn.ReadFrom(p)
+	if err != nil {
+		// this server was stopped, so clear the deadline and let
+		// any new server continue reading; but we will exit
+		if atomic.LoadInt32(&fcpc.closed) == 1 {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
+					return
+				}
+			}
+		}
+		return
+	}
+
+	return
+}
+
+// Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
+func (fcpc *fakeClosePacketConn) Close() error {
+	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
+		_ = fcpc.SetReadDeadline(time.Now()) // unblock ReadFrom() calls to kick old servers out of their loops
+		_, _ = listenerPool.Delete(fcpc.sharedPacketConn.key)
+	}
+	return nil
+}
+
+func (fcpc *fakeClosePacketConn) Unwrap() net.PacketConn {
+	return fcpc.sharedPacketConn.PacketConn
+}
+
+// sharedPacketConn is like sharedListener, but for net.PacketConns.
+type sharedPacketConn struct {
+	net.PacketConn
+	key string
+}
+
+// Destruct closes the underlying socket.
+func (spc *sharedPacketConn) Destruct() error {
+	return spc.PacketConn.Close()
+}
+
+// Unwrap returns the underlying socket
+func (spc *sharedPacketConn) Unwrap() net.PacketConn {
+	return spc.PacketConn
+}
+
+// Interface guards (see https://github.com/caddyserver/caddy/issues/3998)
+var (
+	_ (interface {
+		Unwrap() net.PacketConn
+	}) = (*fakeClosePacketConn)(nil)
+)

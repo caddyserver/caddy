@@ -94,8 +94,8 @@ func init() {
 Starts the Caddy process, optionally bootstrapped with an initial config file.
 This command unblocks after the server starts running or fails to run.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 On Windows, the spawned child process will remain attached to the terminal, so
 closing the window will forcefully stop Caddy; to avoid forgetting this, try
@@ -104,7 +104,7 @@ using 'caddy run' instead to keep it in the foreground.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("watch", "w", false, "Reload changed config file automatically")
 			cmd.Flags().StringP("pidfile", "", "", "Path of file to which to write process ID")
 			cmd.RunE = WrapCommandFuncForCobra(cmdStart)
@@ -133,8 +133,8 @@ As a special case, if the current working directory has a file called
 that file will be loaded and used to configure Caddy, even without any command
 line flags.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 If --environ is specified, the environment as seen by the Caddy process will
 be printed before starting. This is the same as the environ command but does
@@ -150,7 +150,7 @@ option in a local development environment.
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter to apply")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.Flags().BoolP("environ", "e", false, "Print environment")
 			cmd.Flags().BoolP("resume", "r", false, "Use saved config, if any (and prefer over --config file)")
 			cmd.Flags().BoolP("watch", "w", false, "Watch config file for changes and reload it automatically")
@@ -240,6 +240,7 @@ documentation: https://go.dev/doc/modules/version-numbers
 
 	RegisterCommand(Command{
 		Name:  "environ",
+		Usage: "[--envfile <path>]",
 		Short: "Prints the environment",
 		Long: `
 Prints the environment as seen by this Caddy process.
@@ -248,6 +249,9 @@ The environment includes variables set in the system. If your Caddy
 configuration uses environment variables (e.g. "{env.VARIABLE}") then
 this command can be useful for verifying that the variables will have
 the values you expect in your config.
+
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 
 Note that environments may be different depending on how you run Caddy.
 Environments for Caddy instances started by service managers such as
@@ -259,12 +263,15 @@ by adding the "--environ" flag.
 
 Environments may contain sensitive data.
 `,
-		Func: cmdEnviron,
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
+			cmd.RunE = WrapCommandFuncForCobra(cmdEnviron)
+		},
 	})
 
 	RegisterCommand(Command{
 		Name:  "adapt",
-		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate]",
+		Usage: "--config <path> [--adapter <name>] [--pretty] [--validate] [--envfile <path>]",
 		Short: "Adapts a configuration to Caddy's native JSON",
 		Long: `
 Adapts a configuration to Caddy's native JSON format and writes the
@@ -276,12 +283,16 @@ for human readability.
 If --validate is used, the adapted config will be checked for validity.
 If the config is invalid, an error will be printed to stderr and a non-
 zero exit status will be returned.
+
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
 			cmd.Flags().StringP("adapter", "a", "caddyfile", "Name of config adapter")
 			cmd.Flags().BoolP("pretty", "p", false, "Format the output for human readability")
 			cmd.Flags().BoolP("validate", "", false, "Validate the output")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdAdaptConfig)
 		},
 	})
@@ -295,13 +306,13 @@ Loads and provisions the provided config, but does not start running it.
 This reveals any errors with the configuration through the loading and
 provisioning stages.
 
-If --envfile is specified, an environment file with environment variables in
-the KEY=VALUE format will be loaded into the Caddy process.
+If --envfile is specified, an environment file with environment variables
+in the KEY=VALUE format will be loaded into the Caddy process.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Input configuration file")
 			cmd.Flags().StringP("adapter", "a", "", "Name of config adapter")
-			cmd.Flags().StringP("envfile", "", "", "Environment file to load")
+			cmd.Flags().StringSliceP("envfile", "", []string{}, "Environment file(s) to load")
 			cmd.RunE = WrapCommandFuncForCobra(cmdValidateConfig)
 		},
 	})
@@ -402,7 +413,7 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are 
+added. Retains existing packages. Returns an error if the any of packages are
 already included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -417,8 +428,8 @@ already included. EXPERIMENTAL: May be changed or removed.
 		Usage: "<packages...>",
 		Short: "Removes Caddy packages (EXPERIMENTAL)",
 		Long: `
-Downloads an updated Caddy binaries without the specified packages (module/plugin). 
-Returns an error if any of the packages are not included. 
+Downloads an updated Caddy binaries without the specified packages (module/plugin).
+Returns an error if any of the packages are not included.
 EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
@@ -464,40 +475,40 @@ argument of --directory. If the directory does not exist, it will be created.
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate completion script",
 		Long: fmt.Sprintf(`To load completions:
-	
+
 	Bash:
-	
+
 	  $ source <(%[1]s completion bash)
-	
+
 	  # To load completions for each session, execute once:
 	  # Linux:
 	  $ %[1]s completion bash > /etc/bash_completion.d/%[1]s
 	  # macOS:
 	  $ %[1]s completion bash > $(brew --prefix)/etc/bash_completion.d/%[1]s
-	
+
 	Zsh:
-	
+
 	  # If shell completion is not already enabled in your environment,
 	  # you will need to enable it.  You can execute the following once:
-	
+
 	  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
-	
+
 	  # To load completions for each session, execute once:
 	  $ %[1]s completion zsh > "${fpath[1]}/_%[1]s"
-	
+
 	  # You will need to start a new shell for this setup to take effect.
-	
+
 	fish:
-	
+
 	  $ %[1]s completion fish | source
-	
+
 	  # To load completions for each session, execute once:
 	  $ %[1]s completion fish > ~/.config/fish/completions/%[1]s.fish
-	
+
 	PowerShell:
-	
+
 	  PS> %[1]s completion powershell | Out-String | Invoke-Expression
-	
+
 	  # To load completions for every new session, run:
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.

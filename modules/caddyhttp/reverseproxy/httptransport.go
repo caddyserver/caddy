@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mastercactapus/proxyprotocol"
+	"github.com/pires/go-proxyproto"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 
@@ -207,44 +207,42 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			if !ok {
 				return nil, fmt.Errorf("failed to get proxy protocol info from context")
 			}
-
-			// The src and dst have to be of the some address family. As we don't know the original
-			// dst address (it's kind of impossible to know) and this address is generelly of very
+			header := proxyproto.Header{
+				SourceAddr: &net.TCPAddr{
+					IP:   proxyProtocolInfo.AddrPort.Addr().AsSlice(),
+					Port: int(proxyProtocolInfo.AddrPort.Port()),
+					Zone: proxyProtocolInfo.AddrPort.Addr().Zone(),
+				},
+			}
+			// The src and dst have to be of the same address family. As we don't know the original
+			// dst address (it's kind of impossible to know) and this address is generally of very
 			// little interest, we just set it to all zeros.
-			var destIP net.IP
 			switch {
 			case proxyProtocolInfo.AddrPort.Addr().Is4():
-				destIP = net.IPv4zero
+				header.TransportProtocol = proxyproto.TCPv4
+				header.DestinationAddr = &net.TCPAddr{
+					IP: net.IPv4zero,
+				}
 			case proxyProtocolInfo.AddrPort.Addr().Is6():
-				destIP = net.IPv6zero
+				header.TransportProtocol = proxyproto.TCPv6
+				header.DestinationAddr = &net.TCPAddr{
+					IP: net.IPv6zero,
+				}
 			default:
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
 			}
 
-			// TODO: We should probably migrate away from net.IP to use netip.Addr,
-			// but due to the upstream dependency, we can't do that yet.
 			switch h.ProxyProtocol {
 			case "v1":
-				header := proxyprotocol.HeaderV1{
-					SrcIP:    net.IP(proxyProtocolInfo.AddrPort.Addr().AsSlice()),
-					SrcPort:  int(proxyProtocolInfo.AddrPort.Port()),
-					DestIP:   destIP,
-					DestPort: 0,
-				}
+				header.Version = 1
 				caddyCtx.Logger().Debug("sending proxy protocol header v1", zap.Any("header", header))
-				_, err = header.WriteTo(conn)
 			case "v2":
-				header := proxyprotocol.HeaderV2{
-					Command: proxyprotocol.CmdProxy,
-					Src:     &net.TCPAddr{IP: net.IP(proxyProtocolInfo.AddrPort.Addr().AsSlice()), Port: int(proxyProtocolInfo.AddrPort.Port())},
-					Dest:    &net.TCPAddr{IP: destIP, Port: 0},
-				}
+				header.Version = 2
 				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
-				_, err = header.WriteTo(conn)
 			default:
 				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
-
+			_, err = header.WriteTo(conn)
 			if err != nil {
 				// identify this error as one that occurred during
 				// dialing, which can be important when trying to

@@ -1,288 +1,296 @@
 {{- define "icon"}}
 	{{- if .IsDir}}
-	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-folder-filled" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M9 3a1 1 0 0 1 .608 .206l.1 .087l2.706 2.707h6.586a3 3 0 0 1 2.995 2.824l.005 .176v8a3 3 0 0 1 -2.824 2.995l-.176 .005h-14a3 3 0 0 1 -2.995 -2.824l-.005 -.176v-11a3 3 0 0 1 2.824 -2.995l.176 -.005h4z" stroke-width="0" fill="currentColor"></path>
-	</svg>
+		{{- if .IsSymlink}}
+		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-folder-filled" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+			<path d="M9 3a1 1 0 0 1 .608 .206l.1 .087l2.706 2.707h6.586a3 3 0 0 1 2.995 2.824l.005 .176v8a3 3 0 0 1 -2.824 2.995l-.176 .005h-14a3 3 0 0 1 -2.995 -2.824l-.005 -.176v-11a3 3 0 0 1 2.824 -2.995l.176 -.005h4z" stroke-width="0" fill="currentColor"/>
+			<path fill="#000" d="M2.795 17.306c0-2.374 1.792-4.314 4.078-4.538v-1.104a.38.38 0 0 1 .651-.272l2.45 2.492a.132.132 0 0 1 0 .188l-2.45 2.492a.381.381 0 0 1-.651-.272V15.24c-1.889.297-3.436 1.39-3.817 3.26a2.809 2.809 0 0 1-.261-1.193Z" style="stroke-width:.127478"/>
+		</svg>
+		{{- else}}
+		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-folder-filled" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+			<path d="M9 3a1 1 0 0 1 .608 .206l.1 .087l2.706 2.707h6.586a3 3 0 0 1 2.995 2.824l.005 .176v8a3 3 0 0 1 -2.824 2.995l-.176 .005h-14a3 3 0 0 1 -2.995 -2.824l-.005 -.176v-11a3 3 0 0 1 2.824 -2.995l.176 -.005h4z" stroke-width="0" fill="currentColor"/>
+		</svg>
+		{{- end}}
 	{{- else if or (eq .Name "LICENSE") (eq .Name "README")}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-license" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M15 21h-9a3 3 0 0 1 -3 -3v-1h10v2a2 2 0 0 0 4 0v-14a2 2 0 1 1 2 2h-2m2 -4h-11a3 3 0 0 0 -3 3v11"></path>
-		<path d="M9 7l4 0"></path>
-		<path d="M9 11l4 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M15 21h-9a3 3 0 0 1 -3 -3v-1h10v2a2 2 0 0 0 4 0v-14a2 2 0 1 1 2 2h-2m2 -4h-11a3 3 0 0 0 -3 3v11"/>
+		<path d="M9 7l4 0"/>
+		<path d="M9 11l4 0"/>
 	</svg>
 	{{- else if .HasExt ".jpg" ".jpeg" ".png" ".gif" ".webp" ".tiff" ".bmp" ".heif" ".heic" ".svg"}}
 		{{- if eq .Tpl.Layout "grid"}}
 		<img loading="lazy" src="{{html .Name}}">
 		{{- else}}
 		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-photo" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-			<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-			<path d="M15 8h.01"></path>
-			<path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z"></path>
-			<path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5"></path>
-			<path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3"></path>
+			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+			<path d="M15 8h.01"/>
+			<path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z"/>
+			<path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5"/>
+			<path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3"/>
 		</svg>
 		{{- end}}
-	{{- else if .HasExt ".mp4" ".mov" ".mpeg" ".mpg" ".avi" ".ogg" ".webm" ".mkv" ".vob" ".gifv" ".3gp"}}
+	{{- else if .HasExt ".mp4" ".mov" ".m4v" ".mpeg" ".mpg" ".avi" ".ogg" ".webm" ".mkv" ".vob" ".gifv" ".3gp"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-movie" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"></path>
-		<path d="M8 4l0 16"></path>
-		<path d="M16 4l0 16"></path>
-		<path d="M4 8l4 0"></path>
-		<path d="M4 16l4 0"></path>
-		<path d="M4 12l16 0"></path>
-		<path d="M16 8l4 0"></path>
-		<path d="M16 16l4 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>
+		<path d="M8 4l0 16"/>
+		<path d="M16 4l0 16"/>
+		<path d="M4 8l4 0"/>
+		<path d="M4 16l4 0"/>
+		<path d="M4 12l16 0"/>
+		<path d="M16 8l4 0"/>
+		<path d="M16 16l4 0"/>
 	</svg>
 	{{- else if .HasExt ".mp3" ".m4a" ".aac" ".ogg" ".flac" ".wav" ".wma" ".midi" ".cda"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-music" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M6 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"></path>
-		<path d="M16 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"></path>
-		<path d="M9 17l0 -13l10 0l0 13"></path>
-		<path d="M9 8l10 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M6 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
+		<path d="M16 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
+		<path d="M9 17l0 -13l10 0l0 13"/>
+		<path d="M9 8l10 0"/>
 	</svg>
 	{{- else if .HasExt ".pdf"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-pdf" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"></path>
-		<path d="M5 18h1.5a1.5 1.5 0 0 0 0 -3h-1.5v6"></path>
-		<path d="M17 18h2"></path>
-		<path d="M20 15h-3v6"></path>
-		<path d="M11 15v6h1a2 2 0 0 0 2 -2v-2a2 2 0 0 0 -2 -2h-1z"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"/>
+		<path d="M5 18h1.5a1.5 1.5 0 0 0 0 -3h-1.5v6"/>
+		<path d="M17 18h2"/>
+		<path d="M20 15h-3v6"/>
+		<path d="M11 15v6h1a2 2 0 0 0 2 -2v-2a2 2 0 0 0 -2 -2h-1z"/>
 	</svg>
 	{{- else if .HasExt ".csv" ".tsv"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-csv" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"></path>
-		<path d="M7 16.5a1.5 1.5 0 0 0 -3 0v3a1.5 1.5 0 0 0 3 0"></path>
-		<path d="M10 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
-		<path d="M16 15l2 6l2 -6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"/>
+		<path d="M7 16.5a1.5 1.5 0 0 0 -3 0v3a1.5 1.5 0 0 0 3 0"/>
+		<path d="M10 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
+		<path d="M16 15l2 6l2 -6"/>
 	</svg>
 	{{- else if .HasExt ".txt" ".doc" ".docx" ".odt" ".fodt" ".rtf"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-text" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path>
-		<path d="M9 9l1 0"></path>
-		<path d="M9 13l6 0"></path>
-		<path d="M9 17l6 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
+		<path d="M9 9l1 0"/>
+		<path d="M9 13l6 0"/>
+		<path d="M9 17l6 0"/>
 	</svg>
 	{{- else if .HasExt ".xls" ".xlsx" ".ods" ".fods"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-spreadsheet" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path>
-		<path d="M8 11h8v7h-8z"></path>
-		<path d="M8 15h8"></path>
-		<path d="M11 11v7"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
+		<path d="M8 11h8v7h-8z"/>
+		<path d="M8 15h8"/>
+		<path d="M11 11v7"/>
 	</svg>
 	{{- else if .HasExt ".ppt" ".pptx" ".odp" ".fodp"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-presentation-analytics" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M9 12v-4"></path>
-		<path d="M15 12v-2"></path>
-		<path d="M12 12v-1"></path>
-		<path d="M3 4h18"></path>
-		<path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"></path>
-		<path d="M12 16v4"></path>
-		<path d="M9 20h6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M9 12v-4"/>
+		<path d="M15 12v-2"/>
+		<path d="M12 12v-1"/>
+		<path d="M3 4h18"/>
+		<path d="M4 4v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10"/>
+		<path d="M12 16v4"/>
+		<path d="M9 20h6"/>
 	</svg>
 	{{- else if .HasExt ".zip" ".gz" ".xz" ".tar" ".7z" ".rar" ".xz" ".zst"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-zip" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M6 20.735a2 2 0 0 1 -1 -1.735v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"></path>
-		<path d="M11 17a2 2 0 0 1 2 2v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-2a2 2 0 0 1 2 -2z"></path>
-		<path d="M11 5l-1 0"></path>
-		<path d="M13 7l-1 0"></path>
-		<path d="M11 9l-1 0"></path>
-		<path d="M13 11l-1 0"></path>
-		<path d="M11 13l-1 0"></path>
-		<path d="M13 15l-1 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M6 20.735a2 2 0 0 1 -1 -1.735v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"/>
+		<path d="M11 17a2 2 0 0 1 2 2v2a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-2a2 2 0 0 1 2 -2z"/>
+		<path d="M11 5l-1 0"/>
+		<path d="M13 7l-1 0"/>
+		<path d="M11 9l-1 0"/>
+		<path d="M13 11l-1 0"/>
+		<path d="M11 13l-1 0"/>
+		<path d="M13 15l-1 0"/>
 	</svg>
 	{{- else if .HasExt ".deb" ".dpkg"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-debian" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M12 17c-2.397 -.943 -4 -3.153 -4 -5.635c0 -2.19 1.039 -3.14 1.604 -3.595c2.646 -2.133 6.396 -.27 6.396 3.23c0 2.5 -2.905 2.121 -3.5 1.5c-.595 -.621 -1 -1.5 -.5 -2.5"></path>
-		<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M12 17c-2.397 -.943 -4 -3.153 -4 -5.635c0 -2.19 1.039 -3.14 1.604 -3.595c2.646 -2.133 6.396 -.27 6.396 3.23c0 2.5 -2.905 2.121 -3.5 1.5c-.595 -.621 -1 -1.5 -.5 -2.5"/>
+		<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/>
 	</svg>
 	{{- else if .HasExt ".rpm" ".exe" ".flatpak" ".appimage" ".jar" ".msi" ".apk"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-package" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"></path>
-		<path d="M12 12l8 -4.5"></path>
-		<path d="M12 12l0 9"></path>
-		<path d="M12 12l-8 -4.5"></path>
-		<path d="M16 5.25l-8 4.5"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"/>
+		<path d="M12 12l8 -4.5"/>
+		<path d="M12 12l0 9"/>
+		<path d="M12 12l-8 -4.5"/>
+		<path d="M16 5.25l-8 4.5"/>
 	</svg>
 	{{- else if .HasExt ".ps1"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-powershell" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M4.887 20h11.868c.893 0 1.664 -.665 1.847 -1.592l2.358 -12c.212 -1.081 -.442 -2.14 -1.462 -2.366a1.784 1.784 0 0 0 -.385 -.042h-11.868c-.893 0 -1.664 .665 -1.847 1.592l-2.358 12c-.212 1.081 .442 2.14 1.462 2.366c.127 .028 .256 .042 .385 .042z"></path>
-		<path d="M9 8l4 4l-6 4"></path>
-		<path d="M12 16h3"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M4.887 20h11.868c.893 0 1.664 -.665 1.847 -1.592l2.358 -12c.212 -1.081 -.442 -2.14 -1.462 -2.366a1.784 1.784 0 0 0 -.385 -.042h-11.868c-.893 0 -1.664 .665 -1.847 1.592l-2.358 12c-.212 1.081 .442 2.14 1.462 2.366c.127 .028 .256 .042 .385 .042z"/>
+		<path d="M9 8l4 4l-6 4"/>
+		<path d="M12 16h3"/>
 	</svg>
 	{{- else if .HasExt ".py" ".pyc" ".pyo"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-python" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M12 9h-7a2 2 0 0 0 -2 2v4a2 2 0 0 0 2 2h3"></path>
-		<path d="M12 15h7a2 2 0 0 0 2 -2v-4a2 2 0 0 0 -2 -2h-3"></path>
-		<path d="M8 9v-4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-4a2 2 0 0 0 -2 2v5a2 2 0 0 0 2 2h4a2 2 0 0 0 2 -2v-4"></path>
-		<path d="M11 6l0 .01"></path>
-		<path d="M13 18l0 .01"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M12 9h-7a2 2 0 0 0 -2 2v4a2 2 0 0 0 2 2h3"/>
+		<path d="M12 15h7a2 2 0 0 0 2 -2v-4a2 2 0 0 0 -2 -2h-3"/>
+		<path d="M8 9v-4a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-4a2 2 0 0 0 -2 2v5a2 2 0 0 0 2 2h4a2 2 0 0 0 2 -2v-4"/>
+		<path d="M11 6l0 .01"/>
+		<path d="M13 18l0 .01"/>
 	</svg>
 	{{- else if .HasExt ".bash" ".sh" ".com" ".bat" ".dll" ".so"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-script" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M17 20h-11a3 3 0 0 1 0 -6h11a3 3 0 0 0 0 6h1a3 3 0 0 0 3 -3v-11a2 2 0 0 0 -2 -2h-10a2 2 0 0 0 -2 2v8"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M17 20h-11a3 3 0 0 1 0 -6h11a3 3 0 0 0 0 6h1a3 3 0 0 0 3 -3v-11a2 2 0 0 0 -2 -2h-10a2 2 0 0 0 -2 2v8"/>
 	</svg>
 	{{- else if .HasExt ".dmg"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-finder" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M3 4m0 1a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1z"></path>
-		<path d="M7 8v1"></path>
-		<path d="M17 8v1"></path>
-		<path d="M12.5 4c-.654 1.486 -1.26 3.443 -1.5 9h2.5c-.19 2.867 .094 5.024 .5 7"></path>
-		<path d="M7 15.5c3.667 2 6.333 2 10 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M3 4m0 1a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1z"/>
+		<path d="M7 8v1"/>
+		<path d="M17 8v1"/>
+		<path d="M12.5 4c-.654 1.486 -1.26 3.443 -1.5 9h2.5c-.19 2.867 .094 5.024 .5 7"/>
+		<path d="M7 15.5c3.667 2 6.333 2 10 0"/>
 	</svg>
 	{{- else if .HasExt ".iso" ".img"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-disc" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"></path>
-		<path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"></path>
-		<path d="M7 12a5 5 0 0 1 5 -5"></path>
-		<path d="M12 17a5 5 0 0 0 5 -5"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/>
+		<path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>
+		<path d="M7 12a5 5 0 0 1 5 -5"/>
+		<path d="M12 17a5 5 0 0 0 5 -5"/>
 	</svg>
 	{{- else if .HasExt ".md" ".mdown" ".markdown"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-markdown" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M3 5m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"></path>
-		<path d="M7 15v-6l2 2l2 -2v6"></path>
-		<path d="M14 13l2 2l2 -2m-2 2v-6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M3 5m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"/>
+		<path d="M7 15v-6l2 2l2 -2v6"/>
+		<path d="M14 13l2 2l2 -2m-2 2v-6"/>
 	</svg>
 	{{- else if .HasExt ".ttf" ".otf" ".woff" ".woff2" ".eof"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-typography" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path>
-		<path d="M11 18h2"></path>
-		<path d="M12 18v-7"></path>
-		<path d="M9 12v-1h6v1"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
+		<path d="M11 18h2"/>
+		<path d="M12 18v-7"/>
+		<path d="M9 12v-1h6v1"/>
 	</svg>
 	{{- else if .HasExt ".go"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-golang" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M15.695 14.305c1.061 1.06 2.953 .888 4.226 -.384c1.272 -1.273 1.444 -3.165 .384 -4.226c-1.061 -1.06 -2.953 -.888 -4.226 .384c-1.272 1.273 -1.444 3.165 -.384 4.226z"></path>
-		<path d="M12.68 9.233c-1.084 -.497 -2.545 -.191 -3.591 .846c-1.284 1.273 -1.457 3.165 -.388 4.226c1.07 1.06 2.978 .888 4.261 -.384a3.669 3.669 0 0 0 1.038 -1.921h-2.427"></path>
-		<path d="M5.5 15h-1.5"></path>
-		<path d="M6 9h-2"></path>
-		<path d="M5 12h-3"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M15.695 14.305c1.061 1.06 2.953 .888 4.226 -.384c1.272 -1.273 1.444 -3.165 .384 -4.226c-1.061 -1.06 -2.953 -.888 -4.226 .384c-1.272 1.273 -1.444 3.165 -.384 4.226z"/>
+		<path d="M12.68 9.233c-1.084 -.497 -2.545 -.191 -3.591 .846c-1.284 1.273 -1.457 3.165 -.388 4.226c1.07 1.06 2.978 .888 4.261 -.384a3.669 3.669 0 0 0 1.038 -1.921h-2.427"/>
+		<path d="M5.5 15h-1.5"/>
+		<path d="M6 9h-2"/>
+		<path d="M5 12h-3"/>
 	</svg>
 	{{- else if .HasExt ".html" ".htm"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-html" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"></path>
-		<path d="M2 21v-6"></path>
-		<path d="M5 15v6"></path>
-		<path d="M2 18h3"></path>
-		<path d="M20 15v6h2"></path>
-		<path d="M13 21v-6l2 3l2 -3v6"></path>
-		<path d="M7.5 15h3"></path>
-		<path d="M9 15v6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"/>
+		<path d="M2 21v-6"/>
+		<path d="M5 15v6"/>
+		<path d="M2 18h3"/>
+		<path d="M20 15v6h2"/>
+		<path d="M13 21v-6l2 3l2 -3v6"/>
+		<path d="M7.5 15h3"/>
+		<path d="M9 15v6"/>
 	</svg>
 	{{- else if .HasExt ".js"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-js" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M3 15h3v4.5a1.5 1.5 0 0 1 -3 0"></path>
-		<path d="M9 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M3 15h3v4.5a1.5 1.5 0 0 1 -3 0"/>
+		<path d="M9 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"/>
 	</svg>
 	{{- else if .HasExt ".css"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-css" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"></path>
-		<path d="M8 16.5a1.5 1.5 0 0 0 -3 0v3a1.5 1.5 0 0 0 3 0"></path>
-		<path d="M11 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
-		<path d="M17 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"/>
+		<path d="M8 16.5a1.5 1.5 0 0 0 -3 0v3a1.5 1.5 0 0 0 3 0"/>
+		<path d="M11 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
+		<path d="M17 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
 	</svg>
 	{{- else if .HasExt ".json" ".json5" ".jsonc"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-json" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M20 16v-8l3 8v-8"></path>
-		<path d="M15 8a2 2 0 0 1 2 2v4a2 2 0 1 1 -4 0v-4a2 2 0 0 1 2 -2z"></path>
-		<path d="M1 8h3v6.5a1.5 1.5 0 0 1 -3 0v-.5"></path>
-		<path d="M7 15a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1h1a1 1 0 0 1 1 1"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M20 16v-8l3 8v-8"/>
+		<path d="M15 8a2 2 0 0 1 2 2v4a2 2 0 1 1 -4 0v-4a2 2 0 0 1 2 -2z"/>
+		<path d="M1 8h3v6.5a1.5 1.5 0 0 1 -3 0v-.5"/>
+		<path d="M7 15a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1h1a1 1 0 0 1 1 1"/>
 	</svg>
 	{{- else if .HasExt ".ts"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-ts" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M9 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
-		<path d="M3.5 15h3"></path>
-		<path d="M5 15v6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-1"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M9 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
+		<path d="M3.5 15h3"/>
+		<path d="M5 15v6"/>
 	</svg>
 	{{- else if .HasExt ".sql"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-type-sql" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-		<path d="M5 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"></path>
-		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"></path>
-		<path d="M18 15v6h2"></path>
-		<path d="M13 15a2 2 0 0 1 2 2v2a2 2 0 1 1 -4 0v-2a2 2 0 0 1 2 -2z"></path>
-		<path d="M14 20l1.5 1.5"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+		<path d="M5 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75"/>
+		<path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4"/>
+		<path d="M18 15v6h2"/>
+		<path d="M13 15a2 2 0 0 1 2 2v2a2 2 0 1 1 -4 0v-2a2 2 0 0 1 2 -2z"/>
+		<path d="M14 20l1.5 1.5"/>
 	</svg>
 	{{- else if .HasExt ".db" ".sqlite" ".bak" ".mdb"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-database" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0"></path>
-		<path d="M4 6v6a8 3 0 0 0 16 0v-6"></path>
-		<path d="M4 12v6a8 3 0 0 0 16 0v-6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0"/>
+		<path d="M4 6v6a8 3 0 0 0 16 0v-6"/>
+		<path d="M4 12v6a8 3 0 0 0 16 0v-6"/>
 	</svg>
 	{{- else if .HasExt ".eml" ".email" ".mailbox" ".mbox" ".msg"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-mail" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10z"></path>
-		<path d="M3 7l9 6l9 -6"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10z"/>
+		<path d="M3 7l9 6l9 -6"/>
 	</svg>
 	{{- else if .HasExt ".crt" ".pem" ".x509" ".cer" ".ca-bundle"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-certificate" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M15 15m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"></path>
-		<path d="M13 17.5v4.5l2 -1.5l2 1.5v-4.5"></path>
-		<path d="M10 19h-5a2 2 0 0 1 -2 -2v-10c0 -1.1 .9 -2 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -1 1.73"></path>
-		<path d="M6 9l12 0"></path>
-		<path d="M6 12l3 0"></path>
-		<path d="M6 15l2 0"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M15 15m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
+		<path d="M13 17.5v4.5l2 -1.5l2 1.5v-4.5"/>
+		<path d="M10 19h-5a2 2 0 0 1 -2 -2v-10c0 -1.1 .9 -2 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -1 1.73"/>
+		<path d="M6 9l12 0"/>
+		<path d="M6 12l3 0"/>
+		<path d="M6 15l2 0"/>
 	</svg>
 	{{- else if .HasExt ".key" ".keystore" ".jks" ".p12" ".pfx" ".pub"}}
 	<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-key" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-		<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-		<path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0z"></path>
-		<path d="M15 9h.01"></path>
+		<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+		<path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0z"/>
+		<path d="M15 9h.01"/>
 	</svg>
 	{{- else}}
 		{{- if .IsSymlink}}
 		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file-symlink" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-			<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-			<path d="M4 21v-4a3 3 0 0 1 3 -3h5"></path>
-			<path d="M9 17l3 -3l-3 -3"></path>
-			<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-			<path d="M5 11v-6a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-9.5"></path>
+			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+			<path d="M4 21v-4a3 3 0 0 1 3 -3h5"/>
+			<path d="M9 17l3 -3l-3 -3"/>
+			<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+			<path d="M5 11v-6a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-9.5"/>
 		</svg>
 		{{- else}}
 		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-file" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-			<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-			<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
-			<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path>
+			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+			<path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+			<path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
 		</svg>
 		{{- end}}
 	{{- end}}
@@ -291,6 +299,7 @@
 <html>
 	<head>
 		<title>{{html .Name}}</title>
+		<link rel="canonical" href="{{.Path}}/"  />
 		<meta charset="utf-8">
 		<meta name="color-scheme" content="light dark">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -789,19 +798,19 @@ footer {
 					</div>
 					<a href="javascript:queryParam('layout', '')" id="layout-list" class='layout{{if eq $.Layout "list" ""}}current{{end}}'>
 						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-list" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-							<path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"></path>
-							<path d="M4 14m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"></path>
+							<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+							<path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>
+							<path d="M4 14m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>
 						</svg>
 						List
 					</a>
 					<a href="javascript:queryParam('layout', 'grid')" id="layout-grid" class='layout{{if eq $.Layout "grid"}}current{{end}}'>
 						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-							<path d="M4 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"></path>
-							<path d="M14 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"></path>
-							<path d="M4 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"></path>
-							<path d="M14 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"></path>
+							<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+							<path d="M4 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/>
+							<path d="M14 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/>
+							<path d="M4 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/>
+							<path d="M14 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/>
 						</svg>
 						Grid
 					</a>
@@ -826,22 +835,22 @@ footer {
 							{{- if and (eq .Sort "namedirfirst") (ne .Order "desc")}}
 							<a href="?sort=namedirfirst&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon">
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 14l-6 -6l-6 6h12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 14l-6 -6l-6 6h12"/>
 								</svg>
 							</a>
 							{{- else if and (eq .Sort "namedirfirst") (ne .Order "asc")}}
 							<a href="?sort=namedirfirst&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon">
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M6 10l6 6l6 -6h-12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M6 10l6 6l6 -6h-12"/>
 								</svg>
 							</a>
 							{{- else}}
 							<a href="?sort=namedirfirst&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon sort">
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 14l-6 -6l-6 6h12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 14l-6 -6l-6 6h12"/>
 								</svg>
 							</a>
 							{{- end}}
@@ -850,16 +859,16 @@ footer {
 							<a href="?sort=name&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Name
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 14l-6 -6l-6 6h12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 14l-6 -6l-6 6h12"/>
 								</svg>
 							</a>
 							{{- else if and (eq .Sort "name") (ne .Order "asc")}}
 							<a href="?sort=name&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Name
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M6 10l6 6l6 -6h-12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M6 10l6 6l6 -6h-12"/>
 								</svg>
 							</a>
 							{{- else}}
@@ -870,11 +879,11 @@ footer {
 
 							<div class="filter-container">
 								<svg id="search-icon" xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"></path>
-									<path d="M21 21l-6 -6"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/>
+									<path d="M21 21l-6 -6"/>
 								</svg>
-								<input type="text" placeholder="Search" id="filter" onkeyup='filter()'>
+								<input type="search" placeholder="Search" id="filter" onkeyup='filter()'>
 							</div>
 						</th>
 						<th>
@@ -882,16 +891,16 @@ footer {
 							<a href="?sort=size&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Size
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 14l-6 -6l-6 6h12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 14l-6 -6l-6 6h12"/>
 								</svg>
 							</a>
 							{{- else if and (eq .Sort "size") (ne .Order "asc")}}
 							<a href="?sort=size&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Size
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M6 10l6 6l6 -6h-12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M6 10l6 6l6 -6h-12"/>
 								</svg>
 							</a>
 							{{- else}}
@@ -905,16 +914,16 @@ footer {
 							<a href="?sort=time&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Modified
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 14l-6 -6l-6 6h12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 14l-6 -6l-6 6h12"/>
 								</svg>
 							</a>
 							{{- else if and (eq .Sort "time") (ne .Order "asc")}}
 							<a href="?sort=time&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
 								Modified
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M6 10l6 6l6 -6h-12"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M6 10l6 6l6 -6h-12"/>
 								</svg>
 							</a>
 							{{- else}}
@@ -933,8 +942,8 @@ footer {
 						<td>
 							<a href="..">
 								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-corner-left-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-									<path d="M18 18h-6a3 3 0 0 1 -3 -3v-10l-4 4m8 0l-4 -4"></path>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+									<path d="M18 18h-6a3 3 0 0 1 -3 -3v-10l-4 4m8 0l-4 -4"/>
 								</svg>
 								<span class="go-up">Up</span>
 							</a>
@@ -1075,7 +1084,10 @@ footer {
 				});
 				document.querySelectorAll('.size').forEach(el => {
 					const size = Number(el.dataset.size);
-					el.querySelector('.sizebar-bar').style.width = `${size/largest * 100}%`;
+					const sizebar = el.querySelector('.sizebar-bar');
+					if (sizebar) {
+						sizebar.style.width = `${size/largest * 100}%`;
+					}
 				});
 			}
 
