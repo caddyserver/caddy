@@ -31,6 +31,16 @@ func TestACMEServerWithDefaults(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	l, err := net.Listen("tcp", ":80")
+	if err != nil && strings.Contains(err.Error(), "permission") {
+		t.Skip("cannot listen on port 80")
+		return
+	} else if err != nil {
+		t.Logf("error listening on port 80: %s", err)
+		t.Error(err)
+		t.Skip()
+	}
+	l.Close()
 
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
