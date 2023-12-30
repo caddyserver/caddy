@@ -86,6 +86,10 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			// was already set above.
 		}
 
+		if !isDir {
+			tplCtx.TotalFileSize += size
+		}
+
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		tplCtx.Items = append(tplCtx.Items, fileInfo{
@@ -128,6 +132,9 @@ type browseTemplateContext struct {
 
 	// The number of files (items that aren't directories) in the listing.
 	NumFiles int `json:"num_files"`
+
+	// The total size of all files in the listing.
+	TotalFileSize int64 `json:"total_file_size"`
 
 	// Sort column used
 	Sort string `json:"sort,omitempty"`
@@ -250,6 +257,13 @@ func (fi fileInfo) HasExt(exts ...string) bool {
 // power of 2 or base 1024).
 func (fi fileInfo) HumanSize() string {
 	return humanize.IBytes(uint64(fi.Size))
+}
+
+// HumanTotalFileSize returns the total size of all files
+// in the listing as a human-readable string in IEC format
+// (i.e. power of 2 or base 1024).
+func (btc browseTemplateContext) HumanTotalFileSize() string {
+	return humanize.IBytes(uint64(btc.TotalFileSize))
 }
 
 // HumanModTime returns the modified time of the file
