@@ -76,7 +76,6 @@ func (xs *Filesystems) Provision(ctx caddy.Context) error {
 		})
 	}
 	return nil
-
 }
 
 func (f *Filesystems) Cleanup() error {

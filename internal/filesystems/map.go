@@ -10,9 +10,7 @@ const (
 	DefaultFilesystemKey = "default"
 )
 
-var (
-	DefaultFilesystem = &wrapperFs{key: DefaultFilesystemKey, FS: OsFS{}}
-)
+var DefaultFilesystem = &wrapperFs{key: DefaultFilesystemKey, FS: OsFS{}}
 
 // wrapperFs exists so can easily add to wrapperFs down the line
 type wrapperFs struct {
