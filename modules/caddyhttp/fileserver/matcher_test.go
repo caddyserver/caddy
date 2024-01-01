@@ -1,4 +1,4 @@
-// Copyright 2015 Matthew Holt and The Caddy Authors
+// Copyright 2016 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ func TestFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fileSystem: osFS{},
+			FileSystem: "default",
 			Root:       "./testdata",
 			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
 		}
@@ -225,7 +225,7 @@ func TestPHPFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fileSystem: osFS{},
+			FileSystem: "default",
 			Root:       "./testdata",
 			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
 			SplitPath:  []string{".php"},
