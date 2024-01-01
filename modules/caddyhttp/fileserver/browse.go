@@ -19,6 +19,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -94,7 +95,7 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	switch {
 	case os.IsPermission(err):
 		return caddyhttp.Error(http.StatusForbidden, err)
-	case os.IsNotExist(err):
+	case errors.Is(err, fs.ErrNotExist):
 		return fsrv.notFound(w, r, next)
 	case err != nil:
 		return caddyhttp.Error(http.StatusInternalServerError, err)
