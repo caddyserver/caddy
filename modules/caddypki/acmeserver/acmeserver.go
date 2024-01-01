@@ -91,7 +91,10 @@ type Handler struct {
 	// than 1 resolver address, one is chosen at random.
 	Resolvers []string `json:"resolvers,omitempty"`
 
-	Challenges ACMEChallenges `json:"challenges,omitempty"`
+	// Specify the set of enabled ACME challenges. An empty or absent value
+	// means all challenges are enabled. Accepted values are:
+	// "http-01", "dns-01", "tls-alpn-01"
+	Challenges ACMEChallenges `json:"challenges,omitempty" `
 
 	logger    *zap.Logger
 	resolvers []caddy.NetworkAddress
