@@ -21,6 +21,7 @@ import (
 	"log"
 	"reflect"
 
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
@@ -84,6 +85,10 @@ func (ctx *Context) OnCancel(f func()) {
 
 // Filesystems returns a ref to the FilesystemMap
 func (ctx *Context) Filesystems() FileSystems {
+	// if no config is loaded, we use a default filesystemmap, which includes the osfs
+	if ctx.cfg == nil {
+		return &filesystems.FilesystemMap{}
+	}
 	return ctx.cfg.filesystems
 }
 
