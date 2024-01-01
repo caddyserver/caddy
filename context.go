@@ -21,9 +21,10 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
 // Context is a type which defines the lifetime of modules that
