@@ -98,7 +98,7 @@ jobs:
         go build -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
