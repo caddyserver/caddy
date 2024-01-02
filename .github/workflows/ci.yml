@@ -102,6 +102,7 @@ jobs:
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
+        compression-level: 0
 
     # Commented bits below were useful to allow the job to continue
     # even if the tests fail, so we can publish the report separately
