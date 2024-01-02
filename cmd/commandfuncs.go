@@ -190,7 +190,7 @@ func cmdRun(fl Flags) (int, error) {
 	var config []byte
 	if resumeFlag {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			// not a bad error; just can't resume if autosave file doesn't exist
 			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false

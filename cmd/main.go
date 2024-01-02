@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -128,7 +129,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
 			config, err = os.ReadFile("Caddyfile")
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil
 			} else if err != nil {

@@ -506,10 +506,10 @@ func (fsrv *FileServer) openFile(filename string, w http.ResponseWriter) (fs.Fil
 	file, err := fsrv.fileSystem.Open(filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(err, filename)
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			fsrv.logger.Debug("file not found", zap.String("filename", filename), zap.Error(err))
 			return nil, caddyhttp.Error(http.StatusNotFound, err)
-		} else if os.IsPermission(err) {
+		} else if errors.Is(err, fs.ErrPermission) {
 			fsrv.logger.Debug("permission denied", zap.String("filename", filename), zap.Error(err))
 			return nil, caddyhttp.Error(http.StatusForbidden, err)
 		}
