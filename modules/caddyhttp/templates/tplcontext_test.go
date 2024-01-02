@@ -17,7 +17,9 @@ package templates
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,8 +32,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-type handle struct {
-}
+type handle struct{}
 
 func (h *handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Accept-Encoding") == "identity" {
@@ -176,11 +177,10 @@ func TestImport(t *testing.T) {
 		} else if !templateWasDefined && actual != "" {
 			// template should be defined, return value should be an empty string
 			t.Errorf("Test %d: Expected template %s to be define but got %s", i, test.expect, tplContext.tpl.DefinedTemplates())
-
 		}
 
 		if absFilePath != "" {
-			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
@@ -255,21 +255,20 @@ func TestNestedInclude(t *testing.T) {
 		} else if buf.String() != test.expect {
 			//
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, test.expect, buf.String())
-
 		}
 
 		if absFilePath != "" {
-			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
 		if absFilePath0 != "" {
-			if err := os.Remove(absFilePath0); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath0); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
 		if absFilePath1 != "" {
-			if err := os.Remove(absFilePath1); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath1); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
@@ -342,11 +341,10 @@ func TestInclude(t *testing.T) {
 			t.Errorf("Test %d: Expected error but had none", i)
 		} else if actual != test.expect {
 			t.Errorf("Test %d: Expected %s but got %s", i, test.expect, actual)
-
 		}
 
 		if absFilePath != "" {
-			if err := os.Remove(absFilePath); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(absFilePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test file, got: %v", i, err)
 			}
 		}
@@ -460,7 +458,7 @@ func TestFileListing(t *testing.T) {
 			fileNames: nil,
 			inputBase: "doesNotExist",
 			shouldErr: true,
-			verifyErr: os.IsNotExist,
+			verifyErr: func(err error) bool { return errors.Is(err, fs.ErrNotExist) },
 		},
 		{
 			// directory and files exist, but path to a file
@@ -476,7 +474,7 @@ func TestFileListing(t *testing.T) {
 			fileNames: nil,
 			inputBase: filepath.Join("..", "..", "..", "..", "..", "etc"),
 			shouldErr: true,
-			verifyErr: os.IsNotExist,
+			verifyErr: func(err error) bool { return errors.Is(err, fs.ErrNotExist) },
 		},
 	} {
 		tplContext := getContextOrFail(t)
@@ -525,7 +523,7 @@ func TestFileListing(t *testing.T) {
 		}
 
 		if dirPath != "" {
-			if err := os.RemoveAll(dirPath); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(dirPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Test %d: Expected no error removing temporary test directory, got: %v", i, err)
 			}
 		}
@@ -602,7 +600,6 @@ title = "Welcome"
 			t.Errorf("Test %d: Expected body %s, found %s. Input was SplitFrontMatter(%s)", i, test.body, result.Body, test.input)
 		}
 	}
-
 }
 
 func TestHumanize(t *testing.T) {
