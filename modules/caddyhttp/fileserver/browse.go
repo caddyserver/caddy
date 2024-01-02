@@ -19,6 +19,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -92,9 +93,9 @@ func (fsrv *FileServer) serveBrowse(root, dirPath string, w http.ResponseWriter,
 	// TODO: not entirely sure if path.Clean() is necessary here but seems like a safe plan (i.e. /%2e%2e%2f) - someone could verify this
 	listing, err := fsrv.loadDirectoryContents(r.Context(), dir.(fs.ReadDirFile), root, path.Clean(r.URL.EscapedPath()), repl)
 	switch {
-	case os.IsPermission(err):
+	case errors.Is(err, fs.ErrPermission):
 		return caddyhttp.Error(http.StatusForbidden, err)
-	case os.IsNotExist(err):
+	case errors.Is(err, fs.ErrNotExist):
 		return fsrv.notFound(w, r, next)
 	case err != nil:
 		return caddyhttp.Error(http.StatusInternalServerError, err)
