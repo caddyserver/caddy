@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -318,6 +319,8 @@ func globalDefaultReplacements(key string) (any, bool) {
 		return runtime.GOARCH, true
 	case "time.now":
 		return nowFunc(), true
+	case "math.rand.float64":
+		return rand.Float64(), true
 	case "time.now.http":
 		// According to the comment for http.TimeFormat, the timezone must be in UTC
 		// to generate the correct format.
