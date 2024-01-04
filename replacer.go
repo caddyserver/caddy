@@ -295,6 +295,9 @@ func ToString(val any) string {
 // returned.
 type ReplacerFunc func(key string) (any, bool)
 
+//nolint:gosec
+var weakrand = rand.New(rand.NewSource(time.Now().UnixMicro()))
+
 func globalDefaultReplacements(key string) (any, bool) {
 	// check environment variable
 	const envPrefix = "env."
@@ -320,7 +323,8 @@ func globalDefaultReplacements(key string) (any, bool) {
 	case "time.now":
 		return nowFunc(), true
 	case "math.rand.float64":
-		return rand.Float64(), true
+		// this is intentionally not crypto-secure. people should not rely on this value as a secure source of randomness.
+		return weakrand.Float64(), true
 	case "time.now.http":
 		// According to the comment for http.TimeFormat, the timezone must be in UTC
 		// to generate the correct format.
