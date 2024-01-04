@@ -320,11 +320,11 @@ func globalDefaultReplacements(key string) (any, bool) {
 		return wd, true
 	case "system.arch":
 		return runtime.GOARCH, true
-	case "time.now":
-		return nowFunc(), true
 	case "math.rand.float64":
 		// this is intentionally not crypto-secure. people should not rely on this value as a secure source of randomness.
 		return weakrand.Float64(), true
+	case "time.now":
+		return nowFunc(), true
 	case "time.now.http":
 		// According to the comment for http.TimeFormat, the timezone must be in UTC
 		// to generate the correct format.
