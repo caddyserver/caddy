@@ -66,9 +66,9 @@ example.com {
 							"one.example.com": ""
 						},
 						"skip_hosts": [
+							"example.com",
 							"three.example.com",
-							"two.example.com",
-							"example.com"
+							"two.example.com"
 						]
 					}
 				}

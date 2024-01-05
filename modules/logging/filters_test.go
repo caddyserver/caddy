@@ -83,7 +83,7 @@ func TestIPMaskMultiValue(t *testing.T) {
 	}
 }
 
-func TestQueryFilter(t *testing.T) {
+func TestQueryFilterSingleValue(t *testing.T) {
 	f := QueryFilter{[]queryFilterAction{
 		{replaceAction, "foo", "REDACTED"},
 		{replaceAction, "notexist", "REDACTED"},
@@ -99,6 +99,40 @@ func TestQueryFilter(t *testing.T) {
 	out := f.Filter(zapcore.Field{String: "/path?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed"})
 	if out.String != "/path?baz=e&foo=REDACTED&foo=REDACTED&hash=e3b0c442" {
 		t.Fatalf("query parameters have not been filtered: %s", out.String)
+	}
+}
+
+func TestQueryFilterMultiValue(t *testing.T) {
+	f := QueryFilter{
+		Actions: []queryFilterAction{
+			{Type: replaceAction, Parameter: "foo", Value: "REDACTED"},
+			{Type: replaceAction, Parameter: "notexist", Value: "REDACTED"},
+			{Type: deleteAction, Parameter: "bar"},
+			{Type: deleteAction, Parameter: "notexist"},
+			{Type: hashAction, Parameter: "hash"},
+		},
+	}
+
+	if f.Validate() != nil {
+		t.Fatalf("the filter must be valid")
+	}
+
+	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+		"/path1?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed",
+		"/path2?foo=c&foo=d&bar=e&bar=f&baz=g&hash=hashed",
+	}})
+	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Interface)
+	}
+
+	expected1 := "/path1?baz=e&foo=REDACTED&foo=REDACTED&hash=e3b0c442"
+	expected2 := "/path2?baz=g&foo=REDACTED&foo=REDACTED&hash=e3b0c442"
+	if arr[0] != expected1 {
+		t.Fatalf("query parameters in entry 0 have not been filtered correctly: got %s, expected %s", arr[0], expected1)
+	}
+	if arr[1] != expected2 {
+		t.Fatalf("query parameters in entry 1 have not been filtered correctly: got %s, expected %s", arr[1], expected2)
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -825,10 +826,15 @@ func ParseDuration(s string) (time.Duration, error) {
 // regardless of storage configuration, since each instance is intended to
 // have its own unique ID.
 func InstanceID() (uuid.UUID, error) {
-	uuidFilePath := filepath.Join(AppDataDir(), "instance.uuid")
+	appDataDir := AppDataDir()
+	uuidFilePath := filepath.Join(appDataDir, "instance.uuid")
 	uuidFileBytes, err := os.ReadFile(uuidFilePath)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		uuid, err := uuid.NewRandom()
+		if err != nil {
+			return uuid, err
+		}
+		err = os.MkdirAll(appDataDir, 0o600)
 		if err != nil {
 			return uuid, err
 		}

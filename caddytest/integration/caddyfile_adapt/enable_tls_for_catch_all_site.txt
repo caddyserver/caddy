@@ -1,0 +1,37 @@
+:8443 {
+	tls internal {
+		on_demand
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8443"
+					],
+					"tls_connection_policies": [
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						],
+						"on_demand": true
+					}
+				]
+			}
+		}
+	}
+}
+

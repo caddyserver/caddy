@@ -246,16 +246,26 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 						if err != nil {
 							return nil, err
 						}
-						block, _ := pem.Decode(certDataPEM)
-						if block == nil || block.Type != "CERTIFICATE" {
-							return nil, h.Errf("no CERTIFICATE pem block found in %s", h.Val())
+						// while block is not nil, we have more certificates in the file
+						for block, rest := pem.Decode(certDataPEM); block != nil; block, rest = pem.Decode(rest) {
+							if block.Type != "CERTIFICATE" {
+								return nil, h.Errf("no CERTIFICATE pem block found in %s", filename)
+							}
+							if subdir == "trusted_ca_cert_file" {
+								cp.ClientAuthentication.TrustedCACerts = append(
+									cp.ClientAuthentication.TrustedCACerts,
+									base64.StdEncoding.EncodeToString(block.Bytes),
+								)
+							} else {
+								cp.ClientAuthentication.TrustedLeafCerts = append(
+									cp.ClientAuthentication.TrustedLeafCerts,
+									base64.StdEncoding.EncodeToString(block.Bytes),
+								)
+							}
 						}
-						if subdir == "trusted_ca_cert_file" {
-							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts,
-								base64.StdEncoding.EncodeToString(block.Bytes))
-						} else {
-							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts,
-								base64.StdEncoding.EncodeToString(block.Bytes))
+						// if we decoded nothing, return an error
+						if len(cp.ClientAuthentication.TrustedCACerts) == 0 && len(cp.ClientAuthentication.TrustedLeafCerts) == 0 {
+							return nil, h.Errf("no CERTIFICATE pem block found in %s", filename)
 						}
 
 					default:

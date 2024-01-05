@@ -43,6 +43,18 @@ func (FolderLoader) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision implements caddy.Provisioner.
+func (fl FolderLoader) Provision(ctx caddy.Context) error {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+	}
+	for k, path := range fl {
+		fl[k] = repl.ReplaceKnown(path, "")
+	}
+	return nil
+}
+
 // LoadCertificates loads all the certificates+keys in the directories
 // listed in fl from all files ending with .pem. This method of loading
 // certificates expects the certificate and key to be bundled into the
@@ -146,4 +158,7 @@ func tlsCertFromCertAndKeyPEMBundle(bundle []byte) (tls.Certificate, error) {
 	return cert, nil
 }
 
-var _ CertificateLoader = (FolderLoader)(nil)
+var (
+	_ CertificateLoader = (FolderLoader)(nil)
+	_ caddy.Provisioner = (FolderLoader)(nil)
+)

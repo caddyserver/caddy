@@ -228,7 +228,6 @@ type Server struct {
 
 	server      *http.Server
 	h3server    *http3.Server
-	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	h2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
 
@@ -555,13 +554,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	addr.Network = getHTTP3Network(addr.Network)
-	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
-	if err != nil {
-		return err
-	}
-	ln := lnAny.(net.PacketConn)
-
-	h3ln, err := caddy.ListenQUIC(ln, tlsCfg, &s.activeRequests)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, &s.activeRequests)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -578,8 +571,6 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			},
 		}
 	}
-
-	s.h3listeners = append(s.h3listeners, ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
