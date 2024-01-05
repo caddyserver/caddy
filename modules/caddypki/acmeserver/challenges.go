@@ -8,6 +8,7 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 )
 
+// an opaque string type to represent the supported ACME challenges
 type ACMEChallenge string
 
 const (
@@ -26,6 +27,9 @@ func (c ACMEChallenge) validate() error {
 	}
 }
 
+// The unmarshaller first marshals the value into a string. Then it
+// trims any space around it and lowercase it for normaliztion. The
+// method does not and should not validate the value within accepted enums.
 func (c *ACMEChallenge) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -40,6 +44,7 @@ func (c ACMEChallenge) String() string {
 	return strings.ToLower(string(c))
 }
 
+// container for a collective of ACME challenges
 type ACMEChallenges []ACMEChallenge
 
 // validate checks if the given challenges are supported.
