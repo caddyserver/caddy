@@ -122,6 +122,100 @@ func TestACMEServerWithDefaults(t *testing.T) {
 	}
 }
 
+func TestACMEServerWithMismatchedChallenges(t *testing.T) {
+	// t.Skip("TODO: troubleshoot the test; it succeeds randomly with small probability")
+
+	ctx := context.Background()
+	logger := caddy.Log().Named("acmez")
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		local_certs
+	}
+	acme.localhost {
+		acme_server {
+			challenges tls-alpn-01
+		}
+	}
+  `, "caddyfile")
+
+	datadir := caddy.AppDataDir()
+	rootCertsGlob := filepath.Join(datadir, "pki", "authorities", "local", "*.crt")
+	matches, err := filepath.Glob(rootCertsGlob)
+	if err != nil {
+		t.Errorf("could not find root certs: %s", err)
+		return
+	}
+	certPool := x509.NewCertPool()
+	for _, m := range matches {
+		certPem, err := os.ReadFile(m)
+		if err != nil {
+			t.Errorf("reading cert file '%s' error: %s", m, err)
+			return
+		}
+		if !certPool.AppendCertsFromPEM(certPem) {
+			t.Errorf("failed to append the cert: %s", m)
+			return
+		}
+	}
+
+	client := acmez.Client{
+		Client: &acme.Client{
+			Directory: "https://acme.localhost:9443/acme/local/directory",
+			HTTPClient: &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						RootCAs: certPool,
+					},
+				},
+			},
+			Logger: logger,
+		},
+		ChallengeSolvers: map[string]acmez.Solver{
+			acme.ChallengeTypeHTTP01: naiveHTTPSolver{logger: logger},
+		},
+	}
+
+	accountPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Errorf("generating account key: %v", err)
+	}
+	account := acme.Account{
+		Contact:              []string{"mailto:you@example.com"},
+		TermsOfServiceAgreed: true,
+		PrivateKey:           accountPrivateKey,
+	}
+	account, err = client.NewAccount(ctx, account)
+	if err != nil {
+		t.Errorf("new account: %v", err)
+		return
+	}
+
+	// Every certificate needs a key.
+	certPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Errorf("generating certificate key: %v", err)
+		return
+	}
+
+	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"acme-client.localhost"})
+	if len(certs) > 0 {
+		t.Errorf("expected '0' certificates, but received '%d'", len(certs))
+	}
+	if err == nil {
+		t.Error("expected errors, but received none")
+	}
+	const expectedErrMsg = "no solvers available for remaining challenges (configured=[http-01] offered=[tls-alpn-01] remaining=[tls-alpn-01])"
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf(`received error message does not match expectation: expected="%s" received="%s"`, expectedErrMsg, err.Error())
+	}
+}
+
 // naiveHTTPSolver is a no-op acmez.Solver for example purposes only.
 type naiveHTTPSolver struct {
 	srv    *http.Server
