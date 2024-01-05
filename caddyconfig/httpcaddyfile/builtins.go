@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"html"
@@ -217,6 +218,28 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					subdir := h.Val()
 					switch subdir {
+					case "verifier":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+						vType := h.Val()
+						modID := "tls.client_auth." + vType
+						unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+						if err != nil {
+							return nil, err
+						}
+
+						ccv, ok := unm.(caddytls.ClientCertificateVerifier)
+						if !ok {
+							return nil, h.Dispenser.Errf("module %s is not a caddytls.ClientCertificatVerifier", modID)
+						}
+
+						bytes, err := json.Marshal(ccv)
+						if err != nil {
+							return nil, err
+						}
+						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, bytes)
 					case "mode":
 						if !h.Args(&cp.ClientAuthentication.Mode) {
 							return nil, h.ArgErr()
