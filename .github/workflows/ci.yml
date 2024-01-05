@@ -57,7 +57,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -98,10 +98,11 @@ jobs:
         go build -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
+        compression-level: 0
 
     # Commented bits below were useful to allow the job to continue
     # even if the tests fail, so we can publish the report separately
