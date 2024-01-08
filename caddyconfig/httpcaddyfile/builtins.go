@@ -90,6 +90,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_ttl                       <duration>
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
+//	    reuse_private_keys
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -106,6 +107,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var issuers []certmagic.Issuer
 	var certManagers []certmagic.Manager
 	var onDemand bool
+	var reusePrivateKeys bool
 
 	for h.Next() {
 		// file certificate loader
@@ -483,6 +485,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				onDemand = true
 
+			case "reuse_private_keys":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				reusePrivateKeys = true
+
 			case "insecure_secrets_log":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -586,6 +594,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.cert_manager",
 			Value: certManager,
+		})
+	}
+
+	// reuse private keys TLS
+	if reusePrivateKeys {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.reuse_private_keys",
+			Value: true,
 		})
 	}
 
