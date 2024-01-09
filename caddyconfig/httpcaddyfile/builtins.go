@@ -233,7 +233,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 						if !ok {
 							return nil, h.Dispenser.Errf("module %s is not a caddytls.ClientCertificatVerifier", modID)
 						}
-						
+
 						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, h.warnings))
 					case "mode":
 						if !h.Args(&cp.ClientAuthentication.Mode) {
