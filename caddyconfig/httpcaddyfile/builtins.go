@@ -219,6 +219,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					subdir := h.Val()
 					switch subdir {
+					case "verifier":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+						vType := h.Val()
+						modID := "tls.client_auth." + vType
+						unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+						if err != nil {
+							return nil, err
+						}
+
+						_, ok := unm.(caddytls.ClientCertificateVerifier)
+						if !ok {
+							return nil, h.Dispenser.Errf("module %s is not a caddytls.ClientCertificatVerifier", modID)
+						}
+
+						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, h.warnings))
 					case "mode":
 						if !h.Args(&cp.ClientAuthentication.Mode) {
 							return nil, h.ArgErr()
