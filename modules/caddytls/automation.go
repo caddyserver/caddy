@@ -138,6 +138,15 @@ type AutomationPolicy struct {
 	// load. This enables On-Demand TLS for this policy.
 	OnDemand bool `json:"on_demand,omitempty"`
 
+	// If true, private keys already existing in storage
+	// will be reused. Otherwise, a new key will be
+	// created for every new certificate to mitigate
+	// pinning and reduce the scope of key compromise.
+	// TEMPORARY: Key pinning is against industry best practices.
+	// This property will likely be removed in the future.
+	// Do not rely on it forever; watch the release notes.
+	ReusePrivateKeys bool `json:"reuse_private_keys,omitempty"`
+
 	// Disables OCSP stapling. Disabling OCSP stapling puts clients at
 	// greater risk, reduces their privacy, and usually lowers client
 	// performance. It is NOT recommended to disable this unless you
@@ -288,6 +297,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		KeySource:          keySource,
 		OnEvent:            tlsApp.onEvent,
 		OnDemand:           ond,
+		ReusePrivateKeys:   ap.ReusePrivateKeys,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling:    ap.DisableOCSPStapling,
 			ResponderOverrides: ap.OCSPOverrides,
