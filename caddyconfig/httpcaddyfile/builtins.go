@@ -16,7 +16,6 @@ package httpcaddyfile
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"html"
@@ -230,16 +229,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 							return nil, err
 						}
 
-						ccv, ok := unm.(caddytls.ClientCertificateVerifier)
+						_, ok := unm.(caddytls.ClientCertificateVerifier)
 						if !ok {
 							return nil, h.Dispenser.Errf("module %s is not a caddytls.ClientCertificatVerifier", modID)
 						}
-
-						bytes, err := json.Marshal(ccv)
-						if err != nil {
-							return nil, err
-						}
-						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, bytes)
+						
+						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, h.warnings))
 					case "mode":
 						if !h.Args(&cp.ClientAuthentication.Mode) {
 							return nil, h.ArgErr()
