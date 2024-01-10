@@ -356,13 +356,15 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
-	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.client_auth.ca inline_key=provider"`
+	// Certificate authority module which provides the certificate pool of trusted certificates
+	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
 	ca    CA
 
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
 	// these CAs will be rejected.
+	// Deprecated: Use the `ca` field.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
 	// TrustedCACertPEMFiles is a list of PEM file names
