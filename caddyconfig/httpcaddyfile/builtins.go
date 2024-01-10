@@ -711,6 +711,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		hdr = http.Header{"Content-Type": []string{"text/html; charset=utf-8"}}
 		code = "200" // don't redirect non-browser clients
 	default:
 		// Allow placeholders for the code
