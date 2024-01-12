@@ -90,6 +90,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_ttl                       <duration>
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
+//	    reuse_private_keys
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -106,6 +107,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var issuers []certmagic.Issuer
 	var certManagers []certmagic.Manager
 	var onDemand bool
+	var reusePrivateKeys bool
 
 	for h.Next() {
 		// file certificate loader
@@ -217,6 +219,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				for nesting := h.Nesting(); h.NextBlock(nesting); {
 					subdir := h.Val()
 					switch subdir {
+					case "verifier":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+
+						vType := h.Val()
+						modID := "tls.client_auth." + vType
+						unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+						if err != nil {
+							return nil, err
+						}
+
+						_, ok := unm.(caddytls.ClientCertificateVerifier)
+						if !ok {
+							return nil, h.Dispenser.Errf("module %s is not a caddytls.ClientCertificatVerifier", modID)
+						}
+
+						cp.ClientAuthentication.VerifiersRaw = append(cp.ClientAuthentication.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, h.warnings))
 					case "mode":
 						if !h.Args(&cp.ClientAuthentication.Mode) {
 							return nil, h.ArgErr()
@@ -483,6 +503,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				onDemand = true
 
+			case "reuse_private_keys":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				reusePrivateKeys = true
+
 			case "insecure_secrets_log":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -589,6 +615,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	// reuse private keys TLS
+	if reusePrivateKeys {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
 	// custom certificate selection
 	if len(certSelector.AnyTag) > 0 {
 		cp.CertSelection = &certSelector
@@ -677,6 +711,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		hdr = http.Header{"Content-Type": []string{"text/html; charset=utf-8"}}
 		code = "200" // don't redirect non-browser clients
 	default:
 		// Allow placeholders for the code

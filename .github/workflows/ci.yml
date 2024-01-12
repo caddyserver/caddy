@@ -95,7 +95,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -trimpath -ldflags="-w -s" -v
+        go build -tags nobdger -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
       # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile="cover-profile.out" -short -race ./...
+        go test -tags nobadger -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -147,7 +147,7 @@ jobs:
 
           # The environment is fresh, so there's no point in keeping accepting and adding the key.
           rsync -arz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --progress --delete --exclude '.git' . "$CI_USER"@ci-s390x.caddyserver.com:/var/tmp/"$short_sha"
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t "$CI_USER"@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -v ./..."
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t "$CI_USER"@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -tags nobadger -v ./..."
           test_result=$?
 
           # There's no need leaving the files around
@@ -169,5 +169,3 @@ jobs:
         with:
           version: latest
           args: check
-        env:
-          TAG: ${{ steps.vars.outputs.version_tag }}
