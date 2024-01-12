@@ -147,6 +147,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 				fsrv.PassThru = true
 
+			case "prefer_precompressed":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				fsrv.PreferPrecompressed = true
+
 			default:
 				return nil, h.Errf("unknown subdirective '%s'", h.Val())
 			}
