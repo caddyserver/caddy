@@ -198,7 +198,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {
-			return nil, "", fmt.Errorf("config is not valid JSON: %v; did you mean to use '--adapter'?", err)
+			return nil, "", fmt.Errorf("config is not valid JSON: %v; did you mean to use a config adapter (the --adapter flag)?", err)
 		}
 	}
 
