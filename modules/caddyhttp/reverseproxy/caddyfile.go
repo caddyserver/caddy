@@ -1072,6 +1072,16 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.TLS.InsecureSkipVerify = true
 
+			case "tls_curves":
+				args := d.RemainingArgs()
+				if len(args) == 0 {
+					return d.ArgErr()
+				}
+				if h.TLS == nil {
+					h.TLS = new(TLSConfig)
+				}
+				h.TLS.Curves = args
+
 			case "tls_timeout":
 				if !d.NextArg() {
 					return d.ArgErr()
