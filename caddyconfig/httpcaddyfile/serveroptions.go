@@ -46,6 +46,7 @@ type serverOptions struct {
 	Protocols            []string
 	StrictSNIHost        *bool
 	TrustedProxiesRaw    json.RawMessage
+	TrustedProxiesStrict int
 	ClientIPHeaders      []string
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
@@ -217,6 +218,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				)
 				serverOpts.TrustedProxiesRaw = jsonSource
 
+			case "trusted_proxies_strict":
+				if d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				serverOpts.TrustedProxiesStrict = 1
+
 			case "client_ip_headers":
 				headers := d.RemainingArgs()
 				for _, header := range headers {
@@ -340,6 +347,7 @@ func applyServerOptions(
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.ClientIPHeaders = opts.ClientIPHeaders
+		server.TrustedProxiesStrict = opts.TrustedProxiesStrict
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
