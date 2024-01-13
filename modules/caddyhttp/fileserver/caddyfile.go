@@ -20,6 +20,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
@@ -31,8 +32,23 @@ func init() {
 	httpcaddyfile.RegisterDirective("try_files", parseTryFiles)
 }
 
-// parseCaddyfile parses the file_server directive. It enables the static file
-// server and configures it with this syntax:
+// parseCaddyfile parses the file_server directive.
+// See UnmarshalCaddyfile for the syntax.
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	fsrv := new(FileServer)
+	err := fsrv.UnmarshalCaddyfile(h.Dispenser)
+	if err != nil {
+		return fsrv, err
+	}
+	err = fsrv.FinalizeUnmarshalCaddyfile(h)
+	if err != nil {
+		return nil, err
+	}
+	return fsrv, err
+}
+
+// UnmarshalCaddyfile parses the file_server directive. It enables
+// the static file server and configures it with this syntax:
 //
 //	file_server [<matcher>] [browse] {
 //	    fs            <filesystem>
@@ -44,103 +60,115 @@ func init() {
 //	    status        <status>
 //	    disable_canonical_uris
 //	}
-func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var fsrv FileServer
+//
+// The FinalizeUnmarshalCaddyfile method should be called after this
+// to finalize setup of hidden Caddyfiles.
+func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume directive name
 
-	for h.Next() {
-		args := h.RemainingArgs()
-		switch len(args) {
-		case 0:
-		case 1:
-			if args[0] != "browse" {
-				return nil, h.ArgErr()
+	args := d.RemainingArgs()
+	switch len(args) {
+	case 0:
+	case 1:
+		if args[0] != "browse" {
+			return d.ArgErr()
+		}
+		fsrv.Browse = new(Browse)
+	default:
+		return d.ArgErr()
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "fs":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if fsrv.FileSystem != "" {
+				return d.Err("file system already specified")
+			}
+			fsrv.FileSystem = d.Val()
+
+		case "hide":
+			fsrv.Hide = d.RemainingArgs()
+			if len(fsrv.Hide) == 0 {
+				return d.ArgErr()
+			}
+
+		case "index":
+			fsrv.IndexNames = d.RemainingArgs()
+			if len(fsrv.IndexNames) == 0 {
+				return d.ArgErr()
+			}
+
+		case "root":
+			if !d.Args(&fsrv.Root) {
+				return d.ArgErr()
+			}
+
+		case "browse":
+			if fsrv.Browse != nil {
+				return d.Err("browsing is already configured")
 			}
 			fsrv.Browse = new(Browse)
-		default:
-			return nil, h.ArgErr()
-		}
+			d.Args(&fsrv.Browse.TemplateFile)
 
-		for h.NextBlock(0) {
-			switch h.Val() {
-			case "fs":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
+		case "precompressed":
+			var order []string
+			for d.NextArg() {
+				modID := "http.precompressed." + d.Val()
+				mod, err := caddy.GetModule(modID)
+				if err != nil {
+					return d.Errf("getting module named '%s': %v", modID, err)
 				}
-				if fsrv.FileSystem != "" {
-					return nil, h.Err("file system already specified")
+				inst := mod.New()
+				precompress, ok := inst.(encode.Precompressed)
+				if !ok {
+					return d.Errf("module %s is not a precompressor; is %T", modID, inst)
 				}
-				fsrv.FileSystem = h.Val()
-			case "hide":
-				fsrv.Hide = h.RemainingArgs()
-				if len(fsrv.Hide) == 0 {
-					return nil, h.ArgErr()
+				if fsrv.PrecompressedRaw == nil {
+					fsrv.PrecompressedRaw = make(caddy.ModuleMap)
 				}
-
-			case "index":
-				fsrv.IndexNames = h.RemainingArgs()
-				if len(fsrv.IndexNames) == 0 {
-					return nil, h.ArgErr()
-				}
-
-			case "root":
-				if !h.Args(&fsrv.Root) {
-					return nil, h.ArgErr()
-				}
-
-			case "browse":
-				if fsrv.Browse != nil {
-					return nil, h.Err("browsing is already configured")
-				}
-				fsrv.Browse = new(Browse)
-				h.Args(&fsrv.Browse.TemplateFile)
-
-			case "precompressed":
-				var order []string
-				for h.NextArg() {
-					modID := "http.precompressed." + h.Val()
-					mod, err := caddy.GetModule(modID)
-					if err != nil {
-						return nil, h.Errf("getting module named '%s': %v", modID, err)
-					}
-					inst := mod.New()
-					precompress, ok := inst.(encode.Precompressed)
-					if !ok {
-						return nil, h.Errf("module %s is not a precompressor; is %T", modID, inst)
-					}
-					if fsrv.PrecompressedRaw == nil {
-						fsrv.PrecompressedRaw = make(caddy.ModuleMap)
-					}
-					fsrv.PrecompressedRaw[h.Val()] = caddyconfig.JSON(precompress, nil)
-					order = append(order, h.Val())
-				}
-				fsrv.PrecompressedOrder = order
-
-			case "status":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				fsrv.StatusCode = caddyhttp.WeakString(h.Val())
-
-			case "disable_canonical_uris":
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				falseBool := false
-				fsrv.CanonicalURIs = &falseBool
-
-			case "pass_thru":
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				fsrv.PassThru = true
-
-			default:
-				return nil, h.Errf("unknown subdirective '%s'", h.Val())
+				fsrv.PrecompressedRaw[d.Val()] = caddyconfig.JSON(precompress, nil)
+				order = append(order, d.Val())
 			}
+			fsrv.PrecompressedOrder = order
+
+		case "status":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.StatusCode = caddyhttp.WeakString(d.Val())
+
+		case "disable_canonical_uris":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			falseBool := false
+			fsrv.CanonicalURIs = &falseBool
+
+		case "pass_thru":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.PassThru = true
+
+		default:
+			return d.Errf("unknown subdirective '%s'", d.Val())
 		}
 	}
 
-	// hide the Caddyfile (and any imported Caddyfiles)
+	return nil
+}
+
+// FinalizeUnmarshalCaddyfile finalizes the Caddyfile parsing which
+// requires having an httpcaddyfile.Helper to function, to setup hidden Caddyfiles.
+func (fsrv *FileServer) FinalizeUnmarshalCaddyfile(h httpcaddyfile.Helper) error {
+	// Hide the Caddyfile (and any imported Caddyfiles).
+	// This needs to be done in here instead of UnmarshalCaddyfile
+	// because UnmarshalCaddyfile only has access to the dispenser
+	// and not the helper, and only the helper has access to the
+	// Caddyfiles function.
 	if configFiles := h.Caddyfiles(); len(configFiles) > 0 {
 		for _, file := range configFiles {
 			file = filepath.Clean(file)
@@ -155,8 +183,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 		}
 	}
-
-	return &fsrv, nil
+	return nil
 }
 
 // parseTryFiles parses the try_files directive. It combines a file matcher
@@ -257,3 +284,5 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 
 	return result, nil
 }
+
+var _ caddyfile.Unmarshaler = (*FileServer)(nil)
