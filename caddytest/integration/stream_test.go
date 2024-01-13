@@ -360,7 +360,6 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 
 func testH2ToH1ChunkedResponseServeH1(t *testing.T) *http.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		if r.Host != "127.0.0.1:9443" {
 			t.Errorf("r.Host doesn't match, %v!", r.Host)
 			w.WriteHeader(http.StatusNotFound)

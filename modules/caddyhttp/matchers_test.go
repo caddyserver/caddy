@@ -862,7 +862,6 @@ func TestHeaderREMatcher(t *testing.T) {
 }
 
 func BenchmarkHeaderREMatcher(b *testing.B) {
-
 	i := 0
 	match := MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}}
 	input := http.Header{"Field": []string{"foobar"}}
@@ -1086,6 +1085,7 @@ func TestNotMatcher(t *testing.T) {
 		}
 	}
 }
+
 func BenchmarkLargeHostMatcher(b *testing.B) {
 	// this benchmark simulates a large host matcher (thousands of entries) where each
 	// value is an exact hostname (not a placeholder or wildcard) - compare the results

@@ -105,7 +105,6 @@ func TestPreferOrder(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-
 			if test.accept == "" {
 				r.Header.Del("Accept-Encoding")
 			} else {
@@ -258,7 +257,6 @@ func TestValidate(t *testing.T) {
 				t.Errorf("Validate() error = %v, wantErr = %v", err, test.wantErr)
 			}
 		})
-
 	}
 }
 

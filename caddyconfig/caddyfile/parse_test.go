@@ -22,7 +22,7 @@ import (
 )
 
 func TestParseVariadic(t *testing.T) {
-	var args = make([]string, 10)
+	args := make([]string, 10)
 	for i, tc := range []struct {
 		input  string
 		result bool
@@ -111,7 +111,6 @@ func TestAllTokens(t *testing.T) {
 	input := []byte("a b c\nd e")
 	expected := []string{"a", "b", "c", "d", "e"}
 	tokens, err := allTokens("TestAllTokens", input)
-
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -149,10 +148,11 @@ func TestParseOneAndImport(t *testing.T) {
 			"localhost",
 		}, []int{1}},
 
-		{`localhost:1234
+		{
+			`localhost:1234
 		  dir1 foo bar`, false, []string{
-			"localhost:1234",
-		}, []int{3},
+				"localhost:1234",
+			}, []int{3},
 		},
 
 		{`localhost {
@@ -407,13 +407,13 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import recursive_import_test2`), 0644)
+		import recursive_import_test2`), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(recursiveFile1)
 
-	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0644)
+	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import `+recursiveFile2), 0644)
+		import `+recursiveFile2), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func TestDirectiveImport(t *testing.T) {
 	}
 
 	err = os.WriteFile(directiveFile, []byte(`prop1 1
-	prop2 2`), 0644)
+	prop2 2`), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
