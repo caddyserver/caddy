@@ -20,6 +20,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
@@ -83,20 +84,10 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			if fsrv.FileSystemRaw != nil {
-				return d.Err("file system module already specified")
+			if fsrv.FileSystem != "" {
+				return d.Err("file system already specified")
 			}
-			name := d.Val()
-			modID := "caddy.fs." + name
-			unm, err := caddyfile.UnmarshalModule(d, modID)
-			if err != nil {
-				return err
-			}
-			fsys, ok := unm.(fs.FS)
-			if !ok {
-				return d.Errf("module %s (%T) is not a supported file system implementation (requires fs.FS)", modID, unm)
-			}
-			fsrv.FileSystemRaw = caddyconfig.JSONModuleObject(fsys, "backend", name, nil)
+			fsrv.FileSystem = d.Val()
 
 		case "hide":
 			fsrv.Hide = d.RemainingArgs()
