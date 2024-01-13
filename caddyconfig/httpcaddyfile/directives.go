@@ -41,6 +41,7 @@ var directiveOrder = []string{
 
 	"map",
 	"vars",
+	"fs",
 	"root",
 	"skip_log",
 
