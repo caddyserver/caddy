@@ -358,7 +358,7 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrusted(t *testing.T) {
 			ranges: []netip.Prefix{localPrivatePrefix},
 		},
 		ClientIPHeaders:      []string{"X-Forwarded-For"},
-		TrustedProxiesStrict: true,
+		TrustedProxiesStrict: 1,
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -379,7 +379,7 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingEmpty(t *te
 			ranges: []netip.Prefix{localPrivatePrefix},
 		},
 		ClientIPHeaders:      []string{"Missing-Header", "CF-Connecting-IP", "X-Forwarded-For"},
-		TrustedProxiesStrict: true,
+		TrustedProxiesStrict: 1,
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -401,7 +401,7 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingTrusted(t *
 			ranges: []netip.Prefix{localPrivatePrefix},
 		},
 		ClientIPHeaders:      []string{"CF-Connecting-IP", "X-Forwarded-For"},
-		TrustedProxiesStrict: true,
+		TrustedProxiesStrict: 1,
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -423,7 +423,7 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 			ranges: []netip.Prefix{localPrivatePrefix},
 		},
 		ClientIPHeaders:      []string{"CF-Connecting-IP", "X-Forwarded-For"},
-		TrustedProxiesStrict: true,
+		TrustedProxiesStrict: 1,
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)

@@ -173,17 +173,18 @@ type Server struct {
 	// remote IP address.
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 
-	// Enables strict ClientIPHeaders (default X-Forwarded-For)
-	// parsing. If enabled, the ClientIPHeaders will be parsed
-	// from right to left, and the first value that is both valid
-	// and doesn't match the trusted proxy list will be used as
-	// client IP. If disabled, the ClientIPHeaders will be parsed
-	// from left to right, and the first value that is a valid IP
-	// address will be used as client IP.
+	// If greater than zero, enables strict ClientIPHeaders
+	// (default X-Forwarded-For) parsing. If enabled, the
+	// ClientIPHeaders will be parsed from right to left, and
+	// the first value that is both valid and doesn't match the
+	// trusted proxy list will be used as client IP. If zero,
+	// the ClientIPHeaders will be parsed from left to right,
+	// and the first value that is a valid IP address will be
+	// used as client IP.
 	//
 	// This depends on `trusted_proxies` being configured.
 	// This option is disabled by default.
-	TrustedProxiesStrict bool `json:"trusted_proxies_strict,omitempty"`
+	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
 
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
@@ -853,7 +854,7 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	}
 
 	if isTrustedClientIP(ipAddr, s.trustedProxies.GetIPRanges(r)) {
-		if s.TrustedProxiesStrict {
+		if s.TrustedProxiesStrict > 0 {
 			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String())
 		}
 		return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
