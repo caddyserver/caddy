@@ -245,12 +245,12 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	w.WriteHeader(statusCode)
 
 	// write response body
-	if statusCode != http.StatusEarlyHints && body != "" {
+	if statusCode != http.StatusContinue && statusCode != http.StatusEarlyHints && body != "" {
 		fmt.Fprint(w, body)
 	}
 
 	// continue handling after Early Hints as they are not the final response
-	if statusCode == http.StatusEarlyHints {
+	if statusCode == http.StatusContinue || statusCode == http.StatusEarlyHints {
 		return next.ServeHTTP(w, r)
 	}
 
