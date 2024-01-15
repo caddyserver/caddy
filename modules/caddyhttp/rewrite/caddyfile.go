@@ -26,7 +26,7 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("rewrite", parseCaddyfileRewrite)
+	httpcaddyfile.RegisterDirective("rewrite", parseCaddyfileRewrite)
 	httpcaddyfile.RegisterHandlerDirective("method", parseCaddyfileMethod)
 	httpcaddyfile.RegisterHandlerDirective("uri", parseCaddyfileURI)
 	httpcaddyfile.RegisterDirective("handle_path", parseCaddyfileHandlePath)
@@ -38,7 +38,44 @@ func init() {
 //
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
-func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	// consume directive name
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+
+	// count the tokens to determine what to do
+	argsCount := h.CountRemainingArgs()
+	if argsCount == 0 {
+		return nil, h.Errf("too few arguments; must have at least a rewrite URI")
+	}
+	if argsCount > 2 {
+		return nil, h.Errf("too many arguments; should only be a matcher and a URI")
+	}
+
+	// with only one arg, assume it's a rewrite URI with no matcher token
+	if argsCount == 1 {
+		if !h.NextArg() {
+			return nil, h.ArgErr()
+		}
+		return h.NewRoute(nil, Rewrite{URI: h.Val()}), nil
+	}
+
+	// parse the matcher token into a matcher set
+	userMatcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+
+	// consume directive name, again, because extracting matcher does a reset
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	// advance to the rewrite URI
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+
 	var rewr Rewrite
 	for h.Next() {
 		if !h.NextArg() {
@@ -49,7 +86,7 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler,
 			return nil, h.ArgErr()
 		}
 	}
-	return rewr, nil
+	return h.NewRoute(userMatcherSet, Rewrite{URI: h.Val()}), nil
 }
 
 // parseCaddyfileMethod sets up a basic method rewrite handler from Caddyfile tokens. Syntax:

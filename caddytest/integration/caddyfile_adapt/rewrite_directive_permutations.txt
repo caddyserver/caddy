@@ -1,0 +1,112 @@
+:8080
+
+# With explicit wildcard matcher
+route {
+	rewrite * /a
+}
+
+# With path matcher
+route {
+	rewrite /path /b
+}
+
+# With named matcher
+route {
+	@named method GET
+	rewrite @named /c
+}
+
+# With no matcher, assumed to be wildcard
+route {
+	rewrite /d
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group0",
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "/a"
+												}
+											]
+										}
+									]
+								},
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group1",
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "/b"
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/path"
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "/c"
+												}
+											],
+											"match": [
+												{
+													"method": [
+														"GET"
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group3",
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "/d"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
