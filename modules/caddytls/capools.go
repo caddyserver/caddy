@@ -13,10 +13,12 @@ import (
 	"github.com/caddyserver/certmagic"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 )
 
 func init() {
+	caddy.RegisterModule(InlineCAPool{})
 	caddy.RegisterModule(FileCAPool{})
 	caddy.RegisterModule(PKIRootCAPool{})
 	caddy.RegisterModule(PKIIntermediateCAPool{})
@@ -29,21 +31,93 @@ type CA interface {
 	CertPool() *x509.CertPool
 }
 
-// FileCAPool generates trusted root certificates pool from the designated DER and PEM file
-type FileCAPool struct {
+// InlineCAPool is a certificate authority pool provider coming from
+// a DER-encoded certificates in the config
+type InlineCAPool struct {
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
 	// these CAs will be rejected.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
+	pool *x509.CertPool
+}
+
+// CaddyModule implements caddy.Module.
+func (icp InlineCAPool) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "tls.ca_pool.source.inline",
+		New: func() caddy.Module {
+			return new(InlineCAPool)
+		},
+	}
+}
+
+// Provision implements caddy.Provisioner.
+func (icp *InlineCAPool) Provision(ctx caddy.Context) error {
+	caPool := x509.NewCertPool()
+	for i, clientCAString := range icp.TrustedCACerts {
+		clientCA, err := decodeBase64DERCert(clientCAString)
+		if err != nil {
+			return fmt.Errorf("parsing certificate at index %d: %v", i, err)
+		}
+		caPool.AddCert(clientCA)
+	}
+	icp.pool = caPool
+
+	return nil
+}
+
+// CertPool implements CA.
+func (icp InlineCAPool) CertPool() *x509.CertPool {
+	return icp.pool
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (icp *InlineCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.CountRemainingArgs() > 0 {
+			return d.ArgErr()
+		}
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "trust_der":
+				icp.TrustedCACerts = append(icp.TrustedCACerts, d.RemainingArgs()...)
+			default:
+				return fmt.Errorf("unrecognized directive: %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+// FileCAPool generates trusted root certificates pool from the designated DER and PEM file
+type FileCAPool struct {
 	// TrustedCACertPEMFiles is a list of PEM file names
 	// from which to load certificates of trusted CAs.
 	// Client certificates which are not signed by any of
 	// these CA certificates will be rejected.
-	TrustedCACertPEMFiles []string `json:"trusted_ca_certs_pem_files,omitempty"`
+	TrustedCACertPEMFiles []string `json:"pem_files,omitempty"`
 
 	pool *x509.CertPool
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.CountRemainingArgs() > 0 {
+			return d.ArgErr()
+		}
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "trust_pem_file":
+				fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
+			default:
+				return fmt.Errorf("unrecognized directive: %s", d.Val())
+			}
+		}
+	}
+	return nil
 }
 
 // CaddyModule implements caddy.Module.
@@ -59,13 +133,6 @@ func (FileCAPool) CaddyModule() caddy.ModuleInfo {
 // Loads and decodes the DER and pem files to generate the certificate pool
 func (f *FileCAPool) Provision(ctx caddy.Context) error {
 	caPool := x509.NewCertPool()
-	for _, clientCAString := range f.TrustedCACerts {
-		clientCA, err := decodeBase64DERCert(clientCAString)
-		if err != nil {
-			return fmt.Errorf("parsing certificate: %v", err)
-		}
-		caPool.AddCert(clientCA)
-	}
 	for _, pemFile := range f.TrustedCACertPEMFiles {
 		pemContents, err := os.ReadFile(pemFile)
 		if err != nil {
@@ -88,6 +155,11 @@ type PKIRootCAPool struct {
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (*PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -136,6 +208,11 @@ type PKIIntermediateCAPool struct {
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (*PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -188,6 +265,11 @@ type StoragePool struct {
 
 	storage certmagic.Storage
 	pool    *x509.CertPool
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (*StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -325,6 +407,11 @@ type HTTPCertPool struct {
 	pool *x509.CertPool
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (*HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	panic("unimplemented")
+}
+
 // CaddyModule implements caddy.Module.
 func (*HTTPCertPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -401,6 +488,11 @@ type LazyCertPool struct {
 	ctx caddy.Context
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (*LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	panic("unimplemented")
+}
+
 // CaddyModule implements caddy.Module.
 func (*LazyCertPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -442,28 +534,39 @@ func (lcp *LazyCertPool) CertPool() *x509.CertPool {
 }
 
 var (
-	_ caddy.Module      = (*FileCAPool)(nil)
-	_ caddy.Provisioner = (*FileCAPool)(nil)
-	_ CA                = (*FileCAPool)(nil)
+	_ caddy.Module          = (*InlineCAPool)(nil)
+	_ caddy.Provisioner     = (*InlineCAPool)(nil)
+	_ CA                    = (*InlineCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*InlineCAPool)(nil)
 
-	_ caddy.Module      = (*PKIRootCAPool)(nil)
-	_ caddy.Provisioner = (*PKIRootCAPool)(nil)
-	_ CA                = (*PKIRootCAPool)(nil)
+	_ caddy.Module          = (*FileCAPool)(nil)
+	_ caddy.Provisioner     = (*FileCAPool)(nil)
+	_ CA                    = (*FileCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*FileCAPool)(nil)
 
-	_ caddy.Module      = (*PKIIntermediateCAPool)(nil)
-	_ caddy.Provisioner = (*PKIIntermediateCAPool)(nil)
-	_ CA                = (*PKIIntermediateCAPool)(nil)
+	_ caddy.Module          = (*PKIRootCAPool)(nil)
+	_ caddy.Provisioner     = (*PKIRootCAPool)(nil)
+	_ CA                    = (*PKIRootCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*PKIRootCAPool)(nil)
 
-	_ caddy.Module      = (*StoragePool)(nil)
-	_ caddy.Provisioner = (*StoragePool)(nil)
-	_ CA                = (*StoragePool)(nil)
+	_ caddy.Module          = (*PKIIntermediateCAPool)(nil)
+	_ caddy.Provisioner     = (*PKIIntermediateCAPool)(nil)
+	_ CA                    = (*PKIIntermediateCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*PKIIntermediateCAPool)(nil)
 
-	_ caddy.Module      = (*HTTPCertPool)(nil)
-	_ caddy.Provisioner = (*HTTPCertPool)(nil)
-	_ CA                = (*HTTPCertPool)(nil)
+	_ caddy.Module          = (*StoragePool)(nil)
+	_ caddy.Provisioner     = (*StoragePool)(nil)
+	_ CA                    = (*StoragePool)(nil)
+	_ caddyfile.Unmarshaler = (*StoragePool)(nil)
 
-	_ caddy.Module      = (*LazyCertPool)(nil)
-	_ caddy.Provisioner = (*LazyCertPool)(nil)
-	_ caddy.Validator   = (*LazyCertPool)(nil)
-	_ CA                = (*LazyCertPool)(nil)
+	_ caddy.Module          = (*HTTPCertPool)(nil)
+	_ caddy.Provisioner     = (*HTTPCertPool)(nil)
+	_ CA                    = (*HTTPCertPool)(nil)
+	_ caddyfile.Unmarshaler = (*HTTPCertPool)(nil)
+
+	_ caddy.Module          = (*LazyCertPool)(nil)
+	_ caddy.Provisioner     = (*LazyCertPool)(nil)
+	_ caddy.Validator       = (*LazyCertPool)(nil)
+	_ CA                    = (*LazyCertPool)(nil)
+	_ caddyfile.Unmarshaler = (*LazyCertPool)(nil)
 )

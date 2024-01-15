@@ -15,12 +15,9 @@
 package httpcaddyfile
 
 import (
-	"encoding/base64"
-	"encoding/pem"
 	"fmt"
 	"html"
 	"net/http"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -214,65 +211,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 			case "client_auth":
 				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
-				for nesting := h.Nesting(); h.NextBlock(nesting); {
-					subdir := h.Val()
-					switch subdir {
-					case "mode":
-						if !h.Args(&cp.ClientAuthentication.Mode) {
-							return nil, h.ArgErr()
-						}
-						if h.NextArg() {
-							return nil, h.ArgErr()
-						}
-
-					case "trusted_ca_cert",
-						"trusted_leaf_cert":
-						if !h.NextArg() {
-							return nil, h.ArgErr()
-						}
-						if subdir == "trusted_ca_cert" {
-							cp.ClientAuthentication.TrustedCACerts = append(cp.ClientAuthentication.TrustedCACerts, h.Val())
-						} else {
-							cp.ClientAuthentication.TrustedLeafCerts = append(cp.ClientAuthentication.TrustedLeafCerts, h.Val())
-						}
-
-					case "trusted_ca_cert_file",
-						"trusted_leaf_cert_file":
-						if !h.NextArg() {
-							return nil, h.ArgErr()
-						}
-						filename := h.Val()
-						certDataPEM, err := os.ReadFile(filename)
-						if err != nil {
-							return nil, err
-						}
-						// while block is not nil, we have more certificates in the file
-						for block, rest := pem.Decode(certDataPEM); block != nil; block, rest = pem.Decode(rest) {
-							if block.Type != "CERTIFICATE" {
-								return nil, h.Errf("no CERTIFICATE pem block found in %s", filename)
-							}
-							if subdir == "trusted_ca_cert_file" {
-								cp.ClientAuthentication.TrustedCACerts = append(
-									cp.ClientAuthentication.TrustedCACerts,
-									base64.StdEncoding.EncodeToString(block.Bytes),
-								)
-							} else {
-								cp.ClientAuthentication.TrustedLeafCerts = append(
-									cp.ClientAuthentication.TrustedLeafCerts,
-									base64.StdEncoding.EncodeToString(block.Bytes),
-								)
-							}
-						}
-						// if we decoded nothing, return an error
-						if len(cp.ClientAuthentication.TrustedCACerts) == 0 && len(cp.ClientAuthentication.TrustedLeafCerts) == 0 {
-							return nil, h.Errf("no CERTIFICATE pem block found in %s", filename)
-						}
-
-					default:
-						return nil, h.Errf("unknown subdirective for client_auth: %s", subdir)
-					}
+				if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.Dispenser); err != nil {
+					return nil, err
 				}
-
 			case "alpn":
 				args := h.RemainingArgs()
 				if len(args) == 0 {
