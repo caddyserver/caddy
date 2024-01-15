@@ -28,7 +28,6 @@ func Test_tracersProvider_cleanupTracerProvider(t *testing.T) {
 	tp.getTracerProvider()
 
 	err := tp.cleanupTracerProvider(zap.NewNop())
-
 	if err != nil {
 		t.Errorf("There should be no error: %v", err)
 	}

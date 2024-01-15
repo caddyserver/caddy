@@ -37,7 +37,8 @@ import (
 func init() {
 	RegisterDirective("bind", parseBind)
 	RegisterDirective("tls", parseTLS)
-	RegisterHandlerDirective("root", parseRoot)
+	RegisterHandlerDirective("fs", parseFilesystem)
+	RegisterDirective("root", parseRoot)
 	RegisterHandlerDirective("vars", parseVars)
 	RegisterHandlerDirective("redir", parseRedir)
 	RegisterHandlerDirective("respond", parseRespond)
@@ -87,6 +88,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_ttl                       <duration>
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
+//	    reuse_private_keys
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -103,6 +105,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var issuers []certmagic.Issuer
 	var certManagers []certmagic.Manager
 	var onDemand bool
+	var reusePrivateKeys bool
 
 	for h.Next() {
 		// file certificate loader
@@ -424,6 +427,12 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				}
 				onDemand = true
 
+			case "reuse_private_keys":
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				reusePrivateKeys = true
+
 			case "insecure_secrets_log":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -530,6 +539,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	// reuse private keys TLS
+	if reusePrivateKeys {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
 	// custom certificate selection
 	if len(certSelector.AnyTag) > 0 {
 		cp.CertSelection = &certSelector
@@ -551,18 +568,62 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 // parseRoot parses the root directive. Syntax:
 //
 //	root [<matcher>] <path>
-func parseRoot(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	var root string
+func parseRoot(h Helper) ([]ConfigValue, error) {
+	// consume directive name
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+
+	// count the tokens to determine what to do
+	argsCount := h.CountRemainingArgs()
+	if argsCount == 0 {
+		return nil, h.Errf("too few arguments; must have at least a root path")
+	}
+	if argsCount > 2 {
+		return nil, h.Errf("too many arguments; should only be a matcher and a path")
+	}
+
+	// with only one arg, assume it's a root path with no matcher token
+	if argsCount == 1 {
+		if !h.NextArg() {
+			return nil, h.ArgErr()
+		}
+		return h.NewRoute(nil, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
+	}
+
+	// parse the matcher token into a matcher set
+	userMatcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+
+	// consume directive name, again, because extracting matcher does a reset
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	// advance to the root path
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	// make the route with the matcher
+	return h.NewRoute(userMatcherSet, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
+}
+
+// parseFilesystem parses the fs directive. Syntax:
+//
+//	fs <filesystem>
+func parseFilesystem(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	var name string
 	for h.Next() {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		root = h.Val()
+		name = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
 	}
-	return caddyhttp.VarsMiddleware{"root": root}, nil
+	return caddyhttp.VarsMiddleware{"fs": name}, nil
 }
 
 // parseVars parses the vars directive. See its UnmarshalCaddyfile method for syntax.
@@ -618,6 +679,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 `
 		safeTo := html.EscapeString(to)
 		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		hdr = http.Header{"Content-Type": []string{"text/html; charset=utf-8"}}
 		code = "200" // don't redirect non-browser clients
 	default:
 		// Allow placeholders for the code

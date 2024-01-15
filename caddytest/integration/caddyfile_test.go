@@ -9,7 +9,6 @@ import (
 )
 
 func TestRespond(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 
@@ -32,7 +31,6 @@ func TestRespond(t *testing.T) {
 }
 
 func TestRedirect(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
@@ -61,7 +59,6 @@ func TestRedirect(t *testing.T) {
 }
 
 func TestDuplicateHosts(t *testing.T) {
-
 	// act and assert
 	caddytest.AssertLoadError(t,
 		`
@@ -76,7 +73,6 @@ func TestDuplicateHosts(t *testing.T) {
 }
 
 func TestReadCookie(t *testing.T) {
-
 	localhost, _ := url.Parse("http://localhost")
 	cookie := http.Cookie{
 		Name:  "clientname",
@@ -110,7 +106,6 @@ func TestReadCookie(t *testing.T) {
 }
 
 func TestReplIndex(t *testing.T) {
-
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
   {
@@ -483,4 +478,21 @@ func TestValidPrefix(t *testing.T) {
 	for _, successCase := range successCases {
 		caddytest.AssertAdapt(t, successCase.rawConfig, "caddyfile", successCase.expectedResponse)
 	}
+}
+
+func TestUriReplace(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri replace "\}" %7D
+	uri replace "\{" %7B
+	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
 }

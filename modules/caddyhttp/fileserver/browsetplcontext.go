@@ -32,7 +32,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	name, _ := url.PathUnescape(urlPath)
@@ -62,7 +62,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			continue
 		}
 
-		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(info, root, urlPath)
+		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(fileSystem, info, root, urlPath)
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
@@ -76,7 +76,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 		fileIsSymlink := isSymlink(info)
 		if fileIsSymlink {
 			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			fileInfo, err := fs.Stat(fsrv.fileSystem, path)
+			fileInfo, err := fs.Stat(fileSystem, path)
 			if err == nil {
 				size = fileInfo.Size()
 			}

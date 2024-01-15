@@ -271,6 +271,12 @@ func (st ServerType) Setup(
 	if !reflect.DeepEqual(pkiApp, &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}) {
 		cfg.AppsRaw["pki"] = caddyconfig.JSON(pkiApp, &warnings)
 	}
+	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
+		cfg.AppsRaw["caddy.filesystems"] = caddyconfig.JSON(
+			filesystems,
+			&warnings)
+	}
+
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
 		cfg.StorageRaw = caddyconfig.JSONModuleObject(storageCvtr,
 			"module",
@@ -280,7 +286,6 @@ func (st ServerType) Setup(
 	if adminConfig, ok := options["admin"].(*caddy.AdminConfig); ok && adminConfig != nil {
 		cfg.Admin = adminConfig
 	}
-
 	if pc, ok := options["persist_config"].(string); ok && pc == "off" {
 		if cfg.Admin == nil {
 			cfg.Admin = new(caddy.AdminConfig)

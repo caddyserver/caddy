@@ -173,6 +173,19 @@ type Server struct {
 	// remote IP address.
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 
+	// If greater than zero, enables strict ClientIPHeaders
+	// (default X-Forwarded-For) parsing. If enabled, the
+	// ClientIPHeaders will be parsed from right to left, and
+	// the first value that is both valid and doesn't match the
+	// trusted proxy list will be used as client IP. If zero,
+	// the ClientIPHeaders will be parsed from left to right,
+	// and the first value that is a valid IP address will be
+	// used as client IP.
+	//
+	// This depends on `trusted_proxies` being configured.
+	// This option is disabled by default.
+	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -839,15 +852,26 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	if s.trustedProxies == nil {
 		return false, ipAddr.String()
 	}
-	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
-		if ipRange.Contains(ipAddr) {
-			// We trust the proxy, so let's try to
-			// determine the real client IP
-			return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
+
+	if isTrustedClientIP(ipAddr, s.trustedProxies.GetIPRanges(r)) {
+		if s.TrustedProxiesStrict > 0 {
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String())
 		}
+		return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
 	}
 
 	return false, ipAddr.String()
+}
+
+// isTrustedClientIP returns true if the given IP address is
+// in the list of trusted IP ranges.
+func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
+	for _, ipRange := range trusted {
+		if ipRange.Contains(ipAddr) {
+			return true
+		}
+	}
+	return false
 }
 
 // trustedRealClientIP finds the client IP from the request assuming it is
@@ -881,6 +905,29 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 	}
 
 	// We didn't find a valid IP
+	return clientIP
+}
+
+// strictUntrustedClientIp iterates through the list of client IP headers,
+// parses them from right-to-left, and returns the first valid IP address
+// that is untrusted. If no valid IP address is found, then the direct
+// remote address is returned.
+func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string) string {
+	for _, headerName := range headers {
+		ips := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
+
+		for i := len(ips) - 1; i >= 0; i-- {
+			ip, _, _ := strings.Cut(strings.TrimSpace(ips[i]), "%")
+			ipAddr, err := netip.ParseAddr(ip)
+			if err != nil {
+				continue
+			}
+			if !isTrustedClientIP(ipAddr, trusted) {
+				return ipAddr.String()
+			}
+		}
+	}
+
 	return clientIP
 }
 
