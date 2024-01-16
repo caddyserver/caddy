@@ -774,10 +774,19 @@ func (st *ServerType) serversFromPairings(
 				if srv.Errors == nil {
 					srv.Errors = new(caddyhttp.HTTPErrorConfig)
 				}
+				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
+					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
+					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
+						return false
+					}
+					return true
+				})
+				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
 					sr := val.Value.(*caddyhttp.Subroute)
-					srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, sr, matcherSetsEnc, p, warnings)
+					errorsSubroute.Routes = append(errorsSubroute.Routes, sr.Routes...)
 				}
+				srv.Errors.Routes = appendSubrouteToRouteList(srv.Errors.Routes, errorsSubroute, matcherSetsEnc, p, warnings)
 			}
 
 			// add log associations

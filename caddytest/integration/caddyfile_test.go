@@ -496,3 +496,91 @@ func TestUriReplace(t *testing.T) {
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
 }
+func TestHandleErrorSimpleCodes(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /hidden* "Not found" 404
+	
+		handle_errors 404 410 {
+			respond "404 or 410 error"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/private", 410, "404 or 410 error")
+	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "404 or 410 error")
+}
+
+func TestHandleErrorRange(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /hidden* "Not found" 404
+
+		handle_errors 4xx {
+			respond "Error in the [400 .. 499] range"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Error in the [400 .. 499] range")
+}
+
+func TestHandleErrorSort(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /hidden* "Not found" 404
+		error /internalerr* "Internal Server Error" 500
+
+		handle_errors {
+			respond "Fallback route: code outside the [400..499] range"
+		}
+		handle_errors 4xx {
+			respond "Error in the [400 .. 499] range"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "Fallback route: code outside the [400..499] range")
+	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Error in the [400 .. 499] range")
+}
+
+func TestHandleErrorRangeAndCodes(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /threehundred* "Moved Permanently" 301
+		error /internalerr* "Internal Server Error" 500
+
+		handle_errors 500 3xx {
+			respond "Error code is equal to 500 or in the [300..399] range"
+		}
+		handle_errors 4xx {
+			respond "Error in the [400 .. 499] range"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "Error code is equal to 500 or in the [300..399] range")
+	tester.AssertGetResponse("http://localhost:9080/threehundred", 301, "Error code is equal to 500 or in the [300..399] range")
+	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+}
