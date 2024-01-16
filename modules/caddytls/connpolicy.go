@@ -383,8 +383,7 @@ type ClientAuthentication struct {
 	// A list of base64 DER-encoded client leaf certs
 	// to accept. If this list is not empty, client certs
 	// which are not in this list will be rejected.
-	TrustedLeafCerts   []string `json:"trusted_leaf_certs,omitempty"`
-	trustedLeafCertSet bool     // used as an internal flag for having to create leaf verifier
+	TrustedLeafCerts []string `json:"trusted_leaf_certs,omitempty"`
 
 	// Client certificate verification modules. These can perform
 	// custom client authentication checks, such as ensuring the
@@ -473,21 +472,14 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			return d.Errf("unknown subdirective for client_auth: %s", subdir)
 		}
 	}
-	if len(ca.TrustedCACerts) > 0 || len(ca.TrustedLeafCerts) > 0 {
+	if len(ca.TrustedCACerts) > 0 {
 		if ca.CARaw != nil {
 			return d.Err("'ca' is already specified in addition to file/raw trusted certificates")
 		}
 		fileMod := &InlineCAPool{}
 		fileMod.TrustedCACerts = append(fileMod.TrustedCACerts, ca.TrustedCACerts...)
-		fileMod.TrustedCACerts = append(fileMod.TrustedCACerts, ca.TrustedLeafCerts...)
 		ca.CARaw = caddyconfig.JSONModuleObject(fileMod, "provider", "inline", nil)
-
-		// keeping ca.TrustedLeafCerts because it's used as a signal down the line
 		ca.TrustedCACertPEMFiles, ca.TrustedCACerts = nil, nil
-		if len(ca.TrustedLeafCerts) > 0 {
-			ca.trustedLeafCertSet = true
-			ca.TrustedLeafCerts = nil
-		}
 	}
 	return nil
 }
@@ -529,11 +521,6 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 			}
 			clientauth.TrustedCACerts = append(clientauth.TrustedCACerts, ders...)
 		}
-	}
-
-	if len(clientauth.TrustedLeafCerts) > 0 {
-		clientauth.TrustedCACerts = append(clientauth.TrustedCACerts, clientauth.TrustedLeafCerts...)
-		clientauth.trustedLeafCertSet = true
 	}
 
 	// if we have TrustedCACerts explicitly set, create an 'inline' CA and return
