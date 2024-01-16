@@ -4,15 +4,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 
 	"github.com/caddyserver/certmagic"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
 )
@@ -23,6 +26,7 @@ func init() {
 	caddy.RegisterModule(PKIRootCAPool{})
 	caddy.RegisterModule(PKIIntermediateCAPool{})
 	caddy.RegisterModule(StoragePool{})
+	caddy.RegisterModule(LazyCertPool{})
 }
 
 // The interface to be implemented by all guest modules part of
@@ -102,24 +106,6 @@ type FileCAPool struct {
 	pool *x509.CertPool
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.CountRemainingArgs() > 0 {
-			return d.ArgErr()
-		}
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "trust_pem_file":
-				fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
-			default:
-				return fmt.Errorf("unrecognized directive: %s", d.Val())
-			}
-		}
-	}
-	return nil
-}
-
 // CaddyModule implements caddy.Module.
 func (FileCAPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -144,6 +130,24 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.CountRemainingArgs() > 0 {
+			return d.ArgErr()
+		}
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "trust_pem_file":
+				fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
+			default:
+				return fmt.Errorf("unrecognized directive: %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
 func (f FileCAPool) CertPool() *x509.CertPool {
 	return f.pool
 }
@@ -155,11 +159,6 @@ type PKIRootCAPool struct {
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
-}
-
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (*PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -196,6 +195,21 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (pkir *PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+	pkir.CA = append(pkir.CA, d.RemainingArgs()...)
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "authority":
+			pkir.CA = append(pkir.CA, d.RemainingArgs()...)
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 // return the certificate pool generated with root certificates from the PKI app
 func (p PKIRootCAPool) CertPool() *x509.CertPool {
 	return p.pool
@@ -208,11 +222,6 @@ type PKIIntermediateCAPool struct {
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
-}
-
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (*PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -249,6 +258,21 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (pic *PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+	pic.CA = append(pic.CA, d.RemainingArgs()...)
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "authority":
+			pic.CA = append(pic.CA, d.RemainingArgs()...)
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 // return the certificate pool generated with intermediate certificates from the PKI app
 func (p PKIIntermediateCAPool) CertPool() *x509.CertPool {
 	return p.pool
@@ -265,11 +289,6 @@ type StoragePool struct {
 
 	storage certmagic.Storage
 	pool    *x509.CertPool
-}
-
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (*StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	panic("unimplemented")
 }
 
 // CaddyModule implements caddy.Module.
@@ -314,6 +333,36 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+	// if args are given
+	sp.PEMKeys = append(sp.PEMKeys, d.RemainingArgs()...)
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "storage":
+			if !d.Next() {
+				return d.ArgErr()
+			}
+			modID := "caddy.storage." + d.Val()
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			storage, ok := unm.(caddy.StorageConverter)
+			if !ok {
+				return d.Errf("module %s is not a caddy.StorageConverter", modID)
+			}
+			sp.StorageRaw = caddyconfig.JSONModuleObject(storage, "module", d.Val(), nil)
+		case "keys":
+			sp.PEMKeys = append(sp.PEMKeys, d.RemainingArgs()...)
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 func (p StoragePool) CertPool() *x509.CertPool {
 	return p.pool
 }
@@ -352,10 +401,57 @@ type TLSConfig struct {
 	Renegotiation string `json:"renegotiation,omitempty"`
 }
 
+func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "ca":
+			if !d.Next() {
+				return d.ArgErr()
+			}
+			modID := "tls.ca_pool.source." + d.Val()
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			ca, ok := unm.(CA)
+			if !ok {
+				return d.Errf("module %s is not a caddytls.CA", modID)
+			}
+			t.CARaw = caddyconfig.JSONModuleObject(ca, "module", d.Val(), nil)
+		case "insecure_skip_verify":
+			t.InsecureSkipVerify = true
+		case "handshake_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad timeout value '%s': %v", d.Val(), err)
+			}
+			t.HandshakeTimeout = caddy.Duration(dur)
+		case "server_name":
+			if !d.Args(&t.ServerName) {
+				return d.ArgErr()
+			}
+		case "renegotiation":
+			if !d.Args(&t.Renegotiation) {
+				return d.ArgErr()
+			}
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
 // copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 func (t TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
+	repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if repl == nil {
+		repl = caddy.NewReplacer()
+	}
 	cfg := new(tls.Config)
 
 	if t.CARaw != nil {
@@ -380,7 +476,7 @@ func (t TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	}
 
 	// override for the server name used verify the TLS handshake
-	cfg.ServerName = t.ServerName
+	cfg.ServerName = repl.ReplaceKnown(cfg.ServerName, "")
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
@@ -407,13 +503,8 @@ type HTTPCertPool struct {
 	pool *x509.CertPool
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (*HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	panic("unimplemented")
-}
-
 // CaddyModule implements caddy.Module.
-func (*HTTPCertPool) CaddyModule() caddy.ModuleInfo {
+func (HTTPCertPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "tls.ca_pool.source.http",
 		New: func() caddy.Module {
@@ -461,6 +552,46 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+
+	// if args are given
+	hcp.Endpoints = append(hcp.Endpoints, d.RemainingArgs()...)
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "endpoints":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			hcp.Endpoints = append(hcp.Endpoints, d.RemainingArgs()...)
+		case "tls":
+			if hcp.TLS != nil {
+				return d.Err("tls block already defined")
+			}
+			hcp.TLS = new(TLSConfig)
+			if err := hcp.TLS.unmarshalCaddyfile(d); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+
+	return nil
+}
+
+// report error if the endpoints are not valid URLs
+func (hcp HTTPCertPool) Validate() (err error) {
+	for _, u := range hcp.Endpoints {
+		_, e := url.Parse(u)
+		if e != nil {
+			err = errors.Join(err, e)
+		}
+	}
+	return err
+}
+
 // CertPool return the certificate pool generated from the HTTP responses
 func (hcp HTTPCertPool) CertPool() *x509.CertPool {
 	return hcp.pool
@@ -488,13 +619,8 @@ type LazyCertPool struct {
 	ctx caddy.Context
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (*LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	panic("unimplemented")
-}
-
 // CaddyModule implements caddy.Module.
-func (*LazyCertPool) CaddyModule() caddy.ModuleInfo {
+func (LazyCertPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "tls.ca_pool.source.lazy",
 		New: func() caddy.Module {
@@ -509,12 +635,41 @@ func (lcp *LazyCertPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "backend":
+			if !d.Next() {
+				return d.ArgErr()
+			}
+			modID := "tls.ca_pool.source." + d.Val()
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			backend, ok := unm.(CA)
+			if !ok {
+				return d.Errf("module %s is not a caddytls.CA", modID)
+			}
+			lcp.CARaw = caddyconfig.JSONModuleObject(backend, "provider", d.Val(), nil)
+		case "eager_validation":
+			lcp.EagerValidation = true
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 // If EagerValidation is `true`, it attempts to load and provision the guest module
 // to ensure the guesst module's configuration is correct. Depeneding on the type of the
 // guest module, the resources may not be available at validation time. It is the
 // operator's responsibility to ensure the resources are available if `EagerValidation` is
 // set to `true`.
-func (lcp *LazyCertPool) Validate() error {
+func (lcp LazyCertPool) Validate() error {
 	if lcp.EagerValidation {
 		_, err := lcp.ctx.LoadModule(lcp, "CARaw")
 		return err
@@ -524,7 +679,7 @@ func (lcp *LazyCertPool) Validate() error {
 
 // CertPool loads the guest module and returns the CertPool from there
 // TODO: Cache?
-func (lcp *LazyCertPool) CertPool() *x509.CertPool {
+func (lcp LazyCertPool) CertPool() *x509.CertPool {
 	caRaw, err := lcp.ctx.LoadModule(lcp, "CARaw")
 	if err != nil {
 		return nil
@@ -561,6 +716,7 @@ var (
 
 	_ caddy.Module          = (*HTTPCertPool)(nil)
 	_ caddy.Provisioner     = (*HTTPCertPool)(nil)
+	_ caddy.Validator       = (*HTTPCertPool)(nil)
 	_ CA                    = (*HTTPCertPool)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPCertPool)(nil)
 

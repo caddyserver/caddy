@@ -452,18 +452,11 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return d.ArgErr()
 			}
 			modName := d.Val()
-			mod, err := caddy.GetModule("tls.ca_pool.source." + modName)
+			mod, err := caddyfile.UnmarshalModule(d, "tls.ca_pool.source."+modName)
 			if err != nil {
-				return d.Errf("finding trust_pool module '%s': %v", mod, err)
+				return d.WrapErr(err)
 			}
-			unm, ok := mod.New().(caddyfile.Unmarshaler)
-			if !ok {
-				return fmt.Errorf("trust_pool module '%s' is not a Caddyfile unmarshaler", modName)
-			}
-			if err := unm.UnmarshalCaddyfile(d.NewFromNextSegment()); err != nil {
-				return err
-			}
-			caMod, ok := unm.(CA)
+			caMod, ok := mod.(CA)
 			if !ok {
 				return fmt.Errorf("trust_pool module '%s' is not a certificate pool provider", caMod)
 			}
@@ -539,7 +532,10 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 	if err != nil {
 		return err
 	}
-	ca := caRaw.(CA)
+	ca, ok := caRaw.(CA)
+	if !ok {
+		return fmt.Errorf("CARaw module '%s' is not a certificate pool provider", ca)
+	}
 	clientauth.ca = ca
 
 	return nil
