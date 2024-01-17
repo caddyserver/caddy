@@ -74,23 +74,22 @@ func (icp *InlineCAPool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool	inline {
+//	trust_pool inline {
 //		trust_der <base64_der_cert>...
 //	}
 //
 // The 'trust_der' directive can be specified multiple times.
 func (icp *InlineCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.CountRemainingArgs() > 0 {
-			return d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "trust_der":
-				icp.TrustedCACerts = append(icp.TrustedCACerts, d.RemainingArgs()...)
-			default:
-				return fmt.Errorf("unrecognized directive: %s", d.Val())
-			}
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "trust_der":
+			icp.TrustedCACerts = append(icp.TrustedCACerts, d.RemainingArgs()...)
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
 		}
 	}
 	return nil
@@ -138,23 +137,22 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool	file {
+//	trust_pool file {
 //		pem_file <pem_file>...
 //	}
 //
 // The 'pem_file' directive can be specified multiple times.
 func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.CountRemainingArgs() > 0 {
-			return d.ArgErr()
-		}
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "trust_pem_file":
-				fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
-			default:
-				return fmt.Errorf("unrecognized directive: %s", d.Val())
-			}
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "trust_pem_file":
+			fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
+		default:
+			return fmt.Errorf("unrecognized directive: %s", d.Val())
 		}
 	}
 	return nil
@@ -209,13 +207,13 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool	pki_root [<ca_name>...] {
+//	trust_pool pki_root [<ca_name>...] {
 //		authority <ca_name>...
 //	}
 //
 // The 'authority' directive can be specified multiple times.
 func (pkir *PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next()
+	d.Next() // consume module name
 	pkir.CA = append(pkir.CA, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
@@ -278,13 +276,13 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool	pki_intermediate [<ca_name>...] {
+//	trust_pool pki_intermediate [<ca_name>...] {
 //		authority <ca_name>...
 //	}
 //
 // The 'authority' directive can be specified multiple times.
 func (pic *PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next()
+	d.Next() // consume module name
 	pic.CA = append(pic.CA, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
@@ -361,7 +359,7 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool	storage [<storage_keys>...] {
+//	trust_pool storage [<storage_keys>...] {
 //		storage <storage_module>
 //		keys	<storage_keys>...
 //	}
@@ -369,8 +367,7 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 // The 'keys' directive can be specified multiple times.
 // The'storage' directive is optional and defaults to the default storage module.
 func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next()
-	// if args are given
+	d.Next() // consume module name
 	sp.PEMKeys = append(sp.PEMKeys, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
@@ -608,9 +605,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 //
 // certificate pool and follows the syntax of the named CA module.
 func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next()
-
-	// if args are given
+	d.Next() // consume module name
 	hcp.Endpoints = append(hcp.Endpoints, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
@@ -706,8 +701,7 @@ func (lcp *LazyCertPool) Provision(ctx caddy.Context) error {
 //
 // The `backend` directive is required.
 func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next()
-
+	d.Next() // consume module name
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "backend":
