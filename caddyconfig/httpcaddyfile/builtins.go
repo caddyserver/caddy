@@ -844,9 +844,66 @@ func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
 }
 
 func parseHandleErrors(h Helper) ([]ConfigValue, error) {
-	subroute, err := ParseSegmentAsSubroute(h)
+	h.Next()
+	args := h.RemainingArgs()
+	expression := ""
+	if len(args) > 0 {
+		expression = ""
+		codes := []string{}
+		for _, val := range args {
+			if len(val) != 3 {
+				return nil, h.Errf("bad status value '%s'", val)
+			}
+			if strings.HasSuffix(val, "xx") {
+				val = val[:1]
+				_, err := strconv.Atoi(val)
+				if err != nil {
+					return nil, h.Errf("bad status value '%s': %v", val, err)
+				}
+				if expression != "" {
+					expression += " || "
+				}
+				expression += fmt.Sprintf("{http.error.status_code} >= %s00 && {http.error.status_code} <= %s99", val, val)
+				continue
+			}
+			_, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, h.Errf("bad status value '%s': %v", val, err)
+			}
+			codes = append(codes, val)
+		}
+		if len(codes) > 0 {
+			if expression != "" {
+				expression += " || "
+			}
+			expression += "{http.error.status_code} in [" + strings.Join(codes, ", ") + "]"
+		}
+		// Reset cursor position to get ready for ParseSegmentAsSubroute
+		h.Reset()
+		h.Next()
+		h.RemainingArgs()
+		h.Prev()
+	} else {
+		// If no arguments present reset the cursor position to get ready for ParseSegmentAsSubroute
+		h.Prev()
+	}
+
+	handler, err := ParseSegmentAsSubroute(h)
 	if err != nil {
 		return nil, err
+	}
+	subroute, ok := handler.(*caddyhttp.Subroute)
+	if !ok {
+		return nil, h.Errf("segment was not parsed as a subroute")
+	}
+
+	if expression != "" {
+		statusMatcher := caddy.ModuleMap{
+			"expression": h.JSON(caddyhttp.MatchExpression{Expr: expression}),
+		}
+		for i := range subroute.Routes {
+			subroute.Routes[i].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
+		}
 	}
 	return []ConfigValue{
 		{

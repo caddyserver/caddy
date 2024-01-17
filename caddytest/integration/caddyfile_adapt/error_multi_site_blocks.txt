@@ -1,0 +1,245 @@
+foo.localhost {
+	root * /srv
+	error /private* "Unauthorized" 410
+	error /fivehundred* "Internal Server Error" 500
+
+	handle_errors 5xx {
+		respond "Error In range [500 .. 599]"
+	}
+	handle_errors 410 {
+		respond "404 or 410 error"
+	}
+}
+
+bar.localhost {
+	root * /srv
+	error /private* "Unauthorized" 410
+	error /fivehundred* "Internal Server Error" 500
+
+	handle_errors 5xx {
+		respond "Error In range [500 .. 599] from second site"
+	}
+	handle_errors 410 {
+		respond "404 or 410 error from second site"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/srv"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Internal Server Error",
+													"handler": "error",
+													"status_code": 500
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/fivehundred*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Unauthorized",
+													"handler": "error",
+													"status_code": 410
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/private*"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"bar.localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/srv"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Internal Server Error",
+													"handler": "error",
+													"status_code": 500
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/fivehundred*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Unauthorized",
+													"handler": "error",
+													"status_code": 410
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/private*"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"errors": {
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"foo.localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"body": "404 or 410 error",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [410]"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"body": "Error In range [500 .. 599]",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 500 \u0026\u0026 {http.error.status_code} \u003c= 599"
+													}
+												]
+											}
+										]
+									}
+								],
+								"terminal": true
+							},
+							{
+								"match": [
+									{
+										"host": [
+											"bar.localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"body": "404 or 410 error from second site",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [410]"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"body": "Error In range [500 .. 599] from second site",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 500 \u0026\u0026 {http.error.status_code} \u003c= 599"
+													}
+												]
+											}
+										]
+									}
+								],
+								"terminal": true
+							}
+						]
+					}
+				}
+			}
+		}
+	}
+}
