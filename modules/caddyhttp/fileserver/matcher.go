@@ -127,6 +127,7 @@ func (MatchFile) CaddyModule() caddy.ModuleInfo {
 //	    try_policy first_exist|smallest_size|largest_size|most_recently_modified
 //	}
 func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		m.TryFiles = append(m.TryFiles, d.RemainingArgs()...)
 		for d.NextBlock(0) {

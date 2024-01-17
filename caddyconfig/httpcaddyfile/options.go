@@ -62,105 +62,103 @@ func init() {
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
 func parseOptHTTPPort(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
 	var httpPort int
-	for d.Next() {
-		var httpPortStr string
-		if !d.AllArgs(&httpPortStr) {
-			return 0, d.ArgErr()
-		}
-		var err error
-		httpPort, err = strconv.Atoi(httpPortStr)
-		if err != nil {
-			return 0, d.Errf("converting port '%s' to integer value: %v", httpPortStr, err)
-		}
+	var httpPortStr string
+	if !d.AllArgs(&httpPortStr) {
+		return 0, d.ArgErr()
+	}
+	var err error
+	httpPort, err = strconv.Atoi(httpPortStr)
+	if err != nil {
+		return 0, d.Errf("converting port '%s' to integer value: %v", httpPortStr, err)
 	}
 	return httpPort, nil
 }
 
 func parseOptHTTPSPort(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
 	var httpsPort int
-	for d.Next() {
-		var httpsPortStr string
-		if !d.AllArgs(&httpsPortStr) {
-			return 0, d.ArgErr()
-		}
-		var err error
-		httpsPort, err = strconv.Atoi(httpsPortStr)
-		if err != nil {
-			return 0, d.Errf("converting port '%s' to integer value: %v", httpsPortStr, err)
-		}
+	var httpsPortStr string
+	if !d.AllArgs(&httpsPortStr) {
+		return 0, d.ArgErr()
+	}
+	var err error
+	httpsPort, err = strconv.Atoi(httpsPortStr)
+	if err != nil {
+		return 0, d.Errf("converting port '%s' to integer value: %v", httpsPortStr, err)
 	}
 	return httpsPort, nil
 }
 
 func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
+	// get directive name
+	if !d.Next() {
+		return nil, d.ArgErr()
+	}
+	dirName := d.Val()
+	if _, ok := registeredDirectives[dirName]; !ok {
+		return nil, d.Errf("%s is not a registered directive", dirName)
+	}
+
+	// get positional token
+	if !d.Next() {
+		return nil, d.ArgErr()
+	}
+	pos := d.Val()
+
 	newOrder := directiveOrder
 
-	for d.Next() {
-		// get directive name
-		if !d.Next() {
-			return nil, d.ArgErr()
+	// if directive exists, first remove it
+	for i, d := range newOrder {
+		if d == dirName {
+			newOrder = append(newOrder[:i], newOrder[i+1:]...)
+			break
 		}
-		dirName := d.Val()
-		if _, ok := registeredDirectives[dirName]; !ok {
-			return nil, d.Errf("%s is not a registered directive", dirName)
-		}
+	}
 
-		// get positional token
-		if !d.Next() {
-			return nil, d.ArgErr()
-		}
-		pos := d.Val()
-
-		// if directive exists, first remove it
-		for i, d := range newOrder {
-			if d == dirName {
-				newOrder = append(newOrder[:i], newOrder[i+1:]...)
-				break
-			}
-		}
-
-		// act on the positional
-		switch pos {
-		case "first":
-			newOrder = append([]string{dirName}, newOrder...)
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			directiveOrder = newOrder
-			return newOrder, nil
-		case "last":
-			newOrder = append(newOrder, dirName)
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			directiveOrder = newOrder
-			return newOrder, nil
-		case "before":
-		case "after":
-		default:
-			return nil, d.Errf("unknown positional '%s'", pos)
-		}
-
-		// get name of other directive
-		if !d.NextArg() {
-			return nil, d.ArgErr()
-		}
-		otherDir := d.Val()
+	// act on the positional
+	switch pos {
+	case "first":
+		newOrder = append([]string{dirName}, newOrder...)
 		if d.NextArg() {
 			return nil, d.ArgErr()
 		}
+		directiveOrder = newOrder
+		return newOrder, nil
+	case "last":
+		newOrder = append(newOrder, dirName)
+		if d.NextArg() {
+			return nil, d.ArgErr()
+		}
+		directiveOrder = newOrder
+		return newOrder, nil
+	case "before":
+	case "after":
+	default:
+		return nil, d.Errf("unknown positional '%s'", pos)
+	}
 
-		// insert directive into proper position
-		for i, d := range newOrder {
-			if d == otherDir {
-				if pos == "before" {
-					newOrder = append(newOrder[:i], append([]string{dirName}, newOrder[i:]...)...)
-				} else if pos == "after" {
-					newOrder = append(newOrder[:i+1], append([]string{dirName}, newOrder[i+1:]...)...)
-				}
-				break
+	// get name of other directive
+	if !d.NextArg() {
+		return nil, d.ArgErr()
+	}
+	otherDir := d.Val()
+	if d.NextArg() {
+		return nil, d.ArgErr()
+	}
+
+	// insert directive into proper position
+	for i, d := range newOrder {
+		if d == otherDir {
+			if pos == "before" {
+				newOrder = append(newOrder[:i], append([]string{dirName}, newOrder[i:]...)...)
+			} else if pos == "after" {
+				newOrder = append(newOrder[:i+1], append([]string{dirName}, newOrder[i+1:]...)...)
 			}
+			break
 		}
 	}
 
@@ -223,57 +221,58 @@ func parseOptACMEDNS(d *caddyfile.Dispenser, _ any) (any, error) {
 
 func parseOptACMEEAB(d *caddyfile.Dispenser, _ any) (any, error) {
 	eab := new(acme.EAB)
-	for d.Next() {
-		if d.NextArg() {
-			return nil, d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "key_id":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				eab.KeyID = d.Val()
-
-			case "mac_key":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				eab.MACKey = d.Val()
-
-			default:
-				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
+	d.Next() // consume option name
+	if d.NextArg() {
+		return nil, d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "key_id":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
 			}
+			eab.KeyID = d.Val()
+
+		case "mac_key":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			eab.MACKey = d.Val()
+
+		default:
+			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 		}
 	}
 	return eab, nil
 }
 
 func parseOptCertIssuer(d *caddyfile.Dispenser, existing any) (any, error) {
+	d.Next() // consume option name
+
 	var issuers []certmagic.Issuer
 	if existing != nil {
 		issuers = existing.([]certmagic.Issuer)
 	}
-	for d.Next() { // consume option name
-		if !d.Next() { // get issuer module name
-			return nil, d.ArgErr()
-		}
-		modID := "tls.issuance." + d.Val()
-		unm, err := caddyfile.UnmarshalModule(d, modID)
-		if err != nil {
-			return nil, err
-		}
-		iss, ok := unm.(certmagic.Issuer)
-		if !ok {
-			return nil, d.Errf("module %s (%T) is not a certmagic.Issuer", modID, unm)
-		}
-		issuers = append(issuers, iss)
+
+	// get issuer module name
+	if !d.Next() {
+		return nil, d.ArgErr()
 	}
+	modID := "tls.issuance." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return nil, err
+	}
+	iss, ok := unm.(certmagic.Issuer)
+	if !ok {
+		return nil, d.Errf("module %s (%T) is not a certmagic.Issuer", modID, unm)
+	}
+	issuers = append(issuers, iss)
 	return issuers, nil
 }
 
 func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
-	d.Next() // consume parameter name
+	d.Next() // consume option name
 	if !d.Next() {
 		return "", d.ArgErr()
 	}
@@ -285,7 +284,7 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptStringList(d *caddyfile.Dispenser, _ any) (any, error) {
-	d.Next() // consume parameter name
+	d.Next() // consume option name
 	val := d.RemainingArgs()
 	if len(val) == 0 {
 		return "", d.ArgErr()
@@ -294,33 +293,33 @@ func parseOptStringList(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
 	adminCfg := new(caddy.AdminConfig)
-	for d.Next() {
-		if d.NextArg() {
-			listenAddress := d.Val()
-			if listenAddress == "off" {
-				adminCfg.Disabled = true
-				if d.Next() { // Do not accept any remaining options including block
-					return nil, d.Err("No more option is allowed after turning off admin config")
-				}
-			} else {
-				adminCfg.Listen = listenAddress
-				if d.NextArg() { // At most 1 arg is allowed
-					return nil, d.ArgErr()
-				}
+	if d.NextArg() {
+		listenAddress := d.Val()
+		if listenAddress == "off" {
+			adminCfg.Disabled = true
+			if d.Next() { // Do not accept any remaining options including block
+				return nil, d.Err("No more option is allowed after turning off admin config")
+			}
+		} else {
+			adminCfg.Listen = listenAddress
+			if d.NextArg() { // At most 1 arg is allowed
+				return nil, d.ArgErr()
 			}
 		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "enforce_origin":
-				adminCfg.EnforceOrigin = true
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "enforce_origin":
+			adminCfg.EnforceOrigin = true
 
-			case "origins":
-				adminCfg.Origins = d.RemainingArgs()
+		case "origins":
+			adminCfg.Origins = d.RemainingArgs()
 
-			default:
-				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
-			}
+		default:
+			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 		}
 	}
 	if adminCfg.Listen == "" && !adminCfg.Disabled {
@@ -330,57 +329,57 @@ func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if d.NextArg() {
+		return nil, d.ArgErr()
+	}
+
 	var ond *caddytls.OnDemandConfig
-	for d.Next() {
-		if d.NextArg() {
-			return nil, d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "ask":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				if ond == nil {
-					ond = new(caddytls.OnDemandConfig)
-				}
-				ond.Ask = d.Val()
-
-			case "interval":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return nil, err
-				}
-				if ond == nil {
-					ond = new(caddytls.OnDemandConfig)
-				}
-				if ond.RateLimit == nil {
-					ond.RateLimit = new(caddytls.RateLimit)
-				}
-				ond.RateLimit.Interval = caddy.Duration(dur)
-
-			case "burst":
-				if !d.NextArg() {
-					return nil, d.ArgErr()
-				}
-				burst, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return nil, err
-				}
-				if ond == nil {
-					ond = new(caddytls.OnDemandConfig)
-				}
-				if ond.RateLimit == nil {
-					ond.RateLimit = new(caddytls.RateLimit)
-				}
-				ond.RateLimit.Burst = burst
-
-			default:
-				return nil, d.Errf("unrecognized parameter '%s'", d.Val())
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "ask":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
 			}
+			if ond == nil {
+				ond = new(caddytls.OnDemandConfig)
+			}
+			ond.Ask = d.Val()
+
+		case "interval":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return nil, err
+			}
+			if ond == nil {
+				ond = new(caddytls.OnDemandConfig)
+			}
+			if ond.RateLimit == nil {
+				ond.RateLimit = new(caddytls.RateLimit)
+			}
+			ond.RateLimit.Interval = caddy.Duration(dur)
+
+		case "burst":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			burst, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return nil, err
+			}
+			if ond == nil {
+				ond = new(caddytls.OnDemandConfig)
+			}
+			if ond.RateLimit == nil {
+				ond.RateLimit = new(caddytls.RateLimit)
+			}
+			ond.RateLimit.Burst = burst
+
+		default:
+			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 		}
 	}
 	if ond == nil {
@@ -390,7 +389,7 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
-	d.Next() // consume parameter name
+	d.Next() // consume option name
 	if !d.Next() {
 		return "", d.ArgErr()
 	}
@@ -405,7 +404,7 @@ func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
-	d.Next() // consume parameter name
+	d.Next() // consume option name
 	if !d.Next() {
 		return "", d.ArgErr()
 	}

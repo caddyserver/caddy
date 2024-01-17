@@ -271,12 +271,6 @@ func (h Helper) GroupRoutes(vals []ConfigValue) {
 	}
 }
 
-// NewBindAddresses returns config values relevant to adding
-// listener bind addresses to the config.
-func (h Helper) NewBindAddresses(addrs []string) []ConfigValue {
-	return []ConfigValue{{Class: "bind", Value: addrs}}
-}
-
 // WithDispenser returns a new instance based on d. All others Helper
 // fields are copied, so typically maps are shared with this new instance.
 func (h Helper) WithDispenser(d *caddyfile.Dispenser) Helper {

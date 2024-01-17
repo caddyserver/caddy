@@ -154,73 +154,72 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 // omitted or set to a zero value, then Caddy's default value for that
 // subdirective is used.
 func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
-		fw.Filename = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
-		}
+	d.Next() // consume writer name
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	fw.Filename = d.Val()
+	if d.NextArg() {
+		return d.ArgErr()
+	}
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "roll_disabled":
-				var f bool
-				fw.Roll = &f
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "roll_size":
-				var sizeStr string
-				if !d.AllArgs(&sizeStr) {
-					return d.ArgErr()
-				}
-				size, err := humanize.ParseBytes(sizeStr)
-				if err != nil {
-					return d.Errf("parsing size: %v", err)
-				}
-				fw.RollSizeMB = int(math.Ceil(float64(size) / humanize.MiByte))
-
-			case "roll_uncompressed":
-				var f bool
-				fw.RollCompress = &f
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "roll_local_time":
-				fw.RollLocalTime = true
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "roll_keep":
-				var keepStr string
-				if !d.AllArgs(&keepStr) {
-					return d.ArgErr()
-				}
-				keep, err := strconv.Atoi(keepStr)
-				if err != nil {
-					return d.Errf("parsing roll_keep number: %v", err)
-				}
-				fw.RollKeep = keep
-
-			case "roll_keep_for":
-				var keepForStr string
-				if !d.AllArgs(&keepForStr) {
-					return d.ArgErr()
-				}
-				keepFor, err := caddy.ParseDuration(keepForStr)
-				if err != nil {
-					return d.Errf("parsing roll_keep_for duration: %v", err)
-				}
-				if keepFor < 0 {
-					return d.Errf("negative roll_keep_for duration: %v", keepFor)
-				}
-				fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "roll_disabled":
+			var f bool
+			fw.Roll = &f
+			if d.NextArg() {
+				return d.ArgErr()
 			}
+
+		case "roll_size":
+			var sizeStr string
+			if !d.AllArgs(&sizeStr) {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return d.Errf("parsing size: %v", err)
+			}
+			fw.RollSizeMB = int(math.Ceil(float64(size) / humanize.MiByte))
+
+		case "roll_uncompressed":
+			var f bool
+			fw.RollCompress = &f
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "roll_local_time":
+			fw.RollLocalTime = true
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "roll_keep":
+			var keepStr string
+			if !d.AllArgs(&keepStr) {
+				return d.ArgErr()
+			}
+			keep, err := strconv.Atoi(keepStr)
+			if err != nil {
+				return d.Errf("parsing roll_keep number: %v", err)
+			}
+			fw.RollKeep = keep
+
+		case "roll_keep_for":
+			var keepForStr string
+			if !d.AllArgs(&keepForStr) {
+				return d.ArgErr()
+			}
+			keepFor, err := caddy.ParseDuration(keepForStr)
+			if err != nil {
+				return d.Errf("parsing roll_keep_for duration: %v", err)
+			}
+			if keepFor < 0 {
+				return d.Errf("negative roll_keep_for duration: %v", keepFor)
+			}
+			fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
 		}
 	}
 	return nil

@@ -79,24 +79,23 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextArg() {
-			if d.Val() == "forwarded" {
-				if len(m.Ranges) > 0 {
-					return d.Err("if used, 'forwarded' must be first argument")
-				}
-				m.Forwarded = true
-				continue
+	d.Next() // consume matcher name
+	for d.NextArg() {
+		if d.Val() == "forwarded" {
+			if len(m.Ranges) > 0 {
+				return d.Err("if used, 'forwarded' must be first argument")
 			}
-			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
-				continue
-			}
-			m.Ranges = append(m.Ranges, d.Val())
+			m.Forwarded = true
+			continue
 		}
-		if d.NextBlock(0) {
-			return d.Err("malformed remote_ip matcher: blocks are not supported")
+		if d.Val() == "private_ranges" {
+			m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+			continue
 		}
+		m.Ranges = append(m.Ranges, d.Val())
+	}
+	if d.NextBlock(0) {
+		return d.Err("malformed remote_ip matcher: blocks are not supported")
 	}
 	return nil
 }
@@ -189,17 +188,16 @@ func (MatchClientIP) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchClientIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextArg() {
-			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
-				continue
-			}
-			m.Ranges = append(m.Ranges, d.Val())
+	d.Next() // consume matcher name
+	for d.NextArg() {
+		if d.Val() == "private_ranges" {
+			m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+			continue
 		}
-		if d.NextBlock(0) {
-			return d.Err("malformed client_ip matcher: blocks are not supported")
-		}
+		m.Ranges = append(m.Ranges, d.Val())
+	}
+	if d.NextBlock(0) {
+		return d.Err("malformed client_ip matcher: blocks are not supported")
 	}
 	return nil
 }
