@@ -363,13 +363,14 @@ type ClientAuthentication struct {
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
 	ca    CA
 
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
 	// these CAs will be rejected.
-	// Deprecated: Use the `ca` field.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// TrustedCACertPEMFiles is a list of PEM file names
 	// from which to load certificates of trusted CAs.
 	// Client certificates which are not signed by any of
@@ -409,7 +410,23 @@ type ClientAuthentication struct {
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// UnmarshalCaddyfile parses the Caddyfile segment to set up the client authentication. Syntax:
+//
+//	client_auth {
+//		mode                   [request|require|verify_if_given|require_and_verify]
+//	 	trust_pool			   <module> {
+//			...
+//		}
+//		trusted_leaf_cert      <base64_der>
+//		trusted_leaf_cert_file <filename>
+//	}
+//
+// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
+// - `trusted_leaf_certs`
+// - `trusted_leaf_cert_file`
+// - `trust_pool`
+//
+// Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		subdir := d.Val()

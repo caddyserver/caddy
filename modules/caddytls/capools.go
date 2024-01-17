@@ -72,18 +72,19 @@ func (icp *InlineCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// CertPool implements CA.
-func (icp InlineCAPool) CertPool() *x509.CertPool {
-	return icp.pool
-}
-
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool	inline {
+//		trust_der <base64_der_cert>...
+//	}
+//
+// The 'trust_der' directive can be specified multiple times.
 func (icp *InlineCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.CountRemainingArgs() > 0 {
 			return d.ArgErr()
 		}
-		for d.NextBlock(0) {
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			switch d.Val() {
 			case "trust_der":
 				icp.TrustedCACerts = append(icp.TrustedCACerts, d.RemainingArgs()...)
@@ -93,6 +94,11 @@ func (icp *InlineCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// CertPool implements CA.
+func (icp InlineCAPool) CertPool() *x509.CertPool {
+	return icp.pool
 }
 
 // FileCAPool generates trusted root certificates pool from the designated DER and PEM file
@@ -130,7 +136,13 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool	file {
+//		pem_file <pem_file>...
+//	}
+//
+// The 'pem_file' directive can be specified multiple times.
 func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		if d.CountRemainingArgs() > 0 {
@@ -195,7 +207,13 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool	pki_root [<ca_name>...] {
+//		authority <ca_name>...
+//	}
+//
+// The 'authority' directive can be specified multiple times.
 func (pkir *PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next()
 	pkir.CA = append(pkir.CA, d.RemainingArgs()...)
@@ -258,7 +276,13 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool	pki_intermediate [<ca_name>...] {
+//		authority <ca_name>...
+//	}
+//
+// The 'authority' directive can be specified multiple times.
 func (pic *PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next()
 	pic.CA = append(pic.CA, d.RemainingArgs()...)
@@ -317,7 +341,9 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 	if ca.storage == nil {
 		ca.storage = ctx.Storage()
 	}
-
+	if len(ca.PEMKeys) == 0 {
+		return fmt.Errorf("no PEM keys specified")
+	}
 	caPool := x509.NewCertPool()
 	for _, caID := range ca.PEMKeys {
 		bs, err := ca.storage.Load(ctx, caID)
@@ -333,7 +359,15 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool	storage [<storage_keys>...] {
+//		storage <storage_module>
+//		keys	<storage_keys>...
+//	}
+//
+// The 'keys' directive can be specified multiple times.
+// The'storage' directive is optional and defaults to the default storage module.
 func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next()
 	// if args are given
@@ -341,6 +375,9 @@ func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "storage":
+			if sp.StorageRaw != nil {
+				return d.Err("storage module already set")
+			}
 			if !d.Next() {
 				return d.ArgErr()
 			}
@@ -552,7 +589,24 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool http [<endpoints...>] {
+//			endpoints 	<endpoints...>
+//			tls 		<tls_config>
+//	}
+//
+// tls_config:
+//
+//		ca <ca_module>
+//		insecure_skip_verify
+//		handshake_timeout <duration>
+//		server_name <name>
+//		renegotiation <never|once|freely>
+//
+//	<ca_module> is the name of the CA module to source the trust
+//
+// certificate pool and follows the syntax of the named CA module.
 func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next()
 
@@ -635,13 +689,31 @@ func (lcp *LazyCertPool) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+// Syntax:
+//
+//	trust_pool lazy {
+//		backend <ca_module>
+//		eager_validation
+//	}
+//
+// The `backend` directive specifies the CA module to use to provision the
+// certificate pool. The `eager_validation` directive specifies that the
+// validation step should try to load and provision the guest module to validate
+// the correctness of the configuration. Depeneding on the type of the guest module,
+// the resources may not be available at validation time. It is the
+// operator's responsibility to ensure the resources are available if `EagerValidation`/`eager_validation`
+// is set to `true`.
+//
+// The `backend` directive is required.
 func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next()
 
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "backend":
+			if lcp.CARaw != nil {
+				return d.Err("backend block already defined")
+			}
 			if !d.Next() {
 				return d.ArgErr()
 			}
@@ -660,6 +732,9 @@ func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		default:
 			return fmt.Errorf("unrecognized directive: %s", d.Val())
 		}
+	}
+	if lcp.CARaw == nil {
+		return d.Err("backend block is required")
 	}
 	return nil
 }
