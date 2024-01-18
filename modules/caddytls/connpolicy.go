@@ -428,29 +428,36 @@ type ClientAuthentication struct {
 //
 // Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.NextArg() {
+		// consume any tokens on the same line, if any.
+	}
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		subdir := d.Val()
 		switch subdir {
 		case "mode":
+			if d.CountRemainingArgs() > 1 {
+				return d.ArgErr()
+			}
 			if !d.Args(&ca.Mode) {
 				return d.ArgErr()
 			}
-			if d.NextArg() {
-				return d.ArgErr()
+		case "trusted_ca_cert":
+			if len(ca.CARaw) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
-		case "trusted_ca_cert",
-			"trusted_leaf_cert":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			if subdir == "trusted_ca_cert" {
-				ca.TrustedCACerts = append(ca.TrustedCACerts, d.Val())
-			} else {
-				ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
+			ca.TrustedCACerts = append(ca.TrustedCACerts, d.Val())
+		case "trusted_leaf_cert":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
-
-		case "trusted_ca_cert_file",
-			"trusted_leaf_cert_file":
+			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
+		case "trusted_ca_cert_file":
+			if len(ca.CARaw) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
+			}
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
@@ -459,12 +466,21 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			if err != nil {
 				return d.WrapErr(err)
 			}
-			if subdir == "trusted_ca_cert_file" {
-				ca.TrustedCACerts = append(ca.TrustedCACerts, ders...)
-			} else {
-				ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, ders...)
+			ca.TrustedCACerts = append(ca.TrustedCACerts, ders...)
+		case "trusted_leaf_cert_file":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
+			filename := d.Val()
+			ders, err := convertPEMFilesToDER(filename)
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, ders...)
 		case "trust_pool":
+			if len(ca.TrustedCACerts) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
+			}
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
@@ -482,10 +498,9 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			return d.Errf("unknown subdirective for client_auth: %s", subdir)
 		}
 	}
+
+	// only trust_ca_cert or trust_ca_cert_file was specified
 	if len(ca.TrustedCACerts) > 0 {
-		if ca.CARaw != nil {
-			return d.Err("'ca' is already specified in addition to file/raw trusted certificates")
-		}
 		fileMod := &InlineCAPool{}
 		fileMod.TrustedCACerts = append(fileMod.TrustedCACerts, ca.TrustedCACerts...)
 		ca.CARaw = caddyconfig.JSONModuleObject(fileMod, "provider", "inline", nil)
@@ -565,7 +580,7 @@ func (clientauth ClientAuthentication) Active() bool {
 		len(clientauth.TrustedLeafCerts) > 0 || // TODO: DEPRECATED
 		len(clientauth.VerifiersRaw) > 0 ||
 		len(clientauth.Mode) > 0 ||
-		clientauth.CARaw != nil
+		clientauth.CARaw != nil || clientauth.ca != nil
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.

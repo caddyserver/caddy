@@ -214,7 +214,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 			case "client_auth":
 				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
-				if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.Dispenser); err != nil {
+				if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.NewFromNextSegment()); err != nil {
 					return nil, err
 				}
 			case "alpn":
