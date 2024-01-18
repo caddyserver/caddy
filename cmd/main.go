@@ -34,6 +34,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,6 +63,12 @@ func Main() {
 	if len(os.Args) == 0 {
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
+	}
+
+	undo, err := maxprocs.Set()
+	defer undo()
+	if err != nil {
+		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
 	if err := rootCmd.Execute(); err != nil {
