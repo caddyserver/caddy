@@ -164,6 +164,33 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.certificateLoaders = append(t.certificateLoaders, modIface.(CertificateLoader))
 	}
 
+	// on-demand permission module
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
+		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
+		if err != nil {
+			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
+		}
+		t.Automation.OnDemand.permission = val.(OnDemandPermission)
+	}
+
+	// on-demand rate limiting
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
+		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
+	} else {
+		// remove any existing rate limiter
+		onDemandRateLimiter.SetWindow(0)
+		onDemandRateLimiter.SetMaxEvents(0)
+	}
+
+	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
+		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
+		if err != nil {
+			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		}
+	}
+
 	// automation/management policies
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
@@ -201,24 +228,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		err := t.SessionTickets.provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning session tickets configuration: %v", err)
-		}
-	}
-
-	// on-demand rate limiting
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
-		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
-		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
-	} else {
-		// remove any existing rate limiter
-		onDemandRateLimiter.SetWindow(0)
-		onDemandRateLimiter.SetMaxEvents(0)
-	}
-
-	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
-		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
-		if err != nil {
-			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
 		}
 	}
 

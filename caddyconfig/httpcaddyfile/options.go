@@ -344,7 +344,8 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 				if ond == nil {
 					ond = new(caddytls.OnDemandConfig)
 				}
-				ond.Ask = d.Val()
+				perm := caddytls.PermissionByHTTP{Endpoint: d.Val()}
+				ond.PermissionRaw = caddyconfig.JSONModuleObject(perm, "module", "http", nil)
 
 			case "interval":
 				if !d.NextArg() {
