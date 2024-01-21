@@ -806,19 +806,29 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		return false
 	}
 
-	for param, vals := range m {
+	for param, allowedVals := range m {
 		param = repl.ReplaceAll(param, "")
-		paramVal, found := parsed[param]
+		incomingVals, found := parsed[param]
 		if found {
-			for _, v := range vals {
-				v = repl.ReplaceAll(v, "")
-				if paramVal[0] == v || v == "*" {
+			for _, allowedVal := range allowedVals {
+				allowedVal = repl.ReplaceAll(allowedVal, "")
+				if allowedVal == "*" {
+					return true
+				}
+				matched := true
+				for _, incomingVal := range incomingVals {
+					if incomingVal != allowedVal {
+						matched = false
+						break
+					}
+				}
+				if matched {
 					return true
 				}
 			}
 		}
 	}
-	return len(m) == 0 && len(r.URL.Query()) == 0
+	return len(m) == 0 && len(parsed) == 0
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
