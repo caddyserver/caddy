@@ -89,6 +89,17 @@ type Rewrite struct {
 	// Performs regular expression replacements on the URI path.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
+	// If true, the rewrite will be forced to also apply to the
+	// query part of the URL. This is only needed if the configured
+	// URI does not include a '?' character which is normally used
+	// to determine whether the query should be modified. In other
+	// words, this allows rewriting both the path and query when
+	// using a placeholder as the replacement value, whereas otherwise
+	// only the path would be rewritten because the placeholder itself
+	// does not contain a '?' character. Only use this if the placeholder
+	// is trusted to not be vulnerable to query injections.
+	ModifyQuery bool `json:"modify_query,omitempty"`
+
 	logger *zap.Logger
 }
 
@@ -211,9 +222,14 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			// recompute; new path contains a query string
 			var injectedQuery string
 			newPath, injectedQuery = before, after
-			// don't overwrite explicitly-configured query string
-			if query == "" {
+
+			// don't overwrite explicitly-configured query string,
+			// unless configured explicitly to do so
+			if query == "" || rewr.ModifyQuery {
 				query = injectedQuery
+			}
+			if rewr.ModifyQuery {
+				qsStart = 0
 			}
 		}
 
