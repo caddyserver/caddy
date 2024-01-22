@@ -810,6 +810,10 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		// We regard the Go team's decision as sound and thus reject malformed query strings.
 		return false
 	}
+
+	// Count the amount of matched keys, to ensure we AND
+	// between all configured query keys; all keys must
+	// match at least one value.
 	matchedKeys := 0
 	for param, vals := range m {
 		param = repl.ReplaceAll(param, "")
