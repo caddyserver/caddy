@@ -313,7 +313,7 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	// iterate over each line and strip the whitespace from the front
 	var out string
 	for lineNum, lineText := range lines[:len(lines)-1] {
-		if lineText == "" {
+		if lineText == "" || lineText == "\r" {
 			out += "\n"
 			continue
 		}
