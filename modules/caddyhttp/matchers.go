@@ -33,6 +33,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -789,6 +790,12 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
+	// If no query keys are configured, this only
+	// matches an empty query string.
+	if len(m) == 0 {
+		return len(r.URL.Query()) == 0
+	}
+
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// parse query string just once, for efficiency
@@ -806,19 +813,25 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		return false
 	}
 
+	// Count the amount of matched keys, to ensure we AND
+	// between all configured query keys; all keys must
+	// match at least one value.
+	matchedKeys := 0
 	for param, vals := range m {
 		param = repl.ReplaceAll(param, "")
 		paramVal, found := parsed[param]
-		if found {
-			for _, v := range vals {
-				v = repl.ReplaceAll(v, "")
-				if paramVal[0] == v || v == "*" {
-					return true
-				}
+		if !found {
+			return false
+		}
+		for _, v := range vals {
+			v = repl.ReplaceAll(v, "")
+			if slices.Contains(paramVal, v) || v == "*" {
+				matchedKeys++
+				break
 			}
 		}
 	}
-	return len(m) == 0 && len(r.URL.Query()) == 0
+	return matchedKeys == len(m)
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
