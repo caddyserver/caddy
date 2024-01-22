@@ -368,13 +368,13 @@ block {
 			description: "keep heredoc as-is",
 			input: `block {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 }
 `,
 			expect: `block {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 }
 `,
@@ -383,28 +383,28 @@ block {
 			description: "Mixing heredoc with regular part",
 			input: `block {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 	respond "More than one space will be eaten"     200
 }
 
 block2 {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 	respond "More than one space will be eaten" 200
 }
 `,
 			expect: `block {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 	respond "More than one space will be eaten" 200
 }
 
 block2 {
 	heredoc <<HEREDOC
-	Here's more than a space       Here's more than a space
+	Here's more than one space       Here's more than one space
 	HEREDOC
 	respond "More than one space will be eaten" 200
 }
