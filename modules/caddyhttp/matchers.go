@@ -790,6 +790,8 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
+	// If no query keys are configured, this only
+	// matches an empty query string.
 	if len(m) == 0 {
 		return len(r.URL.Query()) == 0
 	}
