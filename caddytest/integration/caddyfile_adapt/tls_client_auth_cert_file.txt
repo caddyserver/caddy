@@ -5,7 +5,7 @@ tls {
 	client_auth {
 		mode request
 		trust_pool file {
-			trust_pem_file ../caddy.ca.cer
+			pem_file ../caddy.ca.cer
 		}
 	}
 }
