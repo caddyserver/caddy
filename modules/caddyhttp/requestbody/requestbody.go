@@ -17,6 +17,7 @@ package requestbody
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -30,7 +31,8 @@ func init() {
 type RequestBody struct {
 	// The maximum number of bytes to allow reading from the body by a later handler.
 	// If more bytes are read, an error with HTTP status 413 is returned.
-	MaxSize int64 `json:"max_size,omitempty"`
+	MaxSize int64  `json:"max_size,omitempty"`
+	Replace string `json:"replace,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -42,6 +44,10 @@ func (RequestBody) CaddyModule() caddy.ModuleInfo {
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if rb.Replace != "" {
+		r.Body = io.NopCloser(strings.NewReader(rb.Replace))
+		r.ContentLength = int64(len(rb.Replace))
+	}
 	if r.Body == nil {
 		return next.ServeHTTP(w, r)
 	}
