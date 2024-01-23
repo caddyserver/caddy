@@ -248,7 +248,7 @@ type fileInfo struct {
 	Mode        os.FileMode `json:"mode"`
 	IsDir       bool        `json:"is_dir"`
 	IsSymlink   bool        `json:"is_symlink"`
-	SymlinkPath string      `json:"symlink_path"`
+	SymlinkPath string      `json:"symlink_path,omitempty"`
 
 	// a pointer to the template context is useful inside nested templates
 	Tpl *browseTemplateContext `json:"-"`
