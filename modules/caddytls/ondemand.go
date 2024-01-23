@@ -41,17 +41,7 @@ func init() {
 // Caddy can "ask" if it should be allowed to manage
 // certificates for a given hostname.
 type OnDemandConfig struct {
-	// DEPRECATED. WILL BE REMOVED SOON.
-	//
-	// If Caddy needs to load a certificate from
-	// storage or obtain/renew a certificate during a TLS
-	// handshake, it will perform a quick HTTP request to
-	// this URL to check if it should be allowed to try to
-	// get a certificate for the name in the "domain" query
-	// string parameter, like so: `?domain=example.com`.
-	// The endpoint must return a 200 OK status if a certificate
-	// is allowed; anything else will cause it to be denied.
-	// Redirects are not followed.
+	// DEPRECATED. WILL BE REMOVED SOON. Use 'permission' instead.
 	Ask string `json:"ask,omitempty"`
 
 	// REQUIRED. A module that will determine whether a
@@ -67,7 +57,9 @@ type OnDemandConfig struct {
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
 }
 
-// DEPRECATED. MAY BE REMOVED SOON. RateLimit specifies an interval with optional burst size.
+// DEPRECATED. WILL LIKELY BE REMOVED SOON.
+// Instead of using this rate limiter, use a proper tool such as a
+// level 3 or 4 firewall and/or a permission module to apply rate limits.
 type RateLimit struct {
 	// A duration value. Storage may be checked and a certificate may be
 	// obtained 'burst' times during this interval.
@@ -89,16 +81,24 @@ type OnDemandPermission interface {
 	//
 	// The context passed in has the associated *tls.ClientHelloInfo
 	// value available at the certmagic.ClientHelloInfoCtxKey key.
+	//
+	// In the worst case, this function may be called as frequently
+	// as every TLS handshake, so it should return as quick as possible
+	// to reduce latency. In the normal case, this function is only
+	// called when a certificate is needed that is not already loaded
+	// into memory ready to serve.
 	CertificateAllowed(ctx context.Context, name string) error
 }
 
-// PermissionByHTTP gets permission for a TLS certificate by
+// PermissionByHTTP determines permission for a TLS certificate by
 // making a request to an HTTP endpoint.
 type PermissionByHTTP struct {
 	// The endpoint to access. It should be a full URL.
 	// A query string parameter "domain" will be added to it,
 	// containing the domain (or IP) for the desired certificate,
-	// like so: `?domain=example.com`.
+	// like so: `?domain=example.com`. Generally, this endpoint
+	// is not exposed publicly to avoid a minor information leak
+	// (which domains are serviced by your application).
 	//
 	// The endpoint must return a 200 OK status if a certificate
 	// is allowed; anything else will cause it to be denied.

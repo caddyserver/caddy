@@ -166,6 +166,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// on-demand permission module
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
+		if t.Automation.OnDemand.Ask != "" {
+			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
+		}
 		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
 		if err != nil {
 			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
@@ -297,8 +300,7 @@ func (t *TLS) Validate() error {
 // Start activates the TLS module.
 func (t *TLS) Start() error {
 	// warn if on-demand TLS is enabled but no restrictions are in place
-	if t.Automation.OnDemand == nil ||
-		(t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.RateLimit == nil) {
+	if t.Automation.OnDemand == nil || (t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.permission == nil) {
 		for _, ap := range t.Automation.Policies {
 			if ap.OnDemand && ap.isWildcardOrDefault() {
 				t.logger.Warn("YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place",
