@@ -273,7 +273,6 @@ func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 				return
 			}
 			if !tt.wantErr && !reflect.DeepEqual(&tt.expected, ca) {
-				t.Logf("result JSON: %s", ca.CARaw)
 				t.Errorf("ClientAuthentication.UnmarshalCaddyfile() = %v, want %v", ca, tt.expected)
 			}
 		})

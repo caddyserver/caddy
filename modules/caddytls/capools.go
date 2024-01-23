@@ -26,6 +26,7 @@ func init() {
 	caddy.RegisterModule(PKIRootCAPool{})
 	caddy.RegisterModule(PKIIntermediateCAPool{})
 	caddy.RegisterModule(StoragePool{})
+	caddy.RegisterModule(HTTPCertPool{})
 	caddy.RegisterModule(LazyCertPool{})
 }
 
@@ -89,8 +90,11 @@ func (icp *InlineCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "trust_der":
 			icp.TrustedCACerts = append(icp.TrustedCACerts, d.RemainingArgs()...)
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
+	}
+	if len(icp.TrustedCACerts) == 0 {
+		return d.Err("no certificates specified")
 	}
 	return nil
 }
@@ -137,23 +141,24 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 
 // Syntax:
 //
-//	trust_pool file {
+//	trust_pool file [<pem_file>...] {
 //		pem_file <pem_file>...
 //	}
 //
 // The 'pem_file' directive can be specified multiple times.
 func (fcap *FileCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
-	if d.CountRemainingArgs() > 0 {
-		return d.ArgErr()
-	}
+	fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
 	for d.NextBlock(0) {
 		switch d.Val() {
-		case "trust_pem_file":
+		case "pem_file":
 			fcap.TrustedCACertPEMFiles = append(fcap.TrustedCACertPEMFiles, d.RemainingArgs()...)
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
+	}
+	if len(fcap.TrustedCACertPEMFiles) == 0 {
+		return d.Err("no certificates specified")
 	}
 	return nil
 }
@@ -164,8 +169,8 @@ func (f FileCAPool) CertPool() *x509.CertPool {
 
 // PKIRootCAPool extracts the trusted root certificates from Caddy's native 'pki' app
 type PKIRootCAPool struct {
-	// List of the CA names that are configured in the `pki` app whose root certificates are trusted
-	CA []string `json:"ca,omitempty"`
+	// List of the Authority names that are configured in the `pki` app whose root certificates are trusted
+	Authority []string `json:"authority,omitempty"`
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
@@ -188,7 +193,7 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("PKI app not configured")
 	}
 	pki := pkiApp.(*caddypki.PKI)
-	for _, caID := range p.CA {
+	for _, caID := range p.Authority {
 		c, err := pki.GetCA(ctx, caID)
 		if err != nil || c == nil {
 			return fmt.Errorf("getting CA %s: %v", caID, err)
@@ -214,14 +219,17 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 // The 'authority' directive can be specified multiple times.
 func (pkir *PKIRootCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
-	pkir.CA = append(pkir.CA, d.RemainingArgs()...)
+	pkir.Authority = append(pkir.Authority, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "authority":
-			pkir.CA = append(pkir.CA, d.RemainingArgs()...)
+			pkir.Authority = append(pkir.Authority, d.RemainingArgs()...)
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
+	}
+	if len(pkir.Authority) == 0 {
+		return d.Err("no authorities specified")
 	}
 	return nil
 }
@@ -233,8 +241,8 @@ func (p PKIRootCAPool) CertPool() *x509.CertPool {
 
 // PKIIntermediateCAPool extracts the trusted intermediate certificates from Caddy's native 'pki' app
 type PKIIntermediateCAPool struct {
-	// List of the CA names that are configured in the `pki` app whose intermediate certificates are trusted
-	CA []string `json:"ca,omitempty"`
+	// List of the Authority names that are configured in the `pki` app whose intermediate certificates are trusted
+	Authority []string `json:"authority,omitempty"`
 
 	ca   []*caddypki.CA
 	pool *x509.CertPool
@@ -257,7 +265,7 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("PKI app not configured")
 	}
 	pki := pkiApp.(*caddypki.PKI)
-	for _, caID := range p.CA {
+	for _, caID := range p.Authority {
 		c, err := pki.GetCA(ctx, caID)
 		if err != nil || c == nil {
 			return fmt.Errorf("getting CA %s: %v", caID, err)
@@ -270,7 +278,6 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 		caPool.AddCert(ca.IntermediateCertificate())
 	}
 	p.pool = caPool
-
 	return nil
 }
 
@@ -283,14 +290,17 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 // The 'authority' directive can be specified multiple times.
 func (pic *PKIIntermediateCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
-	pic.CA = append(pic.CA, d.RemainingArgs()...)
+	pic.Authority = append(pic.Authority, d.RemainingArgs()...)
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "authority":
-			pic.CA = append(pic.CA, d.RemainingArgs()...)
+			pic.Authority = append(pic.Authority, d.RemainingArgs()...)
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
+	}
+	if len(pic.Authority) == 0 {
+		return d.Err("no authorities specified")
 	}
 	return nil
 }
@@ -375,10 +385,11 @@ func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if sp.StorageRaw != nil {
 				return d.Err("storage module already set")
 			}
-			if !d.Next() {
+			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			modID := "caddy.storage." + d.Val()
+			modStem := d.Val()
+			modID := "caddy.storage." + modStem
 			unm, err := caddyfile.UnmarshalModule(d, modID)
 			if err != nil {
 				return err
@@ -387,11 +398,11 @@ func (sp *StoragePool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return d.Errf("module %s is not a caddy.StorageConverter", modID)
 			}
-			sp.StorageRaw = caddyconfig.JSONModuleObject(storage, "module", d.Val(), nil)
+			sp.StorageRaw = caddyconfig.JSONModuleObject(storage, "module", modStem, nil)
 		case "keys":
 			sp.PEMKeys = append(sp.PEMKeys, d.RemainingArgs()...)
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
 	}
 	return nil
@@ -439,10 +450,11 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "ca":
-			if !d.Next() {
+			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			modID := "tls.ca_pool.source." + d.Val()
+			modStem := d.Val()
+			modID := "tls.ca_pool.source." + modStem
 			unm, err := caddyfile.UnmarshalModule(d, modID)
 			if err != nil {
 				return err
@@ -451,7 +463,7 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return d.Errf("module %s is not a caddytls.CA", modID)
 			}
-			t.CARaw = caddyconfig.JSONModuleObject(ca, "module", d.Val(), nil)
+			t.CARaw = caddyconfig.JSONModuleObject(ca, "provider", modStem, nil)
 		case "insecure_skip_verify":
 			t.InsecureSkipVerify = true
 		case "handshake_timeout":
@@ -471,8 +483,15 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.Args(&t.Renegotiation) {
 				return d.ArgErr()
 			}
+			switch t.Renegotiation {
+			case "never", "once", "freely":
+				continue
+			default:
+				t.Renegotiation = ""
+				return d.Errf("unrecognized renegotiation level: %s", t.Renegotiation)
+			}
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
 	}
 	return nil
@@ -542,7 +561,7 @@ func (HTTPCertPool) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "tls.ca_pool.source.http",
 		New: func() caddy.Module {
-			return new(StoragePool)
+			return new(HTTPCertPool)
 		},
 	}
 }
@@ -610,7 +629,7 @@ func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "endpoints":
-			if !d.NextArg() {
+			if d.CountRemainingArgs() == 0 {
 				return d.ArgErr()
 			}
 			hcp.Endpoints = append(hcp.Endpoints, d.RemainingArgs()...)
@@ -623,7 +642,7 @@ func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
 	}
 
@@ -680,6 +699,9 @@ func (LazyCertPool) CaddyModule() caddy.ModuleInfo {
 
 // Provision implements caddy.Provisioner.
 func (lcp *LazyCertPool) Provision(ctx caddy.Context) error {
+	if len(lcp.CARaw) == 0 {
+		return fmt.Errorf("missing backing CA source")
+	}
 	lcp.ctx = ctx
 	return nil
 }
@@ -708,10 +730,11 @@ func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if lcp.CARaw != nil {
 				return d.Err("backend block already defined")
 			}
-			if !d.Next() {
+			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			modID := "tls.ca_pool.source." + d.Val()
+			modStem := d.Val()
+			modID := "tls.ca_pool.source." + modStem
 			unm, err := caddyfile.UnmarshalModule(d, modID)
 			if err != nil {
 				return err
@@ -720,11 +743,11 @@ func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !ok {
 				return d.Errf("module %s is not a caddytls.CA", modID)
 			}
-			lcp.CARaw = caddyconfig.JSONModuleObject(backend, "provider", d.Val(), nil)
+			lcp.CARaw = caddyconfig.JSONModuleObject(backend, "provider", modStem, nil)
 		case "eager_validation":
 			lcp.EagerValidation = true
 		default:
-			return fmt.Errorf("unrecognized directive: %s", d.Val())
+			return d.Errf("unrecognized directive: %s", d.Val())
 		}
 	}
 	if lcp.CARaw == nil {
