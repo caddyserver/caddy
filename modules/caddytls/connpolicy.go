@@ -735,7 +735,10 @@ func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("Could not parse leaf certificates loaders: %s", err.Error())
 	}
-	trustedLeafCertloaders := val.([]LeafCertificateLoader)
+	trustedLeafCertloaders := []LeafCertificateLoader{}
+	for _, loader := range val.([]any) {
+		trustedLeafCertloaders = append(trustedLeafCertloaders, loader.(LeafCertificateLoader))
+	}
 	trustedLeafCertificates := []*x509.Certificate{}
 	for _, loader := range trustedLeafCertloaders {
 		certs, err := loader.LoadLeafCertificates()
