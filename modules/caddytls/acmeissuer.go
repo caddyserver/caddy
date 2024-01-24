@@ -277,218 +277,219 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //	    }
 //	}
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
+	d.Next() // consume issuer name
+
+	if d.NextArg() {
+		iss.CA = d.Val()
 		if d.NextArg() {
-			iss.CA = d.Val()
+			return d.ArgErr()
+		}
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "dir":
+			if iss.CA != "" {
+				return d.Errf("directory is already specified: %s", iss.CA)
+			}
+			if !d.AllArgs(&iss.CA) {
+				return d.ArgErr()
+			}
+
+		case "test_dir":
+			if !d.AllArgs(&iss.TestCA) {
+				return d.ArgErr()
+			}
+
+		case "email":
+			if !d.AllArgs(&iss.Email) {
+				return d.ArgErr()
+			}
+
+		case "timeout":
+			var timeoutStr string
+			if !d.AllArgs(&timeoutStr) {
+				return d.ArgErr()
+			}
+			timeout, err := caddy.ParseDuration(timeoutStr)
+			if err != nil {
+				return d.Errf("invalid timeout duration %s: %v", timeoutStr, err)
+			}
+			iss.ACMETimeout = caddy.Duration(timeout)
+
+		case "disable_http_challenge":
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "dir":
-				if iss.CA != "" {
-					return d.Errf("directory is already specified: %s", iss.CA)
-				}
-				if !d.AllArgs(&iss.CA) {
-					return d.ArgErr()
-				}
-
-			case "test_dir":
-				if !d.AllArgs(&iss.TestCA) {
-					return d.ArgErr()
-				}
-
-			case "email":
-				if !d.AllArgs(&iss.Email) {
-					return d.ArgErr()
-				}
-
-			case "timeout":
-				var timeoutStr string
-				if !d.AllArgs(&timeoutStr) {
-					return d.ArgErr()
-				}
-				timeout, err := caddy.ParseDuration(timeoutStr)
-				if err != nil {
-					return d.Errf("invalid timeout duration %s: %v", timeoutStr, err)
-				}
-				iss.ACMETimeout = caddy.Duration(timeout)
-
-			case "disable_http_challenge":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.HTTP == nil {
-					iss.Challenges.HTTP = new(HTTPChallengeConfig)
-				}
-				iss.Challenges.HTTP.Disabled = true
-
-			case "disable_tlsalpn_challenge":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.TLSALPN == nil {
-					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
-				}
-				iss.Challenges.TLSALPN.Disabled = true
-
-			case "alt_http_port":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				port, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid port %s: %v", d.Val(), err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.HTTP == nil {
-					iss.Challenges.HTTP = new(HTTPChallengeConfig)
-				}
-				iss.Challenges.HTTP.AlternatePort = port
-
-			case "alt_tlsalpn_port":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				port, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid port %s: %v", d.Val(), err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.TLSALPN == nil {
-					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
-				}
-				iss.Challenges.TLSALPN.AlternatePort = port
-
-			case "eab":
-				iss.ExternalAccount = new(acme.EAB)
-				if !d.AllArgs(&iss.ExternalAccount.KeyID, &iss.ExternalAccount.MACKey) {
-					return d.ArgErr()
-				}
-
-			case "trusted_roots":
-				iss.TrustedRootsPEMFiles = d.RemainingArgs()
-
-			case "dns":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				provName := d.Val()
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-				if err != nil {
-					return err
-				}
-				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
-
-			case "propagation_delay":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				delayStr := d.Val()
-				delay, err := caddy.ParseDuration(delayStr)
-				if err != nil {
-					return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
-
-			case "propagation_timeout":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				timeoutStr := d.Val()
-				var timeout time.Duration
-				if timeoutStr == "-1" {
-					timeout = time.Duration(-1)
-				} else {
-					var err error
-					timeout, err = caddy.ParseDuration(timeoutStr)
-					if err != nil {
-						return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
-					}
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
-
-			case "resolvers":
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
-				if len(iss.Challenges.DNS.Resolvers) == 0 {
-					return d.ArgErr()
-				}
-
-			case "dns_ttl":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				ttlStr := d.Val()
-				ttl, err := caddy.ParseDuration(ttlStr)
-				if err != nil {
-					return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.TTL = caddy.Duration(ttl)
-
-			case "dns_challenge_override_domain":
-				arg := d.RemainingArgs()
-				if len(arg) != 1 {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.OverrideDomain = arg[0]
-
-			case "preferred_chains":
-				chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
-				if err != nil {
-					return err
-				}
-				iss.PreferredChains = chainPref
-
-			default:
-				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
 			}
+			if iss.Challenges.HTTP == nil {
+				iss.Challenges.HTTP = new(HTTPChallengeConfig)
+			}
+			iss.Challenges.HTTP.Disabled = true
+
+		case "disable_tlsalpn_challenge":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.TLSALPN == nil {
+				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+			}
+			iss.Challenges.TLSALPN.Disabled = true
+
+		case "alt_http_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			port, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid port %s: %v", d.Val(), err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.HTTP == nil {
+				iss.Challenges.HTTP = new(HTTPChallengeConfig)
+			}
+			iss.Challenges.HTTP.AlternatePort = port
+
+		case "alt_tlsalpn_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			port, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid port %s: %v", d.Val(), err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.TLSALPN == nil {
+				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+			}
+			iss.Challenges.TLSALPN.AlternatePort = port
+
+		case "eab":
+			iss.ExternalAccount = new(acme.EAB)
+			if !d.AllArgs(&iss.ExternalAccount.KeyID, &iss.ExternalAccount.MACKey) {
+				return d.ArgErr()
+			}
+
+		case "trusted_roots":
+			iss.TrustedRootsPEMFiles = d.RemainingArgs()
+
+		case "dns":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			provName := d.Val()
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+			if err != nil {
+				return err
+			}
+			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+
+		case "propagation_delay":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			delayStr := d.Val()
+			delay, err := caddy.ParseDuration(delayStr)
+			if err != nil {
+				return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
+
+		case "propagation_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			timeoutStr := d.Val()
+			var timeout time.Duration
+			if timeoutStr == "-1" {
+				timeout = time.Duration(-1)
+			} else {
+				var err error
+				timeout, err = caddy.ParseDuration(timeoutStr)
+				if err != nil {
+					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				}
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
+
+		case "resolvers":
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.Resolvers = d.RemainingArgs()
+			if len(iss.Challenges.DNS.Resolvers) == 0 {
+				return d.ArgErr()
+			}
+
+		case "dns_ttl":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			ttlStr := d.Val()
+			ttl, err := caddy.ParseDuration(ttlStr)
+			if err != nil {
+				return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.TTL = caddy.Duration(ttl)
+
+		case "dns_challenge_override_domain":
+			arg := d.RemainingArgs()
+			if len(arg) != 1 {
+				return d.ArgErr()
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.OverrideDomain = arg[0]
+
+		case "preferred_chains":
+			chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
+			if err != nil {
+				return err
+			}
+			iss.PreferredChains = chainPref
+
+		default:
+			return d.Errf("unrecognized ACME issuer property: %s", d.Val())
 		}
 	}
 	return nil
