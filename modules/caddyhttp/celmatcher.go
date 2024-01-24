@@ -176,13 +176,27 @@ func (m MatchExpression) Match(r *http.Request) bool {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.CountRemainingArgs() > 1 {
-			m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
-		} else {
-			m.Expr = d.Val()
-		}
+	d.Next() // consume matcher name
+
+	// if there's multiple args, then we need to keep the raw
+	// tokens because the user may have used quotes within their
+	// CEL expression (e.g. strings) and we should retain that
+	if d.CountRemainingArgs() > 1 {
+		m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
+		return nil
 	}
+
+	// there should at least be one arg
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+
+	// if there's only one token, then we can safely grab the
+	// cleaned token (no quotes) and use that as the expression
+	// because there's no valid CEL expression that is only a
+	// quoted string; commonly quotes are used in Caddyfile to
+	// define the expression
+	m.Expr = d.Val()
 	return nil
 }
 

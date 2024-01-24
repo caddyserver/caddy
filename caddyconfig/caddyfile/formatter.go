@@ -31,6 +31,14 @@ func Format(input []byte) []byte {
 	out := new(bytes.Buffer)
 	rdr := bytes.NewReader(input)
 
+	type heredocState int
+
+	const (
+		heredocClosed  heredocState = 0
+		heredocOpening heredocState = 1
+		heredocOpened  heredocState = 2
+	)
+
 	var (
 		last rune // the last character that was written to the result
 
@@ -46,6 +54,11 @@ func Format(input []byte) []byte {
 		comment bool // whether we're in a comment
 		quoted  bool // whether we're in a quoted segment
 		escaped bool // whether current char is escaped
+
+		heredoc              heredocState // whether we're in a heredoc
+		heredocEscaped       bool         // whether heredoc is escaped
+		heredocMarker        []rune
+		heredocClosingMarker []rune
 
 		nesting int // indentation level
 	)
@@ -75,6 +88,58 @@ func Format(input []byte) []byte {
 			panic(err)
 		}
 
+		// detect whether we have the start of a heredoc
+		if !quoted && !(heredoc != heredocClosed || heredocEscaped) &&
+			space && last == '<' && ch == '<' {
+			write(ch)
+			heredoc = heredocOpening
+			space = false
+			continue
+		}
+
+		if heredoc == heredocOpening {
+			if ch == '\n' {
+				if len(heredocMarker) > 0 && heredocMarkerRegexp.MatchString(string(heredocMarker)) {
+					heredoc = heredocOpened
+				} else {
+					heredocMarker = nil
+					heredoc = heredocClosed
+					nextLine()
+					continue
+				}
+				write(ch)
+				continue
+			}
+			if unicode.IsSpace(ch) {
+				// a space means it's just a regular token and not a heredoc
+				heredocMarker = nil
+				heredoc = heredocClosed
+			} else {
+				heredocMarker = append(heredocMarker, ch)
+				write(ch)
+				continue
+			}
+		}
+		// if we're in a heredoc, all characters are read&write as-is
+		if heredoc == heredocOpened {
+			write(ch)
+			heredocClosingMarker = append(heredocClosingMarker, ch)
+			if len(heredocClosingMarker) > len(heredocMarker) {
+				heredocClosingMarker = heredocClosingMarker[1:]
+			}
+			// check if we're done
+			if string(heredocClosingMarker) == string(heredocMarker) {
+				heredocMarker = nil
+				heredocClosingMarker = nil
+				heredoc = heredocClosed
+			}
+			continue
+		}
+
+		if last == '<' && space {
+			space = false
+		}
+
 		if comment {
 			if ch == '\n' {
 				comment = false
@@ -98,6 +163,9 @@ func Format(input []byte) []byte {
 		}
 
 		if escaped {
+			if ch == '<' {
+				heredocEscaped = true
+			}
 			write(ch)
 			escaped = false
 			continue
@@ -117,6 +185,7 @@ func Format(input []byte) []byte {
 
 		if unicode.IsSpace(ch) {
 			space = true
+			heredocEscaped = false
 			if ch == '\n' {
 				newLines++
 			}
@@ -205,6 +274,11 @@ func Format(input []byte) []byte {
 			write('{')
 			openBraceWritten = true
 		}
+
+		if spacePrior && ch == '<' {
+			space = true
+		}
+
 		write(ch)
 
 		beginningOfLine = false

@@ -42,74 +42,73 @@ func init() {
 // However, for convenience, there may be fewer outputs than destinations and any missing
 // outputs will be filled in implicitly.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+
 	var handler Handler
 
-	for h.Next() {
-		// source
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		handler.Source = h.Val()
+	// source
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	handler.Source = h.Val()
 
-		// destinations
-		handler.Destinations = h.RemainingArgs()
-		if len(handler.Destinations) == 0 {
-			return nil, h.Err("missing destination argument(s)")
-		}
-		for _, dest := range handler.Destinations {
-			if shorthand := httpcaddyfile.WasReplacedPlaceholderShorthand(dest); shorthand != "" {
-				return nil, h.Errf("destination %s conflicts with a Caddyfile placeholder shorthand", shorthand)
-			}
-		}
-
-		// mappings
-		for h.NextBlock(0) {
-			// defaults are a special case
-			if h.Val() == "default" {
-				if len(handler.Defaults) > 0 {
-					return nil, h.Err("defaults already defined")
-				}
-				handler.Defaults = h.RemainingArgs()
-				for len(handler.Defaults) < len(handler.Destinations) {
-					handler.Defaults = append(handler.Defaults, "")
-				}
-				continue
-			}
-
-			// every line maps an input value to one or more outputs
-			in := h.Val()
-			var outs []any
-			for h.NextArg() {
-				val := h.ScalarVal()
-				if val == "-" {
-					outs = append(outs, nil)
-				} else {
-					outs = append(outs, val)
-				}
-			}
-
-			// cannot have more outputs than destinations
-			if len(outs) > len(handler.Destinations) {
-				return nil, h.Err("too many outputs")
-			}
-
-			// for convenience, can have fewer outputs than destinations, but the
-			// underlying handler won't accept that, so we fill in nil values
-			for len(outs) < len(handler.Destinations) {
-				outs = append(outs, nil)
-			}
-
-			// create the mapping
-			mapping := Mapping{Outputs: outs}
-			if strings.HasPrefix(in, "~") {
-				mapping.InputRegexp = in[1:]
-			} else {
-				mapping.Input = in
-			}
-
-			handler.Mappings = append(handler.Mappings, mapping)
+	// destinations
+	handler.Destinations = h.RemainingArgs()
+	if len(handler.Destinations) == 0 {
+		return nil, h.Err("missing destination argument(s)")
+	}
+	for _, dest := range handler.Destinations {
+		if shorthand := httpcaddyfile.WasReplacedPlaceholderShorthand(dest); shorthand != "" {
+			return nil, h.Errf("destination %s conflicts with a Caddyfile placeholder shorthand", shorthand)
 		}
 	}
 
+	// mappings
+	for h.NextBlock(0) {
+		// defaults are a special case
+		if h.Val() == "default" {
+			if len(handler.Defaults) > 0 {
+				return nil, h.Err("defaults already defined")
+			}
+			handler.Defaults = h.RemainingArgs()
+			for len(handler.Defaults) < len(handler.Destinations) {
+				handler.Defaults = append(handler.Defaults, "")
+			}
+			continue
+		}
+
+		// every line maps an input value to one or more outputs
+		in := h.Val()
+		var outs []any
+		for h.NextArg() {
+			val := h.ScalarVal()
+			if val == "-" {
+				outs = append(outs, nil)
+			} else {
+				outs = append(outs, val)
+			}
+		}
+
+		// cannot have more outputs than destinations
+		if len(outs) > len(handler.Destinations) {
+			return nil, h.Err("too many outputs")
+		}
+
+		// for convenience, can have fewer outputs than destinations, but the
+		// underlying handler won't accept that, so we fill in nil values
+		for len(outs) < len(handler.Destinations) {
+			outs = append(outs, nil)
+		}
+
+		// create the mapping
+		mapping := Mapping{Outputs: outs}
+		if strings.HasPrefix(in, "~") {
+			mapping.InputRegexp = in[1:]
+		} else {
+			mapping.Input = in
+		}
+
+		handler.Mappings = append(handler.Mappings, mapping)
+	}
 	return handler, nil
 }
