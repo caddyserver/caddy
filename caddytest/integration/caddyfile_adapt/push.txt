@@ -1,0 +1,78 @@
+:80
+
+push * /foo.txt
+
+push {
+	GET /foo.txt
+}
+
+push {
+	GET /foo.txt
+	HEAD /foo.txt
+}
+
+push {
+	headers {
+		Foo bar
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "push",
+									"resources": [
+										{
+											"target": "/foo.txt"
+										}
+									]
+								},
+								{
+									"handler": "push",
+									"resources": [
+										{
+											"method": "GET",
+											"target": "/foo.txt"
+										}
+									]
+								},
+								{
+									"handler": "push",
+									"resources": [
+										{
+											"method": "GET",
+											"target": "/foo.txt"
+										},
+										{
+											"method": "HEAD",
+											"target": "/foo.txt"
+										}
+									]
+								},
+								{
+									"handler": "push",
+									"headers": {
+										"set": {
+											"Foo": [
+												"bar"
+											]
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

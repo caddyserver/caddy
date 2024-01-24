@@ -39,10 +39,7 @@ func init() {
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
 func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	// consume directive name
-	if !h.NextArg() {
-		return nil, h.ArgErr()
-	}
+	h.Next() // consume directive name
 
 	// count the tokens to determine what to do
 	argsCount := h.CountRemainingArgs()
@@ -66,26 +63,9 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue,
 	if err != nil {
 		return nil, err
 	}
+	h.Next() // consume directive name again, matcher parsing does a reset
+	h.Next() // advance to the rewrite URI
 
-	// consume directive name, again, because extracting matcher does a reset
-	if !h.NextArg() {
-		return nil, h.ArgErr()
-	}
-	// advance to the rewrite URI
-	if !h.NextArg() {
-		return nil, h.ArgErr()
-	}
-
-	var rewr Rewrite
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		rewr.URI = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
-	}
 	return h.NewRoute(userMatcherSet, Rewrite{URI: h.Val()}), nil
 }
 
@@ -93,17 +73,14 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue,
 //
 //	method [<matcher>] <method>
 func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var rewr Rewrite
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		rewr.Method = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
+	h.Next() // consume directive name
+	if !h.NextArg() {
+		return nil, h.ArgErr()
 	}
-	return rewr, nil
+	if h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	return Rewrite{Method: h.Val()}, nil
 }
 
 // parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
@@ -118,65 +95,71 @@ func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 // path_regexp is used, then regular expression replacements will be performed
 // on the path portion of the URI (and a limit cannot be set).
 func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+
+	args := h.RemainingArgs()
+	if len(args) < 2 {
+		return nil, h.ArgErr()
+	}
+
 	var rewr Rewrite
-	for h.Next() {
-		args := h.RemainingArgs()
-		if len(args) < 2 {
+
+	switch args[0] {
+	case "strip_prefix":
+		if len(args) > 2 {
 			return nil, h.ArgErr()
 		}
-		switch args[0] {
-		case "strip_prefix":
-			if len(args) > 2 {
-				return nil, h.ArgErr()
-			}
-			rewr.StripPathPrefix = args[1]
-			if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
-				rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
-			}
-		case "strip_suffix":
-			if len(args) > 2 {
-				return nil, h.ArgErr()
-			}
-			rewr.StripPathSuffix = args[1]
-		case "replace":
-			var find, replace, lim string
-			switch len(args) {
-			case 4:
-				lim = args[3]
-				fallthrough
-			case 3:
-				find = args[1]
-				replace = args[2]
-			default:
-				return nil, h.ArgErr()
-			}
-
-			var limInt int
-			if lim != "" {
-				var err error
-				limInt, err = strconv.Atoi(lim)
-				if err != nil {
-					return nil, h.Errf("limit must be an integer; invalid: %v", err)
-				}
-			}
-
-			rewr.URISubstring = append(rewr.URISubstring, substrReplacer{
-				Find:    find,
-				Replace: replace,
-				Limit:   limInt,
-			})
-		case "path_regexp":
-			if len(args) != 3 {
-				return nil, h.ArgErr()
-			}
-			find, replace := args[1], args[2]
-			rewr.PathRegexp = append(rewr.PathRegexp, &regexReplacer{
-				Find:    find,
-				Replace: replace,
-			})
-		default:
-			return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
+		rewr.StripPathPrefix = args[1]
+		if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
+			rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
 		}
+
+	case "strip_suffix":
+		if len(args) > 2 {
+			return nil, h.ArgErr()
+		}
+		rewr.StripPathSuffix = args[1]
+
+	case "replace":
+		var find, replace, lim string
+		switch len(args) {
+		case 4:
+			lim = args[3]
+			fallthrough
+		case 3:
+			find = args[1]
+			replace = args[2]
+		default:
+			return nil, h.ArgErr()
+		}
+
+		var limInt int
+		if lim != "" {
+			var err error
+			limInt, err = strconv.Atoi(lim)
+			if err != nil {
+				return nil, h.Errf("limit must be an integer; invalid: %v", err)
+			}
+		}
+
+		rewr.URISubstring = append(rewr.URISubstring, substrReplacer{
+			Find:    find,
+			Replace: replace,
+			Limit:   limInt,
+		})
+
+	case "path_regexp":
+		if len(args) != 3 {
+			return nil, h.ArgErr()
+		}
+		find, replace := args[1], args[2]
+		rewr.PathRegexp = append(rewr.PathRegexp, &regexReplacer{
+			Find:    find,
+			Replace: replace,
+		})
+
+	default:
+		return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
 	}
 	return rewr, nil
 }
@@ -190,9 +173,9 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 // Only path matchers (with a `/` prefix) are supported as this is a shortcut
 // for the handle directive with a strip_prefix rewrite.
 func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
+	h.Next() // consume directive name
+
+	// there must be a path matcher
 	if !h.NextArg() {
 		return nil, h.ArgErr()
 	}

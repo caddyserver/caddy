@@ -223,7 +223,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 
 	// parse out the optional try policy
 	var tryPolicy string
-	for nesting := h.Nesting(); h.NextBlock(nesting); {
+	for h.NextBlock(0) {
 		switch h.Val() {
 		case "policy":
 			if tryPolicy != "" {

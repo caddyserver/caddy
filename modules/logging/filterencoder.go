@@ -108,50 +108,49 @@ func (fe *FilterEncoder) Provision(ctx caddy.Context) error {
 //	    }
 //	}
 func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "wrap":
+	d.Next() // consume encoder name
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "wrap":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			moduleName := d.Val()
+			moduleID := "caddy.logging.encoders." + moduleName
+			unm, err := caddyfile.UnmarshalModule(d, moduleID)
+			if err != nil {
+				return err
+			}
+			enc, ok := unm.(zapcore.Encoder)
+			if !ok {
+				return d.Errf("module %s (%T) is not a zapcore.Encoder", moduleID, unm)
+			}
+			fe.WrappedRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, nil)
+
+		case "fields":
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				field := d.Val()
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				moduleName := d.Val()
-				moduleID := "caddy.logging.encoders." + moduleName
+				filterName := d.Val()
+				moduleID := "caddy.logging.encoders.filter." + filterName
 				unm, err := caddyfile.UnmarshalModule(d, moduleID)
 				if err != nil {
 					return err
 				}
-				enc, ok := unm.(zapcore.Encoder)
+				filter, ok := unm.(LogFieldFilter)
 				if !ok {
-					return d.Errf("module %s (%T) is not a zapcore.Encoder", moduleID, unm)
+					return d.Errf("module %s (%T) is not a logging.LogFieldFilter", moduleID, unm)
 				}
-				fe.WrappedRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, nil)
-
-			case "fields":
-				for d.NextBlock(1) {
-					field := d.Val()
-					if !d.NextArg() {
-						return d.ArgErr()
-					}
-					filterName := d.Val()
-					moduleID := "caddy.logging.encoders.filter." + filterName
-					unm, err := caddyfile.UnmarshalModule(d, moduleID)
-					if err != nil {
-						return err
-					}
-					filter, ok := unm.(LogFieldFilter)
-					if !ok {
-						return d.Errf("module %s (%T) is not a logging.LogFieldFilter", moduleID, unm)
-					}
-					if fe.FieldsRaw == nil {
-						fe.FieldsRaw = make(map[string]json.RawMessage)
-					}
-					fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filter, "filter", filterName, nil)
+				if fe.FieldsRaw == nil {
+					fe.FieldsRaw = make(map[string]json.RawMessage)
 				}
-
-			default:
-				return d.Errf("unrecognized subdirective %s", d.Val())
+				fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filter, "filter", filterName, nil)
 			}
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
 	}
 	return nil
