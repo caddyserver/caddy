@@ -285,6 +285,18 @@ EOF same-line-arg
 		},
 		{
 			input: []byte(`heredoc <<EOF
+EOF
+	HERE same-line-arg
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: ``},
+				{Line: 3, Text: `HERE`},
+				{Line: 3, Text: `same-line-arg`},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
 		EOF same-line-arg
 	`),
 			expected: []Token{
