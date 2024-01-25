@@ -42,6 +42,7 @@ linters:
     - gosimple
     - govet
     - ineffassign
+    - importas
     - misspell
     - prealloc
     - sloglint
@@ -84,7 +85,6 @@ linters:
   # - goprintffuncname
   # - gosmopolitan
   # - grouper
-  # - importas
   # - inamedparam
   # - interfacebloat
   # - ireturn
