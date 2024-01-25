@@ -1,0 +1,52 @@
+:80
+
+log {
+	output stdout
+	format filter {
+		fields {
+			request>headers>Server delete
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"output": "stdout"
+				},
+				"encoder": {
+					"fields": {
+						"request\u003eheaders\u003eServer": {
+							"filter": "delete"
+						}
+					},
+					"format": "filter"
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}
