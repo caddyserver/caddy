@@ -42,6 +42,7 @@ linters:
     - ineffassign
     - misspell
     - prealloc
+    - sloglint
     - staticcheck
     - typecheck
     - unconvert
@@ -110,7 +111,6 @@ linters:
   # - reassign
   # - revive
   # - rowserrcheck
-  # - sloglint
   # - sqlclosecheck
   # - stylecheck
   # - tagalign
