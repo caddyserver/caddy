@@ -212,26 +212,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 		case "client_auth":
 			cp.ClientAuthentication = &caddytls.ClientAuthentication{}
-			for nesting := h.Nesting(); h.NextBlock(nesting); {
-				subdir := h.Val()
-				switch subdir {
-				case "verifier":
-					if !h.NextArg() {
-						return nil, h.ArgErr()
-					}
-
-			case "client_auth":
-				cp.ClientAuthentication = &caddytls.ClientAuthentication{}
-				if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.NewFromNextSegment()); err != nil {
-					return nil, err
-				}
-			case "alpn":
-				args := h.RemainingArgs()
-				if len(args) == 0 {
-					return nil, h.ArgErr()
-				}
+			if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.NewFromNextSegment()); err != nil {
+				return nil, err
 			}
-
 		case "alpn":
 			args := h.RemainingArgs()
 			if len(args) == 0 {
