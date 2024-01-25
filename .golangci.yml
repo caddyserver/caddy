@@ -46,6 +46,7 @@ linters:
     - misspell
     - prealloc
     - sloglint
+    - sqlclosecheck
     - staticcheck
     - tenv
     - testableexamples
@@ -115,7 +116,6 @@ linters:
   # - reassign
   # - revive
   # - rowserrcheck
-  # - sqlclosecheck
   # - stylecheck
   # - tagalign
   # - tagliatelle
