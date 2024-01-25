@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -301,8 +304,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 	// client authentication
 	if p.ClientAuthentication != nil {
-		err := p.ClientAuthentication.ConfigureTLSConfig(cfg)
-		if err != nil {
+		if err := p.ClientAuthentication.provision(ctx); err != nil {
+			return fmt.Errorf("provisioning client CA: %v", err)
+		}
+		if err := p.ClientAuthentication.ConfigureTLSConfig(cfg); err != nil {
 			return fmt.Errorf("configuring TLS client authentication: %v", err)
 		}
 	}
@@ -354,12 +359,18 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
+	// Certificate authority module which provides the certificate pool of trusted certificates
+	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
+	ca    CA
+
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
 	// these CAs will be rejected.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// TrustedCACertPEMFiles is a list of PEM file names
 	// from which to load certificates of trusted CAs.
 	// Client certificates which are not signed by any of
@@ -399,13 +410,177 @@ type ClientAuthentication struct {
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
 }
 
+// UnmarshalCaddyfile parses the Caddyfile segment to set up the client authentication. Syntax:
+//
+//	client_auth {
+//		mode                   [request|require|verify_if_given|require_and_verify]
+//	 	trust_pool			   <module> {
+//			...
+//		}
+//		trusted_leaf_cert      <base64_der>
+//		trusted_leaf_cert_file <filename>
+//	}
+//
+// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
+// - `trusted_leaf_certs`
+// - `trusted_leaf_cert_file`
+// - `trust_pool`
+//
+// Otherwise, it defaults to `require`.
+func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.NextArg() {
+		// consume any tokens on the same line, if any.
+	}
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		subdir := d.Val()
+		switch subdir {
+		case "mode":
+			if d.CountRemainingArgs() > 1 {
+				return d.ArgErr()
+			}
+			if !d.Args(&ca.Mode) {
+				return d.ArgErr()
+			}
+		case "trusted_ca_cert":
+			if len(ca.CARaw) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
+			}
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			ca.TrustedCACerts = append(ca.TrustedCACerts, d.Val())
+		case "trusted_leaf_cert":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
+		case "trusted_ca_cert_file":
+			if len(ca.CARaw) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
+			}
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			filename := d.Val()
+			ders, err := convertPEMFilesToDER(filename)
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			ca.TrustedCACerts = append(ca.TrustedCACerts, ders...)
+		case "trusted_leaf_cert_file":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			filename := d.Val()
+			ders, err := convertPEMFilesToDER(filename)
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, ders...)
+		case "trust_pool":
+			if len(ca.TrustedCACerts) != 0 {
+				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
+			}
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modName := d.Val()
+			mod, err := caddyfile.UnmarshalModule(d, "tls.ca_pool.source."+modName)
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			caMod, ok := mod.(CA)
+			if !ok {
+				return fmt.Errorf("trust_pool module '%s' is not a certificate pool provider", caMod)
+			}
+			ca.CARaw = caddyconfig.JSONModuleObject(caMod, "provider", modName, nil)
+		default:
+			return d.Errf("unknown subdirective for client_auth: %s", subdir)
+		}
+	}
+
+	// only trust_ca_cert or trust_ca_cert_file was specified
+	if len(ca.TrustedCACerts) > 0 {
+		fileMod := &InlineCAPool{}
+		fileMod.TrustedCACerts = append(fileMod.TrustedCACerts, ca.TrustedCACerts...)
+		ca.CARaw = caddyconfig.JSONModuleObject(fileMod, "provider", "inline", nil)
+		ca.TrustedCACertPEMFiles, ca.TrustedCACerts = nil, nil
+	}
+	return nil
+}
+
+func convertPEMFilesToDER(filename string) ([]string, error) {
+	certDataPEM, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var ders []string
+	// while block is not nil, we have more certificates in the file
+	for block, rest := pem.Decode(certDataPEM); block != nil; block, rest = pem.Decode(rest) {
+		if block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("no CERTIFICATE pem block found in %s", filename)
+		}
+		ders = append(
+			ders,
+			base64.StdEncoding.EncodeToString(block.Bytes),
+		)
+	}
+	// if we decoded nothing, return an error
+	if len(ders) == 0 {
+		return nil, fmt.Errorf("no CERTIFICATE pem block found in %s", filename)
+	}
+	return ders, nil
+}
+
+func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
+	if len(clientauth.CARaw) > 0 && (len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0) {
+		return fmt.Errorf("conflicting config for client authentication trust CA")
+	}
+
+	// convert all named file paths to inline
+	if len(clientauth.TrustedCACertPEMFiles) > 0 {
+		for _, fpath := range clientauth.TrustedCACertPEMFiles {
+			ders, err := convertPEMFilesToDER(fpath)
+			if err != nil {
+				return nil
+			}
+			clientauth.TrustedCACerts = append(clientauth.TrustedCACerts, ders...)
+		}
+	}
+
+	// if we have TrustedCACerts explicitly set, create an 'inline' CA and return
+	if len(clientauth.TrustedCACerts) > 0 {
+		clientauth.ca = InlineCAPool{
+			TrustedCACerts: clientauth.TrustedCACerts,
+		}
+		return nil
+	}
+
+	// if we don't have any CARaw set, there's not much work to do
+	if clientauth.CARaw == nil {
+		return nil
+	}
+	caRaw, err := ctx.LoadModule(clientauth, "CARaw")
+	if err != nil {
+		return err
+	}
+	ca, ok := caRaw.(CA)
+	if !ok {
+		return fmt.Errorf("CARaw module '%s' is not a certificate pool provider", ca)
+	}
+	clientauth.ca = ca
+
+	return nil
+}
+
 // Active returns true if clientauth has an actionable configuration.
 func (clientauth ClientAuthentication) Active() bool {
 	return len(clientauth.TrustedCACerts) > 0 ||
 		len(clientauth.TrustedCACertPEMFiles) > 0 ||
 		len(clientauth.TrustedLeafCerts) > 0 || // TODO: DEPRECATED
 		len(clientauth.VerifiersRaw) > 0 ||
-		len(clientauth.Mode) > 0
+		len(clientauth.Mode) > 0 ||
+		clientauth.CARaw != nil || clientauth.ca != nil
 }
 
 // ConfigureTLSConfig sets up cfg to enforce clientauth's configuration.
@@ -434,7 +609,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		// otherwise, set a safe default mode
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
-			len(clientauth.TrustedLeafCerts) > 0 {
+			len(clientauth.TrustedLeafCerts) > 0 ||
+			clientauth.CARaw != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -442,23 +618,8 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
-	if len(clientauth.TrustedCACerts) > 0 || len(clientauth.TrustedCACertPEMFiles) > 0 {
-		caPool := x509.NewCertPool()
-		for _, clientCAString := range clientauth.TrustedCACerts {
-			clientCA, err := decodeBase64DERCert(clientCAString)
-			if err != nil {
-				return fmt.Errorf("parsing certificate: %v", err)
-			}
-			caPool.AddCert(clientCA)
-		}
-		for _, pemFile := range clientauth.TrustedCACertPEMFiles {
-			pemContents, err := os.ReadFile(pemFile)
-			if err != nil {
-				return fmt.Errorf("reading %s: %v", pemFile, err)
-			}
-			caPool.AppendCertsFromPEM(pemContents)
-		}
-		cfg.ClientCAs = caPool
+	if clientauth.ca != nil {
+		cfg.ClientCAs = clientauth.ca.CertPool()
 	}
 
 	// TODO: DEPRECATED: Only here for backwards compatibility.
@@ -600,3 +761,5 @@ type destructableWriter struct{ *os.File }
 func (d destructableWriter) Destruct() error { return d.Close() }
 
 var secretsLogPool = caddy.NewUsagePool()
+
+var _ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
