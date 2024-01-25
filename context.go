@@ -19,10 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"reflect"
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
@@ -501,6 +503,30 @@ func (ctx Context) Logger(module ...Module) *zap.Logger {
 		return Log()
 	}
 	return ctx.cfg.Logging.Logger(mod)
+}
+
+// Slogger returns a slog logger that is intended for use by
+// the most recent module associated with the context.
+func (ctx Context) Slogger() *slog.Logger {
+	if ctx.cfg == nil {
+		// often the case in tests; just use a dev logger
+		l, err := zap.NewDevelopment()
+		if err != nil {
+			panic("config missing, unable to create dev logger: " + err.Error())
+		}
+		return slog.New(zapslog.NewHandler(l.Core(), nil))
+	}
+	mod := ctx.Module()
+	if mod == nil {
+		return slog.New(zapslog.NewHandler(Log().Core(), nil))
+	}
+
+	return slog.New(zapslog.NewHandler(
+		ctx.cfg.Logging.Logger(mod).Core(),
+		&zapslog.HandlerOptions{
+			LoggerName: string(mod.CaddyModule().ID),
+		},
+	))
 }
 
 // Modules returns the lineage of modules that this context provisioned,
