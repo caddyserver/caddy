@@ -47,6 +47,7 @@ linters:
     - prealloc
     - sloglint
     - staticcheck
+    - testifylint
     - tparallel
     - typecheck
     - unconvert
@@ -118,7 +119,6 @@ linters:
   # - tagliatelle
   # - tenv
   # - testableexamples
-  # - testifylint
   # - testpackage
   # - thelper
   # - unparam
