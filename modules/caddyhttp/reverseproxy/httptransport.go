@@ -560,7 +560,6 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 				return nil, fmt.Errorf("failed reading ca cert: %v", err)
 			}
 			rootPool.AppendCertsFromPEM(pemData)
-
 		}
 		cfg.RootCAs = rootPool
 	}

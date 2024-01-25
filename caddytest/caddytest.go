@@ -121,7 +121,6 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 
 	tc.t.Cleanup(func() {
 		if tc.t.Failed() && tc.configLoaded {
-
 			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 			if err != nil {
 				tc.t.Log("unable to read the current config")
