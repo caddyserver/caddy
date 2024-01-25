@@ -45,6 +45,7 @@ linters:
     - importas
     - misspell
     - prealloc
+    - promlinter
     - sloglint
     - sqlclosecheck
     - staticcheck
@@ -111,7 +112,6 @@ linters:
   # - paralleltest
   # - perfsprint
   # - predeclared
-  # - promlinter
   # - protogetter
   # - reassign
   # - revive
