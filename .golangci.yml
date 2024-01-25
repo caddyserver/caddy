@@ -47,6 +47,7 @@ linters:
     - prealloc
     - sloglint
     - staticcheck
+    - tparallel
     - typecheck
     - unconvert
     - unused
@@ -120,7 +121,6 @@ linters:
   # - testifylint
   # - testpackage
   # - thelper
-  # - tparallel
   # - unparam
   # - usestdlibvars
   # - varnamelen
