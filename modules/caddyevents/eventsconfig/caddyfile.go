@@ -40,14 +40,8 @@ func init() {
 //
 // If <event> is *, then it will bind to all events.
 func parseApp(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
 	app := new(caddyevents.App)
-
-	// consume the option name
-	if !d.Next() {
-		return nil, d.ArgErr()
-	}
-
-	// handle the block
 	for d.NextBlock(0) {
 		switch d.Val() {
 		case "on":

@@ -60,36 +60,35 @@ func (StaticError) CaddyModule() caddy.ModuleInfo {
 // If there is just one argument (other than the matcher), it is considered
 // to be a status code if it's a valid positive integer of 3 digits.
 func (e *StaticError) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		args := d.RemainingArgs()
-		switch len(args) {
-		case 1:
-			if len(args[0]) == 3 {
-				if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
-					e.StatusCode = WeakString(args[0])
-					break
-				}
+	d.Next() // consume directive name
+	args := d.RemainingArgs()
+	switch len(args) {
+	case 1:
+		if len(args[0]) == 3 {
+			if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+				e.StatusCode = WeakString(args[0])
+				break
 			}
-			e.Error = args[0]
-		case 2:
-			e.Error = args[0]
-			e.StatusCode = WeakString(args[1])
-		default:
-			return d.ArgErr()
 		}
+		e.Error = args[0]
+	case 2:
+		e.Error = args[0]
+		e.StatusCode = WeakString(args[1])
+	default:
+		return d.ArgErr()
+	}
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "message":
-				if e.Error != "" {
-					return d.Err("message already specified")
-				}
-				if !d.AllArgs(&e.Error) {
-					return d.ArgErr()
-				}
-			default:
-				return d.Errf("unrecognized subdirective '%s'", d.Val())
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "message":
+			if e.Error != "" {
+				return d.Err("message already specified")
 			}
+			if !d.AllArgs(&e.Error) {
+				return d.ArgErr()
+			}
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil

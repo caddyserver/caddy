@@ -39,40 +39,40 @@ func (ListenerWrapper) CaddyModule() caddy.ModuleInfo {
 //		fallback_policy <policy>
 //	}
 func (w *ListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		// No same-line options are supported
-		if d.NextArg() {
-			return d.ArgErr()
-		}
+	d.Next() // consume wrapper name
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "timeout":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				dur, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("parsing proxy_protocol timeout duration: %v", err)
-				}
-				w.Timeout = caddy.Duration(dur)
+	// No same-line options are supported
+	if d.NextArg() {
+		return d.ArgErr()
+	}
 
-			case "allow":
-				w.Allow = append(w.Allow, d.RemainingArgs()...)
-			case "deny":
-				w.Deny = append(w.Deny, d.RemainingArgs()...)
-			case "fallback_policy":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				p, err := parsePolicy(d.Val())
-				if err != nil {
-					return d.WrapErr(err)
-				}
-				w.FallbackPolicy = p
-			default:
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "timeout":
+			if !d.NextArg() {
 				return d.ArgErr()
 			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("parsing proxy_protocol timeout duration: %v", err)
+			}
+			w.Timeout = caddy.Duration(dur)
+
+		case "allow":
+			w.Allow = append(w.Allow, d.RemainingArgs()...)
+		case "deny":
+			w.Deny = append(w.Deny, d.RemainingArgs()...)
+		case "fallback_policy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			p, err := parsePolicy(d.Val())
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			w.FallbackPolicy = p
+		default:
+			return d.ArgErr()
 		}
 	}
 	return nil
