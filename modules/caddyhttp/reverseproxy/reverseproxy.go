@@ -589,8 +589,12 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
 	if h.RequestBuffers != 0 && req.Body != nil {
-		req.Body, req.ContentLength = h.bufferedBody(req.Body, h.RequestBuffers)
-		req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
+		var readBytes int64
+		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
+		if h.RequestBuffers == -1 {
+			req.ContentLength = readBytes
+			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
+		}
 	}
 
 	if req.ContentLength == 0 {

@@ -68,7 +68,7 @@ jobs:
         continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
-          GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
+          GOOS=$GOOS GOARCH=$GOARCH go build -tags nobadger -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
           if [ $? -ne 0 ]; then
             echo "::warning ::$GOOS Build Failed"
             exit 0

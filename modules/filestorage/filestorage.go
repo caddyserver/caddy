@@ -55,7 +55,7 @@ func (s *FileStorage) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if d.NextArg() {
 		return d.ArgErr()
 	}
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
+	for d.NextBlock(0) {
 		switch d.Val() {
 		case "root":
 			if !d.NextArg() {

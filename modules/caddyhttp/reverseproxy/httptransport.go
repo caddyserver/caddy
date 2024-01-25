@@ -491,6 +491,10 @@ type TLSConfig struct {
 	// When specified, TLS will automatically be configured on the transport.
 	// The value can be a list of any valid tcp port numbers, default empty.
 	ExceptPorts []string `json:"except_ports,omitempty"`
+
+	// The list of elliptic curves to support. Caddy's
+	// defaults are modern and secure.
+	Curves []string `json:"curves,omitempty"`
 }
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
@@ -578,6 +582,15 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
+
+	curvesAdded := make(map[tls.CurveID]struct{})
+	for _, curveName := range t.Curves {
+		curveID := caddytls.SupportedCurves[curveName]
+		if _, ok := curvesAdded[curveID]; !ok {
+			curvesAdded[curveID] = struct{}{}
+			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)
+		}
+	}
 
 	// only return a config if it's not empty
 	if reflect.DeepEqual(cfg, new(tls.Config)) {

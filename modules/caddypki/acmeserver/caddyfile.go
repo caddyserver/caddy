@@ -35,58 +35,56 @@ func init() {
 //		challenges <challenges...>
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
-
+	h.Next() // consume directive name
 	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
+	}
+	h.Next() // consume the directive name again (matcher parsing resets)
+
+	// no inline args allowed
+	if h.NextArg() {
+		return nil, h.ArgErr()
 	}
 
 	var acmeServer Handler
 	var ca *caddypki.CA
 
-	for h.Next() {
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		for h.NextBlock(0) {
-			switch h.Val() {
-			case "ca":
-				if !h.AllArgs(&acmeServer.CA) {
-					return nil, h.ArgErr()
-				}
-				if ca == nil {
-					ca = new(caddypki.CA)
-				}
-				ca.ID = acmeServer.CA
-			case "lifetime":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-
-				dur, err := caddy.ParseDuration(h.Val())
-				if err != nil {
-					return nil, err
-				}
-
-				if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
-					return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
-				}
-
-				acmeServer.Lifetime = caddy.Duration(dur)
-
-			case "resolvers":
-				acmeServer.Resolvers = h.RemainingArgs()
-				if len(acmeServer.Resolvers) == 0 {
-					return nil, h.Errf("must specify at least one resolver address")
-				}
-			case "challenges":
-				acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
-			default:
-				return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "ca":
+			if !h.AllArgs(&acmeServer.CA) {
+				return nil, h.ArgErr()
 			}
+			if ca == nil {
+				ca = new(caddypki.CA)
+			}
+			ca.ID = acmeServer.CA
+
+		case "lifetime":
+			if !h.NextArg() {
+				return nil, h.ArgErr()
+			}
+
+			dur, err := caddy.ParseDuration(h.Val())
+			if err != nil {
+				return nil, err
+			}
+
+			if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
+				return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
+			}
+			acmeServer.Lifetime = caddy.Duration(dur)
+		case "resolvers":
+			acmeServer.Resolvers = h.RemainingArgs()
+			if len(acmeServer.Resolvers) == 0 {
+				return nil, h.Errf("must specify at least one resolver address")
+			}
+		case "challenges":
+			acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
+		default:
+			return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
+
 		}
 	}
 

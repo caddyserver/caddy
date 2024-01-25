@@ -33,6 +33,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -224,6 +225,7 @@ func (MatchHost) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
 		if d.NextBlock(0) {
@@ -631,6 +633,7 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchPath) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
 		if d.NextBlock(0) {
@@ -715,6 +718,7 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		*m = append(*m, d.RemainingArgs()...)
 		if d.NextBlock(0) {
@@ -769,6 +773,7 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string][]string)
 	}
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		for _, query := range d.RemainingArgs() {
 			if query == "" {
@@ -789,6 +794,12 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
+	// If no query keys are configured, this only
+	// matches an empty query string.
+	if len(m) == 0 {
+		return len(r.URL.Query()) == 0
+	}
+
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// parse query string just once, for efficiency
@@ -806,19 +817,25 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		return false
 	}
 
+	// Count the amount of matched keys, to ensure we AND
+	// between all configured query keys; all keys must
+	// match at least one value.
+	matchedKeys := 0
 	for param, vals := range m {
 		param = repl.ReplaceAll(param, "")
 		paramVal, found := parsed[param]
-		if found {
-			for _, v := range vals {
-				v = repl.ReplaceAll(v, "")
-				if paramVal[0] == v || v == "*" {
-					return true
-				}
+		if !found {
+			return false
+		}
+		for _, v := range vals {
+			v = repl.ReplaceAll(v, "")
+			if slices.Contains(paramVal, v) || v == "*" {
+				matchedKeys++
+				break
 			}
 		}
 	}
-	return len(m) == 0 && len(r.URL.Query()) == 0
+	return matchedKeys == len(m)
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -855,6 +872,7 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string][]string)
 	}
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		var field, val string
 		if !d.Args(&field) {
@@ -989,6 +1007,7 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string]*MatchRegexp)
 	}
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		var first, second, third string
 		if !d.Args(&first, &second) {
@@ -1153,6 +1172,7 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		var proto string
 		if !d.Args(&proto) {
@@ -1194,6 +1214,7 @@ func (MatchNot) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
 		if err != nil {
@@ -1318,6 +1339,7 @@ func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		// If this is the second iteration of the loop
 		// then there's more than one path_regexp matcher

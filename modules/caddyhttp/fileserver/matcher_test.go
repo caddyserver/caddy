@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -116,9 +117,9 @@ func TestFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fileSystem: osFS{},
-			Root:       "./testdata",
-			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
+			fsmap:    &filesystems.FilesystemMap{},
+			Root:     "./testdata",
+			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
 		}
 
 		u, err := url.Parse(tc.path)
@@ -225,10 +226,10 @@ func TestPHPFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fileSystem: osFS{},
-			Root:       "./testdata",
-			TryFiles:   []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
-			SplitPath:  []string{".php"},
+			fsmap:     &filesystems.FilesystemMap{},
+			Root:      "./testdata",
+			TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
+			SplitPath: []string{".php"},
 		}
 
 		u, err := url.Parse(tc.path)
@@ -264,7 +265,10 @@ func TestPHPFileMatcher(t *testing.T) {
 }
 
 func TestFirstSplit(t *testing.T) {
-	m := MatchFile{SplitPath: []string{".php"}}
+	m := MatchFile{
+		SplitPath: []string{".php"},
+		fsmap:     &filesystems.FilesystemMap{},
+	}
 	actual, remainder := m.firstSplit("index.PHP/somewhere")
 	expected := "index.PHP"
 	expectedRemainder := "/somewhere"
@@ -276,83 +280,81 @@ func TestFirstSplit(t *testing.T) {
 	}
 }
 
-var (
-	expressionTests = []struct {
-		name              string
-		expression        *caddyhttp.MatchExpression
-		urlTarget         string
-		httpMethod        string
-		httpHeader        *http.Header
-		wantErr           bool
-		wantResult        bool
-		clientCertificate []byte
-	}{
-		{
-			name: "file error no args (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file()`,
-			},
-			urlTarget:  "https://example.com/foo.txt",
-			wantResult: true,
+var expressionTests = []struct {
+	name              string
+	expression        *caddyhttp.MatchExpression
+	urlTarget         string
+	httpMethod        string
+	httpHeader        *http.Header
+	wantErr           bool
+	wantResult        bool
+	clientCertificate []byte
+}{
+	{
+		name: "file error no args (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file()`,
 		},
-		{
-			name: "file error bad try files (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({"try_file": ["bad_arg"]})`,
-			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+		urlTarget:  "https://example.com/foo.txt",
+		wantResult: true,
+	},
+	{
+		name: "file error bad try files (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"try_file": ["bad_arg"]})`,
 		},
-		{
-			name: "file match short pattern index.php (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file("index.php")`,
-			},
-			urlTarget:  "https://example.com/foo",
-			wantResult: true,
+		urlTarget: "https://example.com/foo",
+		wantErr:   true,
+	},
+	{
+		name: "file match short pattern index.php (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file("index.php")`,
 		},
-		{
-			name: "file match short pattern foo.txt (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({http.request.uri.path})`,
-			},
-			urlTarget:  "https://example.com/foo.txt",
-			wantResult: true,
+		urlTarget:  "https://example.com/foo",
+		wantResult: true,
+	},
+	{
+		name: "file match short pattern foo.txt (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({http.request.uri.path})`,
 		},
-		{
-			name: "file match index.php (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}, "/index.php"]})`,
-			},
-			urlTarget:  "https://example.com/foo",
-			wantResult: true,
+		urlTarget:  "https://example.com/foo.txt",
+		wantResult: true,
+	},
+	{
+		name: "file match index.php (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}, "/index.php"]})`,
 		},
-		{
-			name: "file match long pattern foo.txt (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
-			},
-			urlTarget:  "https://example.com/foo.txt",
-			wantResult: true,
+		urlTarget:  "https://example.com/foo",
+		wantResult: true,
+	},
+	{
+		name: "file match long pattern foo.txt (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
 		},
-		{
-			name: "file match long pattern foo.txt with concatenation (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({"root": ".", "try_files": ["./testdata" + {http.request.uri.path}]})`,
-			},
-			urlTarget:  "https://example.com/foo.txt",
-			wantResult: true,
+		urlTarget:  "https://example.com/foo.txt",
+		wantResult: true,
+	},
+	{
+		name: "file match long pattern foo.txt with concatenation (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": ".", "try_files": ["./testdata" + {http.request.uri.path}]})`,
 		},
-		{
-			name: "file not match long pattern (MatchFile)",
-			expression: &caddyhttp.MatchExpression{
-				Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
-			},
-			urlTarget:  "https://example.com/nopenope.txt",
-			wantResult: false,
+		urlTarget:  "https://example.com/foo.txt",
+		wantResult: true,
+	},
+	{
+		name: "file not match long pattern (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": "./testdata", "try_files": [{http.request.uri.path}]})`,
 		},
-	}
-)
+		urlTarget:  "https://example.com/nopenope.txt",
+		wantResult: false,
+	},
+}
 
 func TestMatchExpressionMatch(t *testing.T) {
 	for _, tst := range expressionTests {

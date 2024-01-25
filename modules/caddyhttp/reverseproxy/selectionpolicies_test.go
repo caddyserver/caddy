@@ -629,7 +629,6 @@ func TestRandomChoicePolicy(t *testing.T) {
 	if h == pool[0] {
 		t.Error("RandomChoicePolicy should not choose pool[0]")
 	}
-
 }
 
 func TestCookieHashPolicy(t *testing.T) {

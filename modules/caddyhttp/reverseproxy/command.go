@@ -308,11 +308,9 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	for _, to := range toAddresses {
-		fmt.Printf("Caddy proxying %s -> %s\n", fromAddr.String(), to)
-	}
+	caddy.Log().Info("caddy proxying", zap.String("from", fromAddr.String()), zap.Strings("to", toAddresses))
 	if len(toAddresses) > 1 {
-		fmt.Println("Load balancing policy: random")
+		caddy.Log().Info("using default load balancing policy", zap.String("policy", "random"))
 	}
 
 	select {}
