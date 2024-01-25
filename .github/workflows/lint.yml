@@ -40,7 +40,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.54
+          version: v1.55
 
           # Workaround for https://github.com/golangci/golangci-lint-action/issues/135
           skip-pkg-cache: true

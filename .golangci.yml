@@ -15,35 +15,68 @@ linters-settings:
     # If `true`, make the section order the same as the order of `sections`.
     # Default: false
     custom-order: true
+  exhaustive:
+    ignore-enum-types: reflect.Kind|svc.Cmd
 
 linters:
   disable-all: true
   enable:
+    - asasalint
+    - asciicheck
+    - bidichk
     - bodyclose
+    - decorder
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
     - errcheck
+    - errname
+    - exhaustive
+    - exportloopref
     - gci
+    - gofmt
+    - goimports
     - gofumpt
     - gosec
     - gosimple
     - govet
     - ineffassign
+    - importas
     - misspell
     - prealloc
+    - promlinter
+    - sloglint
+    - sqlclosecheck
     - staticcheck
+    - tenv
+    - testableexamples
+    - testifylint
+    - tparallel
     - typecheck
     - unconvert
     - unused
+    - wastedassign
+    - whitespace
+    - zerologlint
   # these are implicitly disabled:
-  # - asciicheck
+  # - containedctx
+  # - contextcheck
+  # - cyclop
   # - depguard
-  # - dogsled
-  # - dupl
-  # - exhaustive
-  # - exportloopref
+  # - errchkjson
+  # - errorlint
+  # - exhaustruct
+  # - execinquery
+  # - exhaustruct
+  # - forbidigo
+  # - forcetypeassert
   # - funlen
-  # - gci
+  # - ginkgolinter
+  # - gocheckcompilerdirectives
   # - gochecknoglobals
   # - gochecknoinits
+  # - gochecksumtype
   # - gocognit
   # - goconst
   # - gocritic
@@ -51,27 +84,47 @@ linters:
   # - godot
   # - godox
   # - goerr113
-  # - gofumpt
   # - goheader
-  # - golint
   # - gomnd
+  # - gomoddirectives
   # - gomodguard
   # - goprintffuncname
-  # - interfacer
+  # - gosmopolitan
+  # - grouper
+  # - inamedparam
+  # - interfacebloat
+  # - ireturn
   # - lll
-  # - maligned
+  # - loggercheck
+  # - maintidx
+  # - makezero
+  # - mirror
+  # - musttag
   # - nakedret
   # - nestif
+  # - nilerr
+  # - nilnil
   # - nlreturn
   # - noctx
   # - nolintlint
+  # - nonamedreturns
+  # - nosprintfhostport
+  # - paralleltest
+  # - perfsprint
+  # - predeclared
+  # - protogetter
+  # - reassign
+  # - revive
   # - rowserrcheck
-  # - scopelint
-  # - sqlclosecheck
   # - stylecheck
+  # - tagalign
+  # - tagliatelle
   # - testpackage
+  # - thelper
   # - unparam
-  # - whitespace
+  # - usestdlibvars
+  # - varnamelen
+  # - wrapcheck
   # - wsl
 
 run:
@@ -110,3 +163,6 @@ issues:
       text: 'G404' # G404: Insecure random number source (rand)
       linters:
         - gosec
+    - path: modules/logging/filters.go
+      linters:
+        - dupl

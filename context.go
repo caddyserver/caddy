@@ -176,7 +176,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				return nil, err
 			}
 			result = val
-
 		} else if isJSONRawMessage(typ.Elem()) {
 			// val is `[]json.RawMessage`
 
@@ -192,7 +191,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				all = append(all, val)
 			}
 			result = all
-
 		} else if typ.Elem().Kind() == reflect.Slice && isJSONRawMessage(typ.Elem().Elem()) {
 			// val is `[][]json.RawMessage`
 
@@ -213,7 +211,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				all = append(all, allInner)
 			}
 			result = all
-
 		} else if isModuleMapType(typ.Elem()) {
 			// val is `[]map[string]json.RawMessage`
 
