@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"io"
 	"unicode"
+
+	"golang.org/x/exp/slices"
 )
 
 // Format formats the input Caddyfile to a standard, nice-looking
@@ -128,7 +130,7 @@ func Format(input []byte) []byte {
 				heredocClosingMarker = heredocClosingMarker[1:]
 			}
 			// check if we're done
-			if string(heredocClosingMarker) == string(heredocMarker) {
+			if slices.Equal(heredocClosingMarker, heredocMarker) {
 				heredocMarker = nil
 				heredocClosingMarker = nil
 				heredoc = heredocClosed
