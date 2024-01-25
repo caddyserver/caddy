@@ -35,6 +35,7 @@ linters:
     - exhaustive
     - exportloopref
     - gci
+    - gofmt
     - gofumpt
     - gosec
     - gosimple
@@ -75,7 +76,6 @@ linters:
   # - godot
   # - godox
   # - goerr113
-  # - gofmt
   # - goheader
   # - goimports
   # - gomnd
