@@ -48,124 +48,124 @@ func init() {
 //
 // When the CA ID is unspecified, 'local' is assumed.
 func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
-	pki := &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}
+	d.Next() // consume app name
 
-	for d.Next() {
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "ca":
-				pkiCa := new(caddypki.CA)
+	pki := &caddypki.PKI{
+		CAs: make(map[string]*caddypki.CA),
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "ca":
+			pkiCa := new(caddypki.CA)
+			if d.NextArg() {
+				pkiCa.ID = d.Val()
 				if d.NextArg() {
-					pkiCa.ID = d.Val()
-					if d.NextArg() {
+					return nil, d.ArgErr()
+				}
+			}
+			if pkiCa.ID == "" {
+				pkiCa.ID = caddypki.DefaultCAID
+			}
+
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "name":
+					if !d.NextArg() {
 						return nil, d.ArgErr()
 					}
-				}
-				if pkiCa.ID == "" {
-					pkiCa.ID = caddypki.DefaultCAID
-				}
+					pkiCa.Name = d.Val()
 
-				for nesting := d.Nesting(); d.NextBlock(nesting); {
-					switch d.Val() {
-					case "name":
-						if !d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						pkiCa.Name = d.Val()
-
-					case "root_cn":
-						if !d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						pkiCa.RootCommonName = d.Val()
-
-					case "intermediate_cn":
-						if !d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						pkiCa.IntermediateCommonName = d.Val()
-
-					case "intermediate_lifetime":
-						if !d.NextArg() {
-							return nil, d.ArgErr()
-						}
-						dur, err := caddy.ParseDuration(d.Val())
-						if err != nil {
-							return nil, err
-						}
-						pkiCa.IntermediateLifetime = caddy.Duration(dur)
-
-					case "root":
-						if pkiCa.Root == nil {
-							pkiCa.Root = new(caddypki.KeyPair)
-						}
-						for nesting := d.Nesting(); d.NextBlock(nesting); {
-							switch d.Val() {
-							case "cert":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Root.Certificate = d.Val()
-
-							case "key":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Root.PrivateKey = d.Val()
-
-							case "format":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Root.Format = d.Val()
-
-							default:
-								return nil, d.Errf("unrecognized pki ca root option '%s'", d.Val())
-							}
-						}
-
-					case "intermediate":
-						if pkiCa.Intermediate == nil {
-							pkiCa.Intermediate = new(caddypki.KeyPair)
-						}
-						for nesting := d.Nesting(); d.NextBlock(nesting); {
-							switch d.Val() {
-							case "cert":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Intermediate.Certificate = d.Val()
-
-							case "key":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Intermediate.PrivateKey = d.Val()
-
-							case "format":
-								if !d.NextArg() {
-									return nil, d.ArgErr()
-								}
-								pkiCa.Intermediate.Format = d.Val()
-
-							default:
-								return nil, d.Errf("unrecognized pki ca intermediate option '%s'", d.Val())
-							}
-						}
-
-					default:
-						return nil, d.Errf("unrecognized pki ca option '%s'", d.Val())
+				case "root_cn":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
 					}
+					pkiCa.RootCommonName = d.Val()
+
+				case "intermediate_cn":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					pkiCa.IntermediateCommonName = d.Val()
+
+				case "intermediate_lifetime":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(d.Val())
+					if err != nil {
+						return nil, err
+					}
+					pkiCa.IntermediateLifetime = caddy.Duration(dur)
+
+				case "root":
+					if pkiCa.Root == nil {
+						pkiCa.Root = new(caddypki.KeyPair)
+					}
+					for nesting := d.Nesting(); d.NextBlock(nesting); {
+						switch d.Val() {
+						case "cert":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Root.Certificate = d.Val()
+
+						case "key":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Root.PrivateKey = d.Val()
+
+						case "format":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Root.Format = d.Val()
+
+						default:
+							return nil, d.Errf("unrecognized pki ca root option '%s'", d.Val())
+						}
+					}
+
+				case "intermediate":
+					if pkiCa.Intermediate == nil {
+						pkiCa.Intermediate = new(caddypki.KeyPair)
+					}
+					for nesting := d.Nesting(); d.NextBlock(nesting); {
+						switch d.Val() {
+						case "cert":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Intermediate.Certificate = d.Val()
+
+						case "key":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Intermediate.PrivateKey = d.Val()
+
+						case "format":
+							if !d.NextArg() {
+								return nil, d.ArgErr()
+							}
+							pkiCa.Intermediate.Format = d.Val()
+
+						default:
+							return nil, d.Errf("unrecognized pki ca intermediate option '%s'", d.Val())
+						}
+					}
+
+				default:
+					return nil, d.Errf("unrecognized pki ca option '%s'", d.Val())
 				}
-
-				pki.CAs[pkiCa.ID] = pkiCa
-
-			default:
-				return nil, d.Errf("unrecognized pki option '%s'", d.Val())
 			}
+
+			pki.CAs[pkiCa.ID] = pkiCa
+
+		default:
+			return nil, d.Errf("unrecognized pki option '%s'", d.Val())
 		}
 	}
-
 	return pki, nil
 }
 
