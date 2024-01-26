@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	weakrand "math/rand"
 	"net"
@@ -442,9 +443,14 @@ func (h HTTPTransport) Cleanup() error {
 // TLSConfig holds configuration related to the TLS configuration for the
 // transport/client.
 type TLSConfig struct {
+	// Certificate authority module which provides the certificate pool of trusted certificates
+	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
+
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// Optional list of base64-encoded DER-encoded CA certificates to trust.
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// List of PEM-encoded CA certificate files to add to the same trust
 	// store as RootCAPool (or root_ca_pool in the JSON).
 	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`
@@ -546,6 +552,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// trusted root CAs
 	if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
+		ctx.Logger().Warn("RootCAPool and RootCAPEMFiles are deprecated. Use one of the tls.ca_pool.source modules instead")
 		rootPool := x509.NewCertPool()
 		for _, encodedCACert := range t.RootCAPool {
 			caCert, err := decodeBase64DERCert(encodedCACert)
@@ -562,6 +569,21 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			rootPool.AppendCertsFromPEM(pemData)
 		}
 		cfg.RootCAs = rootPool
+	}
+
+	if t.CARaw != nil {
+		if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
+			return nil, fmt.Errorf("Conflicting config for Root CA pool")
+		}
+		caRaw, err := ctx.LoadModule(t, "CARaw")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load ca module: %v", err)
+		}
+		ca, ok := caRaw.(caddytls.CA)
+		if !ok {
+			return nil, fmt.Errorf("CA module '%s' is not a certificate pool provider", ca)
+		}
+		cfg.RootCAs = ca.CertPool()
 	}
 
 	// Renegotiation
