@@ -53,6 +53,10 @@ type ZeroSSLIssuer struct {
 	// already and don't want to supply your email address.
 	APIKey string `json:"api_key,omitempty"`
 
+	// Gives the user the option to use the ZeroSSL API
+	// to issue certificates.
+	UseZeroSSlApi bool `json:"use_zerossl_api,omitempty"`
+
 	mu     sync.Mutex
 	logger *zap.Logger
 }
@@ -185,7 +189,87 @@ func (iss *ZeroSSLIssuer) PreCheck(ctx context.Context, names []string, interact
 // Issue obtains a certificate for the given csr.
 func (iss *ZeroSSLIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
 	iss.initialize()
-	return iss.ACMEIssuer.Issue(ctx, csr)
+	if !iss.UseZeroSSlApi {
+		return iss.ACMEIssuer.Issue(ctx, csr)
+	}
+	zerosslCertId, err := iss.createCertificate(ctx, csr)
+	if err != nil {
+		return nil, err
+	}
+	return iss.dowloadCertificate(ctx, zerosslCertId)
+}
+
+// createCertificate calls the create endpoint of the zerossl API and returns the id of the generated certificate
+// or an error if the certificate create fails.
+func (iss *ZeroSSLIssuer) createCertificate(ctx context.Context, csr *x509.CertificateRequest) (string, error) {
+	if iss.APIKey == "" {
+		return "", fmt.Errorf("Can't issue a zerossl certificate without an API key")
+	}
+	qs := url.Values{"access_key": []string{iss.APIKey}}
+	endpoint := fmt.Sprintf("%s?%s", zerosslAPICerts, qs.Encode())
+	form := url.Values{"certificate_domains": []string{strings.Join(namesFromCSR(csr), ",")}, "certificate_csr": []string{string(csr.Raw)}}
+	body := strings.NewReader(form.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return "", fmt.Errorf("ZeroSSL create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("performing create certificate request: %v", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Id string `json:"id"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return "", fmt.Errorf("decoding zerossl create API response: %v", err)
+	}
+	return result.Id, nil
+}
+
+// downloadCertificate calls the download (inline) ednpoint of the zerossl API with the given certId and
+// return the corresponding certificate.
+func (iss *ZeroSSLIssuer) dowloadCertificate(ctx context.Context, certId string) (*certmagic.IssuedCertificate, error) {
+	if iss.APIKey == "" {
+		return nil, fmt.Errorf("Can't download a zerossl certificate without an API key")
+	}
+	qs := url.Values{"access_key": []string{iss.APIKey}}
+	endpoint := fmt.Sprintf("%s/%s/download/return?%s", zerosslAPICerts, certId, qs.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ZeroSSL dowload request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("performing dowload certificate request: %v", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		CertificateCrt    string `json:"certificate.crt"`
+		CertificateBundle string `json:"ca_bundle.crt"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, fmt.Errorf("decoding zerossl download API response: %v", err)
+	}
+	return &certmagic.IssuedCertificate{Certificate: []byte(result.CertificateCrt)}, nil
+}
+
+func namesFromCSR(csr *x509.CertificateRequest) []string {
+	nameSet := []string{}
+	nameSet = append(nameSet, csr.Subject.CommonName)
+	nameSet = append(nameSet, csr.DNSNames...)
+	nameSet = append(nameSet, csr.EmailAddresses...)
+	for _, v := range csr.IPAddresses {
+		nameSet = append(nameSet, v.String())
+	}
+	for _, v := range csr.URIs {
+		nameSet = append(nameSet, v.String())
+	}
+
+	return nameSet
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
@@ -202,7 +286,7 @@ func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.Certificate
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//	... zerossl [<api_key>] {
+//	... zerossl [<api_key>] [use_ssl_api]{
 //	    ...
 //	}
 //
@@ -211,6 +295,12 @@ func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume issuer name
 	if d.NextArg() {
 		iss.APIKey = d.Val()
+		if d.NextArg() {
+			if d.Val() != "use_ssl_api" {
+				return d.ArgErr()
+			}
+			iss.UseZeroSSlApi = true
+		}
 		if d.NextArg() {
 			return d.ArgErr()
 		}
@@ -226,7 +316,10 @@ func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-const zerosslAPIBase = "https://api.zerossl.com/acme"
+const (
+	zerosslAPIBase  = "https://api.zerossl.com/acme"
+	zerosslAPICerts = "https://api.zerossl.com/certificates"
+)
 
 // Interface guards
 var (
