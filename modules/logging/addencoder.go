@@ -125,9 +125,27 @@ func (fe *AddEncoder) ConfigureDefaultFormat(wo caddy.WriterOpener) error {
 //	    fields {
 //	        <field> <value>
 //	    }
+//	    <field> <value>
 //	}
 func (fe *AddEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume encoder name
+
+	// parse a field
+	parseField := func() error {
+		if fe.Fields == nil {
+			fe.Fields = make(map[string]any)
+		}
+		field := d.Val()
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		fe.Fields[field] = d.ScalarVal()
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		return nil
+	}
+
 	for d.NextBlock(0) {
 		switch d.Val() {
 		case "wrap":
@@ -147,22 +165,20 @@ func (fe *AddEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fe.WrappedRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, nil)
 
 		case "fields":
-			if fe.Fields == nil {
-				fe.Fields = make(map[string]any)
-			}
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				field := d.Val()
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				fe.Fields[field] = d.ScalarVal()
-				if d.NextArg() {
-					return d.ArgErr()
+				err := parseField()
+				if err != nil {
+					return err
 				}
 			}
 
 		default:
-			return d.Errf("unrecognized subdirective %s", d.Val())
+			// if unknown, assume it's a field so that
+			// the config can be flat
+			err := parseField()
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -3,12 +3,13 @@
 		format add {
 			wrap json
 			fields {
-				env {env.EXAMPLE}
-				int 1
-				float 1.1
-				bool true
-				string "string"
+				wrap "foo"
 			}
+			env {env.EXAMPLE}
+			int 1
+			float 1.1
+			bool true
+			string "string"
 		}
 	}
 }
@@ -27,7 +28,8 @@
 						"env": "{env.EXAMPLE}",
 						"float": 1.1,
 						"int": 1,
-						"string": "string"
+						"string": "string",
+						"wrap": "foo"
 					},
 					"format": "add",
 					"wrap": {
