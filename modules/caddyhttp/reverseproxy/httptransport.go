@@ -552,7 +552,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// trusted root CAs
 	if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
-		ctx.Logger().Warn("RootCAPool and RootCAPEMFiles are deprecated. Use one of the tls.ca_pool.source modules instead")
+		ctx.Logger().Warn("root_ca_pool and root_ca_pem_files are deprecated. Use one of the tls.ca_pool.source modules instead")
 		rootPool := x509.NewCertPool()
 		for _, encodedCACert := range t.RootCAPool {
 			caCert, err := decodeBase64DERCert(encodedCACert)
@@ -573,7 +573,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	if t.CARaw != nil {
 		if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
-			return nil, fmt.Errorf("Conflicting config for Root CA pool")
+			return nil, fmt.Errorf("conflicting config for Root CA pool")
 		}
 		caRaw, err := ctx.LoadModule(t, "CARaw")
 		if err != nil {
