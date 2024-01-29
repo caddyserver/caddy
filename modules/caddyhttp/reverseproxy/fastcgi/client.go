@@ -221,7 +221,6 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		if statusIsCut {
 			resp.Status = statusInfo
 		}
-
 	} else {
 		resp.StatusCode = http.StatusOK
 	}
