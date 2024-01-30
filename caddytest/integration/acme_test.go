@@ -24,8 +24,6 @@ import (
 
 // Test the basic functionality of Caddy's ACME server
 func TestACMEServerWithDefaults(t *testing.T) {
-	t.Skip("TODO: troubleshoot the test; it succeeds randomly with small probability")
-
 	ctx := context.Background()
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -80,7 +78,7 @@ func TestACMEServerWithDefaults(t *testing.T) {
 			Logger: logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
-			acme.ChallengeTypeHTTP01: naiveHTTPSolver{logger: logger},
+			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
 		},
 	}
 
@@ -106,7 +104,7 @@ func TestACMEServerWithDefaults(t *testing.T) {
 		return
 	}
 
-	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"acme-client.localhost"})
+	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"localhost"})
 	if err != nil {
 		t.Errorf("obtaining certificate: %v", err)
 		return
@@ -123,8 +121,6 @@ func TestACMEServerWithDefaults(t *testing.T) {
 }
 
 func TestACMEServerWithMismatchedChallenges(t *testing.T) {
-	// t.Skip("TODO: troubleshoot the test; it succeeds randomly with small probability")
-
 	ctx := context.Background()
 	logger := caddy.Log().Named("acmez")
 
@@ -177,7 +173,7 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 			Logger: logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
-			acme.ChallengeTypeHTTP01: naiveHTTPSolver{logger: logger},
+			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
 		},
 	}
 
@@ -203,7 +199,7 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 		return
 	}
 
-	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"acme-client.localhost"})
+	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"localhost"})
 	if len(certs) > 0 {
 		t.Errorf("expected '0' certificates, but received '%d'", len(certs))
 	}
@@ -222,10 +218,9 @@ type naiveHTTPSolver struct {
 	logger *zap.Logger
 }
 
-func (s naiveHTTPSolver) Present(ctx context.Context, challenge acme.Challenge) error {
-	smallstepacme.InsecurePortHTTP01 = 8080
+func (s *naiveHTTPSolver) Present(ctx context.Context, challenge acme.Challenge) error {
 	s.srv = &http.Server{
-		Addr: ":80",
+		Addr: "localhost:80",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			host, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
