@@ -16,12 +16,12 @@ package caddytls
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"net"
 	"strings"
-	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez"
@@ -254,37 +254,52 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// on-demand TLS
 	var ond *certmagic.OnDemandConfig
 	if ap.OnDemand || len(ap.Managers) > 0 {
-		// ask endpoint is now required after a number of negligence cases causing abuse;
-		// but is still allowed for explicit subjects (non-wildcard, non-unbounded),
-		// for the internal issuer since it doesn't cause ACME issuer pressure
-		if ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.Ask == "") {
-			return fmt.Errorf("on-demand TLS cannot be enabled without an 'ask' endpoint to prevent abuse; please refer to documentation for details")
+		// permission module is now required after a number of negligence cases that allowed abuse;
+		// but it may still be optional for explicit subjects (bounded, non-wildcard), for the
+		// internal issuer since it doesn't cause public PKI pressure on ACME servers
+		if ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil) {
+			return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
 		}
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(ctx context.Context, name string) error {
 				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
 					return nil
 				}
-				if err := onDemandAskRequest(ctx, tlsApp.logger, tlsApp.Automation.OnDemand.Ask, name); err != nil {
+
+				// logging the remote IP can be useful for servers that want to count
+				// attempts from clients to detect patterns of abuse -- it should NOT be
+				// used solely for decision making, however
+				var remoteIP string
+				if hello, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && hello != nil {
+					if remote := hello.Conn.RemoteAddr(); remote != nil {
+						remoteIP, _, _ = net.SplitHostPort(remote.String())
+					}
+				}
+				tlsApp.logger.Debug("asking for permission for on-demand certificate",
+					zap.String("remote_ip", remoteIP),
+					zap.String("domain", name))
+
+				// ask the permission module if this cert is allowed
+				if err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
-					if errors.Is(err, errAskDenied) {
-						tlsApp.logger.Debug("certificate issuance denied",
-							zap.String("ask_endpoint", tlsApp.Automation.OnDemand.Ask),
+					if errors.Is(err, ErrPermissionDenied) {
+						tlsApp.logger.Debug("on-demand certificate issuance denied",
 							zap.String("domain", name),
 							zap.Error(err))
 					} else {
-						tlsApp.logger.Error("request to 'ask' endpoint failed",
-							zap.String("ask_endpoint", tlsApp.Automation.OnDemand.Ask),
+						tlsApp.logger.Error("failed to get permission for on-demand certificate",
 							zap.String("domain", name),
 							zap.Error(err))
 					}
 					return err
 				}
+
 				// check the rate limiter last because
 				// doing so makes a reservation
 				if !onDemandRateLimiter.Allow() {
 					return fmt.Errorf("on-demand rate limit exceeded")
 				}
+
 				return nil
 			},
 			Managers: ap.Managers,
@@ -464,42 +479,6 @@ type DNSChallengeConfig struct {
 	solver acmez.Solver
 }
 
-// OnDemandConfig configures on-demand TLS, for obtaining
-// needed certificates at handshake-time. Because this
-// feature can easily be abused, you should use this to
-// establish rate limits and/or an internal endpoint that
-// Caddy can "ask" if it should be allowed to manage
-// certificates for a given hostname.
-type OnDemandConfig struct {
-	// REQUIRED. If Caddy needs to load a certificate from
-	// storage or obtain/renew a certificate during a TLS
-	// handshake, it will perform a quick HTTP request to
-	// this URL to check if it should be allowed to try to
-	// get a certificate for the name in the "domain" query
-	// string parameter, like so: `?domain=example.com`.
-	// The endpoint must return a 200 OK status if a certificate
-	// is allowed; anything else will cause it to be denied.
-	// Redirects are not followed.
-	Ask string `json:"ask,omitempty"`
-
-	// DEPRECATED. An optional rate limit to throttle
-	// the checking of storage and the issuance of
-	// certificates from handshakes if not already in
-	// storage. WILL BE REMOVED IN A FUTURE RELEASE.
-	RateLimit *RateLimit `json:"rate_limit,omitempty"`
-}
-
-// DEPRECATED. RateLimit specifies an interval with optional burst size.
-type RateLimit struct {
-	// A duration value. Storage may be checked and a certificate may be
-	// obtained 'burst' times during this interval.
-	Interval caddy.Duration `json:"interval,omitempty"`
-
-	// How many times during an interval storage can be checked or a
-	// certificate can be obtained.
-	Burst int `json:"burst,omitempty"`
-}
-
 // ConfigSetter is implemented by certmagic.Issuers that
 // need access to a parent certmagic.Config as part of
 // their provisioning phase. For example, the ACMEIssuer
@@ -508,14 +487,3 @@ type RateLimit struct {
 type ConfigSetter interface {
 	SetConfig(cfg *certmagic.Config)
 }
-
-// These perpetual values are used for on-demand TLS.
-var (
-	onDemandRateLimiter = certmagic.NewRateLimiter(0, 0)
-	onDemandAskClient   = &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return fmt.Errorf("following http redirects is not allowed")
-		},
-	}
-)
