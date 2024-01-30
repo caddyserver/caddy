@@ -239,29 +239,30 @@ func (mset MatcherSet) Match(hello *tls.ClientHelloInfo) bool {
 	return true
 }
 
-func (ms MatcherSets) anyMatch(hello *tls.ClientHelloInfo) bool {
-	for _, mset := range ms {
-		if mset.Match(hello) {
-			return true
-		}
-	}
-	return false
-}
-
-func (ms *MatcherSets) fromInterface(matcherSets any) error {
-	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
-		var matcherSet MatcherSet
-		for _, matcher := range matcherSetIfaces {
-			reqMatcher, ok := matcher.(ConnectionMatcher)
-			if !ok {
-				return fmt.Errorf("decoded module is not a ConnectionMatcher: %#v", matcher)
-			}
-			matcherSet = append(matcherSet, reqMatcher)
-		}
-		*ms = append(*ms, matcherSet)
-	}
-	return nil
-}
+// TODO:
+// func (ms MatcherSets) anyMatch(hello *tls.ClientHelloInfo) bool {
+// 	for _, mset := range ms {
+// 		if mset.Match(hello) {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
+//
+// func (ms *MatcherSets) fromInterface(matcherSets any) error {
+// 	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
+// 		var matcherSet MatcherSet
+// 		for _, matcher := range matcherSetIfaces {
+// 			reqMatcher, ok := matcher.(ConnectionMatcher)
+// 			if !ok {
+// 				return fmt.Errorf("decoded module is not a ConnectionMatcher: %#v", matcher)
+// 			}
+// 			matcherSet = append(matcherSet, reqMatcher)
+// 		}
+// 		*ms = append(*ms, matcherSet)
+// 	}
+// 	return nil
+// }
 
 // MatchNot negates the sub-matchers within it.
 type MatchNot struct {
