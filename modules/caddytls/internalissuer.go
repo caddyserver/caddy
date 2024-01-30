@@ -178,7 +178,6 @@ func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			iss.SignWithRoot = true
-
 		}
 	}
 	return nil

@@ -20,9 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -328,15 +326,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 // Validate ensures the app's configuration is valid.
 func (app *App) Validate() error {
-	isGo120 := strings.Contains(runtime.Version(), "go1.20")
-
 	// each server must use distinct listener addresses
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
-		if isGo120 && srv.EnableFullDuplex {
-			app.logger.Warn("enable_full_duplex is not supported in Go 1.20, use a build made with Go 1.21 or later", zap.String("server", srvName))
-		}
-
 		for _, addr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
