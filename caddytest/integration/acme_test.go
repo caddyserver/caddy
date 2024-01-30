@@ -7,11 +7,11 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -23,12 +23,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const acmeChallengePort = 8080
+
 // Test the basic functionality of Caddy's ACME server
 func TestACMEServerWithDefaults(t *testing.T) {
-	if runtime.GOARCH == "s390x" {
-		t.Skip("skipping test on s390x")
-		return
-	}
 	ctx := context.Background()
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -126,10 +124,6 @@ func TestACMEServerWithDefaults(t *testing.T) {
 }
 
 func TestACMEServerWithMismatchedChallenges(t *testing.T) {
-	if runtime.GOARCH == "s390x" {
-		t.Skip("skipping test on s390x")
-		return
-	}
 	ctx := context.Background()
 	logger := caddy.Log().Named("acmez")
 
@@ -228,8 +222,9 @@ type naiveHTTPSolver struct {
 }
 
 func (s *naiveHTTPSolver) Present(ctx context.Context, challenge acme.Challenge) error {
+	smallstepacme.InsecurePortHTTP01 = acmeChallengePort
 	s.srv = &http.Server{
-		Addr: "localhost:80",
+		Addr: fmt.Sprintf("localhost:%d", acmeChallengePort),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			host, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
@@ -247,7 +242,7 @@ func (s *naiveHTTPSolver) Present(ctx context.Context, challenge acme.Challenge)
 			}
 		}),
 	}
-	l, err := net.Listen("tcp", ":80")
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", acmeChallengePort))
 	if err != nil {
 		return err
 	}
@@ -257,8 +252,8 @@ func (s *naiveHTTPSolver) Present(ctx context.Context, challenge acme.Challenge)
 }
 
 func (s naiveHTTPSolver) CleanUp(ctx context.Context, challenge acme.Challenge) error {
+	smallstepacme.InsecurePortHTTP01 = 0
 	s.logger.Info("cleanup", zap.Any("challenge", challenge))
-	smallstepacme.InsecurePortHTTP01 = 80
 	if s.srv != nil {
 		s.srv.Close()
 	}
