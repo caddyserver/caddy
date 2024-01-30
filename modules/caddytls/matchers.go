@@ -32,6 +32,7 @@ func init() {
 	caddy.RegisterModule(MatchServerName{})
 	caddy.RegisterModule(MatchRemoteIP{})
 	caddy.RegisterModule(MatchNot{})
+	caddy.RegisterModule(MatchLocalIP{})
 }
 
 // MatchServerName matches based on SNI. Names in
@@ -238,7 +239,7 @@ func (mset MatcherSet) Match(hello *tls.ClientHelloInfo) bool {
 	return true
 }
 
-func (ms MatcherSets) AnyMatch(hello *tls.ClientHelloInfo) bool {
+func (ms MatcherSets) anyMatch(hello *tls.ClientHelloInfo) bool {
 	for _, mset := range ms {
 		if mset.Match(hello) {
 			return true
@@ -247,12 +248,7 @@ func (ms MatcherSets) AnyMatch(hello *tls.ClientHelloInfo) bool {
 	return false
 }
 
-type MatchNot struct {
-	MatcherSetRaw RawMatcherSets `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
-	matchers      MatcherSet     `json:"-"`
-}
-
-func (ms *MatcherSets) FromInterface(matcherSets any) error {
+func (ms *MatcherSets) fromInterface(matcherSets any) error {
 	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
 		var matcherSet MatcherSet
 		for _, matcher := range matcherSetIfaces {
@@ -265,6 +261,12 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 		*ms = append(*ms, matcherSet)
 	}
 	return nil
+}
+
+// MatchNot negates the sub-matchers within it.
+type MatchNot struct {
+	MatcherSetRaw RawMatcherSets `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
+	matchers      MatcherSet     `json:"-"`
 }
 
 // UnmarshalJSON satisfies json.Unmarshaler. It puts the JSON
@@ -322,4 +324,7 @@ var (
 
 	_ caddy.Provisioner = (*MatchNot)(nil)
 	_ ConnectionMatcher = (*MatchNot)(nil)
+
+	_ caddy.Provisioner = (*MatchLocalIP)(nil)
+	_ ConnectionMatcher = (*MatchLocalIP)(nil)
 )
