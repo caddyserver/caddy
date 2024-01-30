@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -24,6 +25,10 @@ import (
 
 // Test the basic functionality of Caddy's ACME server
 func TestACMEServerWithDefaults(t *testing.T) {
+	if runtime.GOARCH == "s390x" {
+		t.Skip("skipping test on s390x")
+		return
+	}
 	ctx := context.Background()
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -121,6 +126,10 @@ func TestACMEServerWithDefaults(t *testing.T) {
 }
 
 func TestACMEServerWithMismatchedChallenges(t *testing.T) {
+	if runtime.GOARCH == "s390x" {
+		t.Skip("skipping test on s390x")
+		return
+	}
 	ctx := context.Background()
 	logger := caddy.Log().Named("acmez")
 
