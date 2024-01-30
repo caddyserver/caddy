@@ -9,7 +9,6 @@ type Rule struct {
 	CommonNames []string `json:"common_names,omitempty"`
 	DNSDomains  []string `json:"dns_domains,omitempty"`
 	IPRanges    []string `json:"ip_ranges,omitempty"`
-	URIDomains  []string `json:"uri_domains,omitempty"`
 }
 
 type Policy struct {
@@ -19,26 +18,24 @@ type Policy struct {
 }
 
 func (p *Policy) normalizeAllowRules() *policy.X509NameOptions {
-	if (p == nil) || (p.Allow == nil) || (len(p.Allow.CommonNames) == 0 && len(p.Allow.DNSDomains) == 0 && len(p.Allow.IPRanges) == 0 && len(p.Allow.URIDomains) == 0) {
+	if (p == nil) || (p.Allow == nil) || (len(p.Allow.CommonNames) == 0 && len(p.Allow.DNSDomains) == 0 && len(p.Allow.IPRanges) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
 		CommonNames: p.Allow.CommonNames,
 		DNSDomains:  p.Allow.DNSDomains,
 		IPRanges:    p.Allow.IPRanges,
-		URIDomains:  p.Allow.URIDomains,
 	}
 }
 
 func (p *Policy) normalizeDenyRules() *policy.X509NameOptions {
-	if (p == nil) || (p.Deny == nil) || (len(p.Deny.CommonNames) == 0 && len(p.Deny.DNSDomains) == 0 && len(p.Deny.IPRanges) == 0 && len(p.Deny.URIDomains) == 0) {
+	if (p == nil) || (p.Deny == nil) || (len(p.Deny.CommonNames) == 0 && len(p.Deny.DNSDomains) == 0 && len(p.Deny.IPRanges) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
 		CommonNames: p.Deny.CommonNames,
 		DNSDomains:  p.Deny.DNSDomains,
 		IPRanges:    p.Deny.IPRanges,
-		URIDomains:  p.Deny.URIDomains,
 	}
 }
 

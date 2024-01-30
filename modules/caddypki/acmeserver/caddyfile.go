@@ -103,8 +103,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 						case "ip_ranges":
 							r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
-						case "uri_domains":
-							r.URIDomains = append(r.URIDomains, h.RemainingArgs()...)
 						default:
 							return nil, h.Errf("unrecognized 'allow' subdirective: %s", h.Val())
 						}
@@ -128,8 +126,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 							r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 						case "ip_ranges":
 							r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
-						case "uri_domains":
-							r.URIDomains = append(r.URIDomains, h.RemainingArgs()...)
 						default:
 							return nil, h.Errf("unrecognized 'deny' subdirective: %s", h.Val())
 						}
