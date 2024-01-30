@@ -84,7 +84,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
 		default:
 			return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
-
 		}
 	}
 
