@@ -22,7 +22,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,7 +159,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 
 	switch na.Network {
 	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		ln, err = listenTCPOrUnix(ctx, lnKey, na.Network, address, config)
+		ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
 	case "unixgram":
 		ln, err = config.ListenPacket(ctx, na.Network, address)
 	case "udp", "udp4", "udp6":
@@ -205,7 +204,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 // IsUnixNetwork returns true if na.Network is
 // unix, unixgram, or unixpacket.
 func (na NetworkAddress) IsUnixNetwork() bool {
-	return isUnixNetwork(na.Network)
+	return IsUnixNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
@@ -289,7 +288,7 @@ func (na NetworkAddress) String() string {
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
 }
 
-func isUnixNetwork(netw string) bool {
+func IsUnixNetwork(netw string) bool {
 	return netw == "unix" || netw == "unixgram" || netw == "unixpacket"
 }
 
@@ -310,7 +309,7 @@ func ParseNetworkAddress(addr string) (NetworkAddress, error) {
 	if network == "" {
 		network = "tcp"
 	}
-	if isUnixNetwork(network) {
+	if IsUnixNetwork(network) {
 		return NetworkAddress{
 			Network: network,
 			Host:    host,
@@ -353,7 +352,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
 	}
-	if isUnixNetwork(network) {
+	if IsUnixNetwork(network) {
 		host = a
 		return
 	}
@@ -384,7 +383,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if (host != "" && port == "") || isUnixNetwork(network) {
+	if (host != "" && port == "") || IsUnixNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
@@ -615,54 +614,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkTypes[network] = getListener
 }
 
-type unixListener struct {
-	*net.UnixListener
-	mapKey string
-	count  *int32 // accessed atomically
-}
-
-func (uln *unixListener) Close() error {
-	newCount := atomic.AddInt32(uln.count, -1)
-	if newCount == 0 {
-		defer func() {
-			addr := uln.Addr().String()
-			unixSocketsMu.Lock()
-			delete(unixSockets, uln.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(addr)
-		}()
-	}
-	return uln.UnixListener.Close()
-}
-
-type unixConn struct {
-	*net.UnixConn
-	filename string
-	mapKey   string
-	count    *int32 // accessed atomically
-}
-
-func (uc *unixConn) Close() error {
-	newCount := atomic.AddInt32(uc.count, -1)
-	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uc.mapKey)
-			unixSocketsMu.Unlock()
-			_ = syscall.Unlink(uc.filename)
-		}()
-	}
-	return uc.UnixConn.Close()
-}
-
-// unixSockets keeps track of the currently-active unix sockets
-// so we can transfer their FDs gracefully during reloads.
-var (
-	unixSockets = make(map[string]interface {
-		File() (*os.File, error)
-	})
-	unixSocketsMu sync.Mutex
-)
+var unixSocketsMu sync.Mutex
 
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
