@@ -69,16 +69,24 @@ type ServerLogConfig struct {
 
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*zap.Logger {
+	host := req.Host
+
 	// logger config should always be only
 	// the hostname, without the port
 	hostWithoutPort, _, err := net.SplitHostPort(host)
 	if err != nil {
 		hostWithoutPort = host
 	}
-
 	hosts := slc.getLoggerHosts(hostWithoutPort)
 	loggers := make([]*zap.Logger, 0, len(hosts))
+	if access_logger_names := GetVar(req.Context(), AccessLoggerNameVarKey); access_logger_names != nil {
+		accessLoggerNamesSlice := strings.Split(access_logger_names.(string), ",")
+		for _, loggerName := range accessLoggerNamesSlice {
+			loggers = append(loggers, logger.Named(loggerName))
+		}
+		return loggers
+	}
 	for _, loggerName := range hosts {
 		// no name, use the default logger
 		if loggerName == "" {
@@ -211,4 +219,7 @@ const (
 
 	// For adding additional fields to the access logs
 	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"
+
+	// Variable name used to indicate the logger to be used
+	AccessLoggerNameVarKey string = "access_logger_names"
 )
