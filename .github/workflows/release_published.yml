@@ -18,7 +18,7 @@ jobs:
 
     # See https://github.com/peter-evans/repository-dispatch
     - name: Trigger event on caddyserver/dist
-      uses: peter-evans/repository-dispatch@v2
+      uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/dist
@@ -26,7 +26,7 @@ jobs:
         client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
 
     - name: Trigger event on caddyserver/caddy-docker
-      uses: peter-evans/repository-dispatch@v2
+      uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/caddy-docker
