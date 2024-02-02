@@ -717,7 +717,10 @@ func newDefaultProductionLogEncoder(wo WriterOpener) zapcore.Encoder {
 		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 			encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
 		}
-		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		if coloringEnabled {
+			encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		}
+
 		return zapcore.NewConsoleEncoder(encCfg)
 	}
 	return zapcore.NewJSONEncoder(encCfg)
@@ -758,6 +761,7 @@ func Log() *zap.Logger {
 }
 
 var (
+	coloringEnabled  = os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "xterm-mono"
 	defaultLogger, _ = newDefaultProductionLog()
 	defaultLoggerMu  sync.RWMutex
 )
