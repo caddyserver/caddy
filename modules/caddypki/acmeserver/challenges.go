@@ -8,7 +8,7 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 )
 
-// an opaque string type to represent the supported ACME challenges
+// ACMEChallenge is an opaque string that represents supported ACME challenges.
 type ACMEChallenge string
 
 const (
@@ -44,7 +44,7 @@ func (c ACMEChallenge) String() string {
 	return strings.ToLower(string(c))
 }
 
-// container for a collective of ACME challenges
+// ACMEChallenges is a list of ACME challenges.
 type ACMEChallenges []ACMEChallenge
 
 // validate checks if the given challenges are supported.
