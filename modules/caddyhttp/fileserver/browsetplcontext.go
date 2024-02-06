@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -74,12 +75,21 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		size := info.Size()
 		fileIsSymlink := isSymlink(info)
+		symlinkPath := ""
 		if fileIsSymlink {
 			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
 			fileInfo, err := fs.Stat(fileSystem, path)
 			if err == nil {
 				size = fileInfo.Size()
 			}
+
+			if fsrv.Browse.RevealSymlinks {
+				symLinkTarget, err := filepath.EvalSymlinks(path)
+				if err == nil {
+					symlinkPath = symLinkTarget
+				}
+			}
+
 			// An error most likely means the symlink target doesn't exist,
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, just use the size of the symlink itself, which
@@ -93,14 +103,15 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		tplCtx.Items = append(tplCtx.Items, fileInfo{
-			IsDir:     isDir,
-			IsSymlink: fileIsSymlink,
-			Name:      name,
-			Size:      size,
-			URL:       u.String(),
-			ModTime:   info.ModTime().UTC(),
-			Mode:      info.Mode(),
-			Tpl:       tplCtx, // a reference up to the template context is useful
+			IsDir:       isDir,
+			IsSymlink:   fileIsSymlink,
+			Name:        name,
+			Size:        size,
+			URL:         u.String(),
+			ModTime:     info.ModTime().UTC(),
+			Mode:        info.Mode(),
+			Tpl:         tplCtx, // a reference up to the template context is useful
+			SymlinkPath: symlinkPath,
 		})
 	}
 
@@ -230,13 +241,14 @@ type crumb struct {
 // fileInfo contains serializable information
 // about a file or directory.
 type fileInfo struct {
-	Name      string      `json:"name"`
-	Size      int64       `json:"size"`
-	URL       string      `json:"url"`
-	ModTime   time.Time   `json:"mod_time"`
-	Mode      os.FileMode `json:"mode"`
-	IsDir     bool        `json:"is_dir"`
-	IsSymlink bool        `json:"is_symlink"`
+	Name        string      `json:"name"`
+	Size        int64       `json:"size"`
+	URL         string      `json:"url"`
+	ModTime     time.Time   `json:"mod_time"`
+	Mode        os.FileMode `json:"mode"`
+	IsDir       bool        `json:"is_dir"`
+	IsSymlink   bool        `json:"is_symlink"`
+	SymlinkPath string      `json:"symlink_path,omitempty"`
 
 	// a pointer to the template context is useful inside nested templates
 	Tpl *browseTemplateContext `json:"-"`
