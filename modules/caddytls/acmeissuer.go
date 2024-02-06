@@ -16,12 +16,8 @@ package caddytls
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -495,49 +491,6 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// onDemandAskRequest makes a request to the ask URL
-// to see if a certificate can be obtained for name.
-// The certificate request should be denied if this
-// returns an error.
-func onDemandAskRequest(ctx context.Context, logger *zap.Logger, ask string, name string) error {
-	askURL, err := url.Parse(ask)
-	if err != nil {
-		return fmt.Errorf("parsing ask URL: %v", err)
-	}
-	qs := askURL.Query()
-	qs.Set("domain", name)
-	askURL.RawQuery = qs.Encode()
-
-	askURLString := askURL.String()
-	resp, err := onDemandAskClient.Get(askURLString)
-	if err != nil {
-		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
-			ask, name, err)
-	}
-	resp.Body.Close()
-
-	// logging out the client IP can be useful for servers that want to count
-	// attempts from clients to detect patterns of abuse
-	var clientIP string
-	if hello, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && hello != nil {
-		if remote := hello.Conn.RemoteAddr(); remote != nil {
-			clientIP, _, _ = net.SplitHostPort(remote.String())
-		}
-	}
-
-	logger.Debug("response from ask endpoint",
-		zap.String("client_ip", clientIP),
-		zap.String("domain", name),
-		zap.String("url", askURLString),
-		zap.Int("status", resp.StatusCode))
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)
-	}
-
-	return nil
-}
-
 func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPreference, error) {
 	chainPref := new(ChainPreference)
 	if d.NextArg() {
@@ -604,11 +557,6 @@ type ChainPreference struct {
 	// of these common names.
 	AnyCommonName []string `json:"any_common_name,omitempty"`
 }
-
-// errAskDenied is an error that should be wrapped or returned when the
-// configured "ask" endpoint does not allow a certificate to be issued,
-// to distinguish that from other errors such as connection failure.
-var errAskDenied = errors.New("certificate not allowed by ask endpoint")
 
 // Interface guards
 var (
