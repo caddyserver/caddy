@@ -302,9 +302,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// enable full-duplex for HTTP/1, ensuring the entire
 	// request body gets consumed before writing the response
 	if s.EnableFullDuplex {
-		// TODO: Remove duplex_go12*.go abstraction once our
-		// minimum Go version is 1.21 or later
-		err := enableFullDuplex(w)
+		//nolint:bodyclose
+		err := http.NewResponseController(w).EnableFullDuplex()
 		if err != nil {
 			s.accessLogger.Warn("failed to enable full duplex", zap.Error(err))
 		}

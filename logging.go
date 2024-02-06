@@ -265,6 +265,17 @@ type WriterOpener interface {
 	OpenWriter() (io.WriteCloser, error)
 }
 
+// IsWriterStandardStream returns true if the input is a
+// writer-opener to a standard stream (stdout, stderr).
+func IsWriterStandardStream(wo WriterOpener) bool {
+	switch wo.(type) {
+	case StdoutWriter, StderrWriter,
+		*StdoutWriter, *StderrWriter:
+		return true
+	}
+	return false
+}
+
 type writerDestructor struct {
 	io.WriteCloser
 }
@@ -341,16 +352,18 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 			return fmt.Errorf("loading log encoder module: %v", err)
 		}
 		cl.encoder = mod.(zapcore.Encoder)
+
+		// if the encoder module needs the writer to determine
+		// the correct default to use for a nested encoder, we
+		// pass it down as a secondary provisioning step
+		if cfd, ok := mod.(ConfiguresFormatterDefault); ok {
+			if err := cfd.ConfigureDefaultFormat(cl.writerOpener); err != nil {
+				return fmt.Errorf("configuring default format for encoder module: %v", err)
+			}
+		}
 	}
 	if cl.encoder == nil {
-		// only allow colorized output if this log is going to stdout or stderr
-		var colorize bool
-		switch cl.writerOpener.(type) {
-		case StdoutWriter, StderrWriter,
-			*StdoutWriter, *StderrWriter:
-			colorize = true
-		}
-		cl.encoder = newDefaultProductionLogEncoder(colorize)
+		cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	}
 	cl.buildCore()
 	return nil
@@ -504,7 +517,7 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 	// append a dot so that partial names don't match
 	// (i.e. we don't want "foo.b" to match "foo.bar"); we
 	// will also have to append a dot when we do HasPrefix
-	// below to compensate for when when namespaces are equal
+	// below to compensate for when namespaces are equal
 	if name != "" && name != "*" && name != "." {
 		name += "."
 	}
@@ -680,7 +693,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	cl.encoder = newDefaultProductionLogEncoder(true)
+	cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	cl.levelEnabler = zapcore.InfoLevel
 
 	cl.buildCore()
@@ -697,16 +710,17 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	}, nil
 }
 
-func newDefaultProductionLogEncoder(colorize bool) zapcore.Encoder {
+func newDefaultProductionLogEncoder(wo WriterOpener) zapcore.Encoder {
 	encCfg := zap.NewProductionEncoderConfig()
-	if term.IsTerminal(int(os.Stdout.Fd())) {
+	if IsWriterStandardStream(wo) && term.IsTerminal(int(os.Stderr.Fd())) {
 		// if interactive terminal, make output more human-readable by default
 		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 			encoder.AppendString(ts.UTC().Format("2006/01/02 15:04:05.000"))
 		}
-		if colorize {
+		if coloringEnabled {
 			encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		}
+
 		return zapcore.NewConsoleEncoder(encCfg)
 	}
 	return zapcore.NewJSONEncoder(encCfg)
@@ -747,11 +761,21 @@ func Log() *zap.Logger {
 }
 
 var (
+	coloringEnabled  = os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "xterm-mono"
 	defaultLogger, _ = newDefaultProductionLog()
 	defaultLoggerMu  sync.RWMutex
 )
 
 var writers = NewUsagePool()
+
+// ConfiguresFormatterDefault is an optional interface that
+// encoder modules can implement to configure the default
+// format of their encoder. This is useful for encoders
+// which nest an encoder, that needs to know the writer
+// in order to determine the correct default.
+type ConfiguresFormatterDefault interface {
+	ConfigureDefaultFormat(WriterOpener) error
+}
 
 const DefaultLoggerName = "default"
 

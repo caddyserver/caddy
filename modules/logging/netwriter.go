@@ -117,35 +117,34 @@ func (nw NetWriter) OpenWriter() (io.WriteCloser, error) {
 //	    soft_start
 //	}
 func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
-		nw.Address = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "dial_timeout":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				timeout, err := caddy.ParseDuration(d.Val())
-				if err != nil {
-					return d.Errf("invalid duration: %s", d.Val())
-				}
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				nw.DialTimeout = caddy.Duration(timeout)
-
-			case "soft_start":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				nw.SoftStart = true
+	d.Next() // consume writer name
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	nw.Address = d.Val()
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "dial_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
+			timeout, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("invalid duration: %s", d.Val())
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			nw.DialTimeout = caddy.Duration(timeout)
+
+		case "soft_start":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			nw.SoftStart = true
 		}
 	}
 	return nil

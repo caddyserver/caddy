@@ -1,6 +1,8 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.20
+go 1.21
+
+toolchain go1.21.4
 
 require (
 	github.com/BurntSushi/toml v1.3.2
@@ -16,7 +18,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.5
 	github.com/mholt/acmez v1.2.0
 	github.com/prometheus/client_golang v1.18.0
-	github.com/quic-go/quic-go v0.40.1
+	github.com/quic-go/quic-go v0.41.0
 	github.com/smallstep/certificates v0.25.0
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.12.1
@@ -33,6 +35,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.21.0
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/zap v1.26.0
+	go.uber.org/zap/exp v0.2.0
 	golang.org/x/crypto v0.18.0
 	golang.org/x/exp v0.0.0-20231214170342-aacd6d4b4611
 	golang.org/x/net v0.19.0
@@ -59,7 +62,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.13.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
 	github.com/smallstep/go-attestation v0.4.4-0.20230627102604-cf579e53cbd2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/blake3 v0.2.3 // indirect

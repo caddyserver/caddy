@@ -16,12 +16,8 @@ package caddytls
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -277,263 +273,221 @@ func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 //	    }
 //	}
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
+	d.Next() // consume issuer name
+
+	if d.NextArg() {
+		iss.CA = d.Val()
 		if d.NextArg() {
-			iss.CA = d.Val()
+			return d.ArgErr()
+		}
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "dir":
+			if iss.CA != "" {
+				return d.Errf("directory is already specified: %s", iss.CA)
+			}
+			if !d.AllArgs(&iss.CA) {
+				return d.ArgErr()
+			}
+
+		case "test_dir":
+			if !d.AllArgs(&iss.TestCA) {
+				return d.ArgErr()
+			}
+
+		case "email":
+			if !d.AllArgs(&iss.Email) {
+				return d.ArgErr()
+			}
+
+		case "timeout":
+			var timeoutStr string
+			if !d.AllArgs(&timeoutStr) {
+				return d.ArgErr()
+			}
+			timeout, err := caddy.ParseDuration(timeoutStr)
+			if err != nil {
+				return d.Errf("invalid timeout duration %s: %v", timeoutStr, err)
+			}
+			iss.ACMETimeout = caddy.Duration(timeout)
+
+		case "disable_http_challenge":
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			switch d.Val() {
-			case "dir":
-				if iss.CA != "" {
-					return d.Errf("directory is already specified: %s", iss.CA)
-				}
-				if !d.AllArgs(&iss.CA) {
-					return d.ArgErr()
-				}
-
-			case "test_dir":
-				if !d.AllArgs(&iss.TestCA) {
-					return d.ArgErr()
-				}
-
-			case "email":
-				if !d.AllArgs(&iss.Email) {
-					return d.ArgErr()
-				}
-
-			case "timeout":
-				var timeoutStr string
-				if !d.AllArgs(&timeoutStr) {
-					return d.ArgErr()
-				}
-				timeout, err := caddy.ParseDuration(timeoutStr)
-				if err != nil {
-					return d.Errf("invalid timeout duration %s: %v", timeoutStr, err)
-				}
-				iss.ACMETimeout = caddy.Duration(timeout)
-
-			case "disable_http_challenge":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.HTTP == nil {
-					iss.Challenges.HTTP = new(HTTPChallengeConfig)
-				}
-				iss.Challenges.HTTP.Disabled = true
-
-			case "disable_tlsalpn_challenge":
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.TLSALPN == nil {
-					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
-				}
-				iss.Challenges.TLSALPN.Disabled = true
-
-			case "alt_http_port":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				port, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid port %s: %v", d.Val(), err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.HTTP == nil {
-					iss.Challenges.HTTP = new(HTTPChallengeConfig)
-				}
-				iss.Challenges.HTTP.AlternatePort = port
-
-			case "alt_tlsalpn_port":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				port, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("invalid port %s: %v", d.Val(), err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.TLSALPN == nil {
-					iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
-				}
-				iss.Challenges.TLSALPN.AlternatePort = port
-
-			case "eab":
-				iss.ExternalAccount = new(acme.EAB)
-				if !d.AllArgs(&iss.ExternalAccount.KeyID, &iss.ExternalAccount.MACKey) {
-					return d.ArgErr()
-				}
-
-			case "trusted_roots":
-				iss.TrustedRootsPEMFiles = d.RemainingArgs()
-
-			case "dns":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				provName := d.Val()
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-				if err != nil {
-					return err
-				}
-				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
-
-			case "propagation_delay":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				delayStr := d.Val()
-				delay, err := caddy.ParseDuration(delayStr)
-				if err != nil {
-					return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
-
-			case "propagation_timeout":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				timeoutStr := d.Val()
-				var timeout time.Duration
-				if timeoutStr == "-1" {
-					timeout = time.Duration(-1)
-				} else {
-					var err error
-					timeout, err = caddy.ParseDuration(timeoutStr)
-					if err != nil {
-						return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
-					}
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
-
-			case "resolvers":
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.Resolvers = d.RemainingArgs()
-				if len(iss.Challenges.DNS.Resolvers) == 0 {
-					return d.ArgErr()
-				}
-
-			case "dns_ttl":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				ttlStr := d.Val()
-				ttl, err := caddy.ParseDuration(ttlStr)
-				if err != nil {
-					return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.TTL = caddy.Duration(ttl)
-
-			case "dns_challenge_override_domain":
-				arg := d.RemainingArgs()
-				if len(arg) != 1 {
-					return d.ArgErr()
-				}
-				if iss.Challenges == nil {
-					iss.Challenges = new(ChallengesConfig)
-				}
-				if iss.Challenges.DNS == nil {
-					iss.Challenges.DNS = new(DNSChallengeConfig)
-				}
-				iss.Challenges.DNS.OverrideDomain = arg[0]
-
-			case "preferred_chains":
-				chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
-				if err != nil {
-					return err
-				}
-				iss.PreferredChains = chainPref
-
-			default:
-				return d.Errf("unrecognized ACME issuer property: %s", d.Val())
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
 			}
+			if iss.Challenges.HTTP == nil {
+				iss.Challenges.HTTP = new(HTTPChallengeConfig)
+			}
+			iss.Challenges.HTTP.Disabled = true
+
+		case "disable_tlsalpn_challenge":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.TLSALPN == nil {
+				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+			}
+			iss.Challenges.TLSALPN.Disabled = true
+
+		case "alt_http_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			port, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid port %s: %v", d.Val(), err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.HTTP == nil {
+				iss.Challenges.HTTP = new(HTTPChallengeConfig)
+			}
+			iss.Challenges.HTTP.AlternatePort = port
+
+		case "alt_tlsalpn_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			port, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid port %s: %v", d.Val(), err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.TLSALPN == nil {
+				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
+			}
+			iss.Challenges.TLSALPN.AlternatePort = port
+
+		case "eab":
+			iss.ExternalAccount = new(acme.EAB)
+			if !d.AllArgs(&iss.ExternalAccount.KeyID, &iss.ExternalAccount.MACKey) {
+				return d.ArgErr()
+			}
+
+		case "trusted_roots":
+			iss.TrustedRootsPEMFiles = d.RemainingArgs()
+
+		case "dns":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			provName := d.Val()
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+			if err != nil {
+				return err
+			}
+			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+
+		case "propagation_delay":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			delayStr := d.Val()
+			delay, err := caddy.ParseDuration(delayStr)
+			if err != nil {
+				return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
+
+		case "propagation_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			timeoutStr := d.Val()
+			var timeout time.Duration
+			if timeoutStr == "-1" {
+				timeout = time.Duration(-1)
+			} else {
+				var err error
+				timeout, err = caddy.ParseDuration(timeoutStr)
+				if err != nil {
+					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				}
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
+
+		case "resolvers":
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.Resolvers = d.RemainingArgs()
+			if len(iss.Challenges.DNS.Resolvers) == 0 {
+				return d.ArgErr()
+			}
+
+		case "dns_ttl":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			ttlStr := d.Val()
+			ttl, err := caddy.ParseDuration(ttlStr)
+			if err != nil {
+				return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.TTL = caddy.Duration(ttl)
+
+		case "dns_challenge_override_domain":
+			arg := d.RemainingArgs()
+			if len(arg) != 1 {
+				return d.ArgErr()
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.DNS == nil {
+				iss.Challenges.DNS = new(DNSChallengeConfig)
+			}
+			iss.Challenges.DNS.OverrideDomain = arg[0]
+
+		case "preferred_chains":
+			chainPref, err := ParseCaddyfilePreferredChainsOptions(d)
+			if err != nil {
+				return err
+			}
+			iss.PreferredChains = chainPref
+
+		default:
+			return d.Errf("unrecognized ACME issuer property: %s", d.Val())
 		}
 	}
-	return nil
-}
-
-// onDemandAskRequest makes a request to the ask URL
-// to see if a certificate can be obtained for name.
-// The certificate request should be denied if this
-// returns an error.
-func onDemandAskRequest(ctx context.Context, logger *zap.Logger, ask string, name string) error {
-	askURL, err := url.Parse(ask)
-	if err != nil {
-		return fmt.Errorf("parsing ask URL: %v", err)
-	}
-	qs := askURL.Query()
-	qs.Set("domain", name)
-	askURL.RawQuery = qs.Encode()
-
-	askURLString := askURL.String()
-	resp, err := onDemandAskClient.Get(askURLString)
-	if err != nil {
-		return fmt.Errorf("error checking %v to determine if certificate for hostname '%s' should be allowed: %v",
-			ask, name, err)
-	}
-	resp.Body.Close()
-
-	// logging out the client IP can be useful for servers that want to count
-	// attempts from clients to detect patterns of abuse
-	var clientIP string
-	if hello, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && hello != nil {
-		if remote := hello.Conn.RemoteAddr(); remote != nil {
-			clientIP, _, _ = net.SplitHostPort(remote.String())
-		}
-	}
-
-	logger.Debug("response from ask endpoint",
-		zap.String("client_ip", clientIP),
-		zap.String("domain", name),
-		zap.String("url", askURLString),
-		zap.Int("status", resp.StatusCode))
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, errAskDenied, ask, resp.StatusCode)
-	}
-
 	return nil
 }
 
@@ -603,11 +557,6 @@ type ChainPreference struct {
 	// of these common names.
 	AnyCommonName []string `json:"any_common_name,omitempty"`
 }
-
-// errAskDenied is an error that should be wrapped or returned when the
-// configured "ask" endpoint does not allow a certificate to be issued,
-// to distinguish that from other errors such as connection failure.
-var errAskDenied = errors.New("certificate not allowed by ask endpoint")
 
 // Interface guards
 var (

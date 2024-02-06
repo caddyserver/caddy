@@ -72,10 +72,9 @@ func (ts Tailscale) canHazCertificate(ctx context.Context, hello *tls.ClientHell
 //
 //	... tailscale
 func (Tailscale) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			return d.ArgErr()
-		}
+	d.Next() // consume cert manager name
+	if d.NextArg() {
+		return d.ArgErr()
 	}
 	return nil
 }
@@ -169,17 +168,18 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 //
 //	... http <url>
 func (hcg *HTTPCertGetter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
-		hcg.URL = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			return d.Err("block not allowed here")
-		}
+	d.Next() // consume cert manager name
+
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	hcg.URL = d.Val()
+
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	if d.NextBlock(0) {
+		return d.Err("block not allowed here")
 	}
 	return nil
 }

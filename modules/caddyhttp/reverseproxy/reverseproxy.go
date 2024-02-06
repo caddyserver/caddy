@@ -487,7 +487,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, noUpstreamsAvailable)
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, errNoUpstream)
 		}
 		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
@@ -1041,7 +1041,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if !isDialError && !(isHandlerError && errors.Is(herr, noUpstreamsAvailable)) {
+		if !isDialError && !(isHandlerError && errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
@@ -1097,7 +1097,7 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 
 	// if the passive health checker has a non-zero UnhealthyRequestCount
 	// but the upstream has no MaxRequests set (they are the same thing,
-	// but the passive health checker is a default value for for upstreams
+	// but the passive health checker is a default value for upstreams
 	// without MaxRequests), copy the value into this upstream, since the
 	// value in the upstream (MaxRequests) is what is used during
 	// availability checks
@@ -1450,7 +1450,8 @@ func (c ignoreClientGoneContext) Err() error {
 // from the proxy handler.
 const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
 
-var noUpstreamsAvailable = fmt.Errorf("no upstreams available")
+// errNoUpstream occurs when there are no upstream available.
+var errNoUpstream = fmt.Errorf("no upstreams available")
 
 // Interface guards
 var (
