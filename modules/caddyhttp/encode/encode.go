@@ -85,7 +85,6 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	if enc.Matcher == nil {
 		// common text-based content types
 		// list based on https://developers.cloudflare.com/speed/optimization/content/brotli/content-compression/#compression-between-cloudflare-and-website-visitors
-		// with application/atom+rss added
 		enc.Matcher = &caddyhttp.ResponseMatcher{
 			Headers: http.Header{
 				"Content-Type": []string{
