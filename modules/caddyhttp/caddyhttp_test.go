@@ -66,6 +66,16 @@ func TestSanitizedPathJoin(t *testing.T) {
 			expect:    filepath.Join("/", "a", "b") + separator,
 		},
 		{
+			inputRoot: "/a/b",
+			inputPath: "/foo%2fbar",
+			expect:    filepath.Join("/", "a", "b", "foo", "bar"),
+		},
+		{
+			inputRoot: "/a/b",
+			inputPath: "/foo%252fbar",
+			expect:    filepath.Join("/", "a", "b", "foo%2fbar"),
+		},
+		{
 			inputRoot: "C:\\www",
 			inputPath: "/foo/bar",
 			expect:    filepath.Join("C:\\www", "foo", "bar"),

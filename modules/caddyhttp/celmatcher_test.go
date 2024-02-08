@@ -373,22 +373,6 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			urlTarget:  "https://example.com/foo",
 			wantResult: true,
 		},
-		{
-			name: "remote_ip forwarded (MatchRemoteIP)",
-			expression: &MatchExpression{
-				Expr: `remote_ip('forwarded', '192.0.2.1')`,
-			},
-			urlTarget:  "https://example.com/foo",
-			wantResult: true,
-		},
-		{
-			name: "remote_ip forwarded not first (MatchRemoteIP)",
-			expression: &MatchExpression{
-				Expr: `remote_ip('192.0.2.1', 'forwarded')`,
-			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
-		},
 	}
 )
 
