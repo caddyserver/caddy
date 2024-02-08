@@ -96,6 +96,7 @@ type Handler struct {
 	// "http-01", "dns-01", "tls-alpn-01"
 	Challenges ACMEChallenges `json:"challenges,omitempty" `
 
+	// The policy to use for issuing certificates
 	Policy *Policy `json:"policy,omitempty"`
 
 	logger    *zap.Logger

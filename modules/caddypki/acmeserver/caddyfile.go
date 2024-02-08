@@ -86,7 +86,7 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			}
 			acmeServer.Policy.AllowWildcardNames = true
 		case "allow":
-			r := &Rule{}
+			r := &RuleSet{}
 			for h.Next() {
 				for h.NextBlock(h.Nesting() - 1) {
 					if h.CountRemainingArgs() == 0 {
@@ -109,7 +109,7 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			}
 			acmeServer.Policy.Allow = r
 		case "deny":
-			r := &Rule{}
+			r := &RuleSet{}
 			for h.Next() {
 				for h.NextBlock(h.Nesting() - 1) {
 					if h.CountRemainingArgs() == 0 {
