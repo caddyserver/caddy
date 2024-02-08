@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,7 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	name, _ := url.PathUnescape(urlPath)
@@ -62,7 +63,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 			continue
 		}
 
-		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(info, root, urlPath)
+		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(fileSystem, info, root, urlPath)
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
@@ -74,29 +75,43 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, entries []fs.DirEn
 
 		size := info.Size()
 		fileIsSymlink := isSymlink(info)
+		symlinkPath := ""
 		if fileIsSymlink {
 			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			fileInfo, err := fs.Stat(fsrv.fileSystem, path)
+			fileInfo, err := fs.Stat(fileSystem, path)
 			if err == nil {
 				size = fileInfo.Size()
 			}
+
+			if fsrv.Browse.RevealSymlinks {
+				symLinkTarget, err := filepath.EvalSymlinks(path)
+				if err == nil {
+					symlinkPath = symLinkTarget
+				}
+			}
+
 			// An error most likely means the symlink target doesn't exist,
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, just use the size of the symlink itself, which
 			// was already set above.
 		}
 
+		if !isDir {
+			tplCtx.TotalFileSize += size
+		}
+
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
 
 		tplCtx.Items = append(tplCtx.Items, fileInfo{
-			IsDir:     isDir,
-			IsSymlink: fileIsSymlink,
-			Name:      name,
-			Size:      size,
-			URL:       u.String(),
-			ModTime:   info.ModTime().UTC(),
-			Mode:      info.Mode(),
-			Tpl:       tplCtx, // a reference up to the template context is useful
+			IsDir:       isDir,
+			IsSymlink:   fileIsSymlink,
+			Name:        name,
+			Size:        size,
+			URL:         u.String(),
+			ModTime:     info.ModTime().UTC(),
+			Mode:        info.Mode(),
+			Tpl:         tplCtx, // a reference up to the template context is useful
+			SymlinkPath: symlinkPath,
 		})
 	}
 
@@ -128,6 +143,9 @@ type browseTemplateContext struct {
 
 	// The number of files (items that aren't directories) in the listing.
 	NumFiles int `json:"num_files"`
+
+	// The total size of all files in the listing.
+	TotalFileSize int64 `json:"total_file_size"`
 
 	// Sort column used
 	Sort string `json:"sort,omitempty"`
@@ -223,13 +241,14 @@ type crumb struct {
 // fileInfo contains serializable information
 // about a file or directory.
 type fileInfo struct {
-	Name      string      `json:"name"`
-	Size      int64       `json:"size"`
-	URL       string      `json:"url"`
-	ModTime   time.Time   `json:"mod_time"`
-	Mode      os.FileMode `json:"mode"`
-	IsDir     bool        `json:"is_dir"`
-	IsSymlink bool        `json:"is_symlink"`
+	Name        string      `json:"name"`
+	Size        int64       `json:"size"`
+	URL         string      `json:"url"`
+	ModTime     time.Time   `json:"mod_time"`
+	Mode        os.FileMode `json:"mode"`
+	IsDir       bool        `json:"is_dir"`
+	IsSymlink   bool        `json:"is_symlink"`
+	SymlinkPath string      `json:"symlink_path,omitempty"`
 
 	// a pointer to the template context is useful inside nested templates
 	Tpl *browseTemplateContext `json:"-"`
@@ -250,6 +269,13 @@ func (fi fileInfo) HasExt(exts ...string) bool {
 // power of 2 or base 1024).
 func (fi fileInfo) HumanSize() string {
 	return humanize.IBytes(uint64(fi.Size))
+}
+
+// HumanTotalFileSize returns the total size of all files
+// in the listing as a human-readable string in IEC format
+// (i.e. power of 2 or base 1024).
+func (btc browseTemplateContext) HumanTotalFileSize() string {
+	return humanize.IBytes(uint64(btc.TotalFileSize))
 }
 
 // HumanModTime returns the modified time of the file

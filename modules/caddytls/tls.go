@@ -164,6 +164,36 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.certificateLoaders = append(t.certificateLoaders, modIface.(CertificateLoader))
 	}
 
+	// on-demand permission module
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
+		if t.Automation.OnDemand.Ask != "" {
+			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
+		}
+		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
+		if err != nil {
+			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
+		}
+		t.Automation.OnDemand.permission = val.(OnDemandPermission)
+	}
+
+	// on-demand rate limiting
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
+		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
+	} else {
+		// remove any existing rate limiter
+		onDemandRateLimiter.SetWindow(0)
+		onDemandRateLimiter.SetMaxEvents(0)
+	}
+
+	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
+		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
+		if err != nil {
+			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		}
+	}
+
 	// automation/management policies
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
@@ -201,24 +231,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		err := t.SessionTickets.provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning session tickets configuration: %v", err)
-		}
-	}
-
-	// on-demand rate limiting
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
-		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
-		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
-	} else {
-		// remove any existing rate limiter
-		onDemandRateLimiter.SetWindow(0)
-		onDemandRateLimiter.SetMaxEvents(0)
-	}
-
-	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
-		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
-		if err != nil {
-			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
 		}
 	}
 
@@ -288,8 +300,7 @@ func (t *TLS) Validate() error {
 // Start activates the TLS module.
 func (t *TLS) Start() error {
 	// warn if on-demand TLS is enabled but no restrictions are in place
-	if t.Automation.OnDemand == nil ||
-		(t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.RateLimit == nil) {
+	if t.Automation.OnDemand == nil || (t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.permission == nil) {
 		for _, ap := range t.Automation.Policies {
 			if ap.OnDemand && ap.isWildcardOrDefault() {
 				t.logger.Warn("YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place",
@@ -551,6 +562,10 @@ func (t *TLS) cleanStorageUnits() {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
 
+	// TODO: This check might not be needed anymore now that CertMagic syncs
+	// and throttles storage cleaning globally across the cluster.
+	// The original comment below might be outdated:
+	//
 	// If storage was cleaned recently, don't do it again for now. Although the ticker
 	// calling this function drops missed ticks for us, config reloads discard the old
 	// ticker and replace it with a new one, possibly invoking a cleaning to happen again
@@ -563,21 +578,26 @@ func (t *TLS) cleanStorageUnits() {
 		return
 	}
 
+	id, err := caddy.InstanceID()
+	if err != nil {
+		t.logger.Warn("unable to get instance ID; storage clean stamps will be incomplete", zap.Error(err))
+	}
 	options := certmagic.CleanStorageOptions{
+		Logger:                 t.logger,
+		InstanceID:             id.String(),
+		Interval:               t.storageCleanInterval(),
 		OCSPStaples:            true,
 		ExpiredCerts:           true,
 		ExpiredCertGracePeriod: 24 * time.Hour * 14,
 	}
 
-	// avoid cleaning same storage more than once per cleaning cycle
-	storagesCleaned := make(map[string]struct{})
-
 	// start with the default/global storage
-	storage := t.ctx.Storage()
-	storageStr := fmt.Sprintf("%v", storage)
-	t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
-	certmagic.CleanStorage(t.ctx, storage, options)
-	storagesCleaned[storageStr] = struct{}{}
+	err = certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
+	if err != nil {
+		// probably don't want to return early, since we should still
+		// see if any other storages can get cleaned up
+		t.logger.Error("could not clean default/global storage", zap.Error(err))
+	}
 
 	// then clean each storage defined in ACME automation policies
 	if t.Automation != nil {
@@ -585,13 +605,9 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			storageStr := fmt.Sprintf("%v", ap.storage)
-			if _, ok := storagesCleaned[storageStr]; ok {
-				continue
+			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
+				t.logger.Error("could not clean storage configured in automation policy", zap.Error(err))
 			}
-			t.logger.Info("cleaning storage unit", zap.String("description", storageStr))
-			certmagic.CleanStorage(t.ctx, ap.storage, options)
-			storagesCleaned[storageStr] = struct{}{}
 		}
 	}
 

@@ -93,6 +93,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/xhtml+xml*",
 					"application/atom+xml*",
 					"application/rss+xml*",
+					"application/wasm*",
 					"image/svg+xml*",
 				},
 			},
@@ -310,7 +311,6 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 func (rw *responseWriter) init() {
 	if rw.Header().Get("Content-Encoding") == "" && isEncodeAllowed(rw.Header()) &&
 		rw.config.Match(rw) {
-
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
 		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975

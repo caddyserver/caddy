@@ -17,9 +17,11 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -32,6 +34,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,7 +65,17 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
+	undo, err := maxprocs.Set()
+	defer undo()
+	if err != nil {
+		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
 	if err := rootCmd.Execute(); err != nil {
+		var exitError *exitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode)
+		}
 		os.Exit(1)
 	}
 }
@@ -123,7 +136,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
 			config, err = os.ReadFile("Caddyfile")
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil
 			} else if err != nil {
@@ -300,8 +313,12 @@ func loadEnvFromFile(envFile string) error {
 	}
 
 	for k, v := range envMap {
-		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("setting environment variables: %v", err)
+		// do not overwrite existing environment variables
+		_, exists := os.LookupEnv(k)
+		if !exists {
+			if err := os.Setenv(k, v); err != nil {
+				return fmt.Errorf("setting environment variables: %v", err)
+			}
 		}
 	}
 

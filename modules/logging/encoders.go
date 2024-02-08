@@ -65,14 +65,13 @@ func (ce *ConsoleEncoder) Provision(_ caddy.Context) error {
 // See the godoc on the LogEncoderConfig type for the syntax of
 // subdirectives that are common to most/all encoders.
 func (ce *ConsoleEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			return d.ArgErr()
-		}
-		err := ce.LogEncoderConfig.UnmarshalCaddyfile(d)
-		if err != nil {
-			return err
-		}
+	d.Next() // consume encoder name
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	err := ce.LogEncoderConfig.UnmarshalCaddyfile(d)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -106,14 +105,13 @@ func (je *JSONEncoder) Provision(_ caddy.Context) error {
 // See the godoc on the LogEncoderConfig type for the syntax of
 // subdirectives that are common to most/all encoders.
 func (je *JSONEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			return d.ArgErr()
-		}
-		err := je.LogEncoderConfig.UnmarshalCaddyfile(d)
-		if err != nil {
-			return err
-		}
+	d.Next() // consume encoder name
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	err := je.LogEncoderConfig.UnmarshalCaddyfile(d)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -149,7 +147,7 @@ type LogEncoderConfig struct {
 //	    level_format    <format>
 //	}
 func (lec *LogEncoderConfig) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
+	for d.NextBlock(0) {
 		subdir := d.Val()
 		switch subdir {
 		case "time_local":

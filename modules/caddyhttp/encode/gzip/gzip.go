@@ -44,17 +44,16 @@ func (Gzip) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
 func (g *Gzip) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			continue
-		}
-		levelStr := d.Val()
-		level, err := strconv.Atoi(levelStr)
-		if err != nil {
-			return err
-		}
-		g.Level = level
+	d.Next() // consume option name
+	if !d.NextArg() {
+		return nil
 	}
+	levelStr := d.Val()
+	level, err := strconv.Atoi(levelStr)
+	if err != nil {
+		return err
+	}
+	g.Level = level
 	return nil
 }
 

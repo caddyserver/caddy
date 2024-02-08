@@ -16,10 +16,11 @@ package caddyhttp
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
-	"sync"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -42,7 +43,11 @@ func init() {
 //
 // This listener wrapper must be placed BEFORE the "tls" listener
 // wrapper, for it to work properly.
-type HTTPRedirectListenerWrapper struct{}
+type HTTPRedirectListenerWrapper struct {
+	// MaxHeaderBytes is the maximum size to parse from a client's
+	// HTTP request headers. Default: 1 MB
+	MaxHeaderBytes int64 `json:"max_header_bytes,omitempty"`
+}
 
 func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -56,7 +61,7 @@ func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 }
 
 func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
-	return &httpRedirectListener{l}
+	return &httpRedirectListener{l, h.MaxHeaderBytes}
 }
 
 // httpRedirectListener is listener that checks the first few bytes
@@ -64,6 +69,7 @@ func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener 
 // to respond to an HTTP request with a redirect.
 type httpRedirectListener struct {
 	net.Listener
+	maxHeaderBytes int64
 }
 
 // Accept waits for and returns the next connection to the listener,
@@ -74,16 +80,23 @@ func (l *httpRedirectListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
+	maxHeaderBytes := l.maxHeaderBytes
+	if maxHeaderBytes == 0 {
+		maxHeaderBytes = 1024 * 1024
+	}
+
 	return &httpRedirectConn{
-		Conn: c,
-		r:    bufio.NewReader(c),
+		Conn:  c,
+		limit: maxHeaderBytes,
+		r:     bufio.NewReader(c),
 	}, nil
 }
 
 type httpRedirectConn struct {
 	net.Conn
-	once sync.Once
-	r    *bufio.Reader
+	once  bool
+	limit int64
+	r     *bufio.Reader
 }
 
 // Read tries to peek at the first few bytes of the request, and if we get
@@ -91,53 +104,58 @@ type httpRedirectConn struct {
 // like an HTTP request, then we perform a HTTP->HTTPS redirect on the same
 // port as the original connection.
 func (c *httpRedirectConn) Read(p []byte) (int, error) {
-	var errReturn error
-	c.once.Do(func() {
-		firstBytes, err := c.r.Peek(5)
-		if err != nil {
-			return
-		}
+	if c.once {
+		return c.r.Read(p)
+	}
+	// no need to use sync.Once - net.Conn is not read from concurrently.
+	c.once = true
 
-		// If the request doesn't look like HTTP, then it's probably
-		// TLS bytes and we don't need to do anything.
-		if !firstBytesLookLikeHTTP(firstBytes) {
-			return
-		}
-
-		// Parse the HTTP request, so we can get the Host and URL to redirect to.
-		req, err := http.ReadRequest(c.r)
-		if err != nil {
-			return
-		}
-
-		// Build the redirect response, using the same Host and URL,
-		// but replacing the scheme with https.
-		headers := make(http.Header)
-		headers.Add("Location", "https://"+req.Host+req.URL.String())
-		resp := &http.Response{
-			Proto:      "HTTP/1.0",
-			Status:     "308 Permanent Redirect",
-			StatusCode: 308,
-			ProtoMajor: 1,
-			ProtoMinor: 0,
-			Header:     headers,
-		}
-
-		err = resp.Write(c.Conn)
-		if err != nil {
-			errReturn = fmt.Errorf("couldn't write HTTP->HTTPS redirect")
-			return
-		}
-
-		errReturn = fmt.Errorf("redirected HTTP request on HTTPS port")
-		c.Conn.Close()
-	})
-
-	if errReturn != nil {
-		return 0, errReturn
+	firstBytes, err := c.r.Peek(5)
+	if err != nil {
+		return 0, err
 	}
 
-	return c.r.Read(p)
+	// If the request doesn't look like HTTP, then it's probably
+	// TLS bytes, and we don't need to do anything.
+	if !firstBytesLookLikeHTTP(firstBytes) {
+		return c.r.Read(p)
+	}
+
+	// From now on, we can be almost certain the request is HTTP.
+	// The returned error will be non nil and caller are expected to
+	// close the connection.
+
+	// Set the read limit, io.MultiReader is needed because
+	// when resetting, *bufio.Reader discards buffered data.
+	buffered, _ := c.r.Peek(c.r.Buffered())
+	mr := io.MultiReader(bytes.NewReader(buffered), c.Conn)
+	c.r.Reset(io.LimitReader(mr, c.limit))
+
+	// Parse the HTTP request, so we can get the Host and URL to redirect to.
+	req, err := http.ReadRequest(c.r)
+	if err != nil {
+		return 0, fmt.Errorf("couldn't read HTTP request")
+	}
+
+	// Build the redirect response, using the same Host and URL,
+	// but replacing the scheme with https.
+	headers := make(http.Header)
+	headers.Add("Location", "https://"+req.Host+req.URL.String())
+	resp := &http.Response{
+		Proto:      "HTTP/1.0",
+		Status:     "308 Permanent Redirect",
+		StatusCode: 308,
+		ProtoMajor: 1,
+		ProtoMinor: 0,
+		Header:     headers,
+	}
+
+	err = resp.Write(c.Conn)
+	if err != nil {
+		return 0, fmt.Errorf("couldn't write HTTP->HTTPS redirect")
+	}
+
+	return 0, fmt.Errorf("redirected HTTP request on HTTPS port")
 }
 
 // firstBytesLookLikeHTTP reports whether a TLS record header

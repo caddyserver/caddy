@@ -1,7 +1,11 @@
 package caddycmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 var rootCmd = &cobra.Command{
@@ -95,13 +99,20 @@ https://caddyserver.com/docs/running
 	// kind of annoying to have all the help text printed out if
 	// caddy has an error provisioning its modules, for instance...
 	SilenceUsage: true,
+	Version:      onlyVersionText(),
 }
 
 const fullDocsFooter = `Full documentation is available at:
 https://caddyserver.com/docs/command-line`
 
 func init() {
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() + "\n" + fullDocsFooter + "\n")
+}
+
+func onlyVersionText() string {
+	_, f := caddy.Version()
+	return f
 }
 
 func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
@@ -123,7 +134,24 @@ func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 // in a cobra command's RunE field.
 func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
-		_, err := f(Flags{cmd.Flags()})
+		status, err := f(Flags{cmd.Flags()})
+		if status > 1 {
+			cmd.SilenceErrors = true
+			return &exitError{ExitCode: status, Err: err}
+		}
 		return err
 	}
+}
+
+// exitError carries the exit code from CommandFunc to Main()
+type exitError struct {
+	ExitCode int
+	Err      error
+}
+
+func (e *exitError) Error() string {
+	if e.Err == nil {
+		return fmt.Sprintf("exiting with status %d", e.ExitCode)
+	}
+	return e.Err.Error()
 }

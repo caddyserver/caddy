@@ -305,7 +305,7 @@ func TestDispenser_ArgErr_Err(t *testing.T) {
 		t.Errorf("Expected error message with custom message in it ('foobar'); got '%v'", err)
 	}
 
-	var ErrBarIsFull = errors.New("bar is full")
+	ErrBarIsFull := errors.New("bar is full")
 	bookingError := d.Errf("unable to reserve: %w", ErrBarIsFull)
 	if !errors.Is(bookingError, ErrBarIsFull) {
 		t.Errorf("Errf(): should be able to unwrap the error chain")

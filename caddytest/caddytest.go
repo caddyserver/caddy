@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -120,7 +121,6 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 
 	tc.t.Cleanup(func() {
 		if tc.t.Failed() && tc.configLoaded {
-
 			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 			if err != nil {
 				tc.t.Log("unable to read the current config")
@@ -232,7 +232,7 @@ const initConfig = `{
 func validateTestPrerequisites(t *testing.T) error {
 	// check certificates are found
 	for _, certName := range Default.Certifcates {
-		if _, err := os.Stat(getIntegrationDir() + certName); os.IsNotExist(err) {
+		if _, err := os.Stat(getIntegrationDir() + certName); errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("caddy integration test certificates (%s) not found", certName)
 		}
 	}
@@ -467,7 +467,7 @@ func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) 
 	}
 
 	if expectedStatusCode != resp.StatusCode {
-		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.RequestURI, expectedStatusCode, resp.StatusCode)
+		tc.t.Errorf("requesting \"%s\" expected status code: %d but got %d", req.URL.RequestURI(), expectedStatusCode, resp.StatusCode)
 	}
 
 	return resp

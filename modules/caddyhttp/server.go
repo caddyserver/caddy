@@ -173,6 +173,19 @@ type Server struct {
 	// remote IP address.
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 
+	// If greater than zero, enables strict ClientIPHeaders
+	// (default X-Forwarded-For) parsing. If enabled, the
+	// ClientIPHeaders will be parsed from right to left, and
+	// the first value that is both valid and doesn't match the
+	// trusted proxy list will be used as client IP. If zero,
+	// the ClientIPHeaders will be parsed from left to right,
+	// and the first value that is a valid IP address will be
+	// used as client IP.
+	//
+	// This depends on `trusted_proxies` being configured.
+	// This option is disabled by default.
+	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -228,7 +241,6 @@ type Server struct {
 
 	server      *http.Server
 	h3server    *http3.Server
-	h3listeners []net.PacketConn // TODO: we have to hold these because quic-go won't close listeners it didn't create
 	h2listeners []*http2Listener
 	addresses   []caddy.NetworkAddress
 
@@ -290,9 +302,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// enable full-duplex for HTTP/1, ensuring the entire
 	// request body gets consumed before writing the response
 	if s.EnableFullDuplex {
-		// TODO: Remove duplex_go12*.go abstraction once our
-		// minimum Go version is 1.21 or later
-		err := enableFullDuplex(w)
+		//nolint:bodyclose
+		err := http.NewResponseController(w).EnableFullDuplex()
 		if err != nil {
 			s.accessLogger.Warn("failed to enable full duplex", zap.Error(err))
 		}
@@ -555,13 +566,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	addr.Network = getHTTP3Network(addr.Network)
-	lnAny, err := addr.Listen(s.ctx, 0, net.ListenConfig{})
-	if err != nil {
-		return err
-	}
-	ln := lnAny.(net.PacketConn)
-
-	h3ln, err := caddy.ListenQUIC(ln, tlsCfg, &s.activeRequests)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, &s.activeRequests)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -578,8 +583,6 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			},
 		}
 	}
-
-	s.h3listeners = append(s.h3listeners, ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
@@ -848,15 +851,26 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 	if s.trustedProxies == nil {
 		return false, ipAddr.String()
 	}
-	for _, ipRange := range s.trustedProxies.GetIPRanges(r) {
-		if ipRange.Contains(ipAddr) {
-			// We trust the proxy, so let's try to
-			// determine the real client IP
-			return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
+
+	if isTrustedClientIP(ipAddr, s.trustedProxies.GetIPRanges(r)) {
+		if s.TrustedProxiesStrict > 0 {
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String())
 		}
+		return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
 	}
 
 	return false, ipAddr.String()
+}
+
+// isTrustedClientIP returns true if the given IP address is
+// in the list of trusted IP ranges.
+func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
+	for _, ipRange := range trusted {
+		if ipRange.Contains(ipAddr) {
+			return true
+		}
+	}
+	return false
 }
 
 // trustedRealClientIP finds the client IP from the request assuming it is
@@ -890,6 +904,29 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 	}
 
 	// We didn't find a valid IP
+	return clientIP
+}
+
+// strictUntrustedClientIp iterates through the list of client IP headers,
+// parses them from right-to-left, and returns the first valid IP address
+// that is untrusted. If no valid IP address is found, then the direct
+// remote address is returned.
+func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string) string {
+	for _, headerName := range headers {
+		ips := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
+
+		for i := len(ips) - 1; i >= 0; i-- {
+			ip, _, _ := strings.Cut(strings.TrimSpace(ips[i]), "%")
+			ipAddr, err := netip.ParseAddr(ip)
+			if err != nil {
+				continue
+			}
+			if !isTrustedClientIP(ipAddr, trusted) {
+				return ipAddr.String()
+			}
+		}
+	}
+
 	return clientIP
 }
 

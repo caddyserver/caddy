@@ -118,6 +118,11 @@ func (st ServerType) buildTLSApp(
 				ap.OnDemand = true
 			}
 
+			// reuse private keys tls
+			if _, ok := sblock.pile["tls.reuse_private_keys"]; ok {
+				ap.ReusePrivateKeys = true
+			}
+
 			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)
 			}
@@ -582,10 +587,12 @@ outer:
 			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
 			if reflect.DeepEqual(aps[i].IssuersRaw, aps[j].IssuersRaw) &&
+				reflect.DeepEqual(aps[i].ManagersRaw, aps[j].ManagersRaw) &&
 				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
 				aps[i].MustStaple == aps[j].MustStaple &&
 				aps[i].KeyType == aps[j].KeyType &&
 				aps[i].OnDemand == aps[j].OnDemand &&
+				aps[i].ReusePrivateKeys == aps[j].ReusePrivateKeys &&
 				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio {
 				if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) == 0 {
 					// later policy (at j) has no subjects ("catch-all"), so we can

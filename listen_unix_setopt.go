@@ -1,4 +1,4 @@
-//go:build unix && !freebsd
+//go:build unix && !freebsd && !solaris
 
 package caddy
 

@@ -19,10 +19,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"reflect"
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
+
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
 // Context is a type which defines the lifetime of modules that
@@ -37,6 +41,7 @@ import (
 // not actually need to do this).
 type Context struct {
 	context.Context
+
 	moduleInstances map[string][]Module
 	cfg             *Config
 	cleanupFuncs    []func()
@@ -79,6 +84,15 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // OnCancel executes f when ctx is canceled.
 func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
+}
+
+// Filesystems returns a ref to the FilesystemMap
+func (ctx *Context) Filesystems() FileSystems {
+	// if no config is loaded, we use a default filesystemmap, which includes the osfs
+	if ctx.cfg == nil {
+		return &filesystems.FilesystemMap{}
+	}
+	return ctx.cfg.filesystems
 }
 
 // LoadModule loads the Caddy module(s) from the specified field of the parent struct
@@ -164,7 +178,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				return nil, err
 			}
 			result = val
-
 		} else if isJSONRawMessage(typ.Elem()) {
 			// val is `[]json.RawMessage`
 
@@ -180,7 +193,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				all = append(all, val)
 			}
 			result = all
-
 		} else if typ.Elem().Kind() == reflect.Slice && isJSONRawMessage(typ.Elem().Elem()) {
 			// val is `[][]json.RawMessage`
 
@@ -201,7 +213,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 				all = append(all, allInner)
 			}
 			result = all
-
 		} else if isModuleMapType(typ.Elem()) {
 			// val is `[]map[string]json.RawMessage`
 
@@ -492,6 +503,30 @@ func (ctx Context) Logger(module ...Module) *zap.Logger {
 		return Log()
 	}
 	return ctx.cfg.Logging.Logger(mod)
+}
+
+// Slogger returns a slog logger that is intended for use by
+// the most recent module associated with the context.
+func (ctx Context) Slogger() *slog.Logger {
+	if ctx.cfg == nil {
+		// often the case in tests; just use a dev logger
+		l, err := zap.NewDevelopment()
+		if err != nil {
+			panic("config missing, unable to create dev logger: " + err.Error())
+		}
+		return slog.New(zapslog.NewHandler(l.Core(), nil))
+	}
+	mod := ctx.Module()
+	if mod == nil {
+		return slog.New(zapslog.NewHandler(Log().Core(), nil))
+	}
+
+	return slog.New(zapslog.NewHandler(
+		ctx.cfg.Logging.Logger(mod).Core(),
+		&zapslog.HandlerOptions{
+			LoggerName: string(mod.CaddyModule().ID),
+		},
+	))
 }
 
 // Modules returns the lineage of modules that this context provisioned,
