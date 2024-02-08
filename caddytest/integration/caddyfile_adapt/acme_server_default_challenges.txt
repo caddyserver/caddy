@@ -1,0 +1,62 @@
+{
+	pki {
+		ca custom-ca {
+			name "Custom CA"
+		}
+	}
+}
+
+acme.example.com {
+	acme_server {
+		ca custom-ca
+		challenges
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"acme.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "custom-ca",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"pki": {
+			"certificate_authorities": {
+				"custom-ca": {
+					"name": "Custom CA"
+				}
+			}
+		}
+	}
+}

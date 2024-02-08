@@ -32,6 +32,7 @@ func init() {
 //		ca        <id>
 //		lifetime  <duration>
 //		resolvers <addresses...>
+//		challenges <challenges...>
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	h.Next() // consume directive name
@@ -73,14 +74,16 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
 				return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
 			}
-
 			acmeServer.Lifetime = caddy.Duration(dur)
-
 		case "resolvers":
 			acmeServer.Resolvers = h.RemainingArgs()
 			if len(acmeServer.Resolvers) == 0 {
 				return nil, h.Errf("must specify at least one resolver address")
 			}
+		case "challenges":
+			acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
+		default:
+			return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
 		}
 	}
 
