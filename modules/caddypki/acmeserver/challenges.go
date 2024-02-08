@@ -8,7 +8,6 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 )
 
-
 // ACMEChallenge is an opaque string that represents supported ACME challenges.
 type ACMEChallenge string
 

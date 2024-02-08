@@ -95,8 +95,8 @@ type Handler struct {
 	// means all challenges are enabled. Accepted values are:
 	// "http-01", "dns-01", "tls-alpn-01"
 	Challenges ACMEChallenges `json:"challenges,omitempty" `
-  
-  Policy *Policy `json:"policy,omitempty"`
+
+	Policy *Policy `json:"policy,omitempty"`
 
 	logger    *zap.Logger
 	resolvers []caddy.NetworkAddress
