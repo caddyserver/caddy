@@ -20,7 +20,7 @@ jobs:
       matrix:
         os: 
           - ubuntu-latest
-          - macos-latest
+          - macos-14
           - windows-latest
         go: 
           - '1.21'
@@ -42,7 +42,7 @@ jobs:
           CADDY_BIN_PATH: ./cmd/caddy/caddy
           SUCCESS: 0
 
-        - os: macos-latest
+        - os: macos-14
           CADDY_BIN_PATH: ./cmd/caddy/caddy
           SUCCESS: 0
 
