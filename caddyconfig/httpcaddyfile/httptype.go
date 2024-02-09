@@ -804,23 +804,23 @@ func (st *ServerType) serversFromPairings(
 				} else if len(ncl.hostnames) > 0 {
 					// if the logger overrides the hostnames, map that to the logger name
 					for _, h := range ncl.hostnames {
-						if srv.Logs.LoggerNames == nil {
-							srv.Logs.LoggerNames = make(map[string]string)
+						if srv.Logs.LoggerMapping == nil {
+							srv.Logs.LoggerMapping = make(map[string][]string)
 						}
-						srv.Logs.LoggerNames[h] = ncl.name
+						srv.Logs.LoggerMapping[h] = append(srv.Logs.LoggerMapping[h], ncl.name)
 					}
 				} else {
 					// otherwise, map each host to the logger name
 					for _, h := range sblockLogHosts {
-						if srv.Logs.LoggerNames == nil {
-							srv.Logs.LoggerNames = make(map[string]string)
-						}
 						// strip the port from the host, if any
 						host, _, err := net.SplitHostPort(h)
 						if err != nil {
 							host = h
 						}
-						srv.Logs.LoggerNames[host] = ncl.name
+						if srv.Logs.LoggerMapping == nil {
+							srv.Logs.LoggerMapping = make(map[string][]string)
+						}
+						srv.Logs.LoggerMapping[host] = append(srv.Logs.LoggerMapping[host], ncl.name)
 					}
 				}
 			}

@@ -32,22 +32,31 @@ import (
 // customized per-request-host.
 type ServerLogConfig struct {
 	// The default logger name for all logs emitted by this server for
-	// hostnames that are not in the LoggerNames (logger_names) map.
+	// hostnames that are not in logger_names or logger_mapping.
 	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to a custom logger name.
 	// For example, a mapping of "example.com" to "example" would
 	// cause access logs from requests with a Host of example.com
 	// to be emitted by a logger named "http.log.access.example".
+	// DEPRECATED: Use LoggerMapping instead.
 	LoggerNames map[string]string `json:"logger_names,omitempty"`
+
+	// LoggerMapping maps request hostnames to one or more a custom
+	// logger name. For example, a mapping of "example.com" to "example"
+	// would cause access logs from requests with a Host of example.com
+	// to be emitted by a logger named "http.log.access.example". If
+	// there are multiple logger names, then the log will be emitted
+	// to all of them.
+	LoggerMapping map[string][]string `json:"logger_mapping,omitempty"`
 
 	// By default, all requests to this server will be logged if
 	// access logging is enabled. This field lists the request
 	// hosts for which access logging should be disabled.
 	SkipHosts []string `json:"skip_hosts,omitempty"`
 
-	// If true, requests to any host not appearing in the
-	// LoggerNames (logger_names) map will not be logged.
+	// If true, requests to any host not appearing in
+	// logger_names or logger_mapping will not be logged.
 	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
 
 	// If true, credentials that are otherwise omitted, will be logged.
@@ -57,33 +66,54 @@ type ServerLogConfig struct {
 	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
 }
 
-// wrapLogger wraps logger in a logger named according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
-	if loggerName := slc.getLoggerName(host); loggerName != "" {
-		return logger.Named(loggerName)
+// wrapLogger wraps logger in one or more logger named
+// according to user preferences for the given host.
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
+	var loggers []*zap.Logger
+	for _, loggerName := range slc.getLoggerHosts(host) {
+		if loggerName == "" {
+			continue
+		}
+		loggers = append(loggers, logger.Named(loggerName))
 	}
-	return logger
+	return loggers
 }
 
-func (slc ServerLogConfig) getLoggerName(host string) string {
-	tryHost := func(key string) (string, bool) {
+func (slc ServerLogConfig) getLoggerHosts(host string) []string {
+	tryHost := func(key string) ([]string, bool) {
 		// first try exact match
-		if loggerName, ok := slc.LoggerNames[key]; ok {
-			return loggerName, ok
+		if hosts, ok := slc.LoggerMapping[key]; ok {
+			return hosts, ok
 		}
 		// strip port and try again (i.e. Host header of "example.com:1234" should
 		// match "example.com" if there is no "example.com:1234" in the map)
 		hostOnly, _, err := net.SplitHostPort(key)
 		if err != nil {
-			return "", false
+			return []string{""}, false
 		}
-		loggerName, ok := slc.LoggerNames[hostOnly]
-		return loggerName, ok
+		if hosts, ok := slc.LoggerMapping[hostOnly]; ok {
+			return hosts, ok
+		}
+
+		// Now try the deprecated LoggerNames
+
+		// first try exact match
+		if host, ok := slc.LoggerNames[key]; ok {
+			return []string{host}, ok
+		}
+		// strip port and try again (i.e. Host header of "example.com:1234" should
+		// match "example.com" if there is no "example.com:1234" in the map)
+		hostOnly, _, err = net.SplitHostPort(key)
+		if err != nil {
+			return []string{""}, false
+		}
+		host, ok := slc.LoggerNames[hostOnly]
+		return []string{host}, ok
 	}
 
 	// try the exact hostname first
-	if loggerName, ok := tryHost(host); ok {
-		return loggerName
+	if hosts, ok := tryHost(host); ok {
+		return hosts
 	}
 
 	// try matching wildcard domains if other non-specific loggers exist
@@ -94,24 +124,28 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 		}
 		labels[i] = "*"
 		wildcardHost := strings.Join(labels, ".")
-		if loggerName, ok := tryHost(wildcardHost); ok {
-			return loggerName
+		if hosts, ok := tryHost(wildcardHost); ok {
+			return hosts
 		}
 	}
 
-	return slc.DefaultLoggerName
+	return []string{slc.DefaultLoggerName}
 }
 
 func (slc *ServerLogConfig) clone() *ServerLogConfig {
 	clone := &ServerLogConfig{
 		DefaultLoggerName:    slc.DefaultLoggerName,
 		LoggerNames:          make(map[string]string),
+		LoggerMapping:        make(map[string][]string),
 		SkipHosts:            append([]string{}, slc.SkipHosts...),
 		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
 		ShouldLogCredentials: slc.ShouldLogCredentials,
 	}
 	for k, v := range slc.LoggerNames {
 		clone.LoggerNames[k] = v
+	}
+	for k, v := range slc.LoggerMapping {
+		clone.LoggerMapping[k] = append([]string{}, v...)
 	}
 	return clone
 }

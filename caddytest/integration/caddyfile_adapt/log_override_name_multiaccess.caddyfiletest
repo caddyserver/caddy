@@ -75,8 +75,10 @@ http://localhost:8881 {
 						]
 					},
 					"logs": {
-						"logger_names": {
-							"localhost": "foo"
+						"logger_mapping": {
+							"localhost": [
+								"foo"
+							]
 						}
 					}
 				}

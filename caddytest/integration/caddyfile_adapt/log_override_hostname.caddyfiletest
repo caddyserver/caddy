@@ -74,10 +74,16 @@ example.com:8443 {
 						}
 					],
 					"logs": {
-						"logger_names": {
-							"bar.example.com": "log0",
-							"baz.example.com": "log1",
-							"foo.example.com": "log0"
+						"logger_mapping": {
+							"bar.example.com": [
+								"log0"
+							],
+							"baz.example.com": [
+								"log1"
+							],
+							"foo.example.com": [
+								"log0"
+							]
 						}
 					}
 				},
@@ -98,8 +104,10 @@ example.com:8443 {
 						}
 					],
 					"logs": {
-						"logger_names": {
-							"example.com": "log2"
+						"logger_mapping": {
+							"example.com": [
+								"log2"
+							]
 						}
 					}
 				}
