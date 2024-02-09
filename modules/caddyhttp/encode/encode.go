@@ -84,17 +84,43 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 
 	if enc.Matcher == nil {
 		// common text-based content types
+		// list based on https://developers.cloudflare.com/speed/optimization/content/brotli/content-compression/#compression-between-cloudflare-and-website-visitors
 		enc.Matcher = &caddyhttp.ResponseMatcher{
 			Headers: http.Header{
 				"Content-Type": []string{
-					"text/*",
-					"application/json*",
-					"application/javascript*",
-					"application/xhtml+xml*",
 					"application/atom+xml*",
+					"application/eot*",
+					"application/font*",
+					"application/geo+json*",
+					"application/graphql+json*",
+					"application/javascript*",
+					"application/json*",
+					"application/ld+json*",
+					"application/manifest+json*",
+					"application/opentype*",
+					"application/otf*",
 					"application/rss+xml*",
+					"application/truetype*",
+					"application/ttf*",
+					"application/vnd.api+json*",
+					"application/vnd.ms-fontobject*",
 					"application/wasm*",
+					"application/x-httpd-cgi*",
+					"application/x-javascript*",
+					"application/x-opentype*",
+					"application/x-otf*",
+					"application/x-perl*",
+					"application/x-protobuf*",
+					"application/x-ttf*",
+					"application/xhtml+xml*",
+					"application/xml*",
+					"font/*",
 					"image/svg+xml*",
+					"image/vnd.microsoft.icon*",
+					"image/x-icon*",
+					"multipart/bag*",
+					"multipart/mixed*",
+					"text/*",
 				},
 			},
 		}
