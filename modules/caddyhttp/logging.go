@@ -69,8 +69,9 @@ type ServerLogConfig struct {
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
 func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
-	var loggers []*zap.Logger
-	for _, loggerName := range slc.getLoggerHosts(host) {
+	hosts := slc.getLoggerHosts(host)
+	loggers := make([]*zap.Logger, 0, len(hosts))
+	for _, loggerName := range hosts {
 		if loggerName == "" {
 			continue
 		}
@@ -89,7 +90,7 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 		// match "example.com" if there is no "example.com:1234" in the map)
 		hostOnly, _, err := net.SplitHostPort(key)
 		if err != nil {
-			return []string{""}, false
+			return []string{}, false
 		}
 		if hosts, ok := slc.LoggerMapping[hostOnly]; ok {
 			return hosts, ok
@@ -105,7 +106,7 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 		// match "example.com" if there is no "example.com:1234" in the map)
 		hostOnly, _, err = net.SplitHostPort(key)
 		if err != nil {
-			return []string{""}, false
+			return []string{}, false
 		}
 		host, ok := slc.LoggerNames[hostOnly]
 		return []string{host}, ok
