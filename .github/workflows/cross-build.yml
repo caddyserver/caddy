@@ -11,7 +11,7 @@ on:
       - 2.*
 
 jobs:
-  cross-build-test:
+  build:
     strategy:
       fail-fast: false
       matrix:
