@@ -60,7 +60,7 @@
 						}
 					],
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"bar.example.com": [
 								"json"
 							],

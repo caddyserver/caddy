@@ -71,7 +71,7 @@ b.example.com {
 						}
 					],
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"a.example.com": [
 								"log0"
 							],

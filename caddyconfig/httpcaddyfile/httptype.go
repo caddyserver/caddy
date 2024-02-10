@@ -804,10 +804,10 @@ func (st *ServerType) serversFromPairings(
 				} else if len(ncl.hostnames) > 0 {
 					// if the logger overrides the hostnames, map that to the logger name
 					for _, h := range ncl.hostnames {
-						if srv.Logs.LoggerMapping == nil {
-							srv.Logs.LoggerMapping = make(map[string][]string)
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]caddyhttp.StringArray)
 						}
-						srv.Logs.LoggerMapping[h] = append(srv.Logs.LoggerMapping[h], ncl.name)
+						srv.Logs.LoggerNames[h] = append(srv.Logs.LoggerNames[h], ncl.name)
 					}
 				} else {
 					// otherwise, map each host to the logger name
@@ -817,10 +817,10 @@ func (st *ServerType) serversFromPairings(
 						if err != nil {
 							host = h
 						}
-						if srv.Logs.LoggerMapping == nil {
-							srv.Logs.LoggerMapping = make(map[string][]string)
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]caddyhttp.StringArray)
 						}
-						srv.Logs.LoggerMapping[host] = append(srv.Logs.LoggerMapping[host], ncl.name)
+						srv.Logs.LoggerNames[host] = append(srv.Logs.LoggerNames[host], ncl.name)
 					}
 				}
 			}

@@ -62,7 +62,7 @@ example.com {
 						}
 					],
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"one.example.com": [
 								""
 							]

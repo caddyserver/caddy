@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -32,31 +33,25 @@ import (
 // customized per-request-host.
 type ServerLogConfig struct {
 	// The default logger name for all logs emitted by this server for
-	// hostnames that are not in logger_names or logger_mapping.
+	// hostnames that are not in the logger_names map.
 	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
-	// LoggerNames maps request hostnames to a custom logger name.
-	// For example, a mapping of "example.com" to "example" would
-	// cause access logs from requests with a Host of example.com
-	// to be emitted by a logger named "http.log.access.example".
-	// DEPRECATED: Use LoggerMapping instead.
-	LoggerNames map[string]string `json:"logger_names,omitempty"`
-
-	// LoggerMapping maps request hostnames to one or more a custom
-	// logger name. For example, a mapping of "example.com" to "example"
-	// would cause access logs from requests with a Host of example.com
-	// to be emitted by a logger named "http.log.access.example". If
-	// there are multiple logger names, then the log will be emitted
-	// to all of them.
-	LoggerMapping map[string][]string `json:"logger_mapping,omitempty"`
+	// LoggerNames maps request hostnames to one or more custom logger
+	// names. For example, a mapping of "example.com" to "example" would
+	// cause access logs from requests with a Host of example.com to be
+	// emitted by a logger named "http.log.access.example". If there are
+	// multiple logger names, then the log will be emitted to all of them.
+	// For backwards compatibility, if the value is a string, it is treated
+	// as a single-element array.
+	LoggerNames map[string]StringArray `json:"logger_names,omitempty"`
 
 	// By default, all requests to this server will be logged if
 	// access logging is enabled. This field lists the request
 	// hosts for which access logging should be disabled.
 	SkipHosts []string `json:"skip_hosts,omitempty"`
 
-	// If true, requests to any host not appearing in
-	// logger_names or logger_mapping will not be logged.
+	// If true, requests to any host not appearing in the
+	// logger_names map will not be logged.
 	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
 
 	// If true, credentials that are otherwise omitted, will be logged.
@@ -83,7 +78,7 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Lo
 func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 	tryHost := func(key string) ([]string, bool) {
 		// first try exact match
-		if hosts, ok := slc.LoggerMapping[key]; ok {
+		if hosts, ok := slc.LoggerNames[key]; ok {
 			return hosts, ok
 		}
 		// strip port and try again (i.e. Host header of "example.com:1234" should
@@ -92,24 +87,8 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 		if err != nil {
 			return []string{}, false
 		}
-		if hosts, ok := slc.LoggerMapping[hostOnly]; ok {
-			return hosts, ok
-		}
-
-		// Now try the deprecated LoggerNames
-
-		// first try exact match
-		if host, ok := slc.LoggerNames[key]; ok {
-			return []string{host}, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err = net.SplitHostPort(key)
-		if err != nil {
-			return []string{}, false
-		}
-		host, ok := slc.LoggerNames[hostOnly]
-		return []string{host}, ok
+		hosts, ok := slc.LoggerNames[hostOnly]
+		return hosts, ok
 	}
 
 	// try the exact hostname first
@@ -136,19 +115,46 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 func (slc *ServerLogConfig) clone() *ServerLogConfig {
 	clone := &ServerLogConfig{
 		DefaultLoggerName:    slc.DefaultLoggerName,
-		LoggerNames:          make(map[string]string),
-		LoggerMapping:        make(map[string][]string),
+		LoggerNames:          make(map[string]StringArray),
 		SkipHosts:            append([]string{}, slc.SkipHosts...),
 		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
 		ShouldLogCredentials: slc.ShouldLogCredentials,
 	}
 	for k, v := range slc.LoggerNames {
-		clone.LoggerNames[k] = v
-	}
-	for k, v := range slc.LoggerMapping {
-		clone.LoggerMapping[k] = append([]string{}, v...)
+		clone.LoggerNames[k] = append([]string{}, v...)
 	}
 	return clone
+}
+
+// StringArray is a slices of strings, but also accepts
+// a single string as a value when JSON unmarshaling,
+// converting it to a slice of one string.
+type StringArray []string
+
+// UnmarshalJSON satisfies json.Unmarshaler.
+func (sa *StringArray) UnmarshalJSON(b []byte) error {
+	var jsonObj any
+	err := json.Unmarshal(b, &jsonObj)
+	if err != nil {
+		return err
+	}
+	switch obj := jsonObj.(type) {
+	case string:
+		*sa = StringArray([]string{obj})
+		return nil
+	case []any:
+		s := make([]string, 0, len(obj))
+		for _, v := range obj {
+			value, ok := v.(string)
+			if !ok {
+				return errors.New("unsupported type")
+			}
+			s = append(s, value)
+		}
+		*sa = StringArray(s)
+		return nil
+	}
+	return errors.New("unsupported type")
 }
 
 // errLogValues inspects err and returns the status code

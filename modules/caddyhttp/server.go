@@ -712,10 +712,6 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		// logging is disabled
 		return false
 	}
-	if _, ok := s.Logs.LoggerMapping[r.Host]; ok {
-		// this host is mapped to a particular logger name
-		return true
-	}
 	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
 		// this host is mapped to a particular logger name
 		return true

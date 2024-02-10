@@ -98,7 +98,7 @@ http://localhost:2020 {
 						]
 					},
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"localhost": [
 								""
 							]

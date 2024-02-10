@@ -74,7 +74,7 @@ example.com:8443 {
 						}
 					],
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"bar.example.com": [
 								"log0"
 							],
@@ -104,7 +104,7 @@ example.com:8443 {
 						}
 					],
 					"logs": {
-						"logger_mapping": {
+						"logger_names": {
 							"example.com": [
 								"log2"
 							]
