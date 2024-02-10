@@ -22,12 +22,13 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("basicauth", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("basicauth", parseCaddyfile) // deprecated
+	httpcaddyfile.RegisterHandlerDirective("basic_auth", parseCaddyfile)
 }
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//	basicauth [<matcher>] [<hash_algorithm> [<realm>]] {
+//	basic_auth [<matcher>] [<hash_algorithm> [<realm>]] {
 //	    <username> <hashed_password_base64> [<salt_base64>]
 //	    ...
 //	}
@@ -35,6 +36,11 @@ func init() {
 // If no hash algorithm is supplied, bcrypt will be assumed.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	h.Next() // consume directive name
+
+	// "basicauth" is deprecated, replaced by "basic_auth"
+	if h.Val() == "basicauth" {
+		caddy.Log().Named("config.adapter.caddyfile").Warn("the 'basicauth' directive is deprecated, please use 'basic_auth' instead!")
+	}
 
 	var ba HTTPBasicAuth
 	ba.HashCache = new(Cache)
