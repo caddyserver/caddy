@@ -46,12 +46,33 @@ import (
 //go:embed browse.html
 var BrowseTemplate string
 
+type ReturnType string
+
+const (
+	returnTemplate ReturnType = "template"
+	returnPlain    ReturnType = "plain"
+	returnJSON     ReturnType = "json"
+	//returnDefault             = returnTemplate
+)
+
+var returnTypes = map[string]ReturnType{
+	string(returnTemplate): returnTemplate,
+	string(returnPlain):    returnPlain,
+	string(returnJSON):     returnJSON,
+}
+
 // Browse configures directory browsing.
 type Browse struct {
 	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
 	// Determines whether or not targets of symlinks should be revealed.
-	RevealSymlinks bool `json:"reveal_symlinks,omitempty"`
+	RevealSymlinks bool       `json:"reveal_symlinks,omitempty"`
+	ReturnTypeRaw  ReturnType `json:"return_type,omitempty"`
+}
+
+func (browse *Browse) GetReturnType(returnType string) (ReturnType, bool) {
+	value, ok := returnTypes[returnType]
+	return value, ok
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -111,13 +132,40 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 
-	// write response as either JSON or HTML
-	if strings.Contains(acceptHeader, "application/json") {
+	// Next block of code makes the guarantee
+	w.Header().Set("Content-Type", acceptHeader)
+
+	// write response as one of the return types or HTML
+	returnType := (func() ReturnType {
+		if strings.Contains(acceptHeader, "/*") {
+			return fsrv.Browse.ReturnTypeRaw
+		}
+
+		if strings.Contains(acceptHeader, "application/json") {
+			return returnJSON
+		}
+
+		if strings.Contains(acceptHeader, "text/plain") {
+			return returnPlain
+		}
+
+		return returnTemplate
+	})()
+
+	if returnType == returnJSON {
 		if err := json.NewEncoder(buf).Encode(listing.Items); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	} else {
+	} else if returnType == returnPlain {
+		for _, item := range listing.Items {
+			if _, err := buf.WriteString(item.Name + "\n"); err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	} else { //default (or template)
 		var fs http.FileSystem
 		if fsrv.Root != "" {
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
