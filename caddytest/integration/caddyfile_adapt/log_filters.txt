@@ -21,6 +21,7 @@ log {
 				ipv4 24
 				ipv6 32
 			}
+			request>client_ip ip_mask 16 32
 			request>headers>Regexp regexp secret REDACTED
 			request>headers>Hash hash
 		}
@@ -41,6 +42,11 @@ log {
 				},
 				"encoder": {
 					"fields": {
+						"request\u003eclient_ip": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 16,
+							"ipv6_cidr": 32
+						},
 						"request\u003eheaders\u003eAuthorization": {
 							"filter": "replace",
 							"value": "REDACTED"
