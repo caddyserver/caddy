@@ -20,6 +20,7 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,6 +52,10 @@ type Handler struct {
 	// the ID given to the CA in the `pki` app. If omitted,
 	// the default ID is "local".
 	CA string `json:"ca,omitempty"`
+
+	// The connection string of the database used for
+	// the account data of the ACME clients
+	Database string `json:"database,omitempty"`
 
 	// The lifetime for issued certificates
 	Lifetime caddy.Duration `json:"lifetime,omitempty"`
@@ -153,6 +158,12 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("certificate lifetime (%s) should be less than intermediate certificate lifetime (%s)", time.Duration(ash.Lifetime), time.Duration(ca.IntermediateLifetime))
 	}
 
+	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+		ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, repl)
+	}
+	ash.Database = repl.ReplaceKnown(ash.Database, "")
 	database, err := ash.openDatabase()
 	if err != nil {
 		return err
@@ -248,17 +259,38 @@ func (ash Handler) Cleanup() error {
 func (ash Handler) openDatabase() (*db.AuthDB, error) {
 	key := ash.getDatabaseKey()
 	database, loaded, err := databasePool.LoadOrNew(key, func() (caddy.Destructor, error) {
-		dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", key)
-		dbPath := filepath.Join(dbFolder, "db")
-
-		err := os.MkdirAll(dbFolder, 0o755)
+		var dsn string
+		dburl, err := url.Parse(ash.Database)
 		if err != nil {
-			return nil, fmt.Errorf("making folder for CA database: %v", err)
+			return nil, err
+		}
+		if dburl.Scheme == "" {
+			dburl.Scheme = "bbolt"
+		}
+		var dbtype string
+		switch dburl.Scheme {
+		case "postgresql", "postgres", "psql":
+			dbtype = nosql.PostgreSQLDriver // normalize the postgres identifier
+			dsn = ash.Database
+		case "mysql":
+			dbtype = nosql.MySQLDriver
+			dsn = ash.Database
+		case "bbolt":
+			dbtype = nosql.BBoltDriver
+			dbFolder := filepath.Join(caddy.AppDataDir(), "acme_server", key)
+			dsn = filepath.Join(dbFolder, "db")
+			if err := os.MkdirAll(dbFolder, 0o755); err != nil {
+				return nil, fmt.Errorf("making folder for CA database: %v", err)
+			}
+		default:
+			// Although smallstep/nosql rejects unrecognized database, we
+			// reject them here to avoid surprises. We also reject 'badger'.
+			return nil, fmt.Errorf("unsupported database type: %s", dburl.Scheme)
 		}
 
 		dbConfig := &db.Config{
-			Type:       "bbolt",
-			DataSource: dbPath,
+			Type:       dbtype,
+			DataSource: dsn,
 		}
 		database, err := db.New(dbConfig)
 		return databaseCloser{&database}, err
