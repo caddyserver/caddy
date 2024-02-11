@@ -158,7 +158,7 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("certificate lifetime (%s) should be less than intermediate certificate lifetime (%s)", time.Duration(ash.Lifetime), time.Duration(ca.IntermediateLifetime))
 	}
 
-	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
 		ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, repl)
