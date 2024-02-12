@@ -29,7 +29,7 @@ func init() {
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //	basic_auth [<matcher>] [<hash_algorithm> [<realm>]] {
-//	    <username> <hashed_password_base64>
+//	    <username> <hashed_password>
 //	    ...
 //	}
 //
