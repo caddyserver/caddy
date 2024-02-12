@@ -29,7 +29,7 @@ func init() {
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //	basic_auth [<matcher>] [<hash_algorithm> [<realm>]] {
-//	    <username> <hashed_password_base64> [<salt_base64>]
+//	    <username> <hashed_password>
 //	    ...
 //	}
 //
@@ -64,8 +64,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	switch hashName {
 	case "bcrypt":
 		cmp = BcryptHash{}
-	case "scrypt":
-		cmp = ScryptHash{}
 	default:
 		return nil, h.Errf("unrecognized hash algorithm: %s", hashName)
 	}
@@ -75,8 +73,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	for h.NextBlock(0) {
 		username := h.Val()
 
-		var b64Pwd, b64Salt string
-		h.Args(&b64Pwd, &b64Salt)
+		var b64Pwd string
+		h.Args(&b64Pwd)
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
@@ -88,7 +86,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		ba.AccountList = append(ba.AccountList, Account{
 			Username: username,
 			Password: b64Pwd,
-			Salt:     b64Salt,
 		})
 	}
 
