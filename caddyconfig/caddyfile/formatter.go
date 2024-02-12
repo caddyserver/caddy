@@ -16,7 +16,6 @@ package caddyfile
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"unicode"
 
@@ -119,10 +118,6 @@ func Format(input []byte) []byte {
 				heredoc = heredocClosed
 			} else {
 				heredocMarker = append(heredocMarker, ch)
-				if len(heredocMarker) > 32 {
-					errorString := fmt.Sprintf("heredoc marker too long: <<%s", string(heredocMarker))
-					panic(errorString)
-				}
 				write(ch)
 				continue
 			}
