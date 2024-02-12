@@ -801,7 +801,7 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 	fileName := writeStringToTempFileOrDie(t, `
 		http://example.com {
 			# This isn't an import directive, it's just an arg with value 'import'
-			basicauth / import password
+			basic_auth / import password
 		}
 	`)
 	// Parse the root file that imports the other one.
@@ -812,12 +812,12 @@ func TestImportedFilesIgnoreNonDirectiveImportTokens(t *testing.T) {
 	}
 	auth := blocks[0].Segments[0]
 	line := auth[0].Text + " " + auth[1].Text + " " + auth[2].Text + " " + auth[3].Text
-	if line != "basicauth / import password" {
+	if line != "basic_auth / import password" {
 		// Previously, it would be changed to:
-		//   basicauth / import /path/to/test/dir/password
+		//   basic_auth / import /path/to/test/dir/password
 		// referencing a file that (probably) doesn't exist and changing the
 		// password!
-		t.Errorf("Expected basicauth tokens to be 'basicauth / import password' but got %#q", line)
+		t.Errorf("Expected basic_auth tokens to be 'basic_auth / import password' but got %#q", line)
 	}
 }
 
