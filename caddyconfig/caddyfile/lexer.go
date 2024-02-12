@@ -149,10 +149,6 @@ func (l *lexer) next() (bool, error) {
 				continue
 			}
 
-			if len(val) > 32 {
-				return false, fmt.Errorf("heredoc marker too long on line #%d: %s", l.line, string(val))
-			}
-
 			// after hitting a newline, we know that the heredoc marker
 			// is the characters after the two << and the newline.
 			// we reset the val because the heredoc is syntax we don't
