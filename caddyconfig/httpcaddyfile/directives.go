@@ -58,7 +58,8 @@ var directiveOrder = []string{
 	"try_files",
 
 	// middleware handlers; some wrap responses
-	"basicauth",
+	"basicauth", // TODO: deprecated, renamed to basic_auth
+	"basic_auth",
 	"forward_auth",
 	"request_header",
 	"encode",
