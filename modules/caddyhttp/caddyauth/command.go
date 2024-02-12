@@ -17,7 +17,6 @@ package caddyauth
 import (
 	"bufio"
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
@@ -33,7 +32,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Usage: "[--algorithm <name>] [--salt <string>] [--plaintext <password>]",
+		Usage: "[--plaintext <password>] [--algorithm <name>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
@@ -43,17 +42,10 @@ hash is written to stdout as a base64 string.
 Caddy is attached to a controlling tty, the plaintext will
 not be echoed.
 
---algorithm may be bcrypt or scrypt. If scrypt, the default
-parameters are used.
-
-Use the --salt flag for algorithms which require a salt to
-be provided (scrypt).
-
-Note that scrypt is deprecated. Please use 'bcrypt' instead.
+--algorithm currently only supports 'bcrypt', and is the default.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
-			cmd.Flags().StringP("salt", "s", "", "The password salt")
 			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
@@ -65,7 +57,6 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 	algorithm := fs.String("algorithm")
 	plaintext := []byte(fs.String("plaintext"))
-	salt := []byte(fs.String("salt"))
 
 	if len(plaintext) == 0 {
 		fd := int(os.Stdin.Fd())
@@ -117,13 +108,8 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hashString string
 	switch algorithm {
 	case "bcrypt":
-		hash, err = BcryptHash{}.Hash(plaintext, nil)
+		hash, err = BcryptHash{}.Hash(plaintext)
 		hashString = string(hash)
-	case "scrypt":
-		def := ScryptHash{}
-		def.SetDefaults()
-		hash, err = def.Hash(plaintext, salt)
-		hashString = base64.StdEncoding.EncodeToString(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
 	}
