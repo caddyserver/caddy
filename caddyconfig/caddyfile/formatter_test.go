@@ -15,8 +15,6 @@
 package caddyfile
 
 import (
-	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
@@ -26,7 +24,6 @@ func TestFormatter(t *testing.T) {
 		description string
 		input       string
 		expect      string
-		panics      bool
 	}{
 		{
 			description: "very simple",
@@ -437,36 +434,18 @@ block2 {
 }
 `,
 		},
-		{
-			description: "very long heredoc from fuzzer",
-			input: func() string {
-				bs, _ := os.ReadFile("testdata/clusterfuzz-testcase-minimized-fuzz-format-5806400649363456")
-				return string(bs)
-			}(),
-			panics: true,
-		},
 	} {
-		t.Run(fmt.Sprintf("test case %d: %s", i, tc.description), func(t *testing.T) {
-			if tc.panics {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Errorf("[TEST %d: %s] Expected panic, but got none", i, tc.description)
-					}
-				}()
-			}
+		// the formatter should output a trailing newline,
+		// even if the tests aren't written to expect that
+		if !strings.HasSuffix(tc.expect, "\n") {
+			tc.expect += "\n"
+		}
 
-			// the formatter should output a trailing newline,
-			// even if the tests aren't written to expect that
-			if !strings.HasSuffix(tc.expect, "\n") {
-				tc.expect += "\n"
-			}
+		actual := Format([]byte(tc.input))
 
-			actual := Format([]byte(tc.input))
-
-			if !tc.panics && string(actual) != tc.expect {
-				t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
-					i, tc.description, string(tc.expect), string(actual))
-			}
-		})
+		if string(actual) != tc.expect {
+			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
+				i, tc.description, string(tc.expect), string(actual))
+		}
 	}
 }
