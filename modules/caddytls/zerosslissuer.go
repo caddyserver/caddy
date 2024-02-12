@@ -74,7 +74,14 @@ func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
 	if iss.ACMEIssuer.CA == "" {
 		iss.ACMEIssuer.CA = certmagic.ZeroSSLProductionCA
 	}
-	return iss.ACMEIssuer.Provision(ctx)
+	if err := iss.ACMEIssuer.Provision(ctx); err != nil {
+		return err
+	}
+	// as of Caddy 2.8 / Q1 2024, an email address is now required
+	if iss.Email == "" {
+		return fmt.Errorf("an email address is required to use ZeroSSL; use the same email as you do/will with your ZeroSSL account")
+	}
+	return nil
 }
 
 // newAccountCallback generates EAB if not already provided. It also sets a valid default contact on the account if not set.
@@ -106,8 +113,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.
 	} else {
 		email := iss.Email
 		if email == "" {
-			iss.logger.Warn("missing email address for ZeroSSL; it is strongly recommended to set one for next time")
-			email = "caddy@zerossl.com" // special email address that preserves backwards-compat, but which black-holes dashboard features, oh well
+			return nil, acct, fmt.Errorf("please specify an email address to use ZeroSSL; we recommend using the same email as your ZeroSSL account, if you have one")
 		}
 		if len(acct.Contact) == 0 {
 			// we borrow the email from config or the default email, so ensure it's saved with the account
