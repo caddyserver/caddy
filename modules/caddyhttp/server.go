@@ -301,11 +301,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// enable full-duplex for HTTP/1, ensuring the entire
 	// request body gets consumed before writing the response
-	if s.EnableFullDuplex {
+	if s.EnableFullDuplex && r.ProtoMajor == 1 {
 		//nolint:bodyclose
 		err := http.NewResponseController(w).EnableFullDuplex()
 		if err != nil {
-			s.accessLogger.Warn("failed to enable full duplex", zap.Error(err))
+			s.logger.Warn("failed to enable full duplex", zap.Error(err))
 		}
 	}
 
