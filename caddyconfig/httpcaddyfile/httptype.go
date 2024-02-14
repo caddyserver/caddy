@@ -68,6 +68,9 @@ func (st ServerType) Setup(
 			if j == 0 && strings.HasPrefix(k, "@") {
 				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
 			}
+			if _, ok := registeredDirectives[k]; ok {
+				return nil, warnings, fmt.Errorf("parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k)
+			}
 		}
 		originalServerBlocks = append(originalServerBlocks, serverBlock{
 			block: sblock,
