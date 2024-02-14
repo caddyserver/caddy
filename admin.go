@@ -924,6 +924,10 @@ func (h adminHandler) getOrigin(r *http.Request) (string, *url.URL) {
 	if err != nil {
 		return origin, nil
 	}
+	if originURL.Path != "" && !strings.HasPrefix("/", originURL.Path) {
+		// if it doesn't look like a path, use it as the host instead
+		originURL.Host = originURL.Path
+	}
 	originURL.Path = ""
 	originURL.RawPath = ""
 	originURL.Fragment = ""
