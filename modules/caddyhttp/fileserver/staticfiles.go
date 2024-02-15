@@ -644,6 +644,10 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) error {
 		// prevent path-based open redirects
 		to = strings.TrimPrefix(to, "/")
 	}
+	// preserve the query string if present
+	if r.URL.RawQuery != "" {
+		to += "?" + r.URL.RawQuery
+	}
 	http.Redirect(w, r, to, http.StatusPermanentRedirect)
 	return nil
 }
