@@ -166,7 +166,7 @@ func (e *ExtraLogFields) Set(field zap.Field) {
 const (
 	// Variable name used to indicate that this request
 	// should be omitted from the access logs
-	SkipLogVar string = "skip_log"
+	LogSkipVar string = "log_skip"
 
 	// For adding additional fields to the access logs
 	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"

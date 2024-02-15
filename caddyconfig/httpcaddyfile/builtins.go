@@ -49,7 +49,8 @@ func init() {
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterHandlerDirective("invoke", parseInvoke)
 	RegisterDirective("log", parseLog)
-	RegisterHandlerDirective("skip_log", parseSkipLog)
+	RegisterHandlerDirective("skip_log", parseLogSkip)
+	RegisterHandlerDirective("log_skip", parseLogSkip)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -1038,13 +1039,19 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	return configValues, nil
 }
 
-// parseSkipLog parses the skip_log directive. Syntax:
+// parseLogSkip parses the log_skip directive. Syntax:
 //
-//	skip_log [<matcher>]
-func parseSkipLog(h Helper) (caddyhttp.MiddlewareHandler, error) {
+//	log_skip [<matcher>]
+func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	h.Next() // consume directive name
+
+	// "skip_log" is deprecated, replaced by "log_skip"
+	if h.Val() == "skip_log" {
+		caddy.Log().Named("config.adapter.caddyfile").Warn("the 'skip_log' directive is deprecated, please use 'log_skip' instead!")
+	}
+
 	if h.NextArg() {
 		return nil, h.ArgErr()
 	}
-	return caddyhttp.VarsMiddleware{"skip_log": true}, nil
+	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
 }
