@@ -96,7 +96,7 @@ type HTTPTransport struct {
 	// connection. A negative value disables this. Default: `300ms`.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
-	// How long to wait/Roundtript for reading response headers from server. Default: No timeout.
+	// How long to wait/Roundtrip for reading response headers from server. Default: No timeout.
 	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
 
 	// The length of time to wait for a server's first response
