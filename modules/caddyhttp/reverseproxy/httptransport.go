@@ -74,7 +74,8 @@ type HTTPTransport struct {
 
 	// URL to the server that the HTTP transport will use to proxy
 	// requests to the upstream. See http.Transport.Proxy for
-	// information regarding supported protocols.
+	// information regarding supported protocols. This value takes
+	// precedence over `HTTP_PROXY`, etc.
 	//
 	// Providing a value to this parameter results in
 	// requests flowing through the reverse_proxy in the following
@@ -82,7 +83,6 @@ type HTTPTransport struct {
 	//
 	// User Agent ->
 	//  reverse_proxy ->
-	//  proxy_protocol ->
 	//  transport_proxy_url -> upstream
 	//
 	// Default: off.
@@ -96,7 +96,7 @@ type HTTPTransport struct {
 	// connection. A negative value disables this. Default: `300ms`.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
-	// How long to wait/Roundtrip for reading response headers from server. Default: No timeout.
+	// How long to wait for reading response headers from server. Default: No timeout.
 	ResponseHeaderTimeout caddy.Duration `json:"response_header_timeout,omitempty"`
 
 	// The length of time to wait for a server's first response
@@ -284,12 +284,12 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 
 	// negotiate any HTTP/SOCKS proxy for the HTTP transport
 	var proxy func(*http.Request) (*url.URL, error)
-	if h.TransportProxyURL != "" {
-		pUrl, err := url.Parse(h.TransportProxyURL)
+	if h.ForwardProxyURL != "" {
+		pUrl, err := url.Parse(h.ForwardProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
 		}
-		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.TransportProxyURL))
+		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
 		proxy = func(request *http.Request) (*url.URL, error) {
 			return pUrl, nil
 		}
