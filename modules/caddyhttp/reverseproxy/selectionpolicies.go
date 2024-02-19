@@ -655,12 +655,22 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 		if err != nil {
 			return upstream
 		}
-		http.SetCookie(w, &http.Cookie{
+		cookie := &http.Cookie{
 			Name:   s.Name,
 			Value:  sha,
 			Path:   "/",
 			Secure: false,
-		})
+		}
+		isProxyHttps := false
+		if trusted, ok := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool); ok && trusted {
+			xfp, xfpOk, _ := lastHeaderValue(req.Header, "X-Forwarded-Proto")
+			isProxyHttps = xfpOk && xfp == "https"
+		}
+		if req.TLS != nil || isProxyHttps {
+			cookie.Secure = true
+			cookie.SameSite = http.SameSiteNoneMode
+		}
+		http.SetCookie(w, cookie)
 		return upstream
 	}
 
