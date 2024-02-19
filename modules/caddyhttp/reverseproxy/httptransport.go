@@ -86,7 +86,7 @@ type HTTPTransport struct {
 	//  transport_proxy_url -> upstream
 	//
 	// Default: off.
-	TransportProxyURL string `json:"transport_proxy_url,omitempty"`
+	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
 	// an upstream. Default: `3s`.
