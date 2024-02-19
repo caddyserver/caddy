@@ -9,6 +9,9 @@ import (
 func TestLeafCertLifetimeLessThanIntermediate(t *testing.T) {
 	caddytest.AssertLoadError(t, `
     {
+      "admin": {
+        "disabled": true
+      },
       "apps": {
         "http": {
           "servers": {
@@ -56,6 +59,9 @@ func TestLeafCertLifetimeLessThanIntermediate(t *testing.T) {
 func TestIntermediateLifetimeLessThanRoot(t *testing.T) {
 	caddytest.AssertLoadError(t, `
     {
+      "admin": {
+        "disabled": true
+      },
       "apps": {
         "http": {
           "servers": {

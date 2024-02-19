@@ -23,7 +23,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const acmeChallengePort = 8080
+const acmeChallengePort = 9081
 
 // Test the basic functionality of Caddy's ACME server
 func TestACMEServerWithDefaults(t *testing.T) {
