@@ -83,7 +83,7 @@ type HTTPTransport struct {
 	//
 	// User Agent ->
 	//  reverse_proxy ->
-	//  transport_proxy_url -> upstream
+	//  forward_proxy_url -> upstream
 	//
 	// Default: off.
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
