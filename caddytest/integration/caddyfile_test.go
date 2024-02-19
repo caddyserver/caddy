@@ -597,14 +597,14 @@ func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
 			handle {
 				file_server
 			}`,
-			expectedError: `parsed 'handle' as a site address, but it is a known directive; directives must appear in a site block`,
+			expectedError: `Caddyfile:2: parsed 'handle' as a site address, but it is a known directive; directives must appear in a site block`,
 		},
 		{
 			config: `
 			reverse_proxy localhost:9000 localhost:9001 {
 				file_server
 			}`,
-			expectedError: `parsed 'reverse_proxy' as a site address, but it is a known directive; directives must appear in a site block`,
+			expectedError: `Caddyfile:2: parsed 'reverse_proxy' as a site address, but it is a known directive; directives must appear in a site block`,
 		},
 	}
 
