@@ -496,6 +496,7 @@ func TestUriReplace(t *testing.T) {
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
 }
+
 func TestHandleErrorSimpleCodes(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
@@ -583,4 +584,31 @@ func TestHandleErrorRangeAndCodes(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "Error code is equal to 500 or in the [300..399] range")
 	tester.AssertGetResponse("http://localhost:9080/threehundred", 301, "Error code is equal to 500 or in the [300..399] range")
 	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+}
+
+func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
+	type testCase struct {
+		config, expectedError string
+	}
+
+	failureCases := []testCase{
+		{
+			config: `
+			handle {
+				file_server
+			}`,
+			expectedError: `Caddyfile:2: parsed 'handle' as a site address, but it is a known directive; directives must appear in a site block`,
+		},
+		{
+			config: `
+			reverse_proxy localhost:9000 localhost:9001 {
+				file_server
+			}`,
+			expectedError: `Caddyfile:2: parsed 'reverse_proxy' as a site address, but it is a known directive; directives must appear in a site block`,
+		},
+	}
+
+	for _, failureCase := range failureCases {
+		caddytest.AssertLoadError(t, failureCase.config, "caddyfile", failureCase.expectedError)
+	}
 }

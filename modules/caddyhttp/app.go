@@ -642,6 +642,15 @@ func (app *App) Stop() error {
 		finishedShutdown.Wait()
 	}
 
+	// run stop callbacks now that the server shutdowns are complete
+	for name, s := range app.Servers {
+		for _, stopHook := range s.onStopFuncs {
+			if err := stopHook(ctx); err != nil {
+				app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
+			}
+		}
+	}
+
 	return nil
 }
 
