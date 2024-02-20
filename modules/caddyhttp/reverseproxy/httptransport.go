@@ -290,9 +290,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
 		}
 		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
-		proxy = func(request *http.Request) (*url.URL, error) {
-			return pUrl, nil
-		}
+		proxy = http.ProxyURL(pUrl)
 	} else {
 		proxy = http.ProxyFromEnvironment
 	}
