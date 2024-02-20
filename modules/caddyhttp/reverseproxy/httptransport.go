@@ -85,7 +85,7 @@ type HTTPTransport struct {
 	//  reverse_proxy ->
 	//  forward_proxy_url -> upstream
 	//
-	// Default: off.
+	// Default: http.ProxyFromEnvironment
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
