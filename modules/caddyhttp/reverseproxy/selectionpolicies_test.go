@@ -658,7 +658,7 @@ func TestCookieHashPolicy(t *testing.T) {
 	if cookieServer1.Name != "lb" {
 		t.Error("cookieHashPolicy should set a cookie with name lb")
 	}
-	if cookieServer1.Secure != false {
+	if cookieServer1.Secure {
 		t.Error("cookieHashPolicy should set cookie Secure attribute to false when request is not secure")
 	}
 	if h != pool[0] {
