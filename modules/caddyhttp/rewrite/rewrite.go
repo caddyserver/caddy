@@ -89,6 +89,9 @@ type Rewrite struct {
 	// Performs regular expression replacements on the URI path.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
+	// Performs query parameters operations on the URI path
+	QueryOperations *queryOps `json:"query_operations,omitempty"`
+
 	logger *zap.Logger
 }
 
@@ -267,6 +270,11 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// regular expression replacements on the path
 	for _, rep := range rewr.PathRegexp {
 		rep.do(r, repl)
+	}
+
+	// apply query operations
+	if rewr.QueryOperations != nil {
+		rewr.QueryOperations.do(r)
 	}
 
 	// update the encoded copy of the URI
@@ -468,6 +476,45 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	if req.URL.RawPath == req.URL.Path {
 		req.URL.RawPath = ""
 	}
+}
+
+// queryOps describes the operations to perform on a query like add, delete and replace fields
+type queryOps struct {
+	// Adds query parameters; does not replace any existing header fields.
+	Add []queryOpsArguments `json:"add,omitempty"`
+
+	// Sets query parameters; replaces existing header fields.
+	Set []queryOpsArguments `json:"set,omitempty"`
+
+	// Names of query parameters to delete
+	Delete []string `json:"delete,omitempty"`
+}
+
+func (q *queryOps) do(r *http.Request) {
+	query := r.URL.Query()
+
+	for _, addParam := range q.Add {
+		key := addParam.Key
+		val := addParam.Val
+		query[key] = append(query[key], val)
+	}
+
+	for _, deleteParam := range q.Delete {
+		delete(query, deleteParam)
+	}
+
+	for _, setParam := range q.Set {
+		key := setParam.Key
+		val := setParam.Val
+		query[key] = []string{val}
+	}
+
+	r.URL.RawQuery = query.Encode()
+}
+
+type queryOpsArguments struct {
+	Key string `json:"key,omitempty"`
+	Val string `json:"val,omitempty"`
 }
 
 // Interface guard

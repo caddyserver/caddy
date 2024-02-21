@@ -158,10 +158,44 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 			Replace: replace,
 		})
 
+	case "query":
+		if len(args) > 3 || len(args) < 1 {
+			return nil, h.ArgErr()
+		}
+		rewr.QueryOperations = &queryOps{}
+		err := applyQueryOps(h, rewr.QueryOperations, args[1:])
+		if err != nil {
+			return nil, err
+		}
+
 	default:
 		return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
 	}
 	return rewr, nil
+}
+
+func applyQueryOps(h httpcaddyfile.Helper, qo *queryOps, args []string) error {
+	key := args[0]
+	switch {
+	case strings.HasPrefix(key, "-"):
+		if len(args) != 1 {
+			return h.ArgErr()
+		}
+		qo.Delete = append(qo.Delete, strings.TrimLeft(key, "-"))
+
+	case strings.HasPrefix(key, "+"):
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		param := strings.TrimLeft(key, "+")
+		qo.Add = append(qo.Add, queryOpsArguments{Key: param, Val: args[1]})
+	default:
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		qo.Set = append(qo.Set, queryOpsArguments{Key: key, Val: args[1]})
+	}
+	return nil
 }
 
 // parseCaddyfileHandlePath parses the handle_path directive. Syntax:
