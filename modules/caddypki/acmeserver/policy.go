@@ -8,8 +8,16 @@ import (
 // RuleSet is the specific set of SAN criteria for a certificate
 // to be issued or denied.
 type RuleSet struct {
-	DNSDomains []string `json:"dns_domains,omitempty"`
-	IPRanges   []string `json:"ip_ranges,omitempty"`
+	// Domains is a list of DNS domains that are allowed to be issued.
+	// It can be in the form of FQDN for specific domain name, or
+	// a wildcard domain name format, e.g. *.example.com, to allow
+	// sub-domains of a domain.
+	Domains []string `json:"domains,omitempty"`
+
+	// IP ranges in the form of CIDR notation or specific IP addresses
+	// to be approved or denied for certificates. Non-CIDR IP addresses
+	// are matched exactly.
+	IPRanges []string `json:"ip_ranges,omitempty"`
 }
 
 // Policy defines the criteria for the ACME server
@@ -33,11 +41,11 @@ type Policy struct {
 // or all rules within the `Allow` rule are empty. Otherwise, it returns the X509NameOptions
 // with the content of the `Allow` rule.
 func (p *Policy) normalizeAllowRules() *policy.X509NameOptions {
-	if (p == nil) || (p.Allow == nil) || (len(p.Allow.DNSDomains) == 0 && len(p.Allow.IPRanges) == 0) {
+	if (p == nil) || (p.Allow == nil) || (len(p.Allow.Domains) == 0 && len(p.Allow.IPRanges) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
-		DNSDomains: p.Allow.DNSDomains,
+		DNSDomains: p.Allow.Domains,
 		IPRanges:   p.Allow.IPRanges,
 	}
 }
@@ -46,11 +54,11 @@ func (p *Policy) normalizeAllowRules() *policy.X509NameOptions {
 // or all rules within the `Deny` rule are empty. Otherwise, it returns the X509NameOptions
 // with the content of the `Deny` rule.
 func (p *Policy) normalizeDenyRules() *policy.X509NameOptions {
-	if (p == nil) || (p.Deny == nil) || (len(p.Deny.DNSDomains) == 0 && len(p.Deny.IPRanges) == 0) {
+	if (p == nil) || (p.Deny == nil) || (len(p.Deny.Domains) == 0 && len(p.Deny.IPRanges) == 0) {
 		return nil
 	}
 	return &policy.X509NameOptions{
-		DNSDomains: p.Deny.DNSDomains,
+		DNSDomains: p.Deny.Domains,
 		IPRanges:   p.Deny.IPRanges,
 	}
 }
