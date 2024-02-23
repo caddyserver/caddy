@@ -93,8 +93,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 						return nil, h.ArgErr() // TODO:
 					}
 					switch h.Val() {
-					case "common_names":
-						r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 					case "domains":
 						r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 					case "ip_ranges":
@@ -116,8 +114,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 						return nil, h.ArgErr() // TODO:
 					}
 					switch h.Val() {
-					case "common_names":
-						r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 					case "domains":
 						r.DNSDomains = append(r.DNSDomains, h.RemainingArgs()...)
 					case "ip_ranges":
