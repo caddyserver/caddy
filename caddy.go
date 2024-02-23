@@ -715,6 +715,7 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	logger.Warn("exiting; byeee!! 👋")
 
 	exitCode := ExitCodeSuccess
+	lastContext := ActiveContext()
 
 	// stop all apps
 	if err := Stop(); err != nil {
@@ -734,6 +735,11 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 				zap.Error(err))
 			exitCode = ExitCodeFailedQuit
 		}
+	}
+
+	// execute any process-exit callbacks
+	for _, exitFunc := range lastContext.exitFuncs {
+		exitFunc(ctx)
 	}
 
 	// shut down admin endpoint(s) in goroutines so that
