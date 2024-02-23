@@ -23,10 +23,22 @@ jobs:
     strategy:
       matrix:
         os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-    runs-on: ${{ matrix.os }}
+          - linux
+          - mac
+          - windows
+
+        include:
+        - os: linux
+          OS_LABEL: ubuntu-latest
+
+        - os: mac
+          OS_LABEL: macos-14
+
+        - os: windows
+          OS_LABEL: windows-latest
+
+    runs-on: ${{ matrix.OS_LABEL }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
