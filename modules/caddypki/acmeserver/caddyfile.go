@@ -33,6 +33,15 @@ func init() {
 //		lifetime  <duration>
 //		resolvers <addresses...>
 //		challenges <challenges...>
+//		allow_wildcard_names
+//		allow {
+//			domains <domains...>
+//			ip_ranges <addresses...>
+//		}
+//		deny {
+//			domains <domains...>
+//			ip_ranges <addresses...>
+//		}
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	h.Next() // consume directive name
@@ -60,7 +69,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				ca = new(caddypki.CA)
 			}
 			ca.ID = acmeServer.CA
-
 		case "lifetime":
 			if !h.NextArg() {
 				return nil, h.ArgErr()
@@ -70,7 +78,6 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			if err != nil {
 				return nil, err
 			}
-
 			if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
 				return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
 			}
@@ -82,6 +89,53 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			}
 		case "challenges":
 			acmeServer.Challenges = append(acmeServer.Challenges, stringToChallenges(h.RemainingArgs())...)
+		case "allow_wildcard_names":
+			if acmeServer.Policy == nil {
+				acmeServer.Policy = &Policy{}
+			}
+			acmeServer.Policy.AllowWildcardNames = true
+		case "allow":
+			r := &RuleSet{}
+			for h.Next() {
+				for h.NextBlock(h.Nesting() - 1) {
+					if h.CountRemainingArgs() == 0 {
+						return nil, h.ArgErr() // TODO:
+					}
+					switch h.Val() {
+					case "domains":
+						r.Domains = append(r.Domains, h.RemainingArgs()...)
+					case "ip_ranges":
+						r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+					default:
+						return nil, h.Errf("unrecognized 'allow' subdirective: %s", h.Val())
+					}
+				}
+			}
+			if acmeServer.Policy == nil {
+				acmeServer.Policy = &Policy{}
+			}
+			acmeServer.Policy.Allow = r
+		case "deny":
+			r := &RuleSet{}
+			for h.Next() {
+				for h.NextBlock(h.Nesting() - 1) {
+					if h.CountRemainingArgs() == 0 {
+						return nil, h.ArgErr() // TODO:
+					}
+					switch h.Val() {
+					case "domains":
+						r.Domains = append(r.Domains, h.RemainingArgs()...)
+					case "ip_ranges":
+						r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+					default:
+						return nil, h.Errf("unrecognized 'deny' subdirective: %s", h.Val())
+					}
+				}
+			}
+			if acmeServer.Policy == nil {
+				acmeServer.Policy = &Policy{}
+			}
+			acmeServer.Policy.Deny = r
 		default:
 			return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
 		}
