@@ -160,10 +160,7 @@ func RegisterDirectiveOrder(dir string, position Positional, standardDir string)
 		panic("directive '" + dir + "' already ordered")
 	}
 
-	switch position {
-	case Before:
-	case After:
-	default:
+	if position != Before && position != After {
 		panic("the 2nd argument must be either 'before' or 'after', got '" + position + "'")
 	}
 
