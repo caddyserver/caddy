@@ -33,6 +33,15 @@ func init() {
 //		lifetime  <duration>
 //		resolvers <addresses...>
 //		challenges <challenges...>
+//		allow_wildcard_names
+//		allow {
+//			domains <domains...>
+//			ip_ranges <addresses...>
+//		}
+//		deny {
+//			domains <domains...>
+//			ip_ranges <addresses...>
+//		}
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	h.Next() // consume directive name
