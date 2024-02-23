@@ -39,8 +39,9 @@ type Context struct {
 	context.Context
 	moduleInstances map[string][]Module
 	cfg             *Config
-	cleanupFuncs    []func()
 	ancestry        []Module
+	cleanupFuncs    []func()                // invoked at every config unload
+	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting
 }
 
 // NewContext provides a new context derived from the given
@@ -79,6 +80,13 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // OnCancel executes f when ctx is canceled.
 func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
+}
+
+// OnExit executes f when the process exits gracefully.
+// The function is only executed if the process is gracefully
+// shut down while this context is active.
+func (ctx *Context) OnExit(f func(context.Context)) {
+	ctx.exitFuncs = append(ctx.exitFuncs, f)
 }
 
 // LoadModule loads the Caddy module(s) from the specified field of the parent struct
