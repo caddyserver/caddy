@@ -5,21 +5,6 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 )
 
-// RuleSet is the specific set of SAN criteria for a certificate
-// to be issued or denied.
-type RuleSet struct {
-	// Domains is a list of DNS domains that are allowed to be issued.
-	// It can be in the form of FQDN for specific domain name, or
-	// a wildcard domain name format, e.g. *.example.com, to allow
-	// sub-domains of a domain.
-	Domains []string `json:"domains,omitempty"`
-
-	// IP ranges in the form of CIDR notation or specific IP addresses
-	// to be approved or denied for certificates. Non-CIDR IP addresses
-	// are matched exactly.
-	IPRanges []string `json:"ip_ranges,omitempty"`
-}
-
 // Policy defines the criteria for the ACME server
 // of when to issue a certificate. Refer to the
 // [Certificate Issuance Policy](https://smallstep.com/docs/step-ca/policies/)
@@ -35,6 +20,21 @@ type Policy struct {
 
 	// If set to true, the ACME server will allow issuing wildcard certificates.
 	AllowWildcardNames bool `json:"allow_wildcard_names,omitempty"`
+}
+
+// RuleSet is the specific set of SAN criteria for a certificate
+// to be issued or denied.
+type RuleSet struct {
+	// Domains is a list of DNS domains that are allowed to be issued.
+	// It can be in the form of FQDN for specific domain name, or
+	// a wildcard domain name format, e.g. *.example.com, to allow
+	// sub-domains of a domain.
+	Domains []string `json:"domains,omitempty"`
+
+	// IP ranges in the form of CIDR notation or specific IP addresses
+	// to be approved or denied for certificates. Non-CIDR IP addresses
+	// are matched exactly.
+	IPRanges []string `json:"ip_ranges,omitempty"`
 }
 
 // normalizeAllowRules returns `nil` if policy is nil, the `Allow` rule is `nil`,
