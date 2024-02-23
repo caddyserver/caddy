@@ -1,0 +1,77 @@
+{
+	log json {
+		output file /var/log/caddy-json.log
+		format json
+	}
+	log console {
+		output stdout
+		format console
+	}
+}
+
+*.example.com {
+	log json {
+		hostnames foo.example.com bar.example.com
+	}
+	log console {
+		hostnames foo.example.com
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"console": {
+				"writer": {
+					"output": "stdout"
+				},
+				"encoder": {
+					"format": "console"
+				}
+			},
+			"json": {
+				"writer": {
+					"filename": "/var/log/caddy-json.log",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "json"
+				}
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_mapping": {
+							"bar.example.com": [
+								"json"
+							],
+							"foo.example.com": [
+								"json",
+								"console"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}
