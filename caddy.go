@@ -741,6 +741,11 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	for _, exitFunc := range lastContext.exitFuncs {
 		exitFunc(ctx)
 	}
+	exitFuncsMu.Lock()
+	for _, exitFunc := range exitFuncs {
+		exitFunc(ctx)
+	}
+	exitFuncsMu.Unlock()
 
 	// shut down admin endpoint(s) in goroutines so that
 	// if this function was called from an admin handler,
@@ -779,6 +784,23 @@ var exiting = new(int32) // accessed atomically
 // Exiting returns true if the process is exiting.
 // EXPERIMENTAL API: subject to change or removal.
 func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
+
+// OnExit registers a callback to invoke during process exit.
+// This registration is PROCESS-GLOBAL, meaning that each
+// function should only be registered once forever, NOT once
+// per config load (etc).
+//
+// EXPERIMENTAL API: subject to change or removal.
+func OnExit(f func(context.Context)) {
+	exitFuncsMu.Lock()
+	exitFuncs = append(exitFuncs, f)
+	exitFuncsMu.Unlock()
+}
+
+var (
+	exitFuncs   []func(context.Context)
+	exitFuncsMu sync.Mutex
+)
 
 // Duration can be an integer or a string. An integer is
 // interpreted as nanoseconds. If a string, it is a Go
