@@ -96,6 +96,9 @@ type Handler struct {
 	// "http-01", "dns-01", "tls-alpn-01"
 	Challenges ACMEChallenges `json:"challenges,omitempty" `
 
+	// The policy to use for issuing certificates
+	Policy *Policy `json:"policy,omitempty"`
+
 	logger    *zap.Logger
 	resolvers []caddy.NetworkAddress
 	ctx       caddy.Context
@@ -165,7 +168,10 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 				&provisioner.ACME{
 					Name:       ash.CA,
 					Challenges: ash.Challenges.toSmallstepType(),
-					Type:       provisioner.TypeACME.String(),
+					Options: &provisioner.Options{
+						X509: ash.Policy.normalizeRules(),
+					},
+					Type: provisioner.TypeACME.String(),
 					Claims: &provisioner.Claims{
 						MinTLSDur:     &provisioner.Duration{Duration: 5 * time.Minute},
 						MaxTLSDur:     &provisioner.Duration{Duration: 24 * time.Hour * 365},
