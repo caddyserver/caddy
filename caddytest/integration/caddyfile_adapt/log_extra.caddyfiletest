@@ -1,0 +1,71 @@
+:80 {
+	log
+
+	vars foo foo
+
+	extra_log const bar
+	extra_log vars foo
+	extra_log placeholder {path}
+
+	extra_log /only-for-this-path secret value
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"foo": "foo",
+									"handler": "vars"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/only-for-this-path"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "extra_log",
+									"key": "secret",
+									"value": "value"
+								}
+							]
+						},
+						{
+							"handle": [
+								{
+									"handler": "extra_log",
+									"key": "const",
+									"value": "bar"
+								},
+								{
+									"handler": "extra_log",
+									"key": "vars",
+									"value": "foo"
+								},
+								{
+									"handler": "extra_log",
+									"key": "placeholder",
+									"value": "{http.request.uri.path}"
+								}
+							]
+						}
+					],
+					"logs": {}
+				}
+			}
+		}
+	}
+}
