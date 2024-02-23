@@ -41,7 +41,7 @@ type Context struct {
 	cfg             *Config
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
-	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting
+	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
 }
 
 // NewContext provides a new context derived from the given
@@ -85,6 +85,8 @@ func (ctx *Context) OnCancel(f func()) {
 // OnExit executes f when the process exits gracefully.
 // The function is only executed if the process is gracefully
 // shut down while this context is active.
+//
+// EXPERIMENTAL API: subject to change or removal.
 func (ctx *Context) OnExit(f func(context.Context)) {
 	ctx.exitFuncs = append(ctx.exitFuncs, f)
 }
