@@ -515,6 +515,25 @@ func TestUriOps(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&taz=test")
 }
 
+func TestUriOpsBlock(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query {
+		+foo bar
+		-baz
+		taz test
+	} 
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&taz=test")
+}
+
 func TestHandleErrorSimpleCodes(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{

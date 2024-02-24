@@ -98,7 +98,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 	h.Next() // consume directive name
 
 	args := h.RemainingArgs()
-	if len(args) < 2 {
+	if len(args) < 1 {
 		return nil, h.ArgErr()
 	}
 
@@ -159,13 +159,29 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 		})
 
 	case "query":
-		if len(args) > 3 || len(args) < 1 {
+		if len(args) > 4 {
 			return nil, h.ArgErr()
 		}
 		rewr.QueryOperations = &queryOps{}
-		err := applyQueryOps(h, rewr.QueryOperations, args[1:])
-		if err != nil {
-			return nil, err
+		var hasArgs bool
+		if len(args) > 1 {
+			hasArgs = true
+			err := applyQueryOps(h, rewr.QueryOperations, args[1:])
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		for h.NextBlock(0) {
+			if hasArgs {
+				return nil, h.Err("Cannot specify uri query rewrites in both argument and block")
+			}
+			queryArgs := []string{h.Val()}
+			queryArgs = append(queryArgs, h.RemainingArgs()...)
+			err := applyQueryOps(h, rewr.QueryOperations, queryArgs)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 	default:
