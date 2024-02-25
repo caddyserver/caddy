@@ -22,7 +22,7 @@ func (dummyVerifier) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // CaddyModule implements caddy.Module.
 func (dummyVerifier) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID: "tls.client_auth.dummy",
+		ID: "tls.client_auth.verifier.dummy",
 		New: func() caddy.Module {
 			return new(dummyVerifier)
 		},
