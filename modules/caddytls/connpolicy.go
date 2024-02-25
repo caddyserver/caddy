@@ -494,6 +494,23 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return fmt.Errorf("trust_pool module '%s' is not a certificate pool provider", caMod)
 			}
 			ca.CARaw = caddyconfig.JSONModuleObject(caMod, "provider", modName, nil)
+		case "verifier":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			vType := d.Val()
+			modID := "tls.client_auth." + vType
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+
+			_, ok := unm.(ClientCertificateVerifier)
+			if !ok {
+				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+			}
+			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:
 			return d.Errf("unknown subdirective for client_auth: %s", subdir)
 		}
@@ -566,7 +583,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 	}
 	ca, ok := caRaw.(CA)
 	if !ok {
-		return fmt.Errorf("CARaw module '%s' is not a certificate pool provider", ca)
+		return fmt.Errorf("'ca' module '%s' is not a certificate pool provider", ca)
 	}
 	clientauth.ca = ca
 
