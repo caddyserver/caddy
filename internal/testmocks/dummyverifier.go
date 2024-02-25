@@ -34,6 +34,8 @@ func (dummyVerifier) VerifyClientCertificate(rawCerts [][]byte, verifiedChains [
 	return nil
 }
 
-var _ caddy.Module = dummyVerifier{}
-var _ caddytls.ClientCertificateVerifier = dummyVerifier{}
-var _ caddyfile.Unmarshaler = dummyVerifier{}
+var (
+	_ caddy.Module                       = dummyVerifier{}
+	_ caddytls.ClientCertificateVerifier = dummyVerifier{}
+	_ caddyfile.Unmarshaler              = dummyVerifier{}
+)
