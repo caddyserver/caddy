@@ -274,7 +274,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 
 	// apply query operations
 	if rewr.QueryOperations != nil {
-		rewr.QueryOperations.do(r)
+		rewr.QueryOperations.do(r, repl)
 	}
 
 	// update the encoded copy of the URI
@@ -490,22 +490,32 @@ type queryOps struct {
 	Delete []string `json:"delete,omitempty"`
 }
 
-func (q *queryOps) do(r *http.Request) {
+func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 	query := r.URL.Query()
 
 	for _, addParam := range q.Add {
-		key := addParam.Key
-		val := addParam.Val
+		key := repl.ReplaceAll(addParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(addParam.Val, "")
 		query[key] = append(query[key], val)
 	}
 
 	for _, deleteParam := range q.Delete {
-		delete(query, deleteParam)
+		param := repl.ReplaceAll(deleteParam, "")
+		if param == "" {
+			continue
+		}
+		delete(query, param)
 	}
 
 	for _, setParam := range q.Set {
-		key := setParam.Key
-		val := setParam.Val
+		key := repl.ReplaceAll(setParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(setParam.Val, "")
 		query[key] = []string{val}
 	}
 
