@@ -510,10 +510,11 @@ func TestUriOps(t *testing.T) {
 	uri query -baz
 	uri query taz test
 	uri query key=value example
+	uri query changethis>changed
 	
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
 }
 
 func TestUriOpsBlock(t *testing.T) {

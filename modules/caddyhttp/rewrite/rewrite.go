@@ -486,6 +486,9 @@ type queryOps struct {
 	// Sets query parameters; replaces existing header fields.
 	Set []queryOpsArguments `json:"set,omitempty"`
 
+	// Renames query keys
+	Rename []queryOpsArguments `json:"rename,omitempty"`
+
 	// Names of query parameters to delete
 	Delete []string `json:"delete,omitempty"`
 }
@@ -517,6 +520,16 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 		}
 		val := repl.ReplaceAll(setParam.Val, "")
 		query[key] = []string{val}
+	}
+
+	for _, renameParam := range q.Rename {
+		key := repl.ReplaceAll(renameParam.Key, "")
+		val := repl.ReplaceAll(renameParam.Val, "")
+		if key == "" || val == "" {
+			continue
+		}
+		query[val] = query[key]
+		delete(query, key)
 	}
 
 	r.URL.RawQuery = query.Encode()
