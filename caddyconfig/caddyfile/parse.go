@@ -359,9 +359,15 @@ func (p *parser) doImport(nesting int) error {
 	// set up a replacer for non-variadic args replacement
 	repl := makeArgsReplacer(args)
 
+	// grab up to a single block and write it to the outlet string
+	outlet := []Token{}
+	for currentNesting := p.Nesting(); p.NextBlock(currentNesting); {
+		outlet = append(outlet, p.Token())
+	}
+
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
-	tokensBefore := p.tokens[:p.cursor-1-len(args)]
+	tokensBefore := p.tokens[:p.cursor-1-len(args)-len(outlet)]
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
 	var nodes []string
@@ -490,6 +496,15 @@ func (p *parser) doImport(nesting int) error {
 			if nesting == 0 && maybeSnippet {
 				maybeSnippet = false
 			}
+		case "{outlet}":
+			if len(outlet) == 0 {
+				// if there is no content in the snippet outlet, don't do any replacement
+				// this allows snippets to contain {outlet} in them and function backwards compatible
+				tokensCopy = append(tokensCopy, token)
+			} else {
+				tokensCopy = append(tokensCopy, outlet...)
+			}
+			continue
 		}
 
 		if maybeSnippet {
@@ -512,7 +527,7 @@ func (p *parser) doImport(nesting int) error {
 	// splice the imported tokens in the place of the import statement
 	// and rewind cursor so Next() will land on first imported token
 	p.tokens = append(tokensBefore, append(tokensCopy, tokensAfter...)...)
-	p.cursor -= len(args) + 1
+	p.cursor -= len(args) + len(outlet) + 1
 
 	return nil
 }
