@@ -360,14 +360,40 @@ func (p *parser) doImport(nesting int) error {
 	repl := makeArgsReplacer(args)
 
 	// grab up to a single block and write it to the outlet string
-	outlet := []Token{}
+	blockTokens := []Token{}
 	for currentNesting := p.Nesting(); p.NextBlock(currentNesting); {
-		outlet = append(outlet, p.Token())
+		// if we are here, we have entered the block
+		blockTokens = append(blockTokens, p.Token())
+	}
+	// use such tokens to create a new dispenser, and then use it to parse each block
+	blockMapping := map[string][]Token{}
+	bd := NewDispenser(blockTokens)
+	for bd.Next() {
+		// see if we can grab a key
+		var currentMappingKey string
+		if bd.Val() == "{" {
+			return p.Err("anonymous blocks are not supported")
+		}
+		currentMappingKey = bd.Val()
+		currentMappingTokens := []Token{}
+		// read all args until end of line / {
+		if bd.NextArg() {
+			currentMappingTokens = append(currentMappingTokens, bd.Token())
+			for bd.NextArg() {
+				currentMappingTokens = append(currentMappingTokens, bd.Token())
+			}
+		} else {
+			// try to enter the nesting and append all those tokens
+			for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
+				currentMappingTokens = append(currentMappingTokens, bd.Token())
+			}
+		}
+		blockMapping[currentMappingKey] = currentMappingTokens
 	}
 
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
-	tokensBefore := p.tokens[:p.cursor-1-len(args)-len(outlet)]
+	tokensBefore := p.tokens[:p.cursor-1-len(args)-len(blockTokens)]
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
 	var nodes []string
@@ -496,13 +522,31 @@ func (p *parser) doImport(nesting int) error {
 			if nesting == 0 && maybeSnippet {
 				maybeSnippet = false
 			}
-		case "{outlet}":
-			if len(outlet) == 0 {
-				// if there is no content in the snippet outlet, don't do any replacement
-				// this allows snippets to contain {outlet} in them and function backwards compatible
+		}
+
+		// {block} {blocks.*}
+		var skip bool
+		var tokensToAdd []Token
+		switch {
+		case token.Text == "{block}":
+			tokensToAdd = blockTokens
+		case strings.HasPrefix(token.Text, "{blocks.") && strings.HasSuffix(token.Text, "}"):
+			blockKey := strings.TrimPrefix(strings.TrimSuffix(token.Text, "}"), "{blocks.")
+			val, ok := blockMapping[blockKey]
+			// NOTE: to keep backwards compatiblity, we passthrough the string if it is not found, as a nil token causes an append + continue
+			if ok {
+				tokensToAdd = val
+			}
+		default:
+			skip = true
+		}
+		if !skip {
+			if len(tokensToAdd) == 0 {
+				// if there is no content in the snippet block, don't do any replacement
+				// this allows snippets to contain {block} in them and function backwards compatible
 				tokensCopy = append(tokensCopy, token)
 			} else {
-				tokensCopy = append(tokensCopy, outlet...)
+				tokensCopy = append(tokensCopy, tokensToAdd...)
 			}
 			continue
 		}
@@ -527,7 +571,7 @@ func (p *parser) doImport(nesting int) error {
 	// splice the imported tokens in the place of the import statement
 	// and rewind cursor so Next() will land on first imported token
 	p.tokens = append(tokensBefore, append(tokensCopy, tokensAfter...)...)
-	p.cursor -= len(args) + len(outlet) + 1
+	p.cursor -= len(args) + len(blockTokens) + 1
 
 	return nil
 }
