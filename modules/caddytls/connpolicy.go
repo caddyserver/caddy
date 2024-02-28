@@ -733,7 +733,7 @@ func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
 	}
 	val, err := ctx.LoadModule(l, "LeafCertificateLoadersRaw")
 	if err != nil {
-		return fmt.Errorf("Could not parse leaf certificates loaders: %s", err.Error())
+		return fmt.Errorf("could not parse leaf certificates loaders: %s", err.Error())
 	}
 	trustedLeafCertloaders := []LeafCertificateLoader{}
 	for _, loader := range val.([]any) {
@@ -743,7 +743,7 @@ func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
 	for _, loader := range trustedLeafCertloaders {
 		certs, err := loader.LoadLeafCertificates()
 		if err != nil {
-			return fmt.Errorf("Could not load leaf certificates: %s", err.Error())
+			return fmt.Errorf("could not load leaf certificates: %s", err.Error())
 		}
 		trustedLeafCertificates = append(trustedLeafCertificates, certs...)
 	}

@@ -44,7 +44,7 @@ func (LeafFolderLoader) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision implements caddy.Provisioner.
-func (fl LeafFolderLoader) Provision(ctx caddy.Context) error {
+func (fl *LeafFolderLoader) Provision(ctx caddy.Context) error {
 	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
@@ -71,7 +71,7 @@ func (fl LeafFolderLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 				return nil
 			}
 
-			certData, err := os.ReadFile(fpath)
+			certData, err := convertPEMFilesToDERBytes(fpath)
 			if err != nil {
 				return err
 			}

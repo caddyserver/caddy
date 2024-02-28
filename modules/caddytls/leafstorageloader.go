@@ -34,7 +34,7 @@ func init() {
 type LeafStorageLoader struct {
 	// A list of pairs of certificate file names along with their
 	// encoding format so that they can be loaded from storage.
-	Certs []LeafCertFile `json:"certs,omitempty"`
+	Certs []string `json:"certs,omitempty"`
 
 	// The storage module where the trusted leaf certificates are stored. Absent
 	// explicit storage implies the use of Caddy default storage.
@@ -76,15 +76,8 @@ func (sl *LeafStorageLoader) Provision(ctx caddy.Context) error {
 	if !ok {
 		repl = caddy.NewReplacer()
 	}
-	for k, pair := range sl.Certs {
-		for i, tag := range pair.Tags {
-			pair.Tags[i] = repl.ReplaceKnown(tag, "")
-		}
-		sl.Certs[k] = LeafCertFile{
-			LeafCertificate: repl.ReplaceKnown(pair.LeafCertificate, ""),
-			Format:          repl.ReplaceKnown(pair.Format, ""),
-			Tags:            pair.Tags,
-		}
+	for k, path := range sl.Certs {
+		sl.Certs[k] = repl.ReplaceKnown(path, "")
 	}
 	return nil
 }
@@ -92,31 +85,21 @@ func (sl *LeafStorageLoader) Provision(ctx caddy.Context) error {
 // LoadLeafCertificates returns the certificates to be loaded by sl.
 func (sl LeafStorageLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 	certificates := make([]*x509.Certificate, 0, len(sl.Certs))
-	for _, pair := range sl.Certs {
-		certData, err := sl.storage.Load(sl.ctx, pair.LeafCertificate)
+	for _, path := range sl.Certs {
+		certData, err := sl.storage.Load(sl.ctx, path)
 		if err != nil {
 			return nil, err
 		}
 
-		switch pair.Format {
-		case "":
-			fallthrough
-		case "pem":
-			ders, err := convertPEMToDER(certData)
-			if err != nil {
-				return nil, err
-			}
-			certs, err := x509.ParseCertificates(ders)
-			if err != nil {
-				return nil, err
-			}
-			certificates = append(certificates, certs...)
-		default:
-			return nil, fmt.Errorf("unrecognized certificate/key encoding format: %s", pair.Format)
-		}
+		ders, err := convertPEMToDER(certData)
 		if err != nil {
 			return nil, err
 		}
+		certs, err := x509.ParseCertificates(ders)
+		if err != nil {
+			return nil, err
+		}
+		certificates = append(certificates, certs...)
 	}
 	return certificates, nil
 }

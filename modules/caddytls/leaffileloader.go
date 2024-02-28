@@ -29,24 +29,17 @@ func init() {
 
 // LeafFileLoader loads leaf certificates from disk.
 type LeafFileLoader struct {
-	Files []LeafCertFile `json:"files,omitempty"`
+	Files []string `json:"files,omitempty"`
 }
 
 // Provision implements caddy.Provisioner.
-func (fl LeafFileLoader) Provision(ctx caddy.Context) error {
+func (fl *LeafFileLoader) Provision(ctx caddy.Context) error {
 	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
 	}
-	for k, pair := range fl.Files {
-		for i, tag := range pair.Tags {
-			pair.Tags[i] = repl.ReplaceKnown(tag, "")
-		}
-		fl.Files[k] = LeafCertFile{
-			LeafCertificate: repl.ReplaceKnown(pair.LeafCertificate, ""),
-			Format:          repl.ReplaceKnown(pair.Format, ""),
-			Tags:            pair.Tags,
-		}
+	for k, path := range fl.Files {
+		fl.Files[k] = repl.ReplaceKnown(path, "")
 	}
 	return nil
 }
@@ -59,41 +52,19 @@ func (LeafFileLoader) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// LeafCertFile associates leaf certificate file name along with its
-// encoding format so that they can be loaded from disk.
-type LeafCertFile struct {
-	// Path to the certificate file.
-	LeafCertificate string `json:"certificate"`
-
-	// The format of the cert. Can be "pem". Default: "pem"
-	Format string `json:"format,omitempty"`
-
-	// Arbitrary values to associate with this certificate.
-	// Can be useful when you want to select a particular
-	// certificate when there may be multiple valid candidates.
-	Tags []string `json:"tags,omitempty"`
-}
-
 // LoadLEafCertificates returns the certificates to be loaded by fl.
 func (fl LeafFileLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 	certificates := make([]*x509.Certificate, 0, len(fl.Files))
-	for _, pair := range fl.Files {
-		switch pair.Format {
-		case "":
-			fallthrough
-		case "pem":
-			ders, err := convertPEMFilesToDERBytes(pair.LeafCertificate)
-			if err != nil {
-				return nil, err
-			}
-			certs, err := x509.ParseCertificates(ders)
-			if err != nil {
-				return nil, err
-			}
-			certificates = append(certificates, certs...)
-		default:
-			return nil, fmt.Errorf("unrecognized certificate/key encoding format: %s", pair.Format)
+	for _, path := range fl.Files {
+		ders, err := convertPEMFilesToDERBytes(path)
+		if err != nil {
+			return nil, err
 		}
+		certs, err := x509.ParseCertificates(ders)
+		if err != nil {
+			return nil, err
+		}
+		certificates = append(certificates, certs...)
 	}
 	return certificates, nil
 }

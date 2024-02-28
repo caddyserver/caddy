@@ -29,23 +29,17 @@ func init() {
 // decoding their DER blocks directly. This has the advantage
 // of not needing to store them on disk at all.
 type LeafDERLoader struct {
-	Ders []LeafCertDER `json:"ders,omitempty"`
+	Certificates []string `json:"certs,omitempty"`
 }
 
 // Provision implements caddy.Provisioner.
-func (pl LeafDERLoader) Provision(ctx caddy.Context) error {
+func (pl *LeafDERLoader) Provision(ctx caddy.Context) error {
 	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
 	}
-	for k, pair := range pl.Ders {
-		for i, tag := range pair.Tags {
-			pair.Tags[i] = repl.ReplaceKnown(tag, "")
-		}
-		pl.Ders[k] = LeafCertDER{
-			CertificateDER: repl.ReplaceKnown(pair.CertificateDER, ""),
-			Tags:           pair.Tags,
-		}
+	for i, cert := range pl.Certificates {
+		pl.Certificates[i] = repl.ReplaceKnown(cert, "")
 	}
 	return nil
 }
@@ -58,22 +52,11 @@ func (LeafDERLoader) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// LeafCertDER contains DER-encoded Leaf certificate.
-type LeafCertDER struct {
-	// The leaf certificate in DER format.
-	CertificateDER string `json:"certificate"`
-
-	// Arbitrary values to associate with this certificate.
-	// Can be useful when you want to select a particular
-	// certificate when there may be multiple valid candidates.
-	Tags []string `json:"tags,omitempty"`
-}
-
 // LoadLeafCertificates returns the certificates contained in pl.
 func (pl LeafDERLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
-	certs := make([]*x509.Certificate, 0, len(pl.Ders))
-	for i, pair := range pl.Ders {
-		cert, err := x509.ParseCertificate([]byte(pair.CertificateDER))
+	certs := make([]*x509.Certificate, 0, len(pl.Certificates))
+	for i, cert := range pl.Certificates {
+		cert, err := x509.ParseCertificate([]byte(cert))
 		if err != nil {
 			return nil, fmt.Errorf("DER cert %d: %v", i, err)
 		}
