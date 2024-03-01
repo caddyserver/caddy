@@ -44,8 +44,9 @@ type Context struct {
 
 	moduleInstances map[string][]Module
 	cfg             *Config
-	cleanupFuncs    []func()
 	ancestry        []Module
+	cleanupFuncs    []func()                // invoked at every config unload
+	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
 }
 
 // NewContext provides a new context derived from the given
@@ -86,13 +87,23 @@ func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
 }
 
-// Filesystems returns a ref to the FilesystemMap
+// Filesystems returns a ref to the FilesystemMap.
+// EXPERIMENTAL: This API is subject to change.
 func (ctx *Context) Filesystems() FileSystems {
 	// if no config is loaded, we use a default filesystemmap, which includes the osfs
 	if ctx.cfg == nil {
 		return &filesystems.FilesystemMap{}
 	}
 	return ctx.cfg.filesystems
+}
+
+// OnExit executes f when the process exits gracefully.
+// The function is only executed if the process is gracefully
+// shut down while this context is active.
+//
+// EXPERIMENTAL API: subject to change or removal.
+func (ctx *Context) OnExit(f func(context.Context)) {
+	ctx.exitFuncs = append(ctx.exitFuncs, f)
 }
 
 // LoadModule loads the Caddy module(s) from the specified field of the parent struct
