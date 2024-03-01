@@ -119,7 +119,7 @@ func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   caddyCmd.Name,
 		Short: caddyCmd.Short,
-		Long:  caddyCmd.Usage + "\n\n" + caddyCmd.Long,
+		Long:  caddyCmd.Usage + caddyCmd.Long,
 	}
 	if caddyCmd.CobraFunc != nil {
 		caddyCmd.CobraFunc(cmd)
