@@ -15,6 +15,9 @@
 package caddyzstd
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/caddyserver/caddy/v2"
@@ -27,7 +30,10 @@ func init() {
 }
 
 // Zstd can create Zstandard encoders.
-type Zstd struct{}
+type Zstd struct {
+	// Compression level from 1 to 4 (refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression).
+	Level zstd.EncoderLevel `json:"level,omitempty"`
+}
 
 // CaddyModule returns the Caddy module information.
 func (Zstd) CaddyModule() caddy.ModuleInfo {
@@ -38,7 +44,36 @@ func (Zstd) CaddyModule() caddy.ModuleInfo {
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens.
-func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (g *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume option name
+	if !d.NextArg() {
+		return nil
+	}
+	levelStr := d.Val()
+	level, err := strconv.Atoi(levelStr)
+	if err != nil {
+		return err
+	}
+	g.Level = zstd.EncoderLevel(level)
+	return nil
+}
+
+// Provision provisions g's configuration.
+func (g *Zstd) Provision(ctx caddy.Context) error {
+	if g.Level == 0 {
+		g.Level = zstd.SpeedDefault
+	}
+	return nil
+}
+
+// Validate validates g's configuration.
+func (g Zstd) Validate() error {
+	if g.Level < zstd.SpeedFastest {
+		return fmt.Errorf("quality too low; must be >= %d", zstd.SpeedFastest)
+	}
+	if g.Level > zstd.SpeedBestCompression {
+		return fmt.Errorf("quality too high; must be <= %d", zstd.SpeedBestCompression)
+	}
 	return nil
 }
 
@@ -51,7 +86,13 @@ func (z Zstd) NewEncoder() encode.Encoder {
 	// The default of 8MB for the window is
 	// too large for many clients, so we limit
 	// it to 128K to lighten their load.
-	writer, _ := zstd.NewWriter(nil, zstd.WithWindowSize(128<<10), zstd.WithEncoderConcurrency(1), zstd.WithZeroFrames(true))
+	writer, _ := zstd.NewWriter(
+		nil,
+		zstd.WithWindowSize(128<<10),
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithZeroFrames(true),
+		zstd.WithEncoderLevel(z.Level),
+	)
 	return writer
 }
 
