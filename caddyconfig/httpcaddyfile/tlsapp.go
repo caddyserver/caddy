@@ -45,8 +45,8 @@ func (st ServerType) buildTLSApp(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
-	autoHTTPS := "on"
-	if ah, ok := options["auto_https"].(string); ok {
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
 		autoHTTPS = ah
 	}
 
@@ -54,13 +54,14 @@ func (st ServerType) buildTLSApp(
 	// key, so that they don't get forgotten/omitted by auto-HTTPS
 	// (since they won't appear in route matchers)
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	if autoHTTPS != "off" {
+	if !sliceContains(autoHTTPS, "off") {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
 				for _, addr := range sb.parsedKeys {
 					if addr.Host != "" {
 						continue
 					}
+
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
 					for _, otherAddr := range sb.parsedKeys {
@@ -350,7 +351,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	if autoHTTPS != "off" && autoHTTPS != "disable_certs" {
+	if !sliceContains(autoHTTPS, "off") && !sliceContains(autoHTTPS, "disable_certs") {
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
