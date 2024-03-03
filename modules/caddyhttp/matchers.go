@@ -675,7 +675,10 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			pattern := data.(types.String)
-			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+				Pattern: string(pattern),
+			}}
 			err := matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -694,7 +697,14 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
-			matcher := MatchPathRE{MatchRegexp{Name: strParams[0], Pattern: strParams[1]}}
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    name,
+				Pattern: strParams[1],
+			}}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1104,7 +1114,10 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			}
 			strParams := params.([]string)
 			matcher := MatchHeaderRE{}
-			matcher[strParams[0]] = &MatchRegexp{Pattern: strParams[1], Name: ""}
+			matcher[strParams[0]] = &MatchRegexp{
+				Pattern: strParams[1],
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1123,8 +1136,15 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
 			matcher := MatchHeaderRE{}
-			matcher[strParams[1]] = &MatchRegexp{Pattern: strParams[2], Name: strParams[0]}
+			matcher[strParams[1]] = &MatchRegexp{
+				Pattern: strParams[2],
+				Name:    name,
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},

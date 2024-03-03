@@ -380,7 +380,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 	for _, tst := range matcherTests {
 		tc := tst
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.expression.Provision(caddy.Context{})
+			caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			err := tc.expression.Provision(caddyCtx)
 			if err != nil {
 				if !tc.wantErr {
 					t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tc.wantErr)
@@ -482,7 +484,9 @@ func TestMatchExpressionProvision(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.expression.Provision(caddy.Context{}); (err != nil) != tt.wantErr {
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			if err := tt.expression.Provision(ctx); (err != nil) != tt.wantErr {
 				t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
