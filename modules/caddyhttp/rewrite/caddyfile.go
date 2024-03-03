@@ -162,11 +162,11 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 		if len(args) > 4 {
 			return nil, h.ArgErr()
 		}
-		rewr.QueryOperations = &queryOps{}
+		rewr.Query = &queryOps{}
 		var hasArgs bool
 		if len(args) > 1 {
 			hasArgs = true
-			err := applyQueryOps(h, rewr.QueryOperations, args[1:])
+			err := applyQueryOps(h, rewr.Query, args[1:])
 			if err != nil {
 				return nil, err
 			}
@@ -178,7 +178,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 			}
 			queryArgs := []string{h.Val()}
 			queryArgs = append(queryArgs, h.RemainingArgs()...)
-			err := applyQueryOps(h, rewr.QueryOperations, queryArgs)
+			err := applyQueryOps(h, rewr.Query, queryArgs)
 			if err != nil {
 				return nil, err
 			}

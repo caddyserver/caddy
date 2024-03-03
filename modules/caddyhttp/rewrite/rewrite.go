@@ -89,8 +89,9 @@ type Rewrite struct {
 	// Performs regular expression replacements on the URI path.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
-	// Performs query parameters operations on the URI path
-	QueryOperations *queryOps `json:"query_operations,omitempty"`
+	// Mutates the query string of the URI.
+
+	Query *queryOps `json:"query_operations,omitempty"`
 
 	logger *zap.Logger
 }
@@ -273,8 +274,8 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	}
 
 	// apply query operations
-	if rewr.QueryOperations != nil {
-		rewr.QueryOperations.do(r, repl)
+	if rewr.Query != nil {
+		rewr.Query.do(r, repl)
 	}
 
 	// update the encoded copy of the URI
@@ -536,6 +537,7 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 }
 
 type queryOpsArguments struct {
+	// A key in the query string. Note that query string keys may appear multiple times.
 	Key string `json:"key,omitempty"`
 	Val string `json:"val,omitempty"`
 }
