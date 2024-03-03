@@ -1397,6 +1397,14 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	// given a matcher name and the tokens following it, parse
 	// the tokens as a matcher module and record it
 	makeMatcher := func(matcherName string, tokens []caddyfile.Token) error {
+		// create a new dispenser from the tokens
+		dispenser := caddyfile.NewDispenser(tokens)
+
+		// set the matcher name (without @) in the dispenser context so
+		// that matcher modules can access it to use it as their name
+		// (e.g. regexp matchers which use the name for capture groups)
+		dispenser.SetContext(caddyfile.MatcherNameCtxKey, definitionName[1:])
+
 		mod, err := caddy.GetModule("http.matchers." + matcherName)
 		if err != nil {
 			return fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
@@ -1405,7 +1413,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		if !ok {
 			return fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
 		}
-		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
+		err = unm.UnmarshalCaddyfile(dispenser)
 		if err != nil {
 			return err
 		}

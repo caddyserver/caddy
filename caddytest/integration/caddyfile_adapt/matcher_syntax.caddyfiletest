@@ -146,6 +146,7 @@
 								{
 									"vars_regexp": {
 										"{http.request.uri}": {
+											"name": "matcher6",
 											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
 										}
 									}

@@ -1023,6 +1023,11 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val = second
 		}
 
+		// Default to the named matcher's name, if no regexp name is provided
+		if name == "" {
+			name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		// If there's already a pattern for this field
 		// then we would end up overwriting the old one
 		if (*m)[field] != nil {
@@ -1357,6 +1362,12 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		default:
 			return d.ArgErr()
 		}
+
+		// Default to the named matcher's name, if no regexp name is provided
+		if mre.Name == "" {
+			mre.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		if d.NextBlock(0) {
 			return d.Err("malformed path_regexp matcher: blocks are not supported")
 		}
