@@ -22,18 +22,18 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(LeafDERLoader{})
+	caddy.RegisterModule(LeafPEMLoader{})
 }
 
-// LeafDERLoader loads leaf certificates by
-// decoding their DER blocks directly. This has the advantage
+// LeafPEMLoader loads leaf certificates by
+// decoding their PEM blocks directly. This has the advantage
 // of not needing to store them on disk at all.
-type LeafDERLoader struct {
+type LeafPEMLoader struct {
 	Certificates []string `json:"certs,omitempty"`
 }
 
 // Provision implements caddy.Provisioner.
-func (pl *LeafDERLoader) Provision(ctx caddy.Context) error {
+func (pl *LeafPEMLoader) Provision(ctx caddy.Context) error {
 	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
@@ -45,20 +45,24 @@ func (pl *LeafDERLoader) Provision(ctx caddy.Context) error {
 }
 
 // CaddyModule returns the Caddy module information.
-func (LeafDERLoader) CaddyModule() caddy.ModuleInfo {
+func (LeafPEMLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.leaf_cert_loader.der",
-		New: func() caddy.Module { return new(LeafDERLoader) },
+		ID:  "tls.leaf_cert_loader.pem",
+		New: func() caddy.Module { return new(LeafPEMLoader) },
 	}
 }
 
 // LoadLeafCertificates returns the certificates contained in pl.
-func (pl LeafDERLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
+func (pl LeafPEMLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 	certs := make([]*x509.Certificate, 0, len(pl.Certificates))
 	for i, cert := range pl.Certificates {
-		cert, err := x509.ParseCertificate([]byte(cert))
+		derBytes, err := convertPEMToDER([]byte(cert))
 		if err != nil {
-			return nil, fmt.Errorf("DER cert %d: %v", i, err)
+			return nil, fmt.Errorf("PEM leaf certificate loader, cert %d: %v", i, err)
+		}
+		cert, err := x509.ParseCertificate(derBytes)
+		if err != nil {
+			return nil, fmt.Errorf("PEM cert %d: %v", i, err)
 		}
 		certs = append(certs, cert)
 	}
@@ -67,6 +71,6 @@ func (pl LeafDERLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 
 // Interface guard
 var (
-	_ LeafCertificateLoader = (*LeafDERLoader)(nil)
-	_ caddy.Provisioner     = (*LeafDERLoader)(nil)
+	_ LeafCertificateLoader = (*LeafPEMLoader)(nil)
+	_ caddy.Provisioner     = (*LeafPEMLoader)(nil)
 )

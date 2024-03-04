@@ -38,7 +38,7 @@ type LeafFolderLoader struct {
 // CaddyModule returns the Caddy module information.
 func (LeafFolderLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.leaf_cert_loader.folders",
+		ID:  "tls.leaf_cert_loader.folder",
 		New: func() caddy.Module { return new(LeafFolderLoader) },
 	}
 }
