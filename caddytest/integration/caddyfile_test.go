@@ -517,6 +517,58 @@ func TestUriOps(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
 }
 
+func TestSetThenAddQueryParams(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo bar
+	uri query +foo baz
+	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint", 200, "foo=bar&foo=baz")
+}
+
+func TestSetThenDeleteParams(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query bar foo{query.foo}
+	uri query -foo
+	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=foobar")
+}
+
+func TestRenameAndOtherOps(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo>bar
+	uri query bar taz
+	uri query +bar baz
+	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=taz&bar=baz")
+}
+
 func TestUriOpsBlock(t *testing.T) {
 	tester := caddytest.NewTester(t)
 
