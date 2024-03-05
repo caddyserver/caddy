@@ -52,7 +52,7 @@ func (LeafFileLoader) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// LoadLEafCertificates returns the certificates to be loaded by fl.
+// LoadLeafCertificates returns the certificates to be loaded by fl.
 func (fl LeafFileLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 	certificates := make([]*x509.Certificate, 0, len(fl.Files))
 	for _, path := range fl.Files {
