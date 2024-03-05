@@ -3,11 +3,11 @@
 
 	vars foo foo
 
-	extra_log const bar
-	extra_log vars foo
-	extra_log placeholder {path}
+	log_append const bar
+	log_append vars foo
+	log_append placeholder {path}
 
-	extra_log /only-for-this-path secret value
+	log_append /only-for-this-path secret value
 }
 ----------
 {
@@ -37,7 +37,7 @@
 							],
 							"handle": [
 								{
-									"handler": "extra_log",
+									"handler": "log_append",
 									"key": "secret",
 									"value": "value"
 								}
@@ -46,17 +46,17 @@
 						{
 							"handle": [
 								{
-									"handler": "extra_log",
+									"handler": "log_append",
 									"key": "const",
 									"value": "bar"
 								},
 								{
-									"handler": "extra_log",
+									"handler": "log_append",
 									"key": "vars",
 									"value": "foo"
 								},
 								{
-									"handler": "extra_log",
+									"handler": "log_append",
 									"key": "placeholder",
 									"value": "{http.request.uri.path}"
 								}

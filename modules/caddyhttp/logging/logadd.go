@@ -25,13 +25,13 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(ExtraLog{})
+	caddy.RegisterModule(LogAppend{})
 }
 
-// ExtraLog implements a middleware that takes a key and value, where
+// LogAppend implements a middleware that takes a key and value, where
 // the key is the name of a log field and the value is a placeholder,
 // or variable key, or constant value to use for that field.
-type ExtraLog struct {
+type LogAppend struct {
 	// Key is the name of the log field.
 	Key string `json:"key,omitempty"`
 
@@ -45,14 +45,14 @@ type ExtraLog struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (ExtraLog) CaddyModule() caddy.ModuleInfo {
+func (LogAppend) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.extra_log",
-		New: func() caddy.Module { return new(ExtraLog) },
+		ID:  "http.handlers.log_append",
+		New: func() caddy.Module { return new(LogAppend) },
 	}
 }
 
-func (h ExtraLog) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// Run the next handler in the chain first.
 	// If an error occurs, we still want to add
 	// any extra log fields that we can, so we
@@ -90,5 +90,5 @@ func (h ExtraLog) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 // Interface guards
 var (
-	_ caddyhttp.MiddlewareHandler = (*ExtraLog)(nil)
+	_ caddyhttp.MiddlewareHandler = (*LogAppend)(nil)
 )

@@ -21,20 +21,20 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("extra_log", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("log_append", parseCaddyfile)
 }
 
-// parseCaddyfile sets up the extra_log handler from Caddyfile tokens. Syntax:
+// parseCaddyfile sets up the log_append handler from Caddyfile tokens. Syntax:
 //
-//	extra_log [<matcher>] <key> <value>
+//	log_append [<matcher>] <key> <value>
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	handler := new(ExtraLog)
+	handler := new(LogAppend)
 	err := handler.UnmarshalCaddyfile(h.Dispenser)
 	return handler, err
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (h *ExtraLog) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (h *LogAppend) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume directive name
 	if !d.NextArg() {
 		return d.ArgErr()
@@ -49,5 +49,5 @@ func (h *ExtraLog) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Interface guards
 var (
-	_ caddyfile.Unmarshaler = (*ExtraLog)(nil)
+	_ caddyfile.Unmarshaler = (*LogAppend)(nil)
 )
