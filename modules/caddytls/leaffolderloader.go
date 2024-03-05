@@ -32,7 +32,7 @@ func init() {
 // by recursively walking the specified directories, looking for PEM
 // files which contain both a certificate and a key.
 type LeafFolderLoader struct {
-	Folders []string `json:"folders"`
+	Folders []string `json:"folders,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.

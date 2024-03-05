@@ -32,9 +32,8 @@ func init() {
 // LeafStorageLoader loads leaf certificates from the
 // globally configured storage module.
 type LeafStorageLoader struct {
-	// A list of pairs of certificate file names along with their
-	// encoding format so that they can be loaded from storage.
-	Certs []string `json:"certs,omitempty"`
+	// A list of certificate file names to be loaded from storage.
+	Certs []string `json:"certificates,omitempty"`
 
 	// The storage module where the trusted leaf certificates are stored. Absent
 	// explicit storage implies the use of Caddy default storage.

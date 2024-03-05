@@ -29,7 +29,7 @@ func init() {
 // decoding their PEM blocks directly. This has the advantage
 // of not needing to store them on disk at all.
 type LeafPEMLoader struct {
-	Certificates []string `json:"certs,omitempty"`
+	Certificates []string `json:"certificates,omitempty"`
 }
 
 // Provision implements caddy.Provisioner.
