@@ -480,15 +480,15 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 
 // queryOps describes the operations to perform on query keys: add, set, rename and delete.
 type queryOps struct {
-	// Adds query parameters; does not overwrite an existing query field,
-	// and only appends an additional value for that key if any already exist.
-	Add []queryOpsArguments `json:"add,omitempty"`
+	// Renames a query key from Key to Val, without affecting the value.
+	Rename []queryOpsArguments `json:"rename,omitempty"`
 
 	// Sets query parameters; overwrites a query key with the given value.
 	Set []queryOpsArguments `json:"set,omitempty"`
 
-	// Renames a query key from Key to Val, without affecting the value.
-	Rename []queryOpsArguments `json:"rename,omitempty"`
+	// Adds query parameters; does not overwrite an existing query field,
+	// and only appends an additional value for that key if any already exist.
+	Add []queryOpsArguments `json:"add,omitempty"`
 
 	// Deletes a given query key by name.
 	Delete []string `json:"delete,omitempty"`
