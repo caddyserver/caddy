@@ -117,7 +117,7 @@ func onlyVersionText() string {
 
 func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   caddyCmd.Name,
+		Use:   caddyCmd.Name + " " + caddyCmd.Usage,
 		Short: caddyCmd.Short,
 		Long:  caddyCmd.Long,
 	}

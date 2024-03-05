@@ -379,7 +379,7 @@ type ClientAuthentication struct {
 
 	// DEPRECATED: This field is deprecated and will be removed in
 	// a future version. Please use the `validators` field instead
-	// with the tls.client_auth.leaf module instead.
+	// with the tls.client_auth.verifier.leaf module instead.
 	//
 	// A list of base64 DER-encoded client leaf certs
 	// to accept. If this list is not empty, client certs
@@ -389,7 +389,7 @@ type ClientAuthentication struct {
 	// Client certificate verification modules. These can perform
 	// custom client authentication checks, such as ensuring the
 	// certificate is not revoked.
-	VerifiersRaw []json.RawMessage `json:"verifiers,omitempty" caddy:"namespace=tls.client_auth inline_key=verifier"`
+	VerifiersRaw []json.RawMessage `json:"verifiers,omitempty" caddy:"namespace=tls.client_auth.verifier inline_key=verifier"`
 
 	verifiers []ClientCertificateVerifier
 
@@ -494,6 +494,23 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return fmt.Errorf("trust_pool module '%s' is not a certificate pool provider", caMod)
 			}
 			ca.CARaw = caddyconfig.JSONModuleObject(caMod, "provider", modName, nil)
+		case "verifier":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			vType := d.Val()
+			modID := "tls.client_auth.verifier." + vType
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+
+			_, ok := unm.(ClientCertificateVerifier)
+			if !ok {
+				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+			}
+			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:
 			return d.Errf("unknown subdirective for client_auth: %s", subdir)
 		}
@@ -566,7 +583,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 	}
 	ca, ok := caRaw.(CA)
 	if !ok {
-		return fmt.Errorf("CARaw module '%s' is not a certificate pool provider", ca)
+		return fmt.Errorf("'ca' module '%s' is not a certificate pool provider", ca)
 	}
 	clientauth.ca = ca
 
@@ -634,7 +651,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 			}
 			trustedLeafCerts = append(trustedLeafCerts, clientCert)
 		}
-		clientauth.verifiers = append(clientauth.verifiers, LeafCertClientAuth{TrustedLeafCerts: trustedLeafCerts})
+		clientauth.verifiers = append(clientauth.verifiers, LeafCertClientAuth{trustedLeafCerts: trustedLeafCerts})
 	}
 
 	// if a custom verification function already exists, wrap it
@@ -698,15 +715,40 @@ func setDefaultTLSParams(cfg *tls.Config) {
 
 // LeafCertClientAuth verifies the client's leaf certificate.
 type LeafCertClientAuth struct {
-	TrustedLeafCerts []*x509.Certificate
+	LeafCertificateLoadersRaw []json.RawMessage `json:"leaf_certs_loaders,omitempty" caddy:"namespace=tls.leaf_cert_loader inline_key=loader"`
+	trustedLeafCerts          []*x509.Certificate
 }
 
 // CaddyModule returns the Caddy module information.
 func (LeafCertClientAuth) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.client_auth.leaf",
+		ID:  "tls.client_auth.verifier.leaf",
 		New: func() caddy.Module { return new(LeafCertClientAuth) },
 	}
+}
+
+func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
+	if l.LeafCertificateLoadersRaw == nil {
+		return nil
+	}
+	val, err := ctx.LoadModule(l, "LeafCertificateLoadersRaw")
+	if err != nil {
+		return fmt.Errorf("could not parse leaf certificates loaders: %s", err.Error())
+	}
+	trustedLeafCertloaders := []LeafCertificateLoader{}
+	for _, loader := range val.([]any) {
+		trustedLeafCertloaders = append(trustedLeafCertloaders, loader.(LeafCertificateLoader))
+	}
+	trustedLeafCertificates := []*x509.Certificate{}
+	for _, loader := range trustedLeafCertloaders {
+		certs, err := loader.LoadLeafCertificates()
+		if err != nil {
+			return fmt.Errorf("could not load leaf certificates: %s", err.Error())
+		}
+		trustedLeafCertificates = append(trustedLeafCertificates, certs...)
+	}
+	l.trustedLeafCerts = trustedLeafCertificates
+	return nil
 }
 
 func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
@@ -719,7 +761,7 @@ func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x5
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}
 
-	for _, trustedLeafCert := range l.TrustedLeafCerts {
+	for _, trustedLeafCert := range l.trustedLeafCerts {
 		if remoteLeafCert.Equal(trustedLeafCert) {
 			return nil
 		}
@@ -746,6 +788,12 @@ func (a *PublicKeyAlgorithm) UnmarshalJSON(b []byte) error {
 // ConnectionMatcher is a type which matches TLS handshakes.
 type ConnectionMatcher interface {
 	Match(*tls.ClientHelloInfo) bool
+}
+
+// LeafCertificateLoader is a type that loads the trusted leaf certificates
+// for the tls.leaf_cert_loader modules
+type LeafCertificateLoader interface {
+	LoadLeafCertificates() ([]*x509.Certificate, error)
 }
 
 // ClientCertificateVerifier is a type which verifies client certificates.
