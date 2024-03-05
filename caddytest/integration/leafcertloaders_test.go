@@ -15,10 +15,13 @@ func TestLeafCertLoaders(t *testing.T) {
 		},
 		"apps": {
 			"http": {
+				"http_port": 9080,
+       			"https_port": 9443,
+				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
-							":443"
+							":9443"
 						],
 						"routes": [
 							{
