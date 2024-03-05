@@ -33,7 +33,7 @@ func init() {
 // globally configured storage module.
 type LeafStorageLoader struct {
 	// A list of certificate file names to be loaded from storage.
-	Certs []string `json:"certificates,omitempty"`
+	Certificates []string `json:"certificates,omitempty"`
 
 	// The storage module where the trusted leaf certificates are stored. Absent
 	// explicit storage implies the use of Caddy default storage.
@@ -75,16 +75,16 @@ func (sl *LeafStorageLoader) Provision(ctx caddy.Context) error {
 	if !ok {
 		repl = caddy.NewReplacer()
 	}
-	for k, path := range sl.Certs {
-		sl.Certs[k] = repl.ReplaceKnown(path, "")
+	for k, path := range sl.Certificates {
+		sl.Certificates[k] = repl.ReplaceKnown(path, "")
 	}
 	return nil
 }
 
 // LoadLeafCertificates returns the certificates to be loaded by sl.
 func (sl LeafStorageLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
-	certificates := make([]*x509.Certificate, 0, len(sl.Certs))
-	for _, path := range sl.Certs {
+	certificates := make([]*x509.Certificate, 0, len(sl.Certificates))
+	for _, path := range sl.Certificates {
 		certData, err := sl.storage.Load(sl.ctx, path)
 		if err != nil {
 			return nil, err
