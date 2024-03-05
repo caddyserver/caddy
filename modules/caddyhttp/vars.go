@@ -57,6 +57,12 @@ func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 			v = repl.ReplaceAll(valStr, "")
 		}
 		vars[keyExpanded] = v
+
+		// Special case: the user ID is in the replacer, pulled from there
+		// for access logs. Allow users to override it with the vars handler.
+		if keyExpanded == "http.auth.user.id" {
+			repl.Set(keyExpanded, v)
+		}
 	}
 	return next.ServeHTTP(w, r)
 }
