@@ -49,6 +49,13 @@ type SRVUpstreams struct {
 	// Results are cached between lookups. Default: 1m
 	Refresh caddy.Duration `json:"refresh,omitempty"`
 
+	// If > 0 and there is an error with the lookup,
+	// continue to use the cached results for up to
+	// this long before trying again, (even though they
+	// are stale) instead of returning an error to the
+	// client. Default: 0s.
+	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
+
 	// Configures the DNS resolver used to resolve the
 	// SRV address to SRV records.
 	Resolver *UpstreamResolver `json:"resolver,omitempty"`
@@ -140,6 +147,12 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		// out and an error will be returned alongside the remaining results, if any." Thus, we
 		// only return an error if no records were also returned.
 		if len(records) == 0 {
+			if su.GracePeriod > 0 {
+				su.logger.Error("SRV lookup failed; using previously cached", zap.Error(err))
+				cached.freshness = time.Now().Add(time.Duration(su.GracePeriod) - time.Duration(su.Refresh))
+				srvs[suAddr] = cached
+				return allNew(cached.upstreams), nil
+			}
 			return nil, err
 		}
 		su.logger.Warn("SRV records filtered", zap.Error(err))

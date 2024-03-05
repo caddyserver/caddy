@@ -37,6 +37,8 @@ github.com/alecthomas/assert/v2 v2.2.1/go.mod h1:pXcQ2Asjp247dahGEmsZ6ru0UVwnkhk
 github.com/alecthomas/chroma/v2 v2.2.0/go.mod h1:vf4zrexSH54oEjJ7EdB65tGNHmH3pGZmVkgTP5RHvAs=
 github.com/alecthomas/chroma/v2 v2.9.1 h1:0O3lTQh9FxazJ4BYE/MOi/vDGuHn7B+6Bu902N2UZvU=
 github.com/alecthomas/chroma/v2 v2.9.1/go.mod h1:4TQu7gdfuPjSh76j78ietmqh9LiurGF0EpseFXdKMBw=
+github.com/alecthomas/chroma/v2 v2.12.1-0.20240220090827-381050ba0001 h1:Nl5Om7AhgtN3tML9kLn2/lr8IDVKxHT2t2+xWc4Q6Fs=
+github.com/alecthomas/chroma/v2 v2.12.1-0.20240220090827-381050ba0001/go.mod h1:b6DmXsg5hSmn0AcHaTsU+UH0vO73VzhR+JrpFihjsXM=
 github.com/alecthomas/repr v0.0.0-20220113201626-b1b626ac65ae/go.mod h1:2kn6fqh/zIyPLmm3ugklbEi5hg5wS435eygvNfaDQL8=
 github.com/alecthomas/repr v0.2.0 h1:HAzS41CIzNW5syS8Mf9UwXhNH1J9aix/BvDRf1Ml2Yk=
 github.com/alecthomas/repr v0.2.0/go.mod h1:Fr0507jx4eOXV7AlPV6AVZLYrLIuIeSOWtW57eE/O/4=

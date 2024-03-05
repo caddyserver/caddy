@@ -379,7 +379,7 @@ type ClientAuthentication struct {
 
 	// DEPRECATED: This field is deprecated and will be removed in
 	// a future version. Please use the `validators` field instead
-	// with the tls.client_auth.leaf module instead.
+	// with the tls.client_auth.verifier.leaf module instead.
 	//
 	// A list of base64 DER-encoded client leaf certs
 	// to accept. If this list is not empty, client certs
@@ -389,7 +389,7 @@ type ClientAuthentication struct {
 	// Client certificate verification modules. These can perform
 	// custom client authentication checks, such as ensuring the
 	// certificate is not revoked.
-	VerifiersRaw []json.RawMessage `json:"verifiers,omitempty" caddy:"namespace=tls.client_auth inline_key=verifier"`
+	VerifiersRaw []json.RawMessage `json:"verifiers,omitempty" caddy:"namespace=tls.client_auth.verifier inline_key=verifier"`
 
 	verifiers []ClientCertificateVerifier
 
@@ -494,6 +494,23 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return fmt.Errorf("trust_pool module '%s' is not a certificate pool provider", caMod)
 			}
 			ca.CARaw = caddyconfig.JSONModuleObject(caMod, "provider", modName, nil)
+		case "verifier":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			vType := d.Val()
+			modID := "tls.client_auth.verifier." + vType
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+
+			_, ok := unm.(ClientCertificateVerifier)
+			if !ok {
+				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+			}
+			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:
 			return d.Errf("unknown subdirective for client_auth: %s", subdir)
 		}
@@ -566,7 +583,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 	}
 	ca, ok := caRaw.(CA)
 	if !ok {
-		return fmt.Errorf("CARaw module '%s' is not a certificate pool provider", ca)
+		return fmt.Errorf("'ca' module '%s' is not a certificate pool provider", ca)
 	}
 	clientauth.ca = ca
 
@@ -704,7 +721,7 @@ type LeafCertClientAuth struct {
 // CaddyModule returns the Caddy module information.
 func (LeafCertClientAuth) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.client_auth.leaf",
+		ID:  "tls.client_auth.verifier.leaf",
 		New: func() caddy.Module { return new(LeafCertClientAuth) },
 	}
 }

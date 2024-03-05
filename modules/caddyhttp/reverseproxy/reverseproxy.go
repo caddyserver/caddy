@@ -783,7 +783,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// regardless, and we should expect client disconnection in low-latency streaming
 	// scenarios (see issue #4922)
 	if h.FlushInterval == -1 {
-		req = req.WithContext(ignoreClientGoneContext{req.Context()})
+		req = req.WithContext(context.WithoutCancel(req.Context()))
 	}
 
 	// do the round-trip; emit debug log with values we know are
@@ -1417,32 +1417,6 @@ type handleResponseContext struct {
 	// i.e. copied and closed, to make sure that it doesn't
 	// happen twice.
 	isFinalized bool
-}
-
-// ignoreClientGoneContext is a special context.Context type
-// intended for use when doing a RoundTrip where you don't
-// want a client disconnection to cancel the request during
-// the roundtrip.
-// This context clears cancellation, error, and deadline methods,
-// but still allows values to pass through from its embedded
-// context.
-//
-// TODO: This can be replaced with context.WithoutCancel once
-// the minimum required version of Go is 1.21.
-type ignoreClientGoneContext struct {
-	context.Context
-}
-
-func (c ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
-	return
-}
-
-func (c ignoreClientGoneContext) Done() <-chan struct{} {
-	return nil
-}
-
-func (c ignoreClientGoneContext) Err() error {
-	return nil
 }
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
