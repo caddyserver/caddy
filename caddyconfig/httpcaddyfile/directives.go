@@ -154,6 +154,8 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // to ('before' or 'after') a directive included in Caddy's
 // standard distribution. It cannot be relative to another
 // plugin's directive.
+//
+// EXPERIMENTAL: This API may change or be removed.
 func RegisterDirectiveOrder(dir string, position Positional, standardDir string) {
 	// check if directive was already ordered
 	if directiveIsOrdered(dir) {
