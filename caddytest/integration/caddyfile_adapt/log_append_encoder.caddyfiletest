@@ -1,0 +1,63 @@
+{
+	log {
+		format append {
+			wrap json
+			fields {
+				wrap "foo"
+			}
+			env {env.EXAMPLE}
+			int 1
+			float 1.1
+			bool true
+			string "string"
+		}
+	}
+}
+
+:80 {
+	respond "Hello, World!"
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"encoder": {
+					"fields": {
+						"bool": true,
+						"env": "{env.EXAMPLE}",
+						"float": 1.1,
+						"int": 1,
+						"string": "string",
+						"wrap": "foo"
+					},
+					"format": "append",
+					"wrap": {
+						"format": "json"
+					}
+				}
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello, World!",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
