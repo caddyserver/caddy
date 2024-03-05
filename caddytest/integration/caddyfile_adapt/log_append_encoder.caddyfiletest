@@ -1,6 +1,6 @@
 {
 	log {
-		format add {
+		format append {
 			wrap json
 			fields {
 				wrap "foo"
@@ -31,7 +31,7 @@
 						"string": "string",
 						"wrap": "foo"
 					},
-					"format": "add",
+					"format": "append",
 					"wrap": {
 						"format": "json"
 					}
