@@ -347,7 +347,7 @@ func TestParseOneAndImport(t *testing.T) {
 				i, len(test.keys), len(result.Keys))
 			continue
 		}
-		for j, addr := range result.Keys {
+		for j, addr := range result.GetKeysText() {
 			if addr != test.keys[j] {
 				t.Errorf("Test %d, key %d: Expected '%s', but was '%s'",
 					i, j, test.keys[j], addr)
@@ -379,8 +379,9 @@ func TestRecursiveImport(t *testing.T) {
 	}
 
 	isExpected := func(got ServerBlock) bool {
-		if len(got.Keys) != 1 || got.Keys[0] != "localhost" {
-			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
+		textKeys := got.GetKeysText()
+		if len(textKeys) != 1 || textKeys[0] != "localhost" {
+			t.Errorf("got keys unexpected: expect localhost, got %v", textKeys)
 			return false
 		}
 		if len(got.Segments) != 2 {
@@ -474,8 +475,9 @@ func TestDirectiveImport(t *testing.T) {
 	}
 
 	isExpected := func(got ServerBlock) bool {
-		if len(got.Keys) != 1 || got.Keys[0] != "localhost" {
-			t.Errorf("got keys unexpected: expect localhost, got %v", got.Keys)
+		textKeys := got.GetKeysText()
+		if len(textKeys) != 1 || textKeys[0] != "localhost" {
+			t.Errorf("got keys unexpected: expect localhost, got %v", textKeys)
 			return false
 		}
 		if len(got.Segments) != 2 {
@@ -616,7 +618,7 @@ func TestParseAll(t *testing.T) {
 					i, len(test.keys[j]), j, len(block.Keys))
 				continue
 			}
-			for k, addr := range block.Keys {
+			for k, addr := range block.GetKeysText() {
 				if addr != test.keys[j][k] {
 					t.Errorf("Test %d, block %d, key %d: Expected '%s', but got '%s'",
 						i, j, k, test.keys[j][k], addr)
@@ -769,7 +771,7 @@ func TestSnippets(t *testing.T) {
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
 	}
-	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
+	if actual, expected := blocks[0].GetKeysText()[0], "http://example.com"; expected != actual {
 		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
 	}
 	if len(blocks[0].Segments) != 2 {
@@ -844,7 +846,7 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	if len(blocks) != 1 {
 		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
 	}
-	if actual, expected := blocks[0].Keys[0], "http://example.com"; expected != actual {
+	if actual, expected := blocks[0].GetKeysText()[0], "http://example.com"; expected != actual {
 		t.Errorf("Expected server name to be '%s' but was '%s'", expected, actual)
 	}
 	if len(blocks[0].Segments) != 1 {

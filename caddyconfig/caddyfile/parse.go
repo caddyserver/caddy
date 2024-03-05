@@ -160,13 +160,13 @@ func (p *parser) begin() error {
 	}
 
 	if ok, name := p.isNamedRoute(); ok {
-		// named routes only have one key, the route name
-		p.block.Keys = []string{name}
-		p.block.IsNamedRoute = true
-
 		// we just need a dummy leading token to ease parsing later
 		nameToken := p.Token()
 		nameToken.Text = name
+
+		// named routes only have one key, the route name
+		p.block.Keys = []Token{nameToken}
+		p.block.IsNamedRoute = true
 
 		// get all the tokens from the block, including the braces
 		tokens, err := p.blockTokens(true)
@@ -211,10 +211,11 @@ func (p *parser) addresses() error {
 	var expectingAnother bool
 
 	for {
-		tkn := p.Val()
+		value := p.Val()
+		token := p.Token()
 
 		// special case: import directive replaces tokens during parse-time
-		if tkn == "import" && p.isNewLine() {
+		if value == "import" && p.isNewLine() {
 			err := p.doImport(0)
 			if err != nil {
 				return err
@@ -223,9 +224,9 @@ func (p *parser) addresses() error {
 		}
 
 		// Open brace definitely indicates end of addresses
-		if tkn == "{" {
+		if value == "{" {
 			if expectingAnother {
-				return p.Errf("Expected another address but had '%s' - check for extra comma", tkn)
+				return p.Errf("Expected another address but had '%s' - check for extra comma", value)
 			}
 			// Mark this server block as being defined with braces.
 			// This is used to provide a better error message when
@@ -237,15 +238,15 @@ func (p *parser) addresses() error {
 		}
 
 		// Users commonly forget to place a space between the address and the '{'
-		if strings.HasSuffix(tkn, "{") {
-			return p.Errf("Site addresses cannot end with a curly brace: '%s' - put a space between the token and the brace", tkn)
+		if strings.HasSuffix(value, "{") {
+			return p.Errf("Site addresses cannot end with a curly brace: '%s' - put a space between the token and the brace", value)
 		}
 
-		if tkn != "" { // empty token possible if user typed ""
+		if value != "" { // empty token possible if user typed ""
 			// Trailing comma indicates another address will follow, which
 			// may possibly be on the next line
-			if tkn[len(tkn)-1] == ',' {
-				tkn = tkn[:len(tkn)-1]
+			if value[len(value)-1] == ',' {
+				value = value[:len(value)-1]
 				expectingAnother = true
 			} else {
 				expectingAnother = false // but we may still see another one on this line
@@ -254,11 +255,12 @@ func (p *parser) addresses() error {
 			// If there's a comma here, it's probably because they didn't use a space
 			// between their two domains, e.g. "foo.com,bar.com", which would not be
 			// parsed as two separate site addresses.
-			if strings.Contains(tkn, ",") {
-				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", tkn)
+			if strings.Contains(value, ",") {
+				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", value)
 			}
 
-			p.block.Keys = append(p.block.Keys, tkn)
+			token.Text = value
+			p.block.Keys = append(p.block.Keys, token)
 		}
 
 		// Advance token and possibly break out of loop or return error
@@ -637,8 +639,8 @@ func (p *parser) closeCurlyBrace() error {
 func (p *parser) isNamedRoute() (bool, string) {
 	keys := p.block.Keys
 	// A named route block is a single key with parens, prefixed with &.
-	if len(keys) == 1 && strings.HasPrefix(keys[0], "&(") && strings.HasSuffix(keys[0], ")") {
-		return true, strings.TrimSuffix(keys[0][2:], ")")
+	if len(keys) == 1 && strings.HasPrefix(keys[0].Text, "&(") && strings.HasSuffix(keys[0].Text, ")") {
+		return true, strings.TrimSuffix(keys[0].Text[2:], ")")
 	}
 	return false, ""
 }
@@ -646,8 +648,8 @@ func (p *parser) isNamedRoute() (bool, string) {
 func (p *parser) isSnippet() (bool, string) {
 	keys := p.block.Keys
 	// A snippet block is a single key with parens. Nothing else qualifies.
-	if len(keys) == 1 && strings.HasPrefix(keys[0], "(") && strings.HasSuffix(keys[0], ")") {
-		return true, strings.TrimSuffix(keys[0][1:], ")")
+	if len(keys) == 1 && strings.HasPrefix(keys[0].Text, "(") && strings.HasSuffix(keys[0].Text, ")") {
+		return true, strings.TrimSuffix(keys[0].Text[1:], ")")
 	}
 	return false, ""
 }
@@ -691,9 +693,17 @@ func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
 // grouped by segments.
 type ServerBlock struct {
 	HasBraces    bool
-	Keys         []string
+	Keys         []Token
 	Segments     []Segment
 	IsNamedRoute bool
+}
+
+func (sb ServerBlock) GetKeysText() []string {
+	res := []string{}
+	for _, k := range sb.Keys {
+		res = append(res, k.Text)
+	}
+	return res
 }
 
 // DispenseDirective returns a dispenser that contains

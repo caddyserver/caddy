@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
+
+	_ "github.com/caddyserver/caddy/v2/internal/testmocks"
 )
 
 func TestCaddyfileAdaptToJSON(t *testing.T) {
