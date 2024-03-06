@@ -234,6 +234,7 @@ func (rr *responseRecorder) WriteResponse() error {
 // https://github.com/caddyserver/caddy/issues/6144
 func (rr *responseRecorder) FlushError() error {
 	if rr.stream {
+		//nolint:bodyclose
 		return http.NewResponseController(rr.ResponseWriterWrapper).Flush()
 	}
 	return nil
