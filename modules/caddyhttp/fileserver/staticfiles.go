@@ -639,12 +639,18 @@ func calculateEtag(d os.FileInfo) string {
 	return `"` + t + s + `"`
 }
 
-func redirect(w http.ResponseWriter, r *http.Request, to string) error {
-	for strings.HasPrefix(to, "//") {
+// redirect performs a redirect to a given path. The 'toPath' parameter
+// MUST be solely a path, and MUST NOT include a query.
+func redirect(w http.ResponseWriter, r *http.Request, toPath string) error {
+	for strings.HasPrefix(toPath, "//") {
 		// prevent path-based open redirects
-		to = strings.TrimPrefix(to, "/")
+		toPath = strings.TrimPrefix(toPath, "/")
 	}
-	http.Redirect(w, r, to, http.StatusPermanentRedirect)
+	// preserve the query string if present
+	if r.URL.RawQuery != "" {
+		toPath += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, toPath, http.StatusPermanentRedirect)
 	return nil
 }
 
