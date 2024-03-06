@@ -329,7 +329,7 @@ type Templates struct {
 	logger      *zap.Logger
 }
 
-// Customfunctions is the interface for registering custom template functions.
+// CustomFunctions is the interface for registering custom template functions.
 type CustomFunctions interface {
 	// CustomTemplateFunctions should return the mapping from custom function names to implementations.
 	CustomTemplateFunctions() template.FuncMap

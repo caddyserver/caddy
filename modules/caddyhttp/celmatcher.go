@@ -381,24 +381,24 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 type CELMatcherFactory func(data ref.Val) (RequestMatcher, error)
 
 // matcherCELLibrary is a simplistic configurable cel.Library implementation.
-type matcherCELLibary struct {
+type matcherCELLibrary struct {
 	envOptions     []cel.EnvOption
 	programOptions []cel.ProgramOption
 }
 
 // NewMatcherCELLibrary creates a matcherLibrary from option setes.
 func NewMatcherCELLibrary(envOptions []cel.EnvOption, programOptions []cel.ProgramOption) cel.Library {
-	return &matcherCELLibary{
+	return &matcherCELLibrary{
 		envOptions:     envOptions,
 		programOptions: programOptions,
 	}
 }
 
-func (lib *matcherCELLibary) CompileOptions() []cel.EnvOption {
+func (lib *matcherCELLibrary) CompileOptions() []cel.EnvOption {
 	return lib.envOptions
 }
 
-func (lib *matcherCELLibary) ProgramOptions() []cel.ProgramOption {
+func (lib *matcherCELLibrary) ProgramOptions() []cel.ProgramOption {
 	return lib.programOptions
 }
 
