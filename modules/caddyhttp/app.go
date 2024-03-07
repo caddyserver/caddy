@@ -20,9 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -73,7 +71,7 @@ func init() {
 // `{http.request.remote.host}` | The host (IP) part of the remote client's address
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
-// `{http.request.scheme}` | The request scheme
+// `{http.request.scheme}` | The request scheme, typically `http` or `https`
 // `{http.request.tls.version}` | The TLS version name
 // `{http.request.tls.cipher_suite}` | The TLS cipher suite
 // `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
@@ -328,15 +326,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 // Validate ensures the app's configuration is valid.
 func (app *App) Validate() error {
-	isGo120 := strings.Contains(runtime.Version(), "go1.20")
-
 	// each server must use distinct listener addresses
 	lnAddrs := make(map[string]string)
 	for srvName, srv := range app.Servers {
-		if isGo120 && srv.EnableFullDuplex {
-			app.logger.Warn("enable_full_duplex is not supported in Go 1.20, use a build made with Go 1.21 or later", zap.String("server", srvName))
-		}
-
 		for _, addr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
@@ -378,11 +370,7 @@ func (app *App) Start() error {
 				return context.WithValue(ctx, ConnCtxKey, c)
 			},
 		}
-		h2server := &http2.Server{
-			NewWriteScheduler: func() http2.WriteScheduler {
-				return http2.NewPriorityWriteScheduler(nil)
-			},
-		}
+		h2server := new(http2.Server)
 
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
@@ -617,17 +605,6 @@ func (app *App) Stop() error {
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
-
-		// TODO: we have to manually close our listeners because quic-go won't
-		// close listeners it didn't create along with the server itself...
-		// see https://github.com/quic-go/quic-go/issues/3560
-		for _, el := range server.h3listeners {
-			if err := el.Close(); err != nil {
-				app.logger.Error("HTTP/3 listener close",
-					zap.Error(err),
-					zap.String("address", el.LocalAddr().String()))
-			}
-		}
 	}
 	stopH2Listener := func(server *Server) {
 		defer finishedShutdown.Done()
@@ -663,6 +640,15 @@ func (app *App) Stop() error {
 	// may deplete resources)
 	if caddy.Exiting() {
 		finishedShutdown.Wait()
+	}
+
+	// run stop callbacks now that the server shutdowns are complete
+	for name, s := range app.Servers {
+		for _, stopHook := range s.onStopFuncs {
+			if err := stopHook(ctx); err != nil {
+				app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
+			}
+		}
 	}
 
 	return nil

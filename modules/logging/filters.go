@@ -100,12 +100,15 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = hash(s)
+			newArray[i] = hash(s)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = hash(in.String)
 	}
+
 	return in
 }
 
@@ -125,10 +128,9 @@ func (ReplaceFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (f *ReplaceFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			f.Value = d.Val()
-		}
+	d.Next() // consume filter name
+	if d.NextArg() {
+		f.Value = d.Val()
 	}
 	return nil
 }
@@ -166,32 +168,52 @@ func (IPMaskFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "ipv4":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				val, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("error parsing %s: %v", d.Val(), err)
-				}
-				m.IPv4MaskRaw = val
+	d.Next() // consume filter name
 
-			case "ipv6":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				val, err := strconv.Atoi(d.Val())
-				if err != nil {
-					return d.Errf("error parsing %s: %v", d.Val(), err)
-				}
-				m.IPv6MaskRaw = val
+	args := d.RemainingArgs()
+	if len(args) > 2 {
+		return d.Errf("too many arguments")
+	}
+	if len(args) > 0 {
+		val, err := strconv.Atoi(args[0])
+		if err != nil {
+			return d.Errf("error parsing %s: %v", args[0], err)
+		}
+		m.IPv4MaskRaw = val
 
-			default:
-				return d.Errf("unrecognized subdirective %s", d.Val())
+		if len(args) > 1 {
+			val, err := strconv.Atoi(args[1])
+			if err != nil {
+				return d.Errf("error parsing %s: %v", args[1], err)
 			}
+			m.IPv6MaskRaw = val
+		}
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "ipv4":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			val, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("error parsing %s: %v", d.Val(), err)
+			}
+			m.IPv4MaskRaw = val
+
+		case "ipv6":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			val, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("error parsing %s: %v", d.Val(), err)
+			}
+			m.IPv6MaskRaw = val
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
 	}
 	return nil
@@ -219,9 +241,11 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = m.mask(s)
+			newArray[i] = m.mask(s)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = m.mask(in.String)
 	}
@@ -323,54 +347,67 @@ func (QueryFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			qfa := queryFilterAction{}
-			switch d.Val() {
-			case "replace":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				qfa.Type = replaceAction
-				qfa.Parameter = d.Val()
-
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				qfa.Value = d.Val()
-
-			case "hash":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				qfa.Type = hashAction
-				qfa.Parameter = d.Val()
-
-			case "delete":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				qfa.Type = deleteAction
-				qfa.Parameter = d.Val()
-
-			default:
-				return d.Errf("unrecognized subdirective %s", d.Val())
+	d.Next() // consume filter name
+	for d.NextBlock(0) {
+		qfa := queryFilterAction{}
+		switch d.Val() {
+		case "replace":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
 
-			m.Actions = append(m.Actions, qfa)
+			qfa.Type = replaceAction
+			qfa.Parameter = d.Val()
+
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			qfa.Value = d.Val()
+
+		case "hash":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			qfa.Type = hashAction
+			qfa.Parameter = d.Val()
+
+		case "delete":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			qfa.Type = deleteAction
+			qfa.Parameter = d.Val()
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
+
+		m.Actions = append(m.Actions, qfa)
 	}
 	return nil
 }
 
 // Filter filters the input field.
 func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
-	u, err := url.Parse(in.String)
+	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
+		for i, s := range array {
+			newArray[i] = m.processQueryString(s)
+		}
+		in.Interface = newArray
+	} else {
+		in.String = m.processQueryString(in.String)
+	}
+
+	return in
+}
+
+func (m QueryFilter) processQueryString(s string) string {
+	u, err := url.Parse(s)
 	if err != nil {
-		return in
+		return s
 	}
 
 	q := u.Query()
@@ -392,9 +429,7 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 	}
 
 	u.RawQuery = q.Encode()
-	in.String = u.String()
-
-	return in
+	return u.String()
 }
 
 type cookieFilterAction struct {
@@ -443,45 +478,44 @@ func (CookieFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			cfa := cookieFilterAction{}
-			switch d.Val() {
-			case "replace":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				cfa.Type = replaceAction
-				cfa.Name = d.Val()
-
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				cfa.Value = d.Val()
-
-			case "hash":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				cfa.Type = hashAction
-				cfa.Name = d.Val()
-
-			case "delete":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-
-				cfa.Type = deleteAction
-				cfa.Name = d.Val()
-
-			default:
-				return d.Errf("unrecognized subdirective %s", d.Val())
+	d.Next() // consume filter name
+	for d.NextBlock(0) {
+		cfa := cookieFilterAction{}
+		switch d.Val() {
+		case "replace":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
 
-			m.Actions = append(m.Actions, cfa)
+			cfa.Type = replaceAction
+			cfa.Name = d.Val()
+
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			cfa.Value = d.Val()
+
+		case "hash":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = hashAction
+			cfa.Name = d.Val()
+
+		case "delete":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = deleteAction
+			cfa.Name = d.Val()
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
+
+		m.Actions = append(m.Actions, cfa)
 	}
 	return nil
 }
@@ -554,13 +588,12 @@ func (RegexpFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (f *RegexpFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			f.RawRegexp = d.Val()
-		}
-		if d.NextArg() {
-			f.Value = d.Val()
-		}
+	d.Next() // consume filter name
+	if d.NextArg() {
+		f.RawRegexp = d.Val()
+	}
+	if d.NextArg() {
+		f.Value = d.Val()
 	}
 	return nil
 }
@@ -580,9 +613,11 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
 	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
+		newArray := make(caddyhttp.LoggableStringArray, len(array))
 		for i, s := range array {
-			array[i] = f.regexp.ReplaceAllString(s, f.Value)
+			newArray[i] = f.regexp.ReplaceAllString(s, f.Value)
 		}
+		in.Interface = newArray
 	} else {
 		in.String = f.regexp.ReplaceAllString(in.String, f.Value)
 	}
@@ -606,10 +641,9 @@ func (RenameFilter) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
 func (f *RenameFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if d.NextArg() {
-			f.Name = d.Val()
-		}
+	d.Next() // consume filter name
+	if d.NextArg() {
+		f.Name = d.Val()
 	}
 	return nil
 }

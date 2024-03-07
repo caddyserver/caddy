@@ -26,7 +26,7 @@ package reverseproxy
 import "testing"
 
 func TestEqualFold(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		name string
 		a, b string
 		want bool
@@ -64,7 +64,7 @@ func TestEqualFold(t *testing.T) {
 }
 
 func TestIsPrint(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		name string
 		in   string
 		want bool

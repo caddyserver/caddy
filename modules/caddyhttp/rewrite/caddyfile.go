@@ -26,7 +26,7 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("rewrite", parseCaddyfileRewrite)
+	httpcaddyfile.RegisterDirective("rewrite", parseCaddyfileRewrite)
 	httpcaddyfile.RegisterHandlerDirective("method", parseCaddyfileMethod)
 	httpcaddyfile.RegisterHandlerDirective("uri", parseCaddyfileURI)
 	httpcaddyfile.RegisterDirective("handle_path", parseCaddyfileHandlePath)
@@ -38,35 +38,49 @@ func init() {
 //
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
-func parseCaddyfileRewrite(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var rewr Rewrite
-	for h.Next() {
+func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
+	h.Next() // consume directive name
+
+	// count the tokens to determine what to do
+	argsCount := h.CountRemainingArgs()
+	if argsCount == 0 {
+		return nil, h.Errf("too few arguments; must have at least a rewrite URI")
+	}
+	if argsCount > 2 {
+		return nil, h.Errf("too many arguments; should only be a matcher and a URI")
+	}
+
+	// with only one arg, assume it's a rewrite URI with no matcher token
+	if argsCount == 1 {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		rewr.URI = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
+		return h.NewRoute(nil, Rewrite{URI: h.Val()}), nil
 	}
-	return rewr, nil
+
+	// parse the matcher token into a matcher set
+	userMatcherSet, err := h.ExtractMatcherSet()
+	if err != nil {
+		return nil, err
+	}
+	h.Next() // consume directive name again, matcher parsing does a reset
+	h.Next() // advance to the rewrite URI
+
+	return h.NewRoute(userMatcherSet, Rewrite{URI: h.Val()}), nil
 }
 
 // parseCaddyfileMethod sets up a basic method rewrite handler from Caddyfile tokens. Syntax:
 //
 //	method [<matcher>] <method>
 func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var rewr Rewrite
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		rewr.Method = h.Val()
-		if h.NextArg() {
-			return nil, h.ArgErr()
-		}
+	h.Next() // consume directive name
+	if !h.NextArg() {
+		return nil, h.ArgErr()
 	}
-	return rewr, nil
+	if h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	return Rewrite{Method: h.Val()}, nil
 }
 
 // parseCaddyfileURI sets up a handler for manipulating (but not "rewriting") the
@@ -81,67 +95,131 @@ func parseCaddyfileMethod(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, 
 // path_regexp is used, then regular expression replacements will be performed
 // on the path portion of the URI (and a limit cannot be set).
 func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+
+	args := h.RemainingArgs()
+	if len(args) < 1 {
+		return nil, h.ArgErr()
+	}
+
 	var rewr Rewrite
-	for h.Next() {
-		args := h.RemainingArgs()
-		if len(args) < 2 {
+
+	switch args[0] {
+	case "strip_prefix":
+		if len(args) > 2 {
 			return nil, h.ArgErr()
 		}
-		switch args[0] {
-		case "strip_prefix":
-			if len(args) > 2 {
-				return nil, h.ArgErr()
-			}
-			rewr.StripPathPrefix = args[1]
-			if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
-				rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
-			}
-		case "strip_suffix":
-			if len(args) > 2 {
-				return nil, h.ArgErr()
-			}
-			rewr.StripPathSuffix = args[1]
-		case "replace":
-			var find, replace, lim string
-			switch len(args) {
-			case 4:
-				lim = args[3]
-				fallthrough
-			case 3:
-				find = args[1]
-				replace = args[2]
-			default:
-				return nil, h.ArgErr()
-			}
-
-			var limInt int
-			if lim != "" {
-				var err error
-				limInt, err = strconv.Atoi(lim)
-				if err != nil {
-					return nil, h.Errf("limit must be an integer; invalid: %v", err)
-				}
-			}
-
-			rewr.URISubstring = append(rewr.URISubstring, substrReplacer{
-				Find:    find,
-				Replace: replace,
-				Limit:   limInt,
-			})
-		case "path_regexp":
-			if len(args) != 3 {
-				return nil, h.ArgErr()
-			}
-			find, replace := args[1], args[2]
-			rewr.PathRegexp = append(rewr.PathRegexp, &regexReplacer{
-				Find:    find,
-				Replace: replace,
-			})
-		default:
-			return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
+		rewr.StripPathPrefix = args[1]
+		if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
+			rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
 		}
+
+	case "strip_suffix":
+		if len(args) > 2 {
+			return nil, h.ArgErr()
+		}
+		rewr.StripPathSuffix = args[1]
+
+	case "replace":
+		var find, replace, lim string
+		switch len(args) {
+		case 4:
+			lim = args[3]
+			fallthrough
+		case 3:
+			find = args[1]
+			replace = args[2]
+		default:
+			return nil, h.ArgErr()
+		}
+
+		var limInt int
+		if lim != "" {
+			var err error
+			limInt, err = strconv.Atoi(lim)
+			if err != nil {
+				return nil, h.Errf("limit must be an integer; invalid: %v", err)
+			}
+		}
+
+		rewr.URISubstring = append(rewr.URISubstring, substrReplacer{
+			Find:    find,
+			Replace: replace,
+			Limit:   limInt,
+		})
+
+	case "path_regexp":
+		if len(args) != 3 {
+			return nil, h.ArgErr()
+		}
+		find, replace := args[1], args[2]
+		rewr.PathRegexp = append(rewr.PathRegexp, &regexReplacer{
+			Find:    find,
+			Replace: replace,
+		})
+
+	case "query":
+		if len(args) > 4 {
+			return nil, h.ArgErr()
+		}
+		rewr.Query = &queryOps{}
+		var hasArgs bool
+		if len(args) > 1 {
+			hasArgs = true
+			err := applyQueryOps(h, rewr.Query, args[1:])
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		for h.NextBlock(0) {
+			if hasArgs {
+				return nil, h.Err("Cannot specify uri query rewrites in both argument and block")
+			}
+			queryArgs := []string{h.Val()}
+			queryArgs = append(queryArgs, h.RemainingArgs()...)
+			err := applyQueryOps(h, rewr.Query, queryArgs)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+	default:
+		return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
 	}
 	return rewr, nil
+}
+
+func applyQueryOps(h httpcaddyfile.Helper, qo *queryOps, args []string) error {
+	key := args[0]
+	switch {
+	case strings.HasPrefix(key, "-"):
+		if len(args) != 1 {
+			return h.ArgErr()
+		}
+		qo.Delete = append(qo.Delete, strings.TrimLeft(key, "-"))
+
+	case strings.HasPrefix(key, "+"):
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		param := strings.TrimLeft(key, "+")
+		qo.Add = append(qo.Add, queryOpsArguments{Key: param, Val: args[1]})
+
+	case strings.Contains(key, ">"):
+		if len(args) != 1 {
+			return h.ArgErr()
+		}
+		renameValKey := strings.Split(key, ">")
+		qo.Rename = append(qo.Rename, queryOpsArguments{Key: renameValKey[0], Val: renameValKey[1]})
+
+	default:
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		qo.Set = append(qo.Set, queryOpsArguments{Key: key, Val: args[1]})
+	}
+	return nil
 }
 
 // parseCaddyfileHandlePath parses the handle_path directive. Syntax:
@@ -153,9 +231,9 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 // Only path matchers (with a `/` prefix) are supported as this is a shortcut
 // for the handle directive with a strip_prefix rewrite.
 func parseCaddyfileHandlePath(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
+	h.Next() // consume directive name
+
+	// there must be a path matcher
 	if !h.NextArg() {
 		return nil, h.ArgErr()
 	}

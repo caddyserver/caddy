@@ -49,6 +49,13 @@ type SRVUpstreams struct {
 	// Results are cached between lookups. Default: 1m
 	Refresh caddy.Duration `json:"refresh,omitempty"`
 
+	// If > 0 and there is an error with the lookup,
+	// continue to use the cached results for up to
+	// this long before trying again, (even though they
+	// are stale) instead of returning an error to the
+	// client. Default: 0s.
+	GracePeriod caddy.Duration `json:"grace_period,omitempty"`
+
 	// Configures the DNS resolver used to resolve the
 	// SRV address to SRV records.
 	Resolver *UpstreamResolver `json:"resolver,omitempty"`
@@ -140,6 +147,12 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 		// out and an error will be returned alongside the remaining results, if any." Thus, we
 		// only return an error if no records were also returned.
 		if len(records) == 0 {
+			if su.GracePeriod > 0 {
+				su.logger.Error("SRV lookup failed; using previously cached", zap.Error(err))
+				cached.freshness = time.Now().Add(time.Duration(su.GracePeriod) - time.Duration(su.Refresh))
+				srvs[suAddr] = cached
+				return allNew(cached.upstreams), nil
+			}
 			return nil, err
 		}
 		su.logger.Warn("SRV records filtered", zap.Error(err))
@@ -251,6 +264,8 @@ type AUpstreams struct {
 	Versions *IPVersions `json:"versions,omitempty"`
 
 	resolver *net.Resolver
+
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -261,7 +276,8 @@ func (AUpstreams) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (au *AUpstreams) Provision(_ caddy.Context) error {
+func (au *AUpstreams) Provision(ctx caddy.Context) error {
+	au.logger = ctx.Logger()
 	if au.Refresh == 0 {
 		au.Refresh = caddy.Duration(time.Minute)
 	}
@@ -297,8 +313,8 @@ func (au *AUpstreams) Provision(_ caddy.Context) error {
 func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	resolveIpv4 := au.Versions.IPv4 == nil || *au.Versions.IPv4
-	resolveIpv6 := au.Versions.IPv6 == nil || *au.Versions.IPv6
+	resolveIpv4 := au.Versions == nil || au.Versions.IPv4 == nil || *au.Versions.IPv4
+	resolveIpv6 := au.Versions == nil || au.Versions.IPv6 == nil || *au.Versions.IPv6
 
 	// Map ipVersion early, so we can use it as part of the cache-key.
 	// This should be fairly inexpensive and comes and the upside of
@@ -343,6 +359,11 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
+	au.logger.Debug("refreshing A upstreams",
+		zap.String("version", ipVersion),
+		zap.String("name", name),
+		zap.String("port", port))
+
 	ips, err := au.resolver.LookupIP(r.Context(), ipVersion, name)
 	if err != nil {
 		return nil, err
@@ -350,6 +371,8 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 
 	upstreams := make([]Upstream, len(ips))
 	for i, ip := range ips {
+		au.logger.Debug("discovered A record",
+			zap.String("ip", ip.String()))
 		upstreams[i] = Upstream{
 			Dial: net.JoinHostPort(ip.String(), port),
 		}

@@ -208,21 +208,20 @@ func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.Certificate
 //
 // Any of the subdirectives for the ACME issuer can be used in the block.
 func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
+	d.Next() // consume issuer name
+	if d.NextArg() {
+		iss.APIKey = d.Val()
 		if d.NextArg() {
-			iss.APIKey = d.Val()
-			if d.NextArg() {
-				return d.ArgErr()
-			}
+			return d.ArgErr()
 		}
+	}
 
-		if iss.ACMEIssuer == nil {
-			iss.ACMEIssuer = new(ACMEIssuer)
-		}
-		err := iss.ACMEIssuer.UnmarshalCaddyfile(d.NewFromNextSegment())
-		if err != nil {
-			return err
-		}
+	if iss.ACMEIssuer == nil {
+		iss.ACMEIssuer = new(ACMEIssuer)
+	}
+	err := iss.ACMEIssuer.UnmarshalCaddyfile(d.NewFromNextSegment())
+	if err != nil {
+		return err
 	}
 	return nil
 }

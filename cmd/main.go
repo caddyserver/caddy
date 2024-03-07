@@ -17,9 +17,12 @@ package caddycmd
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -32,6 +35,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,7 +66,17 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
+	undo, err := maxprocs.Set()
+	defer undo()
+	if err != nil {
+		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
 	if err := rootCmd.Execute(); err != nil {
+		var exitError *exitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode)
+		}
 		os.Exit(1)
 	}
 }
@@ -94,6 +108,12 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 }
 
 func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, error) {
+	// if no logger is provided, use a nop logger
+	// just so we don't have to check for nil
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
 		return nil, "", fmt.Errorf("cannot adapt config without config file (use --config)")
@@ -106,16 +126,16 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 	if configFile != "" {
 		if configFile == "-" {
 			config, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				return nil, "", fmt.Errorf("reading config from stdin: %v", err)
+			}
+			logger.Info("using config from stdin")
 		} else {
 			config, err = os.ReadFile(configFile)
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("reading config file: %v", err)
-		}
-		if logger != nil {
-			logger.Info("using provided configuration",
-				zap.String("config_file", configFile),
-				zap.String("config_adapter", adapterName))
+			if err != nil {
+				return nil, "", fmt.Errorf("reading config from file: %v", err)
+			}
+			logger.Info("using config from file", zap.String("file", configFile))
 		}
 	} else if adapterName == "" {
 		// if the Caddyfile adapter is plugged in, we can try using an
@@ -123,7 +143,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		cfgAdapter = caddyconfig.GetAdapter("caddyfile")
 		if cfgAdapter != nil {
 			config, err = os.ReadFile("Caddyfile")
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				// okay, no default Caddyfile; pretend like this never happened
 				cfgAdapter = nil
 			} else if err != nil {
@@ -132,9 +152,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
-				if logger != nil {
-					logger.Info("using adjacent Caddyfile")
-				}
+				logger.Info("using adjacent Caddyfile")
 			}
 		}
 	}
@@ -164,16 +182,24 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		if err != nil {
 			return nil, "", fmt.Errorf("adapting config using %s: %v", adapterName, err)
 		}
+		logger.Info("adapted config to JSON", zap.String("adapter", adapterName))
 		for _, warn := range warnings {
 			msg := warn.Message
 			if warn.Directive != "" {
 				msg = fmt.Sprintf("%s: %s", warn.Directive, warn.Message)
 			}
-			if logger != nil {
-				logger.Warn(msg, zap.String("adapter", adapterName), zap.String("file", warn.File), zap.Int("line", warn.Line))
-			}
+			logger.Warn(msg,
+				zap.String("adapter", adapterName),
+				zap.String("file", warn.File),
+				zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
+	} else {
+		// validate that the config is at least valid JSON
+		err = json.Unmarshal(config, new(any))
+		if err != nil {
+			return nil, "", fmt.Errorf("config is not valid JSON: %v; did you mean to use a config adapter (the --adapter flag)?", err)
+		}
 	}
 
 	return config, configFile, nil
@@ -300,8 +326,12 @@ func loadEnvFromFile(envFile string) error {
 	}
 
 	for k, v := range envMap {
-		if err := os.Setenv(k, v); err != nil {
-			return fmt.Errorf("setting environment variables: %v", err)
+		// do not overwrite existing environment variables
+		_, exists := os.LookupEnv(k)
+		if !exists {
+			if err := os.Setenv(k, v); err != nil {
+				return fmt.Errorf("setting environment variables: %v", err)
+			}
 		}
 	}
 

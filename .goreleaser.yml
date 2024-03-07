@@ -77,6 +77,8 @@ builds:
   - -mod=readonly
   ldflags:
   - -s -w
+  tags:
+  - nobadger
 
 signs:
   - cmd: cosign

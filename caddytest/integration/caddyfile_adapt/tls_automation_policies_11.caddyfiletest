@@ -1,0 +1,67 @@
+# example from https://caddy.community/t/21415
+a.com {
+	tls {
+		get_certificate http http://foo.com/get
+	}
+}
+
+b.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"b.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.com"
+						],
+						"get_certificate": [
+							{
+								"url": "http://foo.com/get",
+								"via": "http"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"b.com"
+						]
+					}
+				]
+			}
+		}
+	}
+}

@@ -52,7 +52,7 @@ func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconf
 		return nil, warnings, err
 	}
 
-	// lint check: see if input was properly formatted; sometimes messy files files parse
+	// lint check: see if input was properly formatted; sometimes messy files parse
 	// successfully but result in logical errors (the Caddyfile is a bad format, I'm sorry)
 	if warning, different := FormattingDifference(filename, body); different {
 		warnings = append(warnings, warning)
@@ -92,30 +92,26 @@ func FormattingDifference(filename string, body []byte) (caddyconfig.Warning, bo
 	}, true
 }
 
-// Unmarshaler is a type that can unmarshal
-// Caddyfile tokens to set itself up for a
-// JSON encoding. The goal of an unmarshaler
-// is not to set itself up for actual use,
-// but to set itself up for being marshaled
-// into JSON. Caddyfile-unmarshaled values
-// will not be used directly; they will be
-// encoded as JSON and then used from that.
-// Implementations must be able to support
-// multiple segments (instances of their
-// directive or batch of tokens); typically
-// this means wrapping all token logic in
-// a loop: `for d.Next() { ... }`.
+// Unmarshaler is a type that can unmarshal Caddyfile tokens to
+// set itself up for a JSON encoding. The goal of an unmarshaler
+// is not to set itself up for actual use, but to set itself up for
+// being marshaled into JSON. Caddyfile-unmarshaled values will not
+// be used directly; they will be encoded as JSON and then used from
+// that. Implementations _may_ be able to support multiple segments
+// (instances of their directive or batch of tokens); typically this
+// means wrapping parsing logic in a loop: `for d.Next() { ... }`.
+// More commonly, only a single segment is supported, so a simple
+// `d.Next()` at the start should be used to consume the module
+// identifier token (directive name, etc).
 type Unmarshaler interface {
 	UnmarshalCaddyfile(d *Dispenser) error
 }
 
 // ServerType is a type that can evaluate a Caddyfile and set up a caddy config.
 type ServerType interface {
-	// Setup takes the server blocks which
-	// contain tokens, as well as options
-	// (e.g. CLI flags) and creates a Caddy
-	// config, along with any warnings or
-	// an error.
+	// Setup takes the server blocks which contain tokens,
+	// as well as options (e.g. CLI flags) and creates a
+	// Caddy config, along with any warnings or an error.
 	Setup([]ServerBlock, map[string]any) (*caddy.Config, []caddyconfig.Warning, error)
 }
 

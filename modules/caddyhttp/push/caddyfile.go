@@ -44,63 +44,63 @@ func init() {
 // Placeholders are accepted in resource and header field
 // name and value and replacement tokens.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+
 	handler := new(Handler)
 
-	for h.Next() {
-		if h.NextArg() {
-			handler.Resources = append(handler.Resources, Resource{Target: h.Val()})
-		}
-
-		// optional block
-		for outerNesting := h.Nesting(); h.NextBlock(outerNesting); {
-			switch h.Val() {
-			case "headers":
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				for innerNesting := h.Nesting(); h.NextBlock(innerNesting); {
-					var err error
-
-					// include current token, which we treat as an argument here
-					args := []string{h.Val()}
-					args = append(args, h.RemainingArgs()...)
-
-					if handler.Headers == nil {
-						handler.Headers = new(HeaderConfig)
-					}
-
-					switch len(args) {
-					case 1:
-						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], "", "")
-					case 2:
-						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], "")
-					case 3:
-						err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], args[2])
-					default:
-						return nil, h.ArgErr()
-					}
-
-					if err != nil {
-						return nil, h.Err(err.Error())
-					}
-				}
-
-			case "GET", "HEAD":
-				method := h.Val()
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				target := h.Val()
-				handler.Resources = append(handler.Resources, Resource{
-					Method: method,
-					Target: target,
-				})
-
-			default:
-				handler.Resources = append(handler.Resources, Resource{Target: h.Val()})
-			}
-		}
+	// inline resources
+	if h.NextArg() {
+		handler.Resources = append(handler.Resources, Resource{Target: h.Val()})
 	}
 
+	// optional block
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "headers":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			for nesting := h.Nesting(); h.NextBlock(nesting); {
+				var err error
+
+				// include current token, which we treat as an argument here
+				args := []string{h.Val()}
+				args = append(args, h.RemainingArgs()...)
+
+				if handler.Headers == nil {
+					handler.Headers = new(HeaderConfig)
+				}
+
+				switch len(args) {
+				case 1:
+					err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], "", "")
+				case 2:
+					err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], "")
+				case 3:
+					err = headers.CaddyfileHeaderOp(&handler.Headers.HeaderOps, args[0], args[1], args[2])
+				default:
+					return nil, h.ArgErr()
+				}
+
+				if err != nil {
+					return nil, h.Err(err.Error())
+				}
+			}
+
+		case "GET", "HEAD":
+			method := h.Val()
+			if !h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			target := h.Val()
+			handler.Resources = append(handler.Resources, Resource{
+				Method: method,
+				Target: target,
+			})
+
+		default:
+			handler.Resources = append(handler.Resources, Resource{Target: h.Val()})
+		}
+	}
 	return handler, nil
 }

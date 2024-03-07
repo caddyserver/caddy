@@ -57,7 +57,6 @@ func TestSRVReverseProxy(t *testing.T) {
 }
 
 func TestDialWithPlaceholderUnix(t *testing.T) {
-
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
