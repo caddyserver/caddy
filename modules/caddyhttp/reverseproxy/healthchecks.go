@@ -89,6 +89,14 @@ type ActiveHealthChecks struct {
 	// considering it unhealthy (default 5s).
 	Timeout caddy.Duration `json:"timeout,omitempty"`
 
+	// Number of consecutive health check passes before marking
+	// a previously unhealthy backend as healthy again (default 1).
+	Passes int `json:"passes,omitempty"`
+
+	// Number of consecutive health check failures before marking
+	// a previously healthy backend as unhealthy (default 1).
+	Fails int `json:"fails,omitempty"`
+
 	// The maximum response body to download from the backend
 	// during a health check.
 	MaxSize int64 `json:"max_size,omitempty"`
@@ -165,6 +173,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("expect_body: compiling regular expression: %v", err)
 		}
+	}
+
+	if a.Passes < 1 {
+		a.Passes = 1
+	}
+
+	if a.Fails < 1 {
+		a.Fails = 1
 	}
 
 	return nil
@@ -373,9 +389,35 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	markUnhealthy := func() {
-		// dispatch an event that the host newly became unhealthy
-		if upstream.setHealthy(false) {
-			h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+		// count failures
+		err := upstream.Host.countHealthFail(1)
+		if err != nil {
+			h.HealthChecks.Active.logger.Error("could not count active health failure",
+				zap.String("host", upstream.Dial),
+				zap.Error(err))
+			return
+		}
+		if upstream.Host.HealthFails() >= h.HealthChecks.Active.Fails {
+			// dispatch an event that the host newly became unhealthy
+			if upstream.setHealthy(false) {
+				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+			}
+		}
+	}
+
+	markHealthy := func() {
+		// count passes
+		err := upstream.Host.countHealthPass(1)
+		if err != nil {
+			h.HealthChecks.Active.logger.Error("could not count active health pass",
+				zap.String("host", upstream.Dial),
+				zap.Error(err))
+			return
+		}
+		if upstream.Host.HealthPasses() >= h.HealthChecks.Active.Passes {
+			if upstream.setHealthy(true) {
+				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
+			}
 		}
 	}
 
@@ -439,10 +481,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	// passed health check parameters, so mark as healthy
-	if upstream.setHealthy(true) {
-		h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
-		h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-	}
+	h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
+	markHealthy()
 
 	return nil
 }
