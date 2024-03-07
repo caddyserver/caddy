@@ -19,45 +19,49 @@ jobs:
       fail-fast: false
       matrix:
         os: 
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+          - linux
+          - mac
+          - windows
         go: 
-          - '1.20'
           - '1.21'
+          - '1.22'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.20'
-          GO_SEMVER: '~1.20.6'
-
         - go: '1.21'
           GO_SEMVER: '~1.21.0'
 
+        - go: '1.22'
+          GO_SEMVER: '~1.22.1'
+
         # Set some variables per OS, usable via ${{ matrix.VAR }}
+        # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
         # SUCCESS: the typical value for $? per OS (Windows/pwsh returns 'True')
-        - os: ubuntu-latest
+        - os: linux
+          OS_LABEL: ubuntu-latest
           CADDY_BIN_PATH: ./cmd/caddy/caddy
           SUCCESS: 0
 
-        - os: macos-latest
+        - os: mac
+          OS_LABEL: macos-14
           CADDY_BIN_PATH: ./cmd/caddy/caddy
           SUCCESS: 0
 
-        - os: windows-latest
+        - os: windows
+          OS_LABEL: windows-latest
           CADDY_BIN_PATH: ./cmd/caddy/caddy.exe
           SUCCESS: 'True'
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.OS_LABEL }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Install Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -95,13 +99,14 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -trimpath -ldflags="-w -s" -v
+        go build -tags nobdger -trimpath -ldflags="-w -s" -v
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
+        compression-level: 0
 
     # Commented bits below were useful to allow the job to continue
     # even if the tests fail, so we can publish the report separately
@@ -111,7 +116,7 @@ jobs:
       # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile="cover-profile.out" -short -race ./...
+        go test -tags nobadger -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -124,7 +129,7 @@ jobs:
 
     # To return the correct result even though we set 'continue-on-error: true'
     # - name: Coerce correct build result
-    #   if: matrix.os != 'windows-latest' && steps.step_test.outputs.status != ${{ matrix.SUCCESS }}
+    #   if: matrix.os != 'windows' && steps.step_test.outputs.status != ${{ matrix.SUCCESS }}
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
@@ -146,7 +151,7 @@ jobs:
 
           # The environment is fresh, so there's no point in keeping accepting and adding the key.
           rsync -arz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --progress --delete --exclude '.git' . "$CI_USER"@ci-s390x.caddyserver.com:/var/tmp/"$short_sha"
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t "$CI_USER"@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -v ./..."
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -t "$CI_USER"@ci-s390x.caddyserver.com "cd /var/tmp/$short_sha; go version; go env; printf "\n\n";CGO_ENABLED=0 go test -tags nobadger -v ./..."
           test_result=$?
 
           # There's no need leaving the files around
@@ -168,5 +173,3 @@ jobs:
         with:
           version: latest
           args: check
-        env:
-          TAG: ${{ steps.vars.outputs.version_tag }}

@@ -19,7 +19,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
@@ -470,7 +469,11 @@ func marshalPublicKey(pubKey any) ([]byte, error) {
 	case *rsa.PublicKey:
 		return asn1.Marshal(key)
 	case *ecdsa.PublicKey:
-		return elliptic.Marshal(key.Curve, key.X, key.Y), nil
+		e, err := key.ECDH()
+		if err != nil {
+			return nil, err
+		}
+		return e.Bytes(), nil
 	case ed25519.PublicKey:
 		return key, nil
 	}

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -74,6 +76,123 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	}
 	if actual := w.Result().Header; len(actual) != 0 {
 		t.Errorf("Not empty: expected headers to be empty, but got %#v", actual)
+	}
+
+	// handler returning an error with an HTTP status
+	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		return Error(http.StatusTooManyRequests, nil)
+	})
+
+	ih = newMetricsInstrumentedHandler("foo", mh)
+
+	r = httptest.NewRequest("GET", "/", nil)
+	w = httptest.NewRecorder()
+
+	if err := ih.ServeHTTP(w, r, nil); err == nil {
+		t.Errorf("expected error to be propagated")
+	}
+
+	expected := `
+	# HELP caddy_http_request_duration_seconds Histogram of round-trip request durations.
+	# TYPE caddy_http_request_duration_seconds histogram
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.005"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.01"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.025"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.05"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.1"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.25"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="0.5"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="2.5"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="5"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="10"} 1
+	caddy_http_request_duration_seconds_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_request_duration_seconds_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
+	# HELP caddy_http_request_size_bytes Total size of the request. Includes body
+	# TYPE caddy_http_request_size_bytes histogram
+	caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="256"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1024"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4096"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="16384"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="65536"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="262144"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="+Inf"} 1
+    caddy_http_request_size_bytes_sum{code="200",handler="bar",method="GET",server="UNKNOWN"} 23
+    caddy_http_request_size_bytes_count{code="200",handler="bar",method="GET",server="UNKNOWN"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="256"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1024"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4096"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="16384"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="65536"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="262144"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+    caddy_http_request_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="+Inf"} 1
+    caddy_http_request_size_bytes_sum{code="200",handler="empty",method="GET",server="UNKNOWN"} 23
+    caddy_http_request_size_bytes_count{code="200",handler="empty",method="GET",server="UNKNOWN"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_request_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_request_size_bytes_sum{code="429",handler="foo",method="GET",server="UNKNOWN"} 23
+	caddy_http_request_size_bytes_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
+	# HELP caddy_http_response_size_bytes Size of the returned response.
+	# TYPE caddy_http_response_size_bytes histogram
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="bar",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_response_size_bytes_sum{code="200",handler="bar",method="GET",server="UNKNOWN"} 12
+	caddy_http_response_size_bytes_count{code="200",handler="bar",method="GET",server="UNKNOWN"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="200",handler="empty",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_response_size_bytes_sum{code="200",handler="empty",method="GET",server="UNKNOWN"} 0
+	caddy_http_response_size_bytes_count{code="200",handler="empty",method="GET",server="UNKNOWN"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="256"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1024"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4096"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="16384"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="65536"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="262144"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="1.048576e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="4.194304e+06"} 1
+	caddy_http_response_size_bytes_bucket{code="429",handler="foo",method="GET",server="UNKNOWN",le="+Inf"} 1
+	caddy_http_response_size_bytes_sum{code="429",handler="foo",method="GET",server="UNKNOWN"} 0
+	caddy_http_response_size_bytes_count{code="429",handler="foo",method="GET",server="UNKNOWN"} 1
+	# HELP caddy_http_request_errors_total Number of requests resulting in middleware errors.
+	# TYPE caddy_http_request_errors_total counter
+	caddy_http_request_errors_total{handler="bar",server="UNKNOWN"} 1
+	caddy_http_request_errors_total{handler="foo",server="UNKNOWN"} 1
+	`
+	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected),
+		"caddy_http_request_size_bytes",
+		"caddy_http_response_size_bytes",
+		// caddy_http_request_duration_seconds_sum will vary based on how long the test took to run,
+		// so we check just the _bucket and _count metrics
+		"caddy_http_request_duration_seconds_bucket",
+		"caddy_http_request_duration_seconds_count",
+		"caddy_http_request_errors_total",
+	); err != nil {
+		t.Errorf("received unexpected error: %s", err)
 	}
 }
 

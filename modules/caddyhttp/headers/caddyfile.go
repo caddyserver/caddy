@@ -47,14 +47,12 @@ func init() {
 // ? conditionally sets a value only if the header field is not already set,
 // and > sets a field with defer enabled.
 func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
-
+	h.Next() // consume directive name
 	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
 	}
+	h.Next() // consume the directive name again (matcher parsing resets)
 
 	makeHandler := func() Handler {
 		return Handler{
@@ -65,73 +63,71 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	}
 	handler, handlerWithRequire := makeHandler(), makeHandler()
 
-	for h.Next() {
-		// first see if headers are in the initial line
-		var hasArgs bool
+	// first see if headers are in the initial line
+	var hasArgs bool
+	if h.NextArg() {
+		hasArgs = true
+		field := h.Val()
+		var value, replacement string
 		if h.NextArg() {
-			hasArgs = true
-			field := h.Val()
-			var value, replacement string
-			if h.NextArg() {
-				value = h.Val()
-			}
-			if h.NextArg() {
-				replacement = h.Val()
-			}
-			err := applyHeaderOp(
-				handler.Response.HeaderOps,
-				handler.Response,
-				field,
-				value,
-				replacement,
-			)
-			if err != nil {
-				return nil, h.Err(err.Error())
-			}
-			if len(handler.Response.HeaderOps.Delete) > 0 {
-				handler.Response.Deferred = true
-			}
+			value = h.Val()
+		}
+		if h.NextArg() {
+			replacement = h.Val()
+		}
+		err := applyHeaderOp(
+			handler.Response.HeaderOps,
+			handler.Response,
+			field,
+			value,
+			replacement,
+		)
+		if err != nil {
+			return nil, h.Err(err.Error())
+		}
+		if len(handler.Response.HeaderOps.Delete) > 0 {
+			handler.Response.Deferred = true
+		}
+	}
+
+	// if not, they should be in a block
+	for h.NextBlock(0) {
+		field := h.Val()
+		if field == "defer" {
+			handler.Response.Deferred = true
+			continue
+		}
+		if hasArgs {
+			return nil, h.Err("cannot specify headers in both arguments and block") // because it would be weird
 		}
 
-		// if not, they should be in a block
-		for h.NextBlock(0) {
-			field := h.Val()
-			if field == "defer" {
-				handler.Response.Deferred = true
-				continue
-			}
-			if hasArgs {
-				return nil, h.Err("cannot specify headers in both arguments and block") // because it would be weird
-			}
+		// sometimes it is habitual for users to suffix a field name with a colon,
+		// as if they were writing a curl command or something; see
+		// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
+		field = strings.TrimSuffix(field, ":")
 
-			// sometimes it is habitual for users to suffix a field name with a colon,
-			// as if they were writing a curl command or something; see
-			// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
-			field = strings.TrimSuffix(field, ":")
+		var value, replacement string
+		if h.NextArg() {
+			value = h.Val()
+		}
+		if h.NextArg() {
+			replacement = h.Val()
+		}
 
-			var value, replacement string
-			if h.NextArg() {
-				value = h.Val()
-			}
-			if h.NextArg() {
-				replacement = h.Val()
-			}
+		handlerToUse := handler
+		if strings.HasPrefix(field, "?") {
+			handlerToUse = handlerWithRequire
+		}
 
-			handlerToUse := handler
-			if strings.HasPrefix(field, "?") {
-				handlerToUse = handlerWithRequire
-			}
-
-			err := applyHeaderOp(
-				handlerToUse.Response.HeaderOps,
-				handlerToUse.Response,
-				field,
-				value,
-				replacement,
-			)
-			if err != nil {
-				return nil, h.Err(err.Error())
-			}
+		err := applyHeaderOp(
+			handlerToUse.Response.HeaderOps,
+			handlerToUse.Response,
+			field,
+			value,
+			replacement,
+		)
+		if err != nil {
+			return nil, h.Err(err.Error())
 		}
 	}
 
@@ -151,55 +147,51 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 //
 //	request_header [<matcher>] [[+|-]<field> [<value|regexp>] [<replacement>]]
 func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
-	if !h.Next() {
-		return nil, h.ArgErr()
-	}
-
+	h.Next() // consume directive name
 	matcherSet, err := h.ExtractMatcherSet()
 	if err != nil {
 		return nil, err
 	}
+	h.Next() // consume the directive name again (matcher parsing resets)
 
 	configValues := []httpcaddyfile.ConfigValue{}
 
-	for h.Next() {
-		if !h.NextArg() {
-			return nil, h.ArgErr()
-		}
-		field := h.Val()
+	if !h.NextArg() {
+		return nil, h.ArgErr()
+	}
+	field := h.Val()
 
-		hdr := Handler{
-			Request: &HeaderOps{},
-		}
+	hdr := Handler{
+		Request: &HeaderOps{},
+	}
 
-		// sometimes it is habitual for users to suffix a field name with a colon,
-		// as if they were writing a curl command or something; see
-		// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
-		field = strings.TrimSuffix(field, ":")
+	// sometimes it is habitual for users to suffix a field name with a colon,
+	// as if they were writing a curl command or something; see
+	// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
+	field = strings.TrimSuffix(field, ":")
 
-		var value, replacement string
-		if h.NextArg() {
-			value = h.Val()
-		}
-		if h.NextArg() {
-			replacement = h.Val()
-			if h.NextArg() {
-				return nil, h.ArgErr()
-			}
-		}
-
-		if hdr.Request == nil {
-			hdr.Request = new(HeaderOps)
-		}
-		if err := CaddyfileHeaderOp(hdr.Request, field, value, replacement); err != nil {
-			return nil, h.Err(err.Error())
-		}
-
-		configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
-
+	var value, replacement string
+	if h.NextArg() {
+		value = h.Val()
+	}
+	if h.NextArg() {
+		replacement = h.Val()
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
+	}
+
+	if hdr.Request == nil {
+		hdr.Request = new(HeaderOps)
+	}
+	if err := CaddyfileHeaderOp(hdr.Request, field, value, replacement); err != nil {
+		return nil, h.Err(err.Error())
+	}
+
+	configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
+
+	if h.NextArg() {
+		return nil, h.ArgErr()
 	}
 	return configValues, nil
 }

@@ -763,6 +763,42 @@ func TestQueryMatcher(t *testing.T) {
 			input:    "/?somekey=1",
 			expect:   true,
 		},
+		{
+			scenario: "do not match when not all query params are present",
+			match:    MatchQuery{"debug": []string{"1"}, "foo": []string{"bar"}},
+			input:    "/?debug=1",
+			expect:   false,
+		},
+		{
+			scenario: "match when all query params are present",
+			match:    MatchQuery{"debug": []string{"1"}, "foo": []string{"bar"}},
+			input:    "/?debug=1&foo=bar",
+			expect:   true,
+		},
+		{
+			scenario: "do not match when the value of a query param does not match",
+			match:    MatchQuery{"debug": []string{"1"}, "foo": []string{"bar"}},
+			input:    "/?debug=2&foo=bar",
+			expect:   false,
+		},
+		{
+			scenario: "do not match when all the values the query params do not match",
+			match:    MatchQuery{"debug": []string{"1"}, "foo": []string{"bar"}},
+			input:    "/?debug=2&foo=baz",
+			expect:   false,
+		},
+		{
+			scenario: "match against two values for the same key",
+			match:    MatchQuery{"debug": []string{"1"}},
+			input:    "/?debug=1&debug=2",
+			expect:   true,
+		},
+		{
+			scenario: "match against two values for the same key",
+			match:    MatchQuery{"debug": []string{"2", "1"}},
+			input:    "/?debug=2&debug=1",
+			expect:   true,
+		},
 	} {
 
 		u, _ := url.Parse(tc.input)
@@ -862,7 +898,6 @@ func TestHeaderREMatcher(t *testing.T) {
 }
 
 func BenchmarkHeaderREMatcher(b *testing.B) {
-
 	i := 0
 	match := MatchHeaderRE{"Field": &MatchRegexp{Pattern: "^foo(.*)$", Name: "name"}}
 	input := http.Header{"Field": []string{"foobar"}}
@@ -1086,6 +1121,7 @@ func TestNotMatcher(t *testing.T) {
 		}
 	}
 }
+
 func BenchmarkLargeHostMatcher(b *testing.B) {
 	// this benchmark simulates a large host matcher (thousands of entries) where each
 	// value is an exact hostname (not a placeholder or wildcard) - compare the results

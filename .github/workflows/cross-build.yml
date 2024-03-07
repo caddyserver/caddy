@@ -11,7 +11,7 @@ on:
       - 2.*
 
 jobs:
-  cross-build-test:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -29,13 +29,13 @@ jobs:
           - 'darwin'
           - 'netbsd'
         go: 
-          - '1.21'
+          - '1.22'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.21'
-          GO_SEMVER: '~1.21.0'
+        - go: '1.22'
+          GO_SEMVER: '~1.22.1'
 
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.GO_SEMVER }}
           check-latest: true
@@ -68,7 +68,7 @@ jobs:
         continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
-          GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
+          GOOS=$GOOS GOARCH=$GOARCH go build -tags nobadger -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
           if [ $? -ne 0 ]; then
             echo "::warning ::$GOOS Build Failed"
             exit 0

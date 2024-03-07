@@ -22,68 +22,71 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("basicauth", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("basicauth", parseCaddyfile) // deprecated
+	httpcaddyfile.RegisterHandlerDirective("basic_auth", parseCaddyfile)
 }
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//	basicauth [<matcher>] [<hash_algorithm> [<realm>]] {
-//	    <username> <hashed_password_base64> [<salt_base64>]
+//	basic_auth [<matcher>] [<hash_algorithm> [<realm>]] {
+//	    <username> <hashed_password>
 //	    ...
 //	}
 //
 // If no hash algorithm is supplied, bcrypt will be assumed.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+
+	// "basicauth" is deprecated, replaced by "basic_auth"
+	if h.Val() == "basicauth" {
+		caddy.Log().Named("config.adapter.caddyfile").Warn("the 'basicauth' directive is deprecated, please use 'basic_auth' instead!")
+	}
+
 	var ba HTTPBasicAuth
 	ba.HashCache = new(Cache)
 
-	for h.Next() {
-		var cmp Comparer
-		args := h.RemainingArgs()
+	var cmp Comparer
+	args := h.RemainingArgs()
 
-		var hashName string
-		switch len(args) {
-		case 0:
-			hashName = "bcrypt"
-		case 1:
-			hashName = args[0]
-		case 2:
-			hashName = args[0]
-			ba.Realm = args[1]
-		default:
+	var hashName string
+	switch len(args) {
+	case 0:
+		hashName = "bcrypt"
+	case 1:
+		hashName = args[0]
+	case 2:
+		hashName = args[0]
+		ba.Realm = args[1]
+	default:
+		return nil, h.ArgErr()
+	}
+
+	switch hashName {
+	case "bcrypt":
+		cmp = BcryptHash{}
+	default:
+		return nil, h.Errf("unrecognized hash algorithm: %s", hashName)
+	}
+
+	ba.HashRaw = caddyconfig.JSONModuleObject(cmp, "algorithm", hashName, nil)
+
+	for h.NextBlock(0) {
+		username := h.Val()
+
+		var b64Pwd string
+		h.Args(&b64Pwd)
+		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
 
-		switch hashName {
-		case "bcrypt":
-			cmp = BcryptHash{}
-		case "scrypt":
-			cmp = ScryptHash{}
-		default:
-			return nil, h.Errf("unrecognized hash algorithm: %s", hashName)
+		if username == "" || b64Pwd == "" {
+			return nil, h.Err("username and password cannot be empty or missing")
 		}
 
-		ba.HashRaw = caddyconfig.JSONModuleObject(cmp, "algorithm", hashName, nil)
-
-		for h.NextBlock(0) {
-			username := h.Val()
-
-			var b64Pwd, b64Salt string
-			h.Args(&b64Pwd, &b64Salt)
-			if h.NextArg() {
-				return nil, h.ArgErr()
-			}
-
-			if username == "" || b64Pwd == "" {
-				return nil, h.Err("username and password cannot be empty or missing")
-			}
-
-			ba.AccountList = append(ba.AccountList, Account{
-				Username: username,
-				Password: b64Pwd,
-				Salt:     b64Salt,
-			})
-		}
+		ba.AccountList = append(ba.AccountList, Account{
+			Username: username,
+			Password: b64Pwd,
+		})
 	}
 
 	return Authentication{

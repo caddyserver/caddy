@@ -1,0 +1,153 @@
+{
+	http_port 2099
+}
+localhost:2099 {
+	root * /srv
+	error /private* "Unauthorized" 410
+	error /threehundred* "Moved Permanently" 301
+	error /internalerr* "Internal Server Error" 500
+
+	handle_errors 500 3xx {
+		respond "Error code is equal to 500 or in the [300..399] range"
+	}
+	handle_errors 4xx {
+		respond "Error in the [400 .. 499] range"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"http_port": 2099,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":2099"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/srv"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Moved Permanently",
+													"handler": "error",
+													"status_code": 301
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/threehundred*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Internal Server Error",
+													"handler": "error",
+													"status_code": 500
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/internalerr*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Unauthorized",
+													"handler": "error",
+													"status_code": 410
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/private*"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"errors": {
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"body": "Error in the [400 .. 499] range",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 400 \u0026\u0026 {http.error.status_code} \u003c= 499"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"body": "Error code is equal to 500 or in the [300..399] range",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 300 \u0026\u0026 {http.error.status_code} \u003c= 399 || {http.error.status_code} in [500]"
+													}
+												]
+											}
+										]
+									}
+								],
+								"terminal": true
+							}
+						]
+					}
+				}
+			}
+		}
+	}
+}

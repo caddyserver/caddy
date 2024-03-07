@@ -138,41 +138,40 @@ func (StaticResponse) CaddyModule() caddy.ModuleInfo {
 // If there is just one argument (other than the matcher), it is considered
 // to be a status code if it's a valid positive integer of 3 digits.
 func (s *StaticResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		args := d.RemainingArgs()
-		switch len(args) {
-		case 1:
-			if len(args[0]) == 3 {
-				if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
-					s.StatusCode = WeakString(args[0])
-					break
-				}
+	d.Next() // consume directive name
+	args := d.RemainingArgs()
+	switch len(args) {
+	case 1:
+		if len(args[0]) == 3 {
+			if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+				s.StatusCode = WeakString(args[0])
+				break
 			}
-			s.Body = args[0]
-		case 2:
-			s.Body = args[0]
-			s.StatusCode = WeakString(args[1])
-		default:
-			return d.ArgErr()
 		}
+		s.Body = args[0]
+	case 2:
+		s.Body = args[0]
+		s.StatusCode = WeakString(args[1])
+	default:
+		return d.ArgErr()
+	}
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "body":
-				if s.Body != "" {
-					return d.Err("body already specified")
-				}
-				if !d.AllArgs(&s.Body) {
-					return d.ArgErr()
-				}
-			case "close":
-				if s.Close {
-					return d.Err("close already specified")
-				}
-				s.Close = true
-			default:
-				return d.Errf("unrecognized subdirective '%s'", d.Val())
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "body":
+			if s.Body != "" {
+				return d.Err("body already specified")
 			}
+			if !d.AllArgs(&s.Body) {
+				return d.ArgErr()
+			}
+		case "close":
+			if s.Close {
+				return d.Err("close already specified")
+			}
+			s.Close = true
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil
@@ -257,6 +256,53 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	return nil
 }
 
+func buildHTTPServer(i int, port uint, addr string, statusCode int, hdr http.Header, body string, accessLog bool) (*Server, error) {
+	var handlers []json.RawMessage
+
+	// response body supports a basic template; evaluate it
+	tplCtx := struct {
+		N       int    // server number
+		Port    uint   // only the port
+		Address string // listener address
+	}{
+		N:       i,
+		Port:    port,
+		Address: addr,
+	}
+	tpl, err := template.New("body").Parse(body)
+	if err != nil {
+		return nil, err
+	}
+	buf := new(bytes.Buffer)
+	err = tpl.Execute(buf, tplCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// create route with handler
+	handler := StaticResponse{
+		StatusCode: WeakString(fmt.Sprintf("%d", statusCode)),
+		Headers:    hdr,
+		Body:       buf.String(),
+	}
+	handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "static_response", nil))
+	route := Route{HandlersRaw: handlers}
+
+	server := &Server{
+		Listen:            []string{addr},
+		ReadHeaderTimeout: caddy.Duration(10 * time.Second),
+		IdleTimeout:       caddy.Duration(30 * time.Second),
+		MaxHeaderBytes:    1024 * 10,
+		Routes:            RouteList{route},
+		AutoHTTPS:         &AutoHTTPSConfig{DisableRedir: true},
+	}
+	if accessLog {
+		server.Logs = new(ServerLogConfig)
+	}
+
+	return server, nil
+}
+
 func cmdRespond(fl caddycmd.Flags) (int, error) {
 	caddy.TrapSignals()
 
@@ -332,65 +378,38 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 		hdr.Set(key, val)
 	}
 
+	// build each HTTP server
+	httpApp := App{Servers: make(map[string]*Server)}
+
 	// expand listen address, if more than one port
 	listenAddr, err := caddy.ParseNetworkAddress(listen)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
-	listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
-	for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
-		listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))
-	}
 
-	// build each HTTP server
-	httpApp := App{Servers: make(map[string]*Server)}
-
-	for i, addr := range listenAddrs {
-		var handlers []json.RawMessage
-
-		// response body supports a basic template; evaluate it
-		tplCtx := struct {
-			N       int    // server number
-			Port    uint   // only the port
-			Address string // listener address
-		}{
-			N:       i,
-			Port:    listenAddr.StartPort + uint(i),
-			Address: addr,
+	if !listenAddr.IsUnixNetwork() {
+		listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
+		for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
+			listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))
 		}
-		tpl, err := template.New("body").Parse(body)
+
+		for i, addr := range listenAddrs {
+			server, err := buildHTTPServer(i, listenAddr.StartPort+uint(i), addr, statusCode, hdr, body, accessLog)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
+			// save server
+			httpApp.Servers[fmt.Sprintf("static%d", i)] = server
+		}
+	} else {
+		server, err := buildHTTPServer(0, 0, listen, statusCode, hdr, body, accessLog)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, err
-		}
-		buf := new(bytes.Buffer)
-		err = tpl.Execute(buf, tplCtx)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, err
-		}
-
-		// create route with handler
-		handler := StaticResponse{
-			StatusCode: WeakString(fmt.Sprintf("%d", statusCode)),
-			Headers:    hdr,
-			Body:       buf.String(),
-		}
-		handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "static_response", nil))
-		route := Route{HandlersRaw: handlers}
-
-		server := &Server{
-			Listen:            []string{addr},
-			ReadHeaderTimeout: caddy.Duration(10 * time.Second),
-			IdleTimeout:       caddy.Duration(30 * time.Second),
-			MaxHeaderBytes:    1024 * 10,
-			Routes:            RouteList{route},
-			AutoHTTPS:         &AutoHTTPSConfig{DisableRedir: true},
-		}
-		if accessLog {
-			server.Logs = new(ServerLogConfig)
 		}
 
 		// save server
-		httpApp.Servers[fmt.Sprintf("static%d", i)] = server
+		httpApp.Servers[fmt.Sprintf("static%d", 0)] = server
 	}
 
 	// finish building the config

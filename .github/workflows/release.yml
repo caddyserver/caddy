@@ -37,7 +37,7 @@ jobs:
         fetch-depth: 0
 
     - name: Install Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true

@@ -487,7 +487,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		if proxyErr == nil {
-			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, noUpstreamsAvailable)
+			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, errNoUpstream)
 		}
 		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
 			return true, proxyErr
@@ -589,8 +589,12 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
 	if h.RequestBuffers != 0 && req.Body != nil {
-		req.Body, req.ContentLength = h.bufferedBody(req.Body, h.RequestBuffers)
-		req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
+		var readBytes int64
+		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
+		if h.RequestBuffers == -1 {
+			req.ContentLength = readBytes
+			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
+		}
 	}
 
 	if req.ContentLength == 0 {
@@ -779,7 +783,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// regardless, and we should expect client disconnection in low-latency streaming
 	// scenarios (see issue #4922)
 	if h.FlushInterval == -1 {
-		req = req.WithContext(ignoreClientGoneContext{req.Context()})
+		req = req.WithContext(context.WithoutCancel(req.Context()))
 	}
 
 	// do the round-trip; emit debug log with values we know are
@@ -1037,7 +1041,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if !isDialError && !(isHandlerError && errors.Is(herr, noUpstreamsAvailable)) {
+		if !isDialError && !(isHandlerError && errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
@@ -1093,7 +1097,7 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 
 	// if the passive health checker has a non-zero UnhealthyRequestCount
 	// but the upstream has no MaxRequests set (they are the same thing,
-	// but the passive health checker is a default value for for upstreams
+	// but the passive health checker is a default value for upstreams
 	// without MaxRequests), copy the value into this upstream, since the
 	// value in the upstream (MaxRequests) is what is used during
 	// availability checks
@@ -1415,38 +1419,13 @@ type handleResponseContext struct {
 	isFinalized bool
 }
 
-// ignoreClientGoneContext is a special context.Context type
-// intended for use when doing a RoundTrip where you don't
-// want a client disconnection to cancel the request during
-// the roundtrip.
-// This context clears cancellation, error, and deadline methods,
-// but still allows values to pass through from its embedded
-// context.
-//
-// TODO: This can be replaced with context.WithoutCancel once
-// the minimum required version of Go is 1.21.
-type ignoreClientGoneContext struct {
-	context.Context
-}
-
-func (c ignoreClientGoneContext) Deadline() (deadline time.Time, ok bool) {
-	return
-}
-
-func (c ignoreClientGoneContext) Done() <-chan struct{} {
-	return nil
-}
-
-func (c ignoreClientGoneContext) Err() error {
-	return nil
-}
-
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
 // so that handle_response routes can inherit some config options
 // from the proxy handler.
 const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
 
-var noUpstreamsAvailable = fmt.Errorf("no upstreams available")
+// errNoUpstream occurs when there are no upstream available.
+var errNoUpstream = fmt.Errorf("no upstreams available")
 
 // Interface guards
 var (

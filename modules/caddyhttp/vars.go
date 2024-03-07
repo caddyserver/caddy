@@ -57,6 +57,12 @@ func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 			v = repl.ReplaceAll(valStr, "")
 		}
 		vars[keyExpanded] = v
+
+		// Special case: the user ID is in the replacer, pulled from there
+		// for access logs. Allow users to override it with the vars handler.
+		if keyExpanded == "http.auth.user.id" {
+			repl.Set(keyExpanded, v)
+		}
 	}
 	return next.ServeHTTP(w, r)
 }
@@ -68,6 +74,8 @@ func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 //	    ...
 //	}
 func (m *VarsMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume directive name
+
 	if *m == nil {
 		*m = make(VarsMiddleware)
 	}
@@ -94,14 +102,12 @@ func (m *VarsMiddleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return nil
 	}
 
-	for d.Next() {
-		if err := nextVar(true); err != nil {
+	if err := nextVar(true); err != nil {
+		return err
+	}
+	for d.NextBlock(0) {
+		if err := nextVar(false); err != nil {
 			return err
-		}
-		for nesting := d.Nesting(); d.NextBlock(nesting); {
-			if err := nextVar(false); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -135,6 +141,7 @@ func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string][]string)
 	}
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		var field string
 		if !d.Args(&field) {
@@ -216,6 +223,7 @@ func (m *MatchVarsRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if *m == nil {
 		*m = make(map[string]*MatchRegexp)
 	}
+	// iterate to merge multiple matchers into one
 	for d.Next() {
 		var first, second, third string
 		if !d.Args(&first, &second) {

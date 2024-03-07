@@ -78,19 +78,18 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    disable_openmetrics
 //	}
 func (m *Metrics) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		args := d.RemainingArgs()
-		if len(args) > 0 {
-			return d.ArgErr()
-		}
+	d.Next() // consume directive name
+	args := d.RemainingArgs()
+	if len(args) > 0 {
+		return d.ArgErr()
+	}
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "disable_openmetrics":
-				m.DisableOpenMetrics = true
-			default:
-				return d.Errf("unrecognized subdirective %q", d.Val())
-			}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "disable_openmetrics":
+			m.DisableOpenMetrics = true
+		default:
+			return d.Errf("unrecognized subdirective %q", d.Val())
 		}
 	}
 	return nil

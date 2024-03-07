@@ -7,7 +7,6 @@ import (
 )
 
 func TestDefaultSNI(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
@@ -107,7 +106,6 @@ func TestDefaultSNI(t *testing.T) {
 }
 
 func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
-
 	// arrange
 	tester := caddytest.NewTester(t)
 	tester.InitServer(` 

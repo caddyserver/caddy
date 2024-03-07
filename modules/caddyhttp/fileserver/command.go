@@ -39,7 +39,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
-		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--access-log] [--precompressed]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--reveal-symlinks] [--access-log] [--precompressed]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -62,6 +62,7 @@ respond with a file listing.`,
 			cmd.Flags().StringP("root", "r", "", "The path to the root of the site")
 			cmd.Flags().StringP("listen", "l", "", "The address to which to bind the listener")
 			cmd.Flags().BoolP("browse", "b", false, "Enable directory browsing")
+			cmd.Flags().BoolP("reveal-symlinks", "", false, "Show symlink paths when browse is enabled.")
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
 			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
@@ -91,12 +92,12 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
 	debug := fs.Bool("debug")
+	revealSymlinks := fs.Bool("reveal-symlinks")
 	compress := !fs.Bool("no-compress")
 	precompressed, err := fs.GetStringSlice("precompressed")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid precompressed flag: %v", err)
 	}
-
 	var handlers []json.RawMessage
 
 	if compress {
@@ -150,7 +151,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 
 	if browse {
-		handler.Browse = new(Browse)
+		handler.Browse = &Browse{RevealSymlinks: revealSymlinks}
 	}
 
 	handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "file_server", nil))

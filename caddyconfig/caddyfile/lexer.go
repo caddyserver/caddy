@@ -186,7 +186,7 @@ func (l *lexer) next() (bool, error) {
 			}
 
 			// check if we're done, i.e. that the last few characters are the marker
-			if len(val) > len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
+			if len(val) >= len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
 				// set the final value
 				val, err = l.finalizeHeredoc(val, heredocMarker)
 				if err != nil {
@@ -313,6 +313,11 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	// iterate over each line and strip the whitespace from the front
 	var out string
 	for lineNum, lineText := range lines[:len(lines)-1] {
+		if lineText == "" || lineText == "\r" {
+			out += "\n"
+			continue
+		}
+
 		// find an exact match for the padding
 		index := strings.Index(lineText, paddingToStrip)
 

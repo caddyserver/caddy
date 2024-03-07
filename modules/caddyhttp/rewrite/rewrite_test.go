@@ -333,7 +333,7 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
 			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
 		},
-		
+
 		{
 			rule:   Rewrite{PathRegexp: []*regexReplacer{{Find: "/{2,}", Replace: "/"}}},
 			input:  newRequest(t, "GET", "/foo//bar///baz?a=b//c"),
