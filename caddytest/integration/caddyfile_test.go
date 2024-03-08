@@ -569,6 +569,36 @@ func TestRenameAndOtherOps(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=taz&bar=baz")
 }
 
+func TestReplaceOps(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo bar baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
+}
+
+func TestReplaceAllOps(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query * bar baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar&baz=bar", 200, "baz=baz&foo=baz")
+}
+
 func TestUriOpsBlock(t *testing.T) {
 	tester := caddytest.NewTester(t)
 
