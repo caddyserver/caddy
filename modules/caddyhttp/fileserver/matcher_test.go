@@ -63,6 +63,12 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
+			path:         "/foo.txt?a=b",
+			expectedPath: "/foo.txt",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
 			path:         "/foodir",
 			expectedPath: "/foodir/",
 			expectedType: "directory",
