@@ -12,7 +12,7 @@ require (
 	github.com/caddyserver/certmagic v0.20.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.0.10
-	github.com/google/cel-go v0.15.1
+	github.com/google/cel-go v0.20.1
 	github.com/google/uuid v1.3.1
 	github.com/klauspost/compress v1.17.0
 	github.com/klauspost/cpuid/v2 v2.2.5
@@ -49,7 +49,7 @@ require (
 require (
 	cloud.google.com/go/iam v1.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.0 // indirect
-	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
 	github.com/golang/glog v1.1.2 // indirect

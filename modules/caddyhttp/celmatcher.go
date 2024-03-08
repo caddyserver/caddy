@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common"
+	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
@@ -36,7 +37,6 @@ import (
 	"github.com/google/cel-go/interpreter/functions"
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -473,8 +473,8 @@ func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions
 // The arguments are collected into a single list argument the following
 // function call returned: <funcName>(request, [args])
 func celMatcherStringListMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target *exprpb.Expr, args []*exprpb.Expr) (*exprpb.Expr, *common.Error) {
-		matchArgs := []*exprpb.Expr{}
+	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+		matchArgs := []ast.Expr{}
 		if len(args) == 0 {
 			return nil, &common.Error{
 				Message: "matcher requires at least one argument",
@@ -485,12 +485,12 @@ func celMatcherStringListMacroExpander(funcName string) parser.MacroExpander {
 				matchArgs = append(matchArgs, arg)
 			} else {
 				return nil, &common.Error{
-					Location: eh.OffsetLocation(arg.GetId()),
+					Location: eh.OffsetLocation(arg.ID()),
 					Message:  "matcher arguments must be string constants",
 				}
 			}
 		}
-		return eh.GlobalCall(funcName, eh.Ident("request"), eh.NewList(matchArgs...)), nil
+		return eh.NewCall(funcName, eh.NewIdent("request"), eh.NewList(matchArgs...)), nil
 	}
 }
 
@@ -499,17 +499,17 @@ func celMatcherStringListMacroExpander(funcName string) parser.MacroExpander {
 //
 // The following function call is returned: <funcName>(request, arg)
 func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target *exprpb.Expr, args []*exprpb.Expr) (*exprpb.Expr, *common.Error) {
+	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
 			return nil, &common.Error{
 				Message: "matcher requires one argument",
 			}
 		}
 		if isCELStringExpr(args[0]) {
-			return eh.GlobalCall(funcName, eh.Ident("request"), args[0]), nil
+			return eh.NewCall(funcName, eh.NewIdent("request"), args[0]), nil
 		}
 		return nil, &common.Error{
-			Location: eh.OffsetLocation(args[0].GetId()),
+			Location: eh.OffsetLocation(args[0].ID()),
 			Message:  "matcher argument must be a string literal",
 		}
 	}
@@ -520,47 +520,47 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 //
 // The following function call is returned: <funcName>(request, arg)
 func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target *exprpb.Expr, args []*exprpb.Expr) (*exprpb.Expr, *common.Error) {
+	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
 			return nil, &common.Error{
 				Message: "matcher requires a map literal argument",
 			}
 		}
 		arg := args[0]
-		switch arg.GetExprKind().(type) {
-		case *exprpb.Expr_StructExpr:
-			structExpr := arg.GetStructExpr()
-			if structExpr.GetMessageName() != "" {
+		switch arg.Kind() {
+		case ast.MapKind:
+			structExpr := arg.AsStruct()
+			if structExpr.TypeName() != "" {
 				return nil, &common.Error{
-					Location: eh.OffsetLocation(arg.GetId()),
+					Location: eh.OffsetLocation(arg.ID()),
 					Message: fmt.Sprintf(
 						"matcher input must be a map literal, not a %s",
-						structExpr.GetMessageName(),
+						structExpr.TypeName(),
 					),
 				}
 			}
-			for _, entry := range structExpr.GetEntries() {
-				isStringPlaceholder := isCELStringExpr(entry.GetMapKey())
+			for _, entry := range structExpr.Fields() {
+				isStringPlaceholder := isCELStringExpr(entry.AsMapEntry().Key())
 				if !isStringPlaceholder {
 					return nil, &common.Error{
-						Location: eh.OffsetLocation(entry.GetId()),
+						Location: eh.OffsetLocation(entry.ID()),
 						Message:  "matcher map keys must be string literals",
 					}
 				}
-				isStringListPlaceholder := isCELStringExpr(entry.GetValue()) ||
-					isCELStringListLiteral(entry.GetValue())
+				isStringListPlaceholder := isCELStringExpr(entry.AsStructField().Value()) ||
+					isCELStringListLiteral(entry.AsStructField().Value())
 				if !isStringListPlaceholder {
 					return nil, &common.Error{
-						Location: eh.OffsetLocation(entry.GetValue().GetId()),
+						Location: eh.OffsetLocation(entry.ID()),
 						Message:  "matcher map values must be string or list literals",
 					}
 				}
 			}
-			return eh.GlobalCall(funcName, eh.Ident("request"), arg), nil
+			return eh.NewCall(funcName, eh.NewIdent("request"), arg), nil
 		}
 
 		return nil, &common.Error{
-			Location: eh.OffsetLocation(arg.GetId()),
+			Location: eh.OffsetLocation(arg.ID()),
 			Message:  "matcher requires a map literal argument",
 		}
 	}
@@ -607,17 +607,16 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 }
 
 // isCELStringExpr indicates whether the expression is a supported string expression
-func isCELStringExpr(e *exprpb.Expr) bool {
+func isCELStringExpr(e ast.Expr) bool {
 	return isCELStringLiteral(e) || isCELCaddyPlaceholderCall(e) || isCELConcatCall(e)
 }
 
 // isCELStringLiteral returns whether the expression is a CEL string literal.
-func isCELStringLiteral(e *exprpb.Expr) bool {
-	switch e.GetExprKind().(type) {
-	case *exprpb.Expr_ConstExpr:
-		constant := e.GetConstExpr()
-		switch constant.GetConstantKind().(type) {
-		case *exprpb.Constant_StringValue:
+func isCELStringLiteral(e ast.Expr) bool {
+	switch e.Kind() {
+	case ast.LiteralKind:
+		switch e.AsLiteral().Type().TypeName() {
+		case types.StringType.TypeName():
 			return true
 		}
 	}
@@ -625,11 +624,10 @@ func isCELStringLiteral(e *exprpb.Expr) bool {
 }
 
 // isCELCaddyPlaceholderCall returns whether the expression is a caddy placeholder call.
-func isCELCaddyPlaceholderCall(e *exprpb.Expr) bool {
-	switch e.GetExprKind().(type) {
-	case *exprpb.Expr_CallExpr:
-		call := e.GetCallExpr()
-		if call.GetFunction() == "caddyPlaceholder" {
+func isCELCaddyPlaceholderCall(e ast.Expr) bool {
+	switch e.Kind() {
+	case ast.CallKind:
+		if e.AsCall().FunctionName() == "caddyPlaceholder" {
 			return true
 		}
 	}
@@ -638,17 +636,16 @@ func isCELCaddyPlaceholderCall(e *exprpb.Expr) bool {
 
 // isCELConcatCall tests whether the expression is a concat function (+) with string, placeholder, or
 // other concat call arguments.
-func isCELConcatCall(e *exprpb.Expr) bool {
-	switch e.GetExprKind().(type) {
-	case *exprpb.Expr_CallExpr:
-		call := e.GetCallExpr()
-		if call.GetTarget() != nil {
+func isCELConcatCall(e ast.Expr) bool {
+	switch e.Kind() {
+	case ast.CallKind:
+		if e.AsCall().Target() != nil {
 			return false
 		}
-		if call.GetFunction() != operators.Add {
+		if e.AsCall().FunctionName() != operators.Add {
 			return false
 		}
-		for _, arg := range call.GetArgs() {
+		for _, arg := range e.AsCall().Args() {
 			if !isCELStringExpr(arg) {
 				return false
 			}
@@ -660,11 +657,10 @@ func isCELConcatCall(e *exprpb.Expr) bool {
 
 // isCELStringListLiteral returns whether the expression resolves to a list literal
 // containing only string constants or a placeholder call.
-func isCELStringListLiteral(e *exprpb.Expr) bool {
-	switch e.GetExprKind().(type) {
-	case *exprpb.Expr_ListExpr:
-		list := e.GetListExpr()
-		for _, elem := range list.GetElements() {
+func isCELStringListLiteral(e ast.Expr) bool {
+	switch e.Kind() {
+	case ast.ListKind:
+		for _, elem := range e.AsList().Elements() {
 			if !isCELStringExpr(elem) {
 				return false
 			}
