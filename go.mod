@@ -41,7 +41,6 @@ require (
 	golang.org/x/net v0.21.0
 	golang.org/x/sync v0.5.0
 	golang.org/x/term v0.17.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20231120223509-83a465c0220f
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
