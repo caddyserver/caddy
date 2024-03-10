@@ -118,6 +118,12 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 		rep.re = re
 	}
 
+	for _, replacementOp := range rewr.Query.Replace {
+		err := replacementOp.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+		}
+	}
 	return nil
 }
 
@@ -491,15 +497,26 @@ type queryOps struct {
 	Add []queryOpsArguments `json:"add,omitempty"`
 
 	// Replaces query parameters.
-	Replace []queryOpsReplacement
+	Replace []*queryOpsReplacement
 
 	// Deletes a given query key by name.
 	Delete []string `json:"delete,omitempty"`
 }
 
+// Provision compiles the query replace operation regex.
+func (replacement *queryOpsReplacement) Provision(_ caddy.Context) error {
+	if replacement.SearchRegexp != "" {
+		re, err := regexp.Compile(replacement.SearchRegexp)
+		if err != nil {
+			return fmt.Errorf("replacement for query field '%s': %v", replacement.Key, err)
+		}
+		replacement.re = re
+	}
+	return nil
+}
+
 func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 	query := r.URL.Query()
-
 	for _, renameParam := range q.Rename {
 		key := repl.ReplaceAll(renameParam.Key, "")
 		val := repl.ReplaceAll(renameParam.Val, "")
