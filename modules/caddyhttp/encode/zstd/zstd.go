@@ -29,6 +29,7 @@ func init() {
 // Zstd can create Zstandard encoders.
 type Zstd struct {
 	// Compression level refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression
+	// List of all available levels: fastest, default, better, best
 	Level zstd.EncoderLevel `json:"level,omitempty"`
 }
 
