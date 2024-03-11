@@ -232,8 +232,8 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 	return enc.Matcher.Match(rw.statusCode, rw.Header())
 }
 
-// FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying ResponseWriterWrapper
-// until headers were written.
+// FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
+ // ResponseWriterWrapper until headers were written.
 func (rw *responseWriter) FlushError() error {
 	if !rw.wroteHeader {
 		// flushing the underlying ResponseWriter will write header and status code,
