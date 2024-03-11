@@ -28,9 +28,10 @@ func init() {
 
 // Zstd can create Zstandard encoders.
 type Zstd struct {
-	// Compression level refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression
 	// List of all available levels: fastest, default, better, best
-	Level zstd.EncoderLevel `json:"level,omitempty"`
+	Level string `json:"level,omitempty"`
+	// Compression level refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression
+	level zstd.EncoderLevel
 }
 
 // CaddyModule returns the Caddy module information.
@@ -48,9 +49,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return nil
 	}
 	levelStr := d.Val()
-	ok, level := zstd.EncoderLevelFromString(levelStr)
-
-	if !ok {
+	if ok, _ := zstd.EncoderLevelFromString(levelStr); !ok {
 		return d.Errf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
 			zstd.SpeedFastest,
 			zstd.SpeedDefault,
@@ -59,7 +58,13 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		)
 	}
 
-	z.Level = level
+	z.Level = levelStr
+	return nil
+}
+
+// Provision provisions z's configuration.
+func (z *Zstd) Provision(ctx caddy.Context) error {
+	_, z.level = zstd.EncoderLevelFromString(z.Level)
 	return nil
 }
 
@@ -77,7 +82,7 @@ func (z Zstd) NewEncoder() encode.Encoder {
 		zstd.WithWindowSize(128<<10),
 		zstd.WithEncoderConcurrency(1),
 		zstd.WithZeroFrames(true),
-		zstd.WithEncoderLevel(z.Level),
+		zstd.WithEncoderLevel(z.level),
 	)
 	return writer
 }
@@ -86,4 +91,5 @@ func (z Zstd) NewEncoder() encode.Encoder {
 var (
 	_ encode.Encoding       = (*Zstd)(nil)
 	_ caddyfile.Unmarshaler = (*Zstd)(nil)
+	_ caddy.Provisioner     = (*Zstd)(nil)
 )
