@@ -497,7 +497,7 @@ type queryOps struct {
 	Add []queryOpsArguments `json:"add,omitempty"`
 
 	// Replaces query parameters.
-	Replace []*queryOpsReplacement
+	Replace []*queryOpsReplacement `json:"replace,omitempty"`
 
 	// Deletes a given query key by name.
 	Delete []string `json:"delete,omitempty"`
