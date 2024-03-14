@@ -535,6 +535,7 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 			}
 			return eh.NewCall(funcName, eh.NewIdent("request"), arg), nil
 		case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.SelectKind:
+			// appeasing the linter :)
 		}
 
 		return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
