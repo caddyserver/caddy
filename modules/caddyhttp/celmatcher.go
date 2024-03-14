@@ -534,11 +534,10 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 				}
 			}
 			return eh.NewCall(funcName, eh.NewIdent("request"), arg), nil
-		default:
-			return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
+		case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.SelectKind:
 		}
 
-		// return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
+		return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
 	}
 }
 
