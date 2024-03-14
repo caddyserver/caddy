@@ -596,6 +596,8 @@ func isCELStringLiteral(e ast.Expr) bool {
 		case types.StringType:
 			return true
 		}
+	case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
 	}
 	return false
 }
@@ -608,6 +610,8 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 		if call.FunctionName() == "caddyPlaceholder" {
 			return true
 		}
+	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
 	}
 	return false
 }
@@ -630,6 +634,8 @@ func isCELConcatCall(e ast.Expr) bool {
 			}
 		}
 		return true
+	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
 	}
 	return false
 }
@@ -646,6 +652,8 @@ func isCELStringListLiteral(e ast.Expr) bool {
 			}
 		}
 		return true
+	case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
 	}
 	return false
 }

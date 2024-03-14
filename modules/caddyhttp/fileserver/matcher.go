@@ -653,6 +653,8 @@ func isCELConcatCall(e ast.Expr) bool {
 			}
 		}
 		return true
+	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
 	}
 	return false
 }
