@@ -472,22 +472,17 @@ func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions
 //
 // The arguments are collected into a single list argument the following
 // function call returned: <funcName>(request, [args])
-func celMatcherStringListMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+func celMatcherStringListMacroExpander(funcName string) cel.MacroFactory {
+	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		matchArgs := []ast.Expr{}
 		if len(args) == 0 {
-			return nil, &common.Error{
-				Message: "matcher requires at least one argument",
-			}
+			return nil, eh.NewError(0, "matcher requires at least one argument")
 		}
 		for _, arg := range args {
 			if isCELStringExpr(arg) {
 				matchArgs = append(matchArgs, arg)
 			} else {
-				return nil, &common.Error{
-					Location: eh.OffsetLocation(arg.ID()),
-					Message:  "matcher arguments must be string constants",
-				}
+				return nil, eh.NewError(arg.ID(), "matcher arguments must be string constants")
 			}
 		}
 		return eh.NewCall(funcName, eh.NewIdent("request"), eh.NewList(matchArgs...)), nil
@@ -499,19 +494,14 @@ func celMatcherStringListMacroExpander(funcName string) parser.MacroExpander {
 //
 // The following function call is returned: <funcName>(request, arg)
 func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
-			return nil, &common.Error{
-				Message: "matcher requires one argument",
-			}
+			return nil, eh.NewError(0, "matcher requires one argument")
 		}
 		if isCELStringExpr(args[0]) {
 			return eh.NewCall(funcName, eh.NewIdent("request"), args[0]), nil
 		}
-		return nil, &common.Error{
-			Location: eh.OffsetLocation(args[0].ID()),
-			Message:  "matcher argument must be a string literal",
-		}
+		return nil, eh.NewError(args[0].ID(), "matcher argument must be a string literal")
 	}
 }
 
@@ -520,49 +510,35 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 //
 // The following function call is returned: <funcName>(request, arg)
 func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
-	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
-			return nil, &common.Error{
-				Message: "matcher requires a map literal argument",
-			}
+			return nil, eh.NewError(0, "matcher requires a map literal argument")
 		}
 		arg := args[0]
 
 		switch arg.Kind() {
 		case ast.StructKind:
-			return nil, &common.Error{
-				Location: eh.OffsetLocation(arg.ID()),
-				Message: fmt.Sprintf(
-					"matcher input must be a map literal, not a %s",
-					arg.AsStruct().TypeName(),
-				),
-			}
+			return nil, eh.NewError(arg.ID(),
+				fmt.Sprintf("matcher input must be a map literal, not a %s", arg.AsStruct().TypeName()))
 		case ast.MapKind:
 			mapExpr := arg.AsMap()
 			for _, entry := range mapExpr.Entries() {
 				isStringPlaceholder := isCELStringExpr(entry.AsMapEntry().Key())
 				if !isStringPlaceholder {
-					return nil, &common.Error{
-						Location: eh.OffsetLocation(entry.ID()),
-						Message:  "matcher map keys must be string literals",
-					}
+					return nil, eh.NewError(entry.ID(), "matcher map keys must be string literals")
 				}
 				isStringListPlaceholder := isCELStringExpr(entry.AsMapEntry().Value()) ||
 					isCELStringListLiteral(entry.AsMapEntry().Value())
 				if !isStringListPlaceholder {
-					return nil, &common.Error{
-						Location: eh.OffsetLocation(entry.AsMapEntry().Value().ID()),
-						Message:  "matcher map values must be string or list literals",
-					}
+					return nil, eh.NewError(entry.AsMapEntry().Value().ID(), "matcher map values must be string or list literals")
 				}
 			}
 			return eh.NewCall(funcName, eh.NewIdent("request"), arg), nil
+		default:
+			return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
 		}
 
-		return nil, &common.Error{
-			Location: eh.OffsetLocation(arg.ID()),
-			Message:  "matcher requires a map literal argument",
-		}
+		// return nil, eh.NewError(arg.ID(), "matcher requires a map literal argument")
 	}
 }
 
