@@ -65,8 +65,11 @@ func (st ServerType) Setup(
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
 	for _, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
-			if j == 0 && strings.HasPrefix(k, "@") {
-				return nil, warnings, fmt.Errorf("cannot define a matcher outside of a site block: '%s'", k)
+			if j == 0 && strings.HasPrefix(k.Text, "@") {
+				return nil, warnings, fmt.Errorf("%s:%d: cannot define a matcher outside of a site block: '%s'", k.File, k.Line, k.Text)
+			}
+			if _, ok := registeredDirectives[k.Text]; ok {
+				return nil, warnings, fmt.Errorf("%s:%d: parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k.File, k.Line, k.Text)
 			}
 		}
 		originalServerBlocks = append(originalServerBlocks, serverBlock{
@@ -490,7 +493,7 @@ func (ServerType) extractNamedRoutes(
 			route.HandlersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", subroute.CaddyModule().ID.Name(), h.warnings)}
 		}
 
-		namedRoutes[sb.block.Keys[0]] = &route
+		namedRoutes[sb.block.GetKeysText()[0]] = &route
 	}
 	options["named_routes"] = namedRoutes
 
@@ -528,12 +531,12 @@ func (st *ServerType) serversFromPairings(
 		// address), otherwise their routes will improperly be added
 		// to the same server (see issue #4635)
 		for j, sblock1 := range p.serverBlocks {
-			for _, key := range sblock1.block.Keys {
+			for _, key := range sblock1.block.GetKeysText() {
 				for k, sblock2 := range p.serverBlocks {
 					if k == j {
 						continue
 					}
-					if sliceContains(sblock2.block.Keys, key) {
+					if sliceContains(sblock2.block.GetKeysText(), key) {
 						return nil, fmt.Errorf("ambiguous site definition: %s", key)
 					}
 				}

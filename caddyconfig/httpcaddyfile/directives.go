@@ -27,23 +27,32 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// directiveOrder specifies the order
-// to apply directives in HTTP routes.
+// defaultDirectiveOrder specifies the default order
+// to apply directives in HTTP routes. This must only
+// consist of directives that are included in Caddy's
+// standard distribution.
 //
-// The root directive goes first in case rewrites or
-// redirects depend on existence of files, i.e. the
-// file matcher, which must know the root first.
+// e.g. The 'root' directive goes near the start in
+// case rewrites or redirects depend on existence of
+// files, i.e. the file matcher, which must know the
+// root first.
 //
-// The header directive goes second so that headers
-// can be manipulated before doing redirects.
-var directiveOrder = []string{
+// e.g. The 'header' directive goes before 'redir' so
+// that headers can be manipulated before doing redirects.
+//
+// e.g. The 'respond' directive is near the end because it
+// writes a response and terminates the middleware chain.
+var defaultDirectiveOrder = []string{
 	"tracing",
 
+	// set variables that may be used by other directives
 	"map",
 	"vars",
 	"fs",
 	"root",
-	"skip_log",
+	"log_append",
+	"skip_log", // TODO: deprecated, renamed to log_skip
+	"log_skip",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
@@ -58,7 +67,8 @@ var directiveOrder = []string{
 	"try_files",
 
 	// middleware handlers; some wrap responses
-	"basicauth",
+	"basicauth", // TODO: deprecated, renamed to basic_auth
+	"basic_auth",
 	"forward_auth",
 	"request_header",
 	"encode",
@@ -82,6 +92,11 @@ var directiveOrder = []string{
 	"file_server",
 	"acme_server",
 }
+
+// directiveOrder specifies the order to apply directives
+// in HTTP routes, after being modified by either the
+// plugins or by the user via the "order" global option.
+var directiveOrder = defaultDirectiveOrder
 
 // directiveIsOrdered returns true if dir is
 // a known, ordered (sorted) directive.
@@ -127,6 +142,58 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 
 		return h.NewRoute(matcherSet, val), nil
 	})
+}
+
+// RegisterDirectiveOrder registers the default order for a
+// directive from a plugin.
+//
+// This is useful when a plugin has a well-understood place
+// it should run in the middleware pipeline, and it allows
+// users to avoid having to define the order themselves.
+//
+// The directive dir may be placed in the position relative
+// to ('before' or 'after') a directive included in Caddy's
+// standard distribution. It cannot be relative to another
+// plugin's directive.
+//
+// EXPERIMENTAL: This API may change or be removed.
+func RegisterDirectiveOrder(dir string, position Positional, standardDir string) {
+	// check if directive was already ordered
+	if directiveIsOrdered(dir) {
+		panic("directive '" + dir + "' already ordered")
+	}
+
+	if position != Before && position != After {
+		panic("the 2nd argument must be either 'before' or 'after', got '" + position + "'")
+	}
+
+	// check if directive exists in standard distribution, since
+	// we can't allow plugins to depend on one another; we can't
+	// guarantee the order that plugins are loaded in.
+	foundStandardDir := false
+	for _, d := range defaultDirectiveOrder {
+		if d == standardDir {
+			foundStandardDir = true
+		}
+	}
+	if !foundStandardDir {
+		panic("the 3rd argument '" + standardDir + "' must be a directive that exists in the standard distribution of Caddy")
+	}
+
+	// insert directive into proper position
+	newOrder := directiveOrder
+	for i, d := range newOrder {
+		if d != standardDir {
+			continue
+		}
+		if position == Before {
+			newOrder = append(newOrder[:i], append([]string{dir}, newOrder[i:]...)...)
+		} else if position == After {
+			newOrder = append(newOrder[:i+1], append([]string{dir}, newOrder[i+1:]...)...)
+		}
+		break
+	}
+	directiveOrder = newOrder
 }
 
 // RegisterGlobalOption registers a unique global option opt with
@@ -552,6 +619,16 @@ func (sb serverBlock) isAllHTTP() bool {
 	}
 	return true
 }
+
+// Positional are the supported modes for ordering directives.
+type Positional string
+
+const (
+	Before Positional = "before"
+	After  Positional = "after"
+	First  Positional = "first"
+	Last   Positional = "last"
+)
 
 type (
 	// UnmarshalFunc is a function which can unmarshal Caddyfile

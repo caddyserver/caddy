@@ -60,11 +60,11 @@ var (
 type Tester struct {
 	Client       *http.Client
 	configLoaded bool
-	t            *testing.T
+	t            testing.TB
 }
 
 // NewTester will create a new testing client with an attached cookie jar
-func NewTester(t *testing.T) *Tester {
+func NewTester(t testing.TB) *Tester {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("failed to create cookiejar: %s", err)
@@ -229,7 +229,7 @@ const initConfig = `{
 
 // validateTestPrerequisites ensures the certificates are available in the
 // designated path and Caddy sub-process is running.
-func validateTestPrerequisites(t *testing.T) error {
+func validateTestPrerequisites(t testing.TB) error {
 	// check certificates are found
 	for _, certName := range Default.Certifcates {
 		if _, err := os.Stat(getIntegrationDir() + certName); errors.Is(err, fs.ErrNotExist) {
@@ -373,7 +373,7 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 }
 
 // CompareAdapt adapts a config and then compares it against an expected result
-func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, expectedResponse string) bool {
+func CompareAdapt(t testing.TB, filename, rawConfig string, adapterName string, expectedResponse string) bool {
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
 		t.Logf("unrecognized config adapter '%s'", adapterName)
@@ -432,7 +432,7 @@ func CompareAdapt(t *testing.T, filename, rawConfig string, adapterName string, 
 }
 
 // AssertAdapt adapts a config and then tests it against an expected result
-func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedResponse string) {
+func AssertAdapt(t testing.TB, rawConfig string, adapterName string, expectedResponse string) {
 	ok := CompareAdapt(t, "Caddyfile", rawConfig, adapterName, expectedResponse)
 	if !ok {
 		t.Fail()
@@ -441,7 +441,7 @@ func AssertAdapt(t *testing.T, rawConfig string, adapterName string, expectedRes
 
 // Generic request functions
 
-func applyHeaders(t *testing.T, req *http.Request, requestHeaders []string) {
+func applyHeaders(t testing.TB, req *http.Request, requestHeaders []string) {
 	requestContentType := ""
 	for _, requestHeader := range requestHeaders {
 		arr := strings.SplitAfterN(requestHeader, ":", 2)

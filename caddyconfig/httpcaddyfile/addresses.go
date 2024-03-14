@@ -88,15 +88,15 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 		// will be served by them; this has the effect of treating each
 		// key of a server block as its own, but without having to repeat its
 		// contents in cases where multiple keys really can be served together
-		addrToKeys := make(map[string][]string)
+		addrToKeys := make(map[string][]caddyfile.Token)
 		for j, key := range sblock.block.Keys {
 			// a key can have multiple listener addresses if there are multiple
 			// arguments to the 'bind' directive (although they will all have
 			// the same port, since the port is defined by the key or is implicit
 			// through automatic HTTPS)
-			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key, options)
+			addrs, err := st.listenerAddrsForServerBlockKey(sblock, key.Text, options)
 			if err != nil {
-				return nil, fmt.Errorf("server block %d, key %d (%s): determining listener address: %v", i, j, key, err)
+				return nil, fmt.Errorf("server block %d, key %d (%s): determining listener address: %v", i, j, key.Text, err)
 			}
 
 			// associate this key with each listener address it is served on
@@ -122,9 +122,9 @@ func (st *ServerType) mapAddressToServerBlocks(originalServerBlocks []serverBloc
 			// parse keys so that we only have to do it once
 			parsedKeys := make([]Address, 0, len(keys))
 			for _, key := range keys {
-				addr, err := ParseAddress(key)
+				addr, err := ParseAddress(key.Text)
 				if err != nil {
-					return nil, fmt.Errorf("parsing key '%s': %v", key, err)
+					return nil, fmt.Errorf("parsing key '%s': %v", key.Text, err)
 				}
 				parsedKeys = append(parsedKeys, addr.Normalize())
 			}

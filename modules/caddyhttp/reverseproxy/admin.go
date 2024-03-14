@@ -32,7 +32,7 @@ func init() {
 // reverse proxy upstreams in the pool.
 type adminUpstreams struct{}
 
-// upstreamResults holds the status of a particular upstream
+// upstreamStatus holds the status of a particular upstream
 type upstreamStatus struct {
 	Address     string `json:"address"`
 	NumRequests int    `json:"num_requests"`

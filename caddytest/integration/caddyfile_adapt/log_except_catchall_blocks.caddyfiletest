@@ -1,7 +1,7 @@
 http://localhost:2020 {
 	log
-	skip_log /first-hidden*
-	skip_log /second-hidden*
+	log_skip /first-hidden*
+	log_skip /second-hidden*
 	respond 200
 }
 
@@ -34,7 +34,7 @@ http://localhost:2020 {
 											"handle": [
 												{
 													"handler": "vars",
-													"skip_log": true
+													"log_skip": true
 												}
 											],
 											"match": [
@@ -49,7 +49,7 @@ http://localhost:2020 {
 											"handle": [
 												{
 													"handler": "vars",
-													"skip_log": true
+													"log_skip": true
 												}
 											],
 											"match": [

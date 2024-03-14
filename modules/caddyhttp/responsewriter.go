@@ -230,6 +230,16 @@ func (rr *responseRecorder) WriteResponse() error {
 	return err
 }
 
+// FlushError will suppress actual flushing if the response is buffered. See:
+// https://github.com/caddyserver/caddy/issues/6144
+func (rr *responseRecorder) FlushError() error {
+	if rr.stream {
+		//nolint:bodyclose
+		return http.NewResponseController(rr.ResponseWriterWrapper).Flush()
+	}
+	return nil
+}
+
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
