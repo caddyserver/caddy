@@ -335,6 +335,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Body = bodyReader
 		}
 
+		// should always be true, private interface can only be referenced in the same package
+		if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
+			setReadSizer.setReadSize(&bodyReader.Length)
+		}
+
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
