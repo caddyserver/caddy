@@ -715,7 +715,7 @@ func (s *Server) logRequest(
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
 	// this request may be flagged as omitted from the logs
-	if skipLog, ok := GetVar(r.Context(), SkipLogVar).(bool); ok && skipLog {
+	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
 		return
 	}
 

@@ -145,9 +145,36 @@ func (fe *FilterEncoder) ConfigureDefaultFormat(wo caddy.WriterOpener) error {
 //	            <filter options>
 //	        }
 //	    }
+//	    <field> <filter> {
+//	        <filter options>
+//	    }
 //	}
 func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume encoder name
+
+	// parse a field
+	parseField := func() error {
+		if fe.FieldsRaw == nil {
+			fe.FieldsRaw = make(map[string]json.RawMessage)
+		}
+		field := d.Val()
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		filterName := d.Val()
+		moduleID := "caddy.logging.encoders.filter." + filterName
+		unm, err := caddyfile.UnmarshalModule(d, moduleID)
+		if err != nil {
+			return err
+		}
+		filter, ok := unm.(LogFieldFilter)
+		if !ok {
+			return d.Errf("module %s (%T) is not a logging.LogFieldFilter", moduleID, unm)
+		}
+		fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filter, "filter", filterName, nil)
+		return nil
+	}
+
 	for d.NextBlock(0) {
 		switch d.Val() {
 		case "wrap":
@@ -168,28 +195,19 @@ func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		case "fields":
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				field := d.Val()
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				filterName := d.Val()
-				moduleID := "caddy.logging.encoders.filter." + filterName
-				unm, err := caddyfile.UnmarshalModule(d, moduleID)
+				err := parseField()
 				if err != nil {
 					return err
 				}
-				filter, ok := unm.(LogFieldFilter)
-				if !ok {
-					return d.Errf("module %s (%T) is not a logging.LogFieldFilter", moduleID, unm)
-				}
-				if fe.FieldsRaw == nil {
-					fe.FieldsRaw = make(map[string]json.RawMessage)
-				}
-				fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filter, "filter", filterName, nil)
 			}
 
 		default:
-			return d.Errf("unrecognized subdirective %s", d.Val())
+			// if unknown, assume it's a field so that
+			// the config can be flat
+			err := parseField()
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

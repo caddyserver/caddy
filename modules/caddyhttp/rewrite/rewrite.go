@@ -89,6 +89,9 @@ type Rewrite struct {
 	// Performs regular expression replacements on the URI path.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
+	// Mutates the query string of the URI.
+	Query *queryOps `json:"query,omitempty"`
+
 	logger *zap.Logger
 }
 
@@ -267,6 +270,11 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// regular expression replacements on the path
 	for _, rep := range rewr.PathRegexp {
 		rep.do(r, repl)
+	}
+
+	// apply query operations
+	if rewr.Query != nil {
+		rewr.Query.do(r, repl)
 	}
 
 	// update the encoded copy of the URI
@@ -468,6 +476,74 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	if req.URL.RawPath == req.URL.Path {
 		req.URL.RawPath = ""
 	}
+}
+
+// queryOps describes the operations to perform on query keys: add, set, rename and delete.
+type queryOps struct {
+	// Renames a query key from Key to Val, without affecting the value.
+	Rename []queryOpsArguments `json:"rename,omitempty"`
+
+	// Sets query parameters; overwrites a query key with the given value.
+	Set []queryOpsArguments `json:"set,omitempty"`
+
+	// Adds query parameters; does not overwrite an existing query field,
+	// and only appends an additional value for that key if any already exist.
+	Add []queryOpsArguments `json:"add,omitempty"`
+
+	// Deletes a given query key by name.
+	Delete []string `json:"delete,omitempty"`
+}
+
+func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
+	query := r.URL.Query()
+
+	for _, renameParam := range q.Rename {
+		key := repl.ReplaceAll(renameParam.Key, "")
+		val := repl.ReplaceAll(renameParam.Val, "")
+		if key == "" || val == "" {
+			continue
+		}
+		query[val] = query[key]
+		delete(query, key)
+	}
+
+	for _, setParam := range q.Set {
+		key := repl.ReplaceAll(setParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(setParam.Val, "")
+		query[key] = []string{val}
+	}
+
+	for _, addParam := range q.Add {
+		key := repl.ReplaceAll(addParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(addParam.Val, "")
+		query[key] = append(query[key], val)
+	}
+
+	for _, deleteParam := range q.Delete {
+		param := repl.ReplaceAll(deleteParam, "")
+		if param == "" {
+			continue
+		}
+		delete(query, param)
+	}
+
+	r.URL.RawQuery = query.Encode()
+}
+
+type queryOpsArguments struct {
+	// A key in the query string. Note that query string keys may appear multiple times.
+	Key string `json:"key,omitempty"`
+
+	// The value for the given operation; for add and set, this is
+	// simply the value of the query, and for rename this is the
+	// query key to rename to.
+	Val string `json:"val,omitempty"`
 }
 
 // Interface guard
