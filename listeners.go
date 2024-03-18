@@ -503,43 +503,6 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 	}, nil
 }
 
-// DEPRECATED: Use NetworkAddress.ListenQUIC instead. This function will likely be changed or removed in the future.
-// TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
-func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
-	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
-
-	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		sqs := newSharedQUICState(tlsConf, activeRequests)
-		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
-		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		tr := &quic.Transport{
-			Conn:                ln,
-			VerifySourceAddress: func(net.Addr) bool { return sqs.getActiveRequests() > 1000 },
-		}
-		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
-		if err != nil {
-			return nil, err
-		}
-		// TODO: figure out when to close the listener and the transport
-		return &sharedQuicListener{EarlyListener: earlyLn, sqs: sqs, key: lnKey}, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	sql := sharedEarlyListener.(*sharedQuicListener)
-	// add current tls.Config and request counter to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
-	// and the request counter will reflect current http server
-	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
-
-	return &fakeCloseQuicListener{
-		sharedQuicListener: sql,
-		context:            ctx,
-		contextCancel:      cancel,
-	}, nil
-}
-
 // ListenerUsage returns the current usage count of the given listener address.
 func ListenerUsage(network, addr string) int {
 	count, _ := listenerPool.References(listenerKey(network, addr))
