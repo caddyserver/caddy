@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -405,42 +404,6 @@ func JoinNetworkAddress(network, host, port string) string {
 		a += net.JoinHostPort(host, port)
 	}
 	return a
-}
-
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func Listen(network, addr string) (net.Listener, error) {
-	// a 0 timeout means Go uses its default
-	return ListenTimeout(network, addr, 0)
-}
-
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
-	netAddr, err := ParseNetworkAddress(JoinNetworkAddress(network, addr, ""))
-	if err != nil {
-		return nil, err
-	}
-
-	ln, err := netAddr.Listen(context.TODO(), 0, net.ListenConfig{KeepAlive: keepalivePeriod})
-	if err != nil {
-		return nil, err
-	}
-
-	return ln.(net.Listener), nil
-}
-
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func ListenPacket(network, addr string) (net.PacketConn, error) {
-	netAddr, err := ParseNetworkAddress(JoinNetworkAddress(network, addr, ""))
-	if err != nil {
-		return nil, err
-	}
-
-	ln, err := netAddr.Listen(context.TODO(), 0, net.ListenConfig{})
-	if err != nil {
-		return nil, err
-	}
-
-	return ln.(net.PacketConn), nil
 }
 
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
