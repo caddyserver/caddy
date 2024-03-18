@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"golang.org/x/time/rate"
 	"io"
 	"io/fs"
 	"net"
@@ -34,6 +33,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
