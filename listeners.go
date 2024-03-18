@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"golang.org/x/time/rate"
 	"io"
 	"io/fs"
 	"net"
@@ -472,9 +473,11 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		// Require clients to verify their source address when we're handling more than 256 handshakes per second.
+		limiter := rate.NewLimiter(256, 256)
 		tr := &quic.Transport{
 			Conn:                h3ln,
-			VerifySourceAddress: func(addr net.Addr) bool { return sqs.getActiveRequests() > 1000 },
+			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
 		}
 		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
 		if err != nil {
