@@ -493,8 +493,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 	}
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
-	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
-	// and the request counter will reflect current http server
+	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
 	ctx, cancel := sql.sqs.addState(tlsConf)
 
 	return &fakeCloseQuicListener{
@@ -542,7 +541,7 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 }
 
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
-// so that when cancelled, the active tls.Config and request counter will change
+// so that when cancelled, the active tls.Config will change
 func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
 	sqs.rmu.Lock()
 	defer sqs.rmu.Unlock()
@@ -560,7 +559,7 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, co
 
 		delete(sqs.tlsConfs, tlsConfig)
 		if sqs.activeTlsConf == tlsConfig {
-			// select another tls.Config and request counter, if there is none,
+			// select another tls.Config, if there is none,
 			// related sharedQuicListener will be destroyed anyway
 			for tc := range sqs.tlsConfs {
 				sqs.activeTlsConf = tc
