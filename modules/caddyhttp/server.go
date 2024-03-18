@@ -27,7 +27,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -43,8 +42,6 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
-	activeRequests int64 // accessed atomically
-
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges. Listener addresses must
@@ -274,10 +271,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
-		// keep track of active requests for QUIC transport purposes
-		atomic.AddInt64(&s.activeRequests, 1)
-		defer atomic.AddInt64(&s.activeRequests, -1)
-
 		if r.ProtoMajor < 3 {
 			err := s.h3server.SetQuicHeaders(w.Header())
 			if err != nil {
@@ -567,7 +560,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	addr.Network = getHTTP3Network(addr.Network)
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, &s.activeRequests)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
