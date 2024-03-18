@@ -473,8 +473,9 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		// Require clients to verify their source address when we're handling more than 256 handshakes per second.
-		limiter := rate.NewLimiter(256, 256)
+		// Require clients to verify their source address when we're handling more than 1000 handshakes per second.
+		// TODO: make tunable?
+		limiter := rate.NewLimiter(1000, 1000)
 		tr := &quic.Transport{
 			Conn:                h3ln,
 			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
