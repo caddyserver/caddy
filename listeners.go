@@ -472,16 +472,15 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(h3ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
-			Allow0RTT: true,
-			RequireAddressValidation: func(clientAddr net.Addr) bool {
-				// TODO: make tunable?
-				return sqs.getActiveRequests() > 1000
-			},
-		})
+		tr := &quic.Transport{
+			Conn:                h3ln,
+			VerifySourceAddress: func(addr net.Addr) bool { return sqs.getActiveRequests() > 1000 },
+		}
+		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
 		if err != nil {
 			return nil, err
 		}
+		// TODO: figure out when to close the listener and the transport
 		// using the original net.PacketConn to close them properly
 		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqs: sqs, key: lnKey}, nil
 	})
@@ -511,16 +510,15 @@ func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
-			Allow0RTT: true,
-			RequireAddressValidation: func(clientAddr net.Addr) bool {
-				// TODO: make tunable?
-				return sqs.getActiveRequests() > 1000
-			},
-		})
+		tr := &quic.Transport{
+			Conn:                ln,
+			VerifySourceAddress: func(net.Addr) bool { return sqs.getActiveRequests() > 1000 },
+		}
+		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
 		if err != nil {
 			return nil, err
 		}
+		// TODO: figure out when to close the listener and the transport
 		return &sharedQuicListener{EarlyListener: earlyLn, sqs: sqs, key: lnKey}, nil
 	})
 	if err != nil {
