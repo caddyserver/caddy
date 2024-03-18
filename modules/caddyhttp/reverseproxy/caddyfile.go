@@ -907,6 +907,7 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    read_buffer             <size>
 //	    write_buffer            <size>
 //	    max_response_header     <size>
+//	    forward_proxy_url       <url>
 //	    dial_timeout            <duration>
 //	    dial_fallback_delay     <duration>
 //	    response_header_timeout <duration>
@@ -993,6 +994,12 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			default:
 				return d.Errf("invalid proxy protocol version '%s'", proxyProtocol)
 			}
+
+		case "forward_proxy_url":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.ForwardProxyURL = d.Val()
 
 		case "dial_timeout":
 			if !d.NextArg() {

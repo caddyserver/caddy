@@ -23,6 +23,7 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -70,6 +71,22 @@ type HTTPTransport struct {
 	// If non-empty, which PROXY protocol version to send when
 	// connecting to an upstream. Default: off.
 	ProxyProtocol string `json:"proxy_protocol,omitempty"`
+
+	// URL to the server that the HTTP transport will use to proxy
+	// requests to the upstream. See http.Transport.Proxy for
+	// information regarding supported protocols. This value takes
+	// precedence over `HTTP_PROXY`, etc.
+	//
+	// Providing a value to this parameter results in
+	// requests flowing through the reverse_proxy in the following
+	// way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  forward_proxy_url -> upstream
+	//
+	// Default: http.ProxyFromEnvironment
+	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
 	// an upstream. Default: `3s`.
@@ -265,8 +282,21 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		return conn, nil
 	}
 
+	// negotiate any HTTP/SOCKS proxy for the HTTP transport
+	var proxy func(*http.Request) (*url.URL, error)
+	if h.ForwardProxyURL != "" {
+		pUrl, err := url.Parse(h.ForwardProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
+		}
+		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
+		proxy = http.ProxyURL(pUrl)
+	} else {
+		proxy = http.ProxyFromEnvironment
+	}
+
 	rt := &http.Transport{
-		Proxy:                  http.ProxyFromEnvironment,
+		Proxy:                  proxy,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
