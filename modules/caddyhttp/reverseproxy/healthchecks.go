@@ -389,7 +389,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	markUnhealthy := func() {
-		// count failures
+		// increment failures and then check if it has reached the threshold to mark unhealthy
 		err := upstream.Host.countHealthFail(1)
 		if err != nil {
 			h.HealthChecks.Active.logger.Error("could not count active health failure",
@@ -401,12 +401,13 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+				upstream.Host.resetHealth()
 			}
 		}
 	}
 
 	markHealthy := func() {
-		// count passes
+		// increment passes and then check if it has reached the threshold to be healthy
 		err := upstream.Host.countHealthPass(1)
 		if err != nil {
 			h.HealthChecks.Active.logger.Error("could not count active health pass",
@@ -417,6 +418,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		if upstream.Host.HealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
+				upstream.Host.resetHealth()
 			}
 		}
 	}
