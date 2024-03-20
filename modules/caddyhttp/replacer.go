@@ -119,6 +119,20 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return port, true
 			case "http.request.hostport":
 				return req.Host, true
+			case "http.request.local":
+				localAddr, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
+				return localAddr.String(), true
+			case "http.request.local.host":
+				localAddr, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
+				host, _, _ := net.SplitHostPort(localAddr.String())
+				return host, true
+			case "http.request.local.port":
+				localAddr, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
+				_, port, _ := net.SplitHostPort(localAddr.String())
+				if portNum, err := strconv.Atoi(port); err == nil {
+					return portNum, true
+				}
+				return port, true
 			case "http.request.remote":
 				return req.RemoteAddr, true
 			case "http.request.remote.host":
