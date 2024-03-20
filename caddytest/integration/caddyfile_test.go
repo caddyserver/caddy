@@ -517,6 +517,25 @@ func TestUriOps(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
 }
 
+// Tests the `http.request.local.port` placeholder.
+// We don't test the very similar `http.request.local.host` placeholder,
+// because depending on the host the test is running on, localhost might
+// refer to 127.0.0.1 or ::1.
+// TODO: Test each http version separately (especially http/3)
+func TestHttpRequestLocalPortPlaceholder(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	respond "{http.request.local.port}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", 200, "9080")
+}
+
 func TestSetThenAddQueryParams(t *testing.T) {
 	tester := caddytest.NewTester(t)
 
