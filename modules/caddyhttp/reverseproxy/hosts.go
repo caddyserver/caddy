@@ -138,8 +138,8 @@ func (u *Upstream) fillHost() {
 type Host struct {
 	numRequests  int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
 	fails        int64
-	healthPasses int64
-	healthFails  int64
+	activePasses int64
+	activeFails  int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -152,14 +152,14 @@ func (h *Host) Fails() int {
 	return int(atomic.LoadInt64(&h.fails))
 }
 
-// HealthPasses returns the number of consecutive active health check passes with the upstream.
-func (h *Host) HealthPasses() int {
-	return int(atomic.LoadInt64(&h.healthPasses))
+// ActiveHealthPasses returns the number of consecutive active health check passes with the upstream.
+func (h *Host) ActiveHealthPasses() int {
+	return int(atomic.LoadInt64(&h.activePasses))
 }
 
-// HealthFails returns the number of consecutive active health check failures with the upstream.
-func (h *Host) HealthFails() int {
-	return int(atomic.LoadInt64(&h.healthFails))
+// ActiveHealthFails returns the number of consecutive active health check failures with the upstream.
+func (h *Host) ActiveHealthFails() int {
+	return int(atomic.LoadInt64(&h.activeFails))
 }
 
 // countRequest mutates the active request count by
@@ -185,7 +185,7 @@ func (h *Host) countFail(delta int) error {
 // countHealthPass mutates the recent passes count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countHealthPass(delta int) error {
-	result := atomic.AddInt64(&h.healthPasses, int64(delta))
+	result := atomic.AddInt64(&h.activePasses, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -195,7 +195,7 @@ func (h *Host) countHealthPass(delta int) error {
 // countHealthFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countHealthFail(delta int) error {
-	result := atomic.AddInt64(&h.healthFails, int64(delta))
+	result := atomic.AddInt64(&h.activeFails, int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -204,8 +204,8 @@ func (h *Host) countHealthFail(delta int) error {
 
 // resetHealth resets the health check counters.
 func (h *Host) resetHealth() {
-	atomic.StoreInt64(&h.healthPasses, 0)
-	atomic.StoreInt64(&h.healthFails, 0)
+	atomic.StoreInt64(&h.activePasses, 0)
+	atomic.StoreInt64(&h.activeFails, 0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
