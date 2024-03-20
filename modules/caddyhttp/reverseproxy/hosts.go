@@ -152,13 +152,13 @@ func (h *Host) Fails() int {
 	return int(atomic.LoadInt64(&h.fails))
 }
 
-// ActiveHealthPasses returns the number of consecutive active health check passes with the upstream.
-func (h *Host) ActiveHealthPasses() int {
+// activeHealthPasses returns the number of consecutive active health check passes with the upstream.
+func (h *Host) activeHealthPasses() int {
 	return int(atomic.LoadInt64(&h.activePasses))
 }
 
-// ActiveHealthFails returns the number of consecutive active health check failures with the upstream.
-func (h *Host) ActiveHealthFails() int {
+// activeHealthFails returns the number of consecutive active health check failures with the upstream.
+func (h *Host) activeHealthFails() int {
 	return int(atomic.LoadInt64(&h.activeFails))
 }
 
