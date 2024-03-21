@@ -190,6 +190,8 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 				varStr = vv.String()
 			case error:
 				varStr = vv.Error()
+			case nil:
+				varStr = ""
 			default:
 				varStr = fmt.Sprintf("%v", vv)
 			}
@@ -281,6 +283,8 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 			varStr = vv.String()
 		case error:
 			varStr = vv.Error()
+		case nil:
+			varStr = ""
 		default:
 			varStr = fmt.Sprintf("%v", vv)
 		}

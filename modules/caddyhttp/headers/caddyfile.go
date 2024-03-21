@@ -68,12 +68,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	if h.NextArg() {
 		hasArgs = true
 		field := h.Val()
-		var value, replacement string
+		var value string
+		var replacement *string
 		if h.NextArg() {
 			value = h.Val()
 		}
 		if h.NextArg() {
-			replacement = h.Val()
+			arg := h.Val()
+			replacement = &arg
 		}
 		err := applyHeaderOp(
 			handler.Response.HeaderOps,
@@ -106,12 +108,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 		// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
 		field = strings.TrimSuffix(field, ":")
 
-		var value, replacement string
+		var value string
+		var replacement *string
 		if h.NextArg() {
 			value = h.Val()
 		}
 		if h.NextArg() {
-			replacement = h.Val()
+			arg := h.Val()
+			replacement = &arg
 		}
 
 		handlerToUse := handler
@@ -170,12 +174,14 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, 
 	// https://caddy.community/t/v2-reverse-proxy-please-add-cors-example-to-the-docs/7349/19
 	field = strings.TrimSuffix(field, ":")
 
-	var value, replacement string
+	var value string
+	var replacement *string
 	if h.NextArg() {
 		value = h.Val()
 	}
 	if h.NextArg() {
-		replacement = h.Val()
+		arg := h.Val()
+		replacement = &arg
 		if h.NextArg() {
 			return nil, h.ArgErr()
 		}
@@ -200,15 +206,15 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, 
 // field, value, and replacement. The field can be prefixed with
 // "+" or "-" to specify adding or removing; otherwise, the value
 // will be set (overriding any previous value). If replacement is
-// non-empty, value will be treated as a regular expression which
+// non-nil, value will be treated as a regular expression which
 // will be used to search and then replacement will be used to
 // complete the substring replacement; in that case, any + or -
 // prefix to field will be ignored.
-func CaddyfileHeaderOp(ops *HeaderOps, field, value, replacement string) error {
+func CaddyfileHeaderOp(ops *HeaderOps, field, value string, replacement *string) error {
 	return applyHeaderOp(ops, nil, field, value, replacement)
 }
 
-func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, replacement string) error {
+func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value string, replacement *string) error {
 	switch {
 	case strings.HasPrefix(field, "+"): // append
 		if ops.Add == nil {
@@ -238,7 +244,7 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 		}
 		respHeaderOps.Set.Set(field, value)
 
-	case replacement != "": // replace
+	case replacement != nil: // replace
 		// allow defer shortcut for replace syntax
 		if strings.HasPrefix(field, ">") && respHeaderOps != nil {
 			respHeaderOps.Deferred = true
@@ -251,7 +257,7 @@ func applyHeaderOp(ops *HeaderOps, respHeaderOps *RespHeaderOps, field, value, r
 			ops.Replace[field],
 			Replacement{
 				SearchRegexp: value,
-				Replace:      replacement,
+				Replace:      *replacement,
 			},
 		)
 
