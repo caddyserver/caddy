@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -238,6 +239,7 @@ func TestReplacerSet(t *testing.T) {
 
 func TestReplacerReplaceKnown(t *testing.T) {
 	rep := Replacer{
+		mapMutex: &sync.RWMutex{},
 		providers: []ReplacerFunc{
 			// split our possible vars to two functions (to test if both functions are called)
 			func(key string) (val any, ok bool) {
@@ -310,6 +312,7 @@ func TestReplacerReplaceKnown(t *testing.T) {
 
 func TestReplacerDelete(t *testing.T) {
 	rep := Replacer{
+		mapMutex: &sync.RWMutex{},
 		static: map[string]any{
 			"key1": "val1",
 			"key2": "val2",
@@ -463,5 +466,6 @@ func testReplacer() Replacer {
 	return Replacer{
 		providers: make([]ReplacerFunc, 0),
 		static:    make(map[string]any),
+		mapMutex:  &sync.RWMutex{},
 	}
 }
