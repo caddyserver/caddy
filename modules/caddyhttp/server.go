@@ -902,9 +902,18 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 	allValues := strings.Split(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, ip := range allValues {
-		ip, _, _ = strings.Cut(strings.TrimSpace(ip), "%")
-		ipAddr, err := netip.ParseAddr(ip)
+	for _, part := range allValues {
+		// Some proxies may retain the port number, so split if possible
+		host, _, err := net.SplitHostPort(part)
+		if err != nil {
+			host = part
+		}
+
+		// Remove any zone identifier from the IP address
+		host, _, _ = strings.Cut(strings.TrimSpace(host), "%")
+
+		// Parse the IP address
+		ipAddr, err := netip.ParseAddr(host)
 		if err != nil {
 			continue
 		}
@@ -921,11 +930,20 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 // remote address is returned.
 func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string) string {
 	for _, headerName := range headers {
-		ips := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
+		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
-		for i := len(ips) - 1; i >= 0; i-- {
-			ip, _, _ := strings.Cut(strings.TrimSpace(ips[i]), "%")
-			ipAddr, err := netip.ParseAddr(ip)
+		for i := len(parts) - 1; i >= 0; i-- {
+			// Some proxies may retain the port number, so split if possible
+			host, _, err := net.SplitHostPort(parts[i])
+			if err != nil {
+				host = parts[i]
+			}
+
+			// Remove any zone identifier from the IP address
+			host, _, _ = strings.Cut(strings.TrimSpace(host), "%")
+
+			// Parse the IP address
+			ipAddr, err := netip.ParseAddr(host)
 			if err != nil {
 				continue
 			}
