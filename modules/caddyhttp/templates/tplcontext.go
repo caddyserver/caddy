@@ -249,6 +249,12 @@ func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buf
 
 func (c TemplateContext) funcPlaceholder(name string) string {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	// For safety, we don't want to allow the file placeholder in
+	// templates because it could be used to read arbitrary files
+	// if the template contents were not trusted.
+	repl = repl.WithoutFile()
+
 	value, _ := repl.GetString(name)
 	return value
 }
