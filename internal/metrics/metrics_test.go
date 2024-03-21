@@ -26,3 +26,29 @@ func TestSanitizeMethod(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeCode(t *testing.T) {
+	tests := []struct {
+		statusCode int
+		want       string
+	}{
+		{
+			statusCode: 200,
+			want:       "200",
+		},
+		{
+			statusCode: 400,
+			want:       "400",
+		},
+		{
+			statusCode: 500,
+			want:       "500",
+		},
+	}
+	for _, test := range tests {
+		got := SanitizeCode(test.statusCode)
+		if got != test.want {
+			t.Errorf("Not same: expected %#v, but got %#v", test.want, got)
+		}
+	}
+}
