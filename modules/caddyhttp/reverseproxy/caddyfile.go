@@ -683,7 +683,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			switch len(args) {
 			case 1:
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", nil)
 			case 2:
 				// some lint checks, I guess
 				if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
@@ -698,9 +698,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
 					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
 				}
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], nil)
 			case 3:
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], &args[2])
 			default:
 				return d.ArgErr()
 			}
@@ -721,13 +721,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 			}
 			args := d.RemainingArgs()
+
 			switch len(args) {
 			case 1:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", nil)
 			case 2:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], nil)
 			case 3:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], &args[2])
 			default:
 				return d.ArgErr()
 			}

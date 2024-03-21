@@ -188,6 +188,15 @@ func TestServer_TrustedRealClientIP_OneTrustedHeaderValidArray(t *testing.T) {
 	assert.Equal(t, ip, "1.1.1.1")
 }
 
+func TestServer_TrustedRealClientIP_IncludesPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	req.Header.Set("X-Forwarded-For", "1.1.1.1:1234")
+	ip := trustedRealClientIP(req, []string{"X-Forwarded-For"}, "192.0.2.1")
+
+	assert.Equal(t, ip, "1.1.1.1")
+}
+
 func TestServer_TrustedRealClientIP_SkipsInvalidIps(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.0.2.1:12345"
