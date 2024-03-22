@@ -124,7 +124,15 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return localAddr.String(), true
 			case "http.request.local.host":
 				localAddr, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
-				host, _, _ := net.SplitHostPort(localAddr.String())
+				host, _, err := net.SplitHostPort(localAddr.String())
+				if err != nil {
+					// localAddr is host:port for tcp and udp sockets and /unix/socket.path
+					// for unix sockets. net.SplitHostPort only operates on tcp and udp sockets,
+					// not unix sockets and will fail with the latter.
+					// We assume when net.SplitHostPort fails, localAddr is a unix socket and thus
+					// already "split" and save to return.
+					return localAddr, true
+				}
 				return host, true
 			case "http.request.local.port":
 				localAddr, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
@@ -138,6 +146,11 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.remote.host":
 				host, _, err := net.SplitHostPort(req.RemoteAddr)
 				if err != nil {
+					// req.RemoteAddr is host:port for tcp and udp sockets and /unix/socket.path
+					// for unix sockets. net.SplitHostPort only operates on tcp and udp sockets,
+					// not unix sockets and will fail with the latter.
+					// We assume when net.SplitHostPort fails, req.RemoteAddr is a unix socket
+					// and thus already "split" and save to return.
 					return req.RemoteAddr, true
 				}
 				return host, true
