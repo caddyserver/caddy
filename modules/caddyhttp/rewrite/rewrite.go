@@ -118,6 +118,12 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 		rep.re = re
 	}
 
+	for _, replacementOp := range rewr.Query.Replace {
+		err := replacementOp.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+		}
+	}
 	return nil
 }
 
@@ -490,13 +496,27 @@ type queryOps struct {
 	// and only appends an additional value for that key if any already exist.
 	Add []queryOpsArguments `json:"add,omitempty"`
 
+	// Replaces query parameters.
+	Replace []*queryOpsReplacement `json:"replace,omitempty"`
+
 	// Deletes a given query key by name.
 	Delete []string `json:"delete,omitempty"`
 }
 
+// Provision compiles the query replace operation regex.
+func (replacement *queryOpsReplacement) Provision(_ caddy.Context) error {
+	if replacement.SearchRegexp != "" {
+		re, err := regexp.Compile(replacement.SearchRegexp)
+		if err != nil {
+			return fmt.Errorf("replacement for query field '%s': %v", replacement.Key, err)
+		}
+		replacement.re = re
+	}
+	return nil
+}
+
 func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 	query := r.URL.Query()
-
 	for _, renameParam := range q.Rename {
 		key := repl.ReplaceAll(renameParam.Key, "")
 		val := repl.ReplaceAll(renameParam.Val, "")
@@ -525,6 +545,36 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 		query[key] = append(query[key], val)
 	}
 
+	for _, replaceParam := range q.Replace {
+		key := repl.ReplaceAll(replaceParam.Key, "")
+		search := repl.ReplaceKnown(replaceParam.Search, "")
+		replace := repl.ReplaceKnown(replaceParam.Replace, "")
+
+		// replace all query keys...
+		if key == "*" {
+			for fieldName, vals := range query {
+				for i := range vals {
+					if replaceParam.re != nil {
+						query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
+					} else {
+						query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
+					}
+				}
+			}
+			continue
+		}
+
+		for fieldName, vals := range query {
+			for i := range vals {
+				if replaceParam.re != nil {
+					query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
+				} else {
+					query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
+				}
+			}
+		}
+	}
+
 	for _, deleteParam := range q.Delete {
 		param := repl.ReplaceAll(deleteParam, "")
 		if param == "" {
@@ -544,6 +594,22 @@ type queryOpsArguments struct {
 	// simply the value of the query, and for rename this is the
 	// query key to rename to.
 	Val string `json:"val,omitempty"`
+}
+
+type queryOpsReplacement struct {
+	// The key to replace in the query string.
+	Key string `json:"key,omitempty"`
+
+	// The substring to search for.
+	Search string `json:"search,omitempty"`
+
+	// The regular expression to search with.
+	SearchRegexp string `json:"search_regexp,omitempty"`
+
+	// The string with which to replace matches.
+	Replace string `json:"replace,omitempty"`
+
+	re *regexp.Regexp
 }
 
 // Interface guard

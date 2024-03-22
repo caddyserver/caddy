@@ -569,6 +569,93 @@ func TestRenameAndOtherOps(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=taz&bar=baz")
 }
 
+func TestReplaceOps(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo bar baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
+}
+
+func TestReplaceWithReplacementPlaceholder(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo bar {query.placeholder}	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
+
+}
+
+func TestReplaceWithKeyPlaceholder(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query {query.placeholder} bar baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=foo&foo=bar", 200, "foo=baz&placeholder=foo")
+}
+
+func TestPartialReplacement(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo ar az	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
+}
+
+func TestNonExistingSearch(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query foo var baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=bar")
+}
+
+func TestReplaceAllOps(t *testing.T) {
+	tester := caddytest.NewTester(t)
+
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port     9080
+	}
+	:9080
+	uri query * bar baz	
+	respond "{query}"`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar&baz=bar", 200, "baz=baz&foo=baz")
+}
+
 func TestUriOpsBlock(t *testing.T) {
 	tester := caddytest.NewTester(t)
 
