@@ -117,13 +117,15 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 		}
 		rep.re = re
 	}
-
-	for _, replacementOp := range rewr.Query.Replace {
-		err := replacementOp.Provision(ctx)
-		if err != nil {
-			return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+	if rewr.Query != nil {
+		for _, replacementOp := range rewr.Query.Replace {
+			err := replacementOp.Provision(ctx)
+			if err != nil {
+				return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+			}
 		}
 	}
+
 	return nil
 }
 
