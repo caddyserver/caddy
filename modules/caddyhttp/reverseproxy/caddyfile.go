@@ -69,6 +69,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    health_uri      <uri>
 //	    health_port     <port>
 //	    health_interval <interval>
+//	    health_passes   <num>
+//	    health_fails    <num>
 //	    health_timeout  <duration>
 //	    health_status   <status>
 //	    health_body     <regexp>
@@ -447,6 +449,38 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			h.HealthChecks.Active.ExpectBody = d.Val()
 
+		case "health_passes":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			passes, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid passes count '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Passes = passes
+
+		case "health_fails":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			fails, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid fails count '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Fails = fails
+
 		case "max_fails":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -649,7 +683,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 			switch len(args) {
 			case 1:
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", nil)
 			case 2:
 				// some lint checks, I guess
 				if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
@@ -664,9 +698,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if strings.EqualFold(args[0], "x-forwarded-host") && (args[1] == "{host}" || args[1] == "{http.request.host}" || args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
 					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-Host: the reverse proxy's default behavior is to pass headers to the upstream")
 				}
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], nil)
 			case 3:
-				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], args[2])
+				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], args[1], &args[2])
 			default:
 				return d.ArgErr()
 			}
@@ -687,13 +721,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 			}
 			args := d.RemainingArgs()
+
 			switch len(args) {
 			case 1:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], "", nil)
 			case 2:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], "")
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], nil)
 			case 3:
-				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], args[2])
+				err = headers.CaddyfileHeaderOp(h.Headers.Response.HeaderOps, args[0], args[1], &args[2])
 			default:
 				return d.ArgErr()
 			}
@@ -907,6 +942,7 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    read_buffer             <size>
 //	    write_buffer            <size>
 //	    max_response_header     <size>
+//	    forward_proxy_url       <url>
 //	    dial_timeout            <duration>
 //	    dial_fallback_delay     <duration>
 //	    response_header_timeout <duration>
@@ -993,6 +1029,12 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			default:
 				return d.Errf("invalid proxy protocol version '%s'", proxyProtocol)
 			}
+
+		case "forward_proxy_url":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.ForwardProxyURL = d.Val()
 
 		case "dial_timeout":
 			if !d.NextArg() {

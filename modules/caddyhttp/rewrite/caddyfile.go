@@ -213,6 +213,9 @@ func applyQueryOps(h httpcaddyfile.Helper, qo *queryOps, args []string) error {
 		renameValKey := strings.Split(key, ">")
 		qo.Rename = append(qo.Rename, queryOpsArguments{Key: renameValKey[0], Val: renameValKey[1]})
 
+	case len(args) == 3:
+		qo.Replace = append(qo.Replace, &queryOpsReplacement{Key: key, SearchRegexp: args[1], Replace: args[2]})
+
 	default:
 		if len(args) != 2 {
 			return h.ArgErr()
