@@ -152,12 +152,13 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 		return returnTemplate
 	})()
 
-	if returnType == returnJSON {
+	switch returnType {
+	case returnJSON:
 		if err := json.NewEncoder(buf).Encode(listing.Items); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	} else if returnType == returnPlain {
+	case returnPlain:
 		writer := tabwriter.NewWriter(buf, 0, 8, 1, '\t', tabwriter.AlignRight)
 
 		// Header on top
@@ -184,7 +185,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 		}
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	} else { //default (or template)
+	default:
 		var fs http.FileSystem
 		if fsrv.Root != "" {
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
