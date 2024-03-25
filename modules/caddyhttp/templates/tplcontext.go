@@ -257,7 +257,7 @@ func (TemplateContext) funcEnv(varName string) string {
 	return os.Getenv(varName)
 }
 
-// Cookie gets the value of a cookie with name name.
+// Cookie gets the value of a cookie with name.
 func (c TemplateContext) Cookie(name string) string {
 	cookies := c.Req.Cookies()
 	for _, cookie := range cookies {
