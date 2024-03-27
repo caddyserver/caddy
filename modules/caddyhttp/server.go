@@ -326,6 +326,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			bodyReader = &lengthReader{Source: r.Body}
 			r.Body = bodyReader
+
+			// should always be true, private interface can only be referenced in the same package
+			if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
+				setReadSizer.setReadSize(&bodyReader.Length)
+			}
 		}
 
 		// capture the original version of the request
