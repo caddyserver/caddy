@@ -362,10 +362,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// prepare the error log
 	logger := errLog
-	if s.Logs != nil {
-		logger = s.Logs.wrapLogger(logger, r.Host)
-	}
-	logger = logger.With(zap.Duration("duration", duration))
 
 	// get the values that will be used to log the error
 	errStatus, errMsg, errFields := errLogValues(err)
@@ -376,6 +372,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
 		err2 := s.errorHandlerChain.ServeHTTP(w, r)
+		if s.Logs != nil {
+			logger = s.Logs.wrapLogger(logger, r)
+		}
+		logger = logger.With(zap.Duration("duration", duration))
+
 		if err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
@@ -719,7 +720,7 @@ func (s *Server) logRequest(
 
 	logger := accLog
 	if s.Logs != nil {
-		logger = s.Logs.wrapLogger(logger, r.Host)
+		logger = s.Logs.wrapLogger(logger, r)
 	}
 
 	log := logger.Info

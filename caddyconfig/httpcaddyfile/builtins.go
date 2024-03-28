@@ -911,7 +911,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// this is useful for setting up loggers per subdomain in a site block
 	// with a wildcard domain
 	customHostnames := []string{}
-
+	noLoggerNames := false
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -997,6 +997,12 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				cl.Exclude = append(cl.Exclude, h.Val())
 			}
 
+		case "no_hostname":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			noLoggerNames = true
+
 		default:
 			return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 		}
@@ -1004,7 +1010,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 	var val namedCustomLog
 	val.hostnames = customHostnames
-
+	val.noLoggerNames = noLoggerNames
 	isEmptyConfig := reflect.DeepEqual(cl, new(caddy.CustomLog))
 
 	// Skip handling of empty logging configs
