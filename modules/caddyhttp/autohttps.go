@@ -117,13 +117,13 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 		if srv.AutoHTTPS.Disabled {
-			logger.Warn("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
+			logger.Info("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
 			continue
 		}
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
-			logger.Warn("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
+			logger.Info("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
 				zap.String("server_name", srvName),
 				zap.Int("http_port", app.httpPort()),
 			)
@@ -225,7 +225,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// nothing left to do if auto redirects are disabled
 		if srv.AutoHTTPS.DisableRedir {
-			logger.Warn("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
+			logger.Info("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
 			continue
 		}
 
