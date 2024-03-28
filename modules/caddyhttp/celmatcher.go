@@ -62,7 +62,12 @@ type MatchExpression struct {
 	// The CEL expression to evaluate. Any Caddy placeholders
 	// will be expanded and situated into proper CEL function
 	// calls before evaluating.
-	Expr string
+	Expr string `json:"expr,omitempty"`
+
+	// Name is an optional name for this matcher.
+	// This is used to populate the name for regexp
+	// matchers that appear in the expression.
+	Name string `json:"name,omitempty"`
 
 	expandedExpr string
 	prg          cel.Program
@@ -81,12 +86,36 @@ func (MatchExpression) CaddyModule() caddy.ModuleInfo {
 
 // MarshalJSON marshals m's expression.
 func (m MatchExpression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.Expr)
+	// if the name is empty, then we can marshal just the expression string
+	if m.Name == "" {
+		return json.Marshal(m.Expr)
+	}
+	// otherwise, we need to marshal the full object, using an
+	// anonymous struct to avoid infinite recursion
+	return json.Marshal(struct {
+		Expr string `json:"expr"`
+		Name string `json:"name"`
+	}{
+		Expr: m.Expr,
+		Name: m.Name,
+	})
 }
 
 // UnmarshalJSON unmarshals m's expression.
 func (m *MatchExpression) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &m.Expr)
+	// if the data is a string, then it's just the expression
+	if data[0] == '"' {
+		return json.Unmarshal(data, &m.Expr)
+	}
+	// otherwise, it's a full object, so unmarshal it,
+	// using an temp map to avoid infinite recursion
+	var tmpJson map[string]any
+	err := json.Unmarshal(data, &tmpJson)
+	*m = MatchExpression{
+		Expr: tmpJson["expr"].(string),
+		Name: tmpJson["name"].(string),
+	}
+	return err
 }
 
 // Provision sets ups m.
@@ -109,6 +138,11 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 			matcherLibProducers = append(matcherLibProducers, p)
 		}
 	}
+
+	// add the matcher name to the context so that the matcher name
+	// can be used by regexp matchers being provisioned
+	ctx = ctx.WithValue(MatcherNameCtxKey, m.Name)
+
 	// Assemble the compilation and program options from the different library
 	// producers into a single cel.Library implementation.
 	matcherEnvOpts := []cel.EnvOption{}
@@ -197,6 +231,11 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// quoted string; commonly quotes are used in Caddyfile to
 	// define the expression
 	m.Expr = d.Val()
+
+	// use the named matcher's name, to fill regexp
+	// matchers names by default
+	m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+
 	return nil
 }
 
@@ -672,6 +711,8 @@ var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
 const placeholderFuncName = "caddyPlaceholder"
+
+const MatcherNameCtxKey = "matcher_name"
 
 // Interface guards
 var (

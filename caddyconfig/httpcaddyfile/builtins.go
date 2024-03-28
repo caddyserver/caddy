@@ -117,9 +117,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		} else if !strings.Contains(firstLine[0], "@") {
 			return nil, h.Err("single argument must either be 'internal' or an email address")
 		} else {
-			if acmeIssuer == nil {
-				acmeIssuer = new(caddytls.ACMEIssuer)
-			}
+			acmeIssuer = new(caddytls.ACMEIssuer)
 			acmeIssuer.Email = firstLine[0]
 		}
 

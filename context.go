@@ -556,3 +556,15 @@ func (ctx Context) Module() Module {
 	}
 	return ctx.ancestry[len(ctx.ancestry)-1]
 }
+
+// WithValue returns a new context with the given key-value pair.
+func (ctx *Context) WithValue(key, value any) Context {
+	return Context{
+		Context:         context.WithValue(ctx.Context, key, value),
+		moduleInstances: ctx.moduleInstances,
+		cfg:             ctx.cfg,
+		ancestry:        ctx.ancestry,
+		cleanupFuncs:    ctx.cleanupFuncs,
+		exitFuncs:       ctx.exitFuncs,
+	}
+}

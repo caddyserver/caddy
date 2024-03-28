@@ -84,7 +84,10 @@ abort @e
 											],
 											"match": [
 												{
-													"expression": "{http.error.status_code} == 403"
+													"expression": {
+														"expr": "{http.error.status_code} == 403",
+														"name": "d"
+													}
 												}
 											]
 										},
@@ -97,7 +100,10 @@ abort @e
 											],
 											"match": [
 												{
-													"expression": "{http.error.status_code} == 404"
+													"expression": {
+														"expr": "{http.error.status_code} == 404",
+														"name": "e"
+													}
 												}
 											]
 										}

@@ -676,7 +676,10 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			pattern := data.(types.String)
-			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+				Pattern: string(pattern),
+			}}
 			err := matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -695,7 +698,14 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
-			matcher := MatchPathRE{MatchRegexp{Name: strParams[0], Pattern: strParams[1]}}
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    name,
+				Pattern: strParams[1],
+			}}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1024,6 +1034,11 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val = second
 		}
 
+		// Default to the named matcher's name, if no regexp name is provided
+		if name == "" {
+			name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		// If there's already a pattern for this field
 		// then we would end up overwriting the old one
 		if (*m)[field] != nil {
@@ -1100,7 +1115,10 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			}
 			strParams := params.([]string)
 			matcher := MatchHeaderRE{}
-			matcher[strParams[0]] = &MatchRegexp{Pattern: strParams[1], Name: ""}
+			matcher[strParams[0]] = &MatchRegexp{
+				Pattern: strParams[1],
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1119,8 +1137,15 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
 			matcher := MatchHeaderRE{}
-			matcher[strParams[1]] = &MatchRegexp{Pattern: strParams[2], Name: strParams[0]}
+			matcher[strParams[1]] = &MatchRegexp{
+				Pattern: strParams[2],
+				Name:    name,
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1358,6 +1383,12 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		default:
 			return d.ArgErr()
 		}
+
+		// Default to the named matcher's name, if no regexp name is provided
+		if mre.Name == "" {
+			mre.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		if d.NextBlock(0) {
 			return d.Err("malformed path_regexp matcher: blocks are not supported")
 		}

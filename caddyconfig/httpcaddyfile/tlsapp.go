@@ -490,7 +490,11 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 // for any other automation policies. A nil policy (and no error) will be
 // returned if there are no default/global options. However, if always is
 // true, a non-nil value will always be returned (unless there is an error).
-func newBaseAutomationPolicy(options map[string]any, warnings []caddyconfig.Warning, always bool) (*caddytls.AutomationPolicy, error) {
+func newBaseAutomationPolicy(
+	options map[string]any,
+	_ []caddyconfig.Warning,
+	always bool,
+) (*caddytls.AutomationPolicy, error) {
 	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
