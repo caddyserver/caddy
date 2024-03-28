@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	weakrand "math/rand"
 	"net"
 	"net/http"
@@ -32,6 +31,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/cespare/xxhash"
 )
 
 func init() {
@@ -824,9 +824,9 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 
 // hash calculates a fast hash based on s.
 func hash(s string) uint32 {
-	h := fnv.New32a()
+	h := xxhash.New()
 	_, _ = h.Write([]byte(s))
-	return h.Sum32()
+	return uint32(h.Sum64())
 }
 
 func loadFallbackPolicy(d *caddyfile.Dispenser) (json.RawMessage, error) {
