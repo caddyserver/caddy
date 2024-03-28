@@ -113,13 +113,27 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fsrv.Browse = new(Browse)
 			d.Args(&fsrv.Browse.TemplateFile)
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				if d.Val() != "reveal_symlinks" {
-					return d.Errf("unknown subdirective '%s'", d.Val())
+				switch val := d.Val(); val {
+				case "reveal_symlinks":
+					if fsrv.Browse.RevealSymlinks {
+						return d.Err("Symlinks path reveal is already enabled")
+					}
+
+					fsrv.Browse.RevealSymlinks = true
+					break
+				case "return_type":
+					d.NextArg()
+					return_type, ok := fsrv.Browse.GetReturnType(d.Val())
+
+					if !ok {
+						return d.Errf("Return type %s is not valid", val)
+					}
+
+					fsrv.Browse.ReturnTypeRaw = return_type
+
+				default:
+					return d.Errf("unknown subdirective '%s'", val)
 				}
-				if fsrv.Browse.RevealSymlinks {
-					return d.Err("Symlinks path reveal is already enabled")
-				}
-				fsrv.Browse.RevealSymlinks = true
 			}
 
 		case "precompressed":
