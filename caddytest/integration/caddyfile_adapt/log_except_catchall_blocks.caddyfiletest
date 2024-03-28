@@ -99,7 +99,9 @@ http://localhost:2020 {
 					},
 					"logs": {
 						"logger_names": {
-							"localhost": ""
+							"localhost": [
+								""
+							]
 						},
 						"skip_unmapped_hosts": true
 					}

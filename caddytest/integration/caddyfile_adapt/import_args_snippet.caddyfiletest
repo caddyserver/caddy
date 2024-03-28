@@ -72,8 +72,12 @@ b.example.com {
 					],
 					"logs": {
 						"logger_names": {
-							"a.example.com": "log0",
-							"b.example.com": "log1"
+							"a.example.com": [
+								"log0"
+							],
+							"b.example.com": [
+								"log1"
+							]
 						}
 					}
 				}
