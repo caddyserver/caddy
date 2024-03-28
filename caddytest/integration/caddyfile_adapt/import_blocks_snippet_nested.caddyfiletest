@@ -1,0 +1,82 @@
+(snippet) {
+	header {
+		{blocks.bar}
+	}
+	import sub_snippet {
+		bar {
+			{blocks.foo}
+		}
+	}
+}
+(sub_snippet) {
+	header {
+		{blocks.bar}
+	}
+}
+example.com {
+	import snippet {
+		foo {
+			foo a
+		}
+		bar {
+			bar b
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "headers",
+													"response": {
+														"set": {
+															"Bar": [
+																"b"
+															]
+														}
+													}
+												},
+												{
+													"handler": "headers",
+													"response": {
+														"set": {
+															"Foo": [
+																"a"
+															]
+														}
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
