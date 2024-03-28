@@ -30,6 +30,18 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func init() {
+	caddy.RegisterNamespace("dns.provider", []interface{}{
+		(*acmez.Solver)(nil),
+	})
+	caddy.RegisterNamespace("tls.get_certificate", []interface{}{
+		(*certmagic.Manager)(nil),
+	})
+	caddy.RegisterNamespace("tls.issuance", []interface{}{
+		(*certmagic.Issuer)(nil),
+	})
+}
+
 // AutomationConfig governs the automated management of TLS certificates.
 type AutomationConfig struct {
 	// The list of automation policies. The first policy matching

@@ -37,6 +37,12 @@ import (
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
+func init() {
+	RegisterNamespace("caddy.listeners", []interface{}{
+		(*ListenerWrapper)(nil),
+	})
+}
+
 // NetworkAddress represents one or more network addresses.
 // It contains the individual components for a parsed network
 // address of the form accepted by ParseNetworkAddress().

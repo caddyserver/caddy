@@ -37,6 +37,10 @@ import (
 )
 
 func init() {
+	caddy.RegisterNamespace("http.precompressed", []interface{}{
+		(*encode.Precompressed)(nil),
+	})
+
 	caddy.RegisterModule(FileServer{})
 }
 

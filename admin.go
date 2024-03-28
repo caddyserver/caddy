@@ -55,6 +55,7 @@ func init() {
 	if env, exists := os.LookupEnv("CADDY_ADMIN"); exists {
 		DefaultAdminListen = env
 	}
+	RegisterNamespace("caddy.config_loaders", []interface{}{(*ConfigLoader)(nil)})
 }
 
 // AdminConfig configures Caddy's API endpoint, which is used

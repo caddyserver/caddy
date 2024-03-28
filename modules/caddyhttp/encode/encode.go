@@ -35,6 +35,9 @@ import (
 
 func init() {
 	caddy.RegisterModule(Encode{})
+	caddy.RegisterNamespace("http.encoders", []interface{}{
+		(*Encoding)(nil),
+	})
 }
 
 // Encode is a middleware which can encode responses.

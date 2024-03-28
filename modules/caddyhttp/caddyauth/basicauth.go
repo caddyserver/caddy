@@ -31,6 +31,13 @@ import (
 
 func init() {
 	caddy.RegisterModule(HTTPBasicAuth{})
+
+	caddy.RegisterNamespace("http.authentication.hashes", []interface{}{
+		(*Comparer)(nil),
+	})
+	caddy.RegisterNamespace("http.authentication.providers", []interface{}{
+		(*Authenticator)(nil),
+	})
 }
 
 // HTTPBasicAuth facilitates HTTP basic authentication.

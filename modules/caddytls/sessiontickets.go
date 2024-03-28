@@ -28,6 +28,12 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func init() {
+	caddy.RegisterNamespace("tls.stek", []interface{}{
+		(*STEKProvider)(nil),
+	})
+}
+
 // SessionTicketService configures and manages TLS session tickets.
 type SessionTicketService struct {
 	// KeySource is the method by which Caddy produces or obtains

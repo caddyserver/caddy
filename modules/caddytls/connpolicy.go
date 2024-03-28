@@ -36,6 +36,9 @@ import (
 
 func init() {
 	caddy.RegisterModule(LeafCertClientAuth{})
+	caddy.RegisterNamespace("tls.handshake_match", []interface{}{
+		(*ConnectionMatcher)(nil),
+	})
 }
 
 // ConnectionPolicies govern the establishment of TLS connections. It is

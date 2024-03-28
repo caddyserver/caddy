@@ -33,6 +33,12 @@ func init() {
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
 	RegisterModule(DiscardWriter{})
+	RegisterNamespace("caddy.logging.encoders", []interface{}{
+		(*zapcore.Encoder)(nil),
+	})
+	RegisterNamespace("caddy.logging.writers", []interface{}{
+		(*WriterOpener)(nil),
+	})
 }
 
 // Logging facilitates logging within Caddy. The default log is
@@ -290,6 +296,8 @@ type BaseLog struct {
 	WriterRaw json.RawMessage `json:"writer,omitempty" caddy:"namespace=caddy.logging.writers inline_key=output"`
 
 	// The encoder is how the log entries are formatted or encoded.
+	// An `encoder` should implement the following interfaces:
+	// - [zapcore.Encoder](https://pkg.go.dev/go.uber.org/zap/zapcore#Encoder)
 	EncoderRaw json.RawMessage `json:"encoder,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
 
 	// Level is the minimum level to emit, and is inclusive.

@@ -22,6 +22,12 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func init() {
+	caddy.RegisterNamespace("http.handlers", []interface{}{
+		(*MiddlewareHandler)(nil),
+	})
+}
+
 // Route consists of a set of rules for matching HTTP requests,
 // a list of handlers to execute, and optional flow control
 // parameters which customize the handling of HTTP requests

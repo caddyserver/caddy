@@ -45,6 +45,19 @@ import (
 
 func init() {
 	caddy.RegisterModule(Handler{})
+
+	caddy.RegisterNamespace("http.reverse_proxy.circuit_breakers", []interface{}{
+		(*CircuitBreaker)(nil),
+	})
+	caddy.RegisterNamespace("http.reverse_proxy.selection_policies", []interface{}{
+		(*Selector)(nil),
+	})
+	caddy.RegisterNamespace("http.reverse_proxy.transport", []interface{}{
+		(*http.RoundTripper)(nil),
+	})
+	caddy.RegisterNamespace("http.reverse_proxy.upstreams", []interface{}{
+		(*UpstreamSource)(nil),
+	})
 }
 
 // Handler implements a highly configurable and production-ready reverse proxy.
