@@ -27,11 +27,12 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/cespare/xxhash"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/cespare/xxhash"
 )
 
 func init() {
