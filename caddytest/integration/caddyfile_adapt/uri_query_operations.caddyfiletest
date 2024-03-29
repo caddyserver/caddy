@@ -1,0 +1,106 @@
+:9080
+uri query +foo bar
+uri query -baz
+uri query taz test
+uri query key=value example
+uri query changethis>changed
+uri query {
+	findme value replacement
+	+foo1 baz
+}
+
+respond "{query}"
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":9080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "rewrite",
+									"query": {
+										"add": [
+											{
+												"key": "foo",
+												"val": "bar"
+											}
+										]
+									}
+								},
+								{
+									"handler": "rewrite",
+									"query": {
+										"delete": [
+											"baz"
+										]
+									}
+								},
+								{
+									"handler": "rewrite",
+									"query": {
+										"set": [
+											{
+												"key": "taz",
+												"val": "test"
+											}
+										]
+									}
+								},
+								{
+									"handler": "rewrite",
+									"query": {
+										"set": [
+											{
+												"key": "key=value",
+												"val": "example"
+											}
+										]
+									}
+								},
+								{
+									"handler": "rewrite",
+									"query": {
+										"rename": [
+											{
+												"key": "changethis",
+												"val": "changed"
+											}
+										]
+									}
+								},
+								{
+									"handler": "rewrite",
+									"query": {
+										"add": [
+											{
+												"key": "foo1",
+												"val": "baz"
+											}
+										],
+										"replace": [
+											{
+												"key": "findme",
+												"replace": "replacement",
+												"search_regexp": "value"
+											}
+										]
+									}
+								},
+								{
+									"body": "{http.request.uri.query}",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
