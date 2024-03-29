@@ -27,7 +27,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -808,7 +808,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 	// see https://medium.com/i0exception/rendezvous-hashing-8c00e2fb58b0,
 	// https://randorithms.com/2020/12/26/rendezvous-hashing.html,
 	// and https://en.wikipedia.org/wiki/Rendezvous_hashing.
-	var highestHash uint32
+	var highestHash uint64
 	var upstream *Upstream
 	for _, up := range pool {
 		if !up.Available() {
@@ -824,10 +824,10 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 }
 
 // hash calculates a fast hash based on s.
-func hash(s string) uint32 {
+func hash(s string) uint64 {
 	h := xxhash.New()
 	_, _ = h.Write([]byte(s))
-	return uint32(h.Sum64())
+	return h.Sum64()
 }
 
 func loadFallbackPolicy(d *caddyfile.Dispenser) (json.RawMessage, error) {
