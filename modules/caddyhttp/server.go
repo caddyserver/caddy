@@ -575,6 +575,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 				select {
 				case <-s.ctx.Done():
 					if quicConn, ok := request.Context().Value(quicConnCtxKey).(quic.Connection); ok {
+						//nolint:errcheck
 						quicConn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeRequestRejected), "")
 					}
 				default:
