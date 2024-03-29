@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,7 +30,9 @@ import (
 func TestHTTPVarReplacement(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "/foo/bar.tar.gz", nil)
 	repl := caddy.NewReplacer()
+	localAddr, _ := net.ResolveTCPAddr("tcp", "192.168.159.1:80")
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, http.LocalAddrContextKey, localAddr)
 	req = req.WithContext(ctx)
 	req.Host = "example.com:80"
 	req.RemoteAddr = "192.168.159.32:1234"
@@ -94,6 +97,18 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{
 			get:    "http.request.hostport",
 			expect: "example.com:80",
+		},
+		{
+			get:    "http.request.local.host",
+			expect: "192.168.159.1",
+		},
+		{
+			get:    "http.request.local.port",
+			expect: "80",
+		},
+		{
+			get:    "http.request.local",
+			expect: "192.168.159.1:80",
 		},
 		{
 			get:    "http.request.remote.host",
