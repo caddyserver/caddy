@@ -26,7 +26,6 @@ import (
 	"expvar"
 	"fmt"
 	"hash"
-	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
@@ -41,6 +40,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -946,7 +946,7 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 
 // etagHasher returns a the hasher we used on the config to both
 // produce and verify ETags.
-func etagHasher() hash.Hash32 { return fnv.New32a() }
+func etagHasher() hash.Hash { return xxhash.New() }
 
 // makeEtag returns an Etag header value (including quotes) for
 // the given config path and hash of contents at that path.
