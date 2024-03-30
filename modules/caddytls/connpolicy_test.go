@@ -145,7 +145,7 @@ func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "using 'trusted_ca_cert' adapts sucessfully",
+			name: "using 'trusted_ca_cert' adapts successfully",
 			args: args{
 				d: caddyfile.NewTestDispenser(fmt.Sprintf(`
 				client_auth {
