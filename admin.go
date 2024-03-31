@@ -958,13 +958,14 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		// Set the ETag as a trailer header.
-		// The alternative is to write the config to a buffer, and
-		// then hash that.
-		w.Header().Set("Trailer", "ETag")
-
 		hash := etagHasher()
-		configWriter := io.MultiWriter(w, hash)
+
+		// Read the config into a buffer instead of writing directory to
+		// the response writer, as we want to set the ETag as the header,
+		// not the trailer header
+		var buf bytes.Buffer
+
+		configWriter := io.MultiWriter(&buf, hash)
 		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
@@ -973,6 +974,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// we could consider setting up a sync.Pool for the summed
 		// hashes to reduce GC pressure.
 		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
+		w.Write(buf.Bytes())
 
 		return nil
 
