@@ -960,7 +960,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 		hash := etagHasher()
 
-		// Read the config into a buffer instead of writing directory to
+		// Read the config into a buffer instead of writing directly to
 		// the response writer, as we want to set the ETag as the header,
 		// not the trailer header
 		var buf bytes.Buffer
