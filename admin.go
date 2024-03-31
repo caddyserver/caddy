@@ -974,7 +974,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// we could consider setting up a sync.Pool for the summed
 		// hashes to reduce GC pressure.
 		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
-		w.Write(buf.Bytes())
+		_, err = w.Write(buf.Bytes())
+		if err != nil {
+			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
+		}
 
 		return nil
 
