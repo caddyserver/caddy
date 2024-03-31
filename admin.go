@@ -962,7 +962,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 		// Read the config into a buffer instead of writing directly to
 		// the response writer, as we want to set the ETag as the header,
-		// not the trailer header
+		// not the trailer.
 		var buf bytes.Buffer
 
 		configWriter := io.MultiWriter(&buf, hash)
