@@ -28,6 +28,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"text/tabwriter"
 	"text/template"
 
 	"go.uber.org/zap"
@@ -111,13 +112,42 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
 
-	// write response as either JSON or HTML
-	if strings.Contains(acceptHeader, "application/json") {
+	switch {
+	case strings.Contains(acceptHeader, "application/json"):
 		if err := json.NewEncoder(buf).Encode(listing.Items); err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	} else {
+
+	case strings.Contains(acceptHeader, "text/plain"):
+		writer := tabwriter.NewWriter(buf, 0, 8, 1, '\t', tabwriter.AlignRight)
+
+		// Header on top
+		if _, err := fmt.Fprintln(writer, "Name\tSize\tModified"); err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		// Lines to separate the header
+		if _, err := fmt.Fprintln(writer, "----\t----\t--------"); err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		// Actual files
+		for _, item := range listing.Items {
+			if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\n",
+				item.Name, item.HumanSize(), item.HumanModTime("January 2, 2006 at 15:04:05"),
+			); err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+		}
+
+		if err := writer.Flush(); err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	default:
 		var fs http.FileSystem
 		if fsrv.Root != "" {
 			fs = http.Dir(repl.ReplaceAll(fsrv.Root, "."))
