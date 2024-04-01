@@ -954,6 +954,14 @@ func makeEtag(path string, hash hash.Hash) string {
 	return fmt.Sprintf(`"%s %x"`, path, hash.Sum(nil))
 }
 
+// This buffer pool is used to keep buffers for
+// reading the config file during eTag header generation
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
@@ -963,9 +971,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// Read the config into a buffer instead of writing directly to
 		// the response writer, as we want to set the ETag as the header,
 		// not the trailer.
-		var buf bytes.Buffer
+		buf := bufferPool.Get().(*bytes.Buffer)
 
-		configWriter := io.MultiWriter(&buf, hash)
+		configWriter := io.MultiWriter(buf, hash)
 		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
@@ -978,6 +986,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
 		}
+
+		buf.Reset()
+		bufferPool.Put(buf)
 
 		return nil
 
