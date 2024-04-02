@@ -957,7 +957,7 @@ func makeEtag(path string, hash hash.Hash) string {
 // This buffer pool is used to keep buffers for
 // reading the config file during eTag header generation
 var bufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }
