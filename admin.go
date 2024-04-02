@@ -972,6 +972,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// the response writer, as we want to set the ETag as the header,
 		// not the trailer.
 		buf := bufferPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufferPool.Put(buf)
 
 		configWriter := io.MultiWriter(buf, hash)
 		err := readConfig(r.URL.Path, configWriter)
@@ -984,11 +986,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
 		_, err = w.Write(buf.Bytes())
 		if err != nil {
-			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
+			return APIError{HTTPStatus: http.StatusInternalServerError, Err: err}
 		}
-
-		buf.Reset()
-		bufferPool.Put(buf)
 
 		return nil
 
