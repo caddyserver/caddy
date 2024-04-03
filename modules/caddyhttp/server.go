@@ -572,7 +572,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
-			QuicConfig: &quic.Config{
+			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
 			},
 		}
