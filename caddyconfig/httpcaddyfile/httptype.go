@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
