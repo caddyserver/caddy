@@ -50,7 +50,7 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	p := parser{
 		Dispenser: NewDispenser(tokens),
 		importGraph: importGraph{
-			nodes: make(map[string]bool),
+			nodes: make(map[string]struct{}),
 			edges: make(adjacency),
 		},
 	}
