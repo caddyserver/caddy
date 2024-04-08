@@ -213,8 +213,6 @@ func DisabledTest(t *testing.T) {
 	// TODO: test chunked reader
 	globalt = t
 
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	// server
 	go func() {
 		listener, err := net.Listen("tcp", ipPort)

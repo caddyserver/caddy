@@ -18,7 +18,7 @@ import (
 	"strconv"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2/acme"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -212,9 +212,9 @@ func parseOptACMEDNS(d *caddyfile.Dispenser, _ any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	prov, ok := unm.(certmagic.ACMEDNSProvider)
+	prov, ok := unm.(certmagic.DNSProvider)
 	if !ok {
-		return nil, d.Errf("module %s (%T) is not a certmagic.ACMEDNSProvider", modID, unm)
+		return nil, d.Errf("module %s (%T) is not a certmagic.DNSProvider", modID, unm)
 	}
 	return prov, nil
 }

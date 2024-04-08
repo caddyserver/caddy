@@ -26,7 +26,7 @@ import (
 	"sync"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -106,8 +106,7 @@ func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.
 	} else {
 		email := iss.Email
 		if email == "" {
-			iss.logger.Warn("missing email address for ZeroSSL; it is strongly recommended to set one for next time")
-			email = "caddy@zerossl.com" // special email address that preserves backwards-compat, but which black-holes dashboard features, oh well
+			return nil, acct, fmt.Errorf("email address is required to use ZeroSSL")
 		}
 		if len(acct.Contact) == 0 {
 			// we borrow the email from config or the default email, so ensure it's saved with the account

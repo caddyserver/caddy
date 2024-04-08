@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez"
+	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"

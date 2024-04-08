@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2"
+	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -142,12 +142,14 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			iss.Challenges.DNS.solver = deprecatedProvider
 		} else {
 			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
-				DNSProvider:        val.(certmagic.ACMEDNSProvider),
-				TTL:                time.Duration(iss.Challenges.DNS.TTL),
-				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
-				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
-				Resolvers:          iss.Challenges.DNS.Resolvers,
-				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+				DNSManager: certmagic.DNSManager{
+					DNSProvider:        val.(certmagic.DNSProvider),
+					TTL:                time.Duration(iss.Challenges.DNS.TTL),
+					PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
+					PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
+					Resolvers:          iss.Challenges.DNS.Resolvers,
+					OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+				},
 			}
 		}
 	}
