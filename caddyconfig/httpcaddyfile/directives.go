@@ -74,6 +74,7 @@ var defaultDirectiveOrder = []string{
 	"request_header",
 	"encode",
 	"push",
+	"intercept_response",
 	"templates",
 
 	// special routing & dispatching directives
