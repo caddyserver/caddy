@@ -370,17 +370,21 @@ func (ap *AutomationPolicy) isWildcardOrDefault() bool {
 
 // DefaultIssuers returns empty Issuers (not provisioned) to be used as defaults.
 // This function is experimental and has no compatibility promises.
-func DefaultIssuers() []certmagic.Issuer {
-	return []certmagic.Issuer{
-		new(ACMEIssuer),
-		&ZeroSSLIssuer{ACMEIssuer: new(ACMEIssuer)},
+func DefaultIssuers(userEmail string) []certmagic.Issuer {
+	issuers := []certmagic.Issuer{new(ACMEIssuer)}
+	if strings.TrimSpace(userEmail) != "" {
+		issuers = append(issuers, &ACMEIssuer{
+			CA:    certmagic.ZeroSSLProductionCA,
+			Email: userEmail,
+		})
 	}
+	return issuers
 }
 
 // DefaultIssuersProvisioned returns empty but provisioned default Issuers from
 // DefaultIssuers(). This function is experimental and has no compatibility promises.
 func DefaultIssuersProvisioned(ctx caddy.Context) ([]certmagic.Issuer, error) {
-	issuers := DefaultIssuers()
+	issuers := DefaultIssuers("")
 	for i, iss := range issuers {
 		if prov, ok := iss.(caddy.Provisioner); ok {
 			err := prov.Provision(ctx)
@@ -453,6 +457,7 @@ type TLSALPNChallengeConfig struct {
 type DNSChallengeConfig struct {
 	// The DNS provider module to use which will manage
 	// the DNS records relevant to the ACME challenge.
+	// Required.
 	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 
 	// The TTL of the TXT record used for the DNS challenge.

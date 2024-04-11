@@ -131,8 +131,9 @@ abc.de {
 								"module": "acme"
 							},
 							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
 								"email": "my.email@example.com",
-								"module": "zerossl"
+								"module": "acme"
 							}
 						]
 					}
