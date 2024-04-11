@@ -3,6 +3,7 @@ _gitignore/
 Caddyfile
 Caddyfile.*
 !caddyfile/
+!caddyfile.go
 
 # artifacts from pprof tooling
 *.prof

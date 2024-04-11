@@ -21,18 +21,18 @@ import (
 type adjacency map[string][]string
 
 type importGraph struct {
-	nodes map[string]bool
+	nodes map[string]struct{}
 	edges adjacency
 }
 
 func (i *importGraph) addNode(name string) {
 	if i.nodes == nil {
-		i.nodes = make(map[string]bool)
+		i.nodes = make(map[string]struct{})
 	}
 	if _, exists := i.nodes[name]; exists {
 		return
 	}
-	i.nodes[name] = true
+	i.nodes[name] = struct{}{}
 }
 
 func (i *importGraph) addNodes(names []string) {
@@ -66,7 +66,7 @@ func (i *importGraph) addEdge(from, to string) error {
 	}
 
 	if i.nodes == nil {
-		i.nodes = make(map[string]bool)
+		i.nodes = make(map[string]struct{})
 	}
 	if i.edges == nil {
 		i.edges = make(adjacency)
