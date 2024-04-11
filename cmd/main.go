@@ -165,7 +165,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 	baseConfigExt := filepath.Ext(baseConfig)
 	if (strings.HasPrefix(baseConfig, "caddyfile") ||
 		strings.HasSuffix(baseConfig, ".caddyfile")) &&
-		caddyconfig.GetAdapter(baseConfigExt[1:]) == nil &&
+		(len(baseConfigExt) == 0 || caddyconfig.GetAdapter(baseConfigExt[1:]) == nil) &&
 		baseConfigExt != ".json" &&
 		adapterName == "" {
 		adapterName = "caddyfile"
