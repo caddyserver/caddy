@@ -201,6 +201,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// store them on the policy before putting it on the config
 
 	// load and provision any cert manager modules
+	hadExplicitManagers := len(ap.ManagersRaw) > 0
 	if ap.ManagersRaw != nil {
 		vals, err := tlsApp.ctx.LoadModule(ap, "ManagersRaw")
 		if err != nil {
@@ -256,12 +257,25 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	if ap.OnDemand || len(ap.Managers) > 0 {
 		// permission module is now required after a number of negligence cases that allowed abuse;
 		// but it may still be optional for explicit subjects (bounded, non-wildcard), for the
-		// internal issuer since it doesn't cause public PKI pressure on ACME servers
-		if ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil) {
-			return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
+		// internal issuer since it doesn't cause public PKI pressure on ACME servers; subtly, it
+		// is useful to allow on-demand TLS to be enabled so Managers can be used, but to still
+		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
+		// permission module configured
+		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
+		failClosed := noProtections && hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicity configured
+		if noProtections {
+			if !hadExplicitManagers {
+				// no managers, no explicitly-configured permission module, this is a config error
+				return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
+			}
+			// allow on-demand to be enabled but only for the purpose of the Managers; issuance won't be allowed from Issuers
+			tlsApp.logger.Warn("on-demand TLS can only get certificates from the configured external manager(s) because no ask endpoint / permission module is specified")
 		}
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(ctx context.Context, name string) error {
+				if failClosed {
+					return fmt.Errorf("no permission module configured; certificates not allowed except from external Managers")
+				}
 				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
 					return nil
 				}
@@ -342,6 +356,16 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 // Subjects returns the list of subjects with all placeholders replaced.
 func (ap *AutomationPolicy) Subjects() []string {
 	return ap.subjects
+}
+
+// AllInternalSubjects returns true if all the subjects on this policy are internal.
+func (ap *AutomationPolicy) AllInternalSubjects() bool {
+	for _, subj := range ap.subjects {
+		if !certmagic.SubjectIsInternal(subj) {
+			return false
+		}
+	}
+	return true
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {

@@ -224,7 +224,7 @@ func (st ServerType) buildTLSApp(
 				var internal, external []string
 				for _, s := range ap.SubjectsRaw {
 					// do not create Issuers for Tailscale domains; they will be given a Manager instead
-					if strings.HasSuffix(strings.ToLower(s), ".ts.net") {
+					if isTailscaleDomain(s) {
 						continue
 					}
 					if !certmagic.SubjectQualifiesForCert(s) {
@@ -679,11 +679,17 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 		(strings.Count(subj, "*.") < 2 || ap.OnDemand)
 }
 
+// automationPolicyHasAllPublicNames returns true if all the names on the policy
+// do NOT qualify for public certs OR are tailscale domains.
 func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 	for _, subj := range ap.SubjectsRaw {
-		if !subjectQualifiesForPublicCert(ap, subj) {
+		if !subjectQualifiesForPublicCert(ap, subj) || isTailscaleDomain(subj) {
 			return false
 		}
 	}
 	return true
+}
+
+func isTailscaleDomain(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
 }

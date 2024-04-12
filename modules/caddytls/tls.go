@@ -176,8 +176,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
-	// on-demand rate limiting
+	// on-demand rate limiting (TODO: deprecated, and should be removed later; rate limiting is ineffective now that permission modules are required)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		t.logger.Warn("DEPRECATED: on_demand.rate_limit will be removed in a future release; use permission modules or external certificate managers instead")
 		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
 		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
 	} else {

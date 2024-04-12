@@ -287,6 +287,16 @@ uniqueDomainsLoop:
 			for _, ap := range app.tlsApp.Automation.Policies {
 				for _, apHost := range ap.Subjects() {
 					if apHost == d {
+						// if the automation policy has all internal subjects but no issuers,
+						// it will default to CertMagic's issuers which are public CAs; use
+						// our internal issuer instead
+						if len(ap.Issuers) == 0 && ap.AllInternalSubjects() {
+							iss := new(caddytls.InternalIssuer)
+							if err := iss.Provision(ctx); err != nil {
+								return err
+							}
+							ap.Issuers = append(ap.Issuers, iss)
+						}
 						continue uniqueDomainsLoop
 					}
 				}
