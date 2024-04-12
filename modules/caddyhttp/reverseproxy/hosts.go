@@ -136,8 +136,10 @@ func (u *Upstream) fillHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
-	fails       int64
+	numRequests  int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	fails        int64
+	activePasses int64
+	activeFails  int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -148,6 +150,16 @@ func (h *Host) NumRequests() int {
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
 	return int(atomic.LoadInt64(&h.fails))
+}
+
+// activeHealthPasses returns the number of consecutive active health check passes with the upstream.
+func (h *Host) activeHealthPasses() int {
+	return int(atomic.LoadInt64(&h.activePasses))
+}
+
+// activeHealthFails returns the number of consecutive active health check failures with the upstream.
+func (h *Host) activeHealthFails() int {
+	return int(atomic.LoadInt64(&h.activeFails))
 }
 
 // countRequest mutates the active request count by
@@ -168,6 +180,32 @@ func (h *Host) countFail(delta int) error {
 		return fmt.Errorf("count below 0: %d", result)
 	}
 	return nil
+}
+
+// countHealthPass mutates the recent passes count by
+// delta. It returns an error if the adjustment fails.
+func (h *Host) countHealthPass(delta int) error {
+	result := atomic.AddInt64(&h.activePasses, int64(delta))
+	if result < 0 {
+		return fmt.Errorf("count below 0: %d", result)
+	}
+	return nil
+}
+
+// countHealthFail mutates the recent failures count by
+// delta. It returns an error if the adjustment fails.
+func (h *Host) countHealthFail(delta int) error {
+	result := atomic.AddInt64(&h.activeFails, int64(delta))
+	if result < 0 {
+		return fmt.Errorf("count below 0: %d", result)
+	}
+	return nil
+}
+
+// resetHealth resets the health check counters.
+func (h *Host) resetHealth() {
+	atomic.StoreInt64(&h.activePasses, 0)
+	atomic.StoreInt64(&h.activeFails, 0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.

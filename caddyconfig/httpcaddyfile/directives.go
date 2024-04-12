@@ -51,6 +51,7 @@ var defaultDirectiveOrder = []string{
 	"fs",
 	"root",
 	"log_append",
+	"skip_log", // TODO: deprecated, renamed to log_skip
 	"log_skip",
 
 	"header",
