@@ -35,6 +35,9 @@ func init() {
 	httpcaddyfile.RegisterHandlerDirective("intercept", parseCaddyfile)
 }
 
+// Intercept is a middleware that intercepts then replaces or modifies the original response.
+// It can, for instance, be used to implement X-Sendfile/X-Accel-Redirect-like features
+// when using modules like FrankenPHP or Caddy Snake.
 type Intercept struct {
 	// List of handlers and their associated matchers to evaluate
 	// after successful response generation.
