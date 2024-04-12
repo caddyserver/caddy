@@ -6,7 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-func TestInterceptResponse(t *testing.T) {
+func TestIntercept(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
 			skip_install_trust
@@ -20,7 +20,7 @@ func TestInterceptResponse(t *testing.T) {
 			respond /intercept "I'm a teapot" 408
 			respond /no-intercept "I'm not a teapot"
 
-			intercept_response {
+			intercept {
 				@teapot status 408
 				handle_response @teapot {
 					respond /intercept "I'm a combined coffee/tea pot that is temporarily out of coffee" 503

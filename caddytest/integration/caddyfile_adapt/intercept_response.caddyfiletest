@@ -2,7 +2,7 @@ localhost
 
 respond "To intercept"
 
-intercept_response {
+intercept {
 	@500 status 500
 	replace_status @500 400
 
@@ -209,7 +209,7 @@ intercept_response {
 															]
 														}
 													],
-													"handler": "intercept_response"
+													"handler": "intercept"
 												},
 												{
 													"body": "To intercept",

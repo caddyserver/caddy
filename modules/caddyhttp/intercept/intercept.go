@@ -31,11 +31,11 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(InterceptResponse{})
-	httpcaddyfile.RegisterHandlerDirective("intercept_response", parseCaddyfile)
+	caddy.RegisterModule(Intercept{})
+	httpcaddyfile.RegisterHandlerDirective("intercept", parseCaddyfile)
 }
 
-type InterceptResponse struct {
+type Intercept struct {
 	// List of handlers and their associated matchers to evaluate
 	// after successful response generation.
 	// The first handler that matches the original response will
@@ -44,9 +44,9 @@ type InterceptResponse struct {
 	// it is up to the handler to finish handling the response.
 	//
 	// Three new placeholders are available in this handler chain:
-	// - `{http.intercept_response.status_code}` The status code from the response
-	// - `{http.intercept_response.status_text}` The status text from the response
-	// - `{http.intercept_response.header.*}` The headers from the response
+	// - `{http.intercept.status_code}` The status code from the response
+	// - `{http.intercept.status_text}` The status text from the response
+	// - `{http.intercept.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
 	// Holds the named response matchers from the Caddyfile while adapting
@@ -59,15 +59,15 @@ type InterceptResponse struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (InterceptResponse) CaddyModule() caddy.ModuleInfo {
+func (Intercept) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.intercept_response",
-		New: func() caddy.Module { return new(InterceptResponse) },
+		ID:  "http.handlers.intercept",
+		New: func() caddy.Module { return new(Intercept) },
 	}
 }
 
 // Provision ensures that i is set up properly before use.
-func (irh *InterceptResponse) Provision(ctx caddy.Context) error {
+func (irh *Intercept) Provision(ctx caddy.Context) error {
 	// set up any response routes
 	for i, rh := range irh.HandleResponse {
 		err := rh.Provision(ctx)
@@ -107,7 +107,7 @@ func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 	irh.ResponseRecorder.WriteHeader(statusCode)
 }
 
-func (ir InterceptResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 
@@ -149,9 +149,9 @@ func (ir InterceptResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	// set up the replacer so that parts of the original response can be
 	// used for routing decisions
 	for field, value := range r.Header {
-		repl.Set("http.intercept_response.header."+field, strings.Join(value, ","))
+		repl.Set("http.intercept.header."+field, strings.Join(value, ","))
 	}
-	repl.Set("http.intercept_response.status_code", rec.Status())
+	repl.Set("http.intercept.status_code", rec.Status())
 
 	ir.logger.Debug("handling response", zap.Int("handler", rec.handlerIndex))
 
@@ -161,7 +161,7 @@ func (ir InterceptResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//	intercept_response [<matcher>] {
+//	intercept [<matcher>] {
 //	    # intercept original responses
 //	    @name {
 //	        status <code...>
@@ -175,7 +175,7 @@ func (ir InterceptResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize parsing of "handle_response" blocks, if possible.
-func (i *InterceptResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (i *Intercept) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// collect the response matchers defined as subdirectives
 	// prefixed with "@" for use with "handle_response" blocks
 	i.responseMatchers = make(map[string]caddyhttp.ResponseMatcher)
@@ -241,7 +241,7 @@ func (i *InterceptResponse) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // FinalizeUnmarshalCaddyfile finalizes the Caddyfile parsing which
 // requires having an httpcaddyfile.Helper to function, to parse subroutes.
-func (i *InterceptResponse) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error {
+func (i *Intercept) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error {
 	for _, d := range i.handleResponseSegments {
 		// consume the "handle_response" token
 		d.Next()
@@ -313,7 +313,7 @@ func (i *InterceptResponse) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Help
 const matcherPrefix = "@"
 
 func parseCaddyfile(helper httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var ir InterceptResponse
+	var ir Intercept
 	if err := ir.UnmarshalCaddyfile(helper.Dispenser); err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func parseCaddyfile(helper httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, e
 
 // Interface guards
 var (
-	_ caddy.Provisioner           = (*InterceptResponse)(nil)
-	_ caddyfile.Unmarshaler       = (*InterceptResponse)(nil)
-	_ caddyhttp.MiddlewareHandler = (*InterceptResponse)(nil)
+	_ caddy.Provisioner           = (*Intercept)(nil)
+	_ caddyfile.Unmarshaler       = (*Intercept)(nil)
+	_ caddyhttp.MiddlewareHandler = (*Intercept)(nil)
 )
