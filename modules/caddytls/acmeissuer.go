@@ -310,6 +310,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 		return nil, acct, fmt.Errorf("decoding API response: %v", err)
 	}
 	if result.Error.Code != 0 {
+		// do this check first because ZeroSSL's API returns 200 on errors
 		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
 			resp.StatusCode, result.Error.Type, result.Error.Code)
 	}
