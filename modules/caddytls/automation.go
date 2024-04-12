@@ -262,7 +262,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
 		// permission module configured
 		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
-		failClosed := noProtections && hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicity configured
+		failClosed := noProtections && hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
 		if noProtections {
 			if !hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
