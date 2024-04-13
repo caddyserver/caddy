@@ -193,6 +193,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
 		}
+		perm := PermissionByHTTP{
+			Endpoint: t.Automation.OnDemand.Ask,
+		}
+		if err := perm.Provision(ctx); err != nil {
+			return fmt.Errorf("provisioning 'ask' module: %v", err)
+		}
+		t.Automation.OnDemand.permission = perm
 	}
 
 	// automation/management policies

@@ -260,7 +260,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				// port, we'll have to choose one, so prefer the HTTPS port
 				if _, ok := redirDomains[d]; !ok ||
 					addr.StartPort == uint(app.httpsPort()) {
-					redirDomains[d] = []caddy.NetworkAddress{addr}
+					redirDomains[d] = append(redirDomains[d], addr)
 				}
 			}
 		}
