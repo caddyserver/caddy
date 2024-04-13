@@ -161,6 +161,12 @@ type FileServer struct {
 	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
 	precompressors     map[string]encode.Precompressed
 
+	// List of file extensions to try to read Etags from.
+	// If set, file Etags will be read from sidecar files
+	// with any of these suffixes, instead of generating
+	// our own Etag.
+	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
+
 	fsmap caddy.FileSystems
 
 	logger *zap.Logger
@@ -396,6 +402,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		w.Header().Del("Accept-Ranges")
 		w.Header().Add("Vary", "Accept-Encoding")
 
+		// try to get the etag from pre computed files if an etag suffix list was provided
+		if etag == "" && fsrv.EtagFileExtensions != nil {
+			etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+			if err != nil {
+				return err
+			}
+		}
+
 		// don't assign info = compressedInfo because sidecars are kind
 		// of transparent; however we do need to set the Etag:
 		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
@@ -420,7 +434,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return err // error is already structured
 		}
 		defer file.Close()
-
+		// try to get the etag from pre computed files if an etag suffix list was provided
+		if etag == "" && fsrv.EtagFileExtensions != nil {
+			etag, err = fsrv.getEtagFromFile(fileSystem, filename)
+			if err != nil {
+				return err
+			}
+		}
 		if etag == "" {
 			etag = calculateEtag(info)
 		}
@@ -637,6 +657,22 @@ func calculateEtag(d os.FileInfo) string {
 	t := strconv.FormatInt(mtime, 36)
 	s := strconv.FormatInt(d.Size(), 36)
 	return `"` + t + s + `"`
+}
+
+// Finds the first corresponding etag file for a given file in the file system and return its content
+func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (string, error) {
+	for _, suffix := range fsrv.EtagFileExtensions {
+		etagFilename := filename + suffix
+		etag, err := fs.ReadFile(fileSystem, etagFilename)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("cannot read etag from file %s: %v", etagFilename, err)
+		}
+		return string(etag), nil
+	}
+	return "", nil
 }
 
 // redirect performs a redirect to a given path. The 'toPath' parameter
