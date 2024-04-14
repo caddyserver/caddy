@@ -54,7 +54,10 @@ type ZeroSSLIssuer struct {
 	// forwarded port here.
 	AlternateHTTPPort int `json:"alternate_http_port,omitempty"`
 
-	// Use CNAME validation instead of HTTP.
+	// Use CNAME validation instead of HTTP. ZeroSSL's
+	// API uses CNAME records for DNS validation, similar
+	// to how Let's Encrypt uses TXT records for the
+	// DNS challenge.
 	CNAMEValidation *DNSChallengeConfig `json:"cname_validation,omitempty"`
 
 	logger  *zap.Logger
