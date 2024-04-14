@@ -474,7 +474,6 @@ func manageIdentity(ctx Context, cfg *Config) error {
 	// import the caddytls package -- but it works
 	if cfg.Admin.Identity.IssuersRaw == nil {
 		cfg.Admin.Identity.IssuersRaw = []json.RawMessage{
-			json.RawMessage(`{"module": "zerossl"}`),
 			json.RawMessage(`{"module": "acme"}`),
 		}
 	}

@@ -579,8 +579,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		customTransport.TLSClientConfig = tlsConfig
 	}
 
-	var httpClient *http.Client
-	*httpClient = *http.DefaultClient
+	httpClient := *http.DefaultClient
 	httpClient.Transport = customTransport
 
 	for _, uri := range hcp.Endpoints {
