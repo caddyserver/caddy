@@ -66,7 +66,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (z *Zstd) Provision(ctx caddy.Context) error {
 	var ok bool
 	if ok, z.level = zstd.EncoderLevelFromString(z.Level); !ok {
-		return d.Errf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
+		return fmt.Errorf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
 			zstd.SpeedFastest,
 			zstd.SpeedDefault,
 			zstd.SpeedBetterCompression,
