@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,7 +34,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
-	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -456,8 +456,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// treat it as a fast substring match
 		if strings.Count(matchPattern, "*") == 2 &&
 			strings.HasPrefix(matchPattern, "*") &&
-			strings.HasSuffix(matchPattern, "*") &&
-			strings.Count(matchPattern, "*") == 2 {
+			strings.HasSuffix(matchPattern, "*") {
 			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
 				return true
 			}

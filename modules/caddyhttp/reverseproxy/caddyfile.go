@@ -30,6 +30,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -1145,6 +1146,9 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if h.TLS == nil {
 				h.TLS = new(TLSConfig)
 			}
+			if len(h.TLS.CARaw) != 0 {
+				return d.Err("cannot specify both 'tls_trust_pool' and 'tls_trusted_ca_certs")
+			}
 			h.TLS.RootCAPEMFiles = args
 
 		case "tls_server_name":
@@ -1259,6 +1263,31 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("bad integer value '%s': %v", d.Val(), err)
 			}
 			h.MaxConnsPerHost = num
+
+		case "tls_trust_pool":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "tls.ca_pool.source." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			ca, ok := unm.(caddytls.CA)
+			if !ok {
+				return d.Errf("module %s is not a caddytls.CA", modID)
+			}
+			if h.TLS == nil {
+				h.TLS = new(TLSConfig)
+			}
+			if len(h.TLS.RootCAPEMFiles) != 0 {
+				return d.Err("cannot specify both 'tls_trust_pool' and 'tls_trusted_ca_certs'")
+			}
+			if h.TLS.CARaw != nil {
+				return d.Err("cannot specify \"tls_trust_pool\" twice in caddyfile")
+			}
+			h.TLS.CARaw = caddyconfig.JSONModuleObject(ca, "provider", modStem, nil)
 
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())

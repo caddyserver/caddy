@@ -58,14 +58,6 @@ tls {
 									}
 								},
 								"module": "acme"
-							},
-							{
-								"challenges": {
-									"dns": {
-										"ttl": 310000000000
-									}
-								},
-								"module": "zerossl"
 							}
 						]
 					}

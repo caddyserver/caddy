@@ -17,19 +17,15 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
-	"sync"
+	"strconv"
+	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
@@ -37,24 +33,36 @@ func init() {
 	caddy.RegisterModule(new(ZeroSSLIssuer))
 }
 
-// ZeroSSLIssuer makes an ACME issuer for getting certificates
-// from ZeroSSL by automatically generating EAB credentials.
-// Please be sure to set a valid email address in your config
-// so you can access/manage your domains in your ZeroSSL account.
-//
-// This issuer is only needed for automatic generation of EAB
-// credentials. If manually configuring/reusing EAB credentials,
-// the standard ACMEIssuer may be used if desired.
+// ZeroSSLIssuer uses the ZeroSSL API to get certificates.
+// Note that this is distinct from ZeroSSL's ACME endpoint.
+// To use ZeroSSL's ACME endpoint, use the ACMEIssuer
+// configured with ZeroSSL's ACME directory endpoint.
 type ZeroSSLIssuer struct {
-	*ACMEIssuer
-
 	// The API key (or "access key") for using the ZeroSSL API.
-	// This is optional, but can be used if you have an API key
-	// already and don't want to supply your email address.
+	// REQUIRED.
 	APIKey string `json:"api_key,omitempty"`
 
-	mu     sync.Mutex
-	logger *zap.Logger
+	// How many days the certificate should be valid for.
+	// Only certain values are accepted; see ZeroSSL docs.
+	ValidityDays int `json:"validity_days,omitempty"`
+
+	// The host to bind to when opening a listener for
+	// verifying domain names (or IPs).
+	ListenHost string `json:"listen_host,omitempty"`
+
+	// If HTTP is forwarded from port 80, specify the
+	// forwarded port here.
+	AlternateHTTPPort int `json:"alternate_http_port,omitempty"`
+
+	// Use CNAME validation instead of HTTP. ZeroSSL's
+	// API uses CNAME records for DNS validation, similar
+	// to how Let's Encrypt uses TXT records for the
+	// DNS challenge.
+	CNAMEValidation *DNSChallengeConfig `json:"cname_validation,omitempty"`
+
+	logger  *zap.Logger
+	storage certmagic.Storage
+	issuer  *certmagic.ZeroSSLIssuer
 }
 
 // CaddyModule returns the Caddy module information.
@@ -65,178 +73,184 @@ func (*ZeroSSLIssuer) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision sets up iss.
+// Provision sets up the issuer.
 func (iss *ZeroSSLIssuer) Provision(ctx caddy.Context) error {
 	iss.logger = ctx.Logger()
-	if iss.ACMEIssuer == nil {
-		iss.ACMEIssuer = new(ACMEIssuer)
-	}
-	if iss.ACMEIssuer.CA == "" {
-		iss.ACMEIssuer.CA = certmagic.ZeroSSLProductionCA
-	}
-	return iss.ACMEIssuer.Provision(ctx)
-}
+	iss.storage = ctx.Storage()
+	repl := caddy.NewReplacer()
 
-// newAccountCallback generates EAB if not already provided. It also sets a valid default contact on the account if not set.
-func (iss *ZeroSSLIssuer) newAccountCallback(ctx context.Context, acmeIss *certmagic.ACMEIssuer, acct acme.Account) (acme.Account, error) {
-	if acmeIss.ExternalAccount != nil {
-		return acct, nil
-	}
-	var err error
-	acmeIss.ExternalAccount, acct, err = iss.generateEABCredentials(ctx, acct)
-	return acct, err
-}
-
-// generateEABCredentials generates EAB credentials using the API key if provided,
-// otherwise using the primary contact email on the issuer. If an email is not set
-// on the issuer, a default generic email is used.
-func (iss *ZeroSSLIssuer) generateEABCredentials(ctx context.Context, acct acme.Account) (*acme.EAB, acme.Account, error) {
-	var endpoint string
-	var body io.Reader
-
-	// there are two ways to generate EAB credentials: authenticated with
-	// their API key, or unauthenticated with their email address
-	if iss.APIKey != "" {
-		apiKey := caddy.NewReplacer().ReplaceAll(iss.APIKey, "")
-		if apiKey == "" {
-			return nil, acct, fmt.Errorf("missing API key: '%v'", iss.APIKey)
+	var dnsManager *certmagic.DNSManager
+	if iss.CNAMEValidation != nil && len(iss.CNAMEValidation.ProviderRaw) > 0 {
+		val, err := ctx.LoadModule(iss.CNAMEValidation, "ProviderRaw")
+		if err != nil {
+			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-		qs := url.Values{"access_key": []string{apiKey}}
-		endpoint = fmt.Sprintf("%s/eab-credentials?%s", zerosslAPIBase, qs.Encode())
-	} else {
-		email := iss.Email
-		if email == "" {
-			iss.logger.Warn("missing email address for ZeroSSL; it is strongly recommended to set one for next time")
-			email = "caddy@zerossl.com" // special email address that preserves backwards-compat, but which black-holes dashboard features, oh well
+		dnsManager = &certmagic.DNSManager{
+			DNSProvider:        val.(certmagic.DNSProvider),
+			TTL:                time.Duration(iss.CNAMEValidation.TTL),
+			PropagationDelay:   time.Duration(iss.CNAMEValidation.PropagationDelay),
+			PropagationTimeout: time.Duration(iss.CNAMEValidation.PropagationTimeout),
+			Resolvers:          iss.CNAMEValidation.Resolvers,
+			OverrideDomain:     iss.CNAMEValidation.OverrideDomain,
+			Logger:             iss.logger.Named("cname"),
 		}
-		if len(acct.Contact) == 0 {
-			// we borrow the email from config or the default email, so ensure it's saved with the account
-			acct.Contact = []string{"mailto:" + email}
-		}
-		endpoint = zerosslAPIBase + "/eab-credentials-email"
-		form := url.Values{"email": []string{email}}
-		body = strings.NewReader(form.Encode())
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return nil, acct, fmt.Errorf("forming request: %v", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	}
-	req.Header.Set("User-Agent", certmagic.UserAgent)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Success bool `json:"success"`
-		Error   struct {
-			Code int    `json:"code"`
-			Type string `json:"type"`
-		} `json:"error"`
-		EABKID     string `json:"eab_kid"`
-		EABHMACKey string `json:"eab_hmac_key"`
-	}
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return nil, acct, fmt.Errorf("decoding API response: %v", err)
-	}
-	if result.Error.Code != 0 {
-		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
-			resp.StatusCode, result.Error.Type, result.Error.Code)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
+	iss.issuer = &certmagic.ZeroSSLIssuer{
+		APIKey:          repl.ReplaceAll(iss.APIKey, ""),
+		ValidityDays:    iss.ValidityDays,
+		ListenHost:      iss.ListenHost,
+		AltHTTPPort:     iss.AlternateHTTPPort,
+		Storage:         iss.storage,
+		CNAMEValidation: dnsManager,
+		Logger:          iss.logger,
 	}
 
-	iss.logger.Info("generated EAB credentials", zap.String("key_id", result.EABKID))
-
-	return &acme.EAB{
-		KeyID:  result.EABKID,
-		MACKey: result.EABHMACKey,
-	}, acct, nil
-}
-
-// initialize modifies the template for the underlying ACMEIssuer
-// values by setting the CA endpoint to the ZeroSSL directory and
-// setting the NewAccountFunc callback to one which allows us to
-// generate EAB credentials only if a new account is being made.
-// Since it modifies the stored template, its effect should only
-// be needed once, but it is fine to call it repeatedly.
-func (iss *ZeroSSLIssuer) initialize() {
-	iss.mu.Lock()
-	defer iss.mu.Unlock()
-	if iss.ACMEIssuer.issuer.NewAccountFunc == nil {
-		iss.ACMEIssuer.issuer.NewAccountFunc = iss.newAccountCallback
-	}
-}
-
-// PreCheck implements the certmagic.PreChecker interface.
-func (iss *ZeroSSLIssuer) PreCheck(ctx context.Context, names []string, interactive bool) error {
-	iss.initialize()
-	return iss.ACMEIssuer.PreCheck(ctx, names, interactive)
+	return nil
 }
 
 // Issue obtains a certificate for the given csr.
 func (iss *ZeroSSLIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
-	iss.initialize()
-	return iss.ACMEIssuer.Issue(ctx, csr)
+	return iss.issuer.Issue(ctx, csr)
 }
 
 // IssuerKey returns the unique issuer key for the configured CA endpoint.
 func (iss *ZeroSSLIssuer) IssuerKey() string {
-	iss.initialize()
-	return iss.ACMEIssuer.IssuerKey()
+	return iss.issuer.IssuerKey()
 }
 
 // Revoke revokes the given certificate.
 func (iss *ZeroSSLIssuer) Revoke(ctx context.Context, cert certmagic.CertificateResource, reason int) error {
-	iss.initialize()
-	return iss.ACMEIssuer.Revoke(ctx, cert, reason)
+	return iss.issuer.Revoke(ctx, cert, reason)
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
-//	... zerossl [<api_key>] {
-//	    ...
+//	... zerossl <api_key> {
+//		    validity_days <days>
+//		    alt_http_port <port>
+//		    dns <provider_name> ...
+//		    propagation_delay <duration>
+//		    propagation_timeout <duration>
+//		    resolvers <list...>
+//		    dns_ttl <duration>
 //	}
-//
-// Any of the subdirectives for the ACME issuer can be used in the block.
 func (iss *ZeroSSLIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume issuer name
+
+	// API key is required
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	iss.APIKey = d.Val()
 	if d.NextArg() {
-		iss.APIKey = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
+		return d.ArgErr()
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "validity_days":
+			if iss.ValidityDays != 0 {
+				return d.Errf("validity days is already specified: %d", iss.ValidityDays)
+			}
+			days, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid number of days %s: %v", d.Val(), err)
+			}
+			iss.ValidityDays = days
+
+		case "alt_http_port":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			port, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("invalid port %s: %v", d.Val(), err)
+			}
+			iss.AlternateHTTPPort = port
+
+		case "dns":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			provName := d.Val()
+			if iss.CNAMEValidation == nil {
+				iss.CNAMEValidation = new(DNSChallengeConfig)
+			}
+			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+			if err != nil {
+				return err
+			}
+			iss.CNAMEValidation.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
+
+		case "propagation_delay":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			delayStr := d.Val()
+			delay, err := caddy.ParseDuration(delayStr)
+			if err != nil {
+				return d.Errf("invalid propagation_delay duration %s: %v", delayStr, err)
+			}
+			if iss.CNAMEValidation == nil {
+				iss.CNAMEValidation = new(DNSChallengeConfig)
+			}
+			iss.CNAMEValidation.PropagationDelay = caddy.Duration(delay)
+
+		case "propagation_timeout":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			timeoutStr := d.Val()
+			var timeout time.Duration
+			if timeoutStr == "-1" {
+				timeout = time.Duration(-1)
+			} else {
+				var err error
+				timeout, err = caddy.ParseDuration(timeoutStr)
+				if err != nil {
+					return d.Errf("invalid propagation_timeout duration %s: %v", timeoutStr, err)
+				}
+			}
+			if iss.CNAMEValidation == nil {
+				iss.CNAMEValidation = new(DNSChallengeConfig)
+			}
+			iss.CNAMEValidation.PropagationTimeout = caddy.Duration(timeout)
+
+		case "resolvers":
+			if iss.CNAMEValidation == nil {
+				iss.CNAMEValidation = new(DNSChallengeConfig)
+			}
+			iss.CNAMEValidation.Resolvers = d.RemainingArgs()
+			if len(iss.CNAMEValidation.Resolvers) == 0 {
+				return d.ArgErr()
+			}
+
+		case "dns_ttl":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			ttlStr := d.Val()
+			ttl, err := caddy.ParseDuration(ttlStr)
+			if err != nil {
+				return d.Errf("invalid dns_ttl duration %s: %v", ttlStr, err)
+			}
+			if iss.CNAMEValidation == nil {
+				iss.CNAMEValidation = new(DNSChallengeConfig)
+			}
+			iss.CNAMEValidation.TTL = caddy.Duration(ttl)
+
+		default:
+			return d.Errf("unrecognized zerossl issuer property: %s", d.Val())
 		}
 	}
 
-	if iss.ACMEIssuer == nil {
-		iss.ACMEIssuer = new(ACMEIssuer)
-	}
-	err := iss.ACMEIssuer.UnmarshalCaddyfile(d.NewFromNextSegment())
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
-const zerosslAPIBase = "https://api.zerossl.com/acme"
-
 // Interface guards
 var (
-	_ certmagic.PreChecker = (*ZeroSSLIssuer)(nil)
-	_ certmagic.Issuer     = (*ZeroSSLIssuer)(nil)
-	_ certmagic.Revoker    = (*ZeroSSLIssuer)(nil)
-	_ caddy.Provisioner    = (*ZeroSSLIssuer)(nil)
-	_ ConfigSetter         = (*ZeroSSLIssuer)(nil)
-
-	// a type which properly embeds an ACMEIssuer should implement
-	// this interface so it can be treated as an ACMEIssuer
-	_ interface{ GetACMEIssuer() *ACMEIssuer } = (*ZeroSSLIssuer)(nil)
+	_ certmagic.Issuer  = (*ZeroSSLIssuer)(nil)
+	_ certmagic.Revoker = (*ZeroSSLIssuer)(nil)
+	_ caddy.Provisioner = (*ZeroSSLIssuer)(nil)
 )

@@ -6,7 +6,7 @@ tls {
 		propagation_delay 5m10s
 		propagation_timeout 10m20s
 	}
-	issuer zerossl {
+	issuer zerossl api_key {
 		propagation_delay 5m30s
 		propagation_timeout -1
 	}
@@ -68,11 +68,10 @@ tls {
 								"module": "acme"
 							},
 							{
-								"challenges": {
-									"dns": {
-										"propagation_delay": 330000000000,
-										"propagation_timeout": -1
-									}
+								"api_key": "api_key",
+								"cname_validation": {
+									"propagation_delay": 330000000000,
+									"propagation_timeout": -1
 								},
 								"module": "zerossl"
 							}
