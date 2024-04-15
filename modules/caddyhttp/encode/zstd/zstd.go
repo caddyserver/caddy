@@ -67,7 +67,7 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Provision provisions z's configuration.
 func (z *Zstd) Provision(ctx caddy.Context) error {
 	if z.Level == "" {
-		z.Level = zstd.SpeedDefault
+		z.Level = zstd.SpeedDefault.String()
 	}
 	var ok bool
 	if ok, z.level = zstd.EncoderLevelFromString(z.Level); !ok {
