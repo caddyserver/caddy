@@ -922,7 +922,9 @@ func (h *Handler) finalizeResponse(
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		h.handleUpgradeResponse(logger, rw, req, res)
+		var wg sync.WaitGroup
+		h.handleUpgradeResponse(logger, &wg, rw, req, res)
+		wg.Wait()
 		return nil
 	}
 
