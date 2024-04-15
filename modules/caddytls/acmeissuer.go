@@ -135,12 +135,14 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
 		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
-			DNSProvider:        val.(certmagic.ACMEDNSProvider),
-			TTL:                time.Duration(iss.Challenges.DNS.TTL),
-			PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
-			PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
-			Resolvers:          iss.Challenges.DNS.Resolvers,
-			OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+			DNSManager: certmagic.DNSManager{
+				DNSProvider:        val.(certmagic.ACMEDNSProvider),
+				TTL:                time.Duration(iss.Challenges.DNS.TTL),
+				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
+				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
+				Resolvers:          iss.Challenges.DNS.Resolvers,
+				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+			},
 		}
 	}
 
