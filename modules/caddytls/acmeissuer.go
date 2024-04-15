@@ -28,7 +28,6 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/caddyserver/zerossl"
-	"github.com/mholt/acmez/v2"
 	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap"
 
@@ -135,27 +134,15 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-
-		if deprecatedProvider, ok := val.(acmez.Solver); ok {
-			// TODO: For a temporary amount of time, we are allowing the use of DNS
-			// providers from go-acme/lego since there are so many providers implemented
-			// using that API -- they are adapted as an all-in-one Caddy module in this
-			// repository: https://github.com/caddy-dns/lego-deprecated - the module is a
-			// acmez.Solver type, so we use it directly. The user must set environment
-			// variables to configure it. Remove this shim once a sufficient number of
-			// DNS providers are implemented for the libdns APIs instead.
-			iss.Challenges.DNS.solver = deprecatedProvider
-		} else {
-			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
-				DNSManager: certmagic.DNSManager{
-					DNSProvider:        val.(certmagic.DNSProvider),
-					TTL:                time.Duration(iss.Challenges.DNS.TTL),
-					PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
-					PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
-					Resolvers:          iss.Challenges.DNS.Resolvers,
-					OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
-				},
-			}
+		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
+			DNSManager: certmagic.DNSManager{
+				DNSProvider:        val.(certmagic.DNSProvider),
+				TTL:                time.Duration(iss.Challenges.DNS.TTL),
+				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
+				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
+				Resolvers:          iss.Challenges.DNS.Resolvers,
+				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+			},
 		}
 	}
 
