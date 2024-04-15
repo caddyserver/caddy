@@ -2,17 +2,17 @@
 	debug
 	http_port 8080
 	https_port 8443
-	grace_period 5s
-	shutdown_delay 10s
 	default_sni localhost
 	order root first
 	storage file_system {
 		root /data
 	}
 	acme_ca https://example.com
+	acme_eab {
+		key_id 4K2scIVbBpNd-78scadB2g
+		mac_key abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+	}
 	acme_ca_root /path/to/ca.crt
-	ocsp_stapling off
-
 	email test@example.com
 	admin off
 	on_demand_tls {
@@ -20,7 +20,10 @@
 		interval 30s
 		burst 20
 	}
-	local_certs
+	storage_clean_interval 7d
+	renew_interval 1d
+	ocsp_interval 2d
+
 	key_type ed25519
 }
 
@@ -45,8 +48,6 @@
 		"http": {
 			"http_port": 8080,
 			"https_port": 8443,
-			"grace_period": 5000000000,
-			"shutdown_delay": 10000000000,
 			"servers": {
 				"srv0": {
 					"listen": [
@@ -61,22 +62,35 @@
 					{
 						"issuers": [
 							{
-								"module": "internal"
+								"ca": "https://example.com",
+								"email": "test@example.com",
+								"external_account": {
+									"key_id": "4K2scIVbBpNd-78scadB2g",
+									"mac_key": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+								},
+								"module": "acme",
+								"trusted_roots_pem_files": [
+									"/path/to/ca.crt"
+								]
 							}
 						],
-						"key_type": "ed25519",
-						"disable_ocsp_stapling": true
+						"key_type": "ed25519"
 					}
 				],
 				"on_demand": {
-					"ask": "https://example.com",
+					"permission": {
+						"endpoint": "https://example.com",
+						"module": "http"
+					},
 					"rate_limit": {
 						"interval": 30000000000,
 						"burst": 20
 					}
-				}
-			},
-			"disable_ocsp_stapling": true
+				},
+				"ocsp_interval": 172800000000000,
+				"renew_interval": 86400000000000,
+				"storage_clean_interval": 604800000000000
+			}
 		}
 	}
 }

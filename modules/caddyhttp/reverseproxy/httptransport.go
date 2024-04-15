@@ -19,10 +19,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -70,6 +72,22 @@ type HTTPTransport struct {
 	// If non-empty, which PROXY protocol version to send when
 	// connecting to an upstream. Default: off.
 	ProxyProtocol string `json:"proxy_protocol,omitempty"`
+
+	// URL to the server that the HTTP transport will use to proxy
+	// requests to the upstream. See http.Transport.Proxy for
+	// information regarding supported protocols. This value takes
+	// precedence over `HTTP_PROXY`, etc.
+	//
+	// Providing a value to this parameter results in
+	// requests flowing through the reverse_proxy in the following
+	// way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  forward_proxy_url -> upstream
+	//
+	// Default: http.ProxyFromEnvironment
+	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
 	// an upstream. Default: `3s`.
@@ -265,8 +283,21 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		return conn, nil
 	}
 
+	// negotiate any HTTP/SOCKS proxy for the HTTP transport
+	var proxy func(*http.Request) (*url.URL, error)
+	if h.ForwardProxyURL != "" {
+		pUrl, err := url.Parse(h.ForwardProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
+		}
+		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
+		proxy = http.ProxyURL(pUrl)
+	} else {
+		proxy = http.ProxyFromEnvironment
+	}
+
 	rt := &http.Transport{
-		Proxy:                  http.ProxyFromEnvironment,
+		Proxy:                  proxy,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
@@ -442,9 +473,14 @@ func (h HTTPTransport) Cleanup() error {
 // TLSConfig holds configuration related to the TLS configuration for the
 // transport/client.
 type TLSConfig struct {
+	// Certificate authority module which provides the certificate pool of trusted certificates
+	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
+
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// Optional list of base64-encoded DER-encoded CA certificates to trust.
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 
+	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// List of PEM-encoded CA certificate files to add to the same trust
 	// store as RootCAPool (or root_ca_pool in the JSON).
 	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`
@@ -546,6 +582,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// trusted root CAs
 	if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
+		ctx.Logger().Warn("root_ca_pool and root_ca_pem_files are deprecated. Use one of the tls.ca_pool.source modules instead")
 		rootPool := x509.NewCertPool()
 		for _, encodedCACert := range t.RootCAPool {
 			caCert, err := decodeBase64DERCert(encodedCACert)
@@ -562,6 +599,21 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 			rootPool.AppendCertsFromPEM(pemData)
 		}
 		cfg.RootCAs = rootPool
+	}
+
+	if t.CARaw != nil {
+		if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
+			return nil, fmt.Errorf("conflicting config for Root CA pool")
+		}
+		caRaw, err := ctx.LoadModule(t, "CARaw")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load ca module: %v", err)
+		}
+		ca, ok := caRaw.(caddytls.CA)
+		if !ok {
+			return nil, fmt.Errorf("CA module '%s' is not a certificate pool provider", ca)
+		}
+		cfg.RootCAs = ca.CertPool()
 	}
 
 	// Renegotiation

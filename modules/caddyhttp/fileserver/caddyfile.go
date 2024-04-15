@@ -112,6 +112,17 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			fsrv.Browse = new(Browse)
 			d.Args(&fsrv.Browse.TemplateFile)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "reveal_symlinks":
+					if fsrv.Browse.RevealSymlinks {
+						return d.Err("Symlinks path reveal is already enabled")
+					}
+					fsrv.Browse.RevealSymlinks = true
+				default:
+					return d.Errf("unknown subdirective '%s'", d.Val())
+				}
+			}
 
 		case "precompressed":
 			var order []string
@@ -152,6 +163,13 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			fsrv.PassThru = true
+
+		case "etag_file_extensions":
+			etagFileExtensions := d.RemainingArgs()
+			if len(etagFileExtensions) == 0 {
+				return d.ArgErr()
+			}
+			fsrv.EtagFileExtensions = etagFileExtensions
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())

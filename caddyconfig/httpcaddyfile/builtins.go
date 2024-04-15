@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -49,7 +49,8 @@ func init() {
 	RegisterDirective("handle_errors", parseHandleErrors)
 	RegisterHandlerDirective("invoke", parseInvoke)
 	RegisterDirective("log", parseLog)
-	RegisterHandlerDirective("skip_log", parseSkipLog)
+	RegisterHandlerDirective("skip_log", parseLogSkip)
+	RegisterHandlerDirective("log_skip", parseLogSkip)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -106,7 +107,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var onDemand bool
 	var reusePrivateKeys bool
 
-	// file certificate loader
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
 	case 0:
@@ -116,13 +116,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		} else if !strings.Contains(firstLine[0], "@") {
 			return nil, h.Err("single argument must either be 'internal' or an email address")
 		} else {
-			if acmeIssuer == nil {
-				acmeIssuer = new(caddytls.ACMEIssuer)
+			acmeIssuer = &caddytls.ACMEIssuer{
+				Email: firstLine[0],
 			}
-			acmeIssuer.Email = firstLine[0]
 		}
 
 	case 2:
+		// file certificate loader
 		certFilename := firstLine[0]
 		keyFilename := firstLine[1]
 
@@ -487,19 +487,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 	case acmeIssuer != nil:
 		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
-		defaultIssuers := caddytls.DefaultIssuers()
+		defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
 
-		// if a CA endpoint was set, override multiple implicit issuers since it's a specific one
+		// if an ACME CA endpoint was set, the user expects to use that specific one,
+		// not any others that may be defaults, so replace all defaults with that ACME CA
 		if acmeIssuer.CA != "" {
 			defaultIssuers = []certmagic.Issuer{acmeIssuer}
 		}
 
 		for _, issuer := range defaultIssuers {
-			switch iss := issuer.(type) {
-			case *caddytls.ACMEIssuer:
-				issuer = acmeIssuer
-			case *caddytls.ZeroSSLIssuer:
-				iss.ACMEIssuer = acmeIssuer
+			// apply settings from the implicitly-configured ACMEIssuer to any
+			// default ACMEIssuers, but preserve each default issuer's CA endpoint,
+			// because, for example, if you configure the DNS challenge, it should
+			// apply to any of the default ACMEIssuers, but you don't want to trample
+			// out their unique CA endpoints
+			if iss, ok := issuer.(*caddytls.ACMEIssuer); ok && iss != nil {
+				acmeCopy := *acmeIssuer
+				acmeCopy.CA = iss.CA
+				issuer = &acmeCopy
 			}
 			configVals = append(configVals, ConfigValue{
 				Class: "tls.cert_issuer",
@@ -1038,13 +1043,19 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	return configValues, nil
 }
 
-// parseSkipLog parses the skip_log directive. Syntax:
+// parseLogSkip parses the log_skip directive. Syntax:
 //
-//	skip_log [<matcher>]
-func parseSkipLog(h Helper) (caddyhttp.MiddlewareHandler, error) {
+//	log_skip [<matcher>]
+func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	h.Next() // consume directive name
+
+	// "skip_log" is deprecated, replaced by "log_skip"
+	if h.Val() == "skip_log" {
+		caddy.Log().Named("config.adapter.caddyfile").Warn("the 'skip_log' directive is deprecated, please use 'log_skip' instead!")
+	}
+
 	if h.NextArg() {
 		return nil, h.ArgErr()
 	}
-	return caddyhttp.VarsMiddleware{"skip_log": true}, nil
+	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
 }

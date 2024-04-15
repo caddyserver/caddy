@@ -108,7 +108,6 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 		acct.Username = repl.ReplaceAll(acct.Username, "")
 		acct.Password = repl.ReplaceAll(acct.Password, "")
-		acct.Salt = repl.ReplaceAll(acct.Salt, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
@@ -124,13 +123,6 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 			acct.password, err = base64.StdEncoding.DecodeString(acct.Password)
 			if err != nil {
 				return fmt.Errorf("base64-decoding password: %v", err)
-			}
-		}
-
-		if acct.Salt != "" {
-			acct.salt, err = base64.StdEncoding.DecodeString(acct.Salt)
-			if err != nil {
-				return fmt.Errorf("base64-decoding salt: %v", err)
 			}
 		}
 
@@ -172,7 +164,7 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 
 func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []byte) (bool, error) {
 	compare := func() (bool, error) {
-		return hba.Hash.Compare(account.password, plaintextPassword, account.salt)
+		return hba.Hash.Compare(account.password, plaintextPassword)
 	}
 
 	// if no caching is enabled, simply return the result of hashing + comparing
@@ -181,7 +173,7 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 	}
 
 	// compute a cache key that is unique for these input parameters
-	cacheKey := hex.EncodeToString(append(append(account.password, account.salt...), plaintextPassword...))
+	cacheKey := hex.EncodeToString(append(account.password, plaintextPassword...))
 
 	// fast track: if the result of the input is already cached, use it
 	hba.HashCache.mu.RLock()
@@ -231,7 +223,7 @@ type Cache struct {
 	mu *sync.RWMutex
 	g  *singleflight.Group
 
-	// map of concatenated hashed password + plaintext password + salt, to result
+	// map of concatenated hashed password + plaintext password, to result
 	cache map[string]bool
 }
 
@@ -274,37 +266,33 @@ func (c *Cache) makeRoom() {
 // comparison.
 type Comparer interface {
 	// Compare returns true if the result of hashing
-	// plaintextPassword with salt is hashedPassword,
-	// false otherwise. An error is returned only if
+	// plaintextPassword is hashedPassword, false
+	// otherwise. An error is returned only if
 	// there is a technical/configuration error.
-	Compare(hashedPassword, plaintextPassword, salt []byte) (bool, error)
+	Compare(hashedPassword, plaintextPassword []byte) (bool, error)
 }
 
 // Hasher is a type that can generate a secure hash
-// given a plaintext and optional salt (for algorithms
-// that require a salt). Hashing modules which implement
+// given a plaintext. Hashing modules which implement
 // this interface can be used with the hash-password
 // subcommand as well as benefitting from anti-timing
 // features. A hasher also returns a fake hash which
 // can be used for timing side-channel mitigation.
 type Hasher interface {
-	Hash(plaintext, salt []byte) ([]byte, error)
+	Hash(plaintext []byte) ([]byte, error)
 	FakeHash() []byte
 }
 
-// Account contains a username, password, and salt (if applicable).
+// Account contains a username and password.
 type Account struct {
 	// A user's username.
 	Username string `json:"username"`
 
-	// The user's hashed password, base64-encoded.
+	// The user's hashed password, in Modular Crypt Format (with `$` prefix)
+	// or base64-encoded.
 	Password string `json:"password"`
 
-	// The user's password salt, base64-encoded; for
-	// algorithms where external salt is needed.
-	Salt string `json:"salt,omitempty"`
-
-	password, salt []byte
+	password []byte
 }
 
 // Interface guards

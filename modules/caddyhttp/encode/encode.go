@@ -20,11 +20,9 @@
 package encode
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -84,17 +82,43 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 
 	if enc.Matcher == nil {
 		// common text-based content types
+		// list based on https://developers.cloudflare.com/speed/optimization/content/brotli/content-compression/#compression-between-cloudflare-and-website-visitors
 		enc.Matcher = &caddyhttp.ResponseMatcher{
 			Headers: http.Header{
 				"Content-Type": []string{
-					"text/*",
-					"application/json*",
-					"application/javascript*",
-					"application/xhtml+xml*",
 					"application/atom+xml*",
+					"application/eot*",
+					"application/font*",
+					"application/geo+json*",
+					"application/graphql+json*",
+					"application/javascript*",
+					"application/json*",
+					"application/ld+json*",
+					"application/manifest+json*",
+					"application/opentype*",
+					"application/otf*",
 					"application/rss+xml*",
+					"application/truetype*",
+					"application/ttf*",
+					"application/vnd.api+json*",
+					"application/vnd.ms-fontobject*",
 					"application/wasm*",
+					"application/x-httpd-cgi*",
+					"application/x-javascript*",
+					"application/x-opentype*",
+					"application/x-otf*",
+					"application/x-perl*",
+					"application/x-protobuf*",
+					"application/x-ttf*",
+					"application/xhtml+xml*",
+					"application/xml*",
+					"font/*",
 					"image/svg+xml*",
+					"image/vnd.microsoft.icon*",
+					"image/x-icon*",
+					"multipart/bag*",
+					"multipart/mixed*",
+					"text/*",
 				},
 			},
 		}
@@ -195,6 +219,12 @@ type responseWriter struct {
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+
+	// write status immediately when status code is informational
+	// see: https://caddy.community/t/disappear-103-early-hints-response-with-encode-enable-caddy-v2-7-6/23081/5
+	if 100 <= status && status <= 199 {
+		rw.ResponseWriter.WriteHeader(status)
+	}
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
@@ -202,31 +232,18 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 	return enc.Matcher.Match(rw.statusCode, rw.Header())
 }
 
-// Flush implements http.Flusher. It delays the actual Flush of the underlying ResponseWriterWrapper
-// until headers were written.
-func (rw *responseWriter) Flush() {
+// FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
+// ResponseWriterWrapper until headers were written.
+func (rw *responseWriter) FlushError() error {
 	if !rw.wroteHeader {
 		// flushing the underlying ResponseWriter will write header and status code,
 		// but we need to delay that until we can determine if we must encode and
 		// therefore add the Content-Encoding header; this happens in the first call
 		// to rw.Write (see bug in #4314)
-		return
+		return nil
 	}
 	//nolint:bodyclose
-	http.NewResponseController(rw.ResponseWriter).Flush()
-}
-
-// Hijack implements http.Hijacker. It will flush status code if set. We don't track actual hijacked
-// status assuming http middlewares will track its status.
-func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if !rw.wroteHeader {
-		if rw.statusCode != 0 {
-			rw.ResponseWriter.WriteHeader(rw.statusCode)
-		}
-		rw.wroteHeader = true
-	}
-	//nolint:bodyclose
-	return http.NewResponseController(rw.ResponseWriter).Hijack()
+	return http.NewResponseController(rw.ResponseWriter).Flush()
 }
 
 // Write writes to the response. If the response qualifies,

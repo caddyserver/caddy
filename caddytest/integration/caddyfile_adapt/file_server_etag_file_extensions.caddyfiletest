@@ -1,0 +1,40 @@
+:8080 {
+	root * ./
+	file_server {
+		etag_file_extensions .b3sum .sha256
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "vars",
+									"root": "./"
+								},
+								{
+									"etag_file_extensions": [
+										".b3sum",
+										".sha256"
+									],
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

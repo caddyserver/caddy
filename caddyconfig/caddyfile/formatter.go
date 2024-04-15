@@ -17,9 +17,8 @@ package caddyfile
 import (
 	"bytes"
 	"io"
+	"slices"
 	"unicode"
-
-	"golang.org/x/exp/slices"
 )
 
 // Format formats the input Caddyfile to a standard, nice-looking
@@ -124,18 +123,22 @@ func Format(input []byte) []byte {
 		}
 		// if we're in a heredoc, all characters are read&write as-is
 		if heredoc == heredocOpened {
-			write(ch)
 			heredocClosingMarker = append(heredocClosingMarker, ch)
-			if len(heredocClosingMarker) > len(heredocMarker) {
+			if len(heredocClosingMarker) > len(heredocMarker)+1 { // We assert that the heredocClosingMarker is followed by a unicode.Space
 				heredocClosingMarker = heredocClosingMarker[1:]
 			}
 			// check if we're done
-			if slices.Equal(heredocClosingMarker, heredocMarker) {
+			if unicode.IsSpace(ch) && slices.Equal(heredocClosingMarker[:len(heredocClosingMarker)-1], heredocMarker) {
 				heredocMarker = nil
 				heredocClosingMarker = nil
 				heredoc = heredocClosed
+			} else {
+				write(ch)
+				if ch == '\n' {
+					heredocClosingMarker = heredocClosingMarker[:0]
+				}
+				continue
 			}
-			continue
 		}
 
 		if last == '<' && space {

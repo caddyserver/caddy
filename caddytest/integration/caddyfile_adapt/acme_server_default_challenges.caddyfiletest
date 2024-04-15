@@ -1,5 +1,17 @@
-localhost:80
-respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
+{
+	pki {
+		ca custom-ca {
+			name "Custom CA"
+		}
+	}
+}
+
+acme.example.com {
+	acme_server {
+		ca custom-ca
+		challenges
+	}
+}
 ----------
 {
 	"apps": {
@@ -7,14 +19,14 @@ respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
 			"servers": {
 				"srv0": {
 					"listen": [
-						":80"
+						":443"
 					],
 					"routes": [
 						{
 							"match": [
 								{
 									"host": [
-										"localhost"
+										"acme.example.com"
 									]
 								}
 							],
@@ -25,8 +37,8 @@ respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
 										{
 											"handle": [
 												{
-													"body": "{http.request.header.content-type} {http.request.host.labels.0} {http.request.uri.query.p} {http.request.uri.path.0} {http.regexp.name.0}",
-													"handler": "static_response"
+													"ca": "custom-ca",
+													"handler": "acme_server"
 												}
 											]
 										}
@@ -36,6 +48,13 @@ respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
 							"terminal": true
 						}
 					]
+				}
+			}
+		},
+		"pki": {
+			"certificate_authorities": {
+				"custom-ca": {
+					"name": "Custom CA"
 				}
 			}
 		}

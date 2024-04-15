@@ -98,7 +98,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 	h.Next() // consume directive name
 
 	args := h.RemainingArgs()
-	if len(args) < 2 {
+	if len(args) < 1 {
 		return nil, h.ArgErr()
 	}
 
@@ -158,10 +158,71 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 			Replace: replace,
 		})
 
+	case "query":
+		if len(args) > 4 {
+			return nil, h.ArgErr()
+		}
+		rewr.Query = &queryOps{}
+		var hasArgs bool
+		if len(args) > 1 {
+			hasArgs = true
+			err := applyQueryOps(h, rewr.Query, args[1:])
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		for h.NextBlock(0) {
+			if hasArgs {
+				return nil, h.Err("Cannot specify uri query rewrites in both argument and block")
+			}
+			queryArgs := []string{h.Val()}
+			queryArgs = append(queryArgs, h.RemainingArgs()...)
+			err := applyQueryOps(h, rewr.Query, queryArgs)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 	default:
 		return nil, h.Errf("unrecognized URI manipulation '%s'", args[0])
 	}
 	return rewr, nil
+}
+
+func applyQueryOps(h httpcaddyfile.Helper, qo *queryOps, args []string) error {
+	key := args[0]
+	switch {
+	case strings.HasPrefix(key, "-"):
+		if len(args) != 1 {
+			return h.ArgErr()
+		}
+		qo.Delete = append(qo.Delete, strings.TrimLeft(key, "-"))
+
+	case strings.HasPrefix(key, "+"):
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		param := strings.TrimLeft(key, "+")
+		qo.Add = append(qo.Add, queryOpsArguments{Key: param, Val: args[1]})
+
+	case strings.Contains(key, ">"):
+		if len(args) != 1 {
+			return h.ArgErr()
+		}
+		renameValKey := strings.Split(key, ">")
+		qo.Rename = append(qo.Rename, queryOpsArguments{Key: renameValKey[0], Val: renameValKey[1]})
+
+	case len(args) == 3:
+		qo.Replace = append(qo.Replace, &queryOpsReplacement{Key: key, SearchRegexp: args[1], Replace: args[2]})
+
+	default:
+		if len(args) != 2 {
+			return h.ArgErr()
+		}
+		qo.Set = append(qo.Set, queryOpsArguments{Key: key, Val: args[1]})
+	}
+	return nil
 }
 
 // parseCaddyfileHandlePath parses the handle_path directive. Syntax:

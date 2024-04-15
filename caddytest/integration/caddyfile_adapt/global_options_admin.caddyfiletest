@@ -71,7 +71,10 @@
 					}
 				],
 				"on_demand": {
-					"ask": "https://example.com",
+					"permission": {
+						"endpoint": "https://example.com",
+						"module": "http"
+					},
 					"rate_limit": {
 						"interval": 30000000000,
 						"burst": 20

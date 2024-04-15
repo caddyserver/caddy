@@ -20,13 +20,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	weakrand "math/rand"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/cespare/xxhash/v2"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -655,12 +656,22 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 		if err != nil {
 			return upstream
 		}
-		http.SetCookie(w, &http.Cookie{
+		cookie := &http.Cookie{
 			Name:   s.Name,
 			Value:  sha,
 			Path:   "/",
 			Secure: false,
-		})
+		}
+		isProxyHttps := false
+		if trusted, ok := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool); ok && trusted {
+			xfp, xfpOk, _ := lastHeaderValue(req.Header, "X-Forwarded-Proto")
+			isProxyHttps = xfpOk && xfp == "https"
+		}
+		if req.TLS != nil || isProxyHttps {
+			cookie.Secure = true
+			cookie.SameSite = http.SameSiteNoneMode
+		}
+		http.SetCookie(w, cookie)
 		return upstream
 	}
 
@@ -797,7 +808,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 	// see https://medium.com/i0exception/rendezvous-hashing-8c00e2fb58b0,
 	// https://randorithms.com/2020/12/26/rendezvous-hashing.html,
 	// and https://en.wikipedia.org/wiki/Rendezvous_hashing.
-	var highestHash uint32
+	var highestHash uint64
 	var upstream *Upstream
 	for _, up := range pool {
 		if !up.Available() {
@@ -813,10 +824,10 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 }
 
 // hash calculates a fast hash based on s.
-func hash(s string) uint32 {
-	h := fnv.New32a()
+func hash(s string) uint64 {
+	h := xxhash.New()
 	_, _ = h.Write([]byte(s))
-	return h.Sum32()
+	return h.Sum64()
 }
 
 func loadFallbackPolicy(d *caddyfile.Dispenser) (json.RawMessage, error) {

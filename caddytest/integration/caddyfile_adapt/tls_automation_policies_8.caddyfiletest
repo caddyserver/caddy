@@ -1,18 +1,15 @@
-# https://caddy.community/t/caddyfile-having-individual-sites-differ-from-global-options/11297
-{
-	local_certs
+# (this Caddyfile is contrived, but based on issues #4176 and #4198)
+
+http://example.com {
 }
 
-a.example.com {
-	tls internal
-}
-
-b.example.com {
+https://example.com {
 	tls abc@example.com
 }
 
-c.example.com {
+http://localhost:8081 {
 }
+
 ----------
 {
 	"apps": {
@@ -27,33 +24,52 @@ c.example.com {
 							"match": [
 								{
 									"host": [
-										"a.example.com"
-									]
-								}
-							],
-							"terminal": true
-						},
-						{
-							"match": [
-								{
-									"host": [
-										"b.example.com"
-									]
-								}
-							],
-							"terminal": true
-						},
-						{
-							"match": [
-								{
-									"host": [
-										"c.example.com"
+										"example.com"
 									]
 								}
 							],
 							"terminal": true
 						}
 					]
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":8081"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"localhost"
+						]
+					}
 				}
 			}
 		},
@@ -62,7 +78,7 @@ c.example.com {
 				"policies": [
 					{
 						"subjects": [
-							"b.example.com"
+							"example.com"
 						],
 						"issuers": [
 							{
@@ -70,15 +86,9 @@ c.example.com {
 								"module": "acme"
 							},
 							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
 								"email": "abc@example.com",
-								"module": "zerossl"
-							}
-						]
-					},
-					{
-						"issuers": [
-							{
-								"module": "internal"
+								"module": "acme"
 							}
 						]
 					}
