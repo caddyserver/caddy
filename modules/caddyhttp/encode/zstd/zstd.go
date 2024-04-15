@@ -15,6 +15,8 @@
 package caddyzstd
 
 import (
+	"fmt"
+
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/caddyserver/caddy/v2"
