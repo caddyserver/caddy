@@ -64,7 +64,15 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Provision provisions z's configuration.
 func (z *Zstd) Provision(ctx caddy.Context) error {
-	_, z.level = zstd.EncoderLevelFromString(z.Level)
+	var ok bool
+	if ok, z.level = zstd.EncoderLevelFromString(z.Level); !ok {
+		return d.Errf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
+			zstd.SpeedFastest,
+			zstd.SpeedDefault,
+			zstd.SpeedBetterCompression,
+			zstd.SpeedBestCompression,
+		)
+	}
 	return nil
 }
 
