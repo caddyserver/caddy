@@ -30,8 +30,9 @@ func init() {
 
 // Zstd can create Zstandard encoders.
 type Zstd struct {
-	// List of all available levels: fastest, default, better, best
+	// The compression level. Accepted values: fastest, better, best, default.
 	Level string `json:"level,omitempty"`
+
 	// Compression level refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression
 	level zstd.EncoderLevel
 }
@@ -54,18 +55,20 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if ok, _ := zstd.EncoderLevelFromString(levelStr); !ok {
 		return d.Errf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
 			zstd.SpeedFastest,
-			zstd.SpeedDefault,
 			zstd.SpeedBetterCompression,
 			zstd.SpeedBestCompression,
+			zstd.SpeedDefault,
 		)
 	}
-
 	z.Level = levelStr
 	return nil
 }
 
 // Provision provisions z's configuration.
 func (z *Zstd) Provision(ctx caddy.Context) error {
+	if z.Level == "" {
+		z.Level = zstd.SpeedDefault
+	}
 	var ok bool
 	if ok, z.level = zstd.EncoderLevelFromString(z.Level); !ok {
 		return fmt.Errorf("unexpected compression level, use one of '%s', '%s', '%s', '%s'",
