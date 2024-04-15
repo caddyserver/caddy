@@ -16,7 +16,6 @@ package caddytls
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -31,7 +30,6 @@ import (
 func init() {
 	caddy.RegisterModule(MatchServerName{})
 	caddy.RegisterModule(MatchRemoteIP{})
-	caddy.RegisterModule(MatchNot{})
 	caddy.RegisterModule(MatchLocalIP{})
 }
 
@@ -222,109 +220,10 @@ func (MatchLocalIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
 	return false
 }
 
-// RawMatcherSets is a group of matcher sets
-// in their raw, JSON form.
-type (
-	RawMatcherSets []caddy.ModuleMap
-	MatcherSet     []ConnectionMatcher
-	MatcherSets    []MatcherSet
-)
-
-func (mset MatcherSet) Match(hello *tls.ClientHelloInfo) bool {
-	for _, m := range mset {
-		if !m.Match(hello) {
-			return false
-		}
-	}
-	return true
-}
-
-// TODO:
-// func (ms MatcherSets) anyMatch(hello *tls.ClientHelloInfo) bool {
-// 	for _, mset := range ms {
-// 		if mset.Match(hello) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-//
-// func (ms *MatcherSets) fromInterface(matcherSets any) error {
-// 	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
-// 		var matcherSet MatcherSet
-// 		for _, matcher := range matcherSetIfaces {
-// 			reqMatcher, ok := matcher.(ConnectionMatcher)
-// 			if !ok {
-// 				return fmt.Errorf("decoded module is not a ConnectionMatcher: %#v", matcher)
-// 			}
-// 			matcherSet = append(matcherSet, reqMatcher)
-// 		}
-// 		*ms = append(*ms, matcherSet)
-// 	}
-// 	return nil
-// }
-
-// MatchNot negates the sub-matchers within it.
-type MatchNot struct {
-	MatcherSetRaw RawMatcherSets `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
-	matchers      MatcherSet     `json:"-"`
-}
-
-// UnmarshalJSON satisfies json.Unmarshaler. It puts the JSON
-// bytes directly into m's MatcherSetsRaw field.
-func (m *MatchNot) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &m.MatcherSetRaw)
-}
-
-// MarshalJSON satisfies json.Marshaler by marshaling
-// m's raw matcher sets.
-func (m MatchNot) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.MatcherSetRaw)
-}
-
-// CaddyModule implements caddy.Module.
-func (MatchNot) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID: "tls.handshake_match.not",
-		New: func() caddy.Module {
-			return new(MatchNot)
-		},
-	}
-}
-
-// Provision implements caddy.Provisioner.
-func (m *MatchNot) Provision(ctx caddy.Context) error {
-	matcherSets, err := ctx.LoadModule(m, "MatcherSetRaw")
-	if err != nil {
-		return fmt.Errorf("loading matcher sets: %v", err)
-	}
-	for _, modMap := range matcherSets.([]map[string]any) {
-		var ms MatcherSet
-		for _, modIface := range modMap {
-			ms = append(ms, modIface.(ConnectionMatcher))
-		}
-		m.matchers = append(m.matchers, ms)
-	}
-	return nil
-}
-
-// Match implements ConnectionMatcher.
-func (mc MatchNot) Match(hello *tls.ClientHelloInfo) bool {
-	for _, ms := range mc.matchers {
-		if ms.Match(hello) {
-			return false
-		}
-	}
-	return true
-}
-
 // Interface guards
 var (
 	_ ConnectionMatcher = (*MatchServerName)(nil)
 	_ ConnectionMatcher = (*MatchRemoteIP)(nil)
-
-	_ caddy.Provisioner = (*MatchNot)(nil)
-	_ ConnectionMatcher = (*MatchNot)(nil)
 
 	_ caddy.Provisioner = (*MatchLocalIP)(nil)
 	_ ConnectionMatcher = (*MatchLocalIP)(nil)
