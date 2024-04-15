@@ -176,8 +176,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
-	// on-demand rate limiting
+	// on-demand rate limiting (TODO: deprecated, and should be removed later; rate limiting is ineffective now that permission modules are required)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		t.logger.Warn("DEPRECATED: on_demand.rate_limit will be removed in a future release; use permission modules or external certificate managers instead")
 		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
 		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
 	} else {
@@ -192,6 +193,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
 		}
+		perm := PermissionByHTTP{
+			Endpoint: t.Automation.OnDemand.Ask,
+		}
+		if err := perm.Provision(ctx); err != nil {
+			return fmt.Errorf("provisioning 'ask' module: %v", err)
+		}
+		t.Automation.OnDemand.permission = perm
 	}
 
 	// automation/management policies
@@ -406,35 +414,49 @@ func (t *TLS) Manage(names []string) error {
 	return nil
 }
 
-// HandleHTTPChallenge ensures that the HTTP challenge is handled for the
-// certificate named by r.Host, if it is an HTTP challenge request. It
-// requires that the automation policy for r.Host has an issuer of type
-// *certmagic.ACMEManager, or one that is ACME-enabled (GetACMEIssuer()).
+// HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
+// validation request is handled for the certificate named by r.Host, if it
+// is an HTTP challenge request. It requires that the automation policy for
+// r.Host has an issuer that implements GetACMEIssuer() or is a *ZeroSSLIssuer.
 func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
+	acmeChallenge := certmagic.LooksLikeHTTPChallenge(r)
+	zerosslValidation := certmagic.LooksLikeZeroSSLHTTPValidation(r)
+
 	// no-op if it's not an ACME challenge request
-	if !certmagic.LooksLikeHTTPChallenge(r) {
+	if !acmeChallenge && !zerosslValidation {
 		return false
 	}
 
 	// try all the issuers until we find the one that initiated the challenge
 	ap := t.getAutomationPolicyForName(r.Host)
-	type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
-	for _, iss := range ap.magic.Issuers {
-		if am, ok := iss.(acmeCapable); ok {
-			iss := am.GetACMEIssuer()
-			if iss.issuer.HandleHTTPChallenge(w, r) {
-				return true
+
+	if acmeChallenge {
+		type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
+
+		for _, iss := range ap.magic.Issuers {
+			if acmeIssuer, ok := iss.(acmeCapable); ok {
+				if acmeIssuer.GetACMEIssuer().issuer.HandleHTTPChallenge(w, r) {
+					return true
+				}
 			}
 		}
-	}
 
-	// it's possible another server in this process initiated the challenge;
-	// users have requested that Caddy only handle HTTP challenges it initiated,
-	// so that users can proxy the others through to their backends; but we
-	// might not have an automation policy for all identifiers that are trying
-	// to get certificates (e.g. the admin endpoint), so we do this manual check
-	if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
-		return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+		// it's possible another server in this process initiated the challenge;
+		// users have requested that Caddy only handle HTTP challenges it initiated,
+		// so that users can proxy the others through to their backends; but we
+		// might not have an automation policy for all identifiers that are trying
+		// to get certificates (e.g. the admin endpoint), so we do this manual check
+		if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
+			return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+		}
+	} else if zerosslValidation {
+		for _, iss := range ap.magic.Issuers {
+			if ziss, ok := iss.(*ZeroSSLIssuer); ok {
+				if ziss.issuer.HandleZeroSSLHTTPValidation(w, r) {
+					return true
+				}
+			}
+		}
 	}
 
 	return false

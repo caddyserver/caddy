@@ -1,0 +1,47 @@
+:8884
+reverse_proxy 127.0.0.1:65535 {
+	transport http {
+		tls_trust_pool file {
+			pem_file ../caddy.ca.cer
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"transport": {
+										"protocol": "http",
+										"tls": {
+											"ca": {
+												"pem_files": [
+													"../caddy.ca.cer"
+												],
+												"provider": "file"
+											}
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

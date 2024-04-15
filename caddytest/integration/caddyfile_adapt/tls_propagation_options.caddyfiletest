@@ -60,15 +60,6 @@ tls {
 									}
 								},
 								"module": "acme"
-							},
-							{
-								"challenges": {
-									"dns": {
-										"propagation_delay": 310000000000,
-										"propagation_timeout": 620000000000
-									}
-								},
-								"module": "zerossl"
 							}
 						]
 					}

@@ -456,8 +456,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// treat it as a fast substring match
 		if strings.Count(matchPattern, "*") == 2 &&
 			strings.HasPrefix(matchPattern, "*") &&
-			strings.HasSuffix(matchPattern, "*") &&
-			strings.Count(matchPattern, "*") == 2 {
+			strings.HasSuffix(matchPattern, "*") {
 			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
 				return true
 			}

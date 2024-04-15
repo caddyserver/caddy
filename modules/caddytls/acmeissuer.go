@@ -17,13 +17,19 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/caddyserver/zerossl"
+	"github.com/mholt/acmez/v2"
+	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -129,7 +135,6 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading DNS provider module: %v", err)
 		}
-
 		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 			DNSProvider:        val.(certmagic.ACMEDNSProvider),
 			TTL:                time.Duration(iss.Challenges.DNS.TTL),
@@ -198,6 +203,18 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		}
 	}
 
+	// ZeroSSL requires EAB, but we can generate that automatically (requires an email address be configured)
+	if strings.HasPrefix(iss.CA, "https://acme.zerossl.com/") {
+		template.NewAccountFunc = func(ctx context.Context, acmeIss *certmagic.ACMEIssuer, acct acme.Account) (acme.Account, error) {
+			if acmeIss.ExternalAccount != nil {
+				return acct, nil
+			}
+			var err error
+			acmeIss.ExternalAccount, acct, err = iss.generateZeroSSLEABCredentials(ctx, acct)
+			return acct, err
+		}
+	}
+
 	return template, nil
 }
 
@@ -235,6 +252,65 @@ func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateRes
 // with only this method will succeed, and will still allow the embedded ACMEIssuer
 // to be accessed and manipulated.
 func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
+
+// generateZeroSSLEABCredentials generates ZeroSSL EAB credentials for the primary contact email
+// on the issuer. It should only be usedif the CA endpoint is ZeroSSL. An email address is required.
+func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct acme.Account) (*acme.EAB, acme.Account, error) {
+	if strings.TrimSpace(iss.Email) == "" {
+		return nil, acme.Account{}, fmt.Errorf("your email address is required to use ZeroSSL's ACME endpoint")
+	}
+
+	if len(acct.Contact) == 0 {
+		// we borrow the email from config or the default email, so ensure it's saved with the account
+		acct.Contact = []string{"mailto:" + iss.Email}
+	}
+
+	endpoint := zerossl.BaseURL + "/acme/eab-credentials-email"
+	form := url.Values{"email": []string{iss.Email}}
+	body := strings.NewReader(form.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, acct, fmt.Errorf("forming request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", certmagic.UserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code int    `json:"code"`
+			Type string `json:"type"`
+		} `json:"error"`
+		EABKID     string `json:"eab_kid"`
+		EABHMACKey string `json:"eab_hmac_key"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, acct, fmt.Errorf("decoding API response: %v", err)
+	}
+	if result.Error.Code != 0 {
+		// do this check first because ZeroSSL's API returns 200 on errors
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
+			resp.StatusCode, result.Error.Type, result.Error.Code)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
+	}
+
+	iss.logger.Info("generated EAB credentials", zap.String("key_id", result.EABKID))
+
+	return &acme.EAB{
+		KeyID:  result.EABKID,
+		MACKey: result.EABHMACKey,
+	}, acct, nil
+}
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
