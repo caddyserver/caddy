@@ -66,7 +66,6 @@ type MatchRemoteIP struct {
 	Ranges []string `json:"ranges,omitempty"`
 
 	// The IPs or CIDR ranges to *NOT* match.
-	// Deprecated: Use `not` matcher instead.
 	NotRanges []string `json:"not_ranges,omitempty"`
 
 	cidrs    []netip.Prefix
