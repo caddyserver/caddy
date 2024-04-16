@@ -47,7 +47,7 @@ import (
 )
 
 func init() {
-	// The hard-coded default `DefaultAdminListen` can be overidden
+	// The hard-coded default `DefaultAdminListen` can be overridden
 	// by setting the `CADDY_ADMIN` environment variable.
 	// The environment variable may be used by packagers to change
 	// the default admin address to something more appropriate for

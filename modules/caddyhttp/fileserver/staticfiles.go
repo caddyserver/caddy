@@ -60,7 +60,7 @@ func init() {
 // 404 response. Alternatively, file browsing can be enabled with
 // the "browse" parameter which shows a list of files when directories
 // are requested if no index file is present. If "browse" is enabled,
-// Caddy may serve a JSON array of the dirctory listing when the `Accept`
+// Caddy may serve a JSON array of the directory listing when the `Accept`
 // header mentions `application/json` with the following structure:
 //
 //	[{
