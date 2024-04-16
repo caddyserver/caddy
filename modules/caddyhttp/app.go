@@ -526,7 +526,7 @@ func (app *App) Stop() error {
 	ctx := context.Background()
 
 	// see if any listeners in our config will be closing or if they are continuing
-	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	// through a reload; because if any are closing, we will enforce shutdown delay
 	var delay bool
 	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
 	if app.ShutdownDelay > 0 {
