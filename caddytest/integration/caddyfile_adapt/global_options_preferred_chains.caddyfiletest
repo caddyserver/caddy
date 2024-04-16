@@ -40,12 +40,6 @@ example.com
 								"preferred_chains": {
 									"smallest": true
 								}
-							},
-							{
-								"module": "zerossl",
-								"preferred_chains": {
-									"smallest": true
-								}
 							}
 						]
 					}

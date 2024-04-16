@@ -27,7 +27,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -43,8 +42,6 @@ import (
 
 // Server describes an HTTP server.
 type Server struct {
-	activeRequests int64 // accessed atomically
-
 	// Socket addresses to which to bind listeners. Accepts
 	// [network addresses](/docs/conventions#network-addresses)
 	// that may include port ranges. Listener addresses must
@@ -274,10 +271,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
-		// keep track of active requests for QUIC transport purposes
-		atomic.AddInt64(&s.activeRequests, 1)
-		defer atomic.AddInt64(&s.activeRequests, -1)
-
 		if r.ProtoMajor < 3 {
 			err := s.h3server.SetQuicHeaders(w.Header())
 			if err != nil {
@@ -567,7 +560,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	addr.Network = getHTTP3Network(addr.Network)
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, &s.activeRequests)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -575,12 +568,30 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
 		s.h3server = &http3.Server{
-			Handler:        s,
+			// Currently when closing a http3.Server, only listeners are closed. But caddy reuses these listeners
+			// if possible, requests are still read and handled by the old handler. Close these connections manually.
+			// see issue: https://github.com/caddyserver/caddy/issues/6195
+			// Will interrupt ongoing requests.
+			// TODO: remove the handler wrap after http3.Server.CloseGracefully is implemented, see App.Stop
+			Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				select {
+				case <-s.ctx.Done():
+					if quicConn, ok := request.Context().Value(quicConnCtxKey).(quic.Connection); ok {
+						//nolint:errcheck
+						quicConn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeRequestRejected), "")
+					}
+				default:
+					s.ServeHTTP(writer, request)
+				}
+			}),
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
 			QuicConfig: &quic.Config{
-				Versions: []quic.VersionNumber{quic.Version1, quic.Version2},
+				Versions: []quic.Version{quic.Version1, quic.Version2},
+			},
+			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
+				return context.WithValue(ctx, quicConnCtxKey, c)
 			},
 		}
 	}
@@ -902,9 +913,18 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 	allValues := strings.Split(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, ip := range allValues {
-		ip, _, _ = strings.Cut(strings.TrimSpace(ip), "%")
-		ipAddr, err := netip.ParseAddr(ip)
+	for _, part := range allValues {
+		// Some proxies may retain the port number, so split if possible
+		host, _, err := net.SplitHostPort(part)
+		if err != nil {
+			host = part
+		}
+
+		// Remove any zone identifier from the IP address
+		host, _, _ = strings.Cut(strings.TrimSpace(host), "%")
+
+		// Parse the IP address
+		ipAddr, err := netip.ParseAddr(host)
 		if err != nil {
 			continue
 		}
@@ -921,11 +941,20 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 // remote address is returned.
 func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string) string {
 	for _, headerName := range headers {
-		ips := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
+		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
-		for i := len(ips) - 1; i >= 0; i-- {
-			ip, _, _ := strings.Cut(strings.TrimSpace(ips[i]), "%")
-			ipAddr, err := netip.ParseAddr(ip)
+		for i := len(parts) - 1; i >= 0; i-- {
+			// Some proxies may retain the port number, so split if possible
+			host, _, err := net.SplitHostPort(parts[i])
+			if err != nil {
+				host = parts[i]
+			}
+
+			// Remove any zone identifier from the IP address
+			host, _, _ = strings.Cut(strings.TrimSpace(host), "%")
+
+			// Parse the IP address
+			ipAddr, err := netip.ParseAddr(host)
 			if err != nil {
 				continue
 			}
@@ -980,6 +1009,10 @@ const (
 
 	// For referencing underlying net.Conn
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// For referencing underlying quic.Connection
+	// TODO: export if needed later
+	quicConnCtxKey caddy.CtxKey = "quic_conn"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"

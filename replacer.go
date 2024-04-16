@@ -22,13 +22,15 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // NewReplacer returns a new Replacer.
 func NewReplacer() *Replacer {
 	rep := &Replacer{
-		static: make(map[string]any),
+		static:   make(map[string]any),
+		mapMutex: &sync.RWMutex{},
 	}
 	rep.providers = []ReplacerFunc{
 		globalDefaultReplacements,
@@ -41,7 +43,8 @@ func NewReplacer() *Replacer {
 // without the global default replacements.
 func NewEmptyReplacer() *Replacer {
 	rep := &Replacer{
-		static: make(map[string]any),
+		static:   make(map[string]any),
+		mapMutex: &sync.RWMutex{},
 	}
 	rep.providers = []ReplacerFunc{
 		rep.fromStatic,
@@ -54,7 +57,9 @@ func NewEmptyReplacer() *Replacer {
 // use NewReplacer to make one.
 type Replacer struct {
 	providers []ReplacerFunc
-	static    map[string]any
+
+	static   map[string]any
+	mapMutex *sync.RWMutex
 }
 
 // Map adds mapFunc to the list of value providers.
@@ -65,7 +70,9 @@ func (r *Replacer) Map(mapFunc ReplacerFunc) {
 
 // Set sets a custom variable to a static value.
 func (r *Replacer) Set(variable string, value any) {
+	r.mapMutex.Lock()
 	r.static[variable] = value
+	r.mapMutex.Unlock()
 }
 
 // Get gets a value from the replacer. It returns
@@ -89,11 +96,15 @@ func (r *Replacer) GetString(variable string) (string, bool) {
 // Delete removes a variable with a static value
 // that was created using Set.
 func (r *Replacer) Delete(variable string) {
+	r.mapMutex.Lock()
 	delete(r.static, variable)
+	r.mapMutex.Unlock()
 }
 
 // fromStatic provides values from r.static.
 func (r *Replacer) fromStatic(key string) (any, bool) {
+	r.mapMutex.RLock()
+	defer r.mapMutex.RUnlock()
 	val, ok := r.static[key]
 	return val, ok
 }

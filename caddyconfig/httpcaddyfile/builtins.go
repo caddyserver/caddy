@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -107,7 +107,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var onDemand bool
 	var reusePrivateKeys bool
 
-	// file certificate loader
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
 	case 0:
@@ -117,13 +116,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		} else if !strings.Contains(firstLine[0], "@") {
 			return nil, h.Err("single argument must either be 'internal' or an email address")
 		} else {
-			if acmeIssuer == nil {
-				acmeIssuer = new(caddytls.ACMEIssuer)
+			acmeIssuer = &caddytls.ACMEIssuer{
+				Email: firstLine[0],
 			}
-			acmeIssuer.Email = firstLine[0]
 		}
 
 	case 2:
+		// file certificate loader
 		certFilename := firstLine[0]
 		keyFilename := firstLine[1]
 
@@ -488,19 +487,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 	case acmeIssuer != nil:
 		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
-		defaultIssuers := caddytls.DefaultIssuers()
+		defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
 
-		// if a CA endpoint was set, override multiple implicit issuers since it's a specific one
+		// if an ACME CA endpoint was set, the user expects to use that specific one,
+		// not any others that may be defaults, so replace all defaults with that ACME CA
 		if acmeIssuer.CA != "" {
 			defaultIssuers = []certmagic.Issuer{acmeIssuer}
 		}
 
 		for _, issuer := range defaultIssuers {
-			switch iss := issuer.(type) {
-			case *caddytls.ACMEIssuer:
-				issuer = acmeIssuer
-			case *caddytls.ZeroSSLIssuer:
-				iss.ACMEIssuer = acmeIssuer
+			// apply settings from the implicitly-configured ACMEIssuer to any
+			// default ACMEIssuers, but preserve each default issuer's CA endpoint,
+			// because, for example, if you configure the DNS challenge, it should
+			// apply to any of the default ACMEIssuers, but you don't want to trample
+			// out their unique CA endpoints
+			if iss, ok := issuer.(*caddytls.ACMEIssuer); ok && iss != nil {
+				acmeCopy := *acmeIssuer
+				acmeCopy.CA = iss.CA
+				issuer = &acmeCopy
 			}
 			configVals = append(configVals, ConfigValue{
 				Class: "tls.cert_issuer",

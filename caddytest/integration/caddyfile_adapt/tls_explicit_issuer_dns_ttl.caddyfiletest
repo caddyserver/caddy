@@ -5,7 +5,7 @@ tls {
 	issuer acme {
 		dns_ttl 5m10s
 	}
-	issuer zerossl {
+	issuer zerossl api_key {
 		dns_ttl 10m20s
 	}
 }
@@ -65,10 +65,9 @@ tls {
 								"module": "acme"
 							},
 							{
-								"challenges": {
-									"dns": {
-										"ttl": 620000000000
-									}
+								"api_key": "api_key",
+								"cname_validation": {
+									"ttl": 620000000000
 								},
 								"module": "zerossl"
 							}

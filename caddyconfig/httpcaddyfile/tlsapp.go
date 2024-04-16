@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2/acme"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -224,7 +224,7 @@ func (st ServerType) buildTLSApp(
 				var internal, external []string
 				for _, s := range ap.SubjectsRaw {
 					// do not create Issuers for Tailscale domains; they will be given a Manager instead
-					if strings.HasSuffix(strings.ToLower(s), ".ts.net") {
+					if isTailscaleDomain(s) {
 						continue
 					}
 					if !certmagic.SubjectQualifiesForCert(s) {
@@ -378,15 +378,12 @@ func (st ServerType) buildTLSApp(
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
 					// for public names, create default issuers which will later be filled in with configured global defaults
 					// (internal names will implicitly use the internal issuer at auto-https time)
-					ap.Issuers = caddytls.DefaultIssuers()
+					emailStr, _ := globalEmail.(string)
+					ap.Issuers = caddytls.DefaultIssuers(emailStr)
 
 					// if a specific endpoint is configured, can't use multiple default issuers
 					if globalACMECA != nil {
-						if strings.Contains(globalACMECA.(string), "zerossl") {
-							ap.Issuers = []certmagic.Issuer{&caddytls.ZeroSSLIssuer{ACMEIssuer: new(caddytls.ACMEIssuer)}}
-						} else {
-							ap.Issuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
-						}
+						ap.Issuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
 					}
 				}
 			}
@@ -666,17 +663,33 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except
 // that this allows domains with multiple wildcard levels like '*.*.example.com' to qualify
 // if the automation policy has OnDemand enabled (i.e. this function is more lenient).
+//
+// IP subjects are considered as non-qualifying for public certs. Technically, there are
+// now public ACME CAs as well as non-ACME CAs that issue IP certificates. But this function
+// is used solely for implicit automation (defaults), where it gets really complicated to
+// keep track of which issuers support IP certificates in which circumstances. Currently,
+// issuers that support IP certificates are very few, and all require some sort of config
+// from the user anyway (such as an account credential). Since we cannot implicitly and
+// automatically get public IP certs without configuration from the user, we treat IPs as
+// not qualifying for public certificates. Users should expressly configure an issuer
+// that supports IP certs for that purpose.
 func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) bool {
 	return !certmagic.SubjectIsIP(subj) &&
 		!certmagic.SubjectIsInternal(subj) &&
 		(strings.Count(subj, "*.") < 2 || ap.OnDemand)
 }
 
+// automationPolicyHasAllPublicNames returns true if all the names on the policy
+// do NOT qualify for public certs OR are tailscale domains.
 func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 	for _, subj := range ap.SubjectsRaw {
-		if !subjectQualifiesForPublicCert(ap, subj) {
+		if !subjectQualifiesForPublicCert(ap, subj) || isTailscaleDomain(subj) {
 			return false
 		}
 	}
 	return true
+}
+
+func isTailscaleDomain(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
 }

@@ -28,11 +28,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
@@ -406,48 +406,12 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func Listen(network, addr string) (net.Listener, error) {
-	// a 0 timeout means Go uses its default
-	return ListenTimeout(network, addr, 0)
-}
-
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func ListenTimeout(network, addr string, keepalivePeriod time.Duration) (net.Listener, error) {
-	netAddr, err := ParseNetworkAddress(JoinNetworkAddress(network, addr, ""))
-	if err != nil {
-		return nil, err
-	}
-
-	ln, err := netAddr.Listen(context.TODO(), 0, net.ListenConfig{KeepAlive: keepalivePeriod})
-	if err != nil {
-		return nil, err
-	}
-
-	return ln.(net.Listener), nil
-}
-
-// DEPRECATED: Use NetworkAddress.Listen instead. This function will likely be changed or removed in the future.
-func ListenPacket(network, addr string) (net.PacketConn, error) {
-	netAddr, err := ParseNetworkAddress(JoinNetworkAddress(network, addr, ""))
-	if err != nil {
-		return nil, err
-	}
-
-	ln, err := netAddr.Listen(context.TODO(), 0, net.ListenConfig{})
-	if err != nil {
-		return nil, err
-	}
-
-	return ln.(net.PacketConn), nil
-}
-
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // The network will be transformed into a QUIC-compatible type (if unix, then
 // unixgram will be used; otherwise, udp will be used).
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -468,20 +432,22 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			}
 		}
 
-		sqs := newSharedQUICState(tlsConf, activeRequests)
+		sqs := newSharedQUICState(tlsConf)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(h3ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
-			Allow0RTT: true,
-			RequireAddressValidation: func(clientAddr net.Addr) bool {
-				// TODO: make tunable?
-				return sqs.getActiveRequests() > 1000
-			},
-		})
+		// Require clients to verify their source address when we're handling more than 1000 handshakes per second.
+		// TODO: make tunable?
+		limiter := rate.NewLimiter(1000, 1000)
+		tr := &quic.Transport{
+			Conn:                h3ln,
+			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
+		}
+		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
 		if err != nil {
 			return nil, err
 		}
+		// TODO: figure out when to close the listener and the transport
 		// using the original net.PacketConn to close them properly
 		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqs: sqs, key: lnKey}, nil
 	})
@@ -490,47 +456,8 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 	}
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
-	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
-	// and the request counter will reflect current http server
-	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
-
-	return &fakeCloseQuicListener{
-		sharedQuicListener: sql,
-		context:            ctx,
-		contextCancel:      cancel,
-	}, nil
-}
-
-// DEPRECATED: Use NetworkAddress.ListenQUIC instead. This function will likely be changed or removed in the future.
-// TODO: See if we can find a more elegant solution closer to the new NetworkAddress.Listen API.
-func ListenQUIC(ln net.PacketConn, tlsConf *tls.Config, activeRequests *int64) (http3.QUICEarlyListener, error) {
-	lnKey := listenerKey("quic+"+ln.LocalAddr().Network(), ln.LocalAddr().String())
-
-	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		sqs := newSharedQUICState(tlsConf, activeRequests)
-		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
-		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
-		earlyLn, err := quic.ListenEarly(ln, http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{
-			Allow0RTT: true,
-			RequireAddressValidation: func(clientAddr net.Addr) bool {
-				// TODO: make tunable?
-				return sqs.getActiveRequests() > 1000
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &sharedQuicListener{EarlyListener: earlyLn, sqs: sqs, key: lnKey}, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	sql := sharedEarlyListener.(*sharedQuicListener)
-	// add current tls.Config and request counter to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation,
-	// and the request counter will reflect current http server
-	ctx, cancel := sql.sqs.addState(tlsConf, activeRequests)
+	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
+	ctx, cancel := sql.sqs.addState(tlsConf)
 
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
@@ -551,25 +478,21 @@ type contextAndCancelFunc struct {
 	context.CancelFunc
 }
 
-// sharedQUICState manages GetConfigForClient and current number of active requests
+// sharedQUICState manages GetConfigForClient
 // see issue: https://github.com/caddyserver/caddy/pull/4849
 type sharedQUICState struct {
-	rmu                   sync.RWMutex
-	tlsConfs              map[*tls.Config]contextAndCancelFunc
-	requestCounters       map[*tls.Config]*int64
-	activeTlsConf         *tls.Config
-	activeRequestsCounter *int64
+	rmu           sync.RWMutex
+	tlsConfs      map[*tls.Config]contextAndCancelFunc
+	activeTlsConf *tls.Config
 }
 
 // newSharedQUICState creates a new sharedQUICState
-func newSharedQUICState(tlsConfig *tls.Config, activeRequests *int64) *sharedQUICState {
+func newSharedQUICState(tlsConfig *tls.Config) *sharedQUICState {
 	sqtc := &sharedQUICState{
-		tlsConfs:              make(map[*tls.Config]contextAndCancelFunc),
-		requestCounters:       make(map[*tls.Config]*int64),
-		activeTlsConf:         tlsConfig,
-		activeRequestsCounter: activeRequests,
+		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
+		activeTlsConf: tlsConfig,
 	}
-	sqtc.addState(tlsConfig, activeRequests)
+	sqtc.addState(tlsConfig)
 	return sqtc
 }
 
@@ -580,17 +503,9 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 	return sqs.activeTlsConf.GetConfigForClient(ch)
 }
 
-// getActiveRequests returns the number of active requests
-func (sqs *sharedQUICState) getActiveRequests() int64 {
-	// Prevent a race when a context is cancelled and active request counter is being changed
-	sqs.rmu.RLock()
-	defer sqs.rmu.RUnlock()
-	return atomic.LoadInt64(sqs.activeRequestsCounter)
-}
-
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
-// so that when cancelled, the active tls.Config and request counter will change
-func (sqs *sharedQUICState) addState(tlsConfig *tls.Config, activeRequests *int64) (context.Context, context.CancelFunc) {
+// so that when cancelled, the active tls.Config will change
+func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
 	sqs.rmu.Lock()
 	defer sqs.rmu.Unlock()
 
@@ -606,19 +521,16 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config, activeRequests *int6
 		defer sqs.rmu.Unlock()
 
 		delete(sqs.tlsConfs, tlsConfig)
-		delete(sqs.requestCounters, tlsConfig)
 		if sqs.activeTlsConf == tlsConfig {
-			// select another tls.Config and request counter, if there is none,
+			// select another tls.Config, if there is none,
 			// related sharedQuicListener will be destroyed anyway
-			for tc, counter := range sqs.requestCounters {
+			for tc := range sqs.tlsConfs {
 				sqs.activeTlsConf = tc
-				sqs.activeRequestsCounter = counter
 				break
 			}
 		}
 	}
 	sqs.tlsConfs[tlsConfig] = contextAndCancelFunc{ctx, wrappedCancel}
-	sqs.requestCounters[tlsConfig] = activeRequests
 	// there should be at most 2 tls.Configs
 	if len(sqs.tlsConfs) > 2 {
 		Log().Warn("quic listener tls configs are more than 2", zap.Int("number of configs", len(sqs.tlsConfs)))
