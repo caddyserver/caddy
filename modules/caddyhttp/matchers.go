@@ -1309,7 +1309,6 @@ type MatchRegexp struct {
 	Pattern string `json:"pattern"`
 
 	compiled *regexp.Regexp
-	phPrefix string
 }
 
 // Provision compiles the regular expression.
@@ -1319,10 +1318,6 @@ func (mre *MatchRegexp) Provision(caddy.Context) error {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
 	}
 	mre.compiled = re
-	mre.phPrefix = regexpPlaceholderPrefix
-	if mre.Name != "" {
-		mre.phPrefix += "." + mre.Name
-	}
 	return nil
 }
 
@@ -1346,16 +1341,25 @@ func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := mre.phPrefix + "." + strconv.Itoa(i)
-		repl.Set(key, match)
+		keySuffix := "." + strconv.Itoa(i)
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, match)
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
-		if i != 0 && name != "" {
-			key := mre.phPrefix + "." + name
-			repl.Set(key, matches[i])
+		// skip the first element (the full match), and empty names
+		if i == 0 || name == "" {
+			continue
 		}
+
+		keySuffix := "." + name
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, matches[i])
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, matches[i])
 	}
 
 	return true
