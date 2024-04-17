@@ -36,6 +36,7 @@ respond @match "{re.1}"
 											"match": [
 												{
 													"path_regexp": {
+														"name": "match",
 														"pattern": "^/foo(.*)$"
 													}
 												}
