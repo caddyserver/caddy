@@ -344,7 +344,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	if autoHTTPS != "off" {
+	if autoHTTPS != "off" && autoHTTPS != "disable_certs" {
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
