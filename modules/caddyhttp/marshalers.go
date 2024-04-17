@@ -75,7 +75,7 @@ func (h LoggableHTTPHeader) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 		if !h.ShouldLogCredentials {
 			switch strings.ToLower(key) {
 			case "cookie", "set-cookie", "authorization", "proxy-authorization":
-				val = []string{}
+				val = []string{"REDACTED"} // see #5669. I still think ▒▒▒▒ would be cool.
 			}
 		}
 		enc.AddArray(key, LoggableStringArray(val))

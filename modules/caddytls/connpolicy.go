@@ -26,7 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mholt/acmez"
+	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"

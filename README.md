@@ -56,7 +56,7 @@
 </p>
 
 
-## [Features](https://caddyserver.com/v2)
+## [Features](https://caddyserver.com/features)
 
 - **Easy configuration** with the [Caddyfile](https://caddyserver.com/docs/caddyfile)
 - **Powerful configuration** with its [native JSON config](https://caddyserver.com/docs/json/)
@@ -75,7 +75,7 @@
 - **Runs anywhere** with **no external dependencies** (not even libc)
 - Written in Go, a language with higher **memory safety guarantees** than other servers
 - Actually **fun to use**
-- So much more to [discover](https://caddyserver.com/v2)
+- So much more to [discover](https://caddyserver.com/features)
 
 ## Install
 

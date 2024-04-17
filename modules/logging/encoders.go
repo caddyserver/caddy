@@ -118,17 +118,26 @@ func (je *JSONEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // LogEncoderConfig holds configuration common to most encoders.
 type LogEncoderConfig struct {
-	MessageKey     *string `json:"message_key,omitempty"`
-	LevelKey       *string `json:"level_key,omitempty"`
-	TimeKey        *string `json:"time_key,omitempty"`
-	NameKey        *string `json:"name_key,omitempty"`
-	CallerKey      *string `json:"caller_key,omitempty"`
-	StacktraceKey  *string `json:"stacktrace_key,omitempty"`
-	LineEnding     *string `json:"line_ending,omitempty"`
-	TimeFormat     string  `json:"time_format,omitempty"`
-	TimeLocal      bool    `json:"time_local,omitempty"`
-	DurationFormat string  `json:"duration_format,omitempty"`
-	LevelFormat    string  `json:"level_format,omitempty"`
+	MessageKey    *string `json:"message_key,omitempty"`
+	LevelKey      *string `json:"level_key,omitempty"`
+	TimeKey       *string `json:"time_key,omitempty"`
+	NameKey       *string `json:"name_key,omitempty"`
+	CallerKey     *string `json:"caller_key,omitempty"`
+	StacktraceKey *string `json:"stacktrace_key,omitempty"`
+	LineEnding    *string `json:"line_ending,omitempty"`
+
+	// Recognized values are: unix_seconds_float, unix_milli_float, unix_nano, iso8601, rfc3339, rfc3339_nano, wall, wall_milli, wall_nano, common_log.
+	// The value may also be custom format per the Go `time` package layout specification, as described [here](https://pkg.go.dev/time#pkg-constants).
+	TimeFormat string `json:"time_format,omitempty"`
+	TimeLocal  bool   `json:"time_local,omitempty"`
+
+	// Recognized values are: s/second/seconds, ns/nano/nanos, ms/milli/millis, string.
+	// Empty and unrecognized value default to seconds.
+	DurationFormat string `json:"duration_format,omitempty"`
+
+	// Recognized values are: lower, upper, color.
+	// Empty and unrecognized value default to lower.
+	LevelFormat string `json:"level_format,omitempty"`
 }
 
 // UnmarshalCaddyfile populates the struct from Caddyfile tokens. Syntax:
@@ -260,12 +269,16 @@ func (lec *LogEncoderConfig) ZapcoreEncoderConfig() zapcore.EncoderConfig {
 	// duration format
 	var durFormatter zapcore.DurationEncoder
 	switch lec.DurationFormat {
-	case "", "seconds":
+	case "s", "second", "seconds":
 		durFormatter = zapcore.SecondsDurationEncoder
-	case "nano":
+	case "ns", "nano", "nanos":
 		durFormatter = zapcore.NanosDurationEncoder
+	case "ms", "milli", "millis":
+		durFormatter = zapcore.MillisDurationEncoder
 	case "string":
 		durFormatter = zapcore.StringDurationEncoder
+	default:
+		durFormatter = zapcore.SecondsDurationEncoder
 	}
 	cfg.EncodeDuration = durFormatter
 

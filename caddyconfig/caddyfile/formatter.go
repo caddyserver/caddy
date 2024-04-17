@@ -17,9 +17,8 @@ package caddyfile
 import (
 	"bytes"
 	"io"
+	"slices"
 	"unicode"
-
-	"golang.org/x/exp/slices"
 )
 
 // Format formats the input Caddyfile to a standard, nice-looking

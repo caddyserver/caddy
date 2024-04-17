@@ -13,8 +13,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddytest"
-	"github.com/mholt/acmez"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v2"
+	"github.com/mholt/acmez/v2/acme"
 	smallstepacme "github.com/smallstep/certificates/acme"
 	"go.uber.org/zap"
 )
@@ -77,7 +77,7 @@ func TestACMEServerWithDefaults(t *testing.T) {
 		return
 	}
 
-	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"localhost"})
+	certs, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"localhost"})
 	if err != nil {
 		t.Errorf("obtaining certificate: %v", err)
 		return
@@ -146,7 +146,7 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 		return
 	}
 
-	certs, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"localhost"})
+	certs, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"localhost"})
 	if len(certs) > 0 {
 		t.Errorf("expected '0' certificates, but received '%d'", len(certs))
 	}

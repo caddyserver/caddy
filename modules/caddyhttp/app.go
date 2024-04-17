@@ -68,6 +68,9 @@ func init() {
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
+// `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
+// `{http.request.local.port}` | The port part of the local address the connection arrived on
+// `{http.request.local}` | The local address the connection arrived on
 // `{http.request.remote.host}` | The host (IP) part of the remote client's address
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
@@ -523,7 +526,7 @@ func (app *App) Stop() error {
 	ctx := context.Background()
 
 	// see if any listeners in our config will be closing or if they are continuing
-	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	// through a reload; because if any are closing, we will enforce shutdown delay
 	var delay bool
 	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
 	if app.ShutdownDelay > 0 {

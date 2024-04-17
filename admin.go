@@ -26,7 +26,6 @@ import (
 	"expvar"
 	"fmt"
 	"hash"
-	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
@@ -41,13 +40,14 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 func init() {
-	// The hard-coded default `DefaultAdminListen` can be overidden
+	// The hard-coded default `DefaultAdminListen` can be overridden
 	// by setting the `CADDY_ADMIN` environment variable.
 	// The environment variable may be used by packagers to change
 	// the default admin address to something more appropriate for
@@ -474,7 +474,6 @@ func manageIdentity(ctx Context, cfg *Config) error {
 	// import the caddytls package -- but it works
 	if cfg.Admin.Identity.IssuersRaw == nil {
 		cfg.Admin.Identity.IssuersRaw = []json.RawMessage{
-			json.RawMessage(`{"module": "zerossl"}`),
 			json.RawMessage(`{"module": "acme"}`),
 		}
 	}
@@ -946,7 +945,7 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 
 // etagHasher returns a the hasher we used on the config to both
 // produce and verify ETags.
-func etagHasher() hash.Hash32 { return fnv.New32a() }
+func etagHasher() hash.Hash { return xxhash.New() }
 
 // makeEtag returns an Etag header value (including quotes) for
 // the given config path and hash of contents at that path.
@@ -954,17 +953,28 @@ func makeEtag(path string, hash hash.Hash) string {
 	return fmt.Sprintf(`"%s %x"`, path, hash.Sum(nil))
 }
 
+// This buffer pool is used to keep buffers for
+// reading the config file during eTag header generation
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		// Set the ETag as a trailer header.
-		// The alternative is to write the config to a buffer, and
-		// then hash that.
-		w.Header().Set("Trailer", "ETag")
-
 		hash := etagHasher()
-		configWriter := io.MultiWriter(w, hash)
+
+		// Read the config into a buffer instead of writing directly to
+		// the response writer, as we want to set the ETag as the header,
+		// not the trailer.
+		buf := bufferPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufferPool.Put(buf)
+
+		configWriter := io.MultiWriter(buf, hash)
 		err := readConfig(r.URL.Path, configWriter)
 		if err != nil {
 			return APIError{HTTPStatus: http.StatusBadRequest, Err: err}
@@ -973,6 +983,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// we could consider setting up a sync.Pool for the summed
 		// hashes to reduce GC pressure.
 		w.Header().Set("Etag", makeEtag(r.URL.Path, hash))
+		_, err = w.Write(buf.Bytes())
+		if err != nil {
+			return APIError{HTTPStatus: http.StatusInternalServerError, Err: err}
+		}
 
 		return nil
 
