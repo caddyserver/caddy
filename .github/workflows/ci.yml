@@ -101,6 +101,12 @@ jobs:
       run: |
         go build -tags nobdger -trimpath -ldflags="-w -s" -v
 
+    - name: Smoke test Caddy
+      working-directory: ./cmd/caddy
+      run: |
+        ./caddy start
+        ./caddy stop
+
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v4
       with:
