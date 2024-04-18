@@ -199,7 +199,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
-	} else {
+	} else if len(config) != 0 {
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {
