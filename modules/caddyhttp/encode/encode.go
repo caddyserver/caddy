@@ -164,8 +164,11 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
 			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
-				etag = strings.TrimSuffix(etag, "-"+encName+`"`) + `"`
-				r.Header.Set("If-None-Match", etag)
+				ourSuffix := "-" + encName + `"`
+				if strings.HasSuffix(etag, ourSuffix) {
+					etag = strings.TrimSuffix(etag, ourSuffix) + `"`
+					r.Header.Set("If-None-Match", etag)
+				}
 			}
 
 			break
