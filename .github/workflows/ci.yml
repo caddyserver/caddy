@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - 2.*
+      - hurl-tests
   pull_request:
     branches:
       - master
@@ -14,6 +15,9 @@ on:
 
 jobs:
   test:
+    permissions:
+      checks: write
+      pull-requests: write
     strategy:
       # Default is true, cancels jobs for other platforms in the matrix if one fails
       fail-fast: false
@@ -124,6 +128,31 @@ jobs:
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -tags nobadger -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
+
+    - name: Install Hurl
+      if: matrix.os == 'linux' && matrix.go == '1.22'
+      run: |
+        curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.2.0/hurl_4.2.0_amd64.deb
+        sudo dpkg -i hurl_4.2.0_amd64.deb
+
+    - name: Run Caddy
+      if: matrix.os == 'linux' && matrix.go == '1.22'
+      working-directory: ./cmd/caddy
+      run: |
+        ./caddy start
+
+    - name: Run tests with Hurl
+      if: matrix.os == 'linux' && matrix.go == '1.22'
+      run: |
+        mkdir hurl-report
+        find . -name *.hurl -exec hurl --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
+    
+    - name: Publish Test Results
+      if: matrix.os == 'linux' && matrix.go == '1.22'
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      with:
+        files: |
+          hurl-report/junit.xml
 
     # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
