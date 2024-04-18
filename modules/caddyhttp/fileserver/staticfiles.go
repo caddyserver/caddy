@@ -644,19 +644,32 @@ func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next ca
 	return caddyhttp.Error(http.StatusNotFound, nil)
 }
 
-// calculateEtag produces a strong etag by default, although, for
-// efficiency reasons, it does not actually consume the contents
-// of the file to make a hash of all the bytes. ¯\_(ツ)_/¯
-// Prefix the etag with "W/" to convert it into a weak etag.
-// See: https://tools.ietf.org/html/rfc7232#section-2.3
+// calculateEtag computes an entity tag using a strong validator
+// without consuming the contents of the file. It requires the
+// file info contain the correct size and modification time.
+// It strives to implement the semantics regarding ETags as defined
+// by RFC 9110 section 8.8.3 and 8.8.1. See
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.
+//
+// As our implementation uses file modification timestamp and size,
+// note the following from RFC 9110 section 8.8.1: "A representation's
+// modification time, if defined with only one-second resolution,
+// might be a weak validator if it is possible for the representation to
+// be modified twice during a single second and retrieved between those
+// modifications." The ext4 file system, which underpins the vast majority
+// of Caddy deployments, stores mod times with millisecond precision,
+// which we consider precise enough to qualify as a strong validator.
 func calculateEtag(d os.FileInfo) string {
-	mtime := d.ModTime().Unix()
-	if mtime == 0 || mtime == 1 {
+	mtime := d.ModTime()
+	if mtimeUnix := mtime.Unix(); mtimeUnix == 0 || mtimeUnix == 1 {
 		return "" // not useful anyway; see issue #5548
 	}
-	t := strconv.FormatInt(mtime, 36)
-	s := strconv.FormatInt(d.Size(), 36)
-	return `"` + t + s + `"`
+	var sb strings.Builder
+	sb.WriteRune('"')
+	sb.WriteString(strconv.FormatInt(mtime.UnixNano(), 36))
+	sb.WriteString(strconv.FormatInt(d.Size(), 36))
+	sb.WriteRune('"')
+	return sb.String()
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content

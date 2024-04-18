@@ -63,6 +63,12 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			continue
 		}
 
+		// keep track of the most recently modified item in the listing
+		modTime := info.ModTime()
+		if tplCtx.lastModified.IsZero() || modTime.After(tplCtx.lastModified) {
+			tplCtx.lastModified = modTime
+		}
+
 		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(fileSystem, info, root, urlPath)
 
 		// add the slash after the escape of path to avoid escaping the slash as well
@@ -108,7 +114,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			Name:        name,
 			Size:        size,
 			URL:         u.String(),
-			ModTime:     info.ModTime().UTC(),
+			ModTime:     modTime.UTC(),
 			Mode:        info.Mode(),
 			Tpl:         tplCtx, // a reference up to the template context is useful
 			SymlinkPath: symlinkPath,
@@ -155,6 +161,10 @@ type browseTemplateContext struct {
 
 	// Display format (list or grid)
 	Layout string `json:"layout,omitempty"`
+
+	// The most recent file modification date in the listing.
+	// Used for HTTP header purposes.
+	lastModified time.Time
 }
 
 // Breadcrumbs returns l.Path where every element maps
