@@ -37,6 +37,7 @@ import (
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+
 	// For running in minimal environments, this can ease
 	// headaches related to establishing TLS connections.
 	// "Package fallback embeds a set of fallback X.509 trusted
