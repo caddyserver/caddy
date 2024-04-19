@@ -63,7 +63,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    filepath.Join("/", "a", "b") + separator,
+			expect:    filepath.Join("/", "a", "b"),
 		},
 		{
 			inputRoot: "/a/b",
@@ -84,6 +84,12 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputRoot: "C:\\www",
 			inputPath: "/D:\\foo\\bar",
 			expect:    filepath.Join("C:\\www", "D:\\foo\\bar"),
+		},
+		{
+			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
+			inputRoot: "root",
+			inputPath: "/a/b/../../c",
+			expect:    filepath.Join("root", "c"),
 		},
 	} {
 		// we don't *need* to use an actual parsed URL, but it
