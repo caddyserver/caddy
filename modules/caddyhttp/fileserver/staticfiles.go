@@ -375,6 +375,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// etag is usually unset, but if the user knows what they're doing, let them override it
 	etag := w.Header().Get("Etag")
 
+	// static file responses are often compressed, either on-the-fly
+	// or with precompressed sidecar files; in any case, the headers
+	// should contain "Vary: Accept-Encoding" even when not compressed
+	// so caches can craft a reliable key (according to REDbot results)
+	w.Header().Add("Vary", "Accept-Encoding")
+
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
 		precompress, ok := fsrv.precompressors[ae]
@@ -400,7 +406,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		defer file.Close()
 		w.Header().Set("Content-Encoding", ae)
 		w.Header().Del("Accept-Ranges")
-		w.Header().Add("Vary", "Accept-Encoding")
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {

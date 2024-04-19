@@ -239,7 +239,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified {
+	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
 		rw.Header().Add("Vary", "Accept-Encoding")
 	}
 
@@ -349,14 +349,17 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" && isEncodeAllowed(rw.Header()) &&
+	hdr := rw.Header()
+	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
-		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
-		rw.Header().Set("Content-Encoding", rw.encodingName)
-		rw.Header().Add("Vary", "Accept-Encoding")
-		rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
+		hdr.Del("Content-Length") // https://github.com/golang/go/issues/14975
+		hdr.Set("Content-Encoding", rw.encodingName)
+		if !hasVaryValue(hdr, "Accept-Encoding") {
+			hdr.Add("Vary", "Accept-Encoding")
+		}
+		hdr.Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
 
 		// strong ETags need to be distinct depending on the encoding ("selected representation")
 		// see RFC 9110 section 8.8.3.3:
@@ -365,11 +368,23 @@ func (rw *responseWriter) init() {
 		// (We have to strip the value we append from If-None-Match headers before
 		// sending subsequent requests back upstream, however, since upstream handlers
 		// don't know about our appending to their Etag since they've already done their work)
-		if etag := rw.Header().Get("Etag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+		if etag := hdr.Get("Etag"); etag != "" && !strings.HasPrefix(etag, "W/") {
 			etag = fmt.Sprintf(`%s-%s"`, strings.TrimSuffix(etag, `"`), rw.encodingName)
-			rw.Header().Set("Etag", etag)
+			hdr.Set("Etag", etag)
 		}
 	}
+}
+
+func hasVaryValue(hdr http.Header, target string) bool {
+	for _, vary := range hdr.Values("Vary") {
+		vals := strings.Split(vary, ",")
+		for _, val := range vals {
+			if strings.EqualFold(strings.TrimSpace(val), target) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AcceptedEncodings returns the list of encodings that the

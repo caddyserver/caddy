@@ -105,7 +105,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
-	w.Header().Add("Vary", "Accept")
+	w.Header().Add("Vary", "Accept, Accept-Encoding")
 
 	// speed up browser/client experience and caching by supporting If-Modified-Since
 	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
