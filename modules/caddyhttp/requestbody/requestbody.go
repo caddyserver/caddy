@@ -65,6 +65,7 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
 	}
 	if rb.ReadTimeout > 0 || rb.WriteTimeout > 0 {
+		//nolint:bodyclose
 		rc := http.NewResponseController(w)
 		if rb.ReadTimeout > 0 {
 			if err := rc.SetReadDeadline(time.Now().Add(rb.ReadTimeout)); err != nil {
