@@ -64,10 +64,18 @@ type ServerLogConfig struct {
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
 func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
-	hosts := slc.getLoggerHosts(host)
+	// strip off the port if any
+	hostWithoutPort, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostWithoutPort = host
+	}
+
+	hosts := slc.getLoggerHosts(hostWithoutPort)
 	loggers := make([]*zap.Logger, 0, len(hosts))
 	for _, loggerName := range hosts {
+		// no name, use the default logger
 		if loggerName == "" {
+			loggers = append(loggers, logger)
 			continue
 		}
 		loggers = append(loggers, logger.Named(loggerName))
