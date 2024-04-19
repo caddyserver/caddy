@@ -14,16 +14,20 @@
 
 package caddycmd
 
-// For running in minimal environments, this can ease
-// headaches related to establishing TLS connections.
-// "Package fallback embeds a set of fallback X.509 trusted
-// roots in the application by automatically invoking
-// x509.SetFallbackRoots. This allows the application to
-// work correctly even if the operating system does not
-// provide a verifier or system roots pool. ... It's
-// recommended that only binaries, and not libraries,
-// import this package. This package must be kept up to
-// date for security and compatibility reasons."
 import (
+	// For running in minimal environments, this can ease
+	// headaches related to establishing TLS connections.
+	// "Package fallback embeds a set of fallback X.509 trusted
+	// roots in the application by automatically invoking
+	// x509.SetFallbackRoots. This allows the application to
+	// work correctly even if the operating system does not
+	// provide a verifier or system roots pool. ... It's
+	// recommended that only binaries, and not libraries,
+	// import this package. This package must be kept up to
+	// date for security and compatibility reasons."
+	//
+	// This is in its own file only because of conflicts
+	// between gci and goimports when in main.go.
+	// See https://github.com/daixiang0/gci/issues/76
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
