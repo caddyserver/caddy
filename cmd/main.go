@@ -38,9 +38,6 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
-
 	// For running in minimal environments, this can ease
 	// headaches related to establishing TLS connections.
 	// "Package fallback embeds a set of fallback X.509 trusted
@@ -52,6 +49,9 @@ import (
 	// import this package. This package must be kept up to
 	// date for security and compatibility reasons."
 	_ "golang.org/x/crypto/x509roots/fallback"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
 func init() {
