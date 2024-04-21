@@ -350,9 +350,11 @@ func (app *App) Validate() error {
 		}
 
 		// logger names must not have ports
-		for host := range srv.Logs.LoggerNames {
-			if _, _, err := net.SplitHostPort(host); err == nil {
-				return fmt.Errorf("server %s: logger name must not have a port: %s", srvName, host)
+		if srv.Logs != nil {
+			for host := range srv.Logs.LoggerNames {
+				if _, _, err := net.SplitHostPort(host); err == nil {
+					return fmt.Errorf("server %s: logger name must not have a port: %s", srvName, host)
+				}
 			}
 		}
 	}
