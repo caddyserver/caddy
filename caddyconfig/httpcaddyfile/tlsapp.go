@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -514,7 +515,7 @@ func newBaseAutomationPolicy(
 	}
 
 	if hasIssuers && hasLocalCerts {
-		return nil, fmt.Errorf("global options are ambiguous: local_certs is confusing when combined with cert_issuer, because local_certs is also a specific kind of issuer")
+		return nil, errors.New("global options are ambiguous: local_certs is confusing when combined with cert_issuer, because local_certs is also a specific kind of issuer")
 	}
 
 	if hasIssuers {

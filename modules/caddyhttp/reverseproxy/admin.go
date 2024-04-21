@@ -16,7 +16,7 @@ package reverseproxy
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -63,7 +63,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 	if r.Method != http.MethodGet {
 		return caddy.APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
-			Err:        fmt.Errorf("method not allowed"),
+			Err:        errors.New("method not allowed"),
 		}
 	}
 
@@ -81,7 +81,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,
-				Err:        fmt.Errorf("could not type assert upstream address"),
+				Err:        errors.New("could not type assert upstream address"),
 			}
 			return false
 		}
@@ -90,7 +90,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,
-				Err:        fmt.Errorf("could not type assert upstream struct"),
+				Err:        errors.New("could not type assert upstream struct"),
 			}
 			return false
 		}

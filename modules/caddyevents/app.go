@@ -134,7 +134,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 			if len(sub.Handlers) == 0 {
 				// pointless to bind without any handlers
-				return fmt.Errorf("no handlers defined")
+				return errors.New("no handlers defined")
 			}
 		}
 	}
@@ -166,7 +166,7 @@ func (app *App) Stop() error {
 // created after the events app has started.
 func (app *App) Subscribe(s *Subscription) error {
 	if app.started {
-		return fmt.Errorf("events already started; new subscriptions closed")
+		return errors.New("events already started; new subscriptions closed")
 	}
 
 	// handle special case of catch-alls (omission of event name or module space implies all)

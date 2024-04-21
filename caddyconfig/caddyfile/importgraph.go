@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -53,7 +54,7 @@ func (i *importGraph) removeNodes(names []string) {
 
 func (i *importGraph) addEdge(from, to string) error {
 	if !i.exists(from) || !i.exists(to) {
-		return fmt.Errorf("one of the nodes does not exist")
+		return errors.New("one of the nodes does not exist")
 	}
 
 	if i.willCycle(to, from) {

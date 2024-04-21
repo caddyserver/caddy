@@ -15,7 +15,7 @@
 package reverseproxy
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -62,7 +62,7 @@ func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	// don't allow this to be used outside of handle_response routes
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
-			fmt.Errorf("cannot use 'copy_response' outside of reverse_proxy's handle_response routes"))
+			errors.New("cannot use 'copy_response' outside of reverse_proxy's handle_response routes"))
 	}
 
 	// allow a custom status code to be written; otherwise the
@@ -112,7 +112,7 @@ func (CopyResponseHeadersHandler) CaddyModule() caddy.ModuleInfo {
 // Validate ensures the h's configuration is valid.
 func (h *CopyResponseHeadersHandler) Validate() error {
 	if len(h.Exclude) > 0 && len(h.Include) > 0 {
-		return fmt.Errorf("cannot define both 'exclude' and 'include' lists at the same time")
+		return errors.New("cannot define both 'exclude' and 'include' lists at the same time")
 	}
 
 	return nil
@@ -148,7 +148,7 @@ func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.
 	// don't allow this to be used outside of handle_response routes
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
-			fmt.Errorf("cannot use 'copy_response_headers' outside of reverse_proxy's handle_response routes"))
+			errors.New("cannot use 'copy_response_headers' outside of reverse_proxy's handle_response routes"))
 	}
 
 	for field, values := range hrc.response.Header {

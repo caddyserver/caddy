@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	weakrand "math/rand"
 	"net"
@@ -204,7 +205,7 @@ func (r *RandomChoiceSelection) Provision(ctx caddy.Context) error {
 // Validate ensures that r's configuration is valid.
 func (r RandomChoiceSelection) Validate() error {
 	if r.Choose < 2 {
-		return fmt.Errorf("choose must be at least 2")
+		return errors.New("choose must be at least 2")
 	}
 	return nil
 }
@@ -467,7 +468,7 @@ func (QueryHashSelection) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the module.
 func (s *QueryHashSelection) Provision(ctx caddy.Context) error {
 	if s.Key == "" {
-		return fmt.Errorf("query key is required")
+		return errors.New("query key is required")
 	}
 	if s.FallbackRaw == nil {
 		s.FallbackRaw = caddyconfig.JSONModuleObject(RandomSelection{}, "policy", "random", nil)
@@ -548,7 +549,7 @@ func (HeaderHashSelection) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the module.
 func (s *HeaderHashSelection) Provision(ctx caddy.Context) error {
 	if s.Field == "" {
-		return fmt.Errorf("header field is required")
+		return errors.New("header field is required")
 	}
 	if s.FallbackRaw == nil {
 		s.FallbackRaw = caddyconfig.JSONModuleObject(RandomSelection{}, "policy", "random", nil)

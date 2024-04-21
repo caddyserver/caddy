@@ -16,6 +16,7 @@ package fastcgi
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -120,7 +121,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// PHP upstreams may do bad things, like execute a
 	// non-PHP file as PHP code. See #4574
 	if strings.Contains(r.URL.Path, "\x00") {
-		return nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid request path"))
+		return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("invalid request path"))
 	}
 
 	env, err := t.buildEnv(r)

@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -100,7 +101,7 @@ func (st ServerType) Setup(
 		}
 
 		if len(sb.block.Keys) == 0 {
-			return nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
+			return nil, warnings, errors.New("server block without any key is global configuration, and if used, it must be first")
 		}
 
 		// extract matcher definitions
@@ -752,7 +753,7 @@ func (st *ServerType) serversFromPairings(
 			for _, listenerConfig := range sblock.pile["listener_wrapper"] {
 				listenerWrapper, ok := listenerConfig.Value.(caddy.ListenerWrapper)
 				if !ok {
-					return nil, fmt.Errorf("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
+					return nil, errors.New("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
 				}
 				jsonListenerWrapper := caddyconfig.JSONModuleObject(
 					listenerWrapper,

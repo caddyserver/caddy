@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	weakrand "math/rand"
 	"net"
@@ -223,7 +224,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		if h.ProxyProtocol != "" {
 			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
 			if !ok {
-				return nil, fmt.Errorf("failed to get proxy protocol info from context")
+				return nil, errors.New("failed to get proxy protocol info from context")
 			}
 			header := proxyproto.Header{
 				SourceAddr: &net.TCPAddr{
@@ -247,7 +248,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 					IP: net.IPv6zero,
 				}
 			default:
-				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
+				return nil, errors.New("unexpected remote addr type in proxy protocol info")
 			}
 
 			switch h.ProxyProtocol {
@@ -258,7 +259,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				header.Version = 2
 				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
 			default:
-				return nil, fmt.Errorf("unexpected proxy protocol version")
+				return nil, errors.New("unexpected proxy protocol version")
 			}
 			_, err = header.WriteTo(conn)
 			if err != nil {
@@ -540,10 +541,10 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 
 	// client auth
 	if t.ClientCertificateFile != "" && t.ClientCertificateKeyFile == "" {
-		return nil, fmt.Errorf("client_certificate_file specified without client_certificate_key_file")
+		return nil, errors.New("client_certificate_file specified without client_certificate_key_file")
 	}
 	if t.ClientCertificateFile == "" && t.ClientCertificateKeyFile != "" {
-		return nil, fmt.Errorf("client_certificate_key_file specified without client_certificate_file")
+		return nil, errors.New("client_certificate_key_file specified without client_certificate_file")
 	}
 	if t.ClientCertificateFile != "" && t.ClientCertificateKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(t.ClientCertificateFile, t.ClientCertificateKeyFile)

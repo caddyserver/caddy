@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -199,9 +200,9 @@ func (st *ServerType) listenerAddrsForServerBlockKey(sblock serverBlock, key str
 
 	switch addr.Scheme {
 	case "wss":
-		return nil, fmt.Errorf("the scheme wss:// is only supported in browsers; use https:// instead")
+		return nil, errors.New("the scheme wss:// is only supported in browsers; use https:// instead")
 	case "ws":
-		return nil, fmt.Errorf("the scheme ws:// is only supported in browsers; use http:// instead")
+		return nil, errors.New("the scheme ws:// is only supported in browsers; use http:// instead")
 	case "https", "http", "":
 		// Do nothing or handle the valid schemes
 	default:

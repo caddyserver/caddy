@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -103,7 +104,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid to flag: %v", err)
 	}
 	if len(to) == 0 {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("--to is required")
+		return caddy.ExitCodeFailedStartup, errors.New("--to is required")
 	}
 
 	// set up the downstream address; assume missing information from given parts

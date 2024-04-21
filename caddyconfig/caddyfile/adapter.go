@@ -17,8 +17,7 @@ package caddyfile
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-
+	"errors"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
@@ -31,7 +30,7 @@ type Adapter struct {
 // Adapt converts the Caddyfile config in body to Caddy JSON.
 func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconfig.Warning, error) {
 	if a.ServerType == nil {
-		return nil, nil, fmt.Errorf("no server type")
+		return nil, nil, errors.New("no server type")
 	}
 	if options == nil {
 		options = make(map[string]any)

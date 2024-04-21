@@ -17,6 +17,7 @@ package caddyconfig
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -74,7 +75,7 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return caddy.APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
-			Err:        fmt.Errorf("method not allowed"),
+			Err:        errors.New("method not allowed"),
 		}
 	}
 
@@ -131,7 +132,7 @@ func (adminLoad) handleAdapt(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return caddy.APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
-			Err:        fmt.Errorf("method not allowed"),
+			Err:        errors.New("method not allowed"),
 		}
 	}
 
@@ -191,7 +192,7 @@ func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, err
 	// adapter name should be suffix of MIME type
 	_, adapterName, slashFound := strings.Cut(ct, "/")
 	if !slashFound {
-		return nil, nil, fmt.Errorf("malformed Content-Type")
+		return nil, nil, errors.New("malformed Content-Type")
 	}
 
 	cfgAdapter := GetAdapter(adapterName)

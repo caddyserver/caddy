@@ -15,6 +15,7 @@
 package reverseproxy
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -70,7 +71,7 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		// so we return a more user-friendly error message instead
 		// to explain what to do instead
 		if strings.Contains(upstreamAddr, "{") {
-			return parsedAddr{}, fmt.Errorf("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
+			return parsedAddr{}, errors.New("due to parsing difficulties, placeholders are not allowed when an upstream address contains a scheme")
 		}
 
 		toURL, err := url.Parse(upstreamAddr)
@@ -104,18 +105,18 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		// a backend and proxying to it, so we cannot allow extra components
 		// in backend URLs
 		if toURL.Path != "" || toURL.RawQuery != "" || toURL.Fragment != "" {
-			return parsedAddr{}, fmt.Errorf("for now, URLs for proxy upstreams only support scheme, host, and port components")
+			return parsedAddr{}, errors.New("for now, URLs for proxy upstreams only support scheme, host, and port components")
 		}
 
 		// ensure the port and scheme aren't in conflict
 		if toURL.Scheme == "http" && port == "443" {
-			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, errors.New("upstream address has conflicting scheme (http://) and port (:443, the HTTPS port)")
 		}
 		if toURL.Scheme == "https" && port == "80" {
-			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
+			return parsedAddr{}, errors.New("upstream address has conflicting scheme (https://) and port (:80, the HTTP port)")
 		}
 		if toURL.Scheme == "h2c" && port == "443" {
-			return parsedAddr{}, fmt.Errorf("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
+			return parsedAddr{}, errors.New("upstream address has conflicting scheme (h2c://) and port (:443, the HTTPS port)")
 		}
 
 		// if port is missing, attempt to infer from scheme
