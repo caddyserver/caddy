@@ -439,6 +439,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	var proxyErr error
 	var retries int
 	for {
+		// if the request body was buffered (and only the entire body, hence no body
+		// set to read from after the buffer), make reading from the body idempotent
+		// and reusable, so if a backend partially or fully reads the body but then
+		// produces an error, the request can be repeated to the next backend with
+		// the full body (retries should only happen for idempotent requests) (see #6259)
+		if reqBodyBuf, ok := r.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
+			r.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.buf.Bytes()))
+		}
+
 		var done bool
 		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, next)
 		if done {
