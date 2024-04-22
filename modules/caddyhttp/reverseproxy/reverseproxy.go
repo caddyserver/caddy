@@ -444,6 +444,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if done {
 			break
 		}
+		if h.VerboseLogs {
+			var lbWait time.Duration
+			if h.LoadBalancing != nil {
+				lbWait = time.Duration(h.LoadBalancing.TryInterval)
+			}
+			h.logger.Debug("retrying", zap.Error(proxyErr), zap.Duration("after", lbWait))
+		}
 		retries++
 	}
 
@@ -1131,7 +1138,7 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 	buf.Reset()
 	if limit > 0 {
 		n, err := io.CopyN(buf, originalBody, limit)
-		if err != nil || n == limit {
+		if (err != nil && err != io.EOF) || n == limit {
 			return bodyReadCloser{
 				Reader: io.MultiReader(buf, originalBody),
 				buf:    buf,
