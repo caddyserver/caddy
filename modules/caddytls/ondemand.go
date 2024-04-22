@@ -28,6 +28,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -115,6 +116,17 @@ func (PermissionByHTTP) CaddyModule() caddy.ModuleInfo {
 		ID:  "tls.permission.http",
 		New: func() caddy.Module { return new(PermissionByHTTP) },
 	}
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (p *PermissionByHTTP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if !d.Next() {
+		return nil
+	}
+	if !d.AllArgs(&p.Endpoint) {
+		return d.ArgErr()
+	}
+	return nil
 }
 
 func (p *PermissionByHTTP) Provision(ctx caddy.Context) error {

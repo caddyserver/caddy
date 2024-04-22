@@ -345,8 +345,33 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 			if ond == nil {
 				ond = new(caddytls.OnDemandConfig)
 			}
+			if ond.PermissionRaw != nil {
+				return nil, d.Err("on-demand TLS permission module (or 'ask') already specified")
+			}
 			perm := caddytls.PermissionByHTTP{Endpoint: d.Val()}
 			ond.PermissionRaw = caddyconfig.JSONModuleObject(perm, "module", "http", nil)
+
+		case "permission":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			if ond == nil {
+				ond = new(caddytls.OnDemandConfig)
+			}
+			if ond.PermissionRaw != nil {
+				return nil, d.Err("on-demand TLS permission module (or 'ask') already specified")
+			}
+			modName := d.Val()
+			modID := "tls.permission." + modName
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return nil, err
+			}
+			perm, ok := unm.(caddytls.OnDemandPermission)
+			if !ok {
+				return nil, d.Errf("module %s (%T) is not an on-demand TLS permission module", modID, unm)
+			}
+			ond.PermissionRaw = caddyconfig.JSONModuleObject(perm, "module", modName, nil)
 
 		case "interval":
 			if !d.NextArg() {

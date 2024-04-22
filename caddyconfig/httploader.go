@@ -181,19 +181,13 @@ func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 			if err != nil {
 				return nil, fmt.Errorf("getting server identity credentials: %v", err)
 			}
-			if tlsConfig == nil {
-				tlsConfig = new(tls.Config)
-			}
-			tlsConfig.Certificates = certs
+			tlsConfig = &tls.Config{Certificates: certs}
 		} else if hl.TLS.ClientCertificateFile != "" && hl.TLS.ClientCertificateKeyFile != "" {
 			cert, err := tls.LoadX509KeyPair(hl.TLS.ClientCertificateFile, hl.TLS.ClientCertificateKeyFile)
 			if err != nil {
 				return nil, err
 			}
-			if tlsConfig == nil {
-				tlsConfig = new(tls.Config)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
+			tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 		}
 
 		// trusted server certs
