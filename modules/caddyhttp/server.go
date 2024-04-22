@@ -717,13 +717,20 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		// logging is disabled
 		return false
 	}
-	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+
+	// strip off the port if any, logger names are host only
+	hostWithoutPort, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		hostWithoutPort = r.Host
+	}
+
+	if _, ok := s.Logs.LoggerNames[hostWithoutPort]; ok {
 		// this host is mapped to a particular logger name
 		return true
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
-		if certmagic.MatchWildcard(r.Host, dh) {
+		if certmagic.MatchWildcard(hostWithoutPort, dh) {
 			return false
 		}
 	}

@@ -37,10 +37,16 @@ type ServerLogConfig struct {
 	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to one or more custom logger
-	// names. For example, a mapping of "example.com" to "example" would
+	// names. For example, a mapping of `"example.com": ["example"]` would
 	// cause access logs from requests with a Host of example.com to be
 	// emitted by a logger named "http.log.access.example". If there are
 	// multiple logger names, then the log will be emitted to all of them.
+	// If the logger name is an empty, the default logger is used, i.e.
+	// the logger "http.log.access".
+	//
+	// Keys must be hostnames (without ports), and may contain wildcards
+	// to match subdomains. The value is an array of logger names.
+	//
 	// For backwards compatibility, if the value is a string, it is treated
 	// as a single-element array.
 	LoggerNames map[string]StringArray `json:"logger_names,omitempty"`
@@ -64,10 +70,19 @@ type ServerLogConfig struct {
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
 func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
-	hosts := slc.getLoggerHosts(host)
+	// logger config should always be only
+	// the hostname, without the port
+	hostWithoutPort, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostWithoutPort = host
+	}
+
+	hosts := slc.getLoggerHosts(hostWithoutPort)
 	loggers := make([]*zap.Logger, 0, len(hosts))
 	for _, loggerName := range hosts {
+		// no name, use the default logger
 		if loggerName == "" {
+			loggers = append(loggers, logger)
 			continue
 		}
 		loggers = append(loggers, logger.Named(loggerName))
@@ -76,23 +91,8 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Lo
 }
 
 func (slc ServerLogConfig) getLoggerHosts(host string) []string {
-	tryHost := func(key string) ([]string, bool) {
-		// first try exact match
-		if hosts, ok := slc.LoggerNames[key]; ok {
-			return hosts, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err := net.SplitHostPort(key)
-		if err != nil {
-			return []string{}, false
-		}
-		hosts, ok := slc.LoggerNames[hostOnly]
-		return hosts, ok
-	}
-
 	// try the exact hostname first
-	if hosts, ok := tryHost(host); ok {
+	if hosts, ok := slc.LoggerNames[host]; ok {
 		return hosts
 	}
 
@@ -104,7 +104,7 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 		}
 		labels[i] = "*"
 		wildcardHost := strings.Join(labels, ".")
-		if hosts, ok := tryHost(wildcardHost); ok {
+		if hosts, ok := slc.LoggerNames[wildcardHost]; ok {
 			return hosts
 		}
 	}
