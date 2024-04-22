@@ -129,15 +129,6 @@ type Handler struct {
 	// are also set implicitly.
 	Headers *headers.Handler `json:"headers,omitempty"`
 
-	// DEPRECATED: Do not use; will be removed. See request_buffers instead.
-	DeprecatedBufferRequests bool `json:"buffer_requests,omitempty"`
-
-	// DEPRECATED: Do not use; will be removed. See response_buffers instead.
-	DeprecatedBufferResponses bool `json:"buffer_responses,omitempty"`
-
-	// DEPRECATED: Do not use; will be removed. See request_buffers and response_buffers instead.
-	DeprecatedMaxBufferSize int64 `json:"max_buffer_size,omitempty"`
-
 	// If nonzero, the entire request body up to this size will be read
 	// and buffered in memory before being proxied to the backend. This
 	// should be avoided if at all possible for performance reasons, but
@@ -240,17 +231,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.logger = ctx.Logger()
 	h.connections = make(map[io.ReadWriteCloser]openConnection)
 	h.connectionsMu = new(sync.Mutex)
-
-	// TODO: remove deprecated fields sometime after v2.6.4
-	if h.DeprecatedBufferRequests {
-		h.logger.Warn("DEPRECATED: buffer_requests: this property will be removed soon; use request_buffers instead (and set a maximum buffer size)")
-	}
-	if h.DeprecatedBufferResponses {
-		h.logger.Warn("DEPRECATED: buffer_responses: this property will be removed soon; use response_buffers instead (and set a maximum buffer size)")
-	}
-	if h.DeprecatedMaxBufferSize != 0 {
-		h.logger.Warn("DEPRECATED: max_buffer_size: this property will be removed soon; use request_buffers and/or response_buffers instead (and set maximum buffer sizes)")
-	}
 
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
