@@ -419,6 +419,7 @@ type ClientAuthentication struct {
 //		}
 //		trusted_leaf_cert      <base64_der>
 //		trusted_leaf_cert_file <filename>
+//		verifier               <module>
 //	}
 //
 // If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
