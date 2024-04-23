@@ -38,6 +38,8 @@ func init() {
 // Intercept is a middleware that intercepts then replaces or modifies the original response.
 // It can, for instance, be used to implement X-Sendfile/X-Accel-Redirect-like features
 // when using modules like FrankenPHP or Caddy Snake.
+//
+// EXPERIMENTAL: Subject to change.
 type Intercept struct {
 	// List of handlers and their associated matchers to evaluate
 	// after successful response generation.
