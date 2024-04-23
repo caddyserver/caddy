@@ -1356,6 +1356,7 @@ func (h *CopyResponseHeadersHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) 
 //	    resolvers           <resolvers...>
 //	    dial_timeout        <timeout>
 //	    dial_fallback_delay <timeout>
+//	    grace_period        <duration>
 //	}
 func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume upstream source name
@@ -1435,7 +1436,15 @@ func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("bad delay value '%s': %v", d.Val(), err)
 			}
 			u.FallbackDelay = caddy.Duration(dur)
-
+		case "grace_period":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("bad grace period value '%s': %v", d.Val(), err)
+			}
+			u.GracePeriod = caddy.Duration(dur)
 		default:
 			return d.Errf("unrecognized srv option '%s'", d.Val())
 		}
