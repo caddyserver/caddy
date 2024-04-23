@@ -22,6 +22,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -358,10 +359,12 @@ func (t *TLS) Cleanup() error {
 		// compute which certificates were managed or loaded into the cert cache by this
 		// app instance (which is being stopped) that are not managed or loaded by the
 		// new app instance (which just started), and remove them from the cache
-		var noLongerManaged, noLongerLoaded []string
+		var noLongerManaged []certmagic.SubjectIssuer
+		var noLongerLoaded []string
 		for subj := range t.managing {
 			if _, ok := nextTLSApp.managing[subj]; !ok {
-				noLongerManaged = append(noLongerManaged, subj)
+				name, issuerKey, _ := strings.Cut(subj, "~")
+				noLongerManaged = append(noLongerManaged, certmagic.SubjectIssuer{Subject: name, IssuerKey: issuerKey})
 			}
 		}
 		for hash := range t.loaded {
@@ -407,6 +410,16 @@ func (t *TLS) Manage(names []string) error {
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
 		for _, name := range names {
+			// certs that are issued solely by our internal issuer are a little bit of
+			// a special case: if you have an initial config that manages example.com
+			// using internal CA, then after testing it you switch to a production CA,
+			// you wouldn't want to keep using the same self-signed cert, obviously;
+			// so we differentiate these in the list
+			if len(ap.Issuers) == 1 {
+				if _, ok := ap.Issuers[0].(*InternalIssuer); ok {
+					name += "~" + ap.Issuers[0].IssuerKey()
+				}
+			}
 			t.managing[name] = struct{}{}
 		}
 	}
