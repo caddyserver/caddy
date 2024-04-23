@@ -65,7 +65,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    filepath.Join("/", "a", "b"),
+			expect:    "/a/b", // inputPath fails the IsLocal test so only the root is returned
 		},
 		{
 			inputRoot: "/a/b",
@@ -86,7 +86,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputRoot:     "C:\\www",
 			inputPath:     "/D:\\foo\\bar",
 			expect:        filepath.Join("C:\\www", "D:\\foo\\bar"),
-			expectWindows: filepath.Join("C:\\www"),
+			expectWindows: filepath.Join("C:\\www"), // inputPath fails IsLocal on Windows
 		},
 		{
 			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
