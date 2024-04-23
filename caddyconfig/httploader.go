@@ -181,12 +181,15 @@ func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 			if err != nil {
 				return nil, fmt.Errorf("getting server identity credentials: %v", err)
 			}
+			// See https://github.com/securego/gosec/issues/1054#issuecomment-2072235199
+			//nolint:gosec
 			tlsConfig = &tls.Config{Certificates: certs}
 		} else if hl.TLS.ClientCertificateFile != "" && hl.TLS.ClientCertificateKeyFile != "" {
 			cert, err := tls.LoadX509KeyPair(hl.TLS.ClientCertificateFile, hl.TLS.ClientCertificateKeyFile)
 			if err != nil {
 				return nil, err
 			}
+			//nolint:gosec
 			tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 		}
 
