@@ -84,7 +84,6 @@ func (irh *Intercept) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// TODO: use a single bufPool
 var bufPool = sync.Pool{
 	New: func() any {
 		return new(bytes.Buffer)
@@ -113,6 +112,7 @@ func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
+	defer bufPool.Put(buf)
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rec := interceptedResponseHandler{replacer: repl}
