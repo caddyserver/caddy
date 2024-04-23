@@ -227,9 +227,9 @@ func StatusCodeMatches(actual, configured int) bool {
 // be a trusted path, but reqPath is not; and the output will
 // never be outside of root. The resulting path can be used
 // with the local file system. If root is empty, the current
-// directory is assumed. If the cleaned request path is not
-// lexically local, it will be rejected as unsafe and only
-// the root will be returned.
+// directory is assumed. If the cleaned request path is deemed
+// not local according to lexical processing (i.e. ignoring links),
+// it will be rejected as unsafe and only the root will be returned.
 func SanitizedPathJoin(root, reqPath string) string {
 	if root == "" {
 		root = "."
@@ -241,7 +241,7 @@ func SanitizedPathJoin(root, reqPath string) string {
 		return root
 	}
 
-	path := filepath.Join(root, relPath)
+	path := filepath.Join(root, filepath.FromSlash(relPath))
 
 	// filepath.Join also cleans the path, and cleaning strips
 	// the trailing slash, so we need to re-add it afterwards.
