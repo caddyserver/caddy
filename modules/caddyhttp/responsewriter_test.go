@@ -2,7 +2,6 @@ package caddyhttp
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -75,20 +74,19 @@ func TestResponseWriterWrapperReadFrom(t *testing.T) {
 			// take precedence over our ReadFrom.
 			src := struct{ io.Reader }{strings.NewReader(srcData)}
 
-			fmt.Println(name)
 			if _, err := io.Copy(wrapped, src); err != nil {
-				t.Errorf("Copy() err = %v", err)
+				t.Errorf("%s: Copy() err = %v", name, err)
 			}
 
 			if got := tt.responseWriter.Written(); got != srcData {
-				t.Errorf("data = %q, want %q", got, srcData)
+				t.Errorf("%s: data = %q, want %q", name, got, srcData)
 			}
 
 			if tt.responseWriter.CalledReadFrom() != tt.wantReadFrom {
 				if tt.wantReadFrom {
-					t.Errorf("ReadFrom() should have been called")
+					t.Errorf("%s: ReadFrom() should have been called", name)
 				} else {
-					t.Errorf("ReadFrom() should not have been called")
+					t.Errorf("%s: ReadFrom() should not have been called", name)
 				}
 			}
 		})

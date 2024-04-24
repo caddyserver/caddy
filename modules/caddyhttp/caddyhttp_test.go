@@ -3,6 +3,7 @@ package caddyhttp
 import (
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -12,9 +13,10 @@ func TestSanitizedPathJoin(t *testing.T) {
 	// %2f = /
 	// %5c = \
 	for i, tc := range []struct {
-		inputRoot string
-		inputPath string
-		expect    string
+		inputRoot     string
+		inputPath     string
+		expect        string
+		expectWindows string
 	}{
 		{
 			inputPath: "",
@@ -63,7 +65,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    filepath.Join("/", "a", "b") + separator,
+			expect:    "/a/b", // inputPath fails the IsLocal test so only the root is returned
 		},
 		{
 			inputRoot: "/a/b",
@@ -81,9 +83,16 @@ func TestSanitizedPathJoin(t *testing.T) {
 			expect:    filepath.Join("C:\\www", "foo", "bar"),
 		},
 		{
-			inputRoot: "C:\\www",
-			inputPath: "/D:\\foo\\bar",
-			expect:    filepath.Join("C:\\www", "D:\\foo\\bar"),
+			inputRoot:     "C:\\www",
+			inputPath:     "/D:\\foo\\bar",
+			expect:        filepath.Join("C:\\www", "D:\\foo\\bar"),
+			expectWindows: filepath.Join("C:\\www"), // inputPath fails IsLocal on Windows
+		},
+		{
+			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
+			inputRoot: "root",
+			inputPath: "/a/b/../../c",
+			expect:    filepath.Join("root", "c"),
 		},
 	} {
 		// we don't *need* to use an actual parsed URL, but it
@@ -96,6 +105,9 @@ func TestSanitizedPathJoin(t *testing.T) {
 			t.Fatalf("Test %d: invalid URL: %v", i, err)
 		}
 		actual := SanitizedPathJoin(tc.inputRoot, u.Path)
+		if runtime.GOOS == "windows" && tc.expectWindows != "" {
+			tc.expect = tc.expectWindows
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d: SanitizedPathJoin('%s', '%s') =>  '%s' (expected '%s')",
 				i, tc.inputRoot, tc.inputPath, actual, tc.expect)
