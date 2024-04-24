@@ -226,13 +226,22 @@ func StatusCodeMatches(actual, configured int) bool {
 // in the implementation of http.Dir. The root is assumed to
 // be a trusted path, but reqPath is not; and the output will
 // never be outside of root. The resulting path can be used
-// with the local file system.
+// with the local file system. If root is empty, the current
+// directory is assumed. If the cleaned request path is deemed
+// not local according to lexical processing (i.e. ignoring links),
+// it will be rejected as unsafe and only the root will be returned.
 func SanitizedPathJoin(root, reqPath string) string {
 	if root == "" {
 		root = "."
 	}
 
-	path := filepath.Join(root, path.Clean("/"+reqPath))
+	relPath := path.Clean("/" + reqPath)[1:] // clean path and trim the leading /
+	if !filepath.IsLocal(relPath) {
+		// path is unsafe (see https://github.com/golang/go/issues/56336#issuecomment-1416214885)
+		return root
+	}
+
+	path := filepath.Join(root, filepath.FromSlash(relPath))
 
 	// filepath.Join also cleans the path, and cleaning strips
 	// the trailing slash, so we need to re-add it afterwards.
