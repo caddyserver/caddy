@@ -395,7 +395,6 @@ func (p *parser) doImport(nesting int) error {
 			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
 		}
 		matches, err = filepath.Glob(globPattern)
-
 		if err != nil {
 			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 		}
