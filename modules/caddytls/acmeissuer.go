@@ -94,7 +94,7 @@ type ACMEIssuer struct {
 	// therefore the system must have a reasonably synchronized clock.
 	// NOTE: Not all CAs support this. Check with your CA's ACME
 	// documentation to see if this is allowed and what values may
-	// be used.
+	// be used. EXPERIMENTAL: Subject to change.
 	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
 
 	rootPool *x509.CertPool
