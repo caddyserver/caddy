@@ -456,6 +456,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	globalACMEDNS := options["acme_dns"]
 	globalACMEEAB := options["acme_eab"]
 	globalPreferredChains := options["preferred_chains"]
+	globalCertLifetime := options["cert_lifetime"]
 
 	if globalEmail != nil && acmeIssuer.Email == "" {
 		acmeIssuer.Email = globalEmail.(string)
@@ -478,6 +479,10 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	}
 	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
 		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
+	}
+
+	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
+		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
 	}
 	return nil
 }
