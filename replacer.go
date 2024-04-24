@@ -62,12 +62,14 @@ func NewEmptyReplacer() *Replacer {
 type Replacer struct {
 	providers []replacementProvider
 	static    map[string]any
-	mapMutex *sync.RWMutex
+	mapMutex  *sync.RWMutex
 }
 
 // WithoutFile returns a copy of the current Replacer
 // without support for the {file.*} placeholder, which
 // may be unsafe in some contexts.
+//
+// EXPERIMENTAL: Subject to change or removal.
 func (r *Replacer) WithoutFile() *Replacer {
 	rep := &Replacer{static: r.static}
 	for _, v := range r.providers {
