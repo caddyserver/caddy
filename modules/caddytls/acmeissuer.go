@@ -372,7 +372,7 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("lifetime must be >= 0: %s", lifetime)
 			}
 			iss.CertificateLifetime = caddy.Duration(lifetime)
-			
+
 		case "dir":
 			if iss.CA != "" {
 				return d.Errf("directory is already specified: %s", iss.CA)
