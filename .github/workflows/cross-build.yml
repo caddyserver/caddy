@@ -17,14 +17,12 @@ jobs:
       matrix:
         goos: 
           - 'aix'
-          - 'android'
           - 'linux'
           - 'solaris'
           - 'illumos'
           - 'dragonfly'
           - 'freebsd'
           - 'openbsd'
-          - 'plan9'
           - 'windows'
           - 'darwin'
           - 'netbsd'
@@ -69,7 +67,3 @@ jobs:
         working-directory: ./cmd/caddy
         run: |
           GOOS=$GOOS GOARCH=$GOARCH go build -tags nobadger -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
-          if [ $? -ne 0 ]; then
-            echo "::warning ::$GOOS Build Failed"
-            exit 0
-          fi
