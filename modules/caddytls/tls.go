@@ -360,11 +360,16 @@ func (t *TLS) Cleanup() error {
 		// app instance (which is being stopped) that are not managed or loaded by the
 		// new app instance (which just started), and remove them from the cache
 		var noLongerManaged []certmagic.SubjectIssuer
-		var noLongerLoaded []string
+		var reManage, noLongerLoaded []string
 		for subj := range t.managing {
 			if _, ok := nextTLSApp.managing[subj]; !ok {
 				name, issuerKey, _ := strings.Cut(subj, "~")
 				noLongerManaged = append(noLongerManaged, certmagic.SubjectIssuer{Subject: name, IssuerKey: issuerKey})
+				// if the new TLS app is managing a cert for the same subject we are evicting,
+				// make sure it obtains or loads the cert using that config afterwards
+				if _, ok := nextTLSApp.managing[name]; ok {
+					reManage = append(reManage, name)
+				}
 			}
 		}
 		for hash := range t.loaded {
@@ -377,6 +382,14 @@ func (t *TLS) Cleanup() error {
 		certCache.RemoveManaged(noLongerManaged)
 		certCache.Remove(noLongerLoaded)
 		certCacheMu.RUnlock()
+
+		// give the new TLS app a "kick" to manage certs that it is configured for
+		// with its own configuration instead of the one we just evicted
+		if err := nextTLSApp.Manage(reManage); err != nil {
+			t.logger.Error("re-managing unloaded certificates with new config",
+				zap.Strings("subjects", reManage),
+				zap.Error(err))
+		}
 	} else {
 		// no more TLS app running, so delete in-memory cert cache
 		certCache.Stop()
