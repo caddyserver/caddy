@@ -101,6 +101,17 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		return
 	}
 
+	// There may be buffered data in the *bufio.Reader
+	// see: https://github.com/caddyserver/caddy/issues/6273
+	if buffered := brw.Reader.Buffered(); buffered > 0 {
+		data, _ := brw.Peek(buffered)
+		_, err := backConn.Write(data)
+		if err != nil {
+			logger.Debug("backConn write failed", zap.Error(err))
+			return
+		}
+	}
+
 	// Ensure the hijacked client connection, and the new connection established
 	// with the backend, are both closed in the event of a server shutdown. This
 	// is done by registering them. We also try to gracefully close connections
