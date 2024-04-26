@@ -263,6 +263,8 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		conn.(*hijackedConn).updateReadSize(buffered)
 		data, _ := brw.Peek(buffered)
 		brw.Reader.Reset(io.MultiReader(bytes.NewReader(data), conn))
+		// peek to make buffered data appear, as Reset will make it 0
+		_, _ = brw.Peek(buffered)
 	} else {
 		brw.Reader.Reset(conn)
 	}
