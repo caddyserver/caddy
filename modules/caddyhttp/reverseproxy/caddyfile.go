@@ -1112,6 +1112,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			h.TLS.HandshakeTimeout = caddy.Duration(dur)
 
 		case "tls_trusted_ca_certs":
+			caddy.Log().Warn("The 'tls_trusted_ca_certs' field is deprecated. Use the 'tls_trust_pool' field instead.")
 			args := d.RemainingArgs()
 			if len(args) == 0 {
 				return d.ArgErr()
