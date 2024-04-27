@@ -17,7 +17,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.7
 	github.com/mholt/acmez/v2 v2.0.0-beta.2
 	github.com/prometheus/client_golang v1.19.0
-	github.com/quic-go/quic-go v0.42.0
+	github.com/quic-go/quic-go v0.43.0
 	github.com/smallstep/certificates v0.25.3-rc5
 	github.com/smallstep/nosql v0.6.0
 	github.com/smallstep/truststore v0.13.0
