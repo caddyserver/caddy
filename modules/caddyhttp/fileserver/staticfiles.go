@@ -371,15 +371,17 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	respHeader := w.Header()
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
-	etag := w.Header().Get("Etag")
+	etag := respHeader.Get("Etag")
 
 	// static file responses are often compressed, either on-the-fly
 	// or with precompressed sidecar files; in any case, the headers
 	// should contain "Vary: Accept-Encoding" even when not compressed
 	// so caches can craft a reliable key (according to REDbot results)
-	w.Header().Add("Vary", "Accept-Encoding")
+	// see #5849
+	respHeader.Add("Vary", "Accept-Encoding")
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -404,8 +406,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
-		w.Header().Set("Content-Encoding", ae)
-		w.Header().Del("Accept-Ranges")
+		respHeader.Set("Content-Encoding", ae)
+		respHeader.Del("Accept-Ranges")
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -459,7 +461,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// to repeat the error; just continue because we're probably
 		// trying to write an error page response (see issue #5703)
 		if _, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); !ok {
-			w.Header().Add("Allow", "GET, HEAD")
+			respHeader.Add("Allow", "GET, HEAD")
 			return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
 		}
 	}
@@ -467,16 +469,16 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// set the Etag - note that a conditional If-None-Match request is handled
 	// by http.ServeContent below, which checks against this Etag value
 	if etag != "" {
-		w.Header().Set("Etag", etag)
+		respHeader.Set("Etag", etag)
 	}
 
-	if w.Header().Get("Content-Type") == "" {
+	if respHeader.Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
 		if mtyp == "" {
 			// do not allow Go to sniff the content-type; see https://www.youtube.com/watch?v=8t8JYpt0egE
-			w.Header()["Content-Type"] = nil
+			respHeader["Content-Type"] = nil
 		} else {
-			w.Header().Set("Content-Type", mtyp)
+			respHeader.Set("Content-Type", mtyp)
 		}
 	}
 
