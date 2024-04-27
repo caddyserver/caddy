@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"reflect"
@@ -91,6 +92,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"httpError":        c.funcHTTPError,
 		"humanize":         c.funcHumanize,
 		"maybe":            c.funcMaybe,
+		"pathEscape":       url.PathEscape,
 	})
 	return c.tpl
 }
