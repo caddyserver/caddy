@@ -443,6 +443,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return d.ArgErr()
 			}
 		case "trusted_ca_cert":
+			caddy.Log().Warn("The 'trusted_ca_cert' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
@@ -456,6 +457,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			}
 			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
 		case "trusted_ca_cert_file":
+			caddy.Log().Warn("The 'trusted_ca_cert_file' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}

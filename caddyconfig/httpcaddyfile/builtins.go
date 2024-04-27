@@ -69,8 +69,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    curves    <curves...>
 //	    client_auth {
 //	        mode                   [request|require|verify_if_given|require_and_verify]
-//	        trusted_ca_cert        <base64_der>
-//	        trusted_ca_cert_file   <filename>
+//	        trust_pool			   <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
