@@ -261,7 +261,9 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	logger.Debug("event", zap.Any("data", e.Data))
+	logger = logger.With(zap.Any("data", e.Data))
+
+	logger.Debug("event")
 
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
@@ -281,6 +283,12 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 					return e
 				default:
 				}
+
+				// this log can be a useful sanity check to ensure your handlers are in fact being invoked
+				// (see https://github.com/mholt/caddy-events-exec/issues/6)
+				logger.Debug("invoking subscribed handler",
+					zap.String("subscribed_to", eventName),
+					zap.Any("handler", handler))
 
 				if err := handler.Handle(ctx, e); err != nil {
 					aborted := errors.Is(err, ErrAborted)
