@@ -272,7 +272,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
 		if r.ProtoMajor < 3 {
-			err := s.h3server.SetQuicHeaders(w.Header())
+			err := s.h3server.SetQUICHeaders(w.Header())
 			if err != nil {
 				s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
 			}
