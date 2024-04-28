@@ -32,10 +32,13 @@ var httpMetrics = struct {
 	init: sync.Once{},
 }
 
-func initHTTPMetrics() {
+func initHTTPMetrics(perHost bool) {
 	const ns, sub = "caddy", "http"
 
 	basicLabels := []string{"server", "handler"}
+	if perHost {
+		basicLabels = append(basicLabels, "host")
+	}
 	httpMetrics.requestInFlight = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -60,6 +63,9 @@ func initHTTPMetrics() {
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
 
 	httpLabels := []string{"server", "handler", "code", "method"}
+	if perHost {
+		httpLabels = append(httpLabels, "host")
+	}
 	httpMetrics.requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -103,14 +109,15 @@ func serverNameFromContext(ctx context.Context) string {
 type metricsInstrumentedHandler struct {
 	handler string
 	mh      MiddlewareHandler
+	perHost bool
 }
 
-func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler) *metricsInstrumentedHandler {
+func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler, perHost bool) *metricsInstrumentedHandler {
 	httpMetrics.init.Do(func() {
-		initHTTPMetrics()
+		initHTTPMetrics(perHost)
 	})
 
-	return &metricsInstrumentedHandler{handler, mh}
+	return &metricsInstrumentedHandler{handler, mh, perHost}
 }
 
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
@@ -120,6 +127,11 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// the "code" value is set later, but initialized here to eliminate the possibility
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
+
+	if h.perHost {
+		labels["host"] = r.Host
+		statusLabels["host"] = r.Host
+	}
 
 	inFlight := httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
