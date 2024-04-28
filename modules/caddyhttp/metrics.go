@@ -15,7 +15,9 @@ import (
 
 // Metrics configures metrics observations.
 // EXPERIMENTAL and subject to change or removal.
-type Metrics struct{}
+type Metrics struct {
+	PerHost bool
+}
 
 var httpMetrics = struct {
 	init             sync.Once

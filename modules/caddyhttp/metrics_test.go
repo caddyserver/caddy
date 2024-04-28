@@ -43,7 +43,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return h.ServeHTTP(w, r)
 	})
 
-	ih := newMetricsInstrumentedHandler("bar", mh)
+	ih := newMetricsInstrumentedHandler("bar", mh, false)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
 		return nil
 	})
-	ih = newMetricsInstrumentedHandler("empty", mh)
+	ih = newMetricsInstrumentedHandler("empty", mh, false)
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
@@ -83,7 +83,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih = newMetricsInstrumentedHandler("foo", mh)
+	ih = newMetricsInstrumentedHandler("foo", mh, false)
 
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
