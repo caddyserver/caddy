@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/alecthomas/chroma/v2 v2.13.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.20.1-0.20240419174353-855d4670a49d
+	github.com/caddyserver/certmagic v0.20.1-0.20240423172519-140a6fa9202e
 	github.com/caddyserver/zerossl v0.1.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.0.12
