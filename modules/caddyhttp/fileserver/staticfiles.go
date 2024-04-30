@@ -15,6 +15,8 @@
 package fileserver
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +37,29 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
+
+type VirtualFile struct {
+	content  *bytes.Reader
+	fileInfo fs.FileInfo
+}
+
+func (vf VirtualFile) Close() error {
+	return nil
+}
+
+func (vf VirtualFile) Read(p []byte) (n int, err error) {
+	n, err = vf.content.Read(p)
+	return
+}
+
+func (vf VirtualFile) Stat() (fs.FileInfo, error) {
+	return vf.fileInfo, nil
+}
+
+func (vf VirtualFile) Seek(offset int64, whence int) (n int64, err error) {
+	n, err = vf.content.Seek(offset, whence)
+	return
+}
 
 func init() {
 	caddy.RegisterModule(FileServer{})
@@ -273,104 +298,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		zap.String("request_path", r.URL.Path),
 		zap.String("result", filename))
 
-	// get information about the file
-	info, err := fs.Stat(fileSystem, filename)
-	if err != nil {
-		err = fsrv.mapDirOpenError(fileSystem, err, filename)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
-			return fsrv.notFound(w, r, next)
-		} else if errors.Is(err, fs.ErrPermission) {
-			return caddyhttp.Error(http.StatusForbidden, err)
-		}
-		return caddyhttp.Error(http.StatusInternalServerError, err)
-	}
-
-	// if the request mapped to a directory, see if
-	// there is an index file we can serve
-	var implicitIndexFile bool
-	if info.IsDir() && len(fsrv.IndexNames) > 0 {
-		for _, indexPage := range fsrv.IndexNames {
-			indexPage := repl.ReplaceAll(indexPage, "")
-			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
-			if fileHidden(indexPath, filesToHide) {
-				// pretend this file doesn't exist
-				fsrv.logger.Debug("hiding index file",
-					zap.String("filename", indexPath),
-					zap.Strings("files_to_hide", filesToHide))
-				continue
-			}
-
-			indexInfo, err := fs.Stat(fileSystem, indexPath)
-			if err != nil {
-				continue
-			}
-
-			// don't rewrite the request path to append
-			// the index file, because we might need to
-			// do a canonical-URL redirect below based
-			// on the URL as-is
-
-			// we've chosen to use this index file,
-			// so replace the last file info and path
-			// with that of the index file
-			info = indexInfo
-			filename = indexPath
-			implicitIndexFile = true
-			fsrv.logger.Debug("located index file", zap.String("filename", filename))
-			break
-		}
-	}
-
-	// if still referencing a directory, delegate
-	// to browse or return an error
-	if info.IsDir() {
-		fsrv.logger.Debug("no index file in directory",
-			zap.String("path", filename),
-			zap.Strings("index_filenames", fsrv.IndexNames))
-		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
-			return fsrv.serveBrowse(fileSystem, root, filename, w, r, next)
-		}
-		return fsrv.notFound(w, r, next)
-	}
-
-	// one last check to ensure the file isn't hidden (we might
-	// have changed the filename from when we last checked)
-	if fileHidden(filename, filesToHide) {
-		fsrv.logger.Debug("hiding file",
-			zap.String("filename", filename),
-			zap.Strings("files_to_hide", filesToHide))
-		return fsrv.notFound(w, r, next)
-	}
-
-	// if URL canonicalization is enabled, we need to enforce trailing
-	// slash convention: if a directory, trailing slash; if a file, no
-	// trailing slash - not enforcing this can break relative hrefs
-	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
-	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
-		// Only redirect if the last element of the path (the filename) was not
-		// rewritten; if the admin wanted to rewrite to the canonical path, they
-		// would have, and we have to be very careful not to introduce unwanted
-		// redirects and especially redirect loops!
-		// See https://github.com/caddyserver/caddy/issues/4205.
-		origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
-		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
-			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path + "/"
-				fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
-				return redirect(w, r, to)
-			} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
-				to := origReq.URL.Path[:len(origReq.URL.Path)-1]
-				fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
-				return redirect(w, r, to)
-			}
-		}
-	}
-
 	var file fs.File
+	var info fs.FileInfo
+	var err error
 	respHeader := w.Header()
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
@@ -383,48 +313,263 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// see #5849
 	respHeader.Add("Vary", "Accept-Encoding")
 
-	// check for precompressed files
-	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
-		precompress, ok := fsrv.precompressors[ae]
-		if !ok {
-			continue
-		}
-		compressedFilename := filename + precompress.Suffix()
-		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
-		if err != nil || compressedInfo.IsDir() {
-			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
-			continue
-		}
-		fsrv.logger.Debug("opening compressed sidecar file", zap.String("filename", compressedFilename), zap.Error(err))
-		file, err = fsrv.openFile(fileSystem, compressedFilename, w)
-		if err != nil {
-			fsrv.logger.Warn("opening precompressed file failed", zap.String("filename", compressedFilename), zap.Error(err))
-			if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
-				return err
-			}
-			file = nil
-			continue
-		}
-		defer file.Close()
-		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+	preferPrecompressed := true // TODO: move to config
 
-		// try to get the etag from pre computed files if an etag suffix list was provided
-		if etag == "" && fsrv.EtagFileExtensions != nil {
-			etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+	if preferPrecompressed {
+		fsrv.logger.Debug("prefer_precompressed: seeking precompressed file according to accepted encodings")
+
+		for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
+			precompress, ok := fsrv.precompressors[ae]
+			if !ok {
+				continue
+			}
+			compressedFilename := filename + precompress.Suffix()
+			compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
+			if err != nil || compressedInfo.IsDir() {
+				fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
+				continue
+			}
+			fsrv.logger.Debug("opening compressed file", zap.String("filename", compressedFilename), zap.Error(err))
+			file, err = fsrv.openFile(fileSystem, compressedFilename, w)
 			if err != nil {
+				fsrv.logger.Warn("opening precompressed file failed", zap.String("filename", compressedFilename), zap.Error(err))
+				if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
+					return err
+				}
+				file = nil
+				continue
+			}
+			defer file.Close()
+			respHeader.Set("Content-Encoding", ae)
+			respHeader.Del("Accept-Ranges")
+
+			// try to get the etag from pre computed files if an etag suffix list was provided
+			if etag == "" && fsrv.EtagFileExtensions != nil {
+				etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+				if err != nil {
+					return err
+				}
+			}
+
+			info = compressedInfo
+
+			// Set the Etag:
+			// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
+			if etag == "" {
+				etag = calculateEtag(compressedInfo)
+			}
+
+			break
+		}
+	}
+
+	if preferPrecompressed && file == nil {
+		fsrv.logger.Debug("prefer_precompressed: seeking precompressed file to decompress")
+
+		for _, e := range fsrv.PrecompressedOrder {
+			precompress, ok := fsrv.precompressors[e]
+			if !ok {
+				continue
+			}
+			compressedFilename := filename + precompress.Suffix()
+			compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
+			if err != nil || compressedInfo.IsDir() {
+				fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
+				continue
+			}
+			fsrv.logger.Debug("opening compressed file", zap.String("filename", compressedFilename), zap.Error(err))
+			file, err = fsrv.openFile(fileSystem, compressedFilename, w)
+			if err != nil {
+				fsrv.logger.Warn("opening precompressed file failed", zap.String("filename", compressedFilename), zap.Error(err))
+				if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
+					return err
+				}
+				file = nil
+				continue
+			}
+			defer file.Close()
+
+			// TODO: handle all compressed formats, not only gzip
+			r, err := gzip.NewReader(file)
+			if err != nil {
+				fsrv.logger.Warn("instantiating new gzip reader for file failed", zap.String("filename", compressedFilename), zap.Error(err))
 				return err
+			}
+			defer r.Close()
+
+			var decomp bytes.Buffer
+			_, err = decomp.ReadFrom(r)
+			if err != nil {
+				fsrv.logger.Warn("reading from gzip reader failed", zap.String("filename", compressedFilename), zap.Error(err))
+				return err
+			}
+			file = VirtualFile{bytes.NewReader(decomp.Bytes()), compressedInfo}
+
+			respHeader.Del("Accept-Ranges")
+
+			// try to get the etag from pre computed files if an etag suffix list was provided
+			if etag == "" && fsrv.EtagFileExtensions != nil {
+				etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+				if err != nil {
+					return err
+				}
+			}
+
+			info = compressedInfo
+
+			// Set the Etag:
+			// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
+			if etag == "" {
+				etag = calculateEtag(compressedInfo)
+			}
+
+			break
+		}
+	}
+
+	if file == nil {
+		// get information about the file
+		info, err = fs.Stat(fileSystem, filename)
+		if err != nil {
+			err = fsrv.mapDirOpenError(fileSystem, err, filename)
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+				return fsrv.notFound(w, r, next)
+			} else if errors.Is(err, fs.ErrPermission) {
+				return caddyhttp.Error(http.StatusForbidden, err)
+			}
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+
+		// if the request mapped to a directory, see if
+		// there is an index file we can serve
+		var implicitIndexFile bool
+		if info.IsDir() && len(fsrv.IndexNames) > 0 {
+			for _, indexPage := range fsrv.IndexNames {
+				indexPage := repl.ReplaceAll(indexPage, "")
+				indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
+				if fileHidden(indexPath, filesToHide) {
+					// pretend this file doesn't exist
+					fsrv.logger.Debug("hiding index file",
+						zap.String("filename", indexPath),
+						zap.Strings("files_to_hide", filesToHide))
+					continue
+				}
+
+				indexInfo, err := fs.Stat(fileSystem, indexPath)
+				if err != nil {
+					continue
+				}
+
+				// don't rewrite the request path to append
+				// the index file, because we might need to
+				// do a canonical-URL redirect below based
+				// on the URL as-is
+
+				// we've chosen to use this index file,
+				// so replace the last file info and path
+				// with that of the index file
+				info = indexInfo
+				filename = indexPath
+				implicitIndexFile = true
+				fsrv.logger.Debug("located index file", zap.String("filename", filename))
+				break
 			}
 		}
 
-		// don't assign info = compressedInfo because sidecars are kind
-		// of transparent; however we do need to set the Etag:
-		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
-		if etag == "" {
-			etag = calculateEtag(compressedInfo)
+		// if still referencing a directory, delegate
+		// to browse or return an error
+		if info.IsDir() {
+			fsrv.logger.Debug("no index file in directory",
+				zap.String("path", filename),
+				zap.Strings("index_filenames", fsrv.IndexNames))
+			if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
+				return fsrv.serveBrowse(fileSystem, root, filename, w, r, next)
+			}
+			return fsrv.notFound(w, r, next)
 		}
 
-		break
+		// one last check to ensure the file isn't hidden (we might
+		// have changed the filename from when we last checked)
+		if fileHidden(filename, filesToHide) {
+			fsrv.logger.Debug("hiding file",
+				zap.String("filename", filename),
+				zap.Strings("files_to_hide", filesToHide))
+			return fsrv.notFound(w, r, next)
+		}
+
+		// if URL canonicalization is enabled, we need to enforce trailing
+		// slash convention: if a directory, trailing slash; if a file, no
+		// trailing slash - not enforcing this can break relative hrefs
+		// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
+		if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
+			// Only redirect if the last element of the path (the filename) was not
+			// rewritten; if the admin wanted to rewrite to the canonical path, they
+			// would have, and we have to be very careful not to introduce unwanted
+			// redirects and especially redirect loops!
+			// See https://github.com/caddyserver/caddy/issues/4205.
+			origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
+			if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
+				if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
+					to := origReq.URL.Path + "/"
+					fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to))
+					return redirect(w, r, to)
+				} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
+					to := origReq.URL.Path[:len(origReq.URL.Path)-1]
+					fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to))
+					return redirect(w, r, to)
+				}
+			}
+		}
+	}
+
+	if file == nil {
+		// check for precompressed files
+		for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
+			precompress, ok := fsrv.precompressors[ae]
+			if !ok {
+				continue
+			}
+			compressedFilename := filename + precompress.Suffix()
+			compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
+			if err != nil || compressedInfo.IsDir() {
+				fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
+				continue
+			}
+			fsrv.logger.Debug("opening compressed sidecar file", zap.String("filename", compressedFilename), zap.Error(err))
+			file, err = fsrv.openFile(fileSystem, compressedFilename, w)
+			if err != nil {
+				fsrv.logger.Warn("opening precompressed file failed", zap.String("filename", compressedFilename), zap.Error(err))
+				if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
+					return err
+				}
+				file = nil
+				continue
+			}
+			defer file.Close()
+			respHeader.Set("Content-Encoding", ae)
+			respHeader.Del("Accept-Ranges")
+
+			// try to get the etag from pre computed files if an etag suffix list was provided
+			if etag == "" && fsrv.EtagFileExtensions != nil {
+				etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+				if err != nil {
+					return err
+				}
+			}
+
+			// don't assign info = compressedInfo because sidecars are kind
+			// of transparent; however we do need to set the Etag:
+			// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
+			if etag == "" {
+				etag = calculateEtag(compressedInfo)
+			}
+
+			break
+		}
 	}
 
 	// no precompressed file found, use the actual file
