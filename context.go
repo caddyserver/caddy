@@ -453,10 +453,32 @@ func (ctx Context) App(name string) (any, error) {
 	return modVal, nil
 }
 
+// AppStrict is like App, but it returns an error if the app
+// has not been configured. This is useful when the app is
+// required and its absence is a configuration error.
+func (ctx Context) AppStrict(name string) (any, error) {
+	if app, ok := ctx.cfg.apps[name]; ok {
+		return app, nil
+	}
+	appRaw := ctx.cfg.AppsRaw[name]
+	if appRaw == nil {
+		return nil, fmt.Errorf("app module %s is not configured", name)
+	}
+	return ctx.App(name)
+}
+
 // AppIfConfigured returns an app by its name if it has been
-// configured. Can be called instead of App() to avoid
-// instantiating an empty app when that's not desirable. If
-// the app has not been loaded, nil is returned.
+// configured and provisioned. Can be called instead of App()
+// to avoid instantiating an empty app when that's not desirable.
+// If the app has not been loaded, nil is returned.
+//
+// Since this method does not return the app if it has not been
+// provisioned, this could be misleading if the provisioning order
+// caused the app to not be provisioned yet. This could return
+// nil even if the app is configured, but not yet provisioned.
+// In that case, the caller should probably use AppStrict() instead
+// to ensure the app is provisioned, and no app will be instantiated
+// if it is not configured.
 //
 // We return any type instead of the App type because it is not
 // intended for the caller of this method to be the one to start
