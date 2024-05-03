@@ -232,6 +232,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 				cfg.CertSelection = p.CertSelection
 			}
 			cfg.DefaultServerName = p.DefaultSNI
+			if hello.ServerName == "" && p.DefaultSNI != "" {
+				hello.ServerName = p.DefaultSNI
+			}
 			cfg.FallbackServerName = p.FallbackSNI
 			return cfg.GetCertificate(hello)
 		},
