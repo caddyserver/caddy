@@ -25,6 +25,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"time"
+    "errors"
 
 	"go.uber.org/zap"
 
@@ -81,6 +82,9 @@ type ActiveHealthChecks struct {
 
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
+
+	// boolean to follow redirects in health checks disabled by default
+	HealthFollowRedirects bool `json:"health_follow_redirects,omitempty"`
 
 	// How frequently to perform active health checks (default 30s).
 	Interval caddy.Duration `json:"interval,omitempty"`
@@ -153,6 +157,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
 		Transport: h.Transport,
+        CheckRedirect: func(req *http.Request, via []*http.Request) error {
+            if !a.HealthFollowRedirects {
+                return errors.New(
+                    "Redirects are disabled in health check, set health_follow_redirects flag in config to avoid this error")
+            } else {
+                return nil
+            }
+        },
 	}
 
 	for _, upstream := range h.Upstreams {
