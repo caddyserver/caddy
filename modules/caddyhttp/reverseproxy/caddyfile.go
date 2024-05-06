@@ -75,7 +75,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    health_timeout  <duration>
 //	    health_status   <status>
 //	    health_body     <regexp>
-//         health_follow_redirects
+//	    health_follow_redirects
 //	    health_headers {
 //	        <field> [<values...>]
 //	    }
