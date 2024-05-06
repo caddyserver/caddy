@@ -16,7 +16,6 @@ package reverseproxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -83,8 +82,8 @@ type ActiveHealthChecks struct {
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
 
-	// boolean to follow redirects in health checks disabled by default
-	HealthFollowRedirects bool `json:"health_follow_redirects,omitempty"`
+	// Whether to follow HTTP redirects in response to active health checks (default off).
+	FollowRedirects bool `json:"follow_redirects,omitempty"`
 
 	// How frequently to perform active health checks (default 30s).
 	Interval caddy.Duration `json:"interval,omitempty"`
@@ -158,12 +157,11 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		Timeout:   timeout,
 		Transport: h.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if !a.HealthFollowRedirects {
-				return errors.New(
-					"Redirects are disabled in health check, set health_follow_redirects flag in config to avoid this error")
-			} else {
-				return nil
+			if !a.FollowRedirects {
+				return fmt.Errorf(
+					"active health check encountered a redirect; enable 'health_follow_redirects' if redirects are intentional")
 			}
+			return nil
 		},
 	}
 
