@@ -454,7 +454,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-            h.HealthChecks.Active.HealthFollowRedirects = true
+			h.HealthChecks.Active.HealthFollowRedirects = true
 
 		case "health_passes":
 			if !d.NextArg() {
@@ -649,7 +649,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.TrustedProxies = append(h.TrustedProxies, d.Val())
 			}
-
 
 		case "header_up":
 			var err error

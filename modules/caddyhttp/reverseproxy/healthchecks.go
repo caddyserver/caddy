@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -25,7 +26,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"time"
-    "errors"
 
 	"go.uber.org/zap"
 
@@ -157,14 +157,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
 		Transport: h.Transport,
-        CheckRedirect: func(req *http.Request, via []*http.Request) error {
-            if !a.HealthFollowRedirects {
-                return errors.New(
-                    "Redirects are disabled in health check, set health_follow_redirects flag in config to avoid this error")
-            } else {
-                return nil
-            }
-        },
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if !a.HealthFollowRedirects {
+				return errors.New(
+					"Redirects are disabled in health check, set health_follow_redirects flag in config to avoid this error")
+			} else {
+				return nil
+			}
+		},
 	}
 
 	for _, upstream := range h.Upstreams {
