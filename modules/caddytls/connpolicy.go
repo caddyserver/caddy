@@ -232,7 +232,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 				cfg.CertSelection = p.CertSelection
 			}
 			cfg.DefaultServerName = p.DefaultSNI
+			tlsApp.logger.Info("Looking for ClientHello.ServerName", zap.String("default_sni", p.DefaultSNI))
 			if hello.ServerName == "" && p.DefaultSNI != "" {
+				tlsApp.logger.Info("ClientHello.ServerName is empty; using default SNI", zap.String("default_sni", p.DefaultSNI))
 				hello.ServerName = p.DefaultSNI
 			}
 			cfg.FallbackServerName = p.FallbackSNI
