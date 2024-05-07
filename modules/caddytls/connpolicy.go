@@ -119,6 +119,9 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 						continue policyLoop
 					}
 				}
+				if pol.Drop {
+					return nil, fmt.Errorf("dropping connection")
+				}
 				return pol.TLSConfig, nil
 			}
 
@@ -155,6 +158,9 @@ type ConnectionPolicy struct {
 
 	// Maximum TLS protocol version to allow. Default: `tls1.3`
 	ProtocolMax string `json:"protocol_max,omitempty"`
+
+	// Reject TLS connections. EXPERIMENTAL: May change.
+	Drop bool `json:"drop,omitempty"`
 
 	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
