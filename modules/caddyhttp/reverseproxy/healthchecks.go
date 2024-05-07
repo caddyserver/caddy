@@ -158,7 +158,7 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		Transport: h.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
-			    return http.ErrUseLastResponse
+				return http.ErrUseLastResponse
 			}
 			return nil
 		},
