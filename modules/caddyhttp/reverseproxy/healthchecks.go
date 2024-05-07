@@ -158,8 +158,7 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		Transport: h.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
-				return fmt.Errorf(
-					"active health check encountered a redirect; enable 'health_follow_redirects' if redirects are intentional")
+			    return http.ErrUseLastResponse
 			}
 			return nil
 		},
@@ -463,7 +462,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 			markUnhealthy()
 			return nil
 		}
-	} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		h.HealthChecks.Active.logger.Info("status code out of tolerances",
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("host", hostAddr),
