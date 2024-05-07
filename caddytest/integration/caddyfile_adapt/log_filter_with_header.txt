@@ -12,7 +12,7 @@ localhost {
 	}
 	@healthCheck `header_regexp('User-Agent', '^some-regexp$') || path('/healthz*')`
 	handle @healthCheck {
-		vars access_logger_names "health_check_log,general_log"
+		log_name "health_check_log" "general_log"
 		respond "Healthy"
 	}
 
@@ -89,7 +89,10 @@ localhost {
 														{
 															"handle": [
 																{
-																	"access_logger_names": "health_check_log,general_log",
+																	"access_logger_names": [
+																		"health_check_log",
+																		"general_log"
+																	],
 																	"handler": "vars"
 																},
 																{

@@ -80,10 +80,11 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*
 	}
 	hosts := slc.getLoggerHosts(hostWithoutPort)
 	loggers := make([]*zap.Logger, 0, len(hosts))
-	if access_logger_names := GetVar(req.Context(), AccessLoggerNameVarKey); access_logger_names != nil {
-		accessLoggerNamesSlice := strings.Split(access_logger_names.(string), ",")
-		for _, loggerName := range accessLoggerNamesSlice {
-			loggers = append(loggers, logger.Named(loggerName))
+	if names := GetVar(req.Context(), AccessLoggerNameVarKey); names != nil {
+		if namesSlice, ok := names.([]any); ok {
+			for _, loggerName := range namesSlice {
+				loggers = append(loggers, logger.Named(loggerName.(string)))
+			}
 		}
 		return loggers
 	}

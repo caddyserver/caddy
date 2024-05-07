@@ -51,6 +51,7 @@ func init() {
 	RegisterDirective("log", parseLog)
 	RegisterHandlerDirective("skip_log", parseLogSkip)
 	RegisterHandlerDirective("log_skip", parseLogSkip)
+	RegisterHandlerDirective("log_name", parseLogName)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -914,7 +915,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// this is useful for setting up loggers per subdomain in a site block
 	// with a wildcard domain
 	customHostnames := []string{}
-	noLoggerNames := false
+	noHostname := false
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -1004,7 +1005,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			if h.NextArg() {
 				return nil, h.ArgErr()
 			}
-			noLoggerNames = true
+			noHostname = true
 
 		default:
 			return nil, h.Errf("unrecognized subdirective: %s", h.Val())
@@ -1013,7 +1014,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 	var val namedCustomLog
 	val.hostnames = customHostnames
-	val.noLoggerNames = noLoggerNames
+	val.noHostname = noHostname
 	isEmptyConfig := reflect.DeepEqual(cl, new(caddy.CustomLog))
 
 	// Skip handling of empty logging configs
@@ -1063,4 +1064,13 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, h.ArgErr()
 	}
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
+}
+
+// parseLogName parses the log_name directive. Syntax:
+//
+// log_name <names...>
+func parseLogName(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next()
+	access_logger_names := h.RemainingArgs()
+	return caddyhttp.VarsMiddleware{"access_logger_names": access_logger_names}, nil
 }

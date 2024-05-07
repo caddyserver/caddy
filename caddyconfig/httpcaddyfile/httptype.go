@@ -797,7 +797,7 @@ func (st *ServerType) serversFromPairings(
 			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
-				if ncl.noLoggerNames {
+				if ncl.noHostname {
 					continue
 				}
 				if sblock.hasHostCatchAllKey() && len(ncl.hostnames) == 0 {
@@ -1601,10 +1601,10 @@ func (c counter) nextGroup() string {
 }
 
 type namedCustomLog struct {
-	name          string
-	hostnames     []string
-	log           *caddy.CustomLog
-	noLoggerNames bool
+	name       string
+	hostnames  []string
+	log        *caddy.CustomLog
+	noHostname bool
 }
 
 // sbAddrAssociation is a mapping from a list of
