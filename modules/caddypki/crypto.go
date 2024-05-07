@@ -83,7 +83,7 @@ func (kp KeyPair) Load() (*x509.Certificate, crypto.Signer, error) {
 			return nil, nil, err
 		}
 
-		var key crypto.Signer = nil
+		var key crypto.Signer
 		if kp.PrivateKey != "" {
 			keyData, err := os.ReadFile(kp.PrivateKey)
 			if err != nil {
