@@ -611,7 +611,7 @@ func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 		if len(t.RootCAPool) > 0 || len(t.RootCAPEMFiles) > 0 {
 			return nil, fmt.Errorf("conflicting config for Root CA pool")
 		}
-		caRaw, err := ctx.LoadModule(t, "CARaw")
+		caRaw, err := ctx.LoadModule(&t, "CARaw")
 		if err != nil {
 			return nil, fmt.Errorf("failed to load ca module: %v", err)
 		}

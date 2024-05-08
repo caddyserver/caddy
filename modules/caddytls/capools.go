@@ -508,7 +508,7 @@ func (t TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	if t.CARaw != nil {
-		caRaw, err := ctx.LoadModule(t, "CARaw")
+		caRaw, err := ctx.LoadModule(&t, "CARaw")
 		if err != nil {
 			return nil, err
 		}
@@ -762,7 +762,7 @@ func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // set to `true`.
 func (lcp LazyCertPool) Validate() error {
 	if lcp.EagerValidation {
-		_, err := lcp.ctx.LoadModule(lcp, "CARaw")
+		_, err := lcp.ctx.LoadModule(&lcp, "CARaw")
 		return err
 	}
 	return nil
@@ -771,7 +771,7 @@ func (lcp LazyCertPool) Validate() error {
 // CertPool loads the guest module and returns the CertPool from there
 // TODO: Cache?
 func (lcp LazyCertPool) CertPool() *x509.CertPool {
-	caRaw, err := lcp.ctx.LoadModule(lcp, "CARaw")
+	caRaw, err := lcp.ctx.LoadModule(&lcp, "CARaw")
 	if err != nil {
 		return nil
 	}
