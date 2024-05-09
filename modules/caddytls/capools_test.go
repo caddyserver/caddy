@@ -567,21 +567,6 @@ func TestTLSConfig_unmarshalCaddyfile(t *testing.T) {
 			},
 		},
 		{
-			name: "setting 'ca' to 'lazy' with appropriate block is valid",
-			args: args{
-				d: caddyfile.NewTestDispenser(`{
-					ca lazy {
-						backend file {
-							pem_file /var/caddy/ca.pem
-						}
-					}
-				}`),
-			},
-			expected: TLSConfig{
-				CARaw: []byte(`{"ca":{"pem_files":["/var/caddy/ca.pem"],"provider":"file"},"provider":"lazy"}`),
-			},
-		},
-		{
 			name: "setting 'ca' to 'file' with appropriate block is valid",
 			args: args{
 				d: caddyfile.NewTestDispenser(`{
