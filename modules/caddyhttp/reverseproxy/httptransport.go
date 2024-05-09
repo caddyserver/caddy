@@ -541,7 +541,7 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
+func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	// client auth
