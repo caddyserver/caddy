@@ -173,7 +173,7 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 		},
 		{
 			input: `:8080 {
-				redir /old.html /new.html html
+				redir /old.html /new.html htlm
 			}`,
 			expectError: true,
 		},
