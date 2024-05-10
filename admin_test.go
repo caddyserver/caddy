@@ -124,7 +124,7 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 		var expectedDecoded any
 		err = json.Unmarshal([]byte(tc.expect), &expectedDecoded)
 		if err != nil {
-			t.Fatalf("Test %d: Unmarshalling expected config: %v", i, err)
+			t.Fatalf("Test %d: Unmarshaling expected config: %v", i, err)
 		}
 
 		// make sure the resulting config is as we expect it
