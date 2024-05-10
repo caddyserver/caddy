@@ -1,6 +1,6 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.22.0
+go 1.22.3
 
 require (
 	github.com/BurntSushi/toml v1.3.2
