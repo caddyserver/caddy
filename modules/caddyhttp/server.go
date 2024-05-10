@@ -787,8 +787,11 @@ func (s *Server) logRequest(
 		if wrec.Status() >= 400 {
 			logAtLevel = logger.Error
 		}
-
-		logAtLevel("handled request", fields...)
+		message := "handled request"
+		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+			message = "NOP"
+		}
+		logAtLevel(message, fields...)
 	}
 }
 
