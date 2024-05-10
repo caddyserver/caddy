@@ -198,6 +198,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// only enable access logs if configured
 		if srv.Logs != nil {
 			srv.accessLogger = app.logger.Named("log.access")
+			if srv.Logs.Trace {
+				srv.traceLogger = app.logger.Named("log.trace")
+			}
 		}
 
 		// the Go standard library does not let us serve only HTTP/2 using
