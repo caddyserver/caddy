@@ -46,7 +46,7 @@ type Defaults struct {
 // Default testing values
 var Default = Defaults{
 	AdminPort:          2999, // different from what a real server also running on a developer's machine might be
-	Certificates:        []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
+	Certificates:       []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
 	TestRequestTimeout: 5 * time.Second,
 	LoadRequestTimeout: 5 * time.Second,
 }

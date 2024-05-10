@@ -149,10 +149,10 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
 	var (
-		ln                  any
-		err                 error
-		address             string
-		unixFileMode        fs.FileMode
+		ln                   any
+		err                  error
+		address              string
+		unixFileMode         fs.FileMode
 		isAbstractUnixSocket bool
 	)
 
