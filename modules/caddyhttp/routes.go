@@ -328,7 +328,7 @@ func wrapMiddleware(_ caddy.Context, mh MiddlewareHandler, metrics *Metrics) Mid
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// EXPERIMENTAL: Trace each module that gets invoked
 			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
-				server.traceLog(handlerToUse)
+				server.logTrace(handlerToUse)
 			}
 			return handlerToUse.ServeHTTP(w, r, nextCopy)
 		})
