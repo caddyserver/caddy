@@ -547,7 +547,7 @@ func TestTLSConfig_unmarshalCaddyfile(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "setting 'ca' without arguemnt is an error",
+			name: "setting 'ca' without argument is an error",
 			args: args{
 				d: caddyfile.NewTestDispenser(`{
 					ca
@@ -710,7 +710,7 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "endpoints defiend inline and in block are merged",
+			name: "endpoints defined inline and in block are merged",
 			args: args{
 				d: caddyfile.NewTestDispenser(`http http://localhost/ca-certs {
 					endpoints http://remotehost/ca-certs
@@ -722,7 +722,7 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "multiple endpoints defiend in block on the same line",
+			name: "multiple endpoints defined in block on the same line",
 			args: args{
 				d: caddyfile.NewTestDispenser(`http {
 					endpoints http://remotehost/ca-certs http://localhost/ca-certs

@@ -97,7 +97,7 @@ type AutomationPolicy struct {
 	SubjectsRaw []string `json:"subjects,omitempty"`
 
 	// The modules that may issue certificates. Default: internal if all
-	// subjects do not qualify for public certificates; othewise acme and
+	// subjects do not qualify for public certificates; otherwise acme and
 	// zerossl.
 	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 

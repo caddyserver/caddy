@@ -94,7 +94,7 @@ func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
 }
 
 // IssuerKey returns the unique issuer key for the
-// confgured CA endpoint.
+// configured CA endpoint.
 func (iss InternalIssuer) IssuerKey() string {
 	return iss.ca.ID
 }

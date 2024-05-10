@@ -153,7 +153,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		err                 error
 		address             string
 		unixFileMode        fs.FileMode
-		isAbtractUnixSocket bool
+		isAbstractUnixSocket bool
 	)
 
 	// split unix socket addr early so lnKey
@@ -164,7 +164,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		if err != nil {
 			return nil, err
 		}
-		isAbtractUnixSocket = strings.HasPrefix(address, "@")
+		isAbstractUnixSocket = strings.HasPrefix(address, "@")
 	} else {
 		address = na.JoinHostPort(portOffset)
 	}
@@ -172,7 +172,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	// if this is a unix socket, see if we already have it open,
 	// force socket permissions on it and return early
 	if socket, err := reuseUnixSocket(na.Network, address); socket != nil || err != nil {
-		if !isAbtractUnixSocket {
+		if !isAbstractUnixSocket {
 			if err := os.Chmod(address, unixFileMode); err != nil {
 				return nil, fmt.Errorf("unable to set permissions (%s) on %s: %v", unixFileMode, address, err)
 			}
@@ -195,7 +195,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	}
 
 	if IsUnixNetwork(na.Network) {
-		if !isAbtractUnixSocket {
+		if !isAbstractUnixSocket {
 			if err := os.Chmod(address, unixFileMode); err != nil {
 				return nil, fmt.Errorf("unable to set permissions (%s) on %s: %v", unixFileMode, address, err)
 			}

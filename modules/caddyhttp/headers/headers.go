@@ -184,7 +184,7 @@ type RespHeaderOps struct {
 	Require *caddyhttp.ResponseMatcher `json:"require,omitempty"`
 
 	// If true, header operations will be deferred until
-	// they are written out. Superceded if Require is set.
+	// they are written out. Superseded if Require is set.
 	// Usually you will need to set this to true if any
 	// fields are being deleted.
 	Deferred bool `json:"deferred,omitempty"`

@@ -517,7 +517,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 
 			_, ok := unm.(ClientCertificateVerifier)
 			if !ok {
-				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+				return d.Errf("module '%s' is not a caddytls.ClientCertificateVerifier", modID)
 			}
 			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:
