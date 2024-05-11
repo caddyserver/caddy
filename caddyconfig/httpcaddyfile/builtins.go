@@ -1068,9 +1068,10 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 // parseLogName parses the log_name directive. Syntax:
 //
-// log_name <names...>
+//	log_name <names...>
 func parseLogName(h Helper) (caddyhttp.MiddlewareHandler, error) {
-	h.Next()
-	access_logger_names := h.RemainingArgs()
-	return caddyhttp.VarsMiddleware{"access_logger_names": access_logger_names}, nil
+	h.Next() // consume directive name
+	return caddyhttp.VarsMiddleware{
+		caddyhttp.AccessLoggerNameVarKey: h.RemainingArgs(),
+	}, nil
 }

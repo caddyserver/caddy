@@ -70,30 +70,42 @@ type ServerLogConfig struct {
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
 func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*zap.Logger {
-	host := req.Host
-
-	// logger config should always be only
-	// the hostname, without the port
-	hostWithoutPort, _, err := net.SplitHostPort(host)
-	if err != nil {
-		hostWithoutPort = host
-	}
-	hosts := slc.getLoggerHosts(hostWithoutPort)
-	loggers := make([]*zap.Logger, 0, len(hosts))
+	// using the `log_name` directive or the `access_logger_names` variable,
+	// the logger names can be overridden for the current request
 	if names := GetVar(req.Context(), AccessLoggerNameVarKey); names != nil {
 		if namesSlice, ok := names.([]any); ok {
+			loggers := make([]*zap.Logger, 0, len(namesSlice))
 			for _, loggerName := range namesSlice {
+				// no name, use the default logger
+				if loggerName == "" {
+					loggers = append(loggers, logger)
+					continue
+				}
+				// make a logger with the given name
 				loggers = append(loggers, logger.Named(loggerName.(string)))
 			}
+			return loggers
 		}
-		return loggers
 	}
+
+	// get the hostname from the request, with the port number stripped
+	host, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host = req.Host
+	}
+
+	// get the logger names for this host from the config
+	hosts := slc.getLoggerHosts(host)
+
+	// make a list of named loggers, or the default logger
+	loggers := make([]*zap.Logger, 0, len(hosts))
 	for _, loggerName := range hosts {
 		// no name, use the default logger
 		if loggerName == "" {
 			loggers = append(loggers, logger)
 			continue
 		}
+		// make a logger with the given name
 		loggers = append(loggers, logger.Named(loggerName))
 	}
 	return loggers
