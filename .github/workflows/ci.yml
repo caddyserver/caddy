@@ -23,18 +23,10 @@ jobs:
           - mac
           - windows
         go: 
-          - '1.21'
-          - '1.22'
+          - 'oldstable'
+          - 'stable'
 
         include:
-        # Set the minimum Go patch version for the given Go minor
-        # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.21'
-          GO_SEMVER: '~1.21.0'
-
-        - go: '1.22'
-          GO_SEMVER: '~1.22.3'
-
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
         # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
@@ -60,11 +52,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Go
-      uses: actions/setup-go@v5
+    - name: Setup Go
+      id: go_installation
+      uses: ./.github/setup-go
       with:
-        go-version: ${{ matrix.GO_SEMVER }}
-        check-latest: true
+        go-version: ${{ matrix.go }}
 
     # These tools would be useful if we later decide to reinvestigate
     # publishing test/coverage reports to some tool for easier consumption
@@ -110,7 +102,7 @@ jobs:
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
+        name: caddy_${{ runner.os }}_go${{ steps.go_installation.outputs.go-version }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
         compression-level: 0
 

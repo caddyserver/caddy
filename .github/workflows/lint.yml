@@ -41,10 +41,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '~1.22.3'
-          check-latest: true
+
+      - name: Setup Go
+        id: go_installation
+        uses: ./.github/setup-go
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v5
