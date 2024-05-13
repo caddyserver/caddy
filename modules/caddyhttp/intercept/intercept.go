@@ -39,7 +39,7 @@ func init() {
 // It can, for instance, be used to implement X-Sendfile/X-Accel-Redirect-like features
 // when using modules like FrankenPHP or Caddy Snake.
 //
-// EXPERIMENTAL: Subject to change.
+// EXPERIMENTAL: Subject to change or removal.
 type Intercept struct {
 	// List of handlers and their associated matchers to evaluate
 	// after successful response generation.
@@ -64,6 +64,8 @@ type Intercept struct {
 }
 
 // CaddyModule returns the Caddy module information.
+//
+// EXPERIMENTAL: Subject to change or removal.
 func (Intercept) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.intercept",
@@ -72,6 +74,8 @@ func (Intercept) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision ensures that i is set up properly before use.
+//
+// EXPERIMENTAL: Subject to change or removal.
 func (irh *Intercept) Provision(ctx caddy.Context) error {
 	// set up any response routes
 	for i, rh := range irh.HandleResponse {
@@ -93,6 +97,8 @@ var bufPool = sync.Pool{
 }
 
 // TODO: handle status code replacement
+//
+// EXPERIMENTAL: Subject to change or removal.
 type interceptedResponseHandler struct {
 	caddyhttp.ResponseRecorder
 	replacer     *caddy.Replacer
@@ -101,6 +107,7 @@ type interceptedResponseHandler struct {
 	statusCode   int
 }
 
+// EXPERIMENTAL: Subject to change or removal.
 func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 	if irh.statusCode != 0 && (statusCode < 100 || statusCode >= 200) {
 		irh.ResponseRecorder.WriteHeader(irh.statusCode)
@@ -111,6 +118,7 @@ func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 	irh.ResponseRecorder.WriteHeader(statusCode)
 }
 
+// EXPERIMENTAL: Subject to change or removal.
 func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -180,6 +188,8 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize parsing of "handle_response" blocks, if possible.
+//
+// EXPERIMENTAL: Subject to change or removal.
 func (i *Intercept) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// collect the response matchers defined as subdirectives
 	// prefixed with "@" for use with "handle_response" blocks
@@ -246,6 +256,8 @@ func (i *Intercept) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // FinalizeUnmarshalCaddyfile finalizes the Caddyfile parsing which
 // requires having an httpcaddyfile.Helper to function, to parse subroutes.
+//
+// EXPERIMENTAL: Subject to change or removal.
 func (i *Intercept) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error {
 	for _, d := range i.handleResponseSegments {
 		// consume the "handle_response" token
