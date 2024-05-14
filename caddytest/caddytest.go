@@ -136,6 +136,20 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	})
 
 	rawConfig = prependCaddyFilePath(rawConfig)
+	// normalize JSON config
+	if configType == "json" {
+		tc.t.Logf("Before: %s", rawConfig)
+		var conf any
+		if err := json.Unmarshal([]byte(rawConfig), &conf); err != nil {
+			return err
+		}
+		c, err := json.Marshal(conf)
+		if err != nil {
+			return err
+		}
+		rawConfig = string(c)
+		tc.t.Logf("After: %s", rawConfig)
+	}
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
