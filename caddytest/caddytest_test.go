@@ -45,7 +45,7 @@ func TestLoadUnorderedJSON(t *testing.T) {
 						"output": "stdout"
 					}
 				},
-				"spartacusStdOutLogs": {
+				"sStdOutLogs": {
 					"level": "DEBUG",
 					"writer": {
 						"output": "stdout"
@@ -55,7 +55,7 @@ func TestLoadUnorderedJSON(t *testing.T) {
 						"admin.*"
 					]
 				},
-				"spartacusFileLogs": {
+				"sFileLogs": {
 					"level": "DEBUG",
 					"writer": {
 						"output": "stdout"
@@ -82,7 +82,7 @@ func TestLoadUnorderedJSON(t *testing.T) {
 				"http_port": 9080,
 				"https_port": 9443,
 				"servers": {
-					"spartacus_server": {
+					"s_server": {
 						"listen": [
 							":9443",
 							":9080"
@@ -108,10 +108,10 @@ func TestLoadUnorderedJSON(t *testing.T) {
 							}
 						],
 						"logs": {
-							"default_logger_name": "spartacusStdOutLogs",
+							"default_logger_name": "sStdOutLogs",
 							"logger_names": {
-								"localhost": "spartacusStdOutLogs",
-								"127.0.0.1": "spartacusFileLogs"
+								"localhost": "sStdOutLogs",
+								"127.0.0.1": "sFileLogs"
 							}
 						}
 					}
