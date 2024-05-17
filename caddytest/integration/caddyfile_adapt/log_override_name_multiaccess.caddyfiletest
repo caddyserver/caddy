@@ -76,7 +76,9 @@ http://localhost:8881 {
 					},
 					"logs": {
 						"logger_names": {
-							"localhost": "foo"
+							"localhost": [
+								"foo"
+							]
 						}
 					}
 				}

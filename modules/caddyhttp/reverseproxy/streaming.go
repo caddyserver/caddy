@@ -34,7 +34,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response) {
+func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 
@@ -101,6 +101,17 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		return
 	}
 
+	// There may be buffered data in the *bufio.Reader
+	// see: https://github.com/caddyserver/caddy/issues/6273
+	if buffered := brw.Reader.Buffered(); buffered > 0 {
+		data, _ := brw.Peek(buffered)
+		_, err := backConn.Write(data)
+		if err != nil {
+			logger.Debug("backConn write failed", zap.Error(err))
+			return
+		}
+	}
+
 	// Ensure the hijacked client connection, and the new connection established
 	// with the backend, are both closed in the event of a server shutdown. This
 	// is done by registering them. We also try to gracefully close connections
@@ -121,7 +132,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	defer deleteFrontConn()
 	defer deleteBackConn()
 
-	spc := switchProtocolCopier{user: conn, backend: backConn}
+	spc := switchProtocolCopier{user: conn, backend: backConn, wg: wg}
 
 	// setup the timeout if requested
 	var timeoutc <-chan time.Time
@@ -132,6 +143,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	}
 
 	errc := make(chan error, 1)
+	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
 	select {
@@ -529,16 +541,19 @@ func (m *maxLatencyWriter) stop() {
 // forth have nice names in stacks.
 type switchProtocolCopier struct {
 	user, backend io.ReadWriteCloser
+	wg            *sync.WaitGroup
 }
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
 	_, err := io.Copy(c.user, c.backend)
 	errc <- err
+	c.wg.Done()
 }
 
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 	_, err := io.Copy(c.backend, c.user)
 	errc <- err
+	c.wg.Done()
 }
 
 var streamingBufPool = sync.Pool{

@@ -329,9 +329,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 // Validate ensures the app's configuration is valid.
 func (app *App) Validate() error {
-	// each server must use distinct listener addresses
 	lnAddrs := make(map[string]string)
+
 	for srvName, srv := range app.Servers {
+		// each server must use distinct listener addresses
 		for _, addr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
@@ -345,6 +346,15 @@ func (app *App) Validate() error {
 					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}
 				lnAddrs[addr] = srvName
+			}
+		}
+
+		// logger names must not have ports
+		if srv.Logs != nil {
+			for host := range srv.Logs.LoggerNames {
+				if _, _, err := net.SplitHostPort(host); err == nil {
+					return fmt.Errorf("server %s: logger name must not have a port: %s", srvName, host)
+				}
 			}
 		}
 	}
@@ -526,7 +536,7 @@ func (app *App) Stop() error {
 	ctx := context.Background()
 
 	// see if any listeners in our config will be closing or if they are continuing
-	// hrough a reload; because if any are closing, we will enforce shutdown delay
+	// through a reload; because if any are closing, we will enforce shutdown delay
 	var delay bool
 	scheduledTime := time.Now().Add(time.Duration(app.ShutdownDelay))
 	if app.ShutdownDelay > 0 {

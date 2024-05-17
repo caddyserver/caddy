@@ -1,0 +1,117 @@
+(log-both) {
+	log {args[0]}-json {
+		hostnames {args[0]}
+		output file /var/log/{args[0]}.log
+		format json
+	}
+	log {args[0]}-console {
+		hostnames {args[0]}
+		output file /var/log/{args[0]}.json
+		format console
+	}
+}
+
+*.example.com {
+	# Subdomains log to multiple files at once, with
+	# different output files and formats.
+	import log-both foo.example.com
+	import log-both bar.example.com
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"bar.example.com-console": {
+				"writer": {
+					"filename": "/var/log/bar.example.com.json",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "console"
+				},
+				"include": [
+					"http.log.access.bar.example.com-console"
+				]
+			},
+			"bar.example.com-json": {
+				"writer": {
+					"filename": "/var/log/bar.example.com.log",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "json"
+				},
+				"include": [
+					"http.log.access.bar.example.com-json"
+				]
+			},
+			"default": {
+				"exclude": [
+					"http.log.access.bar.example.com-console",
+					"http.log.access.bar.example.com-json",
+					"http.log.access.foo.example.com-console",
+					"http.log.access.foo.example.com-json"
+				]
+			},
+			"foo.example.com-console": {
+				"writer": {
+					"filename": "/var/log/foo.example.com.json",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "console"
+				},
+				"include": [
+					"http.log.access.foo.example.com-console"
+				]
+			},
+			"foo.example.com-json": {
+				"writer": {
+					"filename": "/var/log/foo.example.com.log",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "json"
+				},
+				"include": [
+					"http.log.access.foo.example.com-json"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"bar.example.com": [
+								"bar.example.com-json",
+								"bar.example.com-console"
+							],
+							"foo.example.com": [
+								"foo.example.com-json",
+								"foo.example.com-console"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

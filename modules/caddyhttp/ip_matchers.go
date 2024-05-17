@@ -274,7 +274,7 @@ func parseIPZoneFromString(address string) (netip.Addr, string, error) {
 		ipStr = address // OK; probably didn't have a port
 	}
 
-	// Some IPv6-Adresses can contain zone identifiers at the end,
+	// Some IPv6-Addresses can contain zone identifiers at the end,
 	// which are separated with "%"
 	zoneID := ""
 	if strings.Contains(ipStr, "%") {

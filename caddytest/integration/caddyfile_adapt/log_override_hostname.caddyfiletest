@@ -75,9 +75,15 @@ example.com:8443 {
 					],
 					"logs": {
 						"logger_names": {
-							"bar.example.com": "log0",
-							"baz.example.com": "log1",
-							"foo.example.com": "log0"
+							"bar.example.com": [
+								"log0"
+							],
+							"baz.example.com": [
+								"log1"
+							],
+							"foo.example.com": [
+								"log0"
+							]
 						}
 					}
 				},
@@ -99,7 +105,9 @@ example.com:8443 {
 					],
 					"logs": {
 						"logger_names": {
-							"example.com": "log2"
+							"example.com": [
+								"log2"
+							]
 						}
 					}
 				}

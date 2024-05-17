@@ -161,7 +161,7 @@ func init() {
 // Renders the given Markdown text as HTML and returns it. This uses the
 // [Goldmark](https://github.com/yuin/goldmark) library,
 // which is CommonMark compliant. It also has these extensions
-// enabled: Github Flavored Markdown, Footnote, and syntax
+// enabled: GitHub Flavored Markdown, Footnote, and syntax
 // highlighting provided by [Chroma](https://github.com/alecthomas/chroma).
 //
 // ```

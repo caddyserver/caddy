@@ -206,7 +206,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	// or for clients to render JSON properly which is very common)
 	body := repl.ReplaceKnown(s.Body, "")
 	if body != "" && w.Header().Get("Content-Type") == "" {
-		content := strings.TrimSpace(s.Body)
+		content := strings.TrimSpace(body)
 		if len(content) > 2 &&
 			(content[0] == '{' && content[len(content)-1] == '}' ||
 				(content[0] == '[' && content[len(content)-1] == ']')) &&

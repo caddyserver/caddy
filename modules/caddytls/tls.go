@@ -91,7 +91,8 @@ type TLS struct {
 
 	// set of subjects with managed certificates,
 	// and hashes of manually-loaded certificates
-	managing, loaded map[string]struct{}
+	// (managing's value is an optional issuer key, for distinction)
+	managing, loaded map[string]string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -112,7 +113,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.ctx = ctx
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
-	t.managing, t.loaded = make(map[string]struct{}), make(map[string]struct{})
+	t.managing, t.loaded = make(map[string]string), make(map[string]string)
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -176,8 +177,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
-	// on-demand rate limiting
+	// on-demand rate limiting (TODO: deprecated, and should be removed later; rate limiting is ineffective now that permission modules are required)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
+		t.logger.Warn("DEPRECATED: on_demand.rate_limit will be removed in a future release; use permission modules or external certificate managers instead")
 		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
 		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
 	} else {
@@ -192,6 +194,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
 		}
+		perm := PermissionByHTTP{
+			Endpoint: t.Automation.OnDemand.Ask,
+		}
+		if err := perm.Provision(ctx); err != nil {
+			return fmt.Errorf("provisioning 'ask' module: %v", err)
+		}
+		t.Automation.OnDemand.permission = perm
 	}
 
 	// automation/management policies
@@ -258,7 +267,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("caching unmanaged certificate: %v", err)
 			}
-			t.loaded[hash] = struct{}{}
+			t.loaded[hash] = ""
 		}
 	}
 
@@ -350,10 +359,27 @@ func (t *TLS) Cleanup() error {
 		// compute which certificates were managed or loaded into the cert cache by this
 		// app instance (which is being stopped) that are not managed or loaded by the
 		// new app instance (which just started), and remove them from the cache
-		var noLongerManaged, noLongerLoaded []string
-		for subj := range t.managing {
-			if _, ok := nextTLSApp.managing[subj]; !ok {
-				noLongerManaged = append(noLongerManaged, subj)
+		var noLongerManaged []certmagic.SubjectIssuer
+		var reManage, noLongerLoaded []string
+		for subj, currentIssuerKey := range t.managing {
+			// It's a bit nuanced: managed certs can sometimes be different enough that we have to
+			// swap them out for a different one, even if they are for the same subject/domain.
+			// We consider "private" certs (internal CA/locally-trusted/etc) to be significantly
+			// distinct from "public" certs (production CAs/globally-trusted/etc) because of the
+			// implications when it comes to actual deployments: switching between an internal CA
+			// and a production CA, for example, is quite significant. Switching from one public CA
+			// to another, however, is not, and for our purposes we consider those to be the same.
+			// Anyway, if the next TLS app does not manage a cert for this name at all, definitely
+			// remove it from the cache. But if it does, and it's not the same kind of issuer/CA
+			// as we have, also remove it, so that it can swap it out for the right one.
+			if nextIssuerKey, ok := nextTLSApp.managing[subj]; !ok || nextIssuerKey != currentIssuerKey {
+				// next app is not managing a cert for this domain at all or is using a different issuer, so remove it
+				noLongerManaged = append(noLongerManaged, certmagic.SubjectIssuer{Subject: subj, IssuerKey: currentIssuerKey})
+
+				// then, if the next app is managing a cert for this name, but with a different issuer, re-manage it
+				if ok && nextIssuerKey != currentIssuerKey {
+					reManage = append(reManage, subj)
+				}
 			}
 		}
 		for hash := range t.loaded {
@@ -362,10 +388,19 @@ func (t *TLS) Cleanup() error {
 			}
 		}
 
+		// remove the certs
 		certCacheMu.RLock()
 		certCache.RemoveManaged(noLongerManaged)
 		certCache.Remove(noLongerLoaded)
 		certCacheMu.RUnlock()
+
+		// give the new TLS app a "kick" to manage certs that it is configured for
+		// with its own configuration instead of the one we just evicted
+		if err := nextTLSApp.Manage(reManage); err != nil {
+			t.logger.Error("re-managing unloaded certificates with new config",
+				zap.Strings("subjects", reManage),
+				zap.Error(err))
+		}
 	} else {
 		// no more TLS app running, so delete in-memory cert cache
 		certCache.Stop()
@@ -399,42 +434,69 @@ func (t *TLS) Manage(names []string) error {
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
 		for _, name := range names {
-			t.managing[name] = struct{}{}
+			// certs that are issued solely by our internal issuer are a little bit of
+			// a special case: if you have an initial config that manages example.com
+			// using internal CA, then after testing it you switch to a production CA,
+			// you wouldn't want to keep using the same self-signed cert, obviously;
+			// so we differentiate these by associating the subject with its issuer key;
+			// we do this because CertMagic has no notion of "InternalIssuer" like we
+			// do, so we have to do this logic ourselves
+			var issuerKey string
+			if len(ap.Issuers) == 1 {
+				if intIss, ok := ap.Issuers[0].(*InternalIssuer); ok && intIss != nil {
+					issuerKey = intIss.IssuerKey()
+				}
+			}
+			t.managing[name] = issuerKey
 		}
 	}
 
 	return nil
 }
 
-// HandleHTTPChallenge ensures that the HTTP challenge is handled for the
-// certificate named by r.Host, if it is an HTTP challenge request. It
-// requires that the automation policy for r.Host has an issuer of type
-// *certmagic.ACMEManager, or one that is ACME-enabled (GetACMEIssuer()).
+// HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
+// validation request is handled for the certificate named by r.Host, if it
+// is an HTTP challenge request. It requires that the automation policy for
+// r.Host has an issuer that implements GetACMEIssuer() or is a *ZeroSSLIssuer.
 func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
+	acmeChallenge := certmagic.LooksLikeHTTPChallenge(r)
+	zerosslValidation := certmagic.LooksLikeZeroSSLHTTPValidation(r)
+
 	// no-op if it's not an ACME challenge request
-	if !certmagic.LooksLikeHTTPChallenge(r) {
+	if !acmeChallenge && !zerosslValidation {
 		return false
 	}
 
 	// try all the issuers until we find the one that initiated the challenge
 	ap := t.getAutomationPolicyForName(r.Host)
-	type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
-	for _, iss := range ap.magic.Issuers {
-		if am, ok := iss.(acmeCapable); ok {
-			iss := am.GetACMEIssuer()
-			if iss.issuer.HandleHTTPChallenge(w, r) {
-				return true
+
+	if acmeChallenge {
+		type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
+
+		for _, iss := range ap.magic.Issuers {
+			if acmeIssuer, ok := iss.(acmeCapable); ok {
+				if acmeIssuer.GetACMEIssuer().issuer.HandleHTTPChallenge(w, r) {
+					return true
+				}
 			}
 		}
-	}
 
-	// it's possible another server in this process initiated the challenge;
-	// users have requested that Caddy only handle HTTP challenges it initiated,
-	// so that users can proxy the others through to their backends; but we
-	// might not have an automation policy for all identifiers that are trying
-	// to get certificates (e.g. the admin endpoint), so we do this manual check
-	if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
-		return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+		// it's possible another server in this process initiated the challenge;
+		// users have requested that Caddy only handle HTTP challenges it initiated,
+		// so that users can proxy the others through to their backends; but we
+		// might not have an automation policy for all identifiers that are trying
+		// to get certificates (e.g. the admin endpoint), so we do this manual check
+		if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
+			return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+		}
+	} else if zerosslValidation {
+		for _, iss := range ap.magic.Issuers {
+			if ziss, ok := iss.(*ZeroSSLIssuer); ok {
+				if ziss.issuer.HandleZeroSSLHTTPValidation(w, r) {
+					return true
+				}
+			}
+		}
 	}
 
 	return false

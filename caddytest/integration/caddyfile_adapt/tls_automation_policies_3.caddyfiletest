@@ -70,8 +70,9 @@ c.example.com {
 								"module": "acme"
 							},
 							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
 								"email": "abc@example.com",
-								"module": "zerossl"
+								"module": "acme"
 							}
 						]
 					},

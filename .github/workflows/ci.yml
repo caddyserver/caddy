@@ -33,7 +33,7 @@ jobs:
           GO_SEMVER: '~1.21.0'
 
         - go: '1.22'
-          GO_SEMVER: '~1.22.1'
+          GO_SEMVER: '~1.22.3'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
@@ -100,6 +100,12 @@ jobs:
         CGO_ENABLED: 0
       run: |
         go build -tags nobdger -trimpath -ldflags="-w -s" -v
+
+    - name: Smoke test Caddy
+      working-directory: ./cmd/caddy
+      run: |
+        ./caddy start
+        ./caddy stop
 
     - name: Publish Build Artifact
       uses: actions/upload-artifact@v4

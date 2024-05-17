@@ -157,11 +157,16 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		}
 	}
 
-	// as a special case, if a config file called "Caddyfile" was
-	// specified, and no adapter is specified, assume caddyfile adapter
-	// for convenience
-	if strings.HasPrefix(filepath.Base(configFile), "Caddyfile") &&
-		filepath.Ext(configFile) != ".json" &&
+	// as a special case, if a config file starts with "caddyfile" or
+	// has a ".caddyfile" extension, and no adapter is specified, and
+	// no adapter module name matches the extension, assume
+	// caddyfile adapter for convenience
+	baseConfig := strings.ToLower(filepath.Base(configFile))
+	baseConfigExt := filepath.Ext(baseConfig)
+	if (strings.HasPrefix(baseConfig, "caddyfile") ||
+		strings.HasSuffix(baseConfig, ".caddyfile")) &&
+		(len(baseConfigExt) == 0 || caddyconfig.GetAdapter(baseConfigExt[1:]) == nil) &&
+		baseConfigExt != ".json" &&
 		adapterName == "" {
 		adapterName = "caddyfile"
 	}
@@ -194,7 +199,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
-	} else {
+	} else if len(config) != 0 {
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {

@@ -164,6 +164,13 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			fsrv.PassThru = true
 
+		case "etag_file_extensions":
+			etagFileExtensions := d.RemainingArgs()
+			if len(etagFileExtensions) == 0 {
+				return d.ArgErr()
+			}
+			fsrv.EtagFileExtensions = etagFileExtensions
+
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
 		}

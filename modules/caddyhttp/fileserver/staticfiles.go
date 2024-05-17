@@ -60,7 +60,7 @@ func init() {
 // 404 response. Alternatively, file browsing can be enabled with
 // the "browse" parameter which shows a list of files when directories
 // are requested if no index file is present. If "browse" is enabled,
-// Caddy may serve a JSON array of the dirctory listing when the `Accept`
+// Caddy may serve a JSON array of the directory listing when the `Accept`
 // header mentions `application/json` with the following structure:
 //
 //	[{
@@ -160,6 +160,12 @@ type FileServer struct {
 	// that both client and server support is used
 	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
 	precompressors     map[string]encode.Precompressed
+
+	// List of file extensions to try to read Etags from.
+	// If set, file Etags will be read from sidecar files
+	// with any of these suffixes, instead of generating
+	// our own Etag.
+	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	fsmap caddy.FileSystems
 
@@ -365,9 +371,17 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	respHeader := w.Header()
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
-	etag := w.Header().Get("Etag")
+	etag := respHeader.Get("Etag")
+
+	// static file responses are often compressed, either on-the-fly
+	// or with precompressed sidecar files; in any case, the headers
+	// should contain "Vary: Accept-Encoding" even when not compressed
+	// so caches can craft a reliable key (according to REDbot results)
+	// see #5849
+	respHeader.Add("Vary", "Accept-Encoding")
 
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
@@ -392,9 +406,16 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
-		w.Header().Set("Content-Encoding", ae)
-		w.Header().Del("Accept-Ranges")
-		w.Header().Add("Vary", "Accept-Encoding")
+		respHeader.Set("Content-Encoding", ae)
+		respHeader.Del("Accept-Ranges")
+
+		// try to get the etag from pre computed files if an etag suffix list was provided
+		if etag == "" && fsrv.EtagFileExtensions != nil {
+			etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+			if err != nil {
+				return err
+			}
+		}
 
 		// don't assign info = compressedInfo because sidecars are kind
 		// of transparent; however we do need to set the Etag:
@@ -420,7 +441,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return err // error is already structured
 		}
 		defer file.Close()
-
+		// try to get the etag from pre computed files if an etag suffix list was provided
+		if etag == "" && fsrv.EtagFileExtensions != nil {
+			etag, err = fsrv.getEtagFromFile(fileSystem, filename)
+			if err != nil {
+				return err
+			}
+		}
 		if etag == "" {
 			etag = calculateEtag(info)
 		}
@@ -434,7 +461,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// to repeat the error; just continue because we're probably
 		// trying to write an error page response (see issue #5703)
 		if _, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); !ok {
-			w.Header().Add("Allow", "GET, HEAD")
+			respHeader.Add("Allow", "GET, HEAD")
 			return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
 		}
 	}
@@ -442,16 +469,16 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// set the Etag - note that a conditional If-None-Match request is handled
 	// by http.ServeContent below, which checks against this Etag value
 	if etag != "" {
-		w.Header().Set("Etag", etag)
+		respHeader.Set("Etag", etag)
 	}
 
-	if w.Header().Get("Content-Type") == "" {
+	if respHeader.Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
 		if mtyp == "" {
 			// do not allow Go to sniff the content-type; see https://www.youtube.com/watch?v=8t8JYpt0egE
-			w.Header()["Content-Type"] = nil
+			respHeader["Content-Type"] = nil
 		} else {
-			w.Header().Set("Content-Type", mtyp)
+			respHeader.Set("Content-Type", mtyp)
 		}
 	}
 
@@ -624,19 +651,48 @@ func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next ca
 	return caddyhttp.Error(http.StatusNotFound, nil)
 }
 
-// calculateEtag produces a strong etag by default, although, for
-// efficiency reasons, it does not actually consume the contents
-// of the file to make a hash of all the bytes. ¯\_(ツ)_/¯
-// Prefix the etag with "W/" to convert it into a weak etag.
-// See: https://tools.ietf.org/html/rfc7232#section-2.3
+// calculateEtag computes an entity tag using a strong validator
+// without consuming the contents of the file. It requires the
+// file info contain the correct size and modification time.
+// It strives to implement the semantics regarding ETags as defined
+// by RFC 9110 section 8.8.3 and 8.8.1. See
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8.3.
+//
+// As our implementation uses file modification timestamp and size,
+// note the following from RFC 9110 section 8.8.1: "A representation's
+// modification time, if defined with only one-second resolution,
+// might be a weak validator if it is possible for the representation to
+// be modified twice during a single second and retrieved between those
+// modifications." The ext4 file system, which underpins the vast majority
+// of Caddy deployments, stores mod times with millisecond precision,
+// which we consider precise enough to qualify as a strong validator.
 func calculateEtag(d os.FileInfo) string {
-	mtime := d.ModTime().Unix()
-	if mtime == 0 || mtime == 1 {
+	mtime := d.ModTime()
+	if mtimeUnix := mtime.Unix(); mtimeUnix == 0 || mtimeUnix == 1 {
 		return "" // not useful anyway; see issue #5548
 	}
-	t := strconv.FormatInt(mtime, 36)
-	s := strconv.FormatInt(d.Size(), 36)
-	return `"` + t + s + `"`
+	var sb strings.Builder
+	sb.WriteRune('"')
+	sb.WriteString(strconv.FormatInt(mtime.UnixNano(), 36))
+	sb.WriteString(strconv.FormatInt(d.Size(), 36))
+	sb.WriteRune('"')
+	return sb.String()
+}
+
+// Finds the first corresponding etag file for a given file in the file system and return its content
+func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (string, error) {
+	for _, suffix := range fsrv.EtagFileExtensions {
+		etagFilename := filename + suffix
+		etag, err := fs.ReadFile(fileSystem, etagFilename)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("cannot read etag from file %s: %v", etagFilename, err)
+		}
+		return string(etag), nil
+	}
+	return "", nil
 }
 
 // redirect performs a redirect to a given path. The 'toPath' parameter

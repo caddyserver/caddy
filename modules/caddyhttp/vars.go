@@ -242,6 +242,11 @@ func (m *MatchVarsRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val = second
 		}
 
+		// Default to the named matcher's name, if no regexp name is provided
+		if name == "" {
+			name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		(*m)[field] = &MatchRegexp{Pattern: val, Name: name}
 		if d.NextBlock(0) {
 			return d.Err("malformed vars_regexp matcher: blocks are not supported")

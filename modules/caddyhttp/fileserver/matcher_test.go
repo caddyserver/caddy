@@ -360,7 +360,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 	for _, tst := range expressionTests {
 		tc := tst
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.expression.Provision(caddy.Context{})
+			caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			err := tc.expression.Provision(caddyCtx)
 			if err != nil {
 				if !tc.wantErr {
 					t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tc.wantErr)

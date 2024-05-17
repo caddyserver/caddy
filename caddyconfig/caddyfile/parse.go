@@ -50,7 +50,7 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	p := parser{
 		Dispenser: NewDispenser(tokens),
 		importGraph: importGraph{
-			nodes: make(map[string]bool),
+			nodes: make(map[string]struct{}),
 			edges: make(adjacency),
 		},
 	}
@@ -431,7 +431,6 @@ func (p *parser) doImport(nesting int) error {
 			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
 		}
 		matches, err = filepath.Glob(globPattern)
-
 		if err != nil {
 			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 		}

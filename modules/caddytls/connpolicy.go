@@ -26,7 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mholt/acmez"
+	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -119,6 +119,9 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 						continue policyLoop
 					}
 				}
+				if pol.Drop {
+					return nil, fmt.Errorf("dropping connection")
+				}
 				return pol.TLSConfig, nil
 			}
 
@@ -155,6 +158,9 @@ type ConnectionPolicy struct {
 
 	// Maximum TLS protocol version to allow. Default: `tls1.3`
 	ProtocolMax string `json:"protocol_max,omitempty"`
+
+	// Reject TLS connections. EXPERIMENTAL: May change.
+	Drop bool `json:"drop,omitempty"`
 
 	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
@@ -419,6 +425,7 @@ type ClientAuthentication struct {
 //		}
 //		trusted_leaf_cert      <base64_der>
 //		trusted_leaf_cert_file <filename>
+//		verifier               <module>
 //	}
 //
 // If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
@@ -442,6 +449,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return d.ArgErr()
 			}
 		case "trusted_ca_cert":
+			caddy.Log().Warn("The 'trusted_ca_cert' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
@@ -455,6 +463,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			}
 			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
 		case "trusted_ca_cert_file":
+			caddy.Log().Warn("The 'trusted_ca_cert_file' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
@@ -508,7 +517,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 
 			_, ok := unm.(ClientCertificateVerifier)
 			if !ok {
-				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+				return d.Errf("module '%s' is not a caddytls.ClientCertificateVerifier", modID)
 			}
 			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:

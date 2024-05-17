@@ -30,6 +30,7 @@ import (
 	"sync"
 	"text/tabwriter"
 	"text/template"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -104,6 +105,18 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
+	w.Header().Add("Vary", "Accept, Accept-Encoding")
+
+	// speed up browser/client experience and caching by supporting If-Modified-Since
+	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
+		ifModSince, err := time.ParseInLocation(http.TimeFormat, ifModSinceStr, time.Local)
+		lastModTrunc := listing.lastModified.Truncate(time.Second)
+		if err == nil && (lastModTrunc.Equal(ifModSince) || lastModTrunc.Before(ifModSince)) {
+			w.WriteHeader(http.StatusNotModified)
+			return nil
+		}
+	}
+
 	fsrv.browseApplyQueryParams(w, r, listing)
 
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -111,6 +124,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	defer bufPool.Put(buf)
 
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
+	w.Header().Set("Last-Modified", listing.lastModified.Format(http.TimeFormat))
 
 	switch {
 	case strings.Contains(acceptHeader, "application/json"):

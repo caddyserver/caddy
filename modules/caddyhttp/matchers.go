@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,7 +34,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
-	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -456,8 +456,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// treat it as a fast substring match
 		if strings.Count(matchPattern, "*") == 2 &&
 			strings.HasPrefix(matchPattern, "*") &&
-			strings.HasSuffix(matchPattern, "*") &&
-			strings.Count(matchPattern, "*") == 2 {
+			strings.HasSuffix(matchPattern, "*") {
 			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
 				return true
 			}
@@ -676,7 +675,10 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.StringType},
 		func(data ref.Val) (RequestMatcher, error) {
 			pattern := data.(types.String)
-			matcher := MatchPathRE{MatchRegexp{Pattern: string(pattern)}}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+				Pattern: string(pattern),
+			}}
 			err := matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -695,7 +697,14 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
-			matcher := MatchPathRE{MatchRegexp{Name: strParams[0], Pattern: strParams[1]}}
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
+			matcher := MatchPathRE{MatchRegexp{
+				Name:    name,
+				Pattern: strParams[1],
+			}}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1024,6 +1033,11 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			val = second
 		}
 
+		// Default to the named matcher's name, if no regexp name is provided
+		if name == "" {
+			name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		// If there's already a pattern for this field
 		// then we would end up overwriting the old one
 		if (*m)[field] != nil {
@@ -1100,7 +1114,10 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			}
 			strParams := params.([]string)
 			matcher := MatchHeaderRE{}
-			matcher[strParams[0]] = &MatchRegexp{Pattern: strParams[1], Name: ""}
+			matcher[strParams[0]] = &MatchRegexp{
+				Pattern: strParams[1],
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1119,8 +1136,15 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				return nil, err
 			}
 			strParams := params.([]string)
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
 			matcher := MatchHeaderRE{}
-			matcher[strParams[1]] = &MatchRegexp{Pattern: strParams[2], Name: strParams[0]}
+			matcher[strParams[1]] = &MatchRegexp{
+				Pattern: strParams[2],
+				Name:    name,
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
 		},
@@ -1285,7 +1309,6 @@ type MatchRegexp struct {
 	Pattern string `json:"pattern"`
 
 	compiled *regexp.Regexp
-	phPrefix string
 }
 
 // Provision compiles the regular expression.
@@ -1295,10 +1318,6 @@ func (mre *MatchRegexp) Provision(caddy.Context) error {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
 	}
 	mre.compiled = re
-	mre.phPrefix = regexpPlaceholderPrefix
-	if mre.Name != "" {
-		mre.phPrefix += "." + mre.Name
-	}
 	return nil
 }
 
@@ -1322,16 +1341,25 @@ func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
 
 	// save all capture groups, first by index
 	for i, match := range matches {
-		key := mre.phPrefix + "." + strconv.Itoa(i)
-		repl.Set(key, match)
+		keySuffix := "." + strconv.Itoa(i)
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, match)
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, match)
 	}
 
 	// then by name
 	for i, name := range mre.compiled.SubexpNames() {
-		if i != 0 && name != "" {
-			key := mre.phPrefix + "." + name
-			repl.Set(key, matches[i])
+		// skip the first element (the full match), and empty names
+		if i == 0 || name == "" {
+			continue
 		}
+
+		keySuffix := "." + name
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, matches[i])
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, matches[i])
 	}
 
 	return true
@@ -1358,6 +1386,12 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		default:
 			return d.ArgErr()
 		}
+
+		// Default to the named matcher's name, if no regexp name is provided
+		if mre.Name == "" {
+			mre.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
 		if d.NextBlock(0) {
 			return d.Err("malformed path_regexp matcher: blocks are not supported")
 		}

@@ -272,7 +272,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
 		if r.ProtoMajor < 3 {
-			err := s.h3server.SetQuicHeaders(w.Header())
+			err := s.h3server.SetQUICHeaders(w.Header())
 			if err != nil {
 				s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
 			}
@@ -326,6 +326,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			bodyReader = &lengthReader{Source: r.Body}
 			r.Body = bodyReader
+
+			// should always be true, private interface can only be referenced in the same package
+			if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
+				setReadSizer.setReadSize(&bodyReader.Length)
+			}
 		}
 
 		// capture the original version of the request
@@ -361,11 +366,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cloneURL(origReq.URL, r.URL)
 
 	// prepare the error log
-	logger := errLog
+	errLog = errLog.With(zap.Duration("duration", duration))
+	errLoggers := []*zap.Logger{errLog}
 	if s.Logs != nil {
-		logger = s.Logs.wrapLogger(logger, r.Host)
+		errLoggers = s.Logs.wrapLogger(errLog, r)
 	}
-	logger = logger.With(zap.Duration("duration", duration))
 
 	// get the values that will be used to log the error
 	errStatus, errMsg, errFields := errLogValues(err)
@@ -379,7 +384,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
-			logger.Debug(errMsg, errFields...)
+			for _, logger := range errLoggers {
+				logger.Debug(errMsg, errFields...)
+			}
 		} else {
 			// well... this is awkward
 			errFields = append([]zapcore.Field{
@@ -387,7 +394,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				zap.Namespace("first_error"),
 				zap.String("msg", errMsg),
 			}, errFields...)
-			logger.Error("error handling handler error", errFields...)
+			for _, logger := range errLoggers {
+				logger.Error("error handling handler error", errFields...)
+			}
 			if handlerErr, ok := err.(HandlerError); ok {
 				w.WriteHeader(handlerErr.StatusCode)
 			} else {
@@ -395,10 +404,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		if errStatus >= 500 {
-			logger.Error(errMsg, errFields...)
-		} else {
-			logger.Debug(errMsg, errFields...)
+		for _, logger := range errLoggers {
+			if errStatus >= 500 {
+				logger.Error(errMsg, errFields...)
+			} else {
+				logger.Debug(errMsg, errFields...)
+			}
 		}
 		w.WriteHeader(errStatus)
 	}
@@ -587,7 +598,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
-			QuicConfig: &quic.Config{
+			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
 			},
 			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
@@ -706,13 +717,20 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		// logging is disabled
 		return false
 	}
-	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+
+	// strip off the port if any, logger names are host only
+	hostWithoutPort, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		hostWithoutPort = r.Host
+	}
+
+	if _, ok := s.Logs.LoggerNames[hostWithoutPort]; ok {
 		// this host is mapped to a particular logger name
 		return true
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
-		if certmagic.MatchWildcard(r.Host, dh) {
+		if certmagic.MatchWildcard(hostWithoutPort, dh) {
 			return false
 		}
 	}
@@ -734,16 +752,6 @@ func (s *Server) logRequest(
 	repl.Set("http.response.size", wrec.Size())
 	repl.Set("http.response.duration", duration)
 	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	logger := accLog
-	if s.Logs != nil {
-		logger = s.Logs.wrapLogger(logger, r.Host)
-	}
-
-	log := logger.Info
-	if wrec.Status() >= 400 {
-		log = logger.Error
-	}
 
 	userID, _ := repl.GetString("http.auth.user.id")
 
@@ -768,7 +776,23 @@ func (s *Server) logRequest(
 		}))
 	fields = append(fields, extra.fields...)
 
-	log("handled request", fields...)
+	loggers := []*zap.Logger{accLog}
+	if s.Logs != nil {
+		loggers = s.Logs.wrapLogger(accLog, r)
+	}
+
+	// wrapping may return multiple loggers, so we log to all of them
+	for _, logger := range loggers {
+		logAtLevel := logger.Info
+		if wrec.Status() >= 500 {
+			logAtLevel = logger.Error
+		}
+		message := "handled request"
+		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+			message = "NOP"
+		}
+		logAtLevel(message, fields...)
+	}
 }
 
 // protocol returns true if the protocol proto is configured/enabled.
@@ -811,7 +835,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 
 	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
-
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change

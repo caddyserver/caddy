@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -797,6 +797,15 @@ func (st *ServerType) serversFromPairings(
 			sblockLogHosts := sblock.hostsFromKeys(true)
 			for _, cval := range sblock.pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
+
+				// if `no_hostname` is set, then this logger will not
+				// be associated with any of the site block's hostnames,
+				// and only be usable via the `log_name` directive
+				// or the `access_logger_names` variable
+				if ncl.noHostname {
+					continue
+				}
+
 				if sblock.hasHostCatchAllKey() && len(ncl.hostnames) == 0 {
 					// all requests for hosts not able to be listed should use
 					// this log because it's a catch-all-hosts server block
@@ -805,22 +814,22 @@ func (st *ServerType) serversFromPairings(
 					// if the logger overrides the hostnames, map that to the logger name
 					for _, h := range ncl.hostnames {
 						if srv.Logs.LoggerNames == nil {
-							srv.Logs.LoggerNames = make(map[string]string)
+							srv.Logs.LoggerNames = make(map[string]caddyhttp.StringArray)
 						}
-						srv.Logs.LoggerNames[h] = ncl.name
+						srv.Logs.LoggerNames[h] = append(srv.Logs.LoggerNames[h], ncl.name)
 					}
 				} else {
 					// otherwise, map each host to the logger name
 					for _, h := range sblockLogHosts {
-						if srv.Logs.LoggerNames == nil {
-							srv.Logs.LoggerNames = make(map[string]string)
-						}
 						// strip the port from the host, if any
 						host, _, err := net.SplitHostPort(h)
 						if err != nil {
 							host = h
 						}
-						srv.Logs.LoggerNames[host] = ncl.name
+						if srv.Logs.LoggerNames == nil {
+							srv.Logs.LoggerNames = make(map[string]caddyhttp.StringArray)
+						}
+						srv.Logs.LoggerNames[host] = append(srv.Logs.LoggerNames[host], ncl.name)
 					}
 				}
 			}
@@ -1282,19 +1291,24 @@ func matcherSetFromMatcherToken(
 	if tkn.Text == "*" {
 		// match all requests == no matchers, so nothing to do
 		return nil, true, nil
-	} else if strings.HasPrefix(tkn.Text, "/") {
-		// convenient way to specify a single path match
+	}
+
+	// convenient way to specify a single path match
+	if strings.HasPrefix(tkn.Text, "/") {
 		return caddy.ModuleMap{
 			"path": caddyconfig.JSON(caddyhttp.MatchPath{tkn.Text}, warnings),
 		}, true, nil
-	} else if strings.HasPrefix(tkn.Text, matcherPrefix) {
-		// pre-defined matcher
+	}
+
+	// pre-defined matcher
+	if strings.HasPrefix(tkn.Text, matcherPrefix) {
 		m, ok := matcherDefs[tkn.Text]
 		if !ok {
 			return nil, false, fmt.Errorf("unrecognized matcher name: %+v", tkn.Text)
 		}
 		return m, true, nil
 	}
+
 	return nil, false, nil
 }
 
@@ -1397,6 +1411,14 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	// given a matcher name and the tokens following it, parse
 	// the tokens as a matcher module and record it
 	makeMatcher := func(matcherName string, tokens []caddyfile.Token) error {
+		// create a new dispenser from the tokens
+		dispenser := caddyfile.NewDispenser(tokens)
+
+		// set the matcher name (without @) in the dispenser context so
+		// that matcher modules can access it to use it as their name
+		// (e.g. regexp matchers which use the name for capture groups)
+		dispenser.SetContext(caddyfile.MatcherNameCtxKey, definitionName[1:])
+
 		mod, err := caddy.GetModule("http.matchers." + matcherName)
 		if err != nil {
 			return fmt.Errorf("getting matcher module '%s': %v", matcherName, err)
@@ -1405,7 +1427,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		if !ok {
 			return fmt.Errorf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
 		}
-		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
+		err = unm.UnmarshalCaddyfile(dispenser)
 		if err != nil {
 			return err
 		}
@@ -1422,11 +1444,13 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	if d.NextArg() {
 		if d.Token().Quoted() {
 			// since it was missing the matcher name, we insert a token
-			// in front of the expression token itself
-			err := makeMatcher("expression", []caddyfile.Token{
-				{Text: "expression", File: d.File(), Line: d.Line()},
-				d.Token(),
-			})
+			// in front of the expression token itself; we use Clone() to
+			// make the new token to keep the same the import location as
+			// the next token, if this is within a snippet or imported file.
+			// see https://github.com/caddyserver/caddy/issues/6287
+			expressionToken := d.Token().Clone()
+			expressionToken.Text = "expression"
+			err := makeMatcher("expression", []caddyfile.Token{expressionToken, d.Token()})
 			if err != nil {
 				return err
 			}
@@ -1583,9 +1607,10 @@ func (c counter) nextGroup() string {
 }
 
 type namedCustomLog struct {
-	name      string
-	hostnames []string
-	log       *caddy.CustomLog
+	name       string
+	hostnames  []string
+	log        *caddy.CustomLog
+	noHostname bool
 }
 
 // sbAddrAssociation is a mapping from a list of
