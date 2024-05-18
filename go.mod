@@ -26,7 +26,7 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
-	github.com/tailscale/tscert v0.0.0-20230806124524-28a91b69a046
+	github.com/tailscale/tscert v0.0.0-20240517230440-bbccfbf48933
 	github.com/yuin/goldmark v1.7.1
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.46.1

@@ -22,6 +22,9 @@ func init() {
 	caddy.RegisterModule(HTTPCertGetter{})
 }
 
+// For referencing the requested SNI server name.
+const ClientHelloSNICtxKey caddy.CtxKey = "client_hello_sni"
+
 // Tailscale is a module that can get certificates from the local Tailscale process.
 type Tailscale struct {
 	logger *zap.Logger
@@ -41,6 +44,7 @@ func (ts *Tailscale) Provision(ctx caddy.Context) error {
 }
 
 func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	ctx = context.WithValue(ctx, ClientHelloSNICtxKey, hello.ServerName)
 	canGetCert, err := ts.canHazCertificate(ctx, hello)
 	if err == nil && !canGetCert {
 		return nil, nil // pass-thru: Tailscale can't offer a cert for this name
@@ -48,7 +52,7 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 	if err != nil {
 		ts.logger.Warn("could not get status; will try to get certificate anyway", zap.Error(err))
 	}
-	return tscert.GetCertificate(hello)
+	return tscert.GetCertificateWithContext(ctx, hello)
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
