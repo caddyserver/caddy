@@ -234,6 +234,7 @@ type Server struct {
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
+	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
 	server      *http.Server
@@ -736,6 +737,15 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	}
 	// if configured, this host is not mapped and thus must not be logged
 	return !s.Logs.SkipUnmappedHosts
+}
+
+// logTrace will log that this middleware handler is being invoked.
+// It emits at DEBUG level.
+func (s *Server) logTrace(mh MiddlewareHandler) {
+	if s.Logs == nil || !s.Logs.Trace {
+		return
+	}
+	s.traceLogger.Debug(caddy.GetModuleName(mh), zap.Any("module", mh))
 }
 
 // logRequest logs the request to access logs, unless skipped.
