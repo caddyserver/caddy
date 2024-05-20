@@ -15,10 +15,13 @@
 package reverseproxy
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	weakrand "math/rand"
@@ -528,6 +531,11 @@ type TLSConfig struct {
 	// option except in testing or local development environments.
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 
+	// If non-empty, TLS compares the SHA-256 fingerprint of the
+	// server certificate to a fixed value, specified as
+	// hexadecimal string.
+	ServerCertSha256 string `json:"server_cert_sha256,omitempty"`
+
 	// The duration to allow a TLS handshake to a server. Default: No timeout.
 	HandshakeTimeout caddy.Duration `json:"handshake_timeout,omitempty"`
 
@@ -662,6 +670,14 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
 
+	if t.ServerCertSha256 != "" {
+		verifier, err := makeFixedCertVerifier(t.ServerCertSha256)
+		if err != nil {
+			return nil, err
+		}
+		cfg.VerifyPeerCertificate = verifier
+	}
+
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range t.Curves {
 		curveID := caddytls.SupportedCurves[curveName]
@@ -747,6 +763,32 @@ func sliceContains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func makeFixedCertVerifier(fingerprint string) (
+	func([][]byte, [][]*x509.Certificate) error, error) {
+	fpHex := strings.ReplaceAll(fingerprint, ":", "")
+	fpBytes, err := hex.DecodeString(fpHex)
+	if err != nil {
+		return nil, err
+	}
+	if len(fpBytes) != 32 {
+		return nil, fmt.Errorf(
+			"sha256 fingerprint expected to be 32 bytes, got %v",
+			len(fpBytes))
+	}
+	errWrongCert := fmt.Errorf("fixed certificate expected: sha256=%v",
+		fingerprint)
+	return func(certs [][]byte, vchain [][]*x509.Certificate) error {
+		if len(certs) < 1 {
+			return errWrongCert
+		}
+		certFp := sha256.Sum256(certs[0])
+		if !bytes.Equal(fpBytes, certFp[:]) {
+			return errWrongCert
+		}
+		return nil
+	}, nil
 }
 
 // Interface guards
