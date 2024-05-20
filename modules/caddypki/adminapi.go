@@ -53,7 +53,7 @@ func (a *adminAPI) Provision(ctx caddy.Context) error {
 	// Avoid initializing PKI if it wasn't configured.
 	// We intentionally ignore the error since it's not
 	// fatal if the PKI app is not explicitly configured.
-	pkiApp, err := ctx.AppStrict("pki")
+	pkiApp, err := ctx.AppIfConfigured("pki")
 	if err == nil {
 		a.pkiApp = pkiApp.(*PKI)
 	}
