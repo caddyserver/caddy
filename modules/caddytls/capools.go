@@ -187,9 +187,9 @@ func (PKIRootCAPool) CaddyModule() caddy.ModuleInfo {
 
 // Loads the PKI app and load the root certificates into the certificate pool
 func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
-	pkiApp := ctx.AppIfConfigured("pki")
-	if pkiApp == nil {
-		return fmt.Errorf("PKI app not configured")
+	pkiApp, err := ctx.AppIfConfigured("pki")
+	if err != nil {
+		return fmt.Errorf("pki_root CA pool requires that a PKI app is configured: %v", err)
 	}
 	pki := pkiApp.(*caddypki.PKI)
 	for _, caID := range p.Authority {
@@ -259,9 +259,9 @@ func (PKIIntermediateCAPool) CaddyModule() caddy.ModuleInfo {
 
 // Loads the PKI app and load the intermediate certificates into the certificate pool
 func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
-	pkiApp := ctx.AppIfConfigured("pki")
-	if pkiApp == nil {
-		return fmt.Errorf("PKI app not configured")
+	pkiApp, err := ctx.AppIfConfigured("pki")
+	if err != nil {
+		return fmt.Errorf("pki_intermediate CA pool requires that a PKI app is configured: %v", err)
 	}
 	pki := pkiApp.(*caddypki.PKI)
 	for _, caID := range p.Authority {
