@@ -123,7 +123,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// skip if all listeners use the HTTP port
 		if !srv.listenersUseAnyPortOtherThan(app.httpPort()) {
-			logger.Info("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
+			logger.Warn("server is listening only on the HTTP port, so no automatic HTTPS will be applied to this server",
 				zap.String("server_name", srvName),
 				zap.Int("http_port", app.httpPort()),
 			)
