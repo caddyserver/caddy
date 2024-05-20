@@ -372,7 +372,7 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 func (cl *BaseLog) buildCore() {
 	// logs which only discard their output don't need
 	// to perform encoding or any other processing steps
-	// at all, so just shorcut to a nop core instead
+	// at all, so just shortcut to a nop core instead
 	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
 		cl.core = zapcore.NewNopCore()
 		return

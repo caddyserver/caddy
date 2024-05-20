@@ -82,6 +82,9 @@ type ActiveHealthChecks struct {
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
 
+	// Whether to follow HTTP redirects in response to active health checks (default off).
+	FollowRedirects bool `json:"follow_redirects,omitempty"`
+
 	// How frequently to perform active health checks (default 30s).
 	Interval caddy.Duration `json:"interval,omitempty"`
 
@@ -153,6 +156,12 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
 		Transport: h.Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if !a.FollowRedirects {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
 	}
 
 	for _, upstream := range h.Upstreams {
@@ -453,7 +462,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 			markUnhealthy()
 			return nil
 		}
-	} else if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		h.HealthChecks.Active.logger.Info("status code out of tolerances",
 			zap.Int("status_code", resp.StatusCode),
 			zap.String("host", hostAddr),

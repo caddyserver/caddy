@@ -75,6 +75,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    health_timeout  <duration>
 //	    health_status   <status>
 //	    health_body     <regexp>
+//	    health_follow_redirects
 //	    health_headers {
 //	        <field> [<values...>]
 //	    }
@@ -449,6 +450,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HealthChecks.Active = new(ActiveHealthChecks)
 			}
 			h.HealthChecks.Active.ExpectBody = d.Val()
+
+		case "health_follow_redirects":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.FollowRedirects = true
 
 		case "health_passes":
 			if !d.NextArg() {

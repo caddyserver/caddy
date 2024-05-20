@@ -225,41 +225,47 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			if !ok {
 				return nil, fmt.Errorf("failed to get proxy protocol info from context")
 			}
-			header := proxyproto.Header{
-				SourceAddr: &net.TCPAddr{
-					IP:   proxyProtocolInfo.AddrPort.Addr().AsSlice(),
-					Port: int(proxyProtocolInfo.AddrPort.Port()),
-					Zone: proxyProtocolInfo.AddrPort.Addr().Zone(),
-				},
+			var proxyv byte
+			switch h.ProxyProtocol {
+			case "v1":
+				proxyv = 1
+			case "v2":
+				proxyv = 2
+			default:
+				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
+
 			// The src and dst have to be of the same address family. As we don't know the original
 			// dst address (it's kind of impossible to know) and this address is generally of very
 			// little interest, we just set it to all zeros.
+			var destAddr net.Addr
 			switch {
 			case proxyProtocolInfo.AddrPort.Addr().Is4():
-				header.TransportProtocol = proxyproto.TCPv4
-				header.DestinationAddr = &net.TCPAddr{
+				destAddr = &net.TCPAddr{
 					IP: net.IPv4zero,
 				}
 			case proxyProtocolInfo.AddrPort.Addr().Is6():
-				header.TransportProtocol = proxyproto.TCPv6
-				header.DestinationAddr = &net.TCPAddr{
+				destAddr = &net.TCPAddr{
 					IP: net.IPv6zero,
 				}
 			default:
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
 			}
+			sourceAddr := &net.TCPAddr{
+				IP:   proxyProtocolInfo.AddrPort.Addr().AsSlice(),
+				Port: int(proxyProtocolInfo.AddrPort.Port()),
+				Zone: proxyProtocolInfo.AddrPort.Addr().Zone(),
+			}
+			header := proxyproto.HeaderProxyFromAddrs(proxyv, sourceAddr, destAddr)
 
+			// retain the log message structure
 			switch h.ProxyProtocol {
 			case "v1":
-				header.Version = 1
 				caddyCtx.Logger().Debug("sending proxy protocol header v1", zap.Any("header", header))
 			case "v2":
-				header.Version = 2
 				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
-			default:
-				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
+
 			_, err = header.WriteTo(conn)
 			if err != nil {
 				// identify this error as one that occurred during
@@ -535,7 +541,7 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
+func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	// client auth

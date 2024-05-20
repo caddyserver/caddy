@@ -36,7 +36,7 @@ type Defaults struct {
 	// Port we expect caddy to listening on
 	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
-	Certifcates []string
+	Certificates []string
 	// TestRequestTimeout is the time to wait for a http request to
 	TestRequestTimeout time.Duration
 	// LoadRequestTimeout is the time to wait for the config to be loaded against the caddy server
@@ -46,7 +46,7 @@ type Defaults struct {
 // Default testing values
 var Default = Defaults{
 	AdminPort:          2999, // different from what a real server also running on a developer's machine might be
-	Certifcates:        []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
+	Certificates:       []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
 	TestRequestTimeout: 5 * time.Second,
 	LoadRequestTimeout: 5 * time.Second,
 }
@@ -136,6 +136,20 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	})
 
 	rawConfig = prependCaddyFilePath(rawConfig)
+	// normalize JSON config
+	if configType == "json" {
+		tc.t.Logf("Before: %s", rawConfig)
+		var conf any
+		if err := json.Unmarshal([]byte(rawConfig), &conf); err != nil {
+			return err
+		}
+		c, err := json.Marshal(conf)
+		if err != nil {
+			return err
+		}
+		rawConfig = string(c)
+		tc.t.Logf("After: %s", rawConfig)
+	}
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
@@ -231,7 +245,7 @@ const initConfig = `{
 // designated path and Caddy sub-process is running.
 func validateTestPrerequisites(t testing.TB) error {
 	// check certificates are found
-	for _, certName := range Default.Certifcates {
+	for _, certName := range Default.Certificates {
 		if _, err := os.Stat(getIntegrationDir() + certName); errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("caddy integration test certificates (%s) not found", certName)
 		}

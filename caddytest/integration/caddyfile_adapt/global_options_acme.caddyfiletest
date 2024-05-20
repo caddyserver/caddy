@@ -63,6 +63,14 @@
 						"issuers": [
 							{
 								"ca": "https://example.com",
+								"challenges": {
+									"http": {
+										"alternate_port": 8080
+									},
+									"tls-alpn": {
+										"alternate_port": 8443
+									}
+								},
 								"email": "test@example.com",
 								"external_account": {
 									"key_id": "4K2scIVbBpNd-78scadB2g",
