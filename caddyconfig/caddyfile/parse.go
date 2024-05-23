@@ -214,7 +214,12 @@ func (p *parser) addresses() error {
 		value := p.Val()
 		token := p.Token()
 
-		// special case: import directive replaces tokens during parse-time
+		// Reject request matchers if trying to define them globally
+		if strings.HasPrefix(value, "@") {
+			return p.Errf("request matchers may not be defined globally, they must be in a site block; found %s", value)
+		}
+
+		// Special case: import directive replaces tokens during parse-time
 		if value == "import" && p.isNewLine() {
 			err := p.doImport(0)
 			if err != nil {
