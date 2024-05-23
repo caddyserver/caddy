@@ -455,19 +455,26 @@ func (ctx Context) App(name string) (any, error) {
 
 // AppIfConfigured is like App, but it returns an error if the
 // app has not been configured. This is useful when the app is
-// required and its absence is a configuration error, or when
+// required and its absence is a configuration error; or when
 // the app is optional and you don't want to instantiate a
-// new one that hasn't been explicitly configured.
+// new one that hasn't been explicitly configured. If the app
+// is not in the configuration, the error wraps ErrNotConfigured.
 func (ctx Context) AppIfConfigured(name string) (any, error) {
+	if ctx.cfg == nil {
+		return nil, fmt.Errorf("app module %s: %w", name, ErrNotConfigured)
+	}
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
 	}
 	appRaw := ctx.cfg.AppsRaw[name]
 	if appRaw == nil {
-		return nil, fmt.Errorf("app module %s is not configured", name)
+		return nil, fmt.Errorf("app module %s: %w", name, ErrNotConfigured)
 	}
 	return ctx.App(name)
 }
+
+// ErrNotConfigured indicates a module is not configured.
+var ErrNotConfigured = fmt.Errorf("module not configured")
 
 // Storage returns the configured Caddy storage implementation.
 func (ctx Context) Storage() certmagic.Storage {
