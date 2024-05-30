@@ -326,8 +326,10 @@ func wrapMiddleware(_ caddy.Context, mh MiddlewareHandler, metrics *Metrics) Mid
 		nextCopy := next
 
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-			// TODO: This is where request tracing could be implemented
-			// TODO: see what the std lib gives us in terms of stack tracing too
+			// EXPERIMENTAL: Trace each module that gets invoked
+			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
+				server.logTrace(handlerToUse)
+			}
 			return handlerToUse.ServeHTTP(w, r, nextCopy)
 		})
 	}

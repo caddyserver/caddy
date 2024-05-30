@@ -300,6 +300,18 @@ func init() {
 // find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
 // The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
 //
+// ##### `pathEscape`
+//
+// Passes a string through `url.PathEscape`, replacing characters that have
+// special meaning in URL path parameters (`?`, `&`, `%`).
+//
+// Useful e.g. to include filenames containing these characters in URL path
+// parameters, or use them as an `img` element's `src` attribute.
+//
+// ```
+// {{pathEscape "50%_valid_filename?.jpg"}}
+// ```
+//
 // ```
 // {{humanize "size" "2048000"}}
 // {{placeholder "http.response.header.Content-Length" | humanize "size"}}

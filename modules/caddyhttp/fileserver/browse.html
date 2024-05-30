@@ -21,7 +21,7 @@
 	</svg>
 	{{- else if .HasExt ".jpg" ".jpeg" ".png" ".gif" ".webp" ".tiff" ".bmp" ".heif" ".heic" ".svg"}}
 		{{- if eq .Tpl.Layout "grid"}}
-		<img loading="lazy" src="{{.Name | replace "#" "%23" | replace "?" "%3f" | html}}">
+		<img loading="lazy" src="{{.Name | pathEscape}}">
 		{{- else}}
 		<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-photo" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
 			<path stroke="none" d="M0 0h24v24H0z" fill="none"/>

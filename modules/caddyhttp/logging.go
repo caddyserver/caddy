@@ -65,6 +65,17 @@ type ServerLogConfig struct {
 	// and this includes some request and response headers, i.e `Cookie`,
 	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
 	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
+
+	// Log each individual handler that is invoked.
+	// Requires that the log emit at DEBUG level.
+	//
+	// NOTE: This may log the configuration of your
+	// HTTP handler modules; do not enable this in
+	// insecure contexts when there is sensitive
+	// data in the configuration.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	Trace bool `json:"trace,omitempty"`
 }
 
 // wrapLogger wraps logger in one or more logger named

@@ -353,7 +353,7 @@ func (t *TLS) Cleanup() error {
 	// if a new TLS app was loaded, remove certificates from the cache that are no longer
 	// being managed or loaded by the new config; if there is no more TLS app running,
 	// then stop cert maintenance and let the cert cache be GC'ed
-	if nextTLS := caddy.ActiveContext().AppIfConfigured("tls"); nextTLS != nil {
+	if nextTLS, err := caddy.ActiveContext().AppIfConfigured("tls"); err == nil && nextTLS != nil {
 		nextTLSApp := nextTLS.(*TLS)
 
 		// compute which certificates were managed or loaded into the cert cache by this

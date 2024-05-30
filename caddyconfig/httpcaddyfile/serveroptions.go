@@ -50,6 +50,7 @@ type serverOptions struct {
 	ClientIPHeaders      []string
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
+	Trace                bool // TODO: EXPERIMENTAL
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -246,39 +247,11 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.Metrics = new(caddyhttp.Metrics)
 
-		// TODO: DEPRECATED. (August 2022)
-		case "protocol":
-			caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol sub-option will be removed soon")
-
-			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				switch d.Val() {
-				case "allow_h2c":
-					caddy.Log().Named("caddyfile").Warn("DEPRECATED: allow_h2c will be removed soon; use protocols option instead")
-
-					if d.NextArg() {
-						return nil, d.ArgErr()
-					}
-					if sliceContains(serverOpts.Protocols, "h2c") {
-						return nil, d.Errf("protocol h2c already specified")
-					}
-					serverOpts.Protocols = append(serverOpts.Protocols, "h2c")
-
-				case "strict_sni_host":
-					caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol > strict_sni_host in this position will be removed soon; move up to the servers block instead")
-
-					if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
-						return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
-					}
-					boolVal := true
-					if d.Val() == "insecure_off" {
-						boolVal = false
-					}
-					serverOpts.StrictSNIHost = &boolVal
-
-				default:
-					return nil, d.Errf("unrecognized protocol option '%s'", d.Val())
-				}
+		case "trace":
+			if d.NextArg() {
+				return nil, d.ArgErr()
 			}
+			serverOpts.Trace = true
 
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
@@ -351,9 +324,16 @@ func applyServerOptions(
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
-				server.Logs = &caddyhttp.ServerLogConfig{}
+				server.Logs = new(caddyhttp.ServerLogConfig)
 			}
 			server.Logs.ShouldLogCredentials = opts.ShouldLogCredentials
+		}
+		if opts.Trace {
+			// TODO: THIS IS EXPERIMENTAL (MAY 2024)
+			if server.Logs == nil {
+				server.Logs = new(caddyhttp.ServerLogConfig)
+			}
+			server.Logs.Trace = opts.Trace
 		}
 
 		if opts.Name != "" {
