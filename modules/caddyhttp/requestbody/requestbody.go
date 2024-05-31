@@ -66,7 +66,9 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		if err != nil {
 			return err
 		}
-		r.Body = io.NopCloser(strings.NewReader(rb.Replace))
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		replacedBody := repl.ReplaceAll(rb.Replace, "")
+		r.Body = io.NopCloser(strings.NewReader(replacedBody))
 		r.ContentLength = int64(len(rb.Replace))
 	}
 	if r.Body == nil {
