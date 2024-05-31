@@ -164,6 +164,10 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 	baseConfig := strings.ToLower(filepath.Base(configFile))
 	baseConfigExt := filepath.Ext(baseConfig)
 	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
+
+	// If the config file starts or ends with "caddyfile",
+	// the extension of the config file is not ".json", AND
+	// the user did not specify an adapter, then we assume it's Caddyfile.
 	if startsOrEndsInCaddyfile &&
 		baseConfigExt != ".json" &&
 		adapterName == "" {
