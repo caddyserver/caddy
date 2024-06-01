@@ -27,21 +27,27 @@ func TestSanitizedPathJoin(t *testing.T) {
 			expect:    ".",
 		},
 		{
+			// fileserver.MatchFile passes an inputPath of "//" for some try_files values.
+			// See https://github.com/caddyserver/caddy/issues/6352
+			inputPath: "//",
+			expect:    filepath.FromSlash("./"),
+		},
+		{
 			inputPath: "/foo",
 			expect:    "foo",
 		},
 		{
 			inputPath: "/foo/",
-			expect:    "foo" + separator,
+			expect:    filepath.FromSlash("foo/"),
 		},
 		{
 			inputPath: "/foo/bar",
-			expect:    filepath.Join("foo", "bar"),
+			expect:    filepath.FromSlash("foo/bar"),
 		},
 		{
 			inputRoot: "/a",
 			inputPath: "/foo/bar",
-			expect:    filepath.Join("/", "a", "foo", "bar"),
+			expect:    filepath.FromSlash("/a/foo/bar"),
 		},
 		{
 			inputPath: "/foo/../bar",
@@ -50,32 +56,34 @@ func TestSanitizedPathJoin(t *testing.T) {
 		{
 			inputRoot: "/a/b",
 			inputPath: "/foo/../bar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
+			expect:    filepath.FromSlash("/a/b/bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/..%2fbar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
+			expect:    filepath.FromSlash("/a/b/bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2fbar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
+			expect:    filepath.FromSlash("/a/b/bar"),
 		},
 		{
+			// inputPath fails the IsLocal test so only the root is returned,
+			// but with a trailing slash since one was included in inputPath
 			inputRoot: "/a/b",
 			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    "/a/b", // inputPath fails the IsLocal test so only the root is returned
+			expect:    filepath.FromSlash("/a/b/"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/foo%2fbar",
-			expect:    filepath.Join("/", "a", "b", "foo", "bar"),
+			expect:    filepath.FromSlash("/a/b/foo/bar"),
 		},
 		{
 			inputRoot: "/a/b",
 			inputPath: "/foo%252fbar",
-			expect:    filepath.Join("/", "a", "b", "foo%2fbar"),
+			expect:    filepath.FromSlash("/a/b/foo%2fbar"),
 		},
 		{
 			inputRoot: "C:\\www",
@@ -92,7 +100,7 @@ func TestSanitizedPathJoin(t *testing.T) {
 			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
 			inputRoot: "root",
 			inputPath: "/a/b/../../c",
-			expect:    filepath.Join("root", "c"),
+			expect:    filepath.FromSlash("root/c"),
 		},
 	} {
 		// we don't *need* to use an actual parsed URL, but it
