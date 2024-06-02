@@ -107,6 +107,44 @@ func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 	return loadConfigWithLogger(caddy.Log(), configFile, adapterName)
 }
 
+func isCaddyfile(configFile, adapterName string) (bool, error) {
+	if adapterName == "caddyfile" {
+		return true, nil
+	}
+
+	// as a special case, if a config file starts with "caddyfile" or
+	// has a ".caddyfile" extension, and no adapter is specified, and
+	// no adapter module name matches the extension, assume
+	// caddyfile adapter for convenience
+	baseConfig := strings.ToLower(filepath.Base(configFile))
+	baseConfigExt := filepath.Ext(baseConfig)
+	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
+	notCaddyfileNorJSON := (baseConfigExt != "" && baseConfigExt != ".caddyfile" && baseConfigExt != ".json")
+
+	if baseConfigExt == ".json" {
+		return false, nil
+	}
+
+	// If the adapter is not specified,
+	// the config file does not starts with "caddyfile",
+	// the config file has an extension,
+	// and isn't a JSON file (e.g. Caddyfile.yaml),
+	// then we don't know what the config format is.
+	if adapterName == "" && startsOrEndsInCaddyfile && notCaddyfileNorJSON {
+		return false, fmt.Errorf("ambiguous config file format; please specify adapter (use --adapter)")
+	}
+
+	// If the config file starts or ends with "caddyfile",
+	// the extension of the config file is not ".json", AND
+	// the user did not specify an adapter, then we assume it's Caddyfile.
+	if startsOrEndsInCaddyfile &&
+		baseConfigExt != ".json" &&
+		adapterName == "" {
+		return true, nil
+	}
+	return false, nil
+}
+
 func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, error) {
 	// if no logger is provided, use a nop logger
 	// just so we don't have to check for nil
@@ -157,30 +195,10 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		}
 	}
 
-	// as a special case, if a config file starts with "caddyfile" or
-	// has a ".caddyfile" extension, and no adapter is specified, and
-	// no adapter module name matches the extension, assume
-	// caddyfile adapter for convenience
-	baseConfig := strings.ToLower(filepath.Base(configFile))
-	baseConfigExt := filepath.Ext(baseConfig)
-	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
-
-	// If the adapter is not specified,
-	// the config file does not starts with "caddyfile",
-	// the config file has an extension,
-	// and isn't a JSON file (e.g. Caddyfile.yaml),
-	// then we don't know what the config format is.
-	if adapterName == "" && startsOrEndsInCaddyfile && (baseConfigExt != "" && baseConfigExt != ".caddyfile" && baseConfigExt != ".json") {
-		return nil, "", fmt.Errorf("ambiguous config file format; please specify adapter (use --adapter)")
-	}
-
-	// If the config file starts or ends with "caddyfile",
-	// the extension of the config file is not ".json", AND
-	// the user did not specify an adapter, then we assume it's Caddyfile.
-	if startsOrEndsInCaddyfile &&
-		baseConfigExt != ".json" &&
-		adapterName == "" {
+	if yes, err := isCaddyfile(configFile, adapterName); yes {
 		adapterName = "caddyfile"
+	} else if err != nil {
+		return nil, "", err
 	}
 
 	// load config adapter
