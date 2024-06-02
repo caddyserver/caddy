@@ -264,7 +264,7 @@ func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateRes
 // to be accessed and manipulated.
 func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 
-// GetRenewalInfo wraps the underlying GetRenewalInfo method and satisifes
+// GetRenewalInfo wraps the underlying GetRenewalInfo method and satisfies
 // the CertMagic interface for ARI support.
 func (iss *ACMEIssuer) GetRenewalInfo(ctx context.Context, cert certmagic.Certificate) (acme.RenewalInfo, error) {
 	return iss.issuer.GetRenewalInfo(ctx, cert)
