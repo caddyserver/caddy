@@ -239,7 +239,7 @@ func SanitizedPathJoin(root, reqPath string) string {
 	}
 
 	relPath := path.Clean("/" + reqPath)[1:] // clean path and trim the leading /
-	if !filepath.IsLocal(relPath) {
+	if relPath != "" && !filepath.IsLocal(relPath) {
 		// path is unsafe (see https://github.com/golang/go/issues/56336#issuecomment-1416214885)
 		return root
 	}
