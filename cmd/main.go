@@ -165,9 +165,12 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 	baseConfigExt := filepath.Ext(baseConfig)
 	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
 
-	// If the adapter is not specified, the config file is not starts with "caddyfile", and isn't a JSON file (e.g. Caddyfile.yaml),
+	// If the adapter is not specified,
+	// the config file is not starts with "caddyfile",
+	// the config file has an extension,
+	// and isn't a JSON file (e.g. Caddyfile.yaml),
 	// then we don't know what the config format is.
-	if adapterName == "" && startsOrEndsInCaddyfile && baseConfigExt != ".caddyfile" && baseConfigExt != ".json" {
+	if adapterName == "" && startsOrEndsInCaddyfile && (baseConfigExt != "" && baseConfigExt != ".caddyfile" && baseConfigExt != ".json") {
 		return nil, "", fmt.Errorf("ambiguous config file format; please specify adapter (use --adapter)")
 	}
 
