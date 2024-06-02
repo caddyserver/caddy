@@ -181,6 +181,15 @@ func Test_isCaddyfile(t *testing.T) {
 		wantErr bool
 	}{
 		{
+			name: "bare Caddyfile without adapter",
+			args: args{
+				configFile:  "Caddyfile",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
 			name: "local Caddyfile without adapter",
 			args: args{
 				configFile:  "./Caddyfile",

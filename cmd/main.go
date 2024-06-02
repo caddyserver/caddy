@@ -119,18 +119,18 @@ func isCaddyfile(configFile, adapterName string) (bool, error) {
 	baseConfig := strings.ToLower(filepath.Base(configFile))
 	baseConfigExt := filepath.Ext(baseConfig)
 	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
-	notCaddyfileNorJSON := (baseConfigExt != "" && baseConfigExt != ".caddyfile" && baseConfigExt != ".json")
+	extNotCaddyfileOrJSON := (baseConfigExt != "" && baseConfigExt != ".caddyfile" && baseConfigExt != ".json")
 
 	if baseConfigExt == ".json" {
 		return false, nil
 	}
 
 	// If the adapter is not specified,
-	// the config file does not starts with "caddyfile",
+	// the config file starts with "caddyfile",
 	// the config file has an extension,
 	// and isn't a JSON file (e.g. Caddyfile.yaml),
 	// then we don't know what the config format is.
-	if adapterName == "" && startsOrEndsInCaddyfile && notCaddyfileNorJSON {
+	if adapterName == "" && startsOrEndsInCaddyfile && extNotCaddyfileOrJSON {
 		return false, fmt.Errorf("ambiguous config file format; please specify adapter (use --adapter)")
 	}
 
