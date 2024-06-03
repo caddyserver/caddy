@@ -4,6 +4,8 @@ go 1.21.0
 
 toolchain go1.22.2
 
+retract v2.8.3
+
 require (
 	github.com/BurntSushi/toml v1.3.2
 	github.com/Masterminds/sprig/v3 v3.2.3
