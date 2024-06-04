@@ -204,7 +204,7 @@ type ConnectionPolicy struct {
 	// A module that can manipulate the context passed into CertMagic's
 	// certificate management functions during TLS handshakes.
 	// EXPERIMENTAL - subject to change or removal.
-	HandshakeContextRaw json.RawMessage `json:"handshake_context,omitempty" caddy:"namespace=tls.context"`
+	HandshakeContextRaw json.RawMessage `json:"handshake_context,omitempty" caddy:"namespace=tls.context inline_key=module"`
 	handshakeContext    HandshakeContext
 
 	// TLSConfig is the fully-formed, standard lib TLS config
