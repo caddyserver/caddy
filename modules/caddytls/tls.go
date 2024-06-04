@@ -81,6 +81,16 @@ type TLS struct {
 	// EXPERIMENTAL. Subject to change.
 	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
 
+	// Disables checks in certmagic that the configured storage is ready
+	// and able to handle writing new content to it. These checks are
+	// intended to prevent information loss (newly issued certificates), but
+	// can be expensive on the storage.
+	//
+	// Disabling these checks should only be done when the storage
+	// can be trusted to have enough capacity and no other problems.
+	// EXPERIMENTAL. Subject to change.
+	DisableStorageCheck bool `json:"disable_storage_check,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      []string
 	ctx                caddy.Context
@@ -255,6 +265,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
+		DisableStorageCheck: t.DisableStorageCheck,
 	})
 	certCacheMu.RUnlock()
 	for _, loader := range t.certificateLoaders {
