@@ -226,13 +226,13 @@ func Test_isCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "config is Caddyfile.yaml without adapter",
+			name: "config is Caddyfile.yaml with adapter",
 			args: args{
 				configFile:  "./Caddyfile.yaml",
-				adapterName: "",
+				adapterName: "yaml",
 			},
 			want:    false,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "json is not caddyfile but not error",
