@@ -100,13 +100,13 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputRoot:     `C:\www`,
 			inputPath:     `/..\windows\win.ini`,
 			expect:        `C:\www/..\windows\win.ini`,
-			expectWindows: `C:\www`, // IsLocal fails because inputPath is outside the
+			expectWindows: `C:\www`,
 		},
 		{
 			inputRoot:     `C:\www`,
 			inputPath:     `/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
 			expect:        `C:\www/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
-			expectWindows: `C:\www`, // IsLocal fails because inputPath is outside the
+			expectWindows: `C:\www`,
 		},
 		{
 			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
