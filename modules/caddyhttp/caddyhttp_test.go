@@ -109,6 +109,18 @@ func TestSanitizedPathJoin(t *testing.T) {
 			expectWindows: `C:\www`,
 		},
 		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..%5cwindows%5cwin.ini`,
+			expect:        `C:\www/..\windows\win.ini`,
+			expectWindows: `C:\www`,
+		},
+		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5cwindows%5cwin.ini`,
+			expect:        `C:\www/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
+			expectWindows: `C:\www`,
+		},
+		{
 			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
 			inputRoot: "root",
 			inputPath: "/a/b/../../c",
