@@ -94,7 +94,31 @@ func TestSanitizedPathJoin(t *testing.T) {
 			inputRoot:     "C:\\www",
 			inputPath:     "/D:\\foo\\bar",
 			expect:        filepath.Join("C:\\www", "D:\\foo\\bar"),
-			expectWindows: filepath.Join("C:\\www"), // inputPath fails IsLocal on Windows
+			expectWindows: "C:\\www", // inputPath fails IsLocal on Windows
+		},
+		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..\windows\win.ini`,
+			expect:        `C:\www/..\windows\win.ini`,
+			expectWindows: `C:\www`,
+		},
+		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
+			expect:        `C:\www/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
+			expectWindows: `C:\www`,
+		},
+		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..%5cwindows%5cwin.ini`,
+			expect:        `C:\www/..\windows\win.ini`,
+			expectWindows: `C:\www`,
+		},
+		{
+			inputRoot:     `C:\www`,
+			inputPath:     `/..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5cwindows%5cwin.ini`,
+			expect:        `C:\www/..\..\..\..\..\..\..\..\..\..\windows\win.ini`,
+			expectWindows: `C:\www`,
 		},
 		{
 			// https://github.com/golang/go/issues/56336#issuecomment-1416214885
