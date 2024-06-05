@@ -246,9 +246,19 @@ func Test_isCaddyfile(t *testing.T) {
 		},
 		{
 			
-			name: "prefix of Caddyfile with any extension is Caddyfile",
+			name: "prefix of Caddyfile and ./ with any extension is Caddyfile",
 			args: args{
 				configFile:  "./Caddyfile.prd",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			
+			name: "prefix of Caddyfile without ./ with any extension is Caddyfile",
+			args: args{
+				configFile:  "Caddyfile.prd",
 				adapterName: "",
 			},
 			want:    true,
