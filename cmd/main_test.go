@@ -235,12 +235,23 @@ func Test_isCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			
 			name: "json is not caddyfile but not error",
 			args: args{
 				configFile:  "./Caddyfile.json",
 				adapterName: "",
 			},
 			want:    false,
+			wantErr: false,
+		},
+		{
+			
+			name: "prefix of Caddyfile with any extension is Caddyfile",
+			args: args{
+				configFile:  "./Caddyfile.prd",
+				adapterName: "",
+			},
+			want:    true,
 			wantErr: false,
 		},
 	}
