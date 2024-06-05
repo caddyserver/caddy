@@ -133,14 +133,11 @@ func isCaddyfile(configFile, adapterName string) (bool, error) {
 		return true, nil
 	}
 
-	// If the config file starts or ends with "caddyfile",
-	// the extension of the config file is not ".json", AND
-	// the user did not specify an adapter, then we assume it's Caddyfile.
-	if startsOrEndsInCaddyfile &&
-		baseConfigExt != ".json" &&
-		adapterName == "" {
-		return true, nil
-	}
+	// adapter is not empty,
+	// adapter is not "caddyfile",
+	// extension is not ".json",
+	// extension is not ".caddyfile"
+	// file does not start with "Caddyfile"
 	return false, nil
 }
 
