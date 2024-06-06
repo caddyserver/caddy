@@ -397,7 +397,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 // will want to use Run instead, which also
 // updates the config's raw state.
 func run(newCfg *Config, start bool) (Context, error) {
-	ctx, err := BuildContext(newCfg, start)
+	ctx, err := ProvisionContext(newCfg, start)
 	if err != nil {
 		return ctx, err
 	}
@@ -443,7 +443,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 	return ctx, finishSettingUp(ctx, ctx.cfg)
 }
 
-func BuildContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
+func ProvisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
