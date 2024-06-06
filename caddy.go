@@ -408,21 +408,21 @@ func run(newCfg *Config, start bool) (Context, error) {
 
 	// Provision any admin routers which may need to access
 	// some of the other apps at runtime
-	err = newCfg.Admin.provisionAdminRouters(ctx)
+	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
 	if err != nil {
 		return ctx, err
 	}
 
 	// Start
 	err = func() error {
-		started := make([]string, 0, len(newCfg.apps))
-		for name, a := range newCfg.apps {
+		started := make([]string, 0, len(ctx.cfg.apps))
+		for name, a := range ctx.cfg.apps {
 			err := a.Start()
 			if err != nil {
 				// an app failed to start, so we need to stop
 				// all other apps that were already started
 				for _, otherAppName := range started {
-					err2 := newCfg.apps[otherAppName].Stop()
+					err2 := ctx.cfg.apps[otherAppName].Stop()
 					if err2 != nil {
 						err = fmt.Errorf("%v; additionally, aborting app %s: %v",
 							err, otherAppName, err2)
@@ -440,7 +440,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
-	return ctx, finishSettingUp(ctx, newCfg)
+	return ctx, finishSettingUp(ctx, ctx.cfg)
 }
 
 func BuildContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
