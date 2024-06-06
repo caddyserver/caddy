@@ -397,7 +397,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 // will want to use Run instead, which also
 // updates the config's raw state.
 func run(newCfg *Config, start bool) (Context, error) {
-	ctx, err := ProvisionContext(newCfg, start)
+	ctx, err := provisionContext(newCfg, start)
 	if err != nil {
 		return ctx, err
 	}
@@ -443,7 +443,12 @@ func run(newCfg *Config, start bool) (Context, error) {
 	return ctx, finishSettingUp(ctx, ctx.cfg)
 }
 
-func ProvisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
+// provisionContext creates a new context from the given configuration and provisions
+// storage and apps.
+// If `newCfg` is nil a new empty configuration will be created.
+// If `replaceAdminServer` is true any currently active admin server will be replaced
+// with a new admin server based on the provided configuration.
+func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
@@ -539,6 +544,15 @@ func ProvisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return nil
 	}()
 	return ctx, err
+}
+
+// ProvisionContext creates a new context from the configuration and provisions storage
+// and app modules.
+// The function is intended for testing and advanced use cases only, typically `Run` should be
+// use to ensure a fully functional caddy instance.
+// EXPERIMENTAL: While this is public the interface and implementation details of this function may change.
+func ProvisionContext(newCfg *Config) (Context, error) {
+	return provisionContext(newCfg, false)
 }
 
 // finishSettingUp should be run after all apps have successfully started.
