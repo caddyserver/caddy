@@ -37,10 +37,16 @@ type ServerLogConfig struct {
 	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
 	// LoggerNames maps request hostnames to one or more custom logger
-	// names. For example, a mapping of "example.com" to "example" would
+	// names. For example, a mapping of `"example.com": ["example"]` would
 	// cause access logs from requests with a Host of example.com to be
 	// emitted by a logger named "http.log.access.example". If there are
 	// multiple logger names, then the log will be emitted to all of them.
+	// If the logger name is an empty, the default logger is used, i.e.
+	// the logger "http.log.access".
+	//
+	// Keys must be hostnames (without ports), and may contain wildcards
+	// to match subdomains. The value is an array of logger names.
+	//
 	// For backwards compatibility, if the value is a string, it is treated
 	// as a single-element array.
 	LoggerNames map[string]StringArray `json:"logger_names,omitempty"`
@@ -59,40 +65,66 @@ type ServerLogConfig struct {
 	// and this includes some request and response headers, i.e `Cookie`,
 	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
 	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
+
+	// Log each individual handler that is invoked.
+	// Requires that the log emit at DEBUG level.
+	//
+	// NOTE: This may log the configuration of your
+	// HTTP handler modules; do not enable this in
+	// insecure contexts when there is sensitive
+	// data in the configuration.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	Trace bool `json:"trace,omitempty"`
 }
 
 // wrapLogger wraps logger in one or more logger named
 // according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) []*zap.Logger {
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*zap.Logger {
+	// using the `log_name` directive or the `access_logger_names` variable,
+	// the logger names can be overridden for the current request
+	if names := GetVar(req.Context(), AccessLoggerNameVarKey); names != nil {
+		if namesSlice, ok := names.([]any); ok {
+			loggers := make([]*zap.Logger, 0, len(namesSlice))
+			for _, loggerName := range namesSlice {
+				// no name, use the default logger
+				if loggerName == "" {
+					loggers = append(loggers, logger)
+					continue
+				}
+				// make a logger with the given name
+				loggers = append(loggers, logger.Named(loggerName.(string)))
+			}
+			return loggers
+		}
+	}
+
+	// get the hostname from the request, with the port number stripped
+	host, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host = req.Host
+	}
+
+	// get the logger names for this host from the config
 	hosts := slc.getLoggerHosts(host)
+
+	// make a list of named loggers, or the default logger
 	loggers := make([]*zap.Logger, 0, len(hosts))
 	for _, loggerName := range hosts {
+		// no name, use the default logger
 		if loggerName == "" {
+			loggers = append(loggers, logger)
 			continue
 		}
+		// make a logger with the given name
 		loggers = append(loggers, logger.Named(loggerName))
 	}
 	return loggers
 }
 
 func (slc ServerLogConfig) getLoggerHosts(host string) []string {
-	tryHost := func(key string) ([]string, bool) {
-		// first try exact match
-		if hosts, ok := slc.LoggerNames[key]; ok {
-			return hosts, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err := net.SplitHostPort(key)
-		if err != nil {
-			return []string{}, false
-		}
-		hosts, ok := slc.LoggerNames[hostOnly]
-		return hosts, ok
-	}
-
 	// try the exact hostname first
-	if hosts, ok := tryHost(host); ok {
+	if hosts, ok := slc.LoggerNames[host]; ok {
 		return hosts
 	}
 
@@ -104,7 +136,7 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 		}
 		labels[i] = "*"
 		wildcardHost := strings.Join(labels, ".")
-		if hosts, ok := tryHost(wildcardHost); ok {
+		if hosts, ok := slc.LoggerNames[wildcardHost]; ok {
 			return hosts
 		}
 	}
@@ -211,4 +243,7 @@ const (
 
 	// For adding additional fields to the access logs
 	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"
+
+	// Variable name used to indicate the logger to be used
+	AccessLoggerNameVarKey string = "access_logger_names"
 )

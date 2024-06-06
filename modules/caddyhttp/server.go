@@ -234,6 +234,7 @@ type Server struct {
 	logger       *zap.Logger
 	accessLogger *zap.Logger
 	errorLogger  *zap.Logger
+	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
 	server      *http.Server
@@ -272,7 +273,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil {
 		if r.ProtoMajor < 3 {
-			err := s.h3server.SetQuicHeaders(w.Header())
+			err := s.h3server.SetQUICHeaders(w.Header())
 			if err != nil {
 				s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
 			}
@@ -369,7 +370,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errLog = errLog.With(zap.Duration("duration", duration))
 	errLoggers := []*zap.Logger{errLog}
 	if s.Logs != nil {
-		errLoggers = s.Logs.wrapLogger(errLog, r.Host)
+		errLoggers = s.Logs.wrapLogger(errLog, r)
 	}
 
 	// get the values that will be used to log the error
@@ -598,7 +599,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
-			QuicConfig: &quic.Config{
+			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
 			},
 			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
@@ -717,18 +718,34 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		// logging is disabled
 		return false
 	}
-	if _, ok := s.Logs.LoggerNames[r.Host]; ok {
+
+	// strip off the port if any, logger names are host only
+	hostWithoutPort, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		hostWithoutPort = r.Host
+	}
+
+	if _, ok := s.Logs.LoggerNames[hostWithoutPort]; ok {
 		// this host is mapped to a particular logger name
 		return true
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
-		if certmagic.MatchWildcard(r.Host, dh) {
+		if certmagic.MatchWildcard(hostWithoutPort, dh) {
 			return false
 		}
 	}
 	// if configured, this host is not mapped and thus must not be logged
 	return !s.Logs.SkipUnmappedHosts
+}
+
+// logTrace will log that this middleware handler is being invoked.
+// It emits at DEBUG level.
+func (s *Server) logTrace(mh MiddlewareHandler) {
+	if s.Logs == nil || !s.Logs.Trace {
+		return
+	}
+	s.traceLogger.Debug(caddy.GetModuleName(mh), zap.Any("module", mh))
 }
 
 // logRequest logs the request to access logs, unless skipped.
@@ -771,17 +788,20 @@ func (s *Server) logRequest(
 
 	loggers := []*zap.Logger{accLog}
 	if s.Logs != nil {
-		loggers = s.Logs.wrapLogger(accLog, r.Host)
+		loggers = s.Logs.wrapLogger(accLog, r)
 	}
 
 	// wrapping may return multiple loggers, so we log to all of them
 	for _, logger := range loggers {
 		logAtLevel := logger.Info
-		if wrec.Status() >= 400 {
+		if wrec.Status() >= 500 {
 			logAtLevel = logger.Error
 		}
-
-		logAtLevel("handled request", fields...)
+		message := "handled request"
+		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+			message = "NOP"
+		}
+		logAtLevel(message, fields...)
 	}
 }
 
@@ -825,7 +845,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 
 	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
-
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change

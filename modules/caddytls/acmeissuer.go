@@ -88,6 +88,15 @@ type ACMEIssuer struct {
 	// will be selected.
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
 
+	// The validity period to ask the CA to issue a certificate for.
+	// Default: 0 (CA chooses lifetime).
+	// This value is used to compute the "notAfter" field of the ACME order;
+	// therefore the system must have a reasonably synchronized clock.
+	// NOTE: Not all CAs support this. Check with your CA's ACME
+	// documentation to see if this is allowed and what values may
+	// be used. EXPERIMENTAL: Subject to change.
+	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
+
 	rootPool *x509.CertPool
 	logger   *zap.Logger
 
@@ -178,6 +187,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
+		NotAfter:          time.Duration(iss.CertificateLifetime),
 		Logger:            iss.logger,
 	}
 
@@ -253,6 +263,12 @@ func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateRes
 // with only this method will succeed, and will still allow the embedded ACMEIssuer
 // to be accessed and manipulated.
 func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
+
+// GetRenewalInfo wraps the underlying GetRenewalInfo method and satisfies
+// the CertMagic interface for ARI support.
+func (iss *ACMEIssuer) GetRenewalInfo(ctx context.Context, cert certmagic.Certificate) (acme.RenewalInfo, error) {
+	return iss.issuer.GetRenewalInfo(ctx, cert)
+}
 
 // generateZeroSSLEABCredentials generates ZeroSSL EAB credentials for the primary contact email
 // on the issuer. It should only be usedif the CA endpoint is ZeroSSL. An email address is required.
@@ -349,6 +365,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "lifetime":
+			var lifetimeStr string
+			if !d.AllArgs(&lifetimeStr) {
+				return d.ArgErr()
+			}
+			lifetime, err := caddy.ParseDuration(lifetimeStr)
+			if err != nil {
+				return d.Errf("invalid lifetime %s: %v", lifetimeStr, err)
+			}
+			if lifetime < 0 {
+				return d.Errf("lifetime must be >= 0: %s", lifetime)
+			}
+			iss.CertificateLifetime = caddy.Duration(lifetime)
+
 		case "dir":
 			if iss.CA != "" {
 				return d.Errf("directory is already specified: %s", iss.CA)
@@ -625,10 +655,11 @@ type ChainPreference struct {
 
 // Interface guards
 var (
-	_ certmagic.PreChecker  = (*ACMEIssuer)(nil)
-	_ certmagic.Issuer      = (*ACMEIssuer)(nil)
-	_ certmagic.Revoker     = (*ACMEIssuer)(nil)
-	_ caddy.Provisioner     = (*ACMEIssuer)(nil)
-	_ ConfigSetter          = (*ACMEIssuer)(nil)
-	_ caddyfile.Unmarshaler = (*ACMEIssuer)(nil)
+	_ certmagic.PreChecker        = (*ACMEIssuer)(nil)
+	_ certmagic.Issuer            = (*ACMEIssuer)(nil)
+	_ certmagic.Revoker           = (*ACMEIssuer)(nil)
+	_ certmagic.RenewalInfoGetter = (*ACMEIssuer)(nil)
+	_ caddy.Provisioner           = (*ACMEIssuer)(nil)
+	_ ConfigSetter                = (*ACMEIssuer)(nil)
+	_ caddyfile.Unmarshaler       = (*ACMEIssuer)(nil)
 )

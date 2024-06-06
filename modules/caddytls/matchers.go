@@ -110,7 +110,7 @@ func (m MatchRemoteIP) Match(hello *tls.ClientHelloInfo) bool {
 	}
 	ipAddr, err := netip.ParseAddr(ipStr)
 	if err != nil {
-		m.logger.Error("invalid client IP addresss", zap.String("ip", ipStr))
+		m.logger.Error("invalid client IP address", zap.String("ip", ipStr))
 		return false
 	}
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs)) &&
@@ -185,7 +185,7 @@ func (m MatchLocalIP) Match(hello *tls.ClientHelloInfo) bool {
 	}
 	ipAddr, err := netip.ParseAddr(ipStr)
 	if err != nil {
-		m.logger.Error("invalid local IP addresss", zap.String("ip", ipStr))
+		m.logger.Error("invalid local IP address", zap.String("ip", ipStr))
 		return false
 	}
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs))

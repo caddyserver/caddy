@@ -117,7 +117,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 		if srv.AutoHTTPS.Disabled {
-			logger.Warn("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
+			logger.Info("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
 			continue
 		}
 
@@ -225,7 +225,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// nothing left to do if auto redirects are disabled
 		if srv.AutoHTTPS.DisableRedir {
-			logger.Warn("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
+			logger.Info("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
 			continue
 		}
 

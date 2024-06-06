@@ -857,6 +857,29 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	}
 }
 
+func TestRejectsGlobalMatcher(t *testing.T) {
+	p := testParser(`
+		@rejected path /foo
+
+		(common) {
+			gzip foo
+			errors stderr
+		}
+
+		http://example.com {
+			import common
+		}
+	`)
+	_, err := p.parseAll()
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+	expected := "request matchers may not be defined globally, they must be in a site block; found @rejected, at Testfile:2"
+	if err.Error() != expected {
+		t.Errorf("Expected error to be '%s' but got '%v'", expected, err)
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }

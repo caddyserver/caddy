@@ -51,6 +51,7 @@ func init() {
 	RegisterDirective("log", parseLog)
 	RegisterHandlerDirective("skip_log", parseLogSkip)
 	RegisterHandlerDirective("log_skip", parseLogSkip)
+	RegisterHandlerDirective("log_name", parseLogName)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -69,8 +70,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    curves    <curves...>
 //	    client_auth {
 //	        mode                   [request|require|verify_if_given|require_and_verify]
-//	        trusted_ca_cert        <base64_der>
-//	        trusted_ca_cert_file   <filename>
+//	        trust_pool			   <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
@@ -915,7 +915,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// this is useful for setting up loggers per subdomain in a site block
 	// with a wildcard domain
 	customHostnames := []string{}
-
+	noHostname := false
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -1001,6 +1001,12 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				cl.Exclude = append(cl.Exclude, h.Val())
 			}
 
+		case "no_hostname":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			noHostname = true
+
 		default:
 			return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 		}
@@ -1008,7 +1014,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 	var val namedCustomLog
 	val.hostnames = customHostnames
-
+	val.noHostname = noHostname
 	isEmptyConfig := reflect.DeepEqual(cl, new(caddy.CustomLog))
 
 	// Skip handling of empty logging configs
@@ -1058,4 +1064,14 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, h.ArgErr()
 	}
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
+}
+
+// parseLogName parses the log_name directive. Syntax:
+//
+//	log_name <names...>
+func parseLogName(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+	return caddyhttp.VarsMiddleware{
+		caddyhttp.AccessLoggerNameVarKey: h.RemainingArgs(),
+	}, nil
 }

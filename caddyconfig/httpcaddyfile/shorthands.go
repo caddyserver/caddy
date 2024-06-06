@@ -36,6 +36,7 @@ func NewShorthandReplacer() ShorthandReplacer {
 		{regexp.MustCompile(`{re\.([\w-\.]*)}`), "{http.regexp.$1}"},
 		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
 		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
+		{regexp.MustCompile(`{resp\.([\w-\.]*)}`), "{http.intercept.$1}"},
 		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
 		{regexp.MustCompile(`{file_match\.([\w-]*)}`), "{http.matchers.file.$1}"},
 	}

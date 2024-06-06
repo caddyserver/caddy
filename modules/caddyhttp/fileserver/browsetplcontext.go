@@ -132,7 +132,7 @@ type browseTemplateContext struct {
 	// The full path of the request.
 	Path string `json:"path"`
 
-	// Whether the parent directory is browseable.
+	// Whether the parent directory is browsable.
 	CanGoUp bool `json:"can_go_up"`
 
 	// The items (files and folders) in the path.

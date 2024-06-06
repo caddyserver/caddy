@@ -1,0 +1,38 @@
+:8884 {
+	reverse_proxy {
+		dynamic srv {
+			name foo
+			refresh 5m
+			grace_period 5s
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"dynamic_upstreams": {
+										"grace_period": 5000000000,
+										"name": "foo",
+										"refresh": 300000000000,
+										"source": "srv"
+									},
+									"handler": "reverse_proxy"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

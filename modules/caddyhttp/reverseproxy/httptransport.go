@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/pires/go-proxyproto"
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 
@@ -124,12 +125,18 @@ type HTTPTransport struct {
 	// can be specified to use H2C (HTTP/2 over Cleartext) to the
 	// upstream (this feature is experimental and subject to
 	// change or removal). Default: ["1.1", "2"]
+	//
+	// EXPERIMENTAL: "3" enables HTTP/3, but it must be the only
+	// version specified if enabled. Additionally, HTTPS must be
+	// enabled to the upstream as HTTP/3 requires TLS. Subject
+	// to change or removal while experimental.
 	Versions []string `json:"versions,omitempty"`
 
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
 	h2cTransport *http2.Transport
+	h3Transport  *http3.RoundTripper // TODO: EXPERIMENTAL (May 2024)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -225,41 +232,47 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			if !ok {
 				return nil, fmt.Errorf("failed to get proxy protocol info from context")
 			}
-			header := proxyproto.Header{
-				SourceAddr: &net.TCPAddr{
-					IP:   proxyProtocolInfo.AddrPort.Addr().AsSlice(),
-					Port: int(proxyProtocolInfo.AddrPort.Port()),
-					Zone: proxyProtocolInfo.AddrPort.Addr().Zone(),
-				},
+			var proxyv byte
+			switch h.ProxyProtocol {
+			case "v1":
+				proxyv = 1
+			case "v2":
+				proxyv = 2
+			default:
+				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
+
 			// The src and dst have to be of the same address family. As we don't know the original
 			// dst address (it's kind of impossible to know) and this address is generally of very
 			// little interest, we just set it to all zeros.
+			var destAddr net.Addr
 			switch {
 			case proxyProtocolInfo.AddrPort.Addr().Is4():
-				header.TransportProtocol = proxyproto.TCPv4
-				header.DestinationAddr = &net.TCPAddr{
+				destAddr = &net.TCPAddr{
 					IP: net.IPv4zero,
 				}
 			case proxyProtocolInfo.AddrPort.Addr().Is6():
-				header.TransportProtocol = proxyproto.TCPv6
-				header.DestinationAddr = &net.TCPAddr{
+				destAddr = &net.TCPAddr{
 					IP: net.IPv6zero,
 				}
 			default:
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
 			}
+			sourceAddr := &net.TCPAddr{
+				IP:   proxyProtocolInfo.AddrPort.Addr().AsSlice(),
+				Port: int(proxyProtocolInfo.AddrPort.Port()),
+				Zone: proxyProtocolInfo.AddrPort.Addr().Zone(),
+			}
+			header := proxyproto.HeaderProxyFromAddrs(proxyv, sourceAddr, destAddr)
 
+			// retain the log message structure
 			switch h.ProxyProtocol {
 			case "v1":
-				header.Version = 1
 				caddyCtx.Logger().Debug("sending proxy protocol header v1", zap.Any("header", header))
 			case "v2":
-				header.Version = 2
 				caddyCtx.Logger().Debug("sending proxy protocol header v2", zap.Any("header", header))
-			default:
-				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
+
 			_, err = header.WriteTo(conn)
 			if err != nil {
 				// identify this error as one that occurred during
@@ -344,6 +357,16 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 	}
 
+	// configure HTTP/3 transport if enabled; however, this does not
+	// automatically fall back to lower versions like most web browsers
+	// do (that'd add latency and complexity, besides, we expect that
+	// site owners  control the backends), so it must be exclusive
+	if len(h.Versions) == 1 && h.Versions[0] == "3" {
+		h.h3Transport = new(http3.RoundTripper)
+	} else if len(h.Versions) > 1 && sliceContains(h.Versions, "3") {
+		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
+	}
+
 	// if h2c is enabled, configure its transport (std lib http.Transport
 	// does not "HTTP/2 over cleartext TCP")
 	if sliceContains(h.Versions, "h2c") {
@@ -407,6 +430,11 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	transport := h.replaceTLSServername(repl)
 
 	transport.SetScheme(req)
+
+	// use HTTP/3 if enabled (TODO: This is EXPERIMENTAL)
+	if h.h3Transport != nil {
+		return h.h3Transport.RoundTrip(req)
+	}
 
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
@@ -535,7 +563,7 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-func (t TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
+func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 
 	// client auth

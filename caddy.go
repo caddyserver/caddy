@@ -869,7 +869,7 @@ func InstanceID() (uuid.UUID, error) {
 		if err != nil {
 			return uuid, err
 		}
-		err = os.MkdirAll(appDataDir, 0o600)
+		err = os.MkdirAll(appDataDir, 0o700)
 		if err != nil {
 			return uuid, err
 		}
