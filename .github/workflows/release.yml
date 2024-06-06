@@ -106,7 +106,7 @@ jobs:
       run: syft version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
+      uses: goreleaser/goreleaser-action@v6
       with:
         version: latest
         args: release --clean --timeout 60m
