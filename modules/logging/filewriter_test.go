@@ -306,3 +306,42 @@ func TestFileModeJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestFileModeToJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    fileMode
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "none zero",
+			mode:    0644,
+			want:    `"0644"`,
+			wantErr: false,
+		},
+		{
+			name:    "zero mode",
+			mode:    0,
+			want:    `"0000"`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b []byte
+			var err error
+
+			if b, err = json.Marshal(&tt.mode); (err != nil) != tt.wantErr {
+				t.Fatalf("MarshalJSON() error = %v, want %v", err, tt.wantErr)
+			}
+
+			got := string(b[:])
+
+			if got != tt.want {
+				t.Errorf("got mode %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

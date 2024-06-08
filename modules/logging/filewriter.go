@@ -59,6 +59,11 @@ func (m *fileMode) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// MarshalJSON satisfies json.Marshaler.
+func (m *fileMode) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("\"%04o\"", *m)), nil
+}
+
 // parseFileMode parses a file mode string,
 // adding support for `chmod` unix command like
 // 1 to 4 digital octal values.
