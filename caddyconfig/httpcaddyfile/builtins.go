@@ -849,6 +849,7 @@ func parseInvoke(h Helper) (caddyhttp.MiddlewareHandler, error) {
 //	log <logger_name> {
 //	    hostnames <hostnames...>
 //	    output <writer_module> ...
+//	    core   <core_module> ...
 //	    format <encoder_module> ...
 //	    level  <level>
 //	}
@@ -959,6 +960,22 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				}
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
+
+		case "core":
+			if !h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			moduleName := h.Val()
+			moduleID := "caddy.logging.cores." + moduleName
+			unm, err := caddyfile.UnmarshalModule(h.Dispenser, moduleID)
+			if err != nil {
+				return nil, err
+			}
+			core, ok := unm.(zapcore.Core)
+			if !ok {
+				return nil, h.Errf("module %s (%T) is not a zapcore.Core", moduleID, unm)
+			}
+			cl.CoreRaw = caddyconfig.JSONModuleObject(core, "module", moduleName, h.warnings)
 
 		case "format":
 			if !h.NextArg() {
