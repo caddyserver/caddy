@@ -345,3 +345,42 @@ func TestFileModeToJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestFileModeModification(t *testing.T) {
+	m := syscall.Umask(0o000)
+	defer syscall.Umask(m)
+
+	dir, err := os.MkdirTemp("", "caddytest")
+	if err != nil {
+		t.Fatalf("failed to create tempdir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	fpath := path.Join(dir, "test.log")
+	f_tmp, err := os.OpenFile(fpath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0600))
+	if err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	f_tmp.Close()
+
+	fw := FileWriter{
+		Mode:     0o666,
+		Filename: fpath,
+	}
+
+	logger, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	defer logger.Close()
+
+	st, err := os.Stat(fpath)
+	if err != nil {
+		t.Fatalf("failed to check file permissions: %v", err)
+	}
+
+	want := os.FileMode(fw.Mode)
+	if st.Mode() != want {
+		t.Errorf("file mode is %v, want %v", st.Mode(), want)
+	}
+}
