@@ -355,6 +355,11 @@ type Event struct {
 	origin caddy.Module
 }
 
+func (e Event) ID() uuid.UUID        { return e.id }
+func (e Event) Timestamp() time.Time { return e.ts }
+func (e Event) Name() string         { return e.name }
+func (e Event) Origin() caddy.Module { return e.origin }
+
 // CloudEvent exports event e as a structure that, when
 // serialized as JSON, is compatible with the
 // CloudEvents spec.

@@ -219,13 +219,13 @@ func (rr *responseRecorder) Buffered() bool {
 }
 
 func (rr *responseRecorder) WriteResponse() error {
-	if rr.stream {
-		return nil
-	}
 	if rr.statusCode == 0 {
 		// could happen if no handlers actually wrote anything,
 		// and this prevents a panic; status must be > 0
-		rr.statusCode = http.StatusOK
+		rr.WriteHeader(http.StatusOK)
+	}
+	if rr.stream {
+		return nil
 	}
 	rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)

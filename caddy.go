@@ -397,6 +397,58 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 // will want to use Run instead, which also
 // updates the config's raw state.
 func run(newCfg *Config, start bool) (Context, error) {
+	ctx, err := provisionContext(newCfg, start)
+	if err != nil {
+		return ctx, err
+	}
+
+	if !start {
+		return ctx, nil
+	}
+
+	// Provision any admin routers which may need to access
+	// some of the other apps at runtime
+	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return ctx, err
+	}
+
+	// Start
+	err = func() error {
+		started := make([]string, 0, len(ctx.cfg.apps))
+		for name, a := range ctx.cfg.apps {
+			err := a.Start()
+			if err != nil {
+				// an app failed to start, so we need to stop
+				// all other apps that were already started
+				for _, otherAppName := range started {
+					err2 := ctx.cfg.apps[otherAppName].Stop()
+					if err2 != nil {
+						err = fmt.Errorf("%v; additionally, aborting app %s: %v",
+							err, otherAppName, err2)
+					}
+				}
+				return fmt.Errorf("%s app module: start: %v", name, err)
+			}
+			started = append(started, name)
+		}
+		return nil
+	}()
+	if err != nil {
+		return ctx, err
+	}
+
+	// now that the user's config is running, finish setting up anything else,
+	// such as remote admin endpoint, config loader, etc.
+	return ctx, finishSettingUp(ctx, ctx.cfg)
+}
+
+// provisionContext creates a new context from the given configuration and provisions
+// storage and apps.
+// If `newCfg` is nil a new empty configuration will be created.
+// If `replaceAdminServer` is true any currently active admin server will be replaced
+// with a new admin server based on the provided configuration.
+func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
@@ -444,7 +496,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 	}
 
 	// start the admin endpoint (and stop any prior one)
-	if start {
+	if replaceAdminServer {
 		err = replaceLocalAdminServer(newCfg)
 		if err != nil {
 			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
@@ -491,49 +543,16 @@ func run(newCfg *Config, start bool) (Context, error) {
 		}
 		return nil
 	}()
-	if err != nil {
-		return ctx, err
-	}
+	return ctx, err
+}
 
-	if !start {
-		return ctx, nil
-	}
-
-	// Provision any admin routers which may need to access
-	// some of the other apps at runtime
-	err = newCfg.Admin.provisionAdminRouters(ctx)
-	if err != nil {
-		return ctx, err
-	}
-
-	// Start
-	err = func() error {
-		started := make([]string, 0, len(newCfg.apps))
-		for name, a := range newCfg.apps {
-			err := a.Start()
-			if err != nil {
-				// an app failed to start, so we need to stop
-				// all other apps that were already started
-				for _, otherAppName := range started {
-					err2 := newCfg.apps[otherAppName].Stop()
-					if err2 != nil {
-						err = fmt.Errorf("%v; additionally, aborting app %s: %v",
-							err, otherAppName, err2)
-					}
-				}
-				return fmt.Errorf("%s app module: start: %v", name, err)
-			}
-			started = append(started, name)
-		}
-		return nil
-	}()
-	if err != nil {
-		return ctx, err
-	}
-
-	// now that the user's config is running, finish setting up anything else,
-	// such as remote admin endpoint, config loader, etc.
-	return ctx, finishSettingUp(ctx, newCfg)
+// ProvisionContext creates a new context from the configuration and provisions storage
+// and app modules.
+// The function is intended for testing and advanced use cases only, typically `Run` should be
+// use to ensure a fully functional caddy instance.
+// EXPERIMENTAL: While this is public the interface and implementation details of this function may change.
+func ProvisionContext(newCfg *Config) (Context, error) {
+	return provisionContext(newCfg, false)
 }
 
 // finishSettingUp should be run after all apps have successfully started.

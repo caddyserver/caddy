@@ -1,3 +1,5 @@
+version: 2
+
 before:
   hooks:
     # The build is done in this particular way to build Caddy in a designated directory named in .gitignore.
