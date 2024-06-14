@@ -303,7 +303,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		// negotiate http/socks proxy from forward_proxy_url
 		logger := caddyCtx.Logger()
 		proxy = func(r *http.Request) (*url.URL, error) {
-
 			// retrieve the replacer from context.
 			repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			if !ok {
