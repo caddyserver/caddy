@@ -84,9 +84,10 @@ type HTTPTransport struct {
 	// requests flowing through the reverse_proxy in the following
 	// way:
 	//
-	// User Agent ->
-	//  reverse_proxy ->
-	//  forward_proxy_url -> upstream
+	// User Agent -> reverse_proxy -> forward_proxy_url -> upstream
+	//
+	// Placeholder values are applied to this value, enabling dynamic
+	// proxy selection.
 	//
 	// Default: http.ProxyFromEnvironment
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
@@ -297,12 +298,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		return conn, nil
 	}
 
-	// negotiate any HTTP/SOCKS proxy for the HTTP transport
-	var proxy func(*http.Request) (*url.URL, error)
+	proxy := http.ProxyFromEnvironment
 	if h.ForwardProxyURL != "" {
+		// negotiate http/socks proxy from forward_proxy_url
 		logger := caddyCtx.Logger()
 		proxy = func(r *http.Request) (*url.URL, error) {
-			// retrieve the replacer from the context.
+
+			// retrieve the replacer from context.
 			repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			if !ok {
 				err := errors.New("failed to obtain replacer from request")
@@ -319,16 +321,30 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 					zap.String("final_value", s),
 					zap.String("hint", "check for invalid placeholders"))
 				return nil, errors.New("empty value for forward_proxy_url")
-			} else if pUrl, err := url.Parse(s); err != nil {
+			}
+
+			// parse the url
+			pUrl, err := url.Parse(s)
+			if err != nil {
 				logger.Warn("failed to derive transport proxy from forward_proxy_url")
-				return nil, err
+				pUrl = nil
+			} else if pUrl.Host == "" || strings.Split("", pUrl.Host)[0] == ":" {
+				// url.Parse does not return an error on these values:
+				//
+				// - http://:80
+				//   - pUrl.Host == ":80"
+				// - /some/path
+				//   - pUrl.Host == ""
+				//
+				// Super edge cases, but humans are human.
+				err = errors.New("supplied forward_proxy_url is missing a host value")
+				pUrl = nil
 			} else {
 				logger.Debug("setting transport proxy url", zap.String("url", s))
-				return pUrl, nil
 			}
+
+			return pUrl, err
 		}
-	} else {
-		proxy = http.ProxyFromEnvironment
 	}
 
 	rt := &http.Transport{
