@@ -705,7 +705,7 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 //
 //	lb_policy cookie [<name> [<secret>]] {
 //		fallback <policy>
-//		[max_age <duration>]
+//		max_age <duration>
 //	}
 //
 // `max_age` is a positive (non-zero) `caddy.Duration`
