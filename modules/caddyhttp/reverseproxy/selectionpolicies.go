@@ -708,7 +708,6 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 //		max_age <duration>
 //	}
 //
-// `max_age` is a positive (non-zero) `caddy.Duration`
 // By default name is `lb`
 func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	args := d.RemainingArgs()
