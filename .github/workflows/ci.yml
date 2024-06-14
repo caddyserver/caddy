@@ -137,15 +137,14 @@ jobs:
 
     - name: Run Caddy
       if: matrix.os == 'linux' && matrix.go == '1.22'
-      working-directory: ./cmd/caddy
       run: |
-        ./caddy start
+        ./cmd/caddy/caddy start
 
     - name: Run tests with Hurl
       if: matrix.os == 'linux' && matrix.go == '1.22'
       run: |
         mkdir hurl-report
-        find . -name *.hurl -exec hurl --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
+        find . -name *.hurl -exec hurl --variables-file caddytest/spec/hurl_vars.properties --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
     
     - name: Publish Test Results
       if: matrix.os == 'linux' && matrix.go == '1.22'
