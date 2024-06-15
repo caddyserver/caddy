@@ -693,7 +693,7 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 		}
 
 		// Etags should not contain newline characters
-		etag = bytes.ReplaceAll(etag, []byte("\n"), []byte(""))
+		etag = bytes.ReplaceAll(etag, []byte("\n"), []byte{})
 
 		return string(etag), nil
 	}
