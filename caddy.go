@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -778,7 +779,10 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 			} else {
 				logger.Error("unclean shutdown")
 			}
-			os.Exit(exitCode)
+			// check if we are in test environment, and dont call exit if we are
+			if flag.Lookup("test.v") == nil || strings.Contains(os.Args[0], ".test") {
+				os.Exit(exitCode)
+			}
 		}()
 
 		if remoteAdminServer != nil {

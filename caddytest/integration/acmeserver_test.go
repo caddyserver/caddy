@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddytest"
 	"github.com/mholt/acmez/v2"
 	"github.com/mholt/acmez/v2/acme"
-	"go.uber.org/zap"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
@@ -66,11 +66,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	logger := caddy.Log().Named("acmez")
 
 	client := acmez.Client{
 		Client: &acme.Client{
@@ -155,11 +151,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	logger := caddy.Log().Named("acmez")
 
 	client := acmez.Client{
 		Client: &acme.Client{
@@ -197,7 +189,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"deny.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'deny.localhost' domain")
-		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
+		} else if !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
 			t.Logf("unexpected error: %v", err)
 		}
 	}

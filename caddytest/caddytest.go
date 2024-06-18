@@ -81,6 +81,10 @@ func NewTester(t testing.TB) *Tester {
 	}
 }
 
+func (t *Tester) T() testing.TB {
+	return t.t
+}
+
 type configLoadError struct {
 	Response string
 }
@@ -92,33 +96,37 @@ func timeElapsed(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
-// InitServer this will configure the server with a configurion of a specific
-// type. The configType must be either "json" or the adapter type.
-func (tc *Tester) InitServer(rawConfig string, configType string) {
-	if err := tc.initServer(rawConfig, configType); err != nil {
-		tc.t.Logf("failed to load config: %s", err)
+// launch caddy will start the server
+func (tc *Tester) LaunchCaddy() {
+	if err := tc.startServer(); err != nil {
+		tc.t.Logf("failed to start server: %s", err)
 		tc.t.Fail()
 	}
-	if err := tc.ensureConfigRunning(rawConfig, configType); err != nil {
+}
+
+// DEPRECATED: InitServer
+// Initserver is shorthand for LaunchCaddy() and LoadConfig(rawConfig, configType string)
+func (tc *Tester) InitServer(rawConfig string, configType string) {
+	if err := tc.startServer(); err != nil {
+		tc.t.Logf("failed to start server: %s", err)
+		tc.t.Fail()
+	}
+	if err := tc.LoadConfig(rawConfig, configType); err != nil {
 		tc.t.Logf("failed ensuring config is running: %s", err)
 		tc.t.Fail()
 	}
 }
 
-// InitServer this will configure the server with a configurion of a specific
-// type. The configType must be either "json" or the adapter type.
-func (tc *Tester) initServer(rawConfig string, configType string) error {
+func (tc *Tester) startServer() error {
 	if testing.Short() {
 		tc.t.SkipNow()
 		return nil
 	}
-
-	err := validateTestPrerequisites(tc.t)
+	err := validateAndStartServer(tc.t)
 	if err != nil {
 		tc.t.Skipf("skipping tests as failed integration prerequisites. %s", err)
 		return nil
 	}
-
 	tc.t.Cleanup(func() {
 		if tc.t.Failed() && tc.configLoaded {
 			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
@@ -133,8 +141,35 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 			_ = json.Indent(&out, body, "", "  ")
 			tc.t.Logf("----------- failed with config -----------\n%s", out.String())
 		}
-	})
+		// now shutdown the server, since the test is done.
 
+		_, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", Default.AdminPort), "", nil)
+		if err != nil {
+			tc.t.Log("couldn't stop admin server")
+		}
+		time.Sleep(1 * time.Millisecond)
+		// try ensure the admin api is stopped three times.
+		for retries := 0; retries < 3; retries++ {
+			if isCaddyAdminRunning() != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+			tc.t.Log("timed out waiting for admin server to stop")
+		}
+	})
+	return nil
+}
+
+func (tc *Tester) MustLoadConfig(rawConfig string, configType string) {
+	if err := tc.LoadConfig(rawConfig, configType); err != nil {
+		tc.t.Logf("failed ensuring config is running: %s", err)
+		tc.t.Fail()
+	}
+}
+
+// LoadConfig loads the config to the tester server and also ensures that the config was loaded
+func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
+	originalRawConfig := rawConfig
 	rawConfig = prependCaddyFilePath(rawConfig)
 	// normalize JSON config
 	if configType == "json" {
@@ -185,7 +220,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 	}
 
 	tc.configLoaded = true
-	return nil
+	return tc.ensureConfigRunning(originalRawConfig, configType)
 }
 
 func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error {
@@ -226,7 +261,9 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		return actual
 	}
 
-	for retries := 10; retries > 0; retries-- {
+	// TODO: does this really need to be tried more than once?
+	// Caddy should block until the new config is loaded, which means needing to wait is a caddy bug
+	for retries := 3; retries > 0; retries-- {
 		if reflect.DeepEqual(expected, fetchConfig(client)) {
 			return nil
 		}
@@ -241,9 +278,9 @@ const initConfig = `{
 }
 `
 
-// validateTestPrerequisites ensures the certificates are available in the
-// designated path and Caddy sub-process is running.
-func validateTestPrerequisites(t testing.TB) error {
+// validateAndStartServer ensures the certificates are available in the
+// designated path, launches caddy, and then ensures the Caddy sub-process is running.
+func validateAndStartServer(t testing.TB) error {
 	// check certificates are found
 	for _, certName := range Default.Certificates {
 		if _, err := os.Stat(getIntegrationDir() + certName); errors.Is(err, fs.ErrNotExist) {
@@ -269,9 +306,8 @@ func validateTestPrerequisites(t testing.TB) error {
 		go func() {
 			caddycmd.Main()
 		}()
-
-		// wait for caddy to start serving the initial config
-		for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+		// wait for caddy admin api to start. it should happen quickly.
+		for retries := 3; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -342,8 +378,8 @@ func CreateTestingTransport() *http.Transport {
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
 	tc := NewTester(t)
-
-	err := tc.initServer(rawConfig, configType)
+	tc.LaunchCaddy()
+	err := tc.LoadConfig(rawConfig, configType)
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("expected error \"%s\" but got \"%s\"", expectedError, err.Error())
 	}
