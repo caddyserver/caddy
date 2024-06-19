@@ -10,12 +10,18 @@ import (
 
 	"github.com/aryann/difflib"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/stretchr/testify/require"
 )
 
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
-	tc := StartHarness(t)
-	err := tc.tester.LoadConfig(rawConfig, configType)
+	tc, err := NewTester()
+	require.NoError(t, err)
+	err = tc.LaunchCaddy()
+	require.NoError(t, err)
+	defer tc.CleanupCaddy()
+
+	err = tc.LoadConfig(rawConfig, configType)
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("expected error \"%s\" but got \"%s\"", expectedError, err.Error())
 	}
