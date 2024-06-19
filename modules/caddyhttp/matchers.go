@@ -34,6 +34,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -239,13 +240,20 @@ func (m *MatchHost) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m MatchHost) Provision(_ caddy.Context) error {
 	// check for duplicates; they are nonsensical and reduce efficiency
 	// (we could just remove them, but the user should know their config is erroneous)
-	seen := make(map[string]int)
-	for i, h := range m {
-		h = strings.ToLower(h)
-		if firstI, ok := seen[h]; ok {
-			return fmt.Errorf("host at index %d is repeated at index %d: %s", firstI, i, h)
+	seen := make(map[string]int, len(m))
+	for i, host := range m {
+		asciiHost, err := idna.ToASCII(host)
+		if err != nil {
+			return fmt.Errorf("converting hostname '%s' to ASCII: %v", host, err)
 		}
-		seen[h] = i
+		if asciiHost != host {
+			m[i] = asciiHost
+		}
+		normalizedHost := strings.ToLower(asciiHost)
+		if firstI, ok := seen[normalizedHost]; ok {
+			return fmt.Errorf("host at index %d is repeated at index %d: %s", firstI, i, host)
+		}
+		seen[normalizedHost] = i
 	}
 
 	if m.large() {
