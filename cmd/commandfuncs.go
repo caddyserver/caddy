@@ -283,9 +283,9 @@ func cmdRun(fl Flags) (int, error) {
 	}
 
 	if flag.Lookup("test.v") == nil || !strings.Contains(os.Args[0], ".test") {
-		return caddy.ExitCodeSuccess, nil
-	} else {
 		select {}
+	} else {
+		return caddy.ExitCodeSuccess, nil
 	}
 }
 
