@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -8,20 +9,20 @@ import (
 
 func TestDefaultSNI(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`{
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
 		"admin": {
-			"listen": "{$TESTING_ADMIN_API}"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"http": {
-				"http_port": 9080,
-				"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+				"https_port": {$TESTING_CADDY_PORT_TWO},
 				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
-							":9443"
+							":{$TESTING_CADDY_PORT_TWO}"
 						],
 						"routes": [
 							{
@@ -102,26 +103,27 @@ func TestDefaultSNI(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a.caddy.localhost")
+	target := fmt.Sprintf("https://127.0.0.1:%d/", harness.Tester().PortTwo())
+	harness.AssertGetResponse(target+"version", 200, "hello from a.caddy.localhost")
 }
 
 func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(` 
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "{$TESTING_ADMIN_API}"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"http": {
-				"http_port": 9080,
-				"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+				"https_port": {$TESTING_CADDY_PORT_TWO},
 				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
-							":9443"
+							":{$TESTING_CADDY_PORT_TWO}"
 						],
 						"routes": [
 							{
@@ -206,26 +208,27 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a")
+	target := fmt.Sprintf("https://127.0.0.1:%d/", harness.Tester().PortTwo())
+	harness.AssertGetResponse(target+"version", 200, "hello from a")
 }
 
 func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(` 
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "{$TESTING_ADMIN_API}"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"http": {
-				"http_port": 9080,
-				"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+				"https_port": {$TESTING_CADDY_PORT_TWO},
 				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
-							":9443"
+							":{$TESTING_CADDY_PORT_TWO}"
 						],
 						"routes": [
 							{
@@ -282,7 +285,8 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 
 	// act and assert
 	// makes a request with no sni
-	tester.AssertGetResponse("https://127.0.0.1:9443/version", 200, "hello from a.caddy.localhost")
+	target := fmt.Sprintf("https://127.0.0.1:%d/", harness.Tester().PortTwo())
+	harness.AssertGetResponse(target+"version", 200, "hello from a.caddy.localhost")
 }
 
 func TestHttpOnlyOnDomainWithSNI(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -42,7 +43,12 @@ var Default = Defaults{
 type Tester struct {
 	Client *http.Client
 
-	adminPort      int
+	adminPort int
+
+	portOne int
+	portTwo int
+
+	started        atomic.Bool
 	configLoaded   bool
 	configFileName string
 	envFileName    string
@@ -78,6 +84,9 @@ func timeElapsed(start time.Time, name string) {
 
 // launch caddy will start the server
 func (tc *Tester) LaunchCaddy() error {
+	if !tc.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("already launched caddy with this tester")
+	}
 	if err := tc.startServer(); err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}
@@ -110,14 +119,32 @@ func (tc *Tester) CleanupCaddy() error {
 	return fmt.Errorf("timed out waiting for caddytest server to stop")
 }
 
+func (tc *Tester) AdminPort() int {
+	return tc.adminPort
+}
+func (tc *Tester) PortOne() int {
+	return tc.portOne
+}
+func (tc *Tester) PortTwo() int {
+	return tc.portTwo
+}
+
+func (tc *Tester) ReplaceTestingPlaceholders(x string) string {
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_BIND}", fmt.Sprintf("localhost:%d", tc.adminPort))
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_PORT}", fmt.Sprintf("%d", tc.adminPort))
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_PORT_ONE}", fmt.Sprintf("%d", tc.portOne))
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_PORT_TWO}", fmt.Sprintf("%d", tc.portTwo))
+	return x
+}
+
 // LoadConfig loads the config to the tester server and also ensures that the config was loaded
 // it should not be run
 func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
 	if tc.adminPort == 0 {
 		return fmt.Errorf("load config called where startServer didnt succeed")
 	}
+	rawConfig = tc.ReplaceTestingPlaceholders(rawConfig)
 	// replace special testing placeholders so we can have our admin api be on a random port
-	rawConfig = strings.ReplaceAll(rawConfig, "{$TESTING_ADMIN_API}", fmt.Sprintf("localhost:%d", tc.adminPort))
 	// normalize JSON config
 	if configType == "json" {
 		var conf any
@@ -220,6 +247,14 @@ func (tc *Tester) startServer() error {
 		return fmt.Errorf("could not find a open port to listen on: %w", err)
 	}
 	tc.adminPort = a
+	tc.portOne, err = getFreePort()
+	if err != nil {
+		return fmt.Errorf("could not find a open portOne: %w", err)
+	}
+	tc.portTwo, err = getFreePort()
+	if err != nil {
+		return fmt.Errorf("could not find a open portOne: %w", err)
+	}
 	// setup the init config file, and set the cleanup afterwards
 	{
 		f, err := os.CreateTemp("", "")

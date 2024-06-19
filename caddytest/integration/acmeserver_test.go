@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -15,40 +16,40 @@ import (
 )
 
 func TestACMEServerDirectory(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
 			}
 		}
 	}
-	acme.localhost:9443 {
+	acme.localhost:{$TESTING_CADDY_PORT_TWO} {
 		acme_server
 	}
   `, "caddyfile")
-	tester.AssertGetResponse(
-		"https://acme.localhost:9443/acme/local/directory",
+	harness.AssertGetResponse(
+		fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
 		200,
-		`{"newNonce":"https://acme.localhost:9443/acme/local/new-nonce","newAccount":"https://acme.localhost:9443/acme/local/new-account","newOrder":"https://acme.localhost:9443/acme/local/new-order","revokeCert":"https://acme.localhost:9443/acme/local/revoke-cert","keyChange":"https://acme.localhost:9443/acme/local/key-change"}
-`)
+		fmt.Sprintf(`{"newNonce":"https://acme.localhost:%[1]d/acme/local/new-nonce","newAccount":"https://acme.localhost:%[1]d/acme/local/new-account","newOrder":"https://acme.localhost:%[1]d/acme/local/new-order","revokeCert":"https://acme.localhost:%[1]d/acme/local/revoke-cert","keyChange":"https://acme.localhost:%[1]d/acme/local/key-change"}
+`, harness.Tester().PortTwo()))
 }
 
 func TestACMEServerAllowPolicy(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
@@ -70,8 +71,8 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client(),
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -127,14 +128,14 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 }
 
 func TestACMEServerDenyPolicy(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
@@ -155,8 +156,8 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client(),
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{

@@ -24,13 +24,13 @@ const acmeChallengePort = 9081
 // Test the basic functionality of Caddy's ACME server
 func TestACMEServerWithDefaults(t *testing.T) {
 	ctx := context.Background()
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		local_certs
 	}
 	acme.localhost {
@@ -41,8 +41,8 @@ func TestACMEServerWithDefaults(t *testing.T) {
 	logger := caddy.Log().Named("acmeserver")
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client(),
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -92,13 +92,13 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 	ctx := context.Background()
 	logger := caddy.Log().Named("acmez")
 
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		local_certs
 	}
 	acme.localhost {
@@ -110,8 +110,8 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client(),
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{

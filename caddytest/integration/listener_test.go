@@ -28,15 +28,15 @@ func setupListenerWrapperTest(t *testing.T, handlerFunc http.HandlerFunc) *caddy
 		_ = srv.Close()
 		_ = l.Close()
 	})
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(fmt.Sprintf(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		local_certs
-		servers :9443 {
+		servers :{$TESTING_CADDY_PORT_TWO} {
 			listener_wrappers {
 				http_redirect
 				tls
@@ -47,7 +47,7 @@ func setupListenerWrapperTest(t *testing.T, handlerFunc http.HandlerFunc) *caddy
 		reverse_proxy %s
 	}
   `, l.Addr().String()), "caddyfile")
-	return tester
+	return harness
 }
 
 func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
@@ -56,7 +56,7 @@ func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
 	body := make([]byte, uploadSize)
 	rand.New(rand.NewSource(0)).Read(body)
 
-	tester := setupListenerWrapperTest(t, func(writer http.ResponseWriter, request *http.Request) {
+	harness := setupListenerWrapperTest(t, func(writer http.ResponseWriter, request *http.Request) {
 		buf := new(bytes.Buffer)
 		_, err := buf.ReadFrom(request.Body)
 		if err != nil {
@@ -69,7 +69,7 @@ func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
 
 		writer.WriteHeader(http.StatusNoContent)
 	})
-	resp, err := tester.Client().Post("https://localhost:9443", "application/octet-stream", bytes.NewReader(body))
+	resp, err := harness.Client().Post(fmt.Sprintf("https://localhost:%d", harness.Tester().PortTwo()), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("failed to post: %s", err)
 	}
@@ -80,14 +80,14 @@ func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
 }
 
 func TestLargeHttpRequest(t *testing.T) {
-	tester := setupListenerWrapperTest(t, func(writer http.ResponseWriter, request *http.Request) {
+	harness := setupListenerWrapperTest(t, func(writer http.ResponseWriter, request *http.Request) {
 		t.Fatal("not supposed to handle a request")
 	})
 
 	// We never read the body in any way, set an extra long header instead.
-	req, _ := http.NewRequest("POST", "http://localhost:9443", nil)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", harness.Tester().PortTwo()), nil)
 	req.Header.Set("Long-Header", strings.Repeat("X", 1024*1024))
-	_, err := tester.Client().Do(req)
+	_, err := harness.Client().Do(req)
 	if err == nil {
 		t.Fatal("not supposed to succeed")
 	}

@@ -1,13 +1,14 @@
 package caddytest
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 )
 
 func TestReplaceCertificatePaths(t *testing.T) {
-	rawConfig := `a.caddy.localhost:9443 {
+	rawConfig := `a.caddy.localhost:9443{
 		tls /caddy.localhost.crt /caddy.localhost.key {
 		}
 
@@ -34,8 +35,8 @@ func TestReplaceCertificatePaths(t *testing.T) {
 }
 
 func TestLoadUnorderedJSON(t *testing.T) {
-	tester := StartHarness(t)
-	tester.LoadConfig(`
+	harness := StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"logging": {
 			"logs": {
@@ -68,7 +69,7 @@ func TestLoadUnorderedJSON(t *testing.T) {
 			}
 		},
 		"admin": {
-			"listen": "{$TESTING_ADMIN_API}"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -79,13 +80,13 @@ func TestLoadUnorderedJSON(t *testing.T) {
 				}
 			},
 			"http": {
-				"http_port": 9080,
-				"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+				"https_port": {$TESTING_CADDY_PORT_TWO},
 				"servers": {
 					"s_server": {
 						"listen": [
-							":9443",
-							":9080"
+							":{$TESTING_CADDY_PORT_ONE}",
+							":{$TESTING_CADDY_PORT_TWO}"
 						],
 						"routes": [
 							{
@@ -120,10 +121,10 @@ func TestLoadUnorderedJSON(t *testing.T) {
 		}
 	}
   `, "json")
-	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), nil)
 	if err != nil {
 		t.Fail()
 		return
 	}
-	tester.AssertResponseCode(req, 200)
+	harness.AssertResponseCode(req, 200)
 }

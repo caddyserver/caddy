@@ -20,21 +20,21 @@ import (
 
 // (see https://github.com/caddyserver/caddy/issues/3556 for use case)
 func TestH2ToH2CStream(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
   {
 	"admin": {
-		"listen": "{$TESTING_ADMIN_API}"
+		"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 	},
     "apps": {
       "http": {
-        "http_port": 9080,
-        "https_port": 9443,
-		"grace_period": 1,
+        "http_port": {$TESTING_CADDY_PORT_ONE},
+        "https_port": {$TESTING_CADDY_PORT_TWO},
+				"grace_period": 1,
         "servers": {
           "srv0": {
             "listen": [
-              ":9443"
+              ":{$TESTING_CADDY_PORT_TWO}"
             ],
             "routes": [
               {
@@ -102,7 +102,7 @@ func TestH2ToH2CStream(t *testing.T) {
 
 	expectedBody := "some data to be echoed"
 	// start the server
-	server := testH2ToH2CStreamServeH2C(t)
+	server := testH2ToH2CStreamServeH2C(harness, t)
 	go server.ListenAndServe()
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
@@ -116,7 +116,7 @@ func TestH2ToH2CStream(t *testing.T) {
 		Body:   io.NopCloser(r),
 		URL: &url.URL{
 			Scheme: "https",
-			Host:   "127.0.0.1:9443",
+			Host:   fmt.Sprintf("127.0.0.1:%d", harness.Tester().PortTwo()),
 			Path:   "/tov2ray",
 		},
 		Proto:      "HTTP/2",
@@ -127,7 +127,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	// Disable any compression method from server.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	resp := tester.AssertResponseCode(req, http.StatusOK)
+	resp := harness.AssertResponseCode(req, http.StatusOK)
 	if resp.StatusCode != http.StatusOK {
 		return
 	}
@@ -149,7 +149,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	}
 }
 
-func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
+func testH2ToH2CStreamServeH2C(harness *caddytest.TestHarness, t *testing.T) *http.Server {
 	h2s := &http2.Server{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rstring, err := httputil.DumpRequest(r, false)
@@ -163,7 +163,7 @@ func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
 			return
 		}
 
-		if r.Host != "127.0.0.1:9443" {
+		if r.Host != fmt.Sprintf("127.0.0.1:%d", harness.Tester().PortTwo()) {
 			t.Errorf("r.Host doesn't match, %v!", r.Host)
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -204,21 +204,21 @@ func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
 
 // (see https://github.com/caddyserver/caddy/issues/3606 for use case)
 func TestH2ToH1ChunkedResponse(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 {
 	"admin": {
-		"listen": "{$TESTING_ADMIN_API}"
+		"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 	},
   "apps": {
     "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-	  "grace_period": 1,
+      "http_port": {$TESTING_CADDY_PORT_ONE},
+      "https_port": {$TESTING_CADDY_PORT_TWO},
+	  	"grace_period": 1,
       "servers": {
         "srv0": {
           "listen": [
-            ":9443"
+            ":{$TESTING_CADDY_PORT_TWO}"
           ],
           "routes": [
             {
@@ -305,7 +305,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	}
 
 	// start the server
-	server := testH2ToH1ChunkedResponseServeH1(t)
+	server := testH2ToH1ChunkedResponseServeH1(harness, t)
 	go server.ListenAndServe()
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
@@ -319,7 +319,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 		Body:   io.NopCloser(r),
 		URL: &url.URL{
 			Scheme: "https",
-			Host:   "127.0.0.1:9443",
+			Host:   fmt.Sprintf("127.0.0.1:%d", harness.Tester().PortTwo()),
 			Path:   "/tov2ray",
 		},
 		Proto:      "HTTP/2",
@@ -333,7 +333,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 		fmt.Fprint(w, expectedBody)
 		w.Close()
 	}()
-	resp := tester.AssertResponseCode(req, http.StatusOK)
+	resp := harness.AssertResponseCode(req, http.StatusOK)
 	if resp.StatusCode != http.StatusOK {
 		return
 	}
@@ -351,9 +351,9 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	}
 }
 
-func testH2ToH1ChunkedResponseServeH1(t *testing.T) *http.Server {
+func testH2ToH1ChunkedResponseServeH1(harness *caddytest.TestHarness, t *testing.T) *http.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != "127.0.0.1:9443" {
+		if r.Host != fmt.Sprintf("127.0.0.1:%d", harness.Tester().PortTwo()) {
 			t.Errorf("r.Host doesn't match, %v!", r.Host)
 			w.WriteHeader(http.StatusNotFound)
 			return

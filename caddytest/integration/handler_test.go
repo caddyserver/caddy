@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -9,36 +10,36 @@ import (
 )
 
 func TestBrowse(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period  1ns
 	}
-	http://localhost:9080 {
+	http://localhost:{$TESTING_CADDY_PORT_ONE} {
 		file_server browse
 	}
   `, "caddyfile")
 
-	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), nil)
 	if err != nil {
 		t.Fail()
 		return
 	}
-	tester.AssertResponseCode(req, 200)
+	harness.AssertResponseCode(req, 200)
 }
 
 func TestRespondWithJSON(t *testing.T) {
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period  1ns
 	}
 	localhost {
@@ -46,7 +47,7 @@ func TestRespondWithJSON(t *testing.T) {
 	}
   `, "caddyfile")
 
-	res, _ := tester.AssertPostResponseBody("https://localhost:9443/",
+	res, _ := harness.AssertPostResponseBody(fmt.Sprintf("https://localhost:%d/", harness.Tester().PortTwo()),
 		nil,
 		bytes.NewBufferString(`{
 		"greeting": "Hello, world!"

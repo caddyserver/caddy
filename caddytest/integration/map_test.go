@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -9,16 +10,16 @@ import (
 
 func TestMap(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`{
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period  1ns
 	}
 
-	localhost:9080 {
+	localhost:{$TESTING_CADDY_PORT_ONE} {
 
 		map {http.request.method} {dest-1} {dest-2} {
 			default unknown1    unknown2
@@ -28,50 +29,50 @@ func TestMap(t *testing.T) {
 
 		respond /version 200 {
 			body "hello from localhost {dest-1} {dest-2}"
-		}	
+		}
 	}
 	`, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost GET-called unknown2")
-	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called foobar")
+	harness.AssertGetResponse(fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne()), 200, "hello from localhost GET-called unknown2")
+	harness.AssertPostResponseBody(fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne()), []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called foobar")
 }
 
 func TestMapRespondWithDefault(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`{
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
 		skip_install_trust
-		admin {$TESTING_ADMIN_API}
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		}
-		
-		localhost:9080 {
-	
+
+		localhost:{$TESTING_CADDY_PORT_ONE} {
+
 			map {http.request.method} {dest-name} {
 				default unknown
 				GET     get-called
 			}
-		
+
 			respond /version 200 {
 				body "hello from localhost {dest-name}"
-			}	
+			}
 		}
 	`, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called")
-	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost unknown")
+	harness.AssertGetResponse(fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne()), 200, "hello from localhost get-called")
+	harness.AssertPostResponseBody(fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne()), []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost unknown")
 }
 
 func TestMapAsJSON(t *testing.T) {
 	// arrange
-	tester := caddytest.StartHarness(t)
-	tester.LoadConfig(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "{$TESTING_ADMIN_API}"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -82,12 +83,12 @@ func TestMapAsJSON(t *testing.T) {
 				}
 			},
 			"http": {
-				"http_port": 9080,
-				"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+				"https_port": {$TESTING_CADDY_PORT_TWO},
 				"servers": {
 					"srv0": {
 						"listen": [
-							":9080"
+							":{$TESTING_CADDY_PORT_ONE}"
 						],
 						"routes": [
 							{
@@ -145,7 +146,7 @@ func TestMapAsJSON(t *testing.T) {
 			}
 		}
 	}`, "json")
-
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost get-called")
-	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called")
+	target := fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne())
+	harness.AssertGetResponse(target, 200, "hello from localhost get-called")
+	harness.AssertPostResponseBody(target, []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost post-called")
 }

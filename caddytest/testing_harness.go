@@ -55,6 +55,10 @@ func StartHarness(t *testing.T) *TestHarness {
 	return o
 }
 
+func (tc *TestHarness) Tester() *Tester {
+	return tc.tester
+}
+
 func (tc *TestHarness) Client() *http.Client {
 	return tc.tester.Client
 }
