@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
@@ -79,6 +80,24 @@ func Main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// MainForTesting implements the main function of the caddy command, used internally for testing
+func MainForTesting(args ...string) error {
+	// create a root command for testing which will not pollute the global namespace, and does not
+	// call os.Exit().
+	tmpRootCmp := cobra.Command{
+		Use:          rootCmd.Use,
+		Long:         rootCmd.Long,
+		Example:      rootCmd.Example,
+		SilenceUsage: rootCmd.SilenceUsage,
+		Version:      rootCmd.Version,
+	}
+	tmpRootCmp.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // handlePingbackConn reads from conn and ensures it matches
