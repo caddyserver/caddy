@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -690,6 +691,10 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 		if err != nil {
 			return "", fmt.Errorf("cannot read etag from file %s: %v", etagFilename, err)
 		}
+
+		// Etags should not contain newline characters
+		etag = bytes.ReplaceAll(etag, []byte("\n"), []byte{})
+
 		return string(etag), nil
 	}
 	return "", nil
