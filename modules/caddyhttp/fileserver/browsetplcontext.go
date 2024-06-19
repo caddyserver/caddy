@@ -163,7 +163,7 @@ type browseTemplateContext struct {
 	TotalFileSize int64 `json:"total_file_size"`
 
 	// The total size of all files in the listing, including the
-	// size of the files targetted by symlinks.
+	// size of the files targeted by symlinks.
 	TotalFileSizeWithSymlinks int64 `json:"total_file_size_with_symlinks"`
 
 	// Sort column used
