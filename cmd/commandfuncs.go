@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -257,6 +258,7 @@ func cmdRun(fl Flags) (int, error) {
 
 	// if enabled, reload config file automatically on changes
 	// (this better only be used in dev!)
+	// do not enable this during tests, it will cause leaks
 	if watchFlag {
 		go watchConfigFile(configFile, configAdapterFlag)
 	}
@@ -280,7 +282,11 @@ func cmdRun(fl Flags) (int, error) {
 		}
 	}
 
-	select {}
+	if flag.Lookup("test.v") == nil || !strings.Contains(os.Args[0], ".test") {
+		return caddy.ExitCodeSuccess, nil
+	} else {
+		select {}
+	}
 }
 
 func cmdStop(fl Flags) (int, error) {
