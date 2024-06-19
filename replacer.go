@@ -355,8 +355,14 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 		return nil, true
 	}
 	content := string(body)
-	content = strings.TrimSuffix(content, "\n")
-	return content, true
+	// Remove a single trailing newline, regardless of its type
+	if strings.HasSuffix(content, "\r\n") {
+		return strings.TrimSuffix(content, "\r\n"), true
+	}
+	if strings.HasSuffix(content, "\n") {
+		return strings.TrimSuffix(content, "\n"), true
+	}
+	return strings.TrimSuffix(content, "\r"), true
 }
 
 // globalDefaultReplacementsProvider handles replacements
