@@ -780,7 +780,7 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 				logger.Error("unclean shutdown")
 			}
 			// check if we are in test environment, and dont call exit if we are
-			if flag.Lookup("test.v") == nil || strings.Contains(os.Args[0], ".test") {
+			if flag.Lookup("test.v") == nil || !strings.Contains(os.Args[0], ".test") {
 				os.Exit(exitCode)
 			}
 		}()

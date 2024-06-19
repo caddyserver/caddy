@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,15 @@ func prependCaddyFilePath(rawConfig string) string {
 	r := matchKey.ReplaceAllString(rawConfig, getIntegrationDir()+"$1")
 	r = matchCert.ReplaceAllString(r, getIntegrationDir()+"$1")
 	return r
+}
+
+func getIntegrationDir() string {
+	_, filename, _, ok := runtime.Caller(1)
+	if !ok {
+		panic("unable to determine the current file path")
+	}
+
+	return path.Dir(filename)
 }
 
 var (
@@ -64,7 +75,9 @@ func (tc *TestHarness) init() {
 	tc.tester = tester
 	err = tc.tester.LaunchCaddy()
 	if err != nil {
-		tc.t.Errorf("Failed to launch caddy tester: %s", err)
+		tc.t.Errorf("Failed to launch caddy server: %s", err)
+		tc.t.FailNow()
+		return
 	}
 	// cleanup
 	tc.t.Cleanup(func() {
@@ -87,6 +100,7 @@ func (tc *TestHarness) init() {
 		err = tc.tester.CleanupCaddy()
 		if err != nil {
 			tc.t.Errorf("failed to clean up caddy instance: %s", err)
+			tc.t.FailNow()
 		}
 	})
 }

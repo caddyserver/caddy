@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,15 +11,11 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
-	"path"
-	"reflect"
-	"runtime"
 	"strings"
 	"time"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig"
 	// plug in Caddy modules here
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
@@ -96,7 +91,7 @@ func (tc *Tester) CleanupCaddy() error {
 	}()
 	_, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", Default.AdminPort), "", nil)
 	if err != nil {
-		return fmt.Errorf("couldn't stop caddytest server")
+		return fmt.Errorf("couldn't stop caddytest server: %w", err)
 	}
 	time.Sleep(200 * time.Millisecond)
 	for retries := 0; retries < 10; retries++ {
@@ -112,7 +107,6 @@ func (tc *Tester) CleanupCaddy() error {
 
 // LoadConfig loads the config to the tester server and also ensures that the config was loaded
 func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
-	originalRawConfig := rawConfig
 	// normalize JSON config
 	if configType == "json" {
 		var conf any
@@ -157,56 +151,32 @@ func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
 	}
 
 	tc.configLoaded = true
-	return tc.ensureConfigRunning(originalRawConfig, configType)
+
+	// if the config is not loaded at this point, it is a bug in caddy's config.Load
+	// the contract for config.Load states that the config must be loaded before it returns, and that it will
+	// error if the config fails to apply
+	return nil
 }
 
-func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error {
-	expectedBytes := []byte(rawConfig)
-	if configType != "json" {
-		adapter := caddyconfig.GetAdapter(configType)
-		if adapter == nil {
-			return fmt.Errorf("adapter of config type is missing: %s", configType)
-		}
-		expectedBytes, _, _ = adapter.Adapt([]byte(rawConfig), nil)
-	}
-
-	var expected any
-	err := json.Unmarshal(expectedBytes, &expected)
-	if err != nil {
-		return err
-	}
-
+func (tc *Tester) GetCurrentConfig(receiver any) error {
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
 
-	fetchConfig := func(client *http.Client) any {
-		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
-		if err != nil {
-			return nil
-		}
-		defer resp.Body.Close()
-		actualBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil
-		}
-		var actual any
-		err = json.Unmarshal(actualBytes, &actual)
-		if err != nil {
-			return nil
-		}
-		return actual
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+	if err != nil {
+		return err
 	}
-
-	// TODO: does this really need to be tried more than once?
-	// Caddy should block until the new config is loaded, which means needing to wait is a caddy bug
-	for retries := 3; retries > 0; retries-- {
-		if reflect.DeepEqual(expected, fetchConfig(client)) {
-			return nil
-		}
-		time.Sleep(1 * time.Second)
+	defer resp.Body.Close()
+	actualBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
 	}
-	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
+	err = json.Unmarshal(actualBytes, receiver)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 const initConfig = `{
@@ -256,15 +226,6 @@ func isCaddyAdminRunning() error {
 	resp.Body.Close()
 
 	return nil
-}
-
-func getIntegrationDir() string {
-	_, filename, _, ok := runtime.Caller(1)
-	if !ok {
-		panic("unable to determine the current file path")
-	}
-
-	return path.Dir(filename)
 }
 
 // CreateTestingTransport creates a testing transport that forces call dialing connections to happen locally

@@ -19,12 +19,13 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 	require.NoError(t, err)
 	err = tc.LaunchCaddy()
 	require.NoError(t, err)
-	defer tc.CleanupCaddy()
 
 	err = tc.LoadConfig(rawConfig, configType)
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("expected error \"%s\" but got \"%s\"", expectedError, err.Error())
 	}
+	err = tc.CleanupCaddy()
+	require.NoError(t, err)
 }
 
 // CompareAdapt adapts a config and then compares it against an expected result
