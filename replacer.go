@@ -354,7 +354,9 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 			zap.Error(err))
 		return nil, true
 	}
-	return string(body), true
+	content := string(body)
+	content = strings.TrimSuffix(content, "\n")
+	return content, true
 }
 
 // globalDefaultReplacementsProvider handles replacements
