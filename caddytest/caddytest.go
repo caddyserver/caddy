@@ -122,9 +122,11 @@ func (tc *Tester) CleanupCaddy() error {
 func (tc *Tester) AdminPort() int {
 	return tc.adminPort
 }
+
 func (tc *Tester) PortOne() int {
 	return tc.portOne
 }
+
 func (tc *Tester) PortTwo() int {
 	return tc.portTwo
 }
