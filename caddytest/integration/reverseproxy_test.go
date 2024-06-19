@@ -14,8 +14,8 @@ import (
 )
 
 func TestSRVReverseProxy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"
@@ -87,8 +87,8 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"
@@ -139,8 +139,8 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 }
 
 func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"
@@ -233,8 +233,8 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 }
 
 func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"
@@ -327,8 +327,8 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 }
 
 func TestReverseProxyHealthCheck(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -364,7 +364,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
@@ -395,7 +395,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester.InitServer(fmt.Sprintf(`
+	tester.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -422,7 +422,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
@@ -453,7 +453,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester.InitServer(fmt.Sprintf(`
+	tester.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
 		admin localhost:2999

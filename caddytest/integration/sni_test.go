@@ -8,8 +8,8 @@ import (
 
 func TestDefaultSNI(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		"admin": {
 			"listen": "localhost:2999"
 		},
@@ -107,8 +107,8 @@ func TestDefaultSNI(t *testing.T) {
 
 func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(` 
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(` 
 	{
 		"admin": {
 			"listen": "localhost:2999"
@@ -211,8 +211,8 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 
 func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(` 
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(` 
 	{
 		"admin": {
 			"listen": "localhost:2999"

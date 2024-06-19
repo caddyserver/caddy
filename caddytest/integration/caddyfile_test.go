@@ -10,19 +10,19 @@ import (
 
 func TestRespond(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(` 
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
   {
     admin localhost:2999
     http_port     9080
     https_port    9443
     grace_period  1ns
   }
-  
+
   localhost:9080 {
     respond /version 200 {
       body "hello from localhost"
-    }	
+    }
     }
   `, "caddyfile")
 
@@ -32,22 +32,22 @@ func TestRespond(t *testing.T) {
 
 func TestRedirect(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
   {
     admin localhost:2999
     http_port     9080
     https_port    9443
     grace_period  1ns
   }
-  
+
   localhost:9080 {
-    
+
     redir / http://localhost:9080/hello 301
-    
+
     respond /hello 200 {
       body "hello from localhost"
-    }	
+    }
     }
   `, "caddyfile")
 
@@ -64,8 +64,8 @@ func TestDuplicateHosts(t *testing.T) {
 		`
     localhost:9080 {
     }
-  
-    localhost:9080 { 
+
+    localhost:9080 {
     }
     `,
 		"caddyfile",
@@ -80,9 +80,9 @@ func TestReadCookie(t *testing.T) {
 	}
 
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.Client.Jar.SetCookies(localhost, []*http.Cookie{&cookie})
-	tester.InitServer(` 
+	tester := caddytest.StartHarness(t)
+	tester.Client().Jar.SetCookies(localhost, []*http.Cookie{&cookie})
+	tester.LoadConfig(`
   {
     skip_install_trust
     admin localhost:2999
@@ -90,7 +90,7 @@ func TestReadCookie(t *testing.T) {
     https_port    9443
     grace_period  1ns
   }
-  
+
   localhost:9080 {
     templates {
       root testdata
@@ -106,8 +106,8 @@ func TestReadCookie(t *testing.T) {
 }
 
 func TestReplIndex(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
   {
     skip_install_trust
     admin localhost:2999
@@ -481,9 +481,9 @@ func TestValidPrefix(t *testing.T) {
 }
 
 func TestUriReplace(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -491,16 +491,16 @@ func TestUriReplace(t *testing.T) {
 	:9080
 	uri replace "\}" %7D
 	uri replace "\{" %7B
-	
+
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
 }
 
 func TestUriOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -511,7 +511,7 @@ func TestUriOps(t *testing.T) {
 	uri query taz test
 	uri query key=value example
 	uri query changethis>changed
-	
+
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
@@ -523,9 +523,9 @@ func TestUriOps(t *testing.T) {
 // refer to 127.0.0.1 or ::1.
 // TODO: Test each http version separately (especially http/3)
 func TestHttpRequestLocalPortPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -537,9 +537,9 @@ func TestHttpRequestLocalPortPlaceholder(t *testing.T) {
 }
 
 func TestSetThenAddQueryParams(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -547,16 +547,16 @@ func TestSetThenAddQueryParams(t *testing.T) {
 	:9080
 	uri query foo bar
 	uri query +foo baz
-	
+
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint", 200, "foo=bar&foo=baz")
 }
 
 func TestSetThenDeleteParams(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -564,16 +564,16 @@ func TestSetThenDeleteParams(t *testing.T) {
 	:9080
 	uri query bar foo{query.foo}
 	uri query -foo
-	
+
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=foobar")
 }
 
 func TestRenameAndOtherOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -582,36 +582,36 @@ func TestRenameAndOtherOps(t *testing.T) {
 	uri query foo>bar
 	uri query bar taz
 	uri query +bar baz
-	
+
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=taz&bar=baz")
 }
 
 func TestReplaceOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query foo bar baz	
+	uri query foo bar baz
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
 }
 
 func TestReplaceWithReplacementPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query foo bar {query.placeholder}	
+	uri query foo bar {query.placeholder}
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
@@ -619,66 +619,66 @@ func TestReplaceWithReplacementPlaceholder(t *testing.T) {
 }
 
 func TestReplaceWithKeyPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query {query.placeholder} bar baz	
+	uri query {query.placeholder} bar baz
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=foo&foo=bar", 200, "foo=baz&placeholder=foo")
 }
 
 func TestPartialReplacement(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query foo ar az	
+	uri query foo ar az
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
 }
 
 func TestNonExistingSearch(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query foo var baz	
+	uri query foo var baz
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=bar")
 }
 
 func TestReplaceAllOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
 	}
 	:9080
-	uri query * bar baz	
+	uri query * bar baz
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar&baz=bar", 200, "baz=baz&foo=baz")
 }
 
 func TestUriOpsBlock(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	tester := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		http_port     9080
@@ -688,15 +688,15 @@ func TestUriOpsBlock(t *testing.T) {
 		+foo bar
 		-baz
 		taz test
-	} 
+	}
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&taz=test")
 }
 
 func TestHandleErrorSimpleCodes(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		admin localhost:2999
 		http_port     9080
 	}
@@ -704,7 +704,7 @@ func TestHandleErrorSimpleCodes(t *testing.T) {
 		root * /srv
 		error /private* "Unauthorized" 410
 		error /hidden* "Not found" 404
-	
+
 		handle_errors 404 410 {
 			respond "404 or 410 error"
 		}
@@ -715,8 +715,8 @@ func TestHandleErrorSimpleCodes(t *testing.T) {
 }
 
 func TestHandleErrorRange(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		admin localhost:2999
 		http_port     9080
 	}
@@ -735,8 +735,8 @@ func TestHandleErrorRange(t *testing.T) {
 }
 
 func TestHandleErrorSort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		admin localhost:2999
 		http_port     9080
 	}
@@ -759,8 +759,8 @@ func TestHandleErrorSort(t *testing.T) {
 }
 
 func TestHandleErrorRangeAndCodes(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		admin localhost:2999
 		http_port     9080
 	}

@@ -7,8 +7,8 @@ import (
 )
 
 func TestLeafCertLoaders(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"

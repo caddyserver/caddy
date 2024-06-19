@@ -15,8 +15,8 @@ import (
 )
 
 func TestACMEServerDirectory(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
@@ -41,8 +41,8 @@ func TestACMEServerDirectory(t *testing.T) {
 }
 
 func TestACMEServerAllowPolicy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
@@ -71,7 +71,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			HTTPClient: tester.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -127,8 +127,8 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 }
 
 func TestACMEServerDenyPolicy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
@@ -156,7 +156,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			HTTPClient: tester.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{

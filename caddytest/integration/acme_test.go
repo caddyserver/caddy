@@ -19,27 +19,13 @@ import (
 	"go.uber.org/zap"
 )
 
-func curry2[A, B any](fn func(A, B)) func(a A) func(b B) {
-	return func(a A) func(B) {
-		return func(b B) {
-			fn(a, b)
-		}
-	}
-}
-
 const acmeChallengePort = 9081
 
-func TestAcmeServer(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.LaunchCaddy()
-	t.Run("WithDefaults", curry2(testACMEServerWithDefaults)(tester))
-	t.Run("WithMismatchedChallenges", curry2(testACMEServerWithDefaults)(tester))
-}
-
 // Test the basic functionality of Caddy's ACME server
-func testACMEServerWithDefaults(tester *caddytest.Tester, t *testing.T) {
+func TestACMEServerWithDefaults(t *testing.T) {
 	ctx := context.Background()
-	tester.MustLoadConfig(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -56,7 +42,7 @@ func testACMEServerWithDefaults(tester *caddytest.Tester, t *testing.T) {
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			HTTPClient: tester.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -102,10 +88,20 @@ func testACMEServerWithDefaults(tester *caddytest.Tester, t *testing.T) {
 	}
 }
 
-func testACMEServerWithMismatchedChallenges(tester *caddytest.Tester, t *testing.T) {
+func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 	ctx := context.Background()
 	logger := caddy.Log().Named("acmez")
-	tester.MustLoadConfig(`
+
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		local_certs
+	}
+	acme.localhost {
 		acme_server {
 			challenges tls-alpn-01
 		}
@@ -115,7 +111,7 @@ func testACMEServerWithMismatchedChallenges(tester *caddytest.Tester, t *testing
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			HTTPClient: tester.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{

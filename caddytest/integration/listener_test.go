@@ -12,7 +12,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-func setupListenerWrapperTest(t *testing.T, handlerFunc http.HandlerFunc) *caddytest.Tester {
+func setupListenerWrapperTest(t *testing.T, handlerFunc http.HandlerFunc) *caddytest.TestHarness {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %s", err)
@@ -28,8 +28,8 @@ func setupListenerWrapperTest(t *testing.T, handlerFunc http.HandlerFunc) *caddy
 		_ = srv.Close()
 		_ = l.Close()
 	})
-	tester := caddytest.NewTester(t)
-	tester.InitServer(fmt.Sprintf(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -69,7 +69,7 @@ func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
 
 		writer.WriteHeader(http.StatusNoContent)
 	})
-	resp, err := tester.Client.Post("https://localhost:9443", "application/octet-stream", bytes.NewReader(body))
+	resp, err := tester.Client().Post("https://localhost:9443", "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("failed to post: %s", err)
 	}
@@ -87,7 +87,7 @@ func TestLargeHttpRequest(t *testing.T) {
 	// We never read the body in any way, set an extra long header instead.
 	req, _ := http.NewRequest("POST", "http://localhost:9443", nil)
 	req.Header.Set("Long-Header", strings.Repeat("X", 1024*1024))
-	_, err := tester.Client.Do(req)
+	_, err := tester.Client().Do(req)
 	if err == nil {
 		t.Fatal("not supposed to succeed")
 	}

@@ -8,8 +8,8 @@ import (
 )
 
 func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		admin localhost:2999
 		skip_install_trust
@@ -24,8 +24,8 @@ func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -40,8 +40,8 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -56,8 +56,8 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T
 }
 
 func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 {
   "admin": {
 	"listen": "localhost:2999"
@@ -98,8 +98,8 @@ func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
 }
 
 func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999
@@ -123,8 +123,8 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
 }
 
 func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSite(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		skip_install_trust
 		admin localhost:2999

@@ -7,8 +7,8 @@ import (
 )
 
 func TestIntercept(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 			skip_install_trust
 			admin localhost:2999
 			http_port     9080

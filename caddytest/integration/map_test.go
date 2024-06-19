@@ -9,8 +9,8 @@ import (
 
 func TestMap(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		skip_install_trust
 		admin localhost:2999
 		http_port     9080
@@ -39,8 +39,8 @@ func TestMap(t *testing.T) {
 
 func TestMapRespondWithDefault(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`{
 		skip_install_trust
 		admin localhost:2999
 		http_port     9080
@@ -67,8 +67,8 @@ func TestMapRespondWithDefault(t *testing.T) {
 
 func TestMapAsJSON(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"admin": {
 			"listen": "localhost:2999"

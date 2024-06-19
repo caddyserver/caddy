@@ -20,8 +20,8 @@ import (
 
 // (see https://github.com/caddyserver/caddy/issues/3556 for use case)
 func TestH2ToH2CStream(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
   {
 	"admin": {
 		"listen": "localhost:2999"
@@ -204,8 +204,8 @@ func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
 
 // (see https://github.com/caddyserver/caddy/issues/3606 for use case)
 func TestH2ToH1ChunkedResponse(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	tester := caddytest.StartHarness(t)
+	tester.LoadConfig(`
 {
 	"admin": {
 		"listen": "localhost:2999"

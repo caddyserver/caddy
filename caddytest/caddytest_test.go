@@ -12,10 +12,10 @@ func TestReplaceCertificatePaths(t *testing.T) {
 		}
 
 		redir / https://b.caddy.localhost:9443/version 301
-    
+
 		respond /version 200 {
 		  body "hello from a.caddy.localhost"
-		}	
+		}
 	  }`
 
 	r := prependCaddyFilePath(rawConfig)
@@ -34,8 +34,8 @@ func TestReplaceCertificatePaths(t *testing.T) {
 }
 
 func TestLoadUnorderedJSON(t *testing.T) {
-	tester := NewTester(t)
-	tester.InitServer(`
+	tester := StartHarness(t)
+	tester.LoadConfig(`
 	{
 		"logging": {
 			"logs": {
