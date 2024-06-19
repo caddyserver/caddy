@@ -94,7 +94,7 @@ func MainForTesting(args ...string) error {
 		Version:      rootCmd.Version,
 	}
 	tmpRootCmp.SetArgs(args)
-	if err := rootCmd.Execute(); err != nil {
+	if err := tmpRootCmp.Execute(); err != nil {
 		return err
 	}
 	return nil
