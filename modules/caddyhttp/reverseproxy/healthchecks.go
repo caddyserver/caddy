@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -252,75 +253,91 @@ func (h *Handler) activeHealthChecker() {
 	}()
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
 	h.doActiveHealthCheckForAllHosts()
-	for {
-		select {
-		case <-ticker.C:
-			h.doActiveHealthCheckForAllHosts()
-		case <-h.ctx.Done():
-			ticker.Stop()
-			return
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				h.HealthChecks.Active.logger.Error("active health checker panicked",
+					zap.Any("error", err),
+					zap.ByteString("stack", debug.Stack()))
+			}
+		}()
+		for {
+			select {
+			case <-ticker.C:
+				h.doActiveHealthCheckForAllHosts()
+			case <-h.ctx.Done():
+				ticker.Stop()
+				return
+			}
 		}
-	}
+	}()
 }
 
 // doActiveHealthCheckForAllHosts immediately performs a
 // health checks for all upstream hosts configured by h.
 func (h *Handler) doActiveHealthCheckForAllHosts() {
-	for _, upstream := range h.Upstreams {
-		go func(upstream *Upstream) {
-			defer func() {
-				if err := recover(); err != nil {
-					h.HealthChecks.Active.logger.Error("active health check panicked",
-						zap.Any("error", err),
-						zap.ByteString("stack", debug.Stack()))
-				}
-			}()
+	egg := errgroup.Group{}
+	for _, u := range h.Upstreams {
+		upstream := u
+		egg.Go(func() error {
+			func(upstream *Upstream) {
+				defer func() {
+					if err := recover(); err != nil {
+						h.HealthChecks.Active.logger.Error("active health check panicked",
+							zap.Any("error", err),
+							zap.ByteString("stack", debug.Stack()))
+					}
+				}()
 
-			networkAddr, err := caddy.NewReplacer().ReplaceOrErr(upstream.Dial, true, true)
-			if err != nil {
-				h.HealthChecks.Active.logger.Error("invalid use of placeholders in dial address for active health checks",
-					zap.String("address", networkAddr),
-					zap.Error(err),
-				)
-				return
-			}
-			addr, err := caddy.ParseNetworkAddress(networkAddr)
-			if err != nil {
-				h.HealthChecks.Active.logger.Error("bad network address",
-					zap.String("address", networkAddr),
-					zap.Error(err),
-				)
-				return
-			}
-			if hcp := uint(upstream.activeHealthCheckPort); hcp != 0 {
-				if addr.IsUnixNetwork() {
-					addr.Network = "tcp" // I guess we just assume TCP since we are using a port??
+				networkAddr, err := caddy.NewReplacer().ReplaceOrErr(upstream.Dial, true, true)
+				if err != nil {
+					h.HealthChecks.Active.logger.Error("invalid use of placeholders in dial address for active health checks",
+						zap.String("address", networkAddr),
+						zap.Error(err),
+					)
+					return
 				}
-				addr.StartPort, addr.EndPort = hcp, hcp
-			}
-			if addr.PortRangeSize() != 1 {
-				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
-					zap.String("address", networkAddr),
-				)
+				addr, err := caddy.ParseNetworkAddress(networkAddr)
+				if err != nil {
+					h.HealthChecks.Active.logger.Error("bad network address",
+						zap.String("address", networkAddr),
+						zap.Error(err),
+					)
+					return
+				}
+				if hcp := uint(upstream.activeHealthCheckPort); hcp != 0 {
+					if addr.IsUnixNetwork() {
+						addr.Network = "tcp" // I guess we just assume TCP since we are using a port??
+					}
+					addr.StartPort, addr.EndPort = hcp, hcp
+				}
+				if addr.PortRangeSize() != 1 {
+					h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
+						zap.String("address", networkAddr),
+					)
+					return
+				}
+				hostAddr := addr.JoinHostPort(0)
+				dialAddr := hostAddr
+				if addr.IsUnixNetwork() {
+					// this will be used as the Host portion of a http.Request URL, and
+					// paths to socket files would produce an error when creating URL,
+					// so use a fake Host value instead; unix sockets are usually local
+					hostAddr = "localhost"
+				}
+				err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream)
+				if err != nil {
+					h.HealthChecks.Active.logger.Error("active health check failed",
+						zap.String("address", hostAddr),
+						zap.Error(err),
+					)
+				}
 				return
-			}
-			hostAddr := addr.JoinHostPort(0)
-			dialAddr := hostAddr
-			if addr.IsUnixNetwork() {
-				// this will be used as the Host portion of a http.Request URL, and
-				// paths to socket files would produce an error when creating URL,
-				// so use a fake Host value instead; unix sockets are usually local
-				hostAddr = "localhost"
-			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream)
-			if err != nil {
-				h.HealthChecks.Active.logger.Error("active health check failed",
-					zap.String("address", hostAddr),
-					zap.Error(err),
-				)
-			}
-		}(upstream)
+			}(upstream)
+			return nil
+		})
 	}
+	egg.Wait()
 }
 
 // doActiveHealthCheck performs a health check to upstream which
