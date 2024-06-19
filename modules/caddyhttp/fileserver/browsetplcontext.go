@@ -81,8 +81,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		size := info.Size()
 
-		// increase the total by the symlink's size, not the target's size.
 		if !isDir {
+			// increase the total by the symlink's size, not the target's size,
+			// by incrementing before we follow the symlink
 			tplCtx.TotalFileSize += size
 		}
 
@@ -106,6 +107,11 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, just use the size of the symlink itself, which
 			// was already set above.
+		}
+
+		if !isDir {
+			// increase the total including the symlink target's size
+			tplCtx.TotalFileSizeWithSymlinks += size
 		}
 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
@@ -152,8 +158,13 @@ type browseTemplateContext struct {
 	// The number of files (items that aren't directories) in the listing.
 	NumFiles int `json:"num_files"`
 
-	// The total size of all files in the listing.
+	// The total size of all files in the listing. Only includes the
+	// size of the files themselves, not the size of the symlinks.
 	TotalFileSize int64 `json:"total_file_size"`
+
+	// The total size of all files in the listing, including the
+	// size of the files targetted by symlinks.
+	TotalFileSizeWithSymlinks int64 `json:"total_file_size_with_symlinks"`
 
 	// Sort column used
 	Sort string `json:"sort,omitempty"`
@@ -288,6 +299,13 @@ func (fi fileInfo) HumanSize() string {
 // (i.e. power of 2 or base 1024).
 func (btc browseTemplateContext) HumanTotalFileSize() string {
 	return humanize.IBytes(uint64(btc.TotalFileSize))
+}
+
+// HumanTotalFileSizeWithSymlinks returns the total size of
+// all files in the listing (including symlinks) as a human-readable
+// string in IEC format (i.e. power of 2 or base 1024).
+func (btc browseTemplateContext) HumanTotalFileSizeWithSymlinks() string {
+	return humanize.IBytes(uint64(btc.TotalFileSizeWithSymlinks))
 }
 
 // HumanModTime returns the modified time of the file
