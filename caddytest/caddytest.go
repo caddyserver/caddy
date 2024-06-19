@@ -93,7 +93,6 @@ func (tc *Tester) CleanupCaddy() error {
 	if err != nil {
 		return fmt.Errorf("couldn't stop caddytest server: %w", err)
 	}
-	time.Sleep(200 * time.Millisecond)
 	for retries := 0; retries < 10; retries++ {
 		if isCaddyAdminRunning() != nil {
 			return nil
@@ -206,8 +205,8 @@ func (tc *Tester) startServer() error {
 		caddycmd.Main()
 	}()
 	// wait for caddy admin api to start. it should happen quickly.
-	for retries := 3; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
-		time.Sleep(1 * time.Second)
+	for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// one more time to return the error
