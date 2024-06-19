@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
@@ -72,7 +71,7 @@ func Main() {
 	if err != nil {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
-
+	rootCmd := defaultFactory.Build()
 	if err := rootCmd.Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
@@ -86,15 +85,9 @@ func Main() {
 func MainForTesting(args ...string) error {
 	// create a root command for testing which will not pollute the global namespace, and does not
 	// call os.Exit().
-	tmpRootCmp := cobra.Command{
-		Use:          rootCmd.Use,
-		Long:         rootCmd.Long,
-		Example:      rootCmd.Example,
-		SilenceUsage: rootCmd.SilenceUsage,
-		Version:      rootCmd.Version,
-	}
-	tmpRootCmp.SetArgs(args)
-	if err := tmpRootCmp.Execute(); err != nil {
+	rootCmd := defaultFactory.Build()
+	rootCmd.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
 		return err
 	}
 	return nil

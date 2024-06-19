@@ -459,7 +459,8 @@ argument of --directory. If the directory does not exist, it will be created.
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return caddy.ExitCodeFailedQuit, err
 				}
-				if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+				ccmd := defaultFactory.Build()
+				if err := doc.GenManTree(ccmd, &doc.GenManHeader{
 					Title:   "Caddy",
 					Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
 				}, dir); err != nil {
@@ -471,10 +472,11 @@ argument of --directory. If the directory does not exist, it will be created.
 	})
 
 	// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "completion [bash|zsh|fish|powershell]",
-		Short: "Generate completion script",
-		Long: fmt.Sprintf(`To load completions:
+	defaultFactory.Use(func(ccmd *cobra.Command) {
+		ccmd.AddCommand(&cobra.Command{
+			Use:   "completion [bash|zsh|fish|powershell]",
+			Short: "Generate completion script",
+			Long: fmt.Sprintf(`To load completions:
 
 	Bash:
 
@@ -512,24 +514,25 @@ argument of --directory. If the directory does not exist, it will be created.
 	  # To load completions for every new session, run:
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
-	`, rootCmd.Root().Name()),
-		DisableFlagsInUseLine: true,
-		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			switch args[0] {
-			case "bash":
-				return cmd.Root().GenBashCompletion(os.Stdout)
-			case "zsh":
-				return cmd.Root().GenZshCompletion(os.Stdout)
-			case "fish":
-				return cmd.Root().GenFishCompletion(os.Stdout, true)
-			case "powershell":
-				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-			default:
-				return fmt.Errorf("unrecognized shell: %s", args[0])
-			}
-		},
+	`, defaultFactory.constructor().Name()),
+			DisableFlagsInUseLine: true,
+			ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+			Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				switch args[0] {
+				case "bash":
+					return cmd.Root().GenBashCompletion(os.Stdout)
+				case "zsh":
+					return cmd.Root().GenZshCompletion(os.Stdout)
+				case "fish":
+					return cmd.Root().GenFishCompletion(os.Stdout, true)
+				case "powershell":
+					return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+				default:
+					return fmt.Errorf("unrecognized shell: %s", args[0])
+				}
+			},
+		})
 	})
 }
 
@@ -563,7 +566,9 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	rootCmd.AddCommand(caddyCmdToCobra(cmd))
+	defaultFactory.Use(func(ccmd *cobra.Command) {
+		ccmd.AddCommand(caddyCmdToCobra(cmd))
+	})
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)
