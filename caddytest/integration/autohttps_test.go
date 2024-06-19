@@ -11,7 +11,7 @@ func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		skip_install_trust
 		http_port     9080
 		https_port    9443
@@ -28,7 +28,7 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 	}
@@ -44,7 +44,7 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 	}
@@ -60,7 +60,7 @@ func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
 	tester.LoadConfig(`
 {
   "admin": {
-	"listen": "localhost:2999"
+	"listen": "{$TESTING_ADMIN_API}"
   },
   "apps": {
     "http": {
@@ -102,7 +102,7 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		local_certs
@@ -127,7 +127,7 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSit
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		local_certs

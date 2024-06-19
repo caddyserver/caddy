@@ -83,7 +83,7 @@ func (tc *TestHarness) init() {
 	tc.t.Cleanup(func() {
 		func() {
 			if tc.t.Failed() {
-				res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+				res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", tc.tester.adminPort))
 				if err != nil {
 					tc.t.Log("unable to read the current config")
 					return

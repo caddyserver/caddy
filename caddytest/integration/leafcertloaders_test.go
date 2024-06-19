@@ -11,7 +11,7 @@ func TestLeafCertLoaders(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"http": {

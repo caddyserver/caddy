@@ -24,7 +24,7 @@ func TestH2ToH2CStream(t *testing.T) {
 	tester.LoadConfig(`
   {
 	"admin": {
-		"listen": "localhost:2999"
+		"listen": "{$TESTING_ADMIN_API}"
 	},
     "apps": {
       "http": {
@@ -208,7 +208,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 	tester.LoadConfig(`
 {
 	"admin": {
-		"listen": "localhost:2999"
+		"listen": "{$TESTING_ADMIN_API}"
 	},
   "apps": {
     "http": {

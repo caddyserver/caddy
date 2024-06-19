@@ -20,7 +20,7 @@ func TestACMEServerDirectory(t *testing.T) {
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		pki {
@@ -46,7 +46,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		pki {
@@ -132,7 +132,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		pki {

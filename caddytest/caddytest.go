@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,8 +23,6 @@ import (
 
 // Defaults store any configuration required to make the tests run
 type Defaults struct {
-	// Port we expect caddy to listening on
-	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
 	Certificates []string
 	// TestRequestTimeout is the time to wait for a http request to
@@ -34,7 +33,6 @@ type Defaults struct {
 
 // Default testing values
 var Default = Defaults{
-	AdminPort:          2999, // different from what a real server also running on a developer's machine might be
 	Certificates:       []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
 	TestRequestTimeout: 5 * time.Second,
 	LoadRequestTimeout: 5 * time.Second,
@@ -42,9 +40,12 @@ var Default = Defaults{
 
 // Tester represents an instance of a test client.
 type Tester struct {
-	Client         *http.Client
+	Client *http.Client
+
+	adminPort      int
 	configLoaded   bool
 	configFileName string
+	envFileName    string
 }
 
 // NewTester will create a new testing client with an attached cookie jar
@@ -86,26 +87,37 @@ func (tc *Tester) LaunchCaddy() error {
 func (tc *Tester) CleanupCaddy() error {
 	// now shutdown the server, since the test is done.
 	defer func() {
-		// try to remove the tmp config file we created
-		os.Remove(tc.configFileName)
+		// try to remove  pthe tmp config file we created
+		if tc.configFileName != "" {
+			os.Remove(tc.configFileName)
+		}
+		if tc.envFileName != "" {
+			os.Remove(tc.envFileName)
+		}
 	}()
-	_, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", Default.AdminPort), "", nil)
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", tc.adminPort), "", nil)
 	if err != nil {
 		return fmt.Errorf("couldn't stop caddytest server: %w", err)
 	}
+	resp.Body.Close()
 	for retries := 0; retries < 10; retries++ {
-		if isCaddyAdminRunning() != nil {
+		if tc.isCaddyAdminRunning() != nil {
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	return fmt.Errorf("timed out waiting for caddytest server to stop")
-
 }
 
 // LoadConfig loads the config to the tester server and also ensures that the config was loaded
+// it should not be run
 func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
+	if tc.adminPort == 0 {
+		return fmt.Errorf("load config called where startServer didnt succeed")
+	}
+	// replace special testing placeholders so we can have our admin api be on a random port
+	rawConfig = strings.ReplaceAll(rawConfig, "{$TESTING_ADMIN_API}", fmt.Sprintf("localhost:%d", tc.adminPort))
 	// normalize JSON config
 	if configType == "json" {
 		var conf any
@@ -122,7 +134,7 @@ func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
 		Timeout: Default.LoadRequestTimeout,
 	}
 	start := time.Now()
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", tc.adminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request. %w", err)
 	}
@@ -162,7 +174,7 @@ func (tc *Tester) GetCurrentConfig(receiver any) error {
 		Timeout: Default.LoadRequestTimeout,
 	}
 
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.adminPort))
 	if err != nil {
 		return err
 	}
@@ -178,48 +190,73 @@ func (tc *Tester) GetCurrentConfig(receiver any) error {
 	return nil
 }
 
-const initConfig = `{
-	admin localhost:2999
+func getFreePort() (int, error) {
+	lr, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+	port := strings.Split(lr.Addr().String(), ":")
+	if len(port) < 2 {
+		return 0, fmt.Errorf("no port available")
+	}
+	i, err := strconv.Atoi(port[1])
+	if err != nil {
+		return 0, err
+	}
+	err = lr.Close()
+	if err != nil {
+		return 0, fmt.Errorf("failed to close listener: %w", err)
+	}
+	return i, nil
 }
-`
 
 // launches caddy, and then ensures the Caddy sub-process is running.
 func (tc *Tester) startServer() error {
-	if isCaddyAdminRunning() == nil {
+	if tc.isCaddyAdminRunning() == nil {
 		return fmt.Errorf("caddy test admin port still in use")
 	}
-	// setup the init config file, and set the cleanup afterwards
-	f, err := os.CreateTemp("", "")
+	a, err := getFreePort()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not find a open port to listen on: %w", err)
 	}
-	tc.configFileName = f.Name()
+	tc.adminPort = a
+	// setup the init config file, and set the cleanup afterwards
+	{
+		f, err := os.CreateTemp("", "")
+		if err != nil {
+			return err
+		}
+		tc.configFileName = f.Name()
 
-	if _, err := f.WriteString(initConfig); err != nil {
-		return err
+		initConfig := fmt.Sprintf(`{
+	admin localhost:%d
+}`, a)
+		if _, err := f.WriteString(initConfig); err != nil {
+			return err
+		}
 	}
 
 	// start inprocess caddy server
 	go func() {
-		caddycmd.MainForTesting("run", "--config", tc.configFileName, "--adapter", "caddyfile")
+		_ = caddycmd.MainForTesting("run", "--config", tc.configFileName, "--adapter", "caddyfile")
 	}()
 	// wait for caddy admin api to start. it should happen quickly.
-	for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+	for retries := 10; retries > 0 && tc.isCaddyAdminRunning() != nil; retries-- {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	// one more time to return the error
-	return isCaddyAdminRunning()
+	return tc.isCaddyAdminRunning()
 }
 
-func isCaddyAdminRunning() error {
+func (tc *Tester) isCaddyAdminRunning() error {
 	// assert that caddy is running
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.adminPort))
 	if err != nil {
-		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", Default.AdminPort)
+		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", tc.adminPort)
 	}
 	resp.Body.Close()
 

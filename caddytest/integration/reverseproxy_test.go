@@ -18,7 +18,7 @@ func TestSRVReverseProxy(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"pki": {
@@ -91,7 +91,7 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"pki": {
@@ -143,7 +143,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"pki": {
@@ -237,7 +237,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"pki": {
@@ -331,7 +331,7 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		grace_period 1ns
@@ -398,7 +398,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	tester.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		grace_period 1ns
@@ -456,7 +456,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	tester.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		grace_period 1ns

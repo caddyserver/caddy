@@ -13,7 +13,7 @@ func TestBrowse(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		grace_period  1ns
@@ -36,7 +36,7 @@ func TestRespondWithJSON(t *testing.T) {
 	tester.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 		https_port    9443
 		grace_period  1ns

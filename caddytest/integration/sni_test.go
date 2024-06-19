@@ -11,7 +11,7 @@ func TestDefaultSNI(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"http": {
@@ -111,7 +111,7 @@ func TestDefaultSNIWithNamedHostAndExplicitIP(t *testing.T) {
 	tester.LoadConfig(` 
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"http": {
@@ -215,7 +215,7 @@ func TestDefaultSNIWithPortMappingOnly(t *testing.T) {
 	tester.LoadConfig(` 
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"http": {

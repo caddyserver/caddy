@@ -9,8 +9,9 @@ import (
 	"testing"
 
 	"github.com/aryann/difflib"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/stretchr/testify/require"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 )
 
 // AssertLoadError will load a config and expect an error
@@ -24,7 +25,7 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("expected error \"%s\" but got \"%s\"", expectedError, err.Error())
 	}
-	tc.CleanupCaddy()
+	_ = tc.CleanupCaddy()
 }
 
 // CompareAdapt adapts a config and then compares it against an expected result

@@ -13,7 +13,7 @@ func TestRespond(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
   {
-    admin localhost:2999
+    admin {$TESTING_ADMIN_API}
     http_port     9080
     https_port    9443
     grace_period  1ns
@@ -35,7 +35,7 @@ func TestRedirect(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
   {
-    admin localhost:2999
+    admin {$TESTING_ADMIN_API}
     http_port     9080
     https_port    9443
     grace_period  1ns
@@ -85,7 +85,7 @@ func TestReadCookie(t *testing.T) {
 	tester.LoadConfig(`
   {
     skip_install_trust
-    admin localhost:2999
+    admin {$TESTING_ADMIN_API}
     http_port     9080
     https_port    9443
     grace_period  1ns
@@ -110,7 +110,7 @@ func TestReplIndex(t *testing.T) {
 	tester.LoadConfig(`
   {
     skip_install_trust
-    admin localhost:2999
+    admin {$TESTING_ADMIN_API}
     http_port     9080
     https_port    9443
     grace_period  1ns
@@ -485,7 +485,7 @@ func TestUriReplace(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -502,7 +502,7 @@ func TestUriOps(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -527,7 +527,7 @@ func TestHttpRequestLocalPortPlaceholder(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -541,7 +541,7 @@ func TestSetThenAddQueryParams(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -558,7 +558,7 @@ func TestSetThenDeleteParams(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -575,7 +575,7 @@ func TestRenameAndOtherOps(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -593,7 +593,7 @@ func TestReplaceOps(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -607,7 +607,7 @@ func TestReplaceWithReplacementPlaceholder(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -615,14 +615,13 @@ func TestReplaceWithReplacementPlaceholder(t *testing.T) {
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
-
 }
 
 func TestReplaceWithKeyPlaceholder(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -636,7 +635,7 @@ func TestPartialReplacement(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -650,7 +649,7 @@ func TestNonExistingSearch(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -665,7 +664,7 @@ func TestReplaceAllOps(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -680,7 +679,7 @@ func TestUriOpsBlock(t *testing.T) {
 
 	tester.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	:9080
@@ -697,7 +696,7 @@ func TestUriOpsBlock(t *testing.T) {
 func TestHandleErrorSimpleCodes(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	localhost:9080 {
@@ -717,7 +716,7 @@ func TestHandleErrorSimpleCodes(t *testing.T) {
 func TestHandleErrorRange(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	localhost:9080 {
@@ -737,7 +736,7 @@ func TestHandleErrorRange(t *testing.T) {
 func TestHandleErrorSort(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	localhost:9080 {
@@ -761,7 +760,7 @@ func TestHandleErrorSort(t *testing.T) {
 func TestHandleErrorRangeAndCodes(t *testing.T) {
 	tester := caddytest.StartHarness(t)
 	tester.LoadConfig(`{
-		admin localhost:2999
+		admin {$TESTING_ADMIN_API}
 		http_port     9080
 	}
 	localhost:9080 {

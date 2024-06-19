@@ -68,7 +68,7 @@ func TestLoadUnorderedJSON(t *testing.T) {
 			}
 		},
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_ADMIN_API}"
 		},
 		"apps": {
 			"pki": {
