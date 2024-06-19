@@ -201,7 +201,7 @@ func (tc *Tester) startServer() error {
 
 	// start inprocess caddy server
 	go func() {
-		caddycmd.MainForTesting("run", "--config", tc.configFileName, "--adapter", "caddyfile")
+		caddycmd.MainForTesting("caddy", "run", "--config", tc.configFileName, "--adapter", "caddyfile")
 	}()
 	// wait for caddy admin api to start. it should happen quickly.
 	for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
