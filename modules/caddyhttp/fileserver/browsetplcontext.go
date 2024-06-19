@@ -80,6 +80,12 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		}
 
 		size := info.Size()
+
+		// increase the total by the symlink's size, not the target's size.
+		if !isDir {
+			tplCtx.TotalFileSize += size
+		}
+
 		fileIsSymlink := isSymlink(info)
 		symlinkPath := ""
 		if fileIsSymlink {
@@ -100,10 +106,6 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, just use the size of the symlink itself, which
 			// was already set above.
-		}
-
-		if !isDir {
-			tplCtx.TotalFileSize += size
 		}
 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
