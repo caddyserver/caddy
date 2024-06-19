@@ -431,6 +431,14 @@ func TestReplacerNew(t *testing.T) {
 			variable: "file.caddytest/integration/testdata/foo.txt",
 			value:    "foo",
 		},
+		{
+			variable: "file.caddytest/integration/testdata/foo_with_trailing_newline.txt",
+			value:    "foo",
+		},
+		{
+			variable: "file.caddytest/integration/testdata/foo_with_multiple_trailing_newlines.txt",
+			value:    "foo\n",
+		},
 	} {
 		if val, ok := repl.providers[1].replace(tc.variable); ok {
 			if val != tc.value {
