@@ -26,7 +26,7 @@ type Tracing struct {
 	// SpanName is a span name. It should follow the naming guidelines here:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
 	SpanName                 string `json:"span"`
-	InjectServerTimingHeader bool   `json:"injectServerTimingHeader,omitempty"`
+	InjectServerTimingHeader bool   `json:"server_timing,omitempty"`
 
 	// otel implements opentelemetry related logic.
 	otel openTelemetryWrapper
@@ -97,7 +97,7 @@ func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
-		case "injectServerTimingHeader":
+		case "server_timing":
 			if d.NextArg() {
 				ot.InjectServerTimingHeader = true
 			}
