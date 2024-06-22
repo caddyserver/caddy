@@ -84,7 +84,6 @@ func newOpenTelemetryWrapper(ctx context.Context, spanName string, injectServerT
 func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
 		traceID := spanCtx.TraceID().String()
