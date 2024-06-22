@@ -24,6 +24,7 @@
 							"handle": [
 								{
 									"handler": "tracing",
+									"injectServerTimingHeader": false,
 									"span": "my-span"
 								}
 							]
