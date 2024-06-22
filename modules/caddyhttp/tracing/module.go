@@ -69,6 +69,7 @@ func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
 //	tracing {
+//	    [injectServerTimingHeader <bool>]
 //	    [span <span_name>]
 //	}
 func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -95,12 +96,19 @@ func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	for d.NextBlock(0) {
-		if dst, ok := paramsMap[d.Val()]; ok {
-			if err := setParameter(d, dst); err != nil {
-				return err
+		switch d.Val() {
+		case "injectServerTimingHeader":
+			if d.NextArg() {
+				ot.InjectServerTimingHeader = true
 			}
-		} else {
-			return d.ArgErr()
+		default:
+			if dst, ok := paramsMap[d.Val()]; ok {
+				if err := setParameter(d, dst); err != nil {
+					return err
+				}
+			} else {
+				return d.ArgErr()
+			}
 		}
 	}
 	return nil
