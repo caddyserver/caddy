@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -63,7 +64,9 @@ func newOpenTelemetryWrapper(ctx context.Context, spanName string, injectServerT
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
 
-	ot.propagators = autoprop.NewTextMapPropagator()
+	prop := autoprop.NewTextMapPropagator()
+	otel.SetTextMapPropagator(prop)
+	ot.propagators = prop
 
 	tracerProvider := globalTracerProvider.getTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
