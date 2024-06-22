@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"net"
 	"net/http"
@@ -32,6 +31,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
