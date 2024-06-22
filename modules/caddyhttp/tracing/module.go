@@ -25,7 +25,8 @@ func init() {
 type Tracing struct {
 	// SpanName is a span name. It should follow the naming guidelines here:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
-	SpanName string `json:"span"`
+	SpanName                 string `json:"span"`
+	InjectServerTimingHeader bool   `json:"injectServerTimingHeader"`
 
 	// otel implements opentelemetry related logic.
 	otel openTelemetryWrapper
@@ -46,7 +47,7 @@ func (ot *Tracing) Provision(ctx caddy.Context) error {
 	ot.logger = ctx.Logger()
 
 	var err error
-	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName)
+	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName, ot.InjectServerTimingHeader)
 
 	return err
 }

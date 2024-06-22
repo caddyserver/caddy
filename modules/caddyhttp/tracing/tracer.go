@@ -37,20 +37,19 @@ type openTelemetryWrapper struct {
 
 	handler http.Handler
 
-	spanName string
+	spanName                 string
+	injectServerTimingHeader bool
 }
 
 // newOpenTelemetryWrapper is responsible for the openTelemetryWrapper initialization using provided configuration.
-func newOpenTelemetryWrapper(
-	ctx context.Context,
-	spanName string,
-) (openTelemetryWrapper, error) {
+func newOpenTelemetryWrapper(ctx context.Context, spanName string, injectServerTimingHeader bool) (openTelemetryWrapper, error) {
 	if spanName == "" {
 		spanName = defaultSpanName
 	}
 
 	ot := openTelemetryWrapper{
-		spanName: spanName,
+		injectServerTimingHeader: injectServerTimingHeader,
+		spanName:                 spanName,
 	}
 
 	version, _ := caddy.Version()
@@ -84,6 +83,7 @@ func newOpenTelemetryWrapper(
 // serveHTTP injects a tracing context and call the next handler.
 func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
@@ -97,6 +97,11 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
 			extra.Add(zap.String("traceID", traceID))
 			extra.Add(zap.String("spanID", spanID))
+		}
+
+		// Add the server-timing header so clients can make the connection
+		if ot.injectServerTimingHeader {
+			w.Header().Set("server-timing", fmt.Sprintf("traceparent;desc=\"00-%s-%s-%s\"", traceID, spanID, spanCtx.TraceFlags().String()))
 		}
 	}
 	next := ctx.Value(nextCallCtxKey).(*nextCall)
