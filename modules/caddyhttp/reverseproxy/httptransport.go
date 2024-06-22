@@ -21,6 +21,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv2 "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.opentelemetry.io/otel/trace"
 	weakrand "math/rand"
 	"net"
 	"net/http"
@@ -137,6 +142,8 @@ type HTTPTransport struct {
 
 	h2cTransport *http2.Transport
 	h3Transport  *http3.RoundTripper // TODO: EXPERIMENTAL (May 2024)
+
+	tracer *trace.Tracer
 }
 
 // CaddyModule returns the Caddy module information.
@@ -442,7 +449,54 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return h.h2cTransport.RoundTrip(req)
 	}
 
-	return transport.Transport.RoundTrip(req)
+	ctx, span := createClientSpanForProxy(req.Context(), req)
+	defer span.End()
+
+	// override the request's context with the span context, so it can be propagated
+	req = req.WithContext(ctx)
+
+	res, err := transport.Transport.RoundTrip(req)
+
+	return recordResponseToSpan(span, res, err)
+}
+
+func recordResponseToSpan(span trace.Span, res *http.Response, err error) (*http.Response, error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		return res, err
+	}
+
+	// record response into span
+	if res != nil {
+		span.SetStatus(semconv2.SpanStatusFromHTTPStatusCodeAndSpanKind(res.StatusCode, trace.SpanKindClient))
+		span.SetAttributes(
+			semconv.HTTPStatusCodeKey.Int(res.StatusCode),
+			semconv.HTTPResponseContentLengthKey.Int64(res.ContentLength),
+		)
+	}
+
+	return res, err
+}
+
+func createClientSpanForProxy(ctx context.Context, req *http.Request) (context.Context, trace.Span) {
+	tracer := otel.Tracer("caddy/reverseproxy/httptransport")
+
+	// create a new span for the client request
+	ctx, span := tracer.Start(ctx, "client request",
+		trace.WithAttributes(
+			semconv.HTTPURLKey.String(req.URL.String()),
+			semconv.HTTPMethodKey.String(req.Method),
+			semconv.HTTPUserAgentKey.String(req.UserAgent()),
+			semconv.HTTPSchemeKey.String(req.URL.Scheme),
+			semconv.HTTPTargetKey.String(req.URL.Path),
+			semconv.HTTPClientIPKey.String(req.RemoteAddr),
+			semconv.HTTPFlavorKey.String(req.Proto),
+		),
+	)
+
+	return ctx, span
 }
 
 // SetScheme ensures that the outbound request req
