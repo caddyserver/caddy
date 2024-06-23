@@ -426,6 +426,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		}
 		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
+				h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
 				upstream.Host.resetHealth()
 			}
@@ -492,7 +493,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	// passed health check parameters, so mark as healthy
-	h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
 	markHealthy()
 
 	return nil
