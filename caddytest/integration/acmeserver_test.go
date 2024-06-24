@@ -5,50 +5,51 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddytest"
 	"github.com/mholt/acmez/v2"
 	"github.com/mholt/acmez/v2/acme"
-	"go.uber.org/zap"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
 			}
 		}
 	}
-	acme.localhost:9443 {
+	acme.localhost:{$TESTING_CADDY_PORT_TWO} {
 		acme_server
 	}
   `, "caddyfile")
-	tester.AssertGetResponse(
-		"https://acme.localhost:9443/acme/local/directory",
+	harness.AssertGetResponse(
+		fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
 		200,
-		`{"newNonce":"https://acme.localhost:9443/acme/local/new-nonce","newAccount":"https://acme.localhost:9443/acme/local/new-account","newOrder":"https://acme.localhost:9443/acme/local/new-order","revokeCert":"https://acme.localhost:9443/acme/local/revoke-cert","keyChange":"https://acme.localhost:9443/acme/local/key-change"}
-`)
+		fmt.Sprintf(`{"newNonce":"https://acme.localhost:%[1]d/acme/local/new-nonce","newAccount":"https://acme.localhost:%[1]d/acme/local/new-account","newOrder":"https://acme.localhost:%[1]d/acme/local/new-order","revokeCert":"https://acme.localhost:%[1]d/acme/local/revoke-cert","keyChange":"https://acme.localhost:%[1]d/acme/local/key-change"}
+`, harness.Tester().PortTwo()))
 }
 
 func TestACMEServerAllowPolicy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
@@ -66,16 +67,12 @@ func TestACMEServerAllowPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	logger := caddy.Log().Named("acmez")
 
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -131,14 +128,14 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 }
 
 func TestACMEServerDenyPolicy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
 		local_certs
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		pki {
 			ca local {
 				name "Caddy Local Authority"
@@ -155,16 +152,12 @@ func TestACMEServerDenyPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	logger := caddy.Log().Named("acmez")
 
 	client := acmez.Client{
 		Client: &acme.Client{
-			Directory:  "https://acme.localhost:9443/acme/local/directory",
-			HTTPClient: tester.Client,
+			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
+			HTTPClient: harness.Client(),
 			Logger:     logger,
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
@@ -197,7 +190,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"deny.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'deny.localhost' domain")
-		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
+		} else if !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
 			t.Logf("unexpected error: %v", err)
 		}
 	}

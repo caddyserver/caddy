@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -699,7 +700,13 @@ type defaultCustomLog struct {
 // and enables INFO-level logs and higher.
 func newDefaultProductionLog() (*defaultCustomLog, error) {
 	cl := new(CustomLog)
-	cl.writerOpener = StderrWriter{}
+	f := flag.Lookup("test.v")
+	if (f != nil && f.Value.String() != "true") || strings.Contains(os.Args[0], ".test") {
+		cl.writerOpener = &DiscardWriter{}
+	} else {
+		cl.writerOpener = StderrWriter{}
+	}
+
 	var err error
 	cl.writer, err = cl.writerOpener.OpenWriter()
 	if err != nil {

@@ -71,7 +71,7 @@ func Main() {
 	if err != nil {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
-
+	rootCmd := defaultFactory.Build()
 	if err := rootCmd.Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
@@ -79,6 +79,18 @@ func Main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// MainForTesting implements the main function of the caddy command, used internally for testing
+func MainForTesting(args ...string) error {
+	// create a root command for testing which will not pollute the global namespace, and does not
+	// call os.Exit().
+	rootCmd := defaultFactory.Build()
+	rootCmd.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // handlePingbackConn reads from conn and ensures it matches

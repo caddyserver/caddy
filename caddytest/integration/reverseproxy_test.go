@@ -14,11 +14,11 @@ import (
 )
 
 func TestSRVReverseProxy(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -87,11 +87,11 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -135,15 +135,15 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 		return
 	}
 	req.Header.Set("X-Caddy-Upstream-Dial", socketName)
-	tester.AssertResponse(req, 200, "Hello, World!")
+	harness.AssertResponse(req, 200, "Hello, World!")
 }
 
 func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -186,7 +186,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 					},
 					"srv1": {
 						"listen": [
-							":9080"
+							":{$TESTING_CADDY_PORT_ONE}"
 						],
 						"routes": [
 							{
@@ -199,7 +199,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -223,21 +223,21 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 	}
 	`, "json")
 
-	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080", nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d", harness.Tester().PortOne()), nil)
 	if err != nil {
 		t.Fail()
 		return
 	}
 	req.Header.Set("X-Caddy-Upstream-Dial", "localhost:18080")
-	tester.AssertResponse(req, 200, "Hello, World!")
+	harness.AssertResponse(req, 200, "Hello, World!")
 }
 
 func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"pki": {
@@ -280,7 +280,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 					},
 					"srv1": {
 						"listen": [
-							":9080"
+							":{$TESTING_CADDY_PORT_ONE}"
 						],
 						"routes": [
 							{
@@ -293,7 +293,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -317,23 +317,23 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 	}
 	`, "json")
 
-	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080", nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d", harness.Tester().PortOne()), nil)
 	if err != nil {
 		t.Fail()
 		return
 	}
 	req.Header.Set("X-Caddy-Upstream-Dial", "localhost")
-	tester.AssertResponse(req, 200, "Hello, World!")
+	harness.AssertResponse(req, 200, "Hello, World!")
 }
 
 func TestReverseProxyHealthCheck(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period 1ns
 	}
 	http://localhost:2020 {
@@ -342,10 +342,10 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	http://localhost:2021 {
 		respond "ok"
 	}
-	http://localhost:9080 {
+	http://localhost:{$TESTING_CADDY_PORT_ONE} {
 		reverse_proxy {
 			to localhost:2020
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 10ms
@@ -357,14 +357,15 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	`, "caddyfile")
 
 	time.Sleep(100 * time.Millisecond) // TODO: for some reason this test seems particularly flaky, getting 503 when it should be 200, unless we wait
-	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target, 200, "Hello, World!")
 }
 
 func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
@@ -395,18 +396,18 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester.InitServer(fmt.Sprintf(`
+	harness.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period 1ns
 	}
-	http://localhost:9080 {
+	http://localhost:{$TESTING_CADDY_PORT_ONE} {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 2s
@@ -415,14 +416,15 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	}
 	`, socketName), "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target, 200, "Hello, World!")
 }
 
 func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Errorf("failed to create TempFile: %s", err)
@@ -453,18 +455,18 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	})
 	runtime.Gosched() // Allow other goroutines to run
 
-	tester.InitServer(fmt.Sprintf(`
+	harness.LoadConfig(fmt.Sprintf(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		grace_period 1ns
 	}
-	http://localhost:9080 {
+	http://localhost:{$TESTING_CADDY_PORT_ONE} {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_interval 2s
 			health_timeout 5s
@@ -472,5 +474,5 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	}
 	`, socketName), "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+	harness.AssertGetResponse(fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), 200, "Hello, World!")
 }
