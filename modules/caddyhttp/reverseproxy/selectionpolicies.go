@@ -111,8 +111,8 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 		if err != nil {
 			return d.Errf("invalid weight value '%s': %v", weight, err)
 		}
-		if weightInt < 1 {
-			return d.Errf("invalid weight value '%s': weight should be non-zero and positive", weight)
+		if weightInt < 0 {
+			return d.Errf("invalid weight value '%s': weight should be non-negative", weight)
 		}
 		r.Weights = append(r.Weights, weightInt)
 	}
