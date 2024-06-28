@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/dustin/go-humanize"
 
@@ -239,13 +240,14 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
 			serverOpts.Metrics = new(caddyhttp.Metrics)
+			perHost := false
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				if d.Val() == "per_host" && d.NextArg() {
+					perHost, _ = strconv.ParseBool(d.Val())
+				}
+			}
+			serverOpts.Metrics.PerHost = perHost
 
 		case "trace":
 			if d.NextArg() {
