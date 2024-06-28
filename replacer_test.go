@@ -431,6 +431,14 @@ func TestReplacerNew(t *testing.T) {
 			variable: "file.caddytest/integration/testdata/foo.txt",
 			value:    "foo",
 		},
+		{
+			variable: "file.caddytest/integration/testdata/foo_with_trailing_newline.txt",
+			value:    "foo",
+		},
+		{
+			variable: "file.caddytest/integration/testdata/foo_with_multiple_trailing_newlines.txt",
+			value:    "foo" + getEOL(),
+		},
 	} {
 		if val, ok := repl.providers[1].replace(tc.variable); ok {
 			if val != tc.value {
@@ -440,6 +448,13 @@ func TestReplacerNew(t *testing.T) {
 			t.Errorf("Expected key '%s' to be recognized by second provider", tc.variable)
 		}
 	}
+}
+
+func getEOL() string {
+	if os.PathSeparator == '\\' {
+		return "\r\n" // Windows EOL
+	}
+	return "\n" // Unix and modern macOS EOL
 }
 
 func TestReplacerNewWithoutFile(t *testing.T) {

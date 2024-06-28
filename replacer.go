@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -354,6 +355,8 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 			zap.Error(err))
 		return nil, true
 	}
+	body = bytes.TrimSuffix(body, []byte("\n"))
+	body = bytes.TrimSuffix(body, []byte("\r"))
 	return string(body), true
 }
 
