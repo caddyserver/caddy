@@ -1,6 +1,6 @@
 {{ $nonce := uuidv4 -}}
 {{ $nonceAttribute := print "nonce=" (quote $nonce) -}}
-{{ $csp := printf "default-src 'none'; img-src 'self'; object-src 'none'; base-uri 'none'; script-src 'strict-dynamic' 'nonce-%s'; style-src 'strict-dynamic' 'nonce-%s'; frame-ancestors 'self'; form-action 'self'; block-all-mixed-content;" $nonce $nonce -}}
+{{ $csp := printf "default-src 'none'; img-src 'self'; object-src 'none'; base-uri 'none'; script-src 'strict-dynamic' 'nonce-%s' 'unsafe-inline' https: http:; style-src 'strict-dynamic' 'nonce-%s'; frame-ancestors 'self'; form-action 'self'; block-all-mixed-content;" $nonce $nonce -}}
 {{/* To disable the Content-Security-Policy, set this to false */}}{{ $enableCsp := true -}}
 {{ if $enableCsp -}}
   {{- .RespHeader.Set "Content-Security-Policy" $csp -}}
