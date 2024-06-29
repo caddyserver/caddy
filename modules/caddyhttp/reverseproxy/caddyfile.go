@@ -938,6 +938,7 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    tls
 //	    tls_client_auth <automate_name> | <cert_file> <key_file>
 //	    tls_insecure_skip_verify
+//	    tls_server_cert_sha256 <fingerprint>
 //	    tls_timeout <duration>
 //	    tls_trusted_ca_certs <cert_files...>
 //	    tls_server_name <sni>
@@ -1100,6 +1101,16 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.TLS = new(TLSConfig)
 			}
 			h.TLS.InsecureSkipVerify = true
+
+		case "tls_server_cert_sha256":
+			args := d.RemainingArgs()
+			if len(args) != 1 {
+				return d.ArgErr()
+			}
+			if h.TLS == nil {
+				h.TLS = new(TLSConfig)
+			}
+			h.TLS.ServerCertSha256 = args[0]
 
 		case "tls_curves":
 			args := d.RemainingArgs()
