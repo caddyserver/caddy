@@ -1,0 +1,48 @@
+name: 'Setup Go'
+description: 'TODO:'
+inputs:
+  go-version:
+    description: "TODO:"
+    required: false
+    default: "stable"
+outputs:
+  go-version:
+    description: "The version of the installed Go toolchain"
+    value: ${{ steps.go-version-printer.outputs.go-version }}
+  go-major-version:
+    description: "The major version of the installed Go toolchain"
+    value: ${{ steps.go-version-printer.outputs.go-major-version }}
+  go-minor-version:
+    description: "The minor version of the installed Go toolchain"
+    value: ${{ steps.go-version-printer.outputs.go-minor-version }}
+  go-patch-version:
+    description: "The patch version of the installed Go toolchain"
+    value: ${{ steps.go-version-printer.outputs.go-patch-version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        check-latest: true
+    - name: Export Go version parts
+      id: go-version-printer
+      shell: bash
+      run: |
+        SEMVER_RE='go version go\([0-9]*[.][0-9]*[.][0-9]*\) .*'
+        SEMVER_PARTS='go version go\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\) .*'
+        GOVER=`go version`
+
+        VER=`echo $GOVER | sed -e "s#$SEMVER_RE#\1#"`
+        echo "go-version=$(echo $VER)" >> $GITHUB_OUTPUT
+
+        VER_MAJOR=`echo $GOVER | sed -e "s#$SEMVER_PARTS#\1#"`
+        echo "go-major-version=$(echo $VER_MAJOR)" >> $GITHUB_OUTPUT
+
+        VER_MINOR=`go version | sed -e "s#$SEMVER_PARTS#\2#"`
+        echo "go-minor-version=$(echo $VER_MINOR)" >> $GITHUB_OUTPUT
+
+        VER_PATCH=`go version | sed -e "s#$SEMVER_PARTS#\3#"`
+        echo "go-patch-version=$(echo $VER_PATCH)" >> $GITHUB_OUTPUT
+
