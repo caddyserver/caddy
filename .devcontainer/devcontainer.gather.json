@@ -1,0 +1,92 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Go",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/go:1-1.22-bookworm",
+    // "dockerComposeFile": [
+    //     // "/data/mywork/gather/dockerfile/docker-compose.ubuntu.yml",
+    //     // "/data/mywork/gather/dockerfile/docker-compose.base.yml",
+    //     "/data/mywork/gather/dockerfile/docker-compose.go.yml"
+    // ],
+    // "workspaceFolder": "/data/mywork/caddy",
+    // "service": "php",
+
+    "containerEnv": {
+        "https_proxy": "http://172.17.0.1:8088",
+        "http_proxy": "http://172.17.0.1:8088"
+    },
+	
+    // "mounts": [
+    //     // "source=${localEnv:HOME}/.ssh,target=/home/${localEnv:USER}/.ssh,type=bind",
+    //     // "source=/data/mywork/gather/,target=/home/${localEnv:USER}/gather,type=bind",
+    //     "source=/data/mywork,target=/data/mywork,type=bind",
+    //     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+    // ],
+
+    	// Features to add to the dev container. More info: https://containers.dev/features.
+	// "features": {},
+    
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+    
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "uname -a",
+    //下面必须一行语句，不能通过 \来拼接换行，否则会出错，不再执行customizations下的命令
+    // "postCreateCommand": " sudo ln -s /home/${localEnv:USER}/gather/mmga.sh  /usr/local/bin/mmga  && sudo ln -s /home/${localEnv:USER}/.gather/mmgc.sh /usr/local/bin/mmgc",
+    
+    // " git config --global --add safe.directory /data/web/workman-api-hub/vendor/ld/app-lib-ld ",
+        // " git config --global --add safe.directory /data/web/workman-api-hub/app/lib/alipay "
+    // ],
+
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+                // "security.allowedUNCHosts": [
+                //     "\"vscode-app\""
+                // ],
+                
+                "http.proxySupport": "on",
+                "http.proxyAuthorization": null,
+                "http.proxy": "http://172.17.0.1:8088", //网关代理
+                "terminal.integrated.copyOnSelection": true,
+                // "docker.commands.build": "${containerCommand} build --rm -f \"${dockerfile}\" -t ${tag} \"${context}\"",
+
+                // "phpunit.args": [
+                //     "--bootstrap", "support/bootstrap.php",
+                //     "--colors=always", // 启用彩色输出
+                //     "--coverage-clover", "coverage.xml", // 生成代码覆盖率报告
+                //     "--log-junit", "junit.xml" // 生成 JUnit 格式的测试报告
+                // ],
+                
+                // "workbench.editor.wrapTabs": true,
+                // "editor.indentSize": "tabSize",
+                // "editor.detectIndentation": false,
+                // "outline.showVariables": false,
+                // "php.debug.executablePath": "",
+                // "workbench.editor.editorActionsLocation": "titleBar",
+                // "editor.codeActionsOnSave": {}
+            },
+            // "extensions": [
+                
+            //     "donjayamanne.githistory",
+            //     "eamodio.gitlens",
+            //     "github.copilot",
+            //     "github.copilot-chat",
+            //     "gruntfuggly.todo-tree",
+            //     "in4margaret.compareit",
+            //     "mhutchie.git-graph",
+            //     "ms-azuretools.vscode-docker",
+            //     "redhat.fabric8-analytics",
+            //     "shd101wyy.markdown-preview-enhanced",
+            //     "yzhang.markdown-all-in-one"
+            // ]
+		}
+    },
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "${localEnv:USER}"
+}
