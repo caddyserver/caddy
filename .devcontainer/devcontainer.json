@@ -17,8 +17,8 @@
 	// Configure tool-specific properties.
 	// "customizations": {},
 	"containerEnv": {
-        "https_proxy": "http://172.17.0.1:8088",
-        "http_proxy": "http://172.17.0.1:8088"
+        "https_proxy": "http://host.docker.internal:8088",
+        "http_proxy": "http://host.docker.internal:8088"
 	},
 	"customizations": {
 		"vscode": {
@@ -36,7 +36,11 @@
 	"mounts": [
 		"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
 		"source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly"
-	]
+	],
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"
+
+	"runArgs": [
+    	"--add-host=host.docker.internal:host-gateway"
+  	]
 }
