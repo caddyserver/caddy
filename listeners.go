@@ -60,8 +60,6 @@ type NetworkAddress struct {
 // ListenAll calls Listen() for all addresses represented by this struct, i.e. all ports in the range.
 // (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
 // It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
-//
-// TODO: Experimental API: subject to change or removal.
 func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
 	var listeners []any
 	var err error
@@ -130,8 +128,6 @@ func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig)
 // Unix sockets will be unlinked before being created, to ensure we can bind to
 // it even if the previous program using it exited uncleanly; it will also be
 // unlinked upon a graceful exit (or when a new config does not use that socket).
-//
-// TODO: Experimental API: subject to change or removal.
 func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
 	if na.IsUnixNetwork() {
 		unixSocketsMu.Lock()
@@ -221,8 +217,6 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 }
 
 // Expand returns one NetworkAddress for each port in the port range.
-//
-// This is EXPERIMENTAL and subject to change or removal.
 func (na NetworkAddress) Expand() []NetworkAddress {
 	size := na.PortRangeSize()
 	addrs := make([]NetworkAddress, size)
