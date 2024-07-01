@@ -22,6 +22,10 @@
 	},
 	"customizations": {
 		"vscode": {
+			"settings": {
+				"http.proxy": "http://host.docker.internal:8088",
+				"http.proxyStrictSSL": false // 如果你的代理服务器使用的是自签名证书，需要将此设置为false
+			},
 			"extensions": [
 				"ms-azuretools.vscode-docker",
 				"mhutchie.git-graph",
