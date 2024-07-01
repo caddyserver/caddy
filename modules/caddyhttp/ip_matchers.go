@@ -143,6 +143,9 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	}
 	address := r.RemoteAddr
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
@@ -228,6 +231,9 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchClientIP) Match(r *http.Request) bool {
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	}
 	address := GetVar(r.Context(), ClientIPVarKey).(string)
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {

@@ -178,6 +178,22 @@ type (
 	// "http/2", "http/3", or minimum versions: "http/2+", etc.
 	MatchProtocol string
 
+	// MatchTLS matches HTTP requests based on the underlying
+	// TLS connection state. If this matcher is specified but
+	// the request did not come over TLS, it will never match.
+	// If this matcher is specified but is empty and the request
+	// did come in over TLS, it will always match.
+	MatchTLS struct {
+		// Matches if the TLS handshake has completed. QUIC 0-RTT early
+		// data may arrive before the handshake completes. Generally, it
+		// is unsafe to replay these requests if they are not idempotent;
+		// additionally, the remote IP of early data packets can more
+		// easily be spoofed. It is conventional to respond with HTTP 425
+		// Too Early if the request cannot risk being processed in this
+		// state.
+		HandshakeComplete *bool `json:"handshake_complete,omitempty"`
+	}
+
 	// MatchNot matches requests by negating the results of its matcher
 	// sets. A single "not" matcher takes one or more matcher sets. Each
 	// matcher set is OR'ed; in other words, if any matcher set returns
@@ -213,6 +229,7 @@ func init() {
 	caddy.RegisterModule(MatchHeader{})
 	caddy.RegisterModule(MatchHeaderRE{})
 	caddy.RegisterModule(new(MatchProtocol))
+	caddy.RegisterModule(MatchTLS{})
 	caddy.RegisterModule(MatchNot{})
 }
 
@@ -1234,6 +1251,28 @@ func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
 			return MatchProtocol(strings.ToLower(string(protocolStr))), nil
 		},
 	)
+}
+
+// CaddyModule returns the Caddy module information.
+func (MatchTLS) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.matchers.tls",
+		New: func() caddy.Module { return new(MatchTLS) },
+	}
+}
+
+// Match returns true if r matches m.
+func (m MatchTLS) Match(r *http.Request) bool {
+	if r.TLS == nil {
+		return false
+	}
+	if m.HandshakeComplete != nil {
+		if (!*m.HandshakeComplete && r.TLS.HandshakeComplete) ||
+			(*m.HandshakeComplete && !r.TLS.HandshakeComplete) {
+			return false
+		}
+	}
+	return true
 }
 
 // CaddyModule returns the Caddy module information.
