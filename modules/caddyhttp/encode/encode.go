@@ -114,7 +114,6 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/xml*",
 					"font/ttf*",
 					"font/otf*",
-					"font/x-woff*",
 					"image/svg+xml*",
 					"image/vnd.microsoft.icon*",
 					"image/x-icon*",
