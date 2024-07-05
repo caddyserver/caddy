@@ -1275,6 +1275,31 @@ func (m MatchTLS) Match(r *http.Request) bool {
 	return true
 }
 
+// UnmarshalCaddyfile parses Caddyfile tokens for this matcher. Syntax:
+//
+// ... tls [early_data]
+//
+// EXPERIMENTAL SYNTAX: Subject to change.
+func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
+	for d.Next() {
+		if d.NextArg() {
+			switch d.Val() {
+			case "early_data":
+				var false bool
+				m.HandshakeComplete = &false
+			}
+		}
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		if d.NextBlock(0) {
+			return d.Err("malformed tls matcher: blocks are not supported yet")
+		}
+	}
+	return nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
