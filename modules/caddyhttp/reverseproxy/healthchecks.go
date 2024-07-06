@@ -386,6 +386,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 
 	// set headers, using a replacer with only globals (env vars, system info, etc.)
 	repl := caddy.NewReplacer()
+	repl.Set("http.reverse_proxy.active.target_host", hostAddr)
 	for key, vals := range h.HealthChecks.Active.Headers {
 		key = repl.ReplaceAll(key, "")
 		if key == "Host" {
