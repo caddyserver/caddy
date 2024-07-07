@@ -991,7 +991,7 @@ footer {
 							<div class="sizebar">
 								<div class="sizebar-bar"></div>
 								<div class="sizebar-text">
-									{{.HumanSize}}
+									{{if .IsSymlink}}↱&nbsp;{{end}}{{.HumanSize}}
 								</div>
 							</div>
 						</td>

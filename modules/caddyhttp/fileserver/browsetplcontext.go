@@ -80,6 +80,13 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		}
 
 		size := info.Size()
+
+		if !isDir {
+			// increase the total by the symlink's size, not the target's size,
+			// by incrementing before we follow the symlink
+			tplCtx.TotalFileSize += size
+		}
+
 		fileIsSymlink := isSymlink(info)
 		symlinkPath := ""
 		if fileIsSymlink {
@@ -103,7 +110,8 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		}
 
 		if !isDir {
-			tplCtx.TotalFileSize += size
+			// increase the total including the symlink target's size
+			tplCtx.TotalFileSizeFollowingSymlinks += size
 		}
 
 		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
@@ -150,8 +158,14 @@ type browseTemplateContext struct {
 	// The number of files (items that aren't directories) in the listing.
 	NumFiles int `json:"num_files"`
 
-	// The total size of all files in the listing.
+	// The total size of all files in the listing. Only includes the
+	// size of the files themselves, not the size of symlink targets
+	// (i.e. the calculation of this value does not follow symlinks).
 	TotalFileSize int64 `json:"total_file_size"`
+
+	// The total size of all files in the listing, including the
+	// size of the files targeted by symlinks.
+	TotalFileSizeFollowingSymlinks int64 `json:"total_file_size_following_symlinks"`
 
 	// Sort column used
 	Sort string `json:"sort,omitempty"`
@@ -286,6 +300,12 @@ func (fi fileInfo) HumanSize() string {
 // (i.e. power of 2 or base 1024).
 func (btc browseTemplateContext) HumanTotalFileSize() string {
 	return humanize.IBytes(uint64(btc.TotalFileSize))
+}
+
+// HumanTotalFileSizeFollowingSymlinks is the same as HumanTotalFileSize
+// except the returned value reflects the size of symlink targets.
+func (btc browseTemplateContext) HumanTotalFileSizeFollowingSymlinks() string {
+	return humanize.IBytes(uint64(btc.TotalFileSizeFollowingSymlinks))
 }
 
 // HumanModTime returns the modified time of the file
