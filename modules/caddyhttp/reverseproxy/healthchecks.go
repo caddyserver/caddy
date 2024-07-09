@@ -351,7 +351,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	if err != nil {
 		host = hostAddr
 	}
-	if h.HealthChecks.Active.Port != 0 {
+
+	if h.HealthChecks.Active.Upstream != "" {
+		u.Host = h.HealthChecks.Active.Upstream
+	} else if h.HealthChecks.Active.Port != 0 {
+		// ignore active health check port if active upstream is provided
 		port := strconv.Itoa(h.HealthChecks.Active.Port)
 		u.Host = net.JoinHostPort(host, port)
 	}
