@@ -75,6 +75,10 @@ type ActiveHealthChecks struct {
 	// The URI (path and query) to use for health checks
 	URI string `json:"uri,omitempty"`
 
+	// The host to use (if different from the upstream's dial
+	// address) for health checks.
+	Upstream string `json:"upstream,omitempty"`
+
 	// The port to use (if different from the upstream's dial
 	// address) for health checks.
 	Port int `json:"port,omitempty"`
@@ -165,9 +169,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	for _, upstream := range h.Upstreams {
-		// if there's an alternative port for health-check provided in the config,
-		// then use it, otherwise use the port of upstream.
-		if a.Port != 0 {
+		// if there's an alternative upstream for health-check provided in the config,
+		// then use it, otherwise use the upstream's dial address. if upstream is used,
+		// then the port is ignored.
+		if a.Upstream != "" {
+			upstream.activeHealthCheckUpstream = a.Upstream
+		} else if a.Port != 0 {
+			// if there's an alternative port for health-check provided in the config,
+			// then use it, otherwise use the port of upstream.
 			upstream.activeHealthCheckPort = a.Port
 		}
 	}
