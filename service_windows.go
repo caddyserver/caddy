@@ -15,31 +15,29 @@
 package caddy
 
 import (
-	"os"
-	"path/filepath"
-
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/caddyserver/caddy/v2/notify"
 )
 
-func init() {
-	isService, err := svc.IsWindowsService()
-	if err != nil || !isService {
-		return
-	}
+// appaegis:disable it
+// func init() {
+// 	isService, err := svc.IsWindowsService()
+// 	if err != nil || !isService {
+// 		return
+// 	}
 
-	// Windows services always start in the system32 directory, try to
-	// switch into the directory where the caddy executable is.
-	execPath, err := os.Executable()
-	if err == nil {
-		_ = os.Chdir(filepath.Dir(execPath))
-	}
+// 	// Windows services always start in the system32 directory, try to
+// 	// switch into the directory where the caddy executable is.
+// 	execPath, err := os.Executable()
+// 	if err == nil {
+// 		_ = os.Chdir(filepath.Dir(execPath))
+// 	}
 
-	go func() {
-		_ = svc.Run("", runner{})
-	}()
-}
+// 	go func() {
+// 		_ = svc.Run("", runner{})
+// 	}()
+// }
 
 type runner struct{}
 
