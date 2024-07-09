@@ -330,7 +330,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstream *Upstream, networkAddr string) error {
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networkAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
 	u := &url.URL{
 		Scheme: "http",
