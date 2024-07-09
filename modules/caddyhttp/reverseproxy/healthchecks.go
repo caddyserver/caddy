@@ -312,7 +312,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream)
+			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, networkAddr, upstream)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
 					zap.String("address", hostAddr),
@@ -330,7 +330,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstream *Upstream) error {
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networkAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
 	u := &url.URL{
 		Scheme: "http",
@@ -386,7 +386,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 
 	// set headers, using a replacer with only globals (env vars, system info, etc.)
 	repl := caddy.NewReplacer()
-	repl.Set("http.reverse_proxy.active.target_host", hostAddr)
+	repl.Set("http.reverse_proxy.active.target_upstream", networkAddr)
 	for key, vals := range h.HealthChecks.Active.Headers {
 		key = repl.ReplaceAll(key, "")
 		if key == "Host" {
