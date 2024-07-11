@@ -136,6 +136,11 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 	a.Headers = cleaned
 
+	// If Method is not set, default to GET
+	if a.Method == "" {
+		a.Method = http.MethodGet
+	}
+
 	h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
 
 	timeout := time.Duration(a.Timeout)
