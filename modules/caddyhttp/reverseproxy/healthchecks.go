@@ -75,7 +75,7 @@ type ActiveHealthChecks struct {
 	// The URI (path and query) to use for health checks
 	URI string `json:"uri,omitempty"`
 
-	// The host:ip to use (if different from the upstream's dial address)
+	// The host:port to use (if different from the upstream's dial address)
 	// for health checks. This should be used in tandem with `health_header` and
 	// `{http.reverse_proxy.active.target_upstream}`. This can be helpful when
 	// creating an intermediate service to do a more thorough health check.
