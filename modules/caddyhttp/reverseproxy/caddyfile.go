@@ -385,7 +385,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HealthChecks.Active = new(ActiveHealthChecks)
 			}
 			if h.HealthChecks.Active.Upstream != "" {
-				caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_port' subdirective is ignored if 'health_upstream' is used!")
+				return d.Errf("the 'health_port' subdirective is ignored if 'health_upstream' is used!")
 			}
 			portNum, err := strconv.Atoi(d.Val())
 			if err != nil {
