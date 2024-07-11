@@ -82,6 +82,9 @@ type ActiveHealthChecks struct {
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
 
+	// The HTTP method to use for health checks (default "GET").
+	Method string `json:"method,omitempty"`
+
 	// Whether to follow HTTP redirects in response to active health checks (default off).
 	FollowRedirects bool `json:"follow_redirects,omitempty"`
 
@@ -132,6 +135,11 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		}
 	}
 	a.Headers = cleaned
+
+	// If Method is not set, default to GET
+	if a.Method == "" {
+		a.Method = http.MethodGet
+	}
 
 	h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
 
@@ -377,7 +385,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
 		dialInfoVarKey: dialInfo,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, h.HealthChecks.Active.Method, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
 	}
