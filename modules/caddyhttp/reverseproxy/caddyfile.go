@@ -79,6 +79,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    health_headers {
 //	        <field> [<values...>]
 //	    }
+//	    health_method   <value>
 //
 //	    # passive health checking
 //	    fail_duration     <duration>
@@ -386,6 +387,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HealthChecks.Active = new(ActiveHealthChecks)
 			}
 			h.HealthChecks.Active.Headers = healthHeaders
+
+		case "health_method":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.Method = d.Val()
 
 		case "health_interval":
 			if !d.NextArg() {
