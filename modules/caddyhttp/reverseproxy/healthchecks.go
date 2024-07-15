@@ -75,8 +75,16 @@ type ActiveHealthChecks struct {
 	// The URI (path and query) to use for health checks
 	URI string `json:"uri,omitempty"`
 
+	// The host:port to use (if different from the upstream's dial address)
+	// for health checks. This should be used in tandem with `health_header` and
+	// `{http.reverse_proxy.active.target_upstream}`. This can be helpful when
+	// creating an intermediate service to do a more thorough health check.
+	// If upstream is set, the active health check port is ignored.
+	Upstream string `json:"upstream,omitempty"`
+
 	// The port to use (if different from the upstream's dial
-	// address) for health checks.
+	// address) for health checks. If active upstream is set,
+	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
 	// HTTP headers to set on health check requests.
@@ -173,9 +181,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	for _, upstream := range h.Upstreams {
-		// if there's an alternative port for health-check provided in the config,
-		// then use it, otherwise use the port of upstream.
-		if a.Port != 0 {
+		// if there's an alternative upstream for health-check provided in the config,
+		// then use it, otherwise use the upstream's dial address. if upstream is used,
+		// then the port is ignored.
+		if a.Upstream != "" {
+			upstream.activeHealthCheckUpstream = a.Upstream
+		} else if a.Port != 0 {
+			// if there's an alternative port for health-check provided in the config,
+			// then use it, otherwise use the port of upstream.
 			upstream.activeHealthCheckPort = a.Port
 		}
 	}
@@ -350,7 +363,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	if err != nil {
 		host = hostAddr
 	}
-	if h.HealthChecks.Active.Port != 0 {
+
+	// ignore active health check port if active upstream is provided as the
+	// active upstream already contains the replacement port
+	if h.HealthChecks.Active.Upstream != "" {
+		u.Host = h.HealthChecks.Active.Upstream
+	} else if h.HealthChecks.Active.Port != 0 {
 		port := strconv.Itoa(h.HealthChecks.Active.Port)
 		u.Host = net.JoinHostPort(host, port)
 	}
