@@ -79,10 +79,12 @@ type ActiveHealthChecks struct {
 	// for health checks. This should be used in tandem with `health_header` and
 	// `{http.reverse_proxy.active.target_upstream}`. This can be helpful when
 	// creating an intermediate service to do a more thorough health check.
+	// If upstream is set, the active health check port is ignored.
 	Upstream string `json:"upstream,omitempty"`
 
 	// The port to use (if different from the upstream's dial
-	// address) for health checks.
+	// address) for health checks. If active upstream is set,
+	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
 	// HTTP headers to set on health check requests.
