@@ -159,6 +159,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
 							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+								d = strings.ToLower(d)
 								serverDomainSet[d] = struct{}{}
 							}
 						}
