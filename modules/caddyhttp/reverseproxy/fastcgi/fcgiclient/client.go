@@ -125,7 +125,6 @@ var pad [maxPad]byte
 // client implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type client struct {
-
 	// This is the underlying network connection that the client uses to communicate with the FastCGI server. It could be a TCP socket or any other type of connection supported by standard Go's net package.
 	// The conn field is essential for sending FastCGI requests and receiving responses from the server.
 	conn net.Conn
@@ -148,7 +147,6 @@ type client struct {
 }
 
 func NewClient(conn net.Conn, logger *zap.Logger, stderr bool) client {
-
 	client := client{
 		conn:      conn,
 		requestID: 1,
