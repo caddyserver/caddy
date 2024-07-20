@@ -21,7 +21,7 @@
 // Use of this source code is governed by a BSD-style
 // Part of source code is from Go fcgi package
 
-package fastcgiclient
+package fcgiclient
 
 import (
 	"bufio"
