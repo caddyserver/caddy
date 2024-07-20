@@ -21,7 +21,7 @@
 // Use of this source code is governed by a BSD-style
 // Part of source code is from Go fcgi package
 
-package fastcgi
+package fastcgiclient
 
 import (
 	"bufio"
@@ -122,19 +122,19 @@ const (
 // not synchronized because we don't care what the contents are
 var pad [maxPad]byte
 
-// client implements a FastCGI client, which is a standard for
+// Client implements a FastCGI Client, which is a standard for
 // interfacing external applications with Web servers.
-type client struct {
-	rwc net.Conn
+type Client struct {
+	Rwc net.Conn
 	// keepAlive bool // TODO: implement
-	reqID  uint16
-	stderr bool
-	logger *zap.Logger
+	ReqID  uint16
+	Stderr bool
+	Logger *zap.Logger
 }
 
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
-func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
+func (c *Client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
 	writer := &streamWriter{c: c}
 	writer.buf = bufPool.Get().(*bytes.Buffer)
 	writer.buf.Reset()
@@ -195,7 +195,7 @@ func (f clientCloser) Close() error {
 
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
-func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
+func (c *Client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
 	r, err := c.Do(p, req)
 	if err != nil {
 		return
@@ -231,7 +231,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 
 	// wrap the response body in our closer
 	closer := clientCloser{
-		rwc:    c.rwc,
+		rwc:    c.Rwc,
 		r:      r.(*streamReader),
 		Reader: rb,
 		status: resp.StatusCode,
@@ -240,8 +240,8 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	if chunked(resp.TransferEncoding) {
 		closer.Reader = httputil.NewChunkedReader(rb)
 	}
-	if c.stderr {
-		closer.logger = c.logger
+	if c.Stderr {
+		closer.logger = c.Logger
 	}
 	resp.Body = closer
 
@@ -249,7 +249,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 }
 
 // Get issues a GET request to the fcgi responder.
-func (c *client) Get(p map[string]string, body io.Reader, l int64) (resp *http.Response, err error) {
+func (c *Client) Get(p map[string]string, body io.Reader, l int64) (resp *http.Response, err error) {
 	p["REQUEST_METHOD"] = "GET"
 	p["CONTENT_LENGTH"] = strconv.FormatInt(l, 10)
 
@@ -257,7 +257,7 @@ func (c *client) Get(p map[string]string, body io.Reader, l int64) (resp *http.R
 }
 
 // Head issues a HEAD request to the fcgi responder.
-func (c *client) Head(p map[string]string) (resp *http.Response, err error) {
+func (c *Client) Head(p map[string]string) (resp *http.Response, err error) {
 	p["REQUEST_METHOD"] = "HEAD"
 	p["CONTENT_LENGTH"] = "0"
 
@@ -265,7 +265,7 @@ func (c *client) Head(p map[string]string) (resp *http.Response, err error) {
 }
 
 // Options issues an OPTIONS request to the fcgi responder.
-func (c *client) Options(p map[string]string) (resp *http.Response, err error) {
+func (c *Client) Options(p map[string]string) (resp *http.Response, err error) {
 	p["REQUEST_METHOD"] = "OPTIONS"
 	p["CONTENT_LENGTH"] = "0"
 
@@ -274,7 +274,7 @@ func (c *client) Options(p map[string]string) (resp *http.Response, err error) {
 
 // Post issues a POST request to the fcgi responder. with request body
 // in the format that bodyType specified
-func (c *client) Post(p map[string]string, method string, bodyType string, body io.Reader, l int64) (resp *http.Response, err error) {
+func (c *Client) Post(p map[string]string, method string, bodyType string, body io.Reader, l int64) (resp *http.Response, err error) {
 	if p == nil {
 		p = make(map[string]string)
 	}
@@ -297,7 +297,7 @@ func (c *client) Post(p map[string]string, method string, bodyType string, body 
 
 // PostForm issues a POST to the fcgi responder, with form
 // as a string key to a list values (url.Values)
-func (c *client) PostForm(p map[string]string, data url.Values) (resp *http.Response, err error) {
+func (c *Client) PostForm(p map[string]string, data url.Values) (resp *http.Response, err error) {
 	body := bytes.NewReader([]byte(data.Encode()))
 	return c.Post(p, "POST", "application/x-www-form-urlencoded", body, int64(body.Len()))
 }
@@ -305,7 +305,7 @@ func (c *client) PostForm(p map[string]string, data url.Values) (resp *http.Resp
 // PostFile issues a POST to the fcgi responder in multipart(RFC 2046) standard,
 // with form as a string key to a list values (url.Values),
 // and/or with file as a string key to a list file path.
-func (c *client) PostFile(p map[string]string, data url.Values, file map[string]string) (resp *http.Response, err error) {
+func (c *Client) PostFile(p map[string]string, data url.Values, file map[string]string) (resp *http.Response, err error) {
 	buf := &bytes.Buffer{}
 	writer := multipart.NewWriter(buf)
 	bodyType := writer.FormDataContentType()
@@ -346,18 +346,18 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 
 // SetReadTimeout sets the read timeout for future calls that read from the
 // fcgi responder. A zero value for t means no timeout will be set.
-func (c *client) SetReadTimeout(t time.Duration) error {
+func (c *Client) SetReadTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.rwc.SetReadDeadline(time.Now().Add(t))
+		return c.Rwc.SetReadDeadline(time.Now().Add(t))
 	}
 	return nil
 }
 
 // SetWriteTimeout sets the write timeout for future calls that send data to
 // the fcgi responder. A zero value for t means no timeout will be set.
-func (c *client) SetWriteTimeout(t time.Duration) error {
+func (c *Client) SetWriteTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.rwc.SetWriteDeadline(time.Now().Add(t))
+		return c.Rwc.SetWriteDeadline(time.Now().Add(t))
 	}
 	return nil
 }

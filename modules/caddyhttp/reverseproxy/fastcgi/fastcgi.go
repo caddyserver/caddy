@@ -30,10 +30,9 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi/fastcgiclient"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
-
-var noopLogger = zap.NewNop()
 
 func init() {
 	caddy.RegisterModule(Transport{})
@@ -167,11 +166,11 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}()
 
 	// create the client that will facilitate the protocol
-	client := client{
-		rwc:    conn,
-		reqID:  1,
-		logger: logger,
-		stderr: t.CaptureStderr,
+	client := fastcgiclient.Client{
+		Rwc:    conn,
+		ReqID:  1,
+		Logger: logger,
+		Stderr: t.CaptureStderr,
 	}
 
 	// read/write timeouts

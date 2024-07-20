@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fastcgi
+package fastcgiclient
 
 import (
 	"bytes"
@@ -22,19 +22,19 @@ import (
 // streamWriter abstracts out the separation of a stream into discrete records.
 // It only writes maxWrite bytes at a time.
 type streamWriter struct {
-	c       *client
+	c       *Client
 	h       header
 	buf     *bytes.Buffer
 	recType uint8
 }
 
 func (w *streamWriter) writeRecord(recType uint8, content []byte) (err error) {
-	w.h.init(recType, w.c.reqID, len(content))
+	w.h.init(recType, w.c.ReqID, len(content))
 	w.buf.Write(pad[:8])
 	w.writeHeader()
 	w.buf.Write(content)
 	w.buf.Write(pad[:w.h.PaddingLength])
-	_, err = w.buf.WriteTo(w.c.rwc)
+	_, err = w.buf.WriteTo(w.c.Rwc)
 	return err
 }
 
@@ -129,10 +129,10 @@ func (w *streamWriter) writeHeader() {
 
 // Flush write buffer data to the underlying connection, it assumes header data is the first 8 bytes of buf
 func (w *streamWriter) Flush() error {
-	w.h.init(w.recType, w.c.reqID, w.buf.Len()-8)
+	w.h.init(w.recType, w.c.ReqID, w.buf.Len()-8)
 	w.writeHeader()
 	w.buf.Write(pad[:w.h.PaddingLength])
-	_, err := w.buf.WriteTo(w.c.rwc)
+	_, err := w.buf.WriteTo(w.c.Rwc)
 	return err
 }
 

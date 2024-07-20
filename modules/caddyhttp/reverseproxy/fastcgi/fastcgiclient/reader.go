@@ -12,21 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fastcgi
+package fastcgiclient
 
-type header struct {
-	Version       uint8
-	Type          uint8
-	ID            uint16
-	ContentLength uint16
-	PaddingLength uint8
-	Reserved      uint8
+import (
+	"bytes"
+	"io"
+)
+
+type streamReader struct {
+	c      *Client
+	rec    record
+	stderr bytes.Buffer
 }
 
-func (h *header) init(recType uint8, reqID uint16, contentLength int) {
-	h.Version = 1
-	h.Type = recType
-	h.ID = reqID
-	h.ContentLength = uint16(contentLength)
-	h.PaddingLength = uint8(-contentLength & 7)
+func (w *streamReader) Read(p []byte) (n int, err error) {
+	for !w.rec.hasMore() {
+		err = w.rec.fill(w.c.Rwc)
+		if err != nil {
+			return 0, err
+		}
+
+		// standard error output
+		if w.rec.h.Type == Stderr {
+			if _, err = io.Copy(&w.stderr, &w.rec); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return w.rec.Read(p)
 }
