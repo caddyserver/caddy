@@ -20,7 +20,7 @@ import (
 )
 
 type streamReader struct {
-	c      *Client
+	c      *client
 	rec    record
 	stderr bytes.Buffer
 }
