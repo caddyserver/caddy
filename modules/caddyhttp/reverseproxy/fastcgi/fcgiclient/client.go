@@ -125,11 +125,38 @@ var pad [maxPad]byte
 // Client implements a FastCGI Client, which is a standard for
 // interfacing external applications with Web servers.
 type Client struct {
-	Rwc net.Conn
+
+	// This is the underlying network connection that the client uses to communicate with the FastCGI server. It could be a TCP socket or any other type of connection supported by standard Go's net package.
+	// The conn field is essential for sending FastCGI requests and receiving responses from the server.
+	conn net.Conn
+
 	// keepAlive bool // TODO: implement
-	ReqID  uint16
-	Stderr bool
-	Logger *zap.Logger
+
+	// In the FastCGI protocol, each request is assigned a unique identifier (ID). This field stores the ID of the current request being handled by the client.
+	// Request IDs help differentiate multiple concurrent requests and ensure proper response routing.
+	// TODO: in current Caddy implementation of FastCGI this is always set to 1
+	// This field would have different values when implemented keepAlive (see above)
+	requestID uint16
+
+	// This boolean flag indicates whether the client should capture and handle standard error (stderr) output from the FastCGI application.
+	// When set to true, the client can redirect stderr output for logging, debugging, or error reporting.
+	stderr bool
+
+	// This is a pointer to a logger instance from the zap logging library. zap is a popular high-performance logging framework in Go.
+	// The logger field allows the client to log events, errors, and debugging information during its operation.
+	logger *zap.Logger
+}
+
+func NewClient(conn net.Conn, logger *zap.Logger, stderr bool) Client {
+
+	client := Client{
+		conn:      conn,
+		requestID: 1,
+		stderr:    stderr,
+		logger:    logger,
+	}
+
+	return client
 }
 
 // Do made the request and returns a io.Reader that translates the data read
@@ -231,7 +258,7 @@ func (c *Client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 
 	// wrap the response body in our closer
 	closer := clientCloser{
-		rwc:    c.Rwc,
+		rwc:    c.conn, // maybe change this clientCloser field's name from rwc to conn?
 		r:      r.(*streamReader),
 		Reader: rb,
 		status: resp.StatusCode,
@@ -240,8 +267,8 @@ func (c *Client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	if chunked(resp.TransferEncoding) {
 		closer.Reader = httputil.NewChunkedReader(rb)
 	}
-	if c.Stderr {
-		closer.logger = c.Logger
+	if c.stderr {
+		closer.logger = c.logger
 	}
 	resp.Body = closer
 
@@ -348,7 +375,7 @@ func (c *Client) PostFile(p map[string]string, data url.Values, file map[string]
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *Client) SetReadTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.Rwc.SetReadDeadline(time.Now().Add(t))
+		return c.conn.SetReadDeadline(time.Now().Add(t))
 	}
 	return nil
 }
@@ -357,7 +384,7 @@ func (c *Client) SetReadTimeout(t time.Duration) error {
 // the fcgi responder. A zero value for t means no timeout will be set.
 func (c *Client) SetWriteTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.Rwc.SetWriteDeadline(time.Now().Add(t))
+		return c.conn.SetWriteDeadline(time.Now().Add(t))
 	}
 	return nil
 }

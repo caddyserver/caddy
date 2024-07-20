@@ -166,12 +166,11 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}()
 
 	// create the client that will facilitate the protocol
-	client := fcgiclient.Client{
-		Rwc:    conn,
-		ReqID:  1,
-		Logger: logger,
-		Stderr: t.CaptureStderr,
-	}
+	client := fcgiclient.NewClient(
+		conn,
+		logger,
+		t.CaptureStderr,
+	)
 
 	// read/write timeouts
 	if err = client.SetReadTimeout(time.Duration(t.ReadTimeout)); err != nil {

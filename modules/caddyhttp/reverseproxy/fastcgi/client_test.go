@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi/fcgiclient"
+	"go.uber.org/zap"
 )
 
 // test fcgi protocol includes:
@@ -125,7 +126,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 		return
 	}
 
-	fcgi := fcgiclient.Client{Rwc: conn, ReqID: 1}
+	fcgi := fcgiclient.NewClient(conn, zap.NewNop(), true)
 
 	length := 0
 

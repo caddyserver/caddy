@@ -27,7 +27,7 @@ type streamReader struct {
 
 func (w *streamReader) Read(p []byte) (n int, err error) {
 	for !w.rec.hasMore() {
-		err = w.rec.fill(w.c.Rwc)
+		err = w.rec.fill(w.c.conn)
 		if err != nil {
 			return 0, err
 		}
