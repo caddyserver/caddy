@@ -30,7 +30,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi/fastcgiclient"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi/fcgiclient"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -166,7 +166,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}()
 
 	// create the client that will facilitate the protocol
-	client := fastcgiclient.Client{
+	client := fcgiclient.Client{
 		Rwc:    conn,
 		ReqID:  1,
 		Logger: logger,

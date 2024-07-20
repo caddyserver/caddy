@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fastcgiclient
+package fcgiclient
 
 type header struct {
 	Version       uint8
