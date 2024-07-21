@@ -363,6 +363,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// site owners  control the backends), so it must be exclusive
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
 		h.h3Transport = new(http3.RoundTripper)
+		if h.TLS != nil {
+			var err error
+			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
+			if err != nil {
+				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
+			}
+		}
 	} else if len(h.Versions) > 1 && sliceContains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}

@@ -231,6 +231,19 @@ type IPVersions struct {
 	IPv6 *bool `json:"ipv6,omitempty"`
 }
 
+func resolveIpVersion(versions *IPVersions) string {
+	resolveIpv4 := versions == nil || (versions.IPv4 == nil && versions.IPv6 == nil) || (versions.IPv4 != nil && *versions.IPv4)
+	resolveIpv6 := versions == nil || (versions.IPv6 == nil && versions.IPv4 == nil) || (versions.IPv6 != nil && *versions.IPv6)
+	switch {
+	case resolveIpv4 && !resolveIpv6:
+		return "ip4"
+	case !resolveIpv4 && resolveIpv6:
+		return "ip6"
+	default:
+		return "ip"
+	}
+}
+
 // AUpstreams provides upstreams from A/AAAA lookups.
 // Results are cached and refreshed at the configured
 // refresh interval.
@@ -313,9 +326,6 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	resolveIpv4 := au.Versions == nil || au.Versions.IPv4 == nil || *au.Versions.IPv4
-	resolveIpv6 := au.Versions == nil || au.Versions.IPv6 == nil || *au.Versions.IPv6
-
 	// Map ipVersion early, so we can use it as part of the cache-key.
 	// This should be fairly inexpensive and comes and the upside of
 	// allowing the same dynamic upstream (name + port combination)
@@ -324,15 +334,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// It also forced a cache-miss if a previously cached dynamic
 	// upstream changes its ip version, e.g. after a config reload,
 	// while keeping the cache-invalidation as simple as it currently is.
-	var ipVersion string
-	switch {
-	case resolveIpv4 && !resolveIpv6:
-		ipVersion = "ip4"
-	case !resolveIpv4 && resolveIpv6:
-		ipVersion = "ip6"
-	default:
-		ipVersion = "ip"
-	}
+	ipVersion := resolveIpVersion(au.Versions)
 
 	auStr := repl.ReplaceAll(au.String()+ipVersion, "")
 

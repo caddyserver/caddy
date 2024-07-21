@@ -75,12 +75,23 @@ type ActiveHealthChecks struct {
 	// The URI (path and query) to use for health checks
 	URI string `json:"uri,omitempty"`
 
+	// The host:port to use (if different from the upstream's dial address)
+	// for health checks. This should be used in tandem with `health_header` and
+	// `{http.reverse_proxy.active.target_upstream}`. This can be helpful when
+	// creating an intermediate service to do a more thorough health check.
+	// If upstream is set, the active health check port is ignored.
+	Upstream string `json:"upstream,omitempty"`
+
 	// The port to use (if different from the upstream's dial
-	// address) for health checks.
+	// address) for health checks. If active upstream is set,
+	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
+
+	// The HTTP method to use for health checks (default "GET").
+	Method string `json:"method,omitempty"`
 
 	// Whether to follow HTTP redirects in response to active health checks (default off).
 	FollowRedirects bool `json:"follow_redirects,omitempty"`
@@ -133,6 +144,11 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 	a.Headers = cleaned
 
+	// If Method is not set, default to GET
+	if a.Method == "" {
+		a.Method = http.MethodGet
+	}
+
 	h.HealthChecks.Active.logger = h.logger.Named("health_checker.active")
 
 	timeout := time.Duration(a.Timeout)
@@ -165,9 +181,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	for _, upstream := range h.Upstreams {
-		// if there's an alternative port for health-check provided in the config,
-		// then use it, otherwise use the port of upstream.
-		if a.Port != 0 {
+		// if there's an alternative upstream for health-check provided in the config,
+		// then use it, otherwise use the upstream's dial address. if upstream is used,
+		// then the port is ignored.
+		if a.Upstream != "" {
+			upstream.activeHealthCheckUpstream = a.Upstream
+		} else if a.Port != 0 {
+			// if there's an alternative port for health-check provided in the config,
+			// then use it, otherwise use the port of upstream.
 			upstream.activeHealthCheckPort = a.Port
 		}
 	}
@@ -312,7 +333,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, upstream)
+			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, networkAddr, upstream)
 			if err != nil {
 				h.HealthChecks.Active.logger.Error("active health check failed",
 					zap.String("address", hostAddr),
@@ -330,7 +351,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 // according to whether it passes the health check. An error is
 // returned only if the health check fails to occur or if marking
 // the host's health status fails.
-func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstream *Upstream) error {
+func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networkAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
 	u := &url.URL{
 		Scheme: "http",
@@ -342,7 +363,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	if err != nil {
 		host = hostAddr
 	}
-	if h.HealthChecks.Active.Port != 0 {
+
+	// ignore active health check port if active upstream is provided as the
+	// active upstream already contains the replacement port
+	if h.HealthChecks.Active.Upstream != "" {
+		u.Host = h.HealthChecks.Active.Upstream
+	} else if h.HealthChecks.Active.Port != 0 {
 		port := strconv.Itoa(h.HealthChecks.Active.Port)
 		u.Host = net.JoinHostPort(host, port)
 	}
@@ -377,7 +403,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
 		dialInfoVarKey: dialInfo,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, h.HealthChecks.Active.Method, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
 	}
@@ -386,6 +412,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 
 	// set headers, using a replacer with only globals (env vars, system info, etc.)
 	repl := caddy.NewReplacer()
+	repl.Set("http.reverse_proxy.active.target_upstream", networkAddr)
 	for key, vals := range h.HealthChecks.Active.Headers {
 		key = repl.ReplaceAll(key, "")
 		if key == "Host" {
@@ -426,6 +453,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 		}
 		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
+				h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
 				upstream.Host.resetHealth()
 			}
@@ -492,7 +520,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, upstre
 	}
 
 	// passed health check parameters, so mark as healthy
-	h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
 	markHealthy()
 
 	return nil
