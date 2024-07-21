@@ -18,6 +18,10 @@ type wrapperFs struct {
 	fs.FS
 }
 
+func (w *wrapperFs) Unwrap() fs.FS {
+	return w.FS
+}
+
 // FilesystemMap stores a map of filesystems
 // the empty key will be overwritten to be the default key
 // it includes a default filesystem, based off the os fs
