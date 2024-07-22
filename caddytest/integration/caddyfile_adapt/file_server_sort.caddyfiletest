@@ -1,0 +1,40 @@
+:8082 {
+	root * .
+	file_server browse {
+		sort size desc
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8082"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"file_server": {
+										"size": {},
+										"desc": {}
+									},
+									"file_server_order": [
+										"size",
+										"desc"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

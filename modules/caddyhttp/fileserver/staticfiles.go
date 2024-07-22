@@ -153,6 +153,16 @@ type FileServer struct {
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
 
+	// Override the default sort. It includes the following options:
+	// sort_by: name(default), size, time
+	// order: asc(default), desc
+	// eg.:
+	//   - `sort time desc` will sort by time in descending order
+	//   - `sort size` will sort by size in ascending order
+	//   - `sort` will sort by name in ascending order, which is the default
+	// The order of the sort options is not important.
+	SortOptions []string `json:"sort,omitempty"`
+
 	// Selection of encoders to use to check for precompressed files.
 	PrecompressedRaw caddy.ModuleMap `json:"precompressed,omitempty" caddy:"namespace=http.precompressed"`
 
