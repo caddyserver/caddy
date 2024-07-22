@@ -99,7 +99,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -tags nobdger -trimpath -ldflags="-w -s" -v
+        go build -tags nobadger -trimpath -ldflags="-w -s" -v
 
     - name: Smoke test Caddy
       working-directory: ./cmd/caddy
