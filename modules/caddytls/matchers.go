@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -54,6 +55,29 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 		}
 	}
 	return false
+}
+
+// UnmarshalCaddyfile sets up the MatchServerName from Caddyfile tokens. Syntax:
+//
+//	sni <domains...>
+func (m *MatchServerName) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		wrapper := d.Val()
+
+		// At least one same-line option must be provided
+		if d.CountRemainingArgs() == 0 {
+			return d.ArgErr()
+		}
+
+		*m = append(*m, d.RemainingArgs()...)
+
+		// No blocks are supported
+		if d.NextBlock(d.Nesting()) {
+			return d.Errf("malformed TLS handshake matcher '%s': blocks are not supported", wrapper)
+		}
+	}
+
+	return nil
 }
 
 // MatchRemoteIP matches based on the remote IP of the
@@ -145,6 +169,50 @@ func (MatchRemoteIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
 	return false
 }
 
+// UnmarshalCaddyfile sets up the MatchRemoteIP from Caddyfile tokens. Syntax:
+//
+//	remote_ip <ranges...>
+//
+// Note: IPs and CIDRs prefixed with ! symbol are treated as not_ranges
+func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		wrapper := d.Val()
+
+		// At least one same-line option must be provided
+		if d.CountRemainingArgs() == 0 {
+			return d.ArgErr()
+		}
+
+		for d.NextArg() {
+			val := d.Val()
+			if len(val) > 1 && val[0] == '!' {
+				prefixes, err := m.parseIPRange(val[1:])
+				if err != nil {
+					return err
+				}
+				for _, prefix := range prefixes {
+					m.NotRanges = append(m.NotRanges, prefix.String())
+				}
+			} else {
+				prefixes, err := m.parseIPRange(val)
+				if err != nil {
+					return err
+				}
+				for _, prefix := range prefixes {
+					m.Ranges = append(m.Ranges, prefix.String())
+				}
+			}
+		}
+
+		// No blocks are supported
+		if d.NextBlock(d.Nesting()) {
+			return d.Errf("malformed TLS handshake matcher '%s': blocks are not supported", wrapper)
+		}
+	}
+
+	return nil
+}
+
 // MatchLocalIP matches based on the IP address of the interface
 // receiving the connection. Specific IPs or CIDR ranges can be specified.
 type MatchLocalIP struct {
@@ -219,6 +287,37 @@ func (MatchLocalIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
 	return false
 }
 
+// UnmarshalCaddyfile sets up the MatchLocalIP from Caddyfile tokens. Syntax:
+//
+//	local_ip <ranges...>
+func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		wrapper := d.Val()
+
+		// At least one same-line option must be provided
+		if d.CountRemainingArgs() == 0 {
+			return d.ArgErr()
+		}
+
+		for d.NextArg() {
+			prefixes, err := m.parseIPRange(d.Val())
+			if err != nil {
+				return err
+			}
+			for _, prefix := range prefixes {
+				m.Ranges = append(m.Ranges, prefix.String())
+			}
+		}
+
+		// No blocks are supported
+		if d.NextBlock(d.Nesting()) {
+			return d.Errf("malformed TLS handshake matcher '%s': blocks are not supported", wrapper)
+		}
+	}
+
+	return nil
+}
+
 // Interface guards
 var (
 	_ ConnectionMatcher = (*MatchServerName)(nil)
@@ -226,4 +325,8 @@ var (
 
 	_ caddy.Provisioner = (*MatchLocalIP)(nil)
 	_ ConnectionMatcher = (*MatchLocalIP)(nil)
+
+	_ caddyfile.Unmarshaler = (*MatchLocalIP)(nil)
+	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
+	_ caddyfile.Unmarshaler = (*MatchServerName)(nil)
 )
