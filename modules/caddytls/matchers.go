@@ -107,16 +107,19 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
+	repl := caddy.NewReplacer()
 	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
 		m.cidrs = append(m.cidrs, cidrs...)
 	}
 	for _, str := range m.NotRanges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
@@ -229,9 +232,11 @@ func (MatchLocalIP) CaddyModule() caddy.ModuleInfo {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchLocalIP) Provision(ctx caddy.Context) error {
+	repl := caddy.NewReplacer()
 	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
