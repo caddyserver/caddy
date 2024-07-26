@@ -185,22 +185,18 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		for d.NextArg() {
 			val := d.Val()
+			var exclamation bool
 			if len(val) > 1 && val[0] == '!' {
-				prefixes, err := m.parseIPRange(val[1:])
-				if err != nil {
-					return err
-				}
-				for _, prefix := range prefixes {
-					m.NotRanges = append(m.NotRanges, prefix.String())
-				}
+				exclamation, val = true, val[1:]
+			}
+			ranges := []string{val}
+			if val == "private_ranges" {
+				ranges = PrivateRangesCIDR()
+			}
+			if exclamation {
+				m.NotRanges = append(m.NotRanges, ranges...)
 			} else {
-				prefixes, err := m.parseIPRange(val)
-				if err != nil {
-					return err
-				}
-				for _, prefix := range prefixes {
-					m.Ranges = append(m.Ranges, prefix.String())
-				}
+				m.Ranges = append(m.Ranges, ranges...)
 			}
 		}
 
@@ -300,13 +296,12 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		for d.NextArg() {
-			prefixes, err := m.parseIPRange(d.Val())
-			if err != nil {
-				return err
+			val := d.Val()
+			if val == "private_ranges" {
+				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				continue
 			}
-			for _, prefix := range prefixes {
-				m.Ranges = append(m.Ranges, prefix.String())
-			}
+			m.Ranges = append(m.Ranges, val)
 		}
 
 		// No blocks are supported
@@ -330,3 +325,17 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*MatchServerName)(nil)
 )
+
+// PrivateRangesCIDR returns a list of private CIDR range
+// strings, which can be used as a configuration shortcut.
+// Copied from caddyhttp/ip_range.go due to an import cycle.
+func PrivateRangesCIDR() []string {
+	return []string{
+		"192.168.0.0/16",
+		"172.16.0.0/12",
+		"10.0.0.0/8",
+		"127.0.0.1/8",
+		"fd00::/8",
+		"::1",
+	}
+}
