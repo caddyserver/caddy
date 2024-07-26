@@ -250,7 +250,9 @@ func (m MatchClientIP) Match(r *http.Request) bool {
 func provisionCidrsZonesFromRanges(ranges []string) ([]*netip.Prefix, []string, error) {
 	cidrs := []*netip.Prefix{}
 	zones := []string{}
+	repl := caddy.NewReplacer()
 	for _, str := range ranges {
+		str = repl.ReplaceAll(str, "")
 		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {
 			split := strings.Split(str, "%")
