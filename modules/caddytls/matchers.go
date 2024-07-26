@@ -49,8 +49,17 @@ func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
+	// caddytls.TestServerNameMatcher calls this function without any context
+	var repl *caddy.Replacer
+	if ctx := hello.Context(); ctx != nil {
+		repl = ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	} else {
+		repl = caddy.NewReplacer()
+	}
+
 	for _, name := range m {
-		if certmagic.MatchWildcard(hello.ServerName, name) {
+		rs := repl.ReplaceAll(name, "")
+		if certmagic.MatchWildcard(hello.ServerName, rs) {
 			return true
 		}
 	}
