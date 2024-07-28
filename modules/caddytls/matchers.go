@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {
@@ -203,7 +204,7 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			ranges := []string{val}
 			if val == "private_ranges" {
-				ranges = PrivateRangesCIDR()
+				ranges = internal.PrivateRangesCIDR()
 			}
 			if exclamation {
 				m.NotRanges = append(m.NotRanges, ranges...)
@@ -312,7 +313,7 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		for d.NextArg() {
 			val := d.Val()
 			if val == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 				continue
 			}
 			m.Ranges = append(m.Ranges, val)
@@ -339,17 +340,3 @@ var (
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*MatchServerName)(nil)
 )
-
-// PrivateRangesCIDR returns a list of private CIDR range
-// strings, which can be used as a configuration shortcut.
-// Copied from caddyhttp/ip_range.go due to an import cycle.
-func PrivateRangesCIDR() []string {
-	return []string{
-		"192.168.0.0/16",
-		"172.16.0.0/12",
-		"10.0.0.0/8",
-		"127.0.0.1/8",
-		"fd00::/8",
-		"::1",
-	}
-}
