@@ -62,13 +62,17 @@ func newOpenTelemetryWrapper(
 	}
 
 	protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+	var traceExporter sdktrace.SpanExporter
 	if protocol == "http/protobuf" {
-		traceExporter, err := otlptracehttp.New(ctx)
+		traceExporter, err = otlptracehttp.New(ctx)
+		if err != nil {
+			return ot, fmt.Errorf("creating HTTP trace exporter error: %w", err)
+		}
 	} else {
-		traceExporter, err := otlptracegrpc.New(ctx)
-	}
-	if err != nil {
-		return ot, fmt.Errorf("creating trace exporter error: %w", err)
+		traceExporter, err = otlptracegrpc.New(ctx)
+		if err != nil {
+			return ot, fmt.Errorf("creating GRPC trace exporter error: %w", err)
+		}
 	}
 
 	ot.propagators = autoprop.NewTextMapPropagator()
