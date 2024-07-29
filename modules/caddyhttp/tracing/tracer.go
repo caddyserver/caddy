@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -61,18 +59,9 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
-	var traceExporter sdktrace.SpanExporter
-	if protocol == "http/protobuf" {
-		traceExporter, err = otlptracehttp.New(ctx)
-		if err != nil {
-			return ot, fmt.Errorf("creating HTTP trace exporter error: %w", err)
-		}
-	} else {
-		traceExporter, err = otlptracegrpc.New(ctx)
-		if err != nil {
-			return ot, fmt.Errorf("creating GRPC trace exporter error: %w", err)
-		}
+	traceExporter, err := autoexport.NewSpanExporter(ctx)
+	if err != nil {
+		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
 
 	ot.propagators = autoprop.NewTextMapPropagator()
