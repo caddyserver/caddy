@@ -615,8 +615,7 @@ func (app *App) Stop() error {
 		// listener first and these listeners maybe unregistered thus won't be closed. caddy
 		// distinguishes quic-listener and underlying datagram sockets.
 
-		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
-		if err := server.h3server.Close(); err != nil {
+		if err := server.h3server.CloseGracefully(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
