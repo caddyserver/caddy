@@ -98,8 +98,13 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 		method = http.MethodGet
 	}
 
+	// tr := otel.Tracer("caddyconfig")
+
+	// ctx, span := tr.Start(ctx, "httploader")
+	// defer span.End()
+	
 	url := repl.ReplaceAll(hl.URL, "")
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
 	}

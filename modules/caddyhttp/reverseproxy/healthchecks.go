@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -429,6 +430,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
 		dialInfoVarKey: dialInfo,
 	})
+
+	tr := otel.Tracer("reverseproxy")
+
+	ctx, span := tr.Start(ctx, "healthcheck")
+	defer span.End()
+
 	req, err := http.NewRequestWithContext(ctx, h.HealthChecks.Active.Method, u.String(), requestBody)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
