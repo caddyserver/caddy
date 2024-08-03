@@ -211,18 +211,11 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 	var env envVars
 
-	// Separate remote IP and port; more lenient than net.SplitHostPort
-	var ip, port string
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > -1 {
-		ip = r.RemoteAddr[:idx]
-		port = r.RemoteAddr[idx+1:]
-	} else {
-		ip = r.RemoteAddr
+	ip := caddyhttp.GetVar(r.Context(), caddyhttp.ClientIPVarKey).(string)
+	_, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		port = ""
 	}
-
-	// Remove [] from IPv6 addresses
-	ip = strings.Replace(ip, "[", "", 1)
-	ip = strings.Replace(ip, "]", "", 1)
 
 	// make sure file root is absolute
 	root, err := filepath.Abs(repl.ReplaceAll(t.Root, "."))
