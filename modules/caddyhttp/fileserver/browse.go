@@ -206,8 +206,7 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
 func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
-	orderParam := ""
-	sortParam := ""
+	var orderParam, sortParam string
 
 	// The configs in Caddyfile have lower priority than Query params,
 	// so put it at first.

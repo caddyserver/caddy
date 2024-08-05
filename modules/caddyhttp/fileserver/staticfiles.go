@@ -153,14 +153,14 @@ type FileServer struct {
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
 
-	// Override the default sort. It includes the following options:
-	// sort_by: name(default), size, time
-	// order: asc(default), desc
+	// Override the default sort.
+	// It includes the following options:
+	//   - sort_by: name(default), namedirfirst, size, time
+	//   - order: asc(default), desc
 	// eg.:
 	//   - `sort time desc` will sort by time in descending order
 	//   - `sort size` will sort by size in ascending order
-	//   - `sort` will sort by name in ascending order, which is the default
-	// The order of the sort options is not important.
+	// The first option must be `sort_by` and the second option must be `order` (if exists).
 	SortOptions []string `json:"sort,omitempty"`
 
 	// Selection of encoders to use to check for precompressed files.
@@ -244,6 +244,20 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			fsrv.precompressors = make(map[string]encode.Precompressed)
 		}
 		fsrv.precompressors[ae] = p
+	}
+
+	// check sort options
+	for idx, sortOption := range fsrv.SortOptions {
+		switch idx {
+		case 0:
+			if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
+				return fmt.Errorf("invalid sort option %s", sortOption)
+			}
+		case 1:
+			if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
+				return fmt.Errorf("invalid sort option %s", sortOption)
+			}
+		}
 	}
 
 	return nil
