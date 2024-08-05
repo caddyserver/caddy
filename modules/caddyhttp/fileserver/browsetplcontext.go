@@ -373,4 +373,7 @@ const (
 	sortByNameDirFirst = "namedirfirst"
 	sortBySize         = "size"
 	sortByTime         = "time"
+
+	sortOrderAsc  = "asc"
+	sortOrderDesc = "desc"
 )

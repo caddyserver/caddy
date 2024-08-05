@@ -153,6 +153,16 @@ type FileServer struct {
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
 
+	// Override the default sort.
+	// It includes the following options:
+	//   - sort_by: name(default), namedirfirst, size, time
+	//   - order: asc(default), desc
+	// eg.:
+	//   - `sort time desc` will sort by time in descending order
+	//   - `sort size` will sort by size in ascending order
+	// The first option must be `sort_by` and the second option must be `order` (if exists).
+	SortOptions []string `json:"sort,omitempty"`
+
 	// Selection of encoders to use to check for precompressed files.
 	PrecompressedRaw caddy.ModuleMap `json:"precompressed,omitempty" caddy:"namespace=http.precompressed"`
 
@@ -234,6 +244,22 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			fsrv.precompressors = make(map[string]encode.Precompressed)
 		}
 		fsrv.precompressors[ae] = p
+	}
+
+	// check sort options
+	for idx, sortOption := range fsrv.SortOptions {
+		switch idx {
+		case 0:
+			if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
+				return fmt.Errorf("the first option must be one of the following: %s, %s, %s, %s, but got %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOption)
+			}
+		case 1:
+			if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
+				return fmt.Errorf("the second option must be one of the following: %s, %s, but got %s", sortOrderAsc, sortOrderDesc, sortOption)
+			}
+		default:
+			return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
+		}
 	}
 
 	return nil
