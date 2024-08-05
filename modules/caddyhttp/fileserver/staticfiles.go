@@ -251,12 +251,14 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		switch idx {
 		case 0:
 			if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
-				return fmt.Errorf("invalid sort option %s", sortOption)
+				return fmt.Errorf("the first option must be one of the following: %s, %s, %s, %s, but got %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOption)
 			}
 		case 1:
 			if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
-				return fmt.Errorf("invalid sort option %s", sortOption)
+				return fmt.Errorf("the second option must be one of the following: %s, %s, but got %s", sortOrderAsc, sortOrderDesc, sortOption)
 			}
+		default:
+			return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
 		}
 	}
 
