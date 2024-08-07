@@ -28,6 +28,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
@@ -688,7 +689,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "trusted_proxies":
 			for d.NextArg() {
 				if d.Val() == "private_ranges" {
-					h.TrustedProxies = append(h.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
+					h.TrustedProxies = append(h.TrustedProxies, internal.PrivateRangesCIDR()...)
 					continue
 				}
 				h.TrustedProxies = append(h.TrustedProxies, d.Val())
