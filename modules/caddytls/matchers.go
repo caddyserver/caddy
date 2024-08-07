@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {
@@ -49,8 +50,17 @@ func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
+	// caddytls.TestServerNameMatcher calls this function without any context
+	var repl *caddy.Replacer
+	if ctx := hello.Context(); ctx != nil {
+		repl = ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	} else {
+		repl = caddy.NewReplacer()
+	}
+
 	for _, name := range m {
-		if certmagic.MatchWildcard(hello.ServerName, name) {
+		rs := repl.ReplaceAll(name, "")
+		if certmagic.MatchWildcard(hello.ServerName, rs) {
 			return true
 		}
 	}
@@ -107,16 +117,19 @@ func (MatchRemoteIP) CaddyModule() caddy.ModuleInfo {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
+	repl := caddy.NewReplacer()
 	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
 		m.cidrs = append(m.cidrs, cidrs...)
 	}
 	for _, str := range m.NotRanges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
@@ -185,22 +198,18 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		for d.NextArg() {
 			val := d.Val()
+			var exclamation bool
 			if len(val) > 1 && val[0] == '!' {
-				prefixes, err := m.parseIPRange(val[1:])
-				if err != nil {
-					return err
-				}
-				for _, prefix := range prefixes {
-					m.NotRanges = append(m.NotRanges, prefix.String())
-				}
+				exclamation, val = true, val[1:]
+			}
+			ranges := []string{val}
+			if val == "private_ranges" {
+				ranges = internal.PrivateRangesCIDR()
+			}
+			if exclamation {
+				m.NotRanges = append(m.NotRanges, ranges...)
 			} else {
-				prefixes, err := m.parseIPRange(val)
-				if err != nil {
-					return err
-				}
-				for _, prefix := range prefixes {
-					m.Ranges = append(m.Ranges, prefix.String())
-				}
+				m.Ranges = append(m.Ranges, ranges...)
 			}
 		}
 
@@ -233,9 +242,11 @@ func (MatchLocalIP) CaddyModule() caddy.ModuleInfo {
 
 // Provision parses m's IP ranges, either from IP or CIDR expressions.
 func (m *MatchLocalIP) Provision(ctx caddy.Context) error {
+	repl := caddy.NewReplacer()
 	m.logger = ctx.Logger()
 	for _, str := range m.Ranges {
-		cidrs, err := m.parseIPRange(str)
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
 		if err != nil {
 			return err
 		}
@@ -300,13 +311,12 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 
 		for d.NextArg() {
-			prefixes, err := m.parseIPRange(d.Val())
-			if err != nil {
-				return err
+			val := d.Val()
+			if val == "private_ranges" {
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
+				continue
 			}
-			for _, prefix := range prefixes {
-				m.Ranges = append(m.Ranges, prefix.String())
-			}
+			m.Ranges = append(m.Ranges, val)
 		}
 
 		// No blocks are supported

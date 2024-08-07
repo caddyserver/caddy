@@ -29,6 +29,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // MatchRemoteIP matches requests by the remote IP address,
@@ -79,7 +80,7 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Err("the 'forwarded' option is no longer supported; use the 'client_ip' matcher instead")
 			}
 			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 				continue
 			}
 			m.Ranges = append(m.Ranges, d.Val())
@@ -173,7 +174,7 @@ func (m *MatchClientIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextArg() {
 			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 				continue
 			}
 			m.Ranges = append(m.Ranges, d.Val())
@@ -250,7 +251,9 @@ func (m MatchClientIP) Match(r *http.Request) bool {
 func provisionCidrsZonesFromRanges(ranges []string) ([]*netip.Prefix, []string, error) {
 	cidrs := []*netip.Prefix{}
 	zones := []string{}
+	repl := caddy.NewReplacer()
 	for _, str := range ranges {
+		str = repl.ReplaceAll(str, "")
 		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {
 			split := strings.Split(str, "%")
