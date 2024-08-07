@@ -602,6 +602,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
 			},
+			IdleTimeout: time.Duration(s.IdleTimeout),
 			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
 				return context.WithValue(ctx, quicConnCtxKey, c)
 			},
