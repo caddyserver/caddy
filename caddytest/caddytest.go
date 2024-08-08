@@ -133,6 +133,16 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 			_ = json.Indent(&out, body, "", "  ")
 			tc.t.Logf("----------- failed with config -----------\n%s", out.String())
 		}
+		tc.t.Log("deleting existing config in test cleanup")
+		deleteRequest, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort), nil)
+		res, err := tc.Client.Do(deleteRequest)
+		if err != nil {
+			tc.t.Logf("failed to delete existing config: %s", err)
+		}
+		if res != nil {
+			_, _ = io.Copy(io.Discard, res.Body)
+			res.Body.Close()
+		}
 	})
 
 	rawConfig = prependCaddyFilePath(rawConfig)
@@ -208,30 +218,34 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 		Timeout: Default.LoadRequestTimeout,
 	}
 
-	fetchConfig := func(client *http.Client) any {
+	fetchConfig := func(client *http.Client) (any, []byte) {
 		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		defer resp.Body.Close()
 		actualBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil
+			return nil, actualBytes
 		}
 		var actual any
 		err = json.Unmarshal(actualBytes, &actual)
 		if err != nil {
-			return nil
+			return nil, actualBytes
 		}
-		return actual
+		return actual, actualBytes
 	}
-
+	var lastFetchedConf any
+	var lastFetchedConfBytes []byte
 	for retries := 10; retries > 0; retries-- {
-		if reflect.DeepEqual(expected, fetchConfig(client)) {
+		lastFetchedConf, lastFetchedConfBytes = fetchConfig(client)
+		if reflect.DeepEqual(expected, lastFetchedConf) {
 			return nil
 		}
 		time.Sleep(1 * time.Second)
 	}
+	tc.t.Logf("expected config: %s", expectedBytes)
+	tc.t.Logf("active config: %s", lastFetchedConfBytes)
 	tc.t.Errorf("POSTed configuration isn't active")
 	return errors.New("EnsureConfigRunning: POSTed configuration isn't active")
 }
