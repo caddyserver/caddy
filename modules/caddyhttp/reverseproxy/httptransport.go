@@ -446,6 +446,9 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
 	if req.URL.Scheme == "http" && h.h2cTransport != nil {
+		// There is no dedicated DisableKeepAlives field in *http2.Transport.
+		// This is an alternative way to disable keep-alive.
+		req.Close = h.Transport.DisableKeepAlives
 		return h.h2cTransport.RoundTrip(req)
 	}
 
