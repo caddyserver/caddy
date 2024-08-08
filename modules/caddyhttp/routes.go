@@ -315,7 +315,7 @@ func wrapMiddleware(_ caddy.Context, mh MiddlewareHandler, metrics *Metrics) Mid
 	handlerToUse := mh
 	if metrics != nil {
 		// wrap the middleware with metrics instrumentation
-		handlerToUse = newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh)
+		handlerToUse = newMetricsInstrumentedHandler(caddy.GetModuleName(mh), mh, metrics.PerHost)
 	}
 
 	return func(next Handler) Handler {
