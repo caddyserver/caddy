@@ -49,7 +49,7 @@ func parseFilesystems(d *caddyfile.Dispenser, existingVal any) (any, error) {
 // CaddyModule returns the Caddy module information.
 func (Filesystems) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "caddy.filesystems",
+		ID:  "filesystems",
 		New: func() caddy.Module { return new(Filesystems) },
 	}
 }

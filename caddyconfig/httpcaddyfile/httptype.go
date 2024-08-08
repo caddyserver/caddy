@@ -275,7 +275,7 @@ func (st ServerType) Setup(
 		cfg.AppsRaw["pki"] = caddyconfig.JSON(pkiApp, &warnings)
 	}
 	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
-		cfg.AppsRaw["caddy.filesystems"] = caddyconfig.JSON(
+		cfg.AppsRaw["filesystems"] = caddyconfig.JSON(
 			filesystems,
 			&warnings)
 	}
