@@ -68,6 +68,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			rb.WriteTimeout = timeout
 
+		case "replace":
+			var replaceStr string
+			if !h.AllArgs(&replaceStr) {
+				return nil, h.ArgErr()
+			}
+			rb.Replace = replaceStr
 		default:
 			return nil, h.Errf("unrecognized request_body subdirective '%s'", h.Val())
 		}
