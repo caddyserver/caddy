@@ -64,6 +64,12 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
+
+	// If true, automatic HTTPS will prefer wildcard names
+	// and ignore non-wildcard names if both are available.
+	// This allows for writing a config with top-level host
+	// matchers without having those names produce certificates.
+	PreferWildcard bool `json:"prefer_wildcard,omitempty"`
 }
 
 // Skipped returns true if name is in skipSlice, which
@@ -163,6 +169,27 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 							}
 						}
 					}
+				}
+			}
+		}
+
+		if srv.AutoHTTPS.PreferWildcard {
+			wildcards := make(map[string]struct{})
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					wildcards[d[2:]] = struct{}{}
+				}
+			}
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					continue
+				}
+				base := d
+				if idx := strings.Index(d, "."); idx != -1 {
+					base = d[idx+1:]
+				}
+				if _, ok := wildcards[base]; ok {
+					delete(serverDomainSet, d)
 				}
 			}
 		}
