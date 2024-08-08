@@ -16,7 +16,9 @@ package caddypki
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +31,8 @@ import (
 	"github.com/smallstep/certificates/authority"
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/truststore"
+	"go.step.sm/crypto/keyutil"
+	"go.step.sm/crypto/x509util"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -394,6 +398,10 @@ func (ca CA) storageKeyIntermediateKey() string {
 	return path.Join(ca.storageKeyCAPrefix(), "intermediate.key")
 }
 
+func (ca CA) storageKeyCSRKey(id string) string {
+	return path.Join(ca.storageKeyCAPrefix(), id+".csr.key")
+}
+
 func (ca CA) newReplacer() *caddy.Replacer {
 	repl := caddy.NewReplacer()
 	repl.Set("pki.ca.name", ca.Name)
@@ -419,6 +427,68 @@ func (ca CA) installRoot() error {
 		truststore.WithFirefox(),
 		truststore.WithJava(),
 	)
+}
+
+func (ca CA) generateCSR(csrReq csrRequest) (csr *x509.CertificateRequest, err error) {
+	var signer crypto.Signer
+	csrKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyCSRKey(csrReq.ID))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return csr, fmt.Errorf("loading csr key '%s': %v", csrReq.ID, err)
+		}
+		if csrReq.Key == nil {
+			signer, err = keyutil.GenerateDefaultSigner()
+			if err != nil {
+				return csr, err
+			}
+		} else {
+			signer, err = keyutil.GenerateSigner(csrReq.Key.Type.String(), csrReq.Key.Curve.String(), csrReq.Key.Size)
+			if err != nil {
+				return csr, err
+			}
+		}
+
+		csrKeyPEM, err = certmagic.PEMEncodePrivateKey(signer)
+		if err != nil {
+			return csr, fmt.Errorf("encoding csr key: %v", err)
+		}
+		if err := ca.storage.Store(ca.ctx, ca.storageKeyCSRKey(csrReq.ID), csrKeyPEM); err != nil {
+			return csr, fmt.Errorf("saving csr key: %v", err)
+		}
+	}
+	if signer == nil {
+		signer, err = certmagic.PEMDecodePrivateKey(csrKeyPEM)
+		if err != nil {
+			return csr, fmt.Errorf("decoding csr key: %v", err)
+		}
+	}
+
+	var subject pkix.Name
+	if csrReq.Request != nil && csrReq.Request.Subject != nil {
+		subject = pkix.Name{
+			Country:            csrReq.Request.Subject.Country,
+			Organization:       csrReq.Request.Subject.Organization,
+			OrganizationalUnit: csrReq.Request.Subject.OrganizationalUnit,
+			Locality:           csrReq.Request.Subject.Locality,
+			Province:           csrReq.Request.Subject.Province,
+			StreetAddress:      csrReq.Request.Subject.StreetAddress,
+			PostalCode:         csrReq.Request.Subject.PostalCode,
+			CommonName:         csrReq.Request.Subject.CommonName,
+		}
+	}
+	dnsNames, ips, emails, uris := x509util.SplitSANs(csrReq.Request.SANs)
+
+	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:        subject,
+		DNSNames:       dnsNames,
+		IPAddresses:    ips,
+		EmailAddresses: emails,
+		URIs:           uris,
+	}, signer)
+	if err != nil {
+		return csr, err
+	}
+	return x509.ParseCertificateRequest(csrBytes)
 }
 
 // AuthorityConfig is used to help a CA configure
