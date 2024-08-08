@@ -659,7 +659,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	}
 
 	// form the request
-	req, err := http.NewRequest(method, origin+uri, body)
+	req, err := http.NewRequestWithContext(context.TODO(), method, origin+uri, body)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}

@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 
@@ -753,6 +754,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	return nil
 }
 
+
 // reverseProxy performs a round-trip to the given backend and processes the response with the client.
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
@@ -784,6 +786,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), otelhttptrace.NewClientTrace(req.Context(), otelhttptrace.ClientTraceOption{
+	})))
 
 	// if FlushInterval is explicitly configured to -1 (i.e. flush continuously to achieve
 	// low-latency streaming), don't let the transport cancel the request if the client
