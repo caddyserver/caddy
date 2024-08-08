@@ -97,6 +97,9 @@ type ACMEIssuer struct {
 	// be used. EXPERIMENTAL: Subject to change.
 	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
 
+	// Forward proxy module
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
+
 	rootPool *x509.CertPool
 	logger   *zap.Logger
 
@@ -170,7 +173,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	}
 
 	var err error
-	iss.template, err = iss.makeIssuerTemplate()
+	iss.template, err = iss.makeIssuerTemplate(ctx)
 	if err != nil {
 		return err
 	}
@@ -178,7 +181,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssuer, error) {
 	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
@@ -189,6 +192,18 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		ExternalAccount:   iss.ExternalAccount,
 		NotAfter:          time.Duration(iss.CertificateLifetime),
 		Logger:            iss.logger,
+	}
+
+	if len(iss.NetworkProxyRaw) != 0 {
+		proxyMod, err := ctx.LoadModule(iss, "ForwardProxyRaw")
+		if err != nil {
+			return template, fmt.Errorf("failed to load network_proxy module: %v", err)
+		}
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			template.HTTPProxy = m.ProxyFunc()
+		} else {
+			return template, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	if iss.Challenges != nil {

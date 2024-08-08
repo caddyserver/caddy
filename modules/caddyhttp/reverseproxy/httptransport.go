@@ -135,6 +135,9 @@ type HTTPTransport struct {
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
+	// Forward proxy module
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
+
 	h2cTransport *http2.Transport
 	h3Transport  *http3.RoundTripper // TODO: EXPERIMENTAL (May 2024)
 }
@@ -297,7 +300,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	// negotiate any HTTP/SOCKS proxy for the HTTP transport
-	var proxy func(*http.Request) (*url.URL, error)
+	proxy := http.ProxyFromEnvironment
+	if len(h.NetworkProxyRaw) != 0 {
+		proxyMod, err := caddyCtx.LoadModule(h, "ForwardProxyRaw")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load network_proxy module: %v", err)
+		}
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			proxy = m.ProxyFunc()
+		} else {
+			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
+	}
+
 	if h.ForwardProxyURL != "" {
 		pUrl, err := url.Parse(h.ForwardProxyURL)
 		if err != nil {
@@ -305,8 +320,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
 		proxy = http.ProxyURL(pUrl)
-	} else {
-		proxy = http.ProxyFromEnvironment
 	}
 
 	rt := &http.Transport{
