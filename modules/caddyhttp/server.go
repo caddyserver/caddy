@@ -40,6 +40,10 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
+func init() {
+	RegisterNetworkHTTP3("iface", "iface+udp")
+}
+
 // Server describes an HTTP server.
 type Server struct {
 	// Socket addresses to which to bind listeners. Accepts
