@@ -11,6 +11,9 @@ on:
     branches:
       - master
       - 2.*
+  issue_comment:
+    types:
+      - created
 
 jobs:
   test:
@@ -55,7 +58,7 @@ jobs:
           SUCCESS: 'True'
 
     runs-on: ${{ matrix.OS_LABEL }}
-
+    if: github.event_name != 'issue_comment'
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -140,10 +143,18 @@ jobs:
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
 
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          echo "event_name: ${{github.event_name}}"
+          echo "event_comment: ${{github.event.comment.body}}"
+
   s390x-test:
     name: test (s390x on IBM Z)
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    if: ${{ (github.event.comment.body == '/test') }}
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
       - name: Checkout code
