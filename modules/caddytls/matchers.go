@@ -60,7 +60,7 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 	}
 
 	for _, name := range m {
-		rs := repl.ReplaceAll(name, "")
+		rs := repl.ReplaceKnown(name, "")
 		if certmagic.MatchWildcard(hello.ServerName, rs) {
 			return true
 		}
