@@ -50,12 +50,13 @@ func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
+	repl := caddy.NewReplacer()
 	// caddytls.TestServerNameMatcher calls this function without any context
-	var repl *caddy.Replacer
 	if ctx := hello.Context(); ctx != nil {
-		repl = ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	} else {
-		repl = caddy.NewReplacer()
+		// In some situations the existing context may have no replacer
+		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
+			repl = replAny.(*caddy.Replacer)
+		}
 	}
 
 	for _, name := range m {
