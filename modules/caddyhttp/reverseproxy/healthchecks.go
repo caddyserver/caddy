@@ -400,10 +400,14 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Path = h.HealthChecks.Active.Path
 	}
 
+	// replacer used for both body and headers. Only globals (env vars, system info, etc.) are available
+	repl := caddy.NewReplacer()
+
 	// if body is provided, create a reader for it, otherwise nil
 	var requestBody io.Reader
 	if h.HealthChecks.Active.Body != "" {
-		requestBody = strings.NewReader(h.HealthChecks.Active.Body)
+		// set body, using replacer
+		requestBody = strings.NewReader(repl.ReplaceAll(h.HealthChecks.Active.Body, ""))
 	}
 
 	// attach dialing information to this request, as well as context values that
@@ -420,8 +424,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *req)
 	req = req.WithContext(ctx)
 
-	// set headers, using a replacer with only globals (env vars, system info, etc.)
-	repl := caddy.NewReplacer()
+	// set headers, using replacer
 	repl.Set("http.reverse_proxy.active.target_upstream", networkAddr)
 	for key, vals := range h.HealthChecks.Active.Headers {
 		key = repl.ReplaceAll(key, "")
