@@ -1,6 +1,6 @@
 module github.com/caddyserver/caddy/v2
 
-go 1.21.0
+go 1.22.3
 
 toolchain go1.23.0
 
