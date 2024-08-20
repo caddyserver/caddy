@@ -530,7 +530,8 @@ func run(newCfg *Config, start bool) (Context, error) {
 	if err != nil {
 		return ctx, err
 	}
-
+	globalMetrics.configSuccess.Set(1)
+	globalMetrics.configSuccessTime.SetToCurrentTime()
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
 	return ctx, finishSettingUp(ctx, newCfg)

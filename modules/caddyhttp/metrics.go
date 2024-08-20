@@ -10,17 +10,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal/metrics"
 )
 
 // Metrics configures metrics observations.
 // EXPERIMENTAL and subject to change or removal.
 type Metrics struct {
-	PerHost bool
+	// Enable per-host metrics. Enabling this option may
+	// incur high-memory consumption, depending on the number of hosts
+	// managed by Caddy.
+	PerHost bool `json:"per_host,omitempty"`
+
+	init              sync.Once
+	configSuccess     prometheus.Gauge `json:"-"` //  TODO:
+	configSuccessTime prometheus.Gauge `json:"-"`
+	httpMetrics       *httpMetrics     `json:"-"`
 }
 
-var httpMetrics = struct {
-	init             sync.Once
+type httpMetrics struct {
 	requestInFlight  *prometheus.GaugeVec
 	requestCount     *prometheus.CounterVec
 	requestErrors    *prometheus.CounterVec
@@ -28,30 +36,28 @@ var httpMetrics = struct {
 	requestSize      *prometheus.HistogramVec
 	responseSize     *prometheus.HistogramVec
 	responseDuration *prometheus.HistogramVec
-}{
-	init: sync.Once{},
 }
 
-func initHTTPMetrics(perHost bool) {
+func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	const ns, sub = "caddy", "http"
-
+	registry := ctx.GetMetricsRegistry()
 	basicLabels := []string{"server", "handler"}
-	if perHost {
+	if metrics.PerHost {
 		basicLabels = append(basicLabels, "host")
 	}
-	httpMetrics.requestInFlight = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	metrics.httpMetrics.requestInFlight = promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "requests_in_flight",
 		Help:      "Number of requests currently handled by this server.",
 	}, basicLabels)
-	httpMetrics.requestErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+	metrics.httpMetrics.requestErrors = promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "request_errors_total",
 		Help:      "Number of requests resulting in middleware errors.",
 	}, basicLabels)
-	httpMetrics.requestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	metrics.httpMetrics.requestCount = promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "requests_total",
@@ -63,37 +69,46 @@ func initHTTPMetrics(perHost bool) {
 	sizeBuckets := prometheus.ExponentialBuckets(256, 4, 8)
 
 	httpLabels := []string{"server", "handler", "code", "method"}
-	if perHost {
+	if metrics.PerHost {
 		httpLabels = append(httpLabels, "host")
 	}
-	httpMetrics.requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	metrics.httpMetrics.requestDuration = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "request_duration_seconds",
 		Help:      "Histogram of round-trip request durations.",
 		Buckets:   durationBuckets,
 	}, httpLabels)
-	httpMetrics.requestSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	metrics.httpMetrics.requestSize = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "request_size_bytes",
 		Help:      "Total size of the request. Includes body",
 		Buckets:   sizeBuckets,
 	}, httpLabels)
-	httpMetrics.responseSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	metrics.httpMetrics.responseSize = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "response_size_bytes",
 		Help:      "Size of the returned response.",
 		Buckets:   sizeBuckets,
 	}, httpLabels)
-	httpMetrics.responseDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	metrics.httpMetrics.responseDuration = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "response_duration_seconds",
 		Help:      "Histogram of times to first byte in response bodies.",
 		Buckets:   durationBuckets,
 	}, httpLabels)
+
+	metrics.configSuccess = promauto.With(registry).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_successful",
+		Help: "Whether the last configuration reload attempt was successful.",
+	})
+	metrics.configSuccessTime = promauto.With(registry).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_success_timestamp_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
+	})
 }
 
 // serverNameFromContext extracts the current server name from the context.
@@ -109,15 +124,15 @@ func serverNameFromContext(ctx context.Context) string {
 type metricsInstrumentedHandler struct {
 	handler string
 	mh      MiddlewareHandler
-	perHost bool
+	metrics *Metrics
 }
 
-func newMetricsInstrumentedHandler(handler string, mh MiddlewareHandler, perHost bool) *metricsInstrumentedHandler {
-	httpMetrics.init.Do(func() {
-		initHTTPMetrics(perHost)
+func newMetricsInstrumentedHandler(ctx caddy.Context, handler string, mh MiddlewareHandler, metrics *Metrics) *metricsInstrumentedHandler {
+	metrics.init.Do(func() {
+		initHTTPMetrics(ctx, metrics)
 	})
 
-	return &metricsInstrumentedHandler{handler, mh, perHost}
+	return &metricsInstrumentedHandler{handler, mh, metrics}
 }
 
 func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
@@ -128,12 +143,12 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
 
-	if h.perHost {
+	if h.metrics.PerHost {
 		labels["host"] = r.Host
 		statusLabels["host"] = r.Host
 	}
 
-	inFlight := httpMetrics.requestInFlight.With(labels)
+	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
 	inFlight.Inc()
 	defer inFlight.Dec()
 
@@ -145,13 +160,13 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
 		statusLabels["code"] = metrics.SanitizeCode(status)
 		ttfb := time.Since(start).Seconds()
-		httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
+		h.metrics.httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
 		return false
 	})
 	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
 	err := h.mh.ServeHTTP(wrec, r, next)
 	dur := time.Since(start).Seconds()
-	httpMetrics.requestCount.With(labels).Inc()
+	h.metrics.httpMetrics.requestCount.With(labels).Inc()
 
 	observeRequest := func(status int) {
 		// If the code hasn't been set yet, and we didn't encounter an error, we're
@@ -162,9 +177,9 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 			statusLabels["code"] = metrics.SanitizeCode(status)
 		}
 
-		httpMetrics.requestDuration.With(statusLabels).Observe(dur)
-		httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
-		httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
+		h.metrics.httpMetrics.requestDuration.With(statusLabels).Observe(dur)
+		h.metrics.httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
+		h.metrics.httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
 	}
 
 	if err != nil {
@@ -173,7 +188,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 			observeRequest(handlerErr.StatusCode)
 		}
 
-		httpMetrics.requestErrors.With(labels).Inc()
+		h.metrics.httpMetrics.requestErrors.With(labels).Inc()
 
 		return err
 	}

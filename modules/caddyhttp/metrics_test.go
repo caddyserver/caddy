@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -27,10 +28,15 @@ func TestServerNameFromContext(t *testing.T) {
 }
 
 func TestMetricsInstrumentedHandler(t *testing.T) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	metrics := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
 	handlerErr := errors.New("oh noes")
 	response := []byte("hello world!")
 	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 1.0 {
+		if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 1.0 {
 			t.Errorf("Not same: expected %#v, but got %#v", 1.0, actual)
 		}
 		if handlerErr == nil {
@@ -43,7 +49,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return h.ServeHTTP(w, r)
 	})
 
-	ih := newMetricsInstrumentedHandler("bar", mh, false)
+	ih := newMetricsInstrumentedHandler(ctx, "bar", mh, metrics)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -51,7 +57,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	if actual := ih.ServeHTTP(w, r, h); actual != handlerErr {
 		t.Errorf("Not same: expected %#v, but got %#v", handlerErr, actual)
 	}
-	if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 0.0 {
+	if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 0.0 {
 		t.Errorf("Not same: expected %#v, but got %#v", 0.0, actual)
 	}
 
@@ -64,7 +70,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
 		return nil
 	})
-	ih = newMetricsInstrumentedHandler("empty", mh, false)
+	ih = newMetricsInstrumentedHandler(ctx, "empty", mh, metrics)
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
@@ -83,7 +89,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih = newMetricsInstrumentedHandler("foo", mh, false)
+	ih = newMetricsInstrumentedHandler(ctx, "foo", mh, metrics)
 
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
@@ -183,7 +189,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	caddy_http_request_errors_total{handler="bar",server="UNKNOWN"} 1
 	caddy_http_request_errors_total{handler="foo",server="UNKNOWN"} 1
 	`
-	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected),
+	if err := testutil.GatherAndCompare(ctx.GetMetricsRegistry(), strings.NewReader(expected),
 		"caddy_http_request_size_bytes",
 		"caddy_http_response_size_bytes",
 		// caddy_http_request_duration_seconds_sum will vary based on how long the test took to run,
@@ -197,10 +203,16 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 }
 
 func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	metrics := &Metrics{
+		PerHost:     true,
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
 	handlerErr := errors.New("oh noes")
 	response := []byte("hello world!")
 	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 1.0 {
+		if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 1.0 {
 			t.Errorf("Not same: expected %#v, but got %#v", 1.0, actual)
 		}
 		if handlerErr == nil {
@@ -213,7 +225,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 		return h.ServeHTTP(w, r)
 	})
 
-	ih := newMetricsInstrumentedHandler("bar", mh, true)
+	ih := newMetricsInstrumentedHandler(ctx, "bar", mh, metrics)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -221,7 +233,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	if actual := ih.ServeHTTP(w, r, h); actual != handlerErr {
 		t.Errorf("Not same: expected %#v, but got %#v", handlerErr, actual)
 	}
-	if actual := testutil.ToFloat64(httpMetrics.requestInFlight); actual != 0.0 {
+	if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 0.0 {
 		t.Errorf("Not same: expected %#v, but got %#v", 0.0, actual)
 	}
 
@@ -234,7 +246,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
 		return nil
 	})
-	ih = newMetricsInstrumentedHandler("empty", mh, true)
+	ih = newMetricsInstrumentedHandler(ctx, "empty", mh, metrics)
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
@@ -253,7 +265,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih = newMetricsInstrumentedHandler("foo", mh, true)
+	ih = newMetricsInstrumentedHandler(ctx, "foo", mh, metrics)
 
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
@@ -353,7 +365,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	caddy_http_request_errors_total{handler="bar",host="example.com",server="UNKNOWN"} 1
 	caddy_http_request_errors_total{handler="foo",host="example.com",server="UNKNOWN"} 1
 	`
-	if err := testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected),
+	if err := testutil.GatherAndCompare(ctx.GetMetricsRegistry(), strings.NewReader(expected),
 		"caddy_http_request_size_bytes",
 		"caddy_http_response_size_bytes",
 		// caddy_http_request_duration_seconds_sum will vary based on how long the test took to run,
