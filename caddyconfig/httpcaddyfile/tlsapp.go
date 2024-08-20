@@ -457,6 +457,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	globalACMEEAB := options["acme_eab"]
 	globalPreferredChains := options["preferred_chains"]
 	globalCertLifetime := options["cert_lifetime"]
+	globalHTTPPort, globalHTTPSPort := options["http_port"], options["https_port"]
 
 	if globalEmail != nil && acmeIssuer.Email == "" {
 		acmeIssuer.Email = globalEmail.(string)
@@ -480,7 +481,24 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
 		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
 	}
-
+	if globalHTTPPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.HTTP == nil || acmeIssuer.Challenges.HTTP.AlternatePort == 0) {
+		if acmeIssuer.Challenges == nil {
+			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		}
+		if acmeIssuer.Challenges.HTTP == nil {
+			acmeIssuer.Challenges.HTTP = new(caddytls.HTTPChallengeConfig)
+		}
+		acmeIssuer.Challenges.HTTP.AlternatePort = globalHTTPPort.(int)
+	}
+	if globalHTTPSPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.TLSALPN == nil || acmeIssuer.Challenges.TLSALPN.AlternatePort == 0) {
+		if acmeIssuer.Challenges == nil {
+			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		}
+		if acmeIssuer.Challenges.TLSALPN == nil {
+			acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
+		}
+		acmeIssuer.Challenges.TLSALPN.AlternatePort = globalHTTPSPort.(int)
+	}
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
 	}

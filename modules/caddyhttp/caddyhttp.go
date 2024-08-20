@@ -76,7 +76,10 @@ type MiddlewareHandler interface {
 }
 
 // emptyHandler is used as a no-op handler.
-var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
+var emptyHandler Handler = HandlerFunc(func(_ http.ResponseWriter, req *http.Request) error {
+	SetVar(req.Context(), "unhandled", true)
+	return nil
+})
 
 // An implicit suffix middleware that, if reached, sets the StatusCode to the
 // error stored in the ErrorCtxKey. This is to prevent situations where the
@@ -120,7 +123,7 @@ type ResponseHandler struct {
 	Routes RouteList `json:"routes,omitempty"`
 }
 
-// Provision sets up the routse in rh.
+// Provision sets up the routes in rh.
 func (rh *ResponseHandler) Provision(ctx caddy.Context) error {
 	if rh.Routes != nil {
 		err := rh.Routes.Provision(ctx)
@@ -236,7 +239,7 @@ func SanitizedPathJoin(root, reqPath string) string {
 	}
 
 	relPath := path.Clean("/" + reqPath)[1:] // clean path and trim the leading /
-	if !filepath.IsLocal(relPath) {
+	if relPath != "" && !filepath.IsLocal(relPath) {
 		// path is unsafe (see https://github.com/golang/go/issues/56336#issuecomment-1416214885)
 		return root
 	}

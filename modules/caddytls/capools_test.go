@@ -547,7 +547,7 @@ func TestTLSConfig_unmarshalCaddyfile(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "setting 'ca' without arguemnt is an error",
+			name: "setting 'ca' without argument is an error",
 			args: args{
 				d: caddyfile.NewTestDispenser(`{
 					ca
@@ -564,21 +564,6 @@ func TestTLSConfig_unmarshalCaddyfile(t *testing.T) {
 			},
 			expected: TLSConfig{
 				CARaw: []byte(`{"pem_files":["/var/caddy/ca.pem"],"provider":"file"}`),
-			},
-		},
-		{
-			name: "setting 'ca' to 'lazy' with appropriate block is valid",
-			args: args{
-				d: caddyfile.NewTestDispenser(`{
-					ca lazy {
-						backend file {
-							pem_file /var/caddy/ca.pem
-						}
-					}
-				}`),
-			},
-			expected: TLSConfig{
-				CARaw: []byte(`{"ca":{"pem_files":["/var/caddy/ca.pem"],"provider":"file"},"provider":"lazy"}`),
 			},
 		},
 		{
@@ -725,7 +710,7 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "endpoints defiend inline and in block are merged",
+			name: "endpoints defined inline and in block are merged",
 			args: args{
 				d: caddyfile.NewTestDispenser(`http http://localhost/ca-certs {
 					endpoints http://remotehost/ca-certs
@@ -737,7 +722,7 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "multiple endpoints defiend in block on the same line",
+			name: "multiple endpoints defined in block on the same line",
 			args: args{
 				d: caddyfile.NewTestDispenser(`http {
 					endpoints http://remotehost/ca-certs http://localhost/ca-certs
@@ -787,105 +772,6 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			}
 			if !tt.wantErr && !reflect.DeepEqual(&tt.expected, hcp) {
 				t.Errorf("HTTPCertPool.UnmarshalCaddyfile() = %v, want %v", hcp, tt.expected)
-			}
-		})
-	}
-}
-
-func TestLazyCertPoolUnmarshalCaddyfile(t *testing.T) {
-	type args struct {
-		d *caddyfile.Dispenser
-	}
-	tests := []struct {
-		name     string
-		args     args
-		expected LazyCertPool
-		wantErr  bool
-	}{
-		{
-			name: "no block results in error",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy`),
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty block results in error",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-				}`),
-			},
-			wantErr: true,
-		},
-		{
-			name: "defining 'backend' multiple times results in error",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-					backend http {
-						endpoints http://localhost/ca-certs
-					}
-					backend file {
-						pem_file /var/caddy/certs
-					}
-				}`),
-			},
-			wantErr: true,
-		},
-		{
-			name: "defining 'backend' without argument results in error",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-					backend
-				}`),
-			},
-			wantErr: true,
-		},
-		{
-			name: "using unrecognized directive results in error",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-					foo
-				}`),
-			},
-			wantErr: true,
-		},
-		{
-			name: "defining single 'backend' is successful",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-					backend http {
-						endpoints http://localhost/ca-certs
-					}
-				}`),
-			},
-			expected: LazyCertPool{
-				CARaw: []byte(`{"endpoints":["http://localhost/ca-certs"],"provider":"http"}`),
-			},
-		},
-		{
-			name: "defining single 'backend' with 'eager_validation' successful",
-			args: args{
-				d: caddyfile.NewTestDispenser(`lazy {
-					backend file {
-						pem_file /var/caddy/certs
-					}
-					eager_validation
-				}`),
-			},
-			expected: LazyCertPool{
-				CARaw:           []byte(`{"pem_files":["/var/caddy/certs"],"provider":"file"}`),
-				EagerValidation: true,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			lcp := &LazyCertPool{}
-			if err := lcp.UnmarshalCaddyfile(tt.args.d); (err != nil) != tt.wantErr {
-				t.Errorf("LazyCertPool.UnmarshalCaddyfile() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr && !reflect.DeepEqual(&tt.expected, lcp) {
-				t.Errorf("LazyCertPool.UnmarshalCaddyfile() = %v, want %v", lcp, tt.expected)
 			}
 		})
 	}

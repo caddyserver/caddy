@@ -53,6 +53,7 @@ var defaultDirectiveOrder = []string{
 	"log_append",
 	"skip_log", // TODO: deprecated, renamed to log_skip
 	"log_skip",
+	"log_name",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
@@ -73,6 +74,7 @@ var defaultDirectiveOrder = []string{
 	"request_header",
 	"encode",
 	"push",
+	"intercept",
 	"templates",
 
 	// special routing & dispatching directives

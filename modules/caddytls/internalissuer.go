@@ -94,7 +94,7 @@ func (iss *InternalIssuer) Provision(ctx caddy.Context) error {
 }
 
 // IssuerKey returns the unique issuer key for the
-// confgured CA endpoint.
+// configured CA endpoint.
 func (iss InternalIssuer) IssuerKey() string {
 	return iss.ca.ID
 }
@@ -129,7 +129,7 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 		)
 	}
 
-	certChain, err := auth.Sign(csr, provisioner.SignOptions{}, customCertLifetime(caddy.Duration(lifetime)))
+	certChain, err := auth.SignWithContext(ctx, csr, provisioner.SignOptions{}, customCertLifetime(caddy.Duration(lifetime)))
 	if err != nil {
 		return nil, err
 	}

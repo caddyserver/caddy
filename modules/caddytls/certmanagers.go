@@ -48,7 +48,7 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 	if err != nil {
 		ts.logger.Warn("could not get status; will try to get certificate anyway", zap.Error(err))
 	}
-	return tscert.GetCertificate(hello)
+	return tscert.GetCertificateWithContext(ctx, hello)
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.

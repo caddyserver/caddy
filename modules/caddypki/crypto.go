@@ -78,18 +78,21 @@ func (kp KeyPair) Load() (*x509.Certificate, crypto.Signer, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		keyData, err := os.ReadFile(kp.PrivateKey)
-		if err != nil {
-			return nil, nil, err
-		}
-
 		cert, err := pemDecodeSingleCert(certData)
 		if err != nil {
 			return nil, nil, err
 		}
-		key, err := certmagic.PEMDecodePrivateKey(keyData)
-		if err != nil {
-			return nil, nil, err
+
+		var key crypto.Signer
+		if kp.PrivateKey != "" {
+			keyData, err := os.ReadFile(kp.PrivateKey)
+			if err != nil {
+				return nil, nil, err
+			}
+			key, err = certmagic.PEMDecodePrivateKey(keyData)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		return cert, key, nil
