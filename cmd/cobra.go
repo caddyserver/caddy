@@ -8,7 +8,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-var defaultFactory = NewRootCommandFactory(func() *cobra.Command {
+var defaultFactory = newRootCommandFactory(func() *cobra.Command {
 	return &cobra.Command{
 		Use: "caddy",
 		Long: `Caddy is an extensible server platform written in Go.
