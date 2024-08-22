@@ -132,6 +132,10 @@ type HTTPTransport struct {
 	// to change or removal while experimental.
 	Versions []string `json:"versions,omitempty"`
 
+	// Specify the address to bind to when connecting to an upstream. In other words,
+	// it is the address the upstream sees as the remote address.
+	LocalAddress string `json:"local_address,omitempty"`
+
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
@@ -185,6 +189,31 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		FallbackDelay: time.Duration(h.FallbackDelay),
 	}
 
+	if h.LocalAddress != "" {
+		netaddr, err := caddy.ParseNetworkAddressWithDefaults(h.LocalAddress, "tcp", 0)
+		if err != nil {
+			return nil, err
+		}
+		if netaddr.PortRangeSize() > 1 {
+			return nil, fmt.Errorf("local_address must be a single address, not a port range")
+		}
+		switch netaddr.Network {
+		case "tcp", "tcp4", "tcp6":
+			dialer.LocalAddr, err = net.ResolveTCPAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			if err != nil {
+				return nil, err
+			}
+		case "unix", "unixgram", "unixpacket":
+			dialer.LocalAddr, err = net.ResolveUnixAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			if err != nil {
+				return nil, err
+			}
+		case "udp", "udp4", "udp6":
+			return nil, fmt.Errorf("local_address must be a TCP address, not a UDP address")
+		default:
+			return nil, fmt.Errorf("unsupported network")
+		}
+	}
 	if h.Resolver != nil {
 		err := h.Resolver.ParseAddresses()
 		if err != nil {

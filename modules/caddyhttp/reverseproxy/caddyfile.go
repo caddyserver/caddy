@@ -1326,7 +1326,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Err("cannot specify \"tls_trust_pool\" twice in caddyfile")
 			}
 			h.TLS.CARaw = caddyconfig.JSONModuleObject(ca, "provider", modStem, nil)
-
+		case "local_address":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.LocalAddress = d.Val()
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())
 		}
