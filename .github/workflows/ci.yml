@@ -150,6 +150,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Run Tests
         run: |
+          set +e
           mkdir -p ~/.ssh && echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_ecdsa && chmod og-rwx ~/.ssh/id_ecdsa
 
           # short sha is enough?

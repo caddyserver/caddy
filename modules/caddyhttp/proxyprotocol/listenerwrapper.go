@@ -40,7 +40,7 @@ type ListenerWrapper struct {
 	Allow []string `json:"allow,omitempty"`
 	allow []netip.Prefix
 
-	// Denby is an optional list of CIDR ranges to
+	// Deny is an optional list of CIDR ranges to
 	// deny PROXY headers from.
 	Deny []string `json:"deny,omitempty"`
 	deny []netip.Prefix
