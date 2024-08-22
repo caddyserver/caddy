@@ -105,8 +105,7 @@ func (e StaticError) ServeHTTP(w http.ResponseWriter, r *http.Request, _ Handler
 		}
 		statusCode = intVal
 	}
-
-	return Error(statusCode, fmt.Errorf("%s", e.Error))
+	return Error(statusCode, fmt.Errorf("%s", repl.ReplaceKnown(e.Error, "")))
 }
 
 // Interface guard
