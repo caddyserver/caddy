@@ -72,7 +72,7 @@ func Main() {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode)
