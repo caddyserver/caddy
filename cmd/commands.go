@@ -439,7 +439,6 @@ EXPERIMENTAL: May be changed or removed.
 	})
 
 	defaultFactory.Use(func(rootCmd *cobra.Command) {
-
 		RegisterCommand(Command{
 			Name:  "manpage",
 			Usage: "--directory <path>",
