@@ -363,6 +363,136 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.InsecureSecretsLog == ""
 }
 
+// UnmarshalCaddyfile sets up the ConnectionPolicy from Caddyfile tokens. Syntax:
+//
+//	connection_policy {
+//		alpn                  <values...>
+//		cert_selection {
+//			...
+//		}
+//		ciphers               <cipher_suites...>
+//		client_auth {
+//			...
+//		}
+//		curves                <curves...>
+//		default_sni           <server_name>
+//		match {
+//			...
+//		}
+//		protocols             <min> [<max>]
+//		# EXPERIMENTAL:
+//		drop
+//		fallback_sni          <server_name>
+//		insecure_secrets_log  <log_file>
+//	}
+func (cp *ConnectionPolicy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	_, wrapper := d.Next(), d.Val()
+
+	// No same-line options are supported
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+
+	var hasCertSelection, hasClientAuth, hasDefaultSNI, hasDrop,
+		hasFallbackSNI, hasInsecureSecretsLog, hasMatch, hasProtocols bool
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		optionName := d.Val()
+		switch optionName {
+		case "alpn":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.ALPN = append(cp.ALPN, d.RemainingArgs()...)
+		case "cert_selection":
+			if hasCertSelection {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			p := &CustomCertSelectionPolicy{}
+			if err := p.UnmarshalCaddyfile(d.NewFromNextSegment()); err != nil {
+				return err
+			}
+			cp.CertSelection, hasCertSelection = p, true
+		case "client_auth":
+			if hasClientAuth {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			ca := &ClientAuthentication{}
+			if err := ca.UnmarshalCaddyfile(d.NewFromNextSegment()); err != nil {
+				return err
+			}
+			cp.ClientAuthentication, hasClientAuth = ca, true
+		case "ciphers":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.CipherSuites = append(cp.CipherSuites, d.RemainingArgs()...)
+		case "curves":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.Curves = append(cp.Curves, d.RemainingArgs()...)
+		case "default_sni":
+			if hasDefaultSNI {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.DefaultSNI, hasDefaultSNI = d.NextArg(), d.Val(), true
+		case "drop": // EXPERIMENTAL
+			if hasDrop {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			cp.Drop, hasDrop = true, true
+		case "fallback_sni": // EXPERIMENTAL
+			if hasFallbackSNI {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.FallbackSNI, hasFallbackSNI = d.NextArg(), d.Val(), true
+		case "insecure_secrets_log": // EXPERIMENTAL
+			if hasInsecureSecretsLog {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.InsecureSecretsLog, hasInsecureSecretsLog = d.NextArg(), d.Val(), true
+		case "match":
+			if hasMatch {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+			if err != nil {
+				return err
+			}
+			cp.MatchersRaw, hasMatch = matcherSet, true
+		case "protocols":
+			if hasProtocols {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() == 0 || d.CountRemainingArgs() > 2 {
+				return d.ArgErr()
+			}
+			_, cp.ProtocolMin, hasProtocols = d.NextArg(), d.Val(), true
+			if d.NextArg() {
+				cp.ProtocolMax = d.Val()
+			}
+		default:
+			return d.ArgErr()
+		}
+
+		// No nested blocks are supported
+		if d.NextBlock(nesting + 1) {
+			return d.Errf("malformed %s option '%s': blocks are not supported", wrapper, optionName)
+		}
+	}
+
+	return nil
+}
+
 // ClientAuthentication configures TLS client auth.
 type ClientAuthentication struct {
 	// Certificate authority module which provides the certificate pool of trusted certificates
@@ -819,4 +949,46 @@ func (d destructableWriter) Destruct() error { return d.Close() }
 
 var secretsLogPool = caddy.NewUsagePool()
 
-var _ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
+// Interface guards
+var (
+	_ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
+	_ caddyfile.Unmarshaler = (*ConnectionPolicy)(nil)
+)
+
+// ParseCaddyfileNestedMatcherSet parses the Caddyfile tokens for a nested
+// matcher set, and returns its raw module map value.
+func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
+	matcherMap := make(map[string]ConnectionMatcher)
+
+	tokensByMatcherName := make(map[string][]caddyfile.Token)
+	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+		matcherName := d.Val()
+		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+	}
+
+	for matcherName, tokens := range tokensByMatcherName {
+		dd := caddyfile.NewDispenser(tokens)
+		dd.Next() // consume wrapper name
+
+		unm, err := caddyfile.UnmarshalModule(dd, "tls.handshake_match."+matcherName)
+		if err != nil {
+			return nil, err
+		}
+		cm, ok := unm.(ConnectionMatcher)
+		if !ok {
+			return nil, fmt.Errorf("matcher module '%s' is not a connection matcher", matcherName)
+		}
+		matcherMap[matcherName] = cm
+	}
+
+	matcherSet := make(caddy.ModuleMap)
+	for name, matcher := range matcherMap {
+		jsonBytes, err := json.Marshal(matcher)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+		}
+		matcherSet[name] = jsonBytes
+	}
+
+	return matcherSet, nil
+}

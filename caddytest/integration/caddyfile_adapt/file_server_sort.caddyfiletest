@@ -1,0 +1,36 @@
+:80
+
+file_server browse {
+	sort size desc
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"browse": {},
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"sort": [
+										"size",
+										"desc"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
