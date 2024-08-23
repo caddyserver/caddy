@@ -171,6 +171,17 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			fsrv.EtagFileExtensions = etagFileExtensions
 
+		case "sort":
+			for d.NextArg() {
+				dVal := d.Val()
+				switch dVal {
+				case sortByName, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc:
+					fsrv.SortOptions = append(fsrv.SortOptions, dVal)
+				default:
+					return d.Errf("unknown sort option '%s'", dVal)
+				}
+			}
+
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
 		}
