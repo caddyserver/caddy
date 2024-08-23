@@ -531,9 +531,9 @@ func sortRoutes(routes []ConfigValue) {
 // a "pile" of config values, keyed by class name,
 // as well as its parsed keys for convenience.
 type serverBlock struct {
-	block caddyfile.ServerBlock
-	pile  map[string][]ConfigValue // config values obtained from directives
-	keys  []Address
+	block       caddyfile.ServerBlock
+	pile        map[string][]ConfigValue // config values obtained from directives
+	parsedKeys  []Address
 }
 
 // hostsFromKeys returns a list of all the non-empty hostnames found in
@@ -550,7 +550,7 @@ type serverBlock struct {
 func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
 	// ensure each entry in our list is unique
 	hostMap := make(map[string]struct{})
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Host == "" {
 			if !loggerMode {
 				// server block contains a key like ":443", i.e. the host portion
@@ -582,7 +582,7 @@ func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
 func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 	// ensure each entry in our list is unique
 	hostMap := make(map[string]struct{})
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Host == "" {
 			continue
 		}
@@ -603,7 +603,7 @@ func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 // hasHostCatchAllKey returns true if sb has a key that
 // omits a host portion, i.e. it "catches all" hosts.
 func (sb serverBlock) hasHostCatchAllKey() bool {
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Host == "" {
 			return true
 		}
@@ -614,7 +614,7 @@ func (sb serverBlock) hasHostCatchAllKey() bool {
 // isAllHTTP returns true if all sb keys explicitly specify
 // the http:// scheme
 func (sb serverBlock) isAllHTTP() bool {
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Scheme != "http" {
 			return false
 		}

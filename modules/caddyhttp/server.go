@@ -218,6 +218,10 @@ type Server struct {
 	// Default: `[h1 h2 h3]`
 	Protocols []string `json:"protocols,omitempty"`
 
+	// ListenProtocols overrides Protocols for each parallel address in Listen.
+	// A nil value or element indicates that Protocols will be used instead.
+	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	Metrics *Metrics `json:"metrics,omitempty"`

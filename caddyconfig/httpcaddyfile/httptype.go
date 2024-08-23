@@ -171,7 +171,7 @@ func (st ServerType) Setup(
 	}
 
 	// map
-	sbmap, err := st.mapAddressToServerBlocks(originalServerBlocks, options)
+	sbmap, err := st.mapAddressToProtocolToServerBlocks(originalServerBlocks, options)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -402,6 +402,21 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			options[opt] = append(existingOpts, logOpts...)
 			continue
 		}
+		// Also fold multiple "socket" options together into and
+		// array so that file descriptors for multiple listen
+		// addresses may be passed to their servers.
+		if opt == "socket" {
+			existingOpts, ok := options[opt].([]addressWithSocket)
+			if !ok {
+				existingOpts = []addressWithSocket{}
+			}
+			socketOpts, ok := val.(addressWithSocket)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type from 'socket' global options: %T", val)
+			}
+			options[opt] = append(existingOpts, socketOpts)
+			continue
+		}
 
 		options[opt] = val
 	}
@@ -545,6 +560,28 @@ func (st *ServerType) serversFromPairings(
 
 		srv := &caddyhttp.Server{
 			Listen: p.addresses,
+			ListenProtocols: p.protocols,
+		}
+
+		// remove srv.ListenProtocols[j] if it only contains the default protocols
+		for j, lnProtocols := range srv.ListenProtocols {
+			srv.ListenProtocols[j] = nil
+			for _, lnProtocol := range lnProtocols {
+				if lnProtocol != "" {
+					srv.ListenProtocols[j] = lnProtocols
+					break
+				}
+			}
+		}
+
+		// remove srv.ListenProtocols if it only contains the default protocols for all listen addresses
+		listenProtocols := srv.ListenProtocols
+		srv.ListenProtocols = nil
+		for _, lnProtocols := range listenProtocols {
+			if lnProtocols != nil {
+				srv.ListenProtocols = listenProtocols
+				break
+			}
 		}
 
 		// handle the auto_https global option
@@ -566,7 +603,7 @@ func (st *ServerType) serversFromPairings(
 		// See ParseAddress() where parsing should later reject paths
 		// See https://github.com/caddyserver/caddy/pull/4728 for a full explanation
 		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.keys {
+			for _, addr := range sblock.parsedKeys {
 				if addr.Path != "" {
 					caddy.Log().Named("caddyfile").Warn("Using a path in a site address is deprecated; please use the 'handle' directive instead", zap.String("address", addr.String()))
 				}
@@ -584,7 +621,7 @@ func (st *ServerType) serversFromPairings(
 			var iLongestPath, jLongestPath string
 			var iLongestHost, jLongestHost string
 			var iWildcardHost, jWildcardHost bool
-			for _, addr := range p.serverBlocks[i].keys {
+			for _, addr := range p.serverBlocks[i].parsedKeys {
 				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					iWildcardHost = true
 				}
@@ -595,7 +632,7 @@ func (st *ServerType) serversFromPairings(
 					iLongestPath = addr.Path
 				}
 			}
-			for _, addr := range p.serverBlocks[j].keys {
+			for _, addr := range p.serverBlocks[j].parsedKeys {
 				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					jWildcardHost = true
 				}
@@ -711,7 +748,7 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
-			for _, addr := range sblock.keys {
+			for _, addr := range sblock.parsedKeys {
 				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
 					// exclude any hosts that were defined explicitly with "http://"
@@ -932,7 +969,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 	}
 
 	for _, sblock := range serverBlocks {
-		for _, addr := range sblock.keys {
+		for _, addr := range sblock.parsedKeys {
 			if addr.Scheme == "http" || addr.Port == httpPort {
 				if err := checkAndSetHTTP(addr); err != nil {
 					return err
@@ -1322,7 +1359,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	var matcherPairs []*hostPathPair
 
 	var catchAllHosts bool
-	for _, addr := range sblock.keys {
+	for _, addr := range sblock.parsedKeys {
 		// choose a matcher pair that should be shared by this
 		// server block; if none exists yet, create one
 		var chosenMatcherPair *hostPathPair
@@ -1614,11 +1651,20 @@ type namedCustomLog struct {
 }
 
 // sbAddrAssociation is a mapping from a list of
-// addresses to a list of server blocks that are
-// served on those addresses.
+// addresses to a parallel list of protocols each
+// address is served with, and a list of server
+// blocks that are served on those addresses.
 type sbAddrAssociation struct {
 	addresses    []string
+	protocols    [][]string
 	serverBlocks []serverBlock
+}
+
+// addressWithSocket associates a listen address with
+// a socket file descriptor to serve it with
+type addressWithSocket struct {
+	address string
+	socket string
 }
 
 const (
