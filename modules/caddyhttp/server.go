@@ -222,6 +222,11 @@ type Server struct {
 	// A nil value or element indicates that Protocols will be used instead.
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
+	// ListenSocket provides an optional socket file descriptor for each parallel
+	// address in Listen. If present, this file descriptor is used to create the
+	// listener rather than binding a new one.
+	ListenSocket []*string `json:"listen_socket,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	Metrics *Metrics `json:"metrics,omitempty"`

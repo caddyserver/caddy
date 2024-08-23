@@ -923,9 +923,49 @@ func (st *ServerType) serversFromPairings(
 		servers[fmt.Sprintf("srv%d", i)] = srv
 	}
 
-	err := applyServerOptions(servers, options, warnings)
-	if err != nil {
+
+	if err := applyServerOptions(servers, options, warnings); err != nil {
 		return nil, fmt.Errorf("applying global server options: %v", err)
+	}
+
+	// applySockets sets socket file descriptors on the appropriate servers
+	applySockets := func (
+			servers map[string]*caddyhttp.Server,
+			options map[string]any,
+			_ *[]caddyconfig.Warning,
+		) error {
+		sockets, ok := options["socket"].([]addressWithSocket)
+		if !ok {
+			return nil
+		}
+
+		addressToSocket := map[string]string{}
+		for _, addressWithSocket := range sockets {
+			address := addressWithSocket.address
+			if _, ok := addressToSocket[address]; ok {
+				return fmt.Errorf("cannot use duplicate socket address '%s'", address)
+			}
+			addressToSocket[address] = addressWithSocket.socket
+		}
+
+		for _, server := range servers {
+			for i, listener := range server.Listen {
+				socket, ok := addressToSocket[listener]
+				if ok {
+					if server.ListenSocket == nil {
+						server.ListenSocket = make([]*string, len(server.Listen))
+					}
+					server.ListenSocket[i] = &socket
+				}
+			}
+		}
+
+		return nil
+	}
+
+
+	if err := applySockets(servers, options, warnings); err != nil {
+		return nil, fmt.Errorf("applying global sockets: %v", err)
 	}
 
 	return servers, nil
