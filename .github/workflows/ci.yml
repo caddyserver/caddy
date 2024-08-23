@@ -23,17 +23,17 @@ jobs:
           - mac
           - windows
         go: 
-          - '1.21'
           - '1.22'
+          - '1.23'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.21'
-          GO_SEMVER: '~1.21.0'
-
         - go: '1.22'
           GO_SEMVER: '~1.22.3'
+
+        - go: '1.23'
+          GO_SEMVER: '~1.23.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)

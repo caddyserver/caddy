@@ -415,7 +415,7 @@ func (d *Dispenser) EOFErr() error {
 
 // Err generates a custom parse-time error with a message of msg.
 func (d *Dispenser) Err(msg string) error {
-	return d.Errf(msg)
+	return d.WrapErr(errors.New(msg))
 }
 
 // Errf is like Err, but for formatted error messages
