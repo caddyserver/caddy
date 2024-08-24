@@ -1074,6 +1074,22 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			h.ForwardProxyURL = d.Val()
 
+		case "forward_proxy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "caddy.network_proxy.source." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			// TODO: should we validate here?
+			// ca, ok := unm.(caddy.ProxyFuncProducer)
+			// if !ok {
+			// 	return d.Errf("module %s is not a caddy.ProxyFuncProducer", modID)
+			// }
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
 		case "dial_timeout":
 			if !d.NextArg() {
 				return d.ArgErr()

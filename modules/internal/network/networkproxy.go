@@ -1,4 +1,4 @@
-package standard
+package network
 
 import (
 	"errors"
@@ -9,28 +9,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
-	caddy.RegisterModule(ProxyFromEnvironment{})
 	caddy.RegisterModule(ProxyFromURL{})
-}
-
-type ProxyFromEnvironment struct{}
-
-// ProxyFunc implements ProxyFuncProducer.
-func (p ProxyFromEnvironment) ProxyFunc() func(*http.Request) (*url.URL, error) {
-	return http.ProxyFromEnvironment
-}
-
-// CaddyModule implements Module.
-func (p ProxyFromEnvironment) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID: "caddy.network_proxy.source.environment",
-		New: func() caddy.Module {
-			return ProxyFromEnvironment{}
-		},
-	}
+	caddy.RegisterModule(ProxyFromNone{})
 }
 
 type ProxyFromURL struct {
@@ -111,16 +95,48 @@ func (p ProxyFromURL) ProxyFunc() func(*http.Request) (*url.URL, error) {
 			return pUrl, err
 		}
 	}
-	return func(*http.Request) (*url.URL, error) {
+	return func(r *http.Request) (*url.URL, error) {
 		return url.Parse(p.URL)
 	}
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (p *ProxyFromURL) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next()
+	d.Next()
+	p.URL = d.Val()
+	return nil
+}
+
+type ProxyFromNone struct{}
+
+func (p ProxyFromNone) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "caddy.network_proxy.source.none",
+		New: func() caddy.Module {
+			return &ProxyFromNone{}
+		},
+	}
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (p ProxyFromNone) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return nil
+}
+
+// ProxyFunc implements ProxyFuncProducer.
+func (p ProxyFromNone) ProxyFunc() func(*http.Request) (*url.URL, error) {
+	return nil
+}
+
 var (
-	_ caddy.Module            = ProxyFromEnvironment{}
-	_ caddy.ProxyFuncProducer = ProxyFromEnvironment{}
 	_ caddy.Module            = ProxyFromURL{}
 	_ caddy.Provisioner       = &ProxyFromURL{}
 	_ caddy.Validator         = ProxyFromURL{}
 	_ caddy.ProxyFuncProducer = ProxyFromURL{}
+	_ caddyfile.Unmarshaler   = &ProxyFromURL{}
+
+	_ caddy.Module            = ProxyFromNone{}
+	_ caddy.ProxyFuncProducer = ProxyFromNone{}
+	_ caddyfile.Unmarshaler   = ProxyFromNone{}
 )
