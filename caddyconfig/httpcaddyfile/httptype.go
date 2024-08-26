@@ -402,15 +402,15 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			options[opt] = append(existingOpts, logOpts...)
 			continue
 		}
-		// Also fold multiple "socket" options together into and
+		// Also fold multiple "sockets" options together into and
 		// array so that file descriptors for multiple listen
 		// addresses may be passed to their servers.
-		if opt == "socket" {
-			existingOpts, ok := options[opt].([]addressWithSocket)
+		if opt == "sockets" {
+			existingOpts, ok := options[opt].([]addressWithSockets)
 			if !ok {
-				existingOpts = []addressWithSocket{}
+				existingOpts = []addressWithSockets{}
 			}
-			socketOpts, ok := val.(addressWithSocket)
+			socketOpts, ok := val.(addressWithSockets)
 			if !ok {
 				return nil, fmt.Errorf("unexpected type from 'socket' global options: %T", val)
 			}
@@ -551,7 +551,7 @@ func (st *ServerType) serversFromPairings(
 					if k == j {
 						continue
 					}
-					if sliceContains(sblock2.block.GetKeysText(), key) {
+					if slices.Contains(sblock2.block.GetKeysText(), key) {
 						return nil, fmt.Errorf("ambiguous site definition: %s", key)
 					}
 				}
@@ -757,7 +757,7 @@ func (st *ServerType) serversFromPairings(
 						if srv.AutoHTTPS == nil {
 							srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 						}
-						if !sliceContains(srv.AutoHTTPS.Skip, addr.Host) {
+						if !slices.Contains(srv.AutoHTTPS.Skip, addr.Host) {
 							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 						}
 					}
@@ -771,7 +771,7 @@ func (st *ServerType) serversFromPairings(
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
 				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
 				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
-					(addr.Host != "" && srv.AutoHTTPS != nil && !sliceContains(srv.AutoHTTPS.Skip, addr.Host))
+					(addr.Host != "" && srv.AutoHTTPS != nil && !slices.Contains(srv.AutoHTTPS.Skip, addr.Host))
 
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
@@ -929,33 +929,33 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	// applySockets sets socket file descriptors on the appropriate servers
-	applySockets := func (
+	applySocketOptions := func (
 			servers map[string]*caddyhttp.Server,
 			options map[string]any,
 			_ *[]caddyconfig.Warning,
 		) error {
-		sockets, ok := options["socket"].([]addressWithSocket)
+		sockets, ok := options["sockets"].([]addressWithSockets)
 		if !ok {
 			return nil
 		}
 
-		addressToSocket := map[string]string{}
-		for _, addressWithSocket := range sockets {
-			address := addressWithSocket.address
-			if _, ok := addressToSocket[address]; ok {
+		addressToSockets := map[string][]string{}
+		for _, addressWithSockets := range sockets {
+			address := addressWithSockets.address
+			if _, ok := addressToSockets[address]; ok {
 				return fmt.Errorf("cannot use duplicate socket address '%s'", address)
 			}
-			addressToSocket[address] = addressWithSocket.socket
+			addressToSockets[address] = addressWithSockets.sockets
 		}
 
 		for _, server := range servers {
 			for i, listener := range server.Listen {
-				socket, ok := addressToSocket[listener]
+				sockets, ok := addressToSockets[listener]
 				if ok {
-					if server.ListenSocket == nil {
-						server.ListenSocket = make([]*string, len(server.Listen))
+					if server.ListenSockets == nil {
+						server.ListenSockets = make([][]string, len(server.Listen))
 					}
-					server.ListenSocket[i] = &socket
+					server.ListenSockets[i] = sockets
 				}
 			}
 		}
@@ -964,8 +964,8 @@ func (st *ServerType) serversFromPairings(
 	}
 
 
-	if err := applySockets(servers, options, warnings); err != nil {
-		return nil, fmt.Errorf("applying global sockets: %v", err)
+	if err := applySocketOptions(servers, options, warnings); err != nil {
+		return nil, fmt.Errorf("applying global socket options: %v", err)
 	}
 
 	return servers, nil
@@ -1138,7 +1138,7 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 				} else if cps[i].CertSelection != nil && cps[j].CertSelection != nil {
 					// if both have one, then combine AnyTag
 					for _, tag := range cps[j].CertSelection.AnyTag {
-						if !sliceContains(cps[i].CertSelection.AnyTag, tag) {
+						if !slices.Contains(cps[i].CertSelection.AnyTag, tag) {
 							cps[i].CertSelection.AnyTag = append(cps[i].CertSelection.AnyTag, tag)
 						}
 					}
@@ -1617,16 +1617,6 @@ func tryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
 	return durationVal
 }
 
-// sliceContains returns true if needle is in haystack.
-func sliceContains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
-}
-
 // listenersUseAnyPortOtherThan returns true if there are any
 // listeners in addresses that use a port which is not otherPort.
 // Mostly borrowed from unexported method in caddyhttp package.
@@ -1702,9 +1692,9 @@ type sbAddrAssociation struct {
 
 // addressWithSocket associates a listen address with
 // a socket file descriptor to serve it with
-type addressWithSocket struct {
+type addressWithSockets struct {
 	address string
-	socket string
+	sockets []string
 }
 
 const (

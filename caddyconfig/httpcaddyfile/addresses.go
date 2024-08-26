@@ -111,7 +111,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 			}
 
 			// associate this key with its protocols and each listener address served with them
-			kwpk := keyWithParsedKey{key: key, parsedKey: parsedKey}
+			kwpk := keyWithParsedKey{key, parsedKey}
 			for addr, protocols := range listeners {
 				protocolToKeyWithParsedKeys, ok := addrToProtocolToKeyWithParsedKeys[addr]
 				if !ok {
@@ -263,8 +263,8 @@ func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[s
 	return sbaddrs
 }
 
-// listenersForServerBlockAddress essentially converts the Caddyfile site addresses to a map of
-// Caddy listener addresses and the protocols to serve them with for each server block.
+// listenersForServerBlockAddress essentially converts the Caddyfile site addresses to a map from
+// Caddy listener addresses and the protocols to serve them with to the parsed address for each server block.
 func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Address,
 	options map[string]any,
 ) (map[string]map[string]struct{}, error) {
@@ -328,31 +328,16 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	// use a map to prevent duplication
 	listeners := map[string]map[string]struct{}{}
 	for _, lnCfgVal := range lnCfgVals {
-		for _, address := range lnCfgVal.addresses {
-			// normally we would simply append the port,
-			// but if lnHost is IPv6, we need to ensure it
-			// is enclosed in [ ]; net.JoinHostPort does
-			// this for us, but lnHost might also have a
-			// network type in front (e.g. "tcp/") leading
-			// to "[tcp/::1]" which causes parsing failures
-			// later; what we need is "tcp/[::1]", so we have
-			// to split the network and host, then re-combine
-			network, host, ok := strings.Cut(address, "/")
-			if !ok {
-				host = network
-				network = ""
-			}
-			host = strings.Trim(host, "[]") // IPv6
-			networkAddr := caddy.JoinNetworkAddress(network, host, lnPort)
-			addr, err := caddy.ParseNetworkAddress(networkAddr)
+		for _, lnHost := range lnCfgVal.addresses {
+			networkAddr, err := caddy.ParseNetworkAddressFromHostPort(lnHost, lnPort)
 			if err != nil {
 				return nil, fmt.Errorf("parsing network address: %v", err)
 			}
 			if _, ok := listeners[addr.String()]; !ok {
-				listeners[addr.String()] = map[string]struct{}{}
+				listeners[networkAddr.String()] = map[string]struct{}{}
 			}
 			for _, protocol := range lnCfgVal.protocols {
-				listeners[addr.String()][protocol] = struct{}{}
+				listeners[networkAddr.String()][protocol] = struct{}{}
 			}
 		}
 	}

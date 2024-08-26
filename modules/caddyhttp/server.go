@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"slices"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
@@ -222,10 +223,10 @@ type Server struct {
 	// A nil value or element indicates that Protocols will be used instead.
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
-	// ListenSocket provides an optional socket file descriptor for each parallel
-	// address in Listen. If present, this file descriptor is used to create the
-	// listener rather than binding a new one.
-	ListenSocket []*string `json:"listen_socket,omitempty"`
+	// ListenSocket provides optional socket file descriptors for each parallel
+	// address in Listen. If present, this file descriptors are used to create
+	// listeners rather than binding new ones.
+	ListenSockets [][]string `json:"listen_sockets,omitempty"`
 
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
@@ -817,11 +818,21 @@ func (s *Server) logRequest(
 
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
-	for _, p := range s.Protocols {
-		if p == proto {
+	if s.ListenProtocols == nil {
+		if slices.Contains(s.Protocols, proto) {
 			return true
 		}
+	} else {
+		for _, lnProtocols := range s.ListenProtocols {
+			if lnProtocols == nil {
+				lnProtocols = s.Protocols
+			}
+			if slices.Contains(lnProtocols, proto) {
+				return true
+			}
+		}
 	}
+
 	return false
 }
 

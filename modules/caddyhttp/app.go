@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"maps"
+	"slices"
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
@@ -214,6 +216,45 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.Protocols = []string{"h1", "h2", "h3"}
 		}
 
+		srvProtocolsUnique := map[string]struct{}{}
+		for _, srvProtocol := range srv.Protocols {
+			srvProtocolsUnique[srvProtocol] = struct{}{}
+		}
+
+		// populate empty listen protocols with server protocols
+		for i, lnProtocols := range srv.ListenProtocols {
+			lnProtocolsDefault := false
+			var lnProtocolsInclude []string
+			srvProtocolsInclude := maps.Clone (srvProtocolsUnique)
+
+			// keep existing listener protocols unless they are empty
+			for _, lnProtocol := range lnProtocols {
+				if lnProtocol == "" {
+					lnProtocolsDefault = true
+				} else {
+					lnProtocolsInclude = append(lnProtocolsInclude, lnProtocol)
+					delete(srvProtocolsInclude, lnProtocol)
+				}
+			}
+
+			// append server protocols to listener protocols if any listener protocols were empty
+			if lnProtocolsDefault {
+				for _, srvProtocol := range srv.Protocols {
+					if _, ok := srvProtocolsInclude[srvProtocol]; ok {
+						lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
+					}
+				}
+				srv.ListenProtocols[i] = lnProtocolsInclude
+			}
+		}
+
+		// check if any listener protocols contain h2 or h2c without h1
+		for i, lnProtocols := range srv.ListenProtocols {
+			if !slices.Contains(lnProtocols, "h1") && (slices.Contains(lnProtocols, "h2") || slices.Contains(lnProtocols, "h2c")) {
+				return fmt.Errorf("server %s, listener %d protocols: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
+			}
+		}
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI
@@ -251,6 +292,21 @@ func (app *App) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("server %s, listener %d: %v", srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
+		}
+
+		// process each listener socket
+		for i, lnSockets := range srv.ListenSockets {
+			if lnSockets != nil {
+				for j, lnSocket := range lnSockets {
+					if lnSocket != "" {
+						lnSocketOut, err := repl.ReplaceOrErr(lnSockets[j], true, true)
+						if err != nil {
+							return fmt.Errorf("server %s, listener %d socket %d: %v", srvName, i, j, err)
+						}
+						srv.ListenSockets[i][j] = lnSocketOut
+					}
+				}
+			}
 		}
 
 		// set up each listener modifier
@@ -422,17 +478,26 @@ func (app *App) Start() error {
 			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
-		for _, lnAddr := range srv.Listen {
+		for lnIndex, lnAddr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
+
+			if srv.ListenSockets != nil && srv.ListenSockets[lnIndex] != nil && listenAddr.PortRangeSize() != uint(len(srv.ListenSockets[lnIndex])) {
+				return fmt.Errorf("%s: listen address '%s' port range size %d != listen sockets length %d",
+					srvName, lnAddr, listenAddr.PortRangeSize(), len(srv.ListenSockets[lnIndex]))
+			}
+
 			srv.addresses = append(srv.addresses, listenAddr)
 
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
+				var socket string
+				if srv.ListenSockets != nil && srv.ListenSockets[lnIndex] != nil {
+					socket = srv.ListenSockets[lnIndex][portOffset]
+				}
 				// create the listener for this socket
-				hostport := listenAddr.JoinHostPort(portOffset)
-				lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
+				lnAny, err := listenAddr.ListenWithSocket(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)}, socket)
 				if err != nil {
 					return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 				}
@@ -456,6 +521,7 @@ func (app *App) Start() error {
 
 					// enable HTTP/3 if configured
 					if srv.protocol("h3") {
+						hostport := listenAddr.JoinHostPort(portOffset)
 						// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
 						// a different transport mechanism... which is fine, but the OS doesn't
 						// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they

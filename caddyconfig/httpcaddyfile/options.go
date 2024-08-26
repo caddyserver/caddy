@@ -28,7 +28,7 @@ import (
 
 func init() {
 	RegisterGlobalOption("debug", parseOptTrue)
-	RegisterGlobalOption("socket", parseOptSocket)
+	RegisterGlobalOption("sockets", parseOptSockets)
 	RegisterGlobalOption("http_port", parseOptHTTPPort)
 	RegisterGlobalOption("https_port", parseOptHTTPSPort)
 	RegisterGlobalOption("default_bind", parseOptStringList)
@@ -63,12 +63,17 @@ func init() {
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
 
-func parseOptSocket(d *caddyfile.Dispenser, _ any) (any, error) {
+func parseOptSockets(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-	var parsed addressWithSocket
-	if !d.AllArgs(&parsed.address, &parsed.socket) {
+	var parsed addressWithSockets
+	if !d.NextArg() {
 		return nil, d.ArgErr()
 	}
+	parsed.address = d.Val()
+	if d.CountRemainingArgs() == 0 {
+		return nil, d.ArgErr()
+	}
+	parsed.sockets = d.RemainingArgs()
 	return parsed, nil
 }
 

@@ -61,6 +61,10 @@ type NetworkAddress struct {
 // (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
 // It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
 func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
+	return na.ListenAllWithSockets(ctx, config, nil)
+}
+
+func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.ListenConfig, sockets []string) ([]any, error) {
 	var listeners []any
 	var err error
 
@@ -88,8 +92,14 @@ func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig)
 		}
 
 		// create (or reuse) the listener ourselves
-		var ln any
-		ln, err = na.Listen(ctx, portOffset, config)
+		var (
+			ln     any
+			socket string
+		)
+		if sockets != nil {
+			socket = sockets[portOffset]
+		}
+		ln, err = na.ListenWithSocket(ctx, portOffset, config, socket)
 		if err != nil {
 			return nil, err
 		}
@@ -129,6 +139,10 @@ func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig)
 // it even if the previous program using it exited uncleanly; it will also be
 // unlinked upon a graceful exit (or when a new config does not use that socket).
 func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
+	return na.ListenWithSocket(ctx, portOffset, config, "")
+}
+
+func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	if na.IsUnixNetwork() {
 		unixSocketsMu.Lock()
 		defer unixSocketsMu.Unlock()
@@ -140,59 +154,79 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 	}
 
 	// create (or reuse) the listener ourselves
-	return na.listen(ctx, portOffset, config)
+	return na.listen(ctx, portOffset, config, socket)
 }
 
-func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
+func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	var (
 		ln                   any
 		err                  error
 		address              string
 		unixFileMode         fs.FileMode
-		isAbstractUnixSocket bool
+		socketFile           *os.File
 	)
 
 	// split unix socket addr early so lnKey
 	// is independent of permissions bits
 	if na.IsUnixNetwork() {
-		var err error
 		address, unixFileMode, err = internal.SplitUnixSocketPermissionsBits(na.Host)
 		if err != nil {
 			return nil, err
 		}
-		isAbstractUnixSocket = strings.HasPrefix(address, "@")
 	} else {
 		address = na.JoinHostPort(portOffset)
 	}
 
-	// if this is a unix socket, see if we already have it open,
-	// force socket permissions on it and return early
-	if socket, err := reuseUnixSocket(na.Network, address); socket != nil || err != nil {
-		if !isAbstractUnixSocket {
-			if err := os.Chmod(address, unixFileMode); err != nil {
-				return nil, fmt.Errorf("unable to set permissions (%s) on %s: %v", unixFileMode, address, err)
-			}
-		}
-		return socket, err
-	}
-
 	lnKey := listenerKey(na.Network, address)
 
+	if socket != "" {
+		var socketFd uint64
+		socketFd, err = strconv.ParseUint(socket, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid socket file descriptor: %v", err)
+		}
+		fd := uintptr(socketFd)
+
+		if file, ok := socketFiles[fd]; ok {
+			socketFile = file
+		} else {
+			socketFile = os.NewFile(fd, lnKey)
+			if socketFile == nil {
+				return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
+			}
+			socketFiles[fd] = socketFile
+		}
+	}
+
 	if strings.HasPrefix(na.Network, "ip") {
-		ln, err = config.ListenPacket(ctx, na.Network, address)
+		if socketFile != nil {
+			ln, err = net.FilePacketConn(socketFile)
+		} else {
+			ln, err = config.ListenPacket(ctx, na.Network, address)
+		}
 	} else {
-		ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
+		if na.IsUnixNetwork() {
+			// if this is a unix socket, see if we already have it open
+			ln, err = reuseUnixSocketWithUnlink(na.Network, address, socketFile == nil)
+		}
+		if ln == nil && err == nil {
+			ln, err = listenReusableWithSocketFile(ctx, lnKey, na.Network, address, config, socketFile)
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	if ln == nil {
 		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
 	if IsUnixNetwork(na.Network) {
+		isAbstractUnixSocket := strings.HasPrefix(address, "@")
 		if !isAbstractUnixSocket {
-			if err := os.Chmod(address, unixFileMode); err != nil {
+			err = os.Chmod(address, unixFileMode)
+			if err != nil {
 				return nil, fmt.Errorf("unable to set permissions (%s) on %s: %v", unixFileMode, address, err)
 			}
 		}
@@ -289,6 +323,25 @@ func (na NetworkAddress) String() string {
 // IsUnixNetwork returns true if the netw is a unix network.
 func IsUnixNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "unix")
+}
+
+// normally we would simply append the port,
+// but if lnHost is IPv6, we need to ensure it
+// is enclosed in [ ]; net.JoinHostPort does
+// this for us, but lnHost might also have a
+// network type in front (e.g. "tcp/") leading
+// to "[tcp/::1]" which causes parsing failures
+// later; what we need is "tcp/[::1]", so we have
+// to split the network and host, then re-combine
+func ParseNetworkAddressFromHostPort(host, port string) (NetworkAddress, error) {
+	network, addr, ok := strings.Cut(host, "/")
+	if !ok {
+		addr = network
+		network = ""
+	}
+	addr = strings.Trim(addr, "[]") // IPv6
+	networkAddr := JoinNetworkAddress(network, addr, port)
+	return ParseNetworkAddress(networkAddr)
 }
 
 // ParseNetworkAddress parses addr into its individual
@@ -665,3 +718,6 @@ type ListenerWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
+
+// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
+var socketFiles = map[uintptr]*os.File{}
