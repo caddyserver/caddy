@@ -88,6 +88,7 @@ type HTTPTransport struct {
 	//  forward_proxy_url -> upstream
 	//
 	// Default: http.ProxyFromEnvironment
+	// DEPRECATED: Use NetworkProxyRaw|`network_proxy` instead. Subject to removal.
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
@@ -139,7 +140,20 @@ type HTTPTransport struct {
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
-	// Forward proxy module
+	// The module that provides the network (forward) proxy
+	// URL that the HTTP transport will use to proxy
+	// requests to the upstream. See [http.Transport.Proxy](https://pkg.go.dev/net/http#Transport.Proxy)
+	// for information regarding supported protocols.
+	//
+	// Providing a value to this parameter results in
+	// requests flowing through the reverse_proxy in the following
+	// way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  [proxy provided by the module] -> upstream
+	//
+	// If nil/empty, default to reading the `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
 
 	h2cTransport *http2.Transport
@@ -343,6 +357,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	if h.ForwardProxyURL != "" {
+		caddyCtx.Logger().Warn("forward_proxy_url is deprecated; use network_proxy instead")
 		pUrl, err := url.Parse(h.ForwardProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)

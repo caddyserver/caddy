@@ -17,6 +17,7 @@ func init() {
 	caddy.RegisterModule(ProxyFromNone{})
 }
 
+// The "url" proxy source uses the defined URL as the proxy
 type ProxyFromURL struct {
 	URL string `json:"url"`
 
@@ -65,17 +66,17 @@ func (p ProxyFromURL) ProxyFunc() func(*http.Request) (*url.URL, error) {
 			// note: h.ForwardProxyURL should never be empty at this point
 			s := repl.ReplaceAll(p.URL, "")
 			if s == "" {
-				p.logger.Error("forward_proxy_url was empty after applying placeholders",
+				p.logger.Error("network_proxy URL was empty after applying placeholders",
 					zap.String("initial_value", p.URL),
 					zap.String("final_value", s),
 					zap.String("hint", "check for invalid placeholders"))
-				return nil, errors.New("empty value for forward_proxy_url")
+				return nil, errors.New("empty value for network_proxy URL")
 			}
 
 			// parse the url
 			pUrl, err := url.Parse(s)
 			if err != nil {
-				p.logger.Warn("failed to derive transport proxy from forward_proxy_url")
+				p.logger.Warn("failed to derive transport proxy from network_proxy URL")
 				pUrl = nil
 			} else if pUrl.Host == "" || strings.Split("", pUrl.Host)[0] == ":" {
 				// url.Parse does not return an error on these values:
@@ -86,7 +87,7 @@ func (p ProxyFromURL) ProxyFunc() func(*http.Request) (*url.URL, error) {
 				//   - pUrl.Host == ""
 				//
 				// Super edge cases, but humans are human.
-				err = errors.New("supplied forward_proxy_url is missing a host value")
+				err = errors.New("supplied network_proxy URL is missing a host value")
 				pUrl = nil
 			} else {
 				p.logger.Debug("setting transport proxy url", zap.String("url", s))
@@ -108,6 +109,7 @@ func (p *ProxyFromURL) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// The "none" proxy source module disables the use of network proxy.
 type ProxyFromNone struct{}
 
 func (p ProxyFromNone) CaddyModule() caddy.ModuleInfo {
