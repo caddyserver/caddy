@@ -132,6 +132,11 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+	if rewr.logger.Check(zap.DebugLevel, "rewrote request") == nil {
+		rewr.Rewrite(r, repl)
+		return next.ServeHTTP(w, r)
+	}
+
 	logger := rewr.logger.With(
 		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 	)
