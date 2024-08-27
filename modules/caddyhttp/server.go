@@ -577,12 +577,20 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
-// serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
+func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
+	return s.serveHTTP3WithSocket(addr, tlsCfg, "")
+}
+
+// serveHTTP3WithSocket creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
-func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	addr.Network = getHTTP3Network(addr.Network)
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
+func (s *Server) serveHTTP3WithSocket(addr caddy.NetworkAddress, tlsCfg *tls.Config, socket string) error {
+	h3net, err := getHTTP3Network(addr.Network)
+	if err != nil {
+		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
+	}
+	addr.Network = h3net
+	h3ln, err := addr.ListenQUICWithSocket(s.ctx, 0, net.ListenConfig{}, tlsCfg, socket)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -824,11 +832,10 @@ func (s *Server) protocol(proto string) bool {
 		}
 	} else {
 		for _, lnProtocols := range s.ListenProtocols {
-			if lnProtocols == nil {
-				lnProtocols = s.Protocols
-			}
-			if slices.Contains(lnProtocols, proto) {
-				return true
+			for _, lnProtocol := range lnProtocols {
+				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
+					return true
+				}
 			}
 		}
 	}
@@ -1076,9 +1083,13 @@ const (
 )
 
 var networkTypesHTTP3 = map[string]string{
-	"unix": "unixgram",
-	"tcp4": "udp4",
-	"tcp6": "udp6",
+	"unixgram": "unixgram",
+	"udp":      "udp",
+	"udp4":     "udp4",
+	"udp6":     "udp6",
+	"tcp":      "udp",
+	"tcp4":     "udp4",
+	"tcp6":     "udp6",
 }
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
@@ -1093,11 +1104,10 @@ func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
 	networkTypesHTTP3[originalNetwork] = h3Network
 }
 
-func getHTTP3Network(originalNetwork string) string {
+func getHTTP3Network(originalNetwork string) (string, error) {
 	h3Network, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]
 	if !ok {
-		// TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
-		return "udp"
+		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
-	return h3Network
+	return h3Network, nil
 }

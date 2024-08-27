@@ -453,16 +453,20 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
+	return na.ListenQUICWithSocket(ctx, portOffset, config, tlsConf, "")
+}
+
 // ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
 // The network will be transformed into a QUIC-compatible type (if unix, then
 // unixgram will be used; otherwise, udp will be used).
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
+func (na NetworkAddress) ListenQUICWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, socket string) (http3.QUICEarlyListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		lnAny, err := na.Listen(ctx, portOffset, config)
+		lnAny, err := na.ListenWithSocket(ctx, portOffset, config, socket)
 		if err != nil {
 			return nil, err
 		}
