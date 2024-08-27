@@ -21,7 +21,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -210,9 +209,17 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.Protocols = []string{"h1", "h2", "h3"}
 		}
 
+		srvProtocolsUnique := map[string]struct{}{}
+		for _, srvProtocol := range srv.Protocols {
+			srvProtocolsUnique[srvProtocol] = struct{}{}
+		}
+		_, h1ok := srvProtocolsUnique["h1"]
+		_, h2ok := srvProtocolsUnique["h2"]
+		_, h2cok := srvProtocolsUnique["h2c"]
+
 		// the Go standard library does not let us serve only HTTP/2 using
 		// http.Server; we would probably need to write our own server
-		if !slices.Contains(srv.Protocols, "h1") && (slices.Contains(srv.Protocols, "h2") || slices.Contains(srv.Protocols, "h2c")) {
+		if !h1ok && (h2ok || h2cok) {
 			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
 		}
 
@@ -220,11 +227,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 			if len(srv.ListenProtocols) != len(srv.Listen) {
 				return fmt.Errorf("server %s: listener protocols count does not match address count: %d != %d",
 					srvName, len(srv.ListenProtocols), len(srv.Listen))
-			}
-
-			srvProtocolsUnique := map[string]struct{}{}
-			for _, srvProtocol := range srv.Protocols {
-				srvProtocolsUnique[srvProtocol] = struct{}{}
 			}
 
 			for i, lnProtocols := range srv.ListenProtocols {
@@ -251,13 +253,22 @@ func (app *App) Provision(ctx caddy.Context) error {
 								lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
 							}
 						}
-						srv.ListenProtocols[i] = lnProtocolsInclude
 					}
 
+					lnProtocolsIncludeUnique := map[string]struct{}{}
+					for _, lnProtocol := range lnProtocolsInclude {
+						lnProtocolsIncludeUnique[lnProtocol] = struct{}{}
+					}
+					_, h1ok := lnProtocolsIncludeUnique["h1"]
+					_, h2ok := lnProtocolsIncludeUnique["h2"]
+					_, h2cok := lnProtocolsIncludeUnique["h2c"]
+
 					// check if any listener protocols contain h2 or h2c without h1
-					if !slices.Contains(lnProtocols, "h1") && (slices.Contains(lnProtocols, "h2") || slices.Contains(lnProtocols, "h2c")) {
+					if !h1ok && (h2ok || h2cok) {
 						return fmt.Errorf("server %s, listener %d protocols: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
 					}
+
+					srv.ListenProtocols[i] = lnProtocolsInclude
 				}
 			}
 		}
@@ -504,10 +515,14 @@ func (app *App) Start() error {
 				protocols = srv.ListenProtocols[lnIndex]
 			}
 
-			h1ok := slices.Contains(protocols, "h1")
-			h2ok := slices.Contains(protocols, "h2")
-			h2cok := slices.Contains(protocols, "h2c")
-			h3ok := slices.Contains(protocols, "h3")
+			protocolsUnique := map[string]struct{}{}
+			for _, protocol := range protocols {
+				protocolsUnique[protocol] = struct{}{}
+			}
+			_, h1ok := protocolsUnique["h1"]
+			_, h2ok := protocolsUnique["h2"]
+			_, h2cok := protocolsUnique["h2c"]
+			_, h3ok := protocolsUnique["h3"]
 
 			var sockets []string
 			if srv.ListenSockets != nil {
