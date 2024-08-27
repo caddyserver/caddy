@@ -40,6 +40,7 @@ func SplitUnixSocketPermissionsBits(addr string) (path string, fileMode fs.FileM
 		if err != nil {
 			return "", 0, fmt.Errorf("could not parse octal permission bits in %s: %v", addr, err)
 		}
+		//nolint:gosec
 		fileMode = fs.FileMode(fileModeUInt64)
 
 		// FileMode.String() returns a string like `-rwxr-xr--` for `u=rwx,g=rx,o=r` (`0754`)

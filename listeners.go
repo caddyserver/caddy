@@ -247,7 +247,7 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 	if na.IsUnixNetwork() {
 		return na.Host
 	}
-	return net.JoinHostPort(na.Host, strconv.Itoa(int(na.StartPort+offset)))
+	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset),10))
 }
 
 // Expand returns one NetworkAddress for each port in the port range.
