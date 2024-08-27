@@ -980,9 +980,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    read_buffer             <size>
 //	    write_buffer            <size>
 //	    max_response_header     <size>
-//		network_proxy			<module> {
-//			...
-//		}
+//	    network_proxy           <module> {
+//	        ...
+//	    }
 //	    dial_timeout            <duration>
 //	    dial_fallback_delay     <duration>
 //	    response_header_timeout <duration>
@@ -993,9 +993,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    tls_insecure_skip_verify
 //	    tls_timeout <duration>
 //	    tls_trusted_ca_certs <cert_files...>
-//		tls_trust_pool	<module> {
-//			...
-//		}
+//	    tls_trust_pool <module> {
+//	        ...
+//	    }
 //	    tls_server_name <sni>
 //	    tls_renegotiation <level>
 //	    tls_except_ports <ports...>
@@ -1074,12 +1074,13 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 
 		case "forward_proxy_url":
-			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use the 'network_proxy' field instead.")
+			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use 'network_proxy url <url>' instead.")
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
 
 			h.ForwardProxyURL = d.Val()
+
 		case "network_proxy":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -1091,6 +1092,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return err
 			}
 			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
+
 		case "dial_timeout":
 			if !d.NextArg() {
 				return d.ArgErr()

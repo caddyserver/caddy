@@ -145,15 +145,15 @@ type HTTPTransport struct {
 	// requests to the upstream. See [http.Transport.Proxy](https://pkg.go.dev/net/http#Transport.Proxy)
 	// for information regarding supported protocols.
 	//
-	// Providing a value to this parameter results in
-	// requests flowing through the reverse_proxy in the following
-	// way:
+	// Providing a value to this parameter results in requests
+	// flowing through the reverse_proxy in the following way:
 	//
 	// User Agent ->
 	//  reverse_proxy ->
 	//  [proxy provided by the module] -> upstream
 	//
-	// If nil/empty, default to reading the `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
+	// If nil, defaults to reading the `HTTP_PROXY`,
+	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
 
 	h2cTransport *http2.Transport
