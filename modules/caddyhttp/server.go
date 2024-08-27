@@ -577,10 +577,6 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
-func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	return s.serveHTTP3WithSocket(addr, tlsCfg, "")
-}
-
 // serveHTTP3WithSocket creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
