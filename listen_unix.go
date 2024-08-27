@@ -26,9 +26,9 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"slices"
 	"sync/atomic"
 	"syscall"
-	"slices"
 
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
@@ -105,7 +105,7 @@ func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, ad
 	// configs are using this socket; necessary to ensure we can know
 	// whether to enforce shutdown delays, for example (see #5393).
 	var (
-		ln io.Closer
+		ln  io.Closer
 		err error
 	)
 
@@ -209,8 +209,8 @@ func (uln *unixListener) Close() error {
 
 type unixConn struct {
 	*net.UnixConn
-	mapKey   string
-	count    *int32 // accessed atomically
+	mapKey string
+	count  *int32 // accessed atomically
 }
 
 func (uc *unixConn) Close() error {

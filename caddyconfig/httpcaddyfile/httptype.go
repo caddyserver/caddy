@@ -559,7 +559,7 @@ func (st *ServerType) serversFromPairings(
 		}
 
 		srv := &caddyhttp.Server{
-			Listen: p.addresses,
+			Listen:          p.addresses,
 			ListenProtocols: p.protocols,
 		}
 
@@ -923,17 +923,16 @@ func (st *ServerType) serversFromPairings(
 		servers[fmt.Sprintf("srv%d", i)] = srv
 	}
 
-
 	if err := applyServerOptions(servers, options, warnings); err != nil {
 		return nil, fmt.Errorf("applying global server options: %v", err)
 	}
 
 	// applySockets sets socket file descriptors on the appropriate servers
-	applySocketOptions := func (
-			servers map[string]*caddyhttp.Server,
-			options map[string]any,
-			_ *[]caddyconfig.Warning,
-		) error {
+	applySocketOptions := func(
+		servers map[string]*caddyhttp.Server,
+		options map[string]any,
+		_ *[]caddyconfig.Warning,
+	) error {
 		sockets, ok := options["sockets"].([]addressWithSockets)
 		if !ok {
 			return nil
@@ -962,7 +961,6 @@ func (st *ServerType) serversFromPairings(
 
 		return nil
 	}
-
 
 	if err := applySocketOptions(servers, options, warnings); err != nil {
 		return nil, fmt.Errorf("applying global socket options: %v", err)

@@ -83,7 +83,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 	addrToProtocolToServerBlocks := map[string]map[string][]serverBlock{}
 
 	type keyWithParsedKey struct {
-		key caddyfile.Token
+		key       caddyfile.Token
 		parsedKey Address
 	}
 
@@ -174,7 +174,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 						Keys:     keys,
 						Segments: sblock.block.Segments,
 					},
-					pile: sblock.pile,
+					pile:       sblock.pile,
 					parsedKeys: parsedKeys,
 				})
 			}

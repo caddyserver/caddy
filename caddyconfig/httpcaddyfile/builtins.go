@@ -56,9 +56,9 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...> [{
-//    protocols [h1|h2|h2c|h3] [...]
-//  }]
+//		bind <addresses...> [{
+//	   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
 	var addresses, protocols []string
@@ -66,13 +66,13 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 
 	for h.NextBlock(0) {
 		switch h.Val() {
-			case "protocols":
-				protocols = h.RemainingArgs()
-				if len(protocols) == 0 {
-					return nil, h.Errf("protocols requires one or more arguments")
-				}
-			default:
-				return nil, h.Errf("unknown subdirective: %s", h.Val())
+		case "protocols":
+			protocols = h.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, h.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, h.Errf("unknown subdirective: %s", h.Val())
 		}
 	}
 

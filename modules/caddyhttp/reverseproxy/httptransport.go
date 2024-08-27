@@ -27,9 +27,9 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
-	"slices"
 
 	"github.com/pires/go-proxyproto"
 	"github.com/quic-go/quic-go/http3"

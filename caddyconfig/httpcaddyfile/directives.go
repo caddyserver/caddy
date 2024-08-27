@@ -531,9 +531,9 @@ func sortRoutes(routes []ConfigValue) {
 // a "pile" of config values, keyed by class name,
 // as well as its parsed keys for convenience.
 type serverBlock struct {
-	block       caddyfile.ServerBlock
-	pile        map[string][]ConfigValue // config values obtained from directives
-	parsedKeys  []Address
+	block      caddyfile.ServerBlock
+	pile       map[string][]ConfigValue // config values obtained from directives
+	parsedKeys []Address
 }
 
 // hostsFromKeys returns a list of all the non-empty hostnames found in

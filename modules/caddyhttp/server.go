@@ -25,10 +25,10 @@ import (
 	"net/netip"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
-	"slices"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"

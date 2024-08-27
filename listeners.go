@@ -159,11 +159,11 @@ func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, 
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	var (
-		ln                   any
-		err                  error
-		address              string
-		unixFileMode         fs.FileMode
-		socketFile           *os.File
+		ln           any
+		err          error
+		address      string
+		unixFileMode fs.FileMode
+		socketFile   *os.File
 	)
 
 	// split unix socket addr early so lnKey
