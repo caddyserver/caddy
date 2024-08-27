@@ -1,0 +1,155 @@
+{
+	sockets :80 {env.CADDY_HTTP_FD}
+	sockets :443 {env.CADDY_HTTPS_FD}
+	sockets udp/:443 {env.CADDY_HTTP3_FD}
+	auto_https disable_redirects
+	admin off
+}
+
+http://localhost {
+	bind tcp/ {
+		protocols h1
+	}
+	log
+	respond "Hello, HTTP!"
+}
+
+https://localhost {
+	bind tcp/ {
+		protocols h1 h2
+	}
+	bind udp/ {
+		protocols h3
+	}
+	log
+	respond "Hello, HTTPS!"
+}
+----------
+{
+	"admin": {
+		"disabled": true
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443",
+						"udp/:443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Hello, HTTPS!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"disable_redirects": true
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								""
+							]
+						}
+					},
+					"listen_protocols": [
+						[
+							"h1",
+							"h2"
+						],
+						[
+							"h3"
+						]
+					],
+					"listen_sockets": [
+						[
+							"{env.CADDY_HTTPS_FD}"
+						],
+						[
+							"{env.CADDY_HTTP3_FD}"
+						]
+					]
+				},
+				"srv1": {
+					"automatic_https": {
+						"disable_redirects": true
+					}
+				},
+				"srv2": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Hello, HTTP!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"disable_redirects": true
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								""
+							]
+						}
+					},
+					"listen_protocols": [
+						[
+							"h1"
+						]
+					],
+					"listen_sockets": [
+						[
+							"{env.CADDY_HTTP_FD}"
+						]
+					]
+				}
+			}
+		}
+	}
+}
