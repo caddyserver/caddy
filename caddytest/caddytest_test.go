@@ -84,7 +84,6 @@ func TestLoadUnorderedJSON(t *testing.T) {
 				"servers": {
 					"s_server": {
 						"listen": [
-							":9443",
 							":9080"
 						],
 						"routes": [
