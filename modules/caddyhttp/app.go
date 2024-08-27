@@ -265,7 +265,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 					// check if any listener protocols contain h2 or h2c without h1
 					if !h1ok && (h2ok || h2cok) {
-						return fmt.Errorf("server %s, listener %d protocols: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
+						return fmt.Errorf("server %s, listener %d: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
 					}
 
 					srv.ListenProtocols[i] = lnProtocolsInclude
