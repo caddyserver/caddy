@@ -408,7 +408,7 @@ func (app *App) Validate() error {
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us
 			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
-				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(listenAddr.StartPort+i),10))
+				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(listenAddr.StartPort+i), 10))
 				if sn, ok := lnAddrs[addr]; ok {
 					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}

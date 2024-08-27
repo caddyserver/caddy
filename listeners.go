@@ -154,10 +154,10 @@ func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, 
 	}
 
 	// create (or reuse) the listener ourselves
-	return na.listen(ctx, portOffset, config, socket)
+	return na.listenWithSocket(ctx, portOffset, config, socket)
 }
 
-func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
+func (na NetworkAddress) listenWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	var (
 		ln           any
 		err          error
@@ -247,7 +247,7 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 	if na.IsUnixNetwork() {
 		return na.Host
 	}
-	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset),10))
+	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset), 10))
 }
 
 // Expand returns one NetworkAddress for each port in the port range.
