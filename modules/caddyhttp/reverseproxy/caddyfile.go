@@ -33,6 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -1078,8 +1079,8 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-
-			h.ForwardProxyURL = d.Val()
+			u := network.ProxyFromURL{URL: d.Val()}
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
 
 		case "network_proxy":
 			if !d.NextArg() {
