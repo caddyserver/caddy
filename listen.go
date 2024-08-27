@@ -19,6 +19,8 @@ package caddy
 import (
 	"context"
 	"net"
+	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,15 +28,24 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(network, addr string) (any, error) {
+func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
 	return nil, nil
 }
 
-func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
-	switch network {
-	case "udp", "udp4", "udp6", "unixgram":
+func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, address string, config net.ListenConfig, socketFile *os.File) (any, error) {
+	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram"}, network)
+
+	if datagram {
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, network, address)
+			var (
+				pc  net.PacketConn
+				err error
+			)
+			if socketFile == nil {
+				pc, err = config.ListenPacket(ctx, network, address)
+			} else {
+				pc, err = net.FilePacketConn(socketFile)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -44,20 +55,27 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			return nil, err
 		}
 		return &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}, nil
+	}
 
-	default:
-		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			ln, err := config.Listen(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedListener{Listener: ln, key: lnKey}, nil
-		})
+	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+		var (
+			ln  net.Listener
+			err error
+		)
+		if socketFile == nil {
+			ln, err = config.Listen(ctx, network, address)
+		} else {
+			ln, err = net.FileListener(socketFile)
+		}
 		if err != nil {
 			return nil, err
 		}
-		return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
+		return &sharedListener{Listener: ln, key: lnKey}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
