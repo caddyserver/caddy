@@ -224,7 +224,7 @@ type Server struct {
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
 	// ListenSocket provides optional socket file descriptors for each parallel
-	// address in Listen. If present, this file descriptors are used to create
+	// address in Listen. If present, these file descriptors are used to create
 	// listeners rather than binding new ones.
 	ListenSockets [][]string `json:"listen_sockets,omitempty"`
 
