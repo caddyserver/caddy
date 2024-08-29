@@ -171,7 +171,6 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 		return nil
 	}
 	return conn.Control(func(descriptor uintptr) {
-		//nolint:gosec
 		if err := unix.SetsockoptInt(int(descriptor), unix.SOL_SOCKET, unixSOREUSEPORT, 1); err != nil {
 			Log().Error("setting SO_REUSEPORT",
 				zap.String("network", network),

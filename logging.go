@@ -724,7 +724,6 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 
 func newDefaultProductionLogEncoder(wo WriterOpener) zapcore.Encoder {
 	encCfg := zap.NewProductionEncoderConfig()
-	//nolint:gosec
 	if IsWriterStandardStream(wo) && term.IsTerminal(int(os.Stderr.Fd())) {
 		// if interactive terminal, make output more human-readable by default
 		encCfg.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
