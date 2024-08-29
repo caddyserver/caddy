@@ -74,6 +74,10 @@ func cmdStart(fl Flags) (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	// we should be able to run caddy in relative paths
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
 	if configFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", configFlag)
 	}

@@ -340,7 +340,7 @@ func (celTypeAdapter) NativeToValue(value any) ref.Val {
 	case time.Time:
 		return types.Timestamp{Time: v}
 	case error:
-		types.NewErr(v.Error())
+		return types.WrapErr(v)
 	}
 	return types.DefaultTypeAdapter.NativeToValue(value)
 }
@@ -499,7 +499,7 @@ func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions
 	return func(celReq, matcherData ref.Val) ref.Val {
 		matcher, err := fac(matcherData)
 		if err != nil {
-			return types.NewErr(err.Error())
+			return types.WrapErr(err)
 		}
 		httpReq := celReq.Value().(celHTTPRequest)
 		return types.Bool(matcher.Match(httpReq.Request))
