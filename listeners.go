@@ -142,6 +142,12 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 	return na.ListenWithSocket(ctx, portOffset, config, "")
 }
 
+// ListenWithSocket synchronizes binds to unix domain sockets to avoid race conditions
+// while an existing socket is unlinked. It checks if a plugin can provide a listener from
+// this address, otherwise a new listener is created. If the socket argument is nonempty,
+// it is used to create a FileListener or FilePacketConn from an existing socket. Otherwise,
+// a new socket is opened and bound to this address, with a new Listener or PacketConn type,
+// determined by the network of this address.
 func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	if na.IsUnixNetwork() {
 		unixSocketsMu.Lock()
@@ -453,13 +459,21 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
+// ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
+//
+// NOTE: This API is EXPERIMENTAL and may be changed or removed.
 func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
 	return na.ListenQUICWithSocket(ctx, portOffset, config, tlsConf, "")
 }
 
-// ListenQUIC returns a quic.EarlyListener suitable for use in a Caddy module.
-// The network will be transformed into a QUIC-compatible type (if unix, then
-// unixgram will be used; otherwise, udp will be used).
+// ListenQUICWithSocket returns a http3.QUICEarlyListener made with a listener from ListenWithSocket.
+//
+// The network will be transformed into a QUIC-compatible type if the same address can be used with
+// different networks. Currently this just means that for tcp, udp will be used with the same
+// address instead.
+//
+// If the socket argument is nonempty, it is used to create a PacketConn from an existing socket,
+// instead of binding a new socket to this address.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 func (na NetworkAddress) ListenQUICWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, socket string) (http3.QUICEarlyListener, error) {
