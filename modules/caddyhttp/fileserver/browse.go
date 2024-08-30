@@ -52,8 +52,19 @@ var BrowseTemplate string
 type Browse struct {
 	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
+
 	// Determines whether or not targets of symlinks should be revealed.
 	RevealSymlinks bool `json:"reveal_symlinks,omitempty"`
+
+	// Override the default sort.
+	// It includes the following options:
+	//   - sort_by: name(default), namedirfirst, size, time
+	//   - order: asc(default), desc
+	// eg.:
+	//   - `sort time desc` will sort by time in descending order
+	//   - `sort size` will sort by size in ascending order
+	// The first option must be `sort_by` and the second option must be `order` (if exists).
+	SortOptions []string `json:"sort,omitempty"`
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -210,7 +221,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 
 	// The configs in Caddyfile have lower priority than Query params,
 	// so put it at first.
-	for idx, item := range fsrv.SortOptions {
+	for idx, item := range fsrv.Browse.SortOptions {
 		// Only `sort` & `order`, 2 params are allowed
 		if idx >= 2 {
 			break
