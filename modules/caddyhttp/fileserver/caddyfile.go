@@ -119,6 +119,16 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						return d.Err("Symlinks path reveal is already enabled")
 					}
 					fsrv.Browse.RevealSymlinks = true
+				case "sort":
+					for d.NextArg() {
+						dVal := d.Val()
+						switch dVal {
+						case sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc:
+							fsrv.Browse.SortOptions = append(fsrv.Browse.SortOptions, dVal)
+						default:
+							return d.Errf("unknown sort option '%s'", dVal)
+						}
+					}
 				default:
 					return d.Errf("unknown subdirective '%s'", d.Val())
 				}
@@ -170,17 +180,6 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			fsrv.EtagFileExtensions = etagFileExtensions
-
-		case "sort":
-			for d.NextArg() {
-				dVal := d.Val()
-				switch dVal {
-				case sortByName, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc:
-					fsrv.SortOptions = append(fsrv.SortOptions, dVal)
-				default:
-					return d.Errf("unknown sort option '%s'", dVal)
-				}
-			}
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
