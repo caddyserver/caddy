@@ -841,7 +841,15 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, cfg.CipherSuites...)
 
 	if len(cfg.CurvePreferences) == 0 {
-		cfg.CurvePreferences = defaultCurves
+		// We would want to write
+		//
+		//	cfg.CurvePreferences = defaultCurves
+		//
+		// but that would disable the post-quantum key agreement X25519Kyber768
+		// supported in Go 1.23, for which the CurveID is not exported.
+		// Instead, we'll set CurvePreferences to nil, which will enable PQC.
+		// See https://github.com/caddyserver/caddy/issues/6540
+		cfg.CurvePreferences = nil
 	}
 
 	if cfg.MinVersion == 0 {

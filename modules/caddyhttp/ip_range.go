@@ -128,3 +128,10 @@ var (
 	_ caddyfile.Unmarshaler = (*StaticIPRange)(nil)
 	_ IPRangeSource         = (*StaticIPRange)(nil)
 )
+
+// PrivateRangesCIDR returns a list of private CIDR range
+// strings, which can be used as a configuration shortcut.
+// Note: this function is used at least by mholt/caddy-l4.
+func PrivateRangesCIDR() []string {
+	return internal.PrivateRangesCIDR()
+}
