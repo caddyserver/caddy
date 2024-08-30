@@ -579,7 +579,9 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 
 // serveHTTP3WithSocket creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
-// the listener, with Server s as the handler.
+// the listener, with Server s as the handler. If the socket argument is nonempty,
+// an existing socket is used to create the listener, otherwise a new socket is
+// opened and bound to addr.
 func (s *Server) serveHTTP3WithSocket(addr caddy.NetworkAddress, tlsCfg *tls.Config, socket string) error {
 	h3net, err := getHTTP3Network(addr.Network)
 	if err != nil {

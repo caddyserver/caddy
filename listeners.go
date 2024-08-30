@@ -57,13 +57,17 @@ type NetworkAddress struct {
 	EndPort   uint
 }
 
-// ListenAll calls Listen() for all addresses represented by this struct, i.e. all ports in the range.
-// (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
-// It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
+// ListenAll calls ListenAllWithSockets with an empty array of sockets, which opens and binds a new
+// socket for each address represented by this struct.
 func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
 	return na.ListenAllWithSockets(ctx, config, nil)
 }
 
+// ListenAllWithSockets calls ListenWithSocket for all addresses represented by this struct, i.e. all ports in the range.
+// (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
+// The sockets argument is an optional array of file descriptors to create each listener with an existing socket, otherwise
+// a new sockets is opened and bound to each address.
+// It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
 func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.ListenConfig, sockets []string) ([]any, error) {
 	var listeners []any
 	var err error

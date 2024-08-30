@@ -34,8 +34,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// reuseUnixSocket copies and reuses the unix domain socket (UDS) if we already
-// have it open; if not, unlink it so we can have it. No-op if not a unix network.
+// reuseUnixSocketWithUnlink copies and reuses the unix domain socket (UDS) if we already
+// have it open; if not and the unlink argument is true, unlink it so we can have it.
+// No-op if not a unix network.
 func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
 	socketKey := listenerKey(network, addr)
 
@@ -88,6 +89,8 @@ func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
 	return nil, nil
 }
 
+// listenReusableWithSocketFile uses socketFile to create a listener from an existing socket if it is non nil, otherwise a new listener is created for the
+// given network and address and added to listenerPool.
 func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, address string, config net.ListenConfig, socketFile *os.File) (any, error) {
 	// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
 	oldControl := config.Control

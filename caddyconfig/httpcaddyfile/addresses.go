@@ -185,11 +185,11 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 }
 
 // consolidateAddrMappings eliminates repetition of identical server blocks in a mapping of
-// single listener addresses to lists of server blocks. Since multiple addresses may serve
-// identical sites (server block contents), this function turns a 1:many mapping into a
-// many:many mapping. Server block contents (tokens) must be exactly identical so that
-// reflect.DeepEqual returns true in order for the addresses to be combined. Identical
-// entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
+// single listener addresses to protocols to lists of server blocks. Since multiple addresses
+// may serve multiple protocols to identical sites (server block contents), this function turns
+// a 1:(1:many) mapping into a many:many:many mapping. Server block contents (tokens) must be
+// exactly identical so that reflect.DeepEqual returns true in order for the addresses to be combined.
+// Identical entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
 func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[string]map[string][]serverBlock) []sbAddrAssociation {
