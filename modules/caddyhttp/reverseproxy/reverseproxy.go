@@ -67,7 +67,7 @@ func init() {
 // `{http.reverse_proxy.upstream.duration_ms}` | Same as 'upstream.duration', but in milliseconds.
 // `{http.reverse_proxy.duration}` | Total time spent proxying, including selecting an upstream, retries, and writing response.
 // `{http.reverse_proxy.duration_ms}` | Same as 'duration', but in milliseconds.
-// `{http.reverse_proxy.lb.retries}` | The number of retries actually performed by the load balancer to communicate with an upstream.
+// `{http.reverse_proxy.retries}` | The number of retries actually performed to communicate with an upstream.
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.
@@ -445,7 +445,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 
 	// number of retries actually performed
-	repl.Set("http.reverse_proxy.lb.retries", retries)
+	repl.Set("http.reverse_proxy.retries", retries)
 
 	if proxyErr != nil {
 		return statusError(proxyErr)
