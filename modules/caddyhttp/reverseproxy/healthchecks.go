@@ -487,7 +487,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		}
 		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
-				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up)"); c != nil {
+				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
