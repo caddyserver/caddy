@@ -367,7 +367,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// one last check to ensure the file isn't hidden (we might
 	// have changed the filename from when we last checked)
 	if fileHidden(filename, filesToHide) {
-		if c := fsrv.logger.Check(zapcore.DebugLevel, "no index file in directory"); c != nil {
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "hiding file"); c != nil {
 			c.Write(
 				zap.String("filename", filename),
 				zap.Strings("files_to_hide", filesToHide),

@@ -156,6 +156,7 @@ func (p PermissionByHTTP) CertificateAllowed(ctx context.Context, name string) e
 	if chi, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && chi != nil {
 		remote = chi.Conn.RemoteAddr().String()
 	}
+
 	if c := p.logger.Check(zapcore.DebugLevel, "asking permission endpoint"); c != nil {
 		c.Write(
 			zap.String("remote", remote),

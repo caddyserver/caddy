@@ -321,6 +321,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 	if resp.StatusCode != http.StatusOK {
 		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
 	}
+
 	if c := iss.logger.Check(zapcore.InfoLevel, "generated EAB credentials"); c != nil {
 		c.Write(zap.String("key_id", result.EABKID))
 	}
