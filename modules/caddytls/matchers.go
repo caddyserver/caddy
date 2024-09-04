@@ -23,6 +23,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -148,7 +149,9 @@ func (m MatchRemoteIP) Match(hello *tls.ClientHelloInfo) bool {
 	}
 	ipAddr, err := netip.ParseAddr(ipStr)
 	if err != nil {
-		m.logger.Error("invalid client IP address", zap.String("ip", ipStr))
+		if c := m.logger.Check(zapcore.ErrorLevel, "invalid client IP address"); c != nil {
+			c.Write(zap.String("ip", ipStr))
+		}
 		return false
 	}
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs)) &&
@@ -265,7 +268,9 @@ func (m MatchLocalIP) Match(hello *tls.ClientHelloInfo) bool {
 	}
 	ipAddr, err := netip.ParseAddr(ipStr)
 	if err != nil {
-		m.logger.Error("invalid local IP address", zap.String("ip", ipStr))
+		if c := m.logger.Check(zapcore.ErrorLevel, "invalid local IP address"); c != nil {
+			c.Write(zap.String("ip", ipStr))
+		}
 		return false
 	}
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs))
