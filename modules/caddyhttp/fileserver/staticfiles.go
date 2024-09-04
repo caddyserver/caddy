@@ -442,7 +442,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		file, err = fsrv.openFile(fileSystem, compressedFilename, w)
 		if err != nil {
-
 			if c := fsrv.logger.Check(zapcore.WarnLevel, "opening precompressed file failed"); c != nil {
 				c.Write(zap.String("filename", compressedFilename), zap.Error(err))
 			}
