@@ -42,9 +42,13 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
-// ReadFrom implements io.ReaderFrom. It simply calls io.Copy,
-// which uses io.ReaderFrom if available.
+// ReadFrom implements io.ReaderFrom. It retries to use io.ReaderFrom if available,
+// then fallback to io.Copy.
+// see: https://github.com/caddyserver/caddy/issues/6546
 func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
 	return io.Copy(rww.ResponseWriter, r)
 }
 
