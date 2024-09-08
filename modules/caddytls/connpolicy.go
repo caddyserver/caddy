@@ -553,17 +553,11 @@ type ClientAuthentication struct {
 //	 	trust_pool			   <module> {
 //			...
 //		}
-//		trusted_leaf_cert      <base64_der>
-//		trusted_leaf_cert_file <filename>
 //		verifier               <module>
 //	}
 //
-// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
-// - `trusted_leaf_certs`
-// - `trusted_leaf_cert_file`
-// - `trust_pool`
-//
-// Otherwise, it defaults to `require`.
+// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided. Otherwise,
+// it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
 		// consume any tokens on the same line, if any.
@@ -766,7 +760,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
 			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil {
+			clientauth.CARaw != nil || clientauth.CA != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
