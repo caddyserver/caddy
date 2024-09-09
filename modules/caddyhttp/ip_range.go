@@ -22,6 +22,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {
@@ -92,7 +93,7 @@ func (m *StaticIPRange) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	for d.NextArg() {
 		if d.Val() == "private_ranges" {
-			m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+			m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 			continue
 		}
 		m.Ranges = append(m.Ranges, d.Val())
@@ -121,22 +122,16 @@ func CIDRExpressionToPrefix(expr string) (netip.Prefix, error) {
 	return prefix, nil
 }
 
-// PrivateRangesCIDR returns a list of private CIDR range
-// strings, which can be used as a configuration shortcut.
-func PrivateRangesCIDR() []string {
-	return []string{
-		"192.168.0.0/16",
-		"172.16.0.0/12",
-		"10.0.0.0/8",
-		"127.0.0.1/8",
-		"fd00::/8",
-		"::1",
-	}
-}
-
 // Interface guards
 var (
 	_ caddy.Provisioner     = (*StaticIPRange)(nil)
 	_ caddyfile.Unmarshaler = (*StaticIPRange)(nil)
 	_ IPRangeSource         = (*StaticIPRange)(nil)
 )
+
+// PrivateRangesCIDR returns a list of private CIDR range
+// strings, which can be used as a configuration shortcut.
+// Note: this function is used at least by mholt/caddy-l4.
+func PrivateRangesCIDR() []string {
+	return internal.PrivateRangesCIDR()
+}

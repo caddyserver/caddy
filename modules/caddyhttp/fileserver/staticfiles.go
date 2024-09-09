@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -233,6 +234,24 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			fsrv.precompressors = make(map[string]encode.Precompressed)
 		}
 		fsrv.precompressors[ae] = p
+	}
+
+	if fsrv.Browse != nil {
+		// check sort options
+		for idx, sortOption := range fsrv.Browse.SortOptions {
+			switch idx {
+			case 0:
+				if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
+					return fmt.Errorf("the first option must be one of the following: %s, %s, %s, %s, but got %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOption)
+				}
+			case 1:
+				if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
+					return fmt.Errorf("the second option must be one of the following: %s, %s, but got %s", sortOrderAsc, sortOrderDesc, sortOption)
+				}
+			default:
+				return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
+			}
+		}
 	}
 
 	return nil
@@ -690,6 +709,10 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 		if err != nil {
 			return "", fmt.Errorf("cannot read etag from file %s: %v", etagFilename, err)
 		}
+
+		// Etags should not contain newline characters
+		etag = bytes.ReplaceAll(etag, []byte("\n"), []byte{})
+
 		return string(etag), nil
 	}
 	return "", nil

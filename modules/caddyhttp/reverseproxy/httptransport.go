@@ -132,6 +132,10 @@ type HTTPTransport struct {
 	// to change or removal while experimental.
 	Versions []string `json:"versions,omitempty"`
 
+	// Specify the address to bind to when connecting to an upstream. In other words,
+	// it is the address the upstream sees as the remote address.
+	LocalAddress string `json:"local_address,omitempty"`
+
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
@@ -185,6 +189,31 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		FallbackDelay: time.Duration(h.FallbackDelay),
 	}
 
+	if h.LocalAddress != "" {
+		netaddr, err := caddy.ParseNetworkAddressWithDefaults(h.LocalAddress, "tcp", 0)
+		if err != nil {
+			return nil, err
+		}
+		if netaddr.PortRangeSize() > 1 {
+			return nil, fmt.Errorf("local_address must be a single address, not a port range")
+		}
+		switch netaddr.Network {
+		case "tcp", "tcp4", "tcp6":
+			dialer.LocalAddr, err = net.ResolveTCPAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			if err != nil {
+				return nil, err
+			}
+		case "unix", "unixgram", "unixpacket":
+			dialer.LocalAddr, err = net.ResolveUnixAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			if err != nil {
+				return nil, err
+			}
+		case "udp", "udp4", "udp6":
+			return nil, fmt.Errorf("local_address must be a TCP address, not a UDP address")
+		default:
+			return nil, fmt.Errorf("unsupported network")
+		}
+	}
 	if h.Resolver != nil {
 		err := h.Resolver.ParseAddresses()
 		if err != nil {
@@ -363,6 +392,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// site owners  control the backends), so it must be exclusive
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
 		h.h3Transport = new(http3.RoundTripper)
+		if h.TLS != nil {
+			var err error
+			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
+			if err != nil {
+				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
+			}
+		}
 	} else if len(h.Versions) > 1 && sliceContains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}
@@ -439,6 +475,9 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
 	// HTTP without TLS, use the alternate H2C-capable transport instead
 	if req.URL.Scheme == "http" && h.h2cTransport != nil {
+		// There is no dedicated DisableKeepAlives field in *http2.Transport.
+		// This is an alternative way to disable keep-alive.
+		req.Close = h.Transport.DisableKeepAlives
 		return h.h2cTransport.RoundTrip(req)
 	}
 

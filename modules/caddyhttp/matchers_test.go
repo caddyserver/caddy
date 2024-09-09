@@ -79,6 +79,11 @@ func TestHostMatcher(t *testing.T) {
 			expect: false,
 		},
 		{
+			match:  MatchHost{"éxàmplê.com"},
+			input:  "xn--xmpl-0na6cm.com",
+			expect: true,
+		},
+		{
 			match:  MatchHost{"*.example.com"},
 			input:  "example.com",
 			expect: false,
@@ -148,6 +153,10 @@ func TestHostMatcher(t *testing.T) {
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
+
+		if err := tc.match.Provision(caddy.Context{}); err != nil {
+			t.Errorf("Test %d %v: provisioning failed: %v", i, tc.match, err)
+		}
 
 		actual := tc.match.Match(req)
 		if actual != tc.expect {
