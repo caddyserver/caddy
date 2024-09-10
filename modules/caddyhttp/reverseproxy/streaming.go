@@ -99,7 +99,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 			h.logger.Error("failed to flush http2 websocket response", zap.Error(flushErr))
 			return
 		}
-		conn = h2ReadWriteCloser{res.Body, rw}
+		conn = h2ReadWriteCloser{req.Body, rw}
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
