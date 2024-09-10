@@ -19,6 +19,7 @@
 package reverseproxy
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +34,24 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
 )
+
+type h2ReadWriteCloser struct {
+	io.ReadCloser
+	http.ResponseWriter
+}
+
+func (rwc h2ReadWriteCloser) Write(p []byte) (n int, err error) {
+	n, err = rwc.ResponseWriter.Write(p)
+	if err != nil {
+		return 0, err
+	}
+
+	err = http.NewResponseController(rwc.ResponseWriter).Flush()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
 
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
@@ -61,20 +80,44 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
-	rw.WriteHeader(res.StatusCode)
 
-	logger.Debug("upgrading connection")
+	var (
+		conn io.ReadWriteCloser
+		brw  *bufio.ReadWriter
+	)
+	// websocket over http2, assuming backend doesn't support this, the request will be modifided to http1.1 upgrade
+	// TODO: once we can reliably detect backend support this, it can be removed for those backends
+	if req.ProtoMajor == 2 && req.Method == http.MethodConnect && req.Header.Get(":protocol") != "" {
+		rw.Header().Del("Upgrade")
+		rw.Header().Del("Connection")
+		rw.Header().Del("Sec-Websocket-Accept")
+		rw.WriteHeader(http.StatusOK)
 
-	//nolint:bodyclose
-	conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
-	if errors.Is(hijackErr, http.ErrNotSupported) {
-		h.logger.Error("can't switch protocols using non-Hijacker ResponseWriter", zap.String("type", fmt.Sprintf("%T", rw)))
-		return
-	}
+		flushErr := http.NewResponseController(rw).Flush()
+		if flushErr != nil {
+			h.logger.Error("failed to flush http2 websocket response", zap.Error(flushErr))
+			return
+		}
+		conn = h2ReadWriteCloser{res.Body, rw}
+		// bufio is not needed, use minimal buffer
+		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
+	} else {
+		rw.WriteHeader(res.StatusCode)
 
-	if hijackErr != nil {
-		h.logger.Error("hijack failed on protocol switch", zap.Error(hijackErr))
-		return
+		logger.Debug("upgrading connection")
+
+		var hijackErr error
+		//nolint:bodyclose
+		conn, brw, hijackErr = http.NewResponseController(rw).Hijack()
+		if errors.Is(hijackErr, http.ErrNotSupported) {
+			h.logger.Error("can't switch protocols using non-Hijacker ResponseWriter", zap.String("type", fmt.Sprintf("%T", rw)))
+			return
+		}
+
+		if hijackErr != nil {
+			h.logger.Error("hijack failed on protocol switch", zap.Error(hijackErr))
+			return
+		}
 	}
 
 	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
