@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
@@ -31,6 +33,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(MatchServerName{})
+	caddy.RegisterModule(MatchServerNameRE{})
 	caddy.RegisterModule(MatchRemoteIP{})
 	caddy.RegisterModule(MatchLocalIP{})
 }
@@ -89,6 +92,146 @@ func (m *MatchServerName) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	return nil
+}
+
+// MatchRegexp is an embeddable type for matching
+// using regular expressions. It adds placeholders
+// to the request's replacer. In fact, it is a copy of
+// caddyhttp.MatchRegexp with a local replacer prefix
+// and placeholders support in a regular expression pattern.
+type MatchRegexp struct {
+	// A unique name for this regular expression. Optional,
+	// but useful to prevent overwriting captures from other
+	// regexp matchers.
+	Name string `json:"name,omitempty"`
+
+	// The regular expression to evaluate, in RE2 syntax,
+	// which is the same general syntax used by Go, Perl,
+	// and Python. For details, see
+	// [Go's regexp package](https://golang.org/pkg/regexp/).
+	// Captures are accessible via placeholders. Unnamed
+	// capture groups are exposed as their numeric, 1-based
+	// index, while named capture groups are available by
+	// the capture group name.
+	Pattern string `json:"pattern"`
+
+	compiled *regexp.Regexp
+}
+
+// Provision compiles the regular expression which may include placeholders.
+func (mre *MatchRegexp) Provision(caddy.Context) error {
+	repl := caddy.NewReplacer()
+	re, err := regexp.Compile(repl.ReplaceAll(mre.Pattern, ""))
+	if err != nil {
+		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
+	}
+	mre.compiled = re
+	return nil
+}
+
+// Validate ensures mre is set up correctly.
+func (mre *MatchRegexp) Validate() error {
+	if mre.Name != "" && !wordRE.MatchString(mre.Name) {
+		return fmt.Errorf("invalid regexp name (must contain only word characters): %s", mre.Name)
+	}
+	return nil
+}
+
+// Match returns true if input matches the compiled regular
+// expression in m. It sets values on the replacer repl
+// associated with capture groups, using the given scope
+// (namespace).
+func (mre *MatchRegexp) Match(input string, repl *caddy.Replacer) bool {
+	matches := mre.compiled.FindStringSubmatch(input)
+	if matches == nil {
+		return false
+	}
+
+	// save all capture groups, first by index
+	for i, match := range matches {
+		keySuffix := "." + strconv.Itoa(i)
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, match)
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, match)
+	}
+
+	// then by name
+	for i, name := range mre.compiled.SubexpNames() {
+		// skip the first element (the full match), and empty names
+		if i == 0 || name == "" {
+			continue
+		}
+
+		keySuffix := "." + name
+		if mre.Name != "" {
+			repl.Set(regexpPlaceholderPrefix+"."+mre.Name+keySuffix, matches[i])
+		}
+		repl.Set(regexpPlaceholderPrefix+keySuffix, matches[i])
+	}
+
+	return true
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
+	for d.Next() {
+		// If this is the second iteration of the loop
+		// then there's more than one *_regexp matcher,
+		// and we would end up overwriting the old one
+		if mre.Pattern != "" {
+			return d.Err("regular expression can only be used once per named matcher")
+		}
+
+		args := d.RemainingArgs()
+		switch len(args) {
+		case 1:
+			mre.Pattern = args[0]
+		case 2:
+			mre.Name = args[0]
+			mre.Pattern = args[1]
+		default:
+			return d.ArgErr()
+		}
+
+		// Default to the named matcher's name, if no regexp name is provided.
+		// Note: it requires d.SetContext(caddyfile.MatcherNameCtxKey, value)
+		// called before this unmarshalling, otherwise it wouldn't work.
+		if mre.Name == "" {
+			mre.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
+		}
+
+		if d.NextBlock(0) {
+			return d.Err("malformed regexp matcher: blocks are not supported")
+		}
+	}
+	return nil
+}
+
+// MatchServerNameRE matches based on SNI using a regular expression.
+type MatchServerNameRE struct{ MatchRegexp }
+
+// CaddyModule returns the Caddy module information.
+func (MatchServerNameRE) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.handshake_match.sni_regexp",
+		New: func() caddy.Module { return new(MatchServerNameRE) },
+	}
+}
+
+// Match matches hello based on SNI using a regular expression.
+func (m MatchServerNameRE) Match(hello *tls.ClientHelloInfo) bool {
+	repl := caddy.NewReplacer()
+	// caddytls.TestServerNameMatcher calls this function without any context
+	if ctx := hello.Context(); ctx != nil {
+		// In some situations the existing context may have no replacer
+		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
+			repl = replAny.(*caddy.Replacer)
+		}
+	}
+
+	return m.MatchRegexp.Match(hello.ServerName, repl)
 }
 
 // MatchRemoteIP matches based on the remote IP of the
@@ -331,13 +474,21 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Interface guards
 var (
-	_ ConnectionMatcher = (*MatchServerName)(nil)
+	_ ConnectionMatcher = (*MatchLocalIP)(nil)
 	_ ConnectionMatcher = (*MatchRemoteIP)(nil)
+	_ ConnectionMatcher = (*MatchServerName)(nil)
+	_ ConnectionMatcher = (*MatchServerNameRE)(nil)
 
 	_ caddy.Provisioner = (*MatchLocalIP)(nil)
-	_ ConnectionMatcher = (*MatchLocalIP)(nil)
+	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
+	_ caddy.Provisioner = (*MatchServerNameRE)(nil)
 
 	_ caddyfile.Unmarshaler = (*MatchLocalIP)(nil)
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*MatchServerName)(nil)
+	_ caddyfile.Unmarshaler = (*MatchServerNameRE)(nil)
 )
+
+var wordRE = regexp.MustCompile(`\w+`)
+
+const regexpPlaceholderPrefix = "tls.regexp"
