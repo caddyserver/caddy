@@ -21,7 +21,7 @@
 // Use of this source code is governed by a BSD-style
 // Part of source code is from Go fcgi package
 
-package fastcgi
+package fcgiclient
 
 import (
 	"bufio"
@@ -125,11 +125,36 @@ var pad [maxPad]byte
 // client implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type client struct {
-	rwc net.Conn
+	// This is the underlying network connection that the client uses to communicate with the FastCGI server. It could be a TCP socket or any other type of connection supported by standard Go's net package.
+	// The conn field is essential for sending FastCGI requests and receiving responses from the server.
+	conn net.Conn
+
 	// keepAlive bool // TODO: implement
-	reqID  uint16
+
+	// In the FastCGI protocol, each request is assigned a unique identifier (ID). This field stores the ID of the current request being handled by the client.
+	// Request IDs help differentiate multiple concurrent requests and ensure proper response routing.
+	// TODO: in current Caddy implementation of FastCGI this is always set to 1
+	// This field would have different values when implemented keepAlive (see above)
+	requestID uint16
+
+	// This boolean flag indicates whether the client should capture and handle standard error (stderr) output from the FastCGI application.
+	// When set to true, the client can redirect stderr output for logging, debugging, or error reporting.
 	stderr bool
+
+	// This is a pointer to a logger instance from the zap logging library. zap is a popular high-performance logging framework in Go.
+	// The logger field allows the client to log events, errors, and debugging information during its operation.
 	logger *zap.Logger
+}
+
+func NewClient(conn net.Conn, logger *zap.Logger, stderr bool) client {
+	client := client{
+		conn:      conn,
+		requestID: 1,
+		stderr:    stderr,
+		logger:    logger,
+	}
+
+	return client
 }
 
 // Do made the request and returns a io.Reader that translates the data read
@@ -231,7 +256,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 
 	// wrap the response body in our closer
 	closer := clientCloser{
-		rwc:    c.rwc,
+		rwc:    c.conn, // maybe change this clientCloser field's name from rwc to conn?
 		r:      r.(*streamReader),
 		Reader: rb,
 		status: resp.StatusCode,
@@ -348,7 +373,7 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *client) SetReadTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.rwc.SetReadDeadline(time.Now().Add(t))
+		return c.conn.SetReadDeadline(time.Now().Add(t))
 	}
 	return nil
 }
@@ -357,7 +382,7 @@ func (c *client) SetReadTimeout(t time.Duration) error {
 // the fcgi responder. A zero value for t means no timeout will be set.
 func (c *client) SetWriteTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.rwc.SetWriteDeadline(time.Now().Add(t))
+		return c.conn.SetWriteDeadline(time.Now().Add(t))
 	}
 	return nil
 }

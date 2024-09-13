@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fastcgi
+package fcgiclient
 
 import (
 	"bytes"
@@ -29,12 +29,12 @@ type streamWriter struct {
 }
 
 func (w *streamWriter) writeRecord(recType uint8, content []byte) (err error) {
-	w.h.init(recType, w.c.reqID, len(content))
+	w.h.init(recType, w.c.requestID, len(content))
 	w.buf.Write(pad[:8])
 	w.writeHeader()
 	w.buf.Write(content)
 	w.buf.Write(pad[:w.h.PaddingLength])
-	_, err = w.buf.WriteTo(w.c.rwc)
+	_, err = w.buf.WriteTo(w.c.conn)
 	return err
 }
 
@@ -129,10 +129,10 @@ func (w *streamWriter) writeHeader() {
 
 // Flush write buffer data to the underlying connection, it assumes header data is the first 8 bytes of buf
 func (w *streamWriter) Flush() error {
-	w.h.init(w.recType, w.c.reqID, w.buf.Len()-8)
+	w.h.init(w.recType, w.c.requestID, w.buf.Len()-8)
 	w.writeHeader()
 	w.buf.Write(pad[:w.h.PaddingLength])
-	_, err := w.buf.WriteTo(w.c.rwc)
+	_, err := w.buf.WriteTo(w.c.conn)
 	return err
 }
 
