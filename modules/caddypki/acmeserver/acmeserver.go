@@ -35,6 +35,7 @@ import (
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/nosql"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -243,10 +244,14 @@ func (ash Handler) Cleanup() error {
 	key := ash.getDatabaseKey()
 	deleted, err := databasePool.Delete(key)
 	if deleted {
-		ash.logger.Debug("unloading unused CA database", zap.String("db_key", key))
+		if c := ash.logger.Check(zapcore.DebugLevel, "unloading unused CA database"); c != nil {
+			c.Write(zap.String("db_key", key))
+		}
 	}
 	if err != nil {
-		ash.logger.Error("closing CA database", zap.String("db_key", key), zap.Error(err))
+		if c := ash.logger.Check(zapcore.ErrorLevel, "closing CA database"); c != nil {
+			c.Write(zap.String("db_key", key), zap.Error(err))
+		}
 	}
 	return err
 }
@@ -271,7 +276,9 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 	})
 
 	if loaded {
-		ash.logger.Debug("loaded preexisting CA database", zap.String("db_key", key))
+		if c := ash.logger.Check(zapcore.DebugLevel, "loaded preexisting CA database"); c != nil {
+			c.Write(zap.String("db_key", key))
+		}
 	}
 
 	return database.(databaseCloser).DB, err

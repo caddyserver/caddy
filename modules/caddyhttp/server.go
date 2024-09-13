@@ -275,7 +275,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor < 3 {
 			err := s.h3server.SetQUICHeaders(w.Header())
 			if err != nil {
-				s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
+				if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 	}
@@ -283,9 +285,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject very long methods; probably a mistake or an attack
 	if len(r.Method) > 32 {
 		if s.shouldLogRequest(r) {
-			s.accessLogger.Debug("rejecting request with long method",
-				zap.String("method_trunc", r.Method[:32]),
-				zap.String("remote_addr", r.RemoteAddr))
+			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
+				c.Write(
+					zap.String("method_trunc", r.Method[:32]),
+					zap.String("remote_addr", r.RemoteAddr),
+				)
+			}
 		}
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -300,7 +305,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		//nolint:bodyclose
 		err := http.NewResponseController(w).EnableFullDuplex()
 		if err != nil {
-			s.logger.Warn("failed to enable full duplex", zap.Error(err))
+			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		}
 	}
 
@@ -379,6 +386,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// add HTTP error information to request context
 	r = s.Errors.WithError(r, err)
 
+	var fields []zapcore.Field
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
 		err2 := s.errorHandlerChain.ServeHTTP(w, r)
@@ -386,17 +394,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// user's error route handled the error response
 			// successfully, so now just log the error
 			for _, logger := range errLoggers {
-				logger.Debug(errMsg, errFields...)
+				if c := logger.Check(zapcore.DebugLevel, errMsg); c != nil {
+					if fields == nil {
+						fields = errFields()
+					}
+
+					c.Write(fields...)
+				}
 			}
 		} else {
 			// well... this is awkward
-			errFields = append([]zapcore.Field{
-				zap.String("error", err2.Error()),
-				zap.Namespace("first_error"),
-				zap.String("msg", errMsg),
-			}, errFields...)
 			for _, logger := range errLoggers {
-				logger.Error("error handling handler error", errFields...)
+				if c := logger.Check(zapcore.ErrorLevel, "error handling handler error"); c != nil {
+					if fields == nil {
+						fields = errFields()
+						fields = append([]zapcore.Field{
+							zap.String("error", err2.Error()),
+							zap.Namespace("first_error"),
+							zap.String("msg", errMsg),
+						}, fields...)
+					}
+					c.Write(fields...)
+				}
 			}
 			if handlerErr, ok := err.(HandlerError); ok {
 				w.WriteHeader(handlerErr.StatusCode)
@@ -405,11 +424,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
+		logLevel := zapcore.DebugLevel
+		if errStatus >= 500 {
+			logLevel = zapcore.ErrorLevel
+		}
+
 		for _, logger := range errLoggers {
-			if errStatus >= 500 {
-				logger.Error(errMsg, errFields...)
-			} else {
-				logger.Debug(errMsg, errFields...)
+			if c := logger.Check(logLevel, errMsg); c != nil {
+				if fields == nil {
+					fields = errFields()
+				}
+				c.Write(fields...)
 			}
 		}
 		w.WriteHeader(errStatus)
@@ -746,7 +771,9 @@ func (s *Server) logTrace(mh MiddlewareHandler) {
 	if s.Logs == nil || !s.Logs.Trace {
 		return
 	}
-	s.traceLogger.Debug(caddy.GetModuleName(mh), zap.Any("module", mh))
+	if c := s.traceLogger.Check(zapcore.DebugLevel, caddy.GetModuleName(mh)); c != nil {
+		c.Write(zap.Any("module", mh))
+	}
 }
 
 // logRequest logs the request to access logs, unless skipped.
@@ -759,50 +786,64 @@ func (s *Server) logRequest(
 		return
 	}
 
-	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
-	repl.Set("http.response.size", wrec.Size())
+	status := wrec.Status()
+	size := wrec.Size()
+
+	repl.Set("http.response.status", status) // will be 0 if no response is written by us (Go will write 200 to client)
+	repl.Set("http.response.size", size)
 	repl.Set("http.response.duration", duration)
 	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	userID, _ := repl.GetString("http.auth.user.id")
-
-	reqBodyLength := 0
-	if bodyReader != nil {
-		reqBodyLength = bodyReader.Length
-	}
-
-	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
-
-	fieldCount := 6
-	fields := make([]zapcore.Field, 0, fieldCount+len(extra.fields))
-	fields = append(fields,
-		zap.Int("bytes_read", reqBodyLength),
-		zap.String("user_id", userID),
-		zap.Duration("duration", *duration),
-		zap.Int("size", wrec.Size()),
-		zap.Int("status", wrec.Status()),
-		zap.Object("resp_headers", LoggableHTTPHeader{
-			Header:               wrec.Header(),
-			ShouldLogCredentials: shouldLogCredentials,
-		}))
-	fields = append(fields, extra.fields...)
 
 	loggers := []*zap.Logger{accLog}
 	if s.Logs != nil {
 		loggers = s.Logs.wrapLogger(accLog, r)
 	}
 
-	// wrapping may return multiple loggers, so we log to all of them
+	message := "handled request"
+	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+		message = "NOP"
+	}
+
+	logLevel := zapcore.InfoLevel
+	if status >= 500 {
+		logLevel = zapcore.ErrorLevel
+	}
+
+	var fields []zapcore.Field
 	for _, logger := range loggers {
-		logAtLevel := logger.Info
-		if wrec.Status() >= 500 {
-			logAtLevel = logger.Error
+		c := logger.Check(logLevel, message)
+		if c == nil {
+			continue
 		}
-		message := "handled request"
-		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
-			message = "NOP"
+
+		if fields == nil {
+
+			userID, _ := repl.GetString("http.auth.user.id")
+
+			reqBodyLength := 0
+			if bodyReader != nil {
+				reqBodyLength = bodyReader.Length
+			}
+
+			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+
+			fieldCount := 6
+			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
+			fields = append(fields,
+				zap.Int("bytes_read", reqBodyLength),
+				zap.String("user_id", userID),
+				zap.Duration("duration", *duration),
+				zap.Int("size", size),
+				zap.Int("status", status),
+				zap.Object("resp_headers", LoggableHTTPHeader{
+					Header:               wrec.Header(),
+					ShouldLogCredentials: shouldLogCredentials,
+				}),
+			)
+			fields = append(fields, extra.fields...)
 		}
-		logAtLevel(message, fields...)
+
+		c.Write(fields...)
 	}
 }
 

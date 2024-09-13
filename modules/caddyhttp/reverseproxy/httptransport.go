@@ -33,6 +33,7 @@ import (
 	"github.com/pires/go-proxyproto"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http2"
 
 	"github.com/caddyserver/caddy/v2"
@@ -750,7 +751,9 @@ func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
 	if c.readTimeout > 0 {
 		err := c.TCPConn.SetReadDeadline(time.Now().Add(c.readTimeout))
 		if err != nil {
-			c.logger.Error("failed to set read deadline", zap.Error(err))
+			if ce := c.logger.Check(zapcore.ErrorLevel, "failed to set read deadline"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
 		}
 	}
 	return c.TCPConn.Read(b)
@@ -760,7 +763,9 @@ func (c *tcpRWTimeoutConn) Write(b []byte) (int, error) {
 	if c.writeTimeout > 0 {
 		err := c.TCPConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		if err != nil {
-			c.logger.Error("failed to set write deadline", zap.Error(err))
+			if ce := c.logger.Check(zapcore.ErrorLevel, "failed to set write deadline"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
 		}
 	}
 	return c.TCPConn.Write(b)

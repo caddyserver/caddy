@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -68,9 +69,9 @@ type Browse struct {
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	fsrv.logger.Debug("browse enabled; listing directory contents",
-		zap.String("path", dirPath),
-		zap.String("root", root))
+	if c := fsrv.logger.Check(zapcore.DebugLevel, "browse enabled; listing directory contents"); c != nil {
+		c.Write(zap.String("path", dirPath), zap.String("root", root))
+	}
 
 	// Navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs to
@@ -92,7 +93,9 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "redirecting to trailing slash to preserve hrefs"); c != nil {
+				c.Write(zap.String("request_path", r.URL.Path))
+			}
 			return redirect(w, r, origReq.URL.Path+"/")
 		}
 	}
