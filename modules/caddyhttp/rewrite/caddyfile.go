@@ -98,7 +98,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 	h.Next() // consume directive name
 
 	args := h.RemainingArgs()
-	if len(args) < 1 {
+	if len(args) <= 1 {
 		return nil, h.ArgErr()
 	}
 
