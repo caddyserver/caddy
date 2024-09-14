@@ -558,9 +558,19 @@ func (st *ServerType) serversFromPairings(
 			}
 		}
 
+		var (
+			addresses []string
+			protocols [][]string
+		)
+
+		for _, addressWithProtocols := range p.addressesWithProtocols {
+			addresses = append(addresses, addressWithProtocols.address)
+			protocols = append(protocols, addressWithProtocols.protocols)
+		}
+
 		srv := &caddyhttp.Server{
-			Listen:          p.addresses,
-			ListenProtocols: p.protocols,
+			Listen:          addresses,
+			ListenProtocols: protocols,
 		}
 
 		// remove srv.ListenProtocols[j] if it only contains the default protocols
@@ -1678,21 +1688,26 @@ type namedCustomLog struct {
 	noHostname bool
 }
 
-// sbAddrAssociation is a mapping from a list of
-// addresses to a parallel list of protocols each
-// address is served with, and a list of server
-// blocks that are served on those addresses.
-type sbAddrAssociation struct {
-	addresses    []string
-	protocols    [][]string
-	serverBlocks []serverBlock
-}
-
-// addressWithSocket associates a listen address with
-// a socket file descriptor to serve it with
+// addressWithSockets associates a listen address with
+// the socket file descriptors to serve it with
 type addressWithSockets struct {
 	address string
 	sockets []string
+}
+
+// addressWithProtocols associates a listen address with
+// the protocols to serve it with
+type addressWithProtocols struct {
+	address	  string
+	protocols []string
+}
+
+// sbAddrAssociation is a mapping from a list of
+// addresses with protocols, and a list of server
+// blocks that are served on those addresses.
+type sbAddrAssociation struct {
+	addressesWithProtocols []addressWithProtocols
+	serverBlocks 		   []serverBlock
 }
 
 const (

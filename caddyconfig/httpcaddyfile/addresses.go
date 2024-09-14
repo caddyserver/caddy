@@ -187,7 +187,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 // consolidateAddrMappings eliminates repetition of identical server blocks in a mapping of
 // single listener addresses to protocols to lists of server blocks. Since multiple addresses
 // may serve multiple protocols to identical sites (server block contents), this function turns
-// a 1:(1:many) mapping into a many:many:many mapping. Server block contents (tokens) must be
+// a 1:many mapping into a many:many mapping. Server block contents (tokens) must be
 // exactly identical so that reflect.DeepEqual returns true in order for the addresses to be combined.
 // Identical entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
 // association from multiple addresses to multiple server blocks; i.e. each element of
@@ -234,28 +234,30 @@ func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[s
 			}
 
 			addresses := make([]string, 0, len(listeners))
-
 			for lnAddr := range listeners {
 				addresses = append(addresses, lnAddr)
 			}
 			sort.Strings(addresses)
 
-			protocols := make([][]string, len(listeners))
+			addressesWithProtocols := make([]addressWithProtocols, 0, len(listeners))
 
-			for i, lnAddr := range addresses {
+			for _, lnAddr := range addresses {
 				lnProts := listeners[lnAddr]
 				prots := make([]string, 0, len(lnProts))
 				for prot := range lnProts {
 					prots = append(prots, prot)
 				}
 				sort.Strings(prots)
-				protocols[i] = prots
+
+				addressesWithProtocols = append(addressesWithProtocols, addressWithProtocols{
+					address:   lnAddr,
+					protocols: prots,
+				})
 			}
 
 			sbaddrs = append(sbaddrs, sbAddrAssociation{
-				addresses:    addresses,
-				protocols:    protocols,
-				serverBlocks: serverBlocks,
+				addressesWithProtocols: addressesWithProtocols,
+				serverBlocks: 			serverBlocks,
 			})
 		}
 	}

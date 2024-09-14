@@ -92,7 +92,11 @@ func (st ServerType) buildTLSApp(
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
-		if !listenersUseAnyPortOtherThan(p.addresses, httpPort) {
+		var addresses []string
+		for _, addressWithProtocols := range p.addressesWithProtocols {
+			addresses = append(addresses, addressWithProtocols.address)
+		}
+		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
 			continue
 		}
 
