@@ -1,13 +1,10 @@
 {
-	sockets :80 {env.CADDY_HTTP_FD}
-	sockets :443 {env.CADDY_HTTPS_FD}
-	sockets udp/:443 {env.CADDY_HTTP3_FD}
 	auto_https disable_redirects
 	admin off
 }
 
 http://localhost {
-	bind tcp/ {
+	bind fd/{env.CADDY_HTTP_FD} {
 		protocols h1
 	}
 	log
@@ -15,10 +12,10 @@ http://localhost {
 }
 
 https://localhost {
-	bind tcp/ {
+	bind fd/{env.CADDY_HTTPS_FD} {
 		protocols h1 h2
 	}
-	bind udp/ {
+	bind fdgram/{env.CADDY_HTTP3_FD} {
 		protocols h3
 	}
 	log
@@ -34,8 +31,8 @@ https://localhost {
 			"servers": {
 				"srv0": {
 					"listen": [
-						":443",
-						"udp/:443"
+						"fd/{env.CADDY_HTTPS_FD}",
+						"fdgram/{env.CADDY_HTTP3_FD}"
 					],
 					"routes": [
 						{
@@ -82,14 +79,6 @@ https://localhost {
 						[
 							"h3"
 						]
-					],
-					"listen_sockets": [
-						[
-							"{env.CADDY_HTTPS_FD}"
-						],
-						[
-							"{env.CADDY_HTTP3_FD}"
-						]
 					]
 				},
 				"srv1": {
@@ -99,7 +88,7 @@ https://localhost {
 				},
 				"srv2": {
 					"listen": [
-						":80"
+						"fd/{env.CADDY_HTTP_FD}"
 					],
 					"routes": [
 						{
@@ -141,11 +130,6 @@ https://localhost {
 					"listen_protocols": [
 						[
 							"h1"
-						]
-					],
-					"listen_sockets": [
-						[
-							"{env.CADDY_HTTP_FD}"
 						]
 					]
 				}
