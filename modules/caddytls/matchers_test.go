@@ -89,6 +89,52 @@ func TestServerNameMatcher(t *testing.T) {
 	}
 }
 
+func TestServerNameREMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		pattern string
+		input   string
+		expect  bool
+	}{
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "example.com",
+			expect:  true,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "foo.com",
+			expect:  false,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "",
+			expect:  false,
+		},
+		{
+			pattern: "",
+			input:   "",
+			expect:  true,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "foo.example.com",
+			expect:  false,
+		},
+	} {
+		chi := &tls.ClientHelloInfo{ServerName: tc.input}
+		mre := MatchServerNameRE{MatchRegexp{Pattern: tc.pattern}}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if mre.Provision(ctx) != nil {
+			t.Errorf("Test %d: Failed to provision a regexp matcher (pattern=%v)", i, tc.pattern)
+		}
+		actual := mre.Match(chi)
+		if actual != tc.expect {
+			t.Errorf("Test %d: Expected %t but got %t (input=%s match=%v)",
+				i, tc.expect, actual, tc.input, tc.pattern)
+		}
+	}
+}
+
 func TestRemoteIPMatcher(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
