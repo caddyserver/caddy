@@ -28,6 +28,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -57,9 +58,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		info, err := entry.Info()
 		if err != nil {
-			fsrv.logger.Error("could not get info about directory entry",
-				zap.String("name", entry.Name()),
-				zap.String("root", root))
+			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
+				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+			}
 			continue
 		}
 
