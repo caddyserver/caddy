@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,23 +29,50 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
+func reuseUnixSocket(network, addr string) (any, error) {
 	return nil, nil
 }
 
-func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, address string, config net.ListenConfig, socketFile *os.File) (any, error) {
-	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram"}, network)
+func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
+	var socketFile *os.File
 
+	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	if fd {
+		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
+
+		func() {
+			socketFilesMu.Lock()
+			defer socketFilesMu.Unlock()
+
+			socketFdWide := uintptr(fd)
+			var ok bool
+
+			socketFile, ok = socketFiles[socketFdWide]
+
+			if !ok {
+				socketFile = os.NewFile(socketFdWide, lnKey)
+			}
+		}()
+
+		if socketFile == nil {
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
+		}
+	}
+
+	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
 	if datagram {
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 			var (
 				pc  net.PacketConn
 				err error
 			)
-			if socketFile == nil {
-				pc, err = config.ListenPacket(ctx, network, address)
-			} else {
+			if fd {
 				pc, err = net.FilePacketConn(socketFile)
+			} else {
+				pc, err = config.ListenPacket(ctx, network, address)
 			}
 			if err != nil {
 				return nil, err
@@ -62,10 +90,10 @@ func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, ad
 			ln  net.Listener
 			err error
 		)
-		if socketFile == nil {
-			ln, err = config.Listen(ctx, network, address)
-		} else {
+		if fd {
 			ln, err = net.FileListener(socketFile)
+		} else {
+			ln, err = config.Listen(ctx, network, address)
 		}
 		if err != nil {
 			return nil, err
@@ -278,3 +306,9 @@ var (
 		Unwrap() net.PacketConn
 	}) = (*fakeClosePacketConn)(nil)
 )
+
+// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
+var socketFiles = map[uintptr]*os.File{}
+
+// socketFilesMu synchronizes socketFiles insertions
+var socketFilesMu sync.Mutex

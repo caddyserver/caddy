@@ -402,21 +402,6 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			options[opt] = append(existingOpts, logOpts...)
 			continue
 		}
-		// Also fold multiple "sockets" options together into and
-		// array so that file descriptors for multiple listen
-		// addresses may be passed to their servers.
-		if opt == "sockets" {
-			existingOpts, ok := options[opt].([]addressWithSockets)
-			if !ok {
-				existingOpts = []addressWithSockets{}
-			}
-			socketOpts, ok := val.(addressWithSockets)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'socket' global options: %T", val)
-			}
-			options[opt] = append(existingOpts, socketOpts)
-			continue
-		}
 
 		options[opt] = val
 	}
@@ -935,45 +920,6 @@ func (st *ServerType) serversFromPairings(
 
 	if err := applyServerOptions(servers, options, warnings); err != nil {
 		return nil, fmt.Errorf("applying global server options: %v", err)
-	}
-
-	// applySockets sets socket file descriptors on the appropriate servers
-	applySocketOptions := func(
-		servers map[string]*caddyhttp.Server,
-		options map[string]any,
-		_ *[]caddyconfig.Warning,
-	) error {
-		sockets, ok := options["sockets"].([]addressWithSockets)
-		if !ok {
-			return nil
-		}
-
-		addressToSockets := map[string][]string{}
-		for _, addressWithSockets := range sockets {
-			address := addressWithSockets.address
-			if _, ok := addressToSockets[address]; ok {
-				return fmt.Errorf("cannot use duplicate socket address '%s'", address)
-			}
-			addressToSockets[address] = addressWithSockets.sockets
-		}
-
-		for _, server := range servers {
-			for i, listener := range server.Listen {
-				sockets, ok := addressToSockets[listener]
-				if ok {
-					if server.ListenSockets == nil {
-						server.ListenSockets = make([][]string, len(server.Listen))
-					}
-					server.ListenSockets[i] = sockets
-				}
-			}
-		}
-
-		return nil
-	}
-
-	if err := applySocketOptions(servers, options, warnings); err != nil {
-		return nil, fmt.Errorf("applying global socket options: %v", err)
 	}
 
 	return servers, nil
@@ -1688,17 +1634,10 @@ type namedCustomLog struct {
 	noHostname bool
 }
 
-// addressWithSockets associates a listen address with
-// the socket file descriptors to serve it with
-type addressWithSockets struct {
-	address string
-	sockets []string
-}
-
 // addressWithProtocols associates a listen address with
 // the protocols to serve it with
 type addressWithProtocols struct {
-	address	  string
+	address   string
 	protocols []string
 }
 
@@ -1707,7 +1646,7 @@ type addressWithProtocols struct {
 // blocks that are served on those addresses.
 type sbAddrAssociation struct {
 	addressesWithProtocols []addressWithProtocols
-	serverBlocks 		   []serverBlock
+	serverBlocks           []serverBlock
 }
 
 const (

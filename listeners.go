@@ -57,18 +57,10 @@ type NetworkAddress struct {
 	EndPort   uint
 }
 
-// ListenAll calls ListenAllWithSockets with an empty array of sockets, which opens and binds a new
-// socket for each address represented by this struct.
-func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
-	return na.ListenAllWithSockets(ctx, config, nil)
-}
-
-// ListenAllWithSockets calls ListenWithSocket for all addresses represented by this struct, i.e. all ports in the range.
+// ListenAll calls Listen for all addresses represented by this struct, i.e. all ports in the range.
 // (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
-// The sockets argument is an optional array of file descriptors to create each listener with an existing socket, otherwise
-// a new sockets is opened and bound to each address.
 // It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
-func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.ListenConfig, sockets []string) ([]any, error) {
+func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig) ([]any, error) {
 	var listeners []any
 	var err error
 
@@ -96,14 +88,8 @@ func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.Li
 		}
 
 		// create (or reuse) the listener ourselves
-		var (
-			ln     any
-			socket string
-		)
-		if sockets != nil {
-			socket = sockets[portOffset]
-		}
-		ln, err = na.ListenWithSocket(ctx, portOffset, config, socket)
+		var ln any
+		ln, err = na.Listen(ctx, portOffset, config)
 		if err != nil {
 			return nil, err
 		}
@@ -119,7 +105,8 @@ func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.Li
 // portOffset to the start port. (For network types that do not use ports, the
 // portOffset is ignored.)
 //
-// The provided ListenConfig is used to create the listener. Its Control function,
+// First Listen checks if a plugin can provide a listener from this address. Otherwise,
+// the provided ListenConfig is used to create the listener. Its Control function,
 // if set, may be wrapped by an internally-used Control function. The provided
 // context may be used to cancel long operations early. The context is not used
 // to close the listener after it has been created.
@@ -142,17 +129,9 @@ func (na NetworkAddress) ListenAllWithSockets(ctx context.Context, config net.Li
 // Unix sockets will be unlinked before being created, to ensure we can bind to
 // it even if the previous program using it exited uncleanly; it will also be
 // unlinked upon a graceful exit (or when a new config does not use that socket).
+// Listen synchronizes binds to unix domain sockets to avoid race conditions
+// while an existing socket is unlinked.
 func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
-	return na.ListenWithSocket(ctx, portOffset, config, "")
-}
-
-// ListenWithSocket synchronizes binds to unix domain sockets to avoid race conditions
-// while an existing socket is unlinked. It checks if a plugin can provide a listener from
-// this address, otherwise a new listener is created. If the socket argument is nonempty,
-// it is used to create a FileListener or FilePacketConn from an existing socket. Otherwise,
-// a new socket is opened and bound to this address, with a new Listener or PacketConn type,
-// determined by the network of this address.
-func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
 	if na.IsUnixNetwork() {
 		unixSocketsMu.Lock()
 		defer unixSocketsMu.Unlock()
@@ -164,16 +143,15 @@ func (na NetworkAddress) ListenWithSocket(ctx context.Context, portOffset uint, 
 	}
 
 	// create (or reuse) the listener ourselves
-	return na.listenWithSocket(ctx, portOffset, config, socket)
+	return na.listen(ctx, portOffset, config)
 }
 
-func (na NetworkAddress) listenWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, socket string) (any, error) {
+func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
 	var (
 		ln           any
 		err          error
 		address      string
 		unixFileMode fs.FileMode
-		socketFile   *os.File
 	)
 
 	// split unix socket addr early so lnKey
@@ -183,44 +161,24 @@ func (na NetworkAddress) listenWithSocket(ctx context.Context, portOffset uint, 
 		if err != nil {
 			return nil, err
 		}
+	} else if na.IsFdNetwork() {
+		address = na.Host
 	} else {
 		address = na.JoinHostPort(portOffset)
 	}
 
-	lnKey := listenerKey(na.Network, address)
-
-	if socket != "" {
-		var socketFd uint64
-		socketFd, err = strconv.ParseUint(socket, 0, strconv.IntSize)
-		if err != nil {
-			return nil, fmt.Errorf("invalid socket file descriptor: %v", err)
-		}
-		fd := uintptr(socketFd)
-
-		if file, ok := socketFiles[fd]; ok {
-			socketFile = file
-		} else {
-			socketFile = os.NewFile(fd, lnKey)
-			if socketFile == nil {
-				return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
-			}
-			socketFiles[fd] = socketFile
-		}
-	}
-
 	if strings.HasPrefix(na.Network, "ip") {
-		if socketFile != nil {
-			ln, err = net.FilePacketConn(socketFile)
-		} else {
-			ln, err = config.ListenPacket(ctx, na.Network, address)
-		}
+		ln, err = config.ListenPacket(ctx, na.Network, address)
 	} else {
 		if na.IsUnixNetwork() {
 			// if this is a unix socket, see if we already have it open
-			ln, err = reuseUnixSocketWithUnlink(na.Network, address, socketFile == nil)
+			ln, err = reuseUnixSocket(na.Network, address)
 		}
+
 		if ln == nil && err == nil {
-			ln, err = listenReusableWithSocketFile(ctx, lnKey, na.Network, address, config, socketFile)
+			// otherwise, create a new listener
+			lnKey := listenerKey(na.Network, address)
+			ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
 		}
 	}
 
@@ -251,10 +209,16 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
+// IsUnixNetwork returns true if na.Network is
+// fd or fdgram.
+func (na NetworkAddress) IsFdNetwork() bool {
+	return IsFdNetwork(na.Network)
+}
+
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
 func (na NetworkAddress) JoinHostPort(offset uint) string {
-	if na.IsUnixNetwork() {
+	if na.IsUnixNetwork() || na.IsFdNetwork() {
 		return na.Host
 	}
 	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset), 10))
@@ -291,7 +255,7 @@ func (na NetworkAddress) PortRangeSize() uint {
 }
 
 func (na NetworkAddress) isLoopback() bool {
-	if na.IsUnixNetwork() {
+	if na.IsUnixNetwork() || na.IsFdNetwork() {
 		return true
 	}
 	if na.Host == "localhost" {
@@ -333,6 +297,11 @@ func (na NetworkAddress) String() string {
 // IsUnixNetwork returns true if the netw is a unix network.
 func IsUnixNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "unix")
+}
+
+// IsFdNetwork returns true if the netw is a fd network.
+func IsFdNetwork(netw string) bool {
+	return strings.HasPrefix(netw, "fd")
 }
 
 // normally we would simply append the port,
@@ -384,6 +353,12 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 			Host:    host,
 		}, err
 	}
+	if IsFdNetwork(network) {
+		return NetworkAddress{
+			Network: network,
+			Host:    host,
+		}, nil
+	}
 	var start, end uint64
 	if port == "" {
 		start = uint64(defaultPort)
@@ -424,7 +399,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
 	}
-	if IsUnixNetwork(network) {
+	if IsUnixNetwork(network) || IsFdNetwork(network) {
 		host = a
 		return
 	}
@@ -455,7 +430,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if (host != "" && port == "") || IsUnixNetwork(network) {
+	if (host != "" && port == "") || IsUnixNetwork(network) || IsFdNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
@@ -465,26 +440,16 @@ func JoinNetworkAddress(network, host, port string) string {
 
 // ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
 //
-// NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
-	return na.ListenQUICWithSocket(ctx, portOffset, config, tlsConf, "")
-}
-
-// ListenQUICWithSocket returns a http3.QUICEarlyListener made with a listener from ListenWithSocket.
-//
 // The network will be transformed into a QUIC-compatible type if the same address can be used with
 // different networks. Currently this just means that for tcp, udp will be used with the same
 // address instead.
 //
-// If the socket argument is nonempty, it is used to create a PacketConn from an existing socket,
-// instead of binding a new socket to this address.
-//
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUICWithSocket(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, socket string) (http3.QUICEarlyListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-		lnAny, err := na.ListenWithSocket(ctx, portOffset, config, socket)
+		lnAny, err := na.Listen(ctx, portOffset, config)
 		if err != nil {
 			return nil, err
 		}
@@ -685,7 +650,8 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
 		network == "udp" || network == "udp4" || network == "udp6" ||
 		network == "unix" || network == "unixpacket" || network == "unixgram" ||
-		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) {
+		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) ||
+		network == "fd" || network == "fdgram" {
 		panic("network type " + network + " is reserved")
 	}
 
@@ -740,6 +706,3 @@ type ListenerWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
-
-// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
-var socketFiles = map[uintptr]*os.File{}

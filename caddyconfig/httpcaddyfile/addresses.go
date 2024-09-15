@@ -257,7 +257,7 @@ func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[s
 
 			sbaddrs = append(sbaddrs, sbAddrAssociation{
 				addressesWithProtocols: addressesWithProtocols,
-				serverBlocks: 			serverBlocks,
+				serverBlocks:           serverBlocks,
 			})
 		}
 	}

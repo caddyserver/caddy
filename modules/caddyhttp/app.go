@@ -273,22 +273,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 		}
 
-		if srv.ListenSockets != nil && len(srv.ListenSockets) != len(srv.Listen) {
-			return fmt.Errorf("server %s: listener sockets count does not equal address count: %d != %d",
-				srvName, len(srv.ListenSockets), len(srv.Listen))
-		}
-
-		// process each listener socket
-		for i, lnSockets := range srv.ListenSockets {
-			for j, lnSocket := range lnSockets {
-				lnSocketOut, err := repl.ReplaceOrErr(lnSocket, true, true)
-				if err != nil {
-					return fmt.Errorf("server %s, listener %d socket %d: %v", srvName, i, j, err)
-				}
-				lnSockets[j] = lnSocketOut
-			}
-		}
-
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI
@@ -411,7 +395,7 @@ func (app *App) Validate() error {
 
 	for srvName, srv := range app.Servers {
 		// each server must use distinct listener addresses
-		for listenIndex, addr := range srv.Listen {
+		for _, addr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(addr)
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
@@ -424,11 +408,6 @@ func (app *App) Validate() error {
 					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}
 				lnAddrs[addr] = srvName
-			}
-			// check that the listener sockets count is equal to the address port range size if they were provided
-			if srv.ListenSockets != nil && srv.ListenSockets[listenIndex] != nil && listenAddr.PortRangeSize() != uint(len(srv.ListenSockets[listenIndex])) {
-				return fmt.Errorf("server %s: listener %d port range size does not equal sockets count: %d != %d",
-					srvName, listenIndex, listenAddr.PortRangeSize(), len(srv.ListenSockets[listenIndex]))
 			}
 		}
 
@@ -524,18 +503,8 @@ func (app *App) Start() error {
 			_, h2cok := protocolsUnique["h2c"]
 			_, h3ok := protocolsUnique["h3"]
 
-			var sockets []string
-			if srv.ListenSockets != nil {
-				sockets = srv.ListenSockets[lnIndex]
-			}
-
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
 				hostport := listenAddr.JoinHostPort(portOffset)
-
-				var socket string
-				if sockets != nil {
-					socket = sockets[portOffset]
-				}
 
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
@@ -543,7 +512,7 @@ func (app *App) Start() error {
 				// enable HTTP/3 if configured
 				if h3ok && useTLS {
 					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-					if err := srv.serveHTTP3WithSocket(listenAddr.At(portOffset), tlsCfg, socket); err != nil {
+					if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
 						return err
 					}
 				}
@@ -557,7 +526,7 @@ func (app *App) Start() error {
 
 				if h1ok || h2ok && useTLS || h2cok {
 					// create the listener for this socket
-					lnAny, err := listenAddr.ListenWithSocket(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)}, socket)
+					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
 					if err != nil {
 						return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 					}
@@ -596,7 +565,7 @@ func (app *App) Start() error {
 
 					// if binding to port 0, the OS chooses a port for us;
 					// but the user won't know the port unless we print it
-					if !listenAddr.IsUnixNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+					if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
 						app.logger.Info("port 0 listener",
 							zap.String("input_address", lnAddr),
 							zap.String("actual_address", ln.Addr().String()))

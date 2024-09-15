@@ -22,11 +22,14 @@ package caddy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"os"
 	"slices"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -34,10 +37,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// reuseUnixSocketWithUnlink copies and reuses the unix domain socket (UDS) if we already
-// have it open; if not and the unlink argument is true, unlink it so we can have it.
+// reuseUnixSocket copies and reuses the unix domain socket (UDS) if we already
+// have it open; if not, unlink it so we can have it.
 // No-op if not a unix network.
-func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
+func reuseUnixSocket(network, addr string) (any, error) {
 	socketKey := listenerKey(network, addr)
 
 	socket, exists := unixSockets[socketKey]
@@ -75,56 +78,79 @@ func reuseUnixSocketWithUnlink(network, addr string, unlink bool) (any, error) {
 		return unixSockets[socketKey], nil
 	}
 
-	if unlink {
-		// from what I can tell after some quick research, it's quite common for programs to
-		// leave their socket file behind after they close, so the typical pattern is to
-		// unlink it before you bind to it -- this is often crucial if the last program using
-		// it was killed forcefully without a chance to clean up the socket, but there is a
-		// race, as the comment in net.UnixListener.close() explains... oh well, I guess?
-		if err := syscall.Unlink(addr); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
+	// from what I can tell after some quick research, it's quite common for programs to
+	// leave their socket file behind after they close, so the typical pattern is to
+	// unlink it before you bind to it -- this is often crucial if the last program using
+	// it was killed forcefully without a chance to clean up the socket, but there is a
+	// race, as the comment in net.UnixListener.close() explains... oh well, I guess?
+	if err := syscall.Unlink(addr); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
 
 	return nil, nil
 }
 
-// listenReusableWithSocketFile uses socketFile to create a listener from an existing socket if it is non nil, otherwise a new listener is created for the
-// given network and address and added to listenerPool.
-func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, address string, config net.ListenConfig, socketFile *os.File) (any, error) {
-	// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
-	oldControl := config.Control
-	config.Control = func(network, address string, c syscall.RawConn) error {
-		if oldControl != nil {
-			if err := oldControl(network, address, c); err != nil {
-				return err
-			}
-		}
-		return reusePort(network, address, c)
-	}
-
+// listenReusable creates a new listener for the given network and address, and adds it to listenerPool.
+func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	// even though SO_REUSEPORT lets us bind the socket multiple times,
 	// we still put it in the listenerPool so we can count how many
 	// configs are using this socket; necessary to ensure we can know
 	// whether to enforce shutdown delays, for example (see #5393).
 	var (
-		ln  io.Closer
-		err error
+		ln         io.Closer
+		err        error
+		socketFile *os.File
 	)
 
-	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram"}, network)
+	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	if fd {
+		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
 
-	if datagram {
+		func() {
+			socketFilesMu.Lock()
+			defer socketFilesMu.Unlock()
+
+			socketFdWide := uintptr(socketFd)
+			var ok bool
+
+			socketFile, ok = socketFiles[socketFdWide]
+
+			if !ok {
+				socketFile = os.NewFile(socketFdWide, lnKey)
+			}
+		}()
+
 		if socketFile == nil {
-			ln, err = config.ListenPacket(ctx, network, address)
-		} else {
-			ln, err = net.FilePacketConn(socketFile)
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
 		}
 	} else {
-		if socketFile == nil {
-			ln, err = config.Listen(ctx, network, address)
+		// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
+		oldControl := config.Control
+		config.Control = func(network, address string, c syscall.RawConn) error {
+			if oldControl != nil {
+				if err := oldControl(network, address, c); err != nil {
+					return err
+				}
+			}
+			return reusePort(network, address, c)
+		}
+	}
+
+	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
+	if datagram {
+		if fd {
+			ln, err = net.FilePacketConn(socketFile)
 		} else {
+			ln, err = config.ListenPacket(ctx, network, address)
+		}
+	} else {
+		if fd {
 			ln, err = net.FileListener(socketFile)
+		} else {
+			ln, err = config.Listen(ctx, network, address)
 		}
 	}
 
@@ -133,7 +159,7 @@ func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, ad
 	}
 
 	if datagram {
-		if socketFile == nil {
+		if !fd {
 			// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener, so...
 			if unix, ok := ln.(*net.UnixConn); ok {
 				one := int32(1)
@@ -147,7 +173,7 @@ func listenReusableWithSocketFile(ctx context.Context, lnKey string, network, ad
 			ln = deletePacketConn{specificLn, lnKey}
 		}
 	} else {
-		if socketFile == nil {
+		if !fd {
 			// if new listener is a unix socket, make sure we can reuse it later
 			// (we do our own "unlink on close" -- not required, but more tidy)
 			if unix, ok := ln.(*net.UnixListener); ok {
@@ -245,6 +271,12 @@ func (uc *unixConn) Unwrap() net.PacketConn {
 var unixSockets = make(map[string]interface {
 	File() (*os.File, error)
 })
+
+// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
+var socketFiles = map[uintptr]*os.File{}
+
+// socketFilesMu synchronizes socketFiles insertions
+var socketFilesMu sync.Mutex
 
 // deleteListener is a type that simply deletes itself
 // from the listenerPool when it closes. It is used

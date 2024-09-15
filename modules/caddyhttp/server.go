@@ -223,11 +223,6 @@ type Server struct {
 	// A nil value or element indicates that Protocols will be used instead.
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
-	// ListenSocket provides optional socket file descriptors for each parallel
-	// address in Listen. If present, these file descriptors are used to create
-	// listeners rather than binding new ones.
-	ListenSockets [][]string `json:"listen_sockets,omitempty"`
-
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	Metrics *Metrics `json:"metrics,omitempty"`
@@ -577,18 +572,16 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
-// serveHTTP3WithSocket creates a QUIC listener, configures an HTTP/3 server if
+// serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
-// the listener, with Server s as the handler. If the socket argument is nonempty,
-// an existing socket is used to create the listener, otherwise a new socket is
-// opened and bound to addr.
-func (s *Server) serveHTTP3WithSocket(addr caddy.NetworkAddress, tlsCfg *tls.Config, socket string) error {
+// the listener, with Server s as the handler.
+func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
 	h3net, err := getHTTP3Network(addr.Network)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUICWithSocket(s.ctx, 0, net.ListenConfig{}, tlsCfg, socket)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -1088,6 +1081,7 @@ var networkTypesHTTP3 = map[string]string{
 	"tcp":      "udp",
 	"tcp4":     "udp4",
 	"tcp6":     "udp6",
+	"fdgram":   "fdgram",
 }
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
