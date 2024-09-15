@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -270,9 +271,12 @@ type CircuitBreaker interface {
 func (h *Handler) activeHealthChecker() {
 	defer func() {
 		if err := recover(); err != nil {
-			h.HealthChecks.Active.logger.Error("active health checker panicked",
-				zap.Any("error", err),
-				zap.ByteString("stack", debug.Stack()))
+			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "active health checker panicked"); c != nil {
+				c.Write(
+					zap.Any("error", err),
+					zap.ByteString("stack", debug.Stack()),
+				)
+			}
 		}
 	}()
 	ticker := time.NewTicker(time.Duration(h.HealthChecks.Active.Interval))
@@ -295,26 +299,33 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 		go func(upstream *Upstream) {
 			defer func() {
 				if err := recover(); err != nil {
-					h.HealthChecks.Active.logger.Error("active health check panicked",
-						zap.Any("error", err),
-						zap.ByteString("stack", debug.Stack()))
+					if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "active health checker panicked"); c != nil {
+						c.Write(
+							zap.Any("error", err),
+							zap.ByteString("stack", debug.Stack()),
+						)
+					}
 				}
 			}()
 
 			networkAddr, err := caddy.NewReplacer().ReplaceOrErr(upstream.Dial, true, true)
 			if err != nil {
-				h.HealthChecks.Active.logger.Error("invalid use of placeholders in dial address for active health checks",
-					zap.String("address", networkAddr),
-					zap.Error(err),
-				)
+				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "invalid use of placeholders in dial address for active health checks"); c != nil {
+					c.Write(
+						zap.String("address", networkAddr),
+						zap.Error(err),
+					)
+				}
 				return
 			}
 			addr, err := caddy.ParseNetworkAddress(networkAddr)
 			if err != nil {
-				h.HealthChecks.Active.logger.Error("bad network address",
-					zap.String("address", networkAddr),
-					zap.Error(err),
-				)
+				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "bad network address"); c != nil {
+					c.Write(
+						zap.String("address", networkAddr),
+						zap.Error(err),
+					)
+				}
 				return
 			}
 			if hcp := uint(upstream.activeHealthCheckPort); hcp != 0 {
@@ -324,9 +335,11 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				addr.StartPort, addr.EndPort = hcp, hcp
 			}
 			if addr.PortRangeSize() != 1 {
-				h.HealthChecks.Active.logger.Error("multiple addresses (upstream must map to only one address)",
-					zap.String("address", networkAddr),
-				)
+				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "multiple addresses (upstream must map to only one address)"); c != nil {
+					c.Write(
+						zap.String("address", networkAddr),
+					)
+				}
 				return
 			}
 			hostAddr := addr.JoinHostPort(0)
@@ -339,10 +352,12 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 			}
 			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, networkAddr, upstream)
 			if err != nil {
-				h.HealthChecks.Active.logger.Error("active health check failed",
-					zap.String("address", hostAddr),
-					zap.Error(err),
-				)
+				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "active health check failed"); c != nil {
+					c.Write(
+						zap.String("address", hostAddr),
+						zap.Error(err),
+					)
+				}
 			}
 		}(upstream)
 	}
@@ -441,9 +456,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		// increment failures and then check if it has reached the threshold to mark unhealthy
 		err := upstream.Host.countHealthFail(1)
 		if err != nil {
-			h.HealthChecks.Active.logger.Error("could not count active health failure",
-				zap.String("host", upstream.Dial),
-				zap.Error(err))
+			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
+				c.Write(
+					zap.String("host", upstream.Dial),
+					zap.Error(err),
+				)
+			}
 			return
 		}
 		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
@@ -459,14 +477,19 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		// increment passes and then check if it has reached the threshold to be healthy
 		err := upstream.Host.countHealthPass(1)
 		if err != nil {
-			h.HealthChecks.Active.logger.Error("could not count active health pass",
-				zap.String("host", upstream.Dial),
-				zap.Error(err))
+			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health pass"); c != nil {
+				c.Write(
+					zap.String("host", upstream.Dial),
+					zap.Error(err),
+				)
+			}
 			return
 		}
 		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
-				h.HealthChecks.Active.logger.Info("host is up", zap.String("host", hostAddr))
+				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
+					c.Write(zap.String("host", hostAddr))
+				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
 				upstream.Host.resetHealth()
 			}
@@ -476,10 +499,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req)
 	if err != nil {
-		h.HealthChecks.Active.logger.Info("HTTP request failed",
-			zap.String("host", hostAddr),
-			zap.Error(err),
-		)
+		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
+			c.Write(
+				zap.String("host", hostAddr),
+				zap.Error(err),
+			)
+		}
 		markUnhealthy()
 		return nil
 	}
@@ -496,18 +521,22 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// if status code is outside criteria, mark down
 	if h.HealthChecks.Active.ExpectStatus > 0 {
 		if !caddyhttp.StatusCodeMatches(resp.StatusCode, h.HealthChecks.Active.ExpectStatus) {
-			h.HealthChecks.Active.logger.Info("unexpected status code",
-				zap.Int("status_code", resp.StatusCode),
-				zap.String("host", hostAddr),
-			)
+			if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "unexpected status code"); c != nil {
+				c.Write(
+					zap.Int("status_code", resp.StatusCode),
+					zap.String("host", hostAddr),
+				)
+			}
 			markUnhealthy()
 			return nil
 		}
 	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		h.HealthChecks.Active.logger.Info("status code out of tolerances",
-			zap.Int("status_code", resp.StatusCode),
-			zap.String("host", hostAddr),
-		)
+		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "status code out of tolerances"); c != nil {
+			c.Write(
+				zap.Int("status_code", resp.StatusCode),
+				zap.String("host", hostAddr),
+			)
+		}
 		markUnhealthy()
 		return nil
 	}
@@ -516,17 +545,21 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	if h.HealthChecks.Active.bodyRegexp != nil {
 		bodyBytes, err := io.ReadAll(body)
 		if err != nil {
-			h.HealthChecks.Active.logger.Info("failed to read response body",
-				zap.String("host", hostAddr),
-				zap.Error(err),
-			)
+			if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "failed to read response body"); c != nil {
+				c.Write(
+					zap.String("host", hostAddr),
+					zap.Error(err),
+				)
+			}
 			markUnhealthy()
 			return nil
 		}
 		if !h.HealthChecks.Active.bodyRegexp.Match(bodyBytes) {
-			h.HealthChecks.Active.logger.Info("response body failed expectations",
-				zap.String("host", hostAddr),
-			)
+			if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "response body failed expectations"); c != nil {
+				c.Write(
+					zap.String("host", hostAddr),
+				)
+			}
 			markUnhealthy()
 			return nil
 		}
@@ -556,9 +589,12 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	// count failure immediately
 	err := upstream.Host.countFail(1)
 	if err != nil {
-		h.HealthChecks.Passive.logger.Error("could not count failure",
-			zap.String("host", upstream.Dial),
-			zap.Error(err))
+		if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count failure"); c != nil {
+			c.Write(
+				zap.String("host", upstream.Dial),
+				zap.Error(err),
+			)
+		}
 		return
 	}
 
@@ -566,9 +602,12 @@ func (h *Handler) countFailure(upstream *Upstream) {
 	go func(host *Host, failDuration time.Duration) {
 		defer func() {
 			if err := recover(); err != nil {
-				h.HealthChecks.Passive.logger.Error("passive health check failure forgetter panicked",
-					zap.Any("error", err),
-					zap.ByteString("stack", debug.Stack()))
+				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "passive health check failure forgetter panicked"); c != nil {
+					c.Write(
+						zap.Any("error", err),
+						zap.ByteString("stack", debug.Stack()),
+					)
+				}
 			}
 		}()
 		timer := time.NewTimer(failDuration)
@@ -581,9 +620,12 @@ func (h *Handler) countFailure(upstream *Upstream) {
 		}
 		err := host.countFail(-1)
 		if err != nil {
-			h.HealthChecks.Passive.logger.Error("could not forget failure",
-				zap.String("host", upstream.Dial),
-				zap.Error(err))
+			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not forget failure"); c != nil {
+				c.Write(
+					zap.String("host", upstream.Dial),
+					zap.Error(err),
+				)
+			}
 		}
 	}(upstream.Host, failDuration)
 }

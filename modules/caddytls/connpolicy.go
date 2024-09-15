@@ -28,6 +28,7 @@ import (
 
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -338,8 +339,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 		cfg.KeyLogWriter = logFile.(io.Writer)
 
-		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
-			zap.String("log_filename", filename))
+		if c := tlsApp.logger.Check(zapcore.WarnLevel, "TLS SECURITY COMPROMISED: secrets logging is enabled!"); c != nil {
+			c.Write(zap.String("log_filename", filename))
+		}
 	}
 
 	setDefaultTLSParams(cfg)
