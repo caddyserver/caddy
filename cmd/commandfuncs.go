@@ -662,7 +662,6 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		parsedAddr.Host = addr
 	} else if parsedAddr.IsFdNetwork() {
 		origin = "http://127.0.0.1"
-		parsedAddr.Host = addr
 	}
 
 	// form the request
