@@ -54,6 +54,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 
 			if !ok {
 				socketFile = os.NewFile(socketFdWide, lnKey)
+				socketFiles[socketFdWide] = socketFile
 			}
 		}()
 
