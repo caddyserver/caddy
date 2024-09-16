@@ -125,7 +125,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		}()
 
 		if socketFile == nil {
-			return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", socketFd)
 		}
 	} else {
 		// wrap any Control function set by the user so we can also add our reusePort control without clobbering theirs
