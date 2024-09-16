@@ -118,7 +118,10 @@ https://localhost {
 						}
 					],
 					"automatic_https": {
-						"disable_redirects": true
+						"disable_redirects": true,
+						"skip": [
+							"localhost"
+						]
 					},
 					"logs": {
 						"logger_names": {
