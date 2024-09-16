@@ -826,7 +826,6 @@ func (s *Server) logRequest(
 		}
 
 		if fields == nil {
-
 			userID, _ := repl.GetString("http.auth.user.id")
 
 			reqBodyLength := 0
