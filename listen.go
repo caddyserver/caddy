@@ -59,7 +59,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		}()
 
 		if socketFile == nil {
-			return nil, fmt.Errorf("invalid socket file descriptor: %d", fd)
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", socketFd)
 		}
 	}
 
