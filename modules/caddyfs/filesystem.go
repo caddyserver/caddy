@@ -15,7 +15,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(Filesystems{})
-	httpcaddyfile.RegisterGlobalOption("filesystem", parseFilesystems)
+	httpcaddyfile.RegisterGlobalOption("file_systems", parseFilesystems)
 }
 
 type moduleEntry struct {
@@ -26,7 +26,7 @@ type moduleEntry struct {
 
 // Filesystems loads caddy.fs modules into the global filesystem map
 type Filesystems struct {
-	Filesystems []*moduleEntry `json:"filesystems"`
+	Filesystems []*moduleEntry `json:"file_systems"`
 
 	defers []func()
 }
@@ -49,7 +49,7 @@ func parseFilesystems(d *caddyfile.Dispenser, existingVal any) (any, error) {
 // CaddyModule returns the Caddy module information.
 func (Filesystems) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "filesystems",
+		ID:  "file_systems",
 		New: func() caddy.Module { return new(Filesystems) },
 	}
 }

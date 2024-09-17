@@ -274,8 +274,8 @@ func (st ServerType) Setup(
 	if !reflect.DeepEqual(pkiApp, &caddypki.PKI{CAs: make(map[string]*caddypki.CA)}) {
 		cfg.AppsRaw["pki"] = caddyconfig.JSON(pkiApp, &warnings)
 	}
-	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
-		cfg.AppsRaw["filesystems"] = caddyconfig.JSON(
+	if filesystems, ok := options["file_systems"].(caddy.Module); ok {
+		cfg.AppsRaw["file_systems"] = caddyconfig.JSON(
 			filesystems,
 			&warnings)
 	}
