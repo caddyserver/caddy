@@ -15,12 +15,12 @@ import (
 
 func init() {
 	caddy.RegisterModule(Filesystems{})
-	httpcaddyfile.RegisterGlobalOption("file_systems", parseFilesystems)
+	httpcaddyfile.RegisterGlobalOption("filesystem", parseFilesystems)
 }
 
 type moduleEntry struct {
 	Key           string          `json:"name,omitempty"`
-	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
+	FileSystemRaw json.RawMessage `json:"filesystem,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
 	fileSystem    fs.FS
 }
 
