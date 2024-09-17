@@ -305,9 +305,9 @@ func IsFdNetwork(netw string) bool {
 }
 
 // normally we would simply append the port,
-// but if lnHost is IPv6, we need to ensure it
+// but if host is IPv6, we need to ensure it
 // is enclosed in [ ]; net.JoinHostPort does
-// this for us, but lnHost might also have a
+// this for us, but host might also have a
 // network type in front (e.g. "tcp/") leading
 // to "[tcp/::1]" which causes parsing failures
 // later; what we need is "tcp/[::1]", so we have
