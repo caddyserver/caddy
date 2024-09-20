@@ -31,6 +31,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/quic-go/qlog"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 
@@ -437,7 +438,13 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			Conn:                h3ln,
 			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
 		}
-		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), &quic.Config{Allow0RTT: true})
+		earlyLn, err := tr.ListenEarly(
+			http3.ConfigureTLSConfig(quicTlsConfig),
+			&quic.Config{
+				Allow0RTT: true,
+				Tracer:    qlog.DefaultConnectionTracer,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
