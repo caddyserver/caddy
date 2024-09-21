@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -381,7 +382,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.DisableCompression = !*h.Compression
 	}
 
-	if sliceContains(h.Versions, "2") {
+	if slices.Contains(h.Versions, "2") {
 		if err := http2.ConfigureTransport(rt); err != nil {
 			return nil, err
 		}
@@ -400,13 +401,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
 			}
 		}
-	} else if len(h.Versions) > 1 && sliceContains(h.Versions, "3") {
+	} else if len(h.Versions) > 1 && slices.Contains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}
 
 	// if h2c is enabled, configure its transport (std lib http.Transport
 	// does not "HTTP/2 over cleartext TCP")
-	if sliceContains(h.Versions, "h2c") {
+	if slices.Contains(h.Versions, "h2c") {
 		// crafting our own http2.Transport doesn't allow us to utilize
 		// most of the customizations/preferences on the http.Transport,
 		// because, for some reason, only http2.ConfigureTransport()
@@ -781,16 +782,6 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 
 	// parse the DER-encoded certificate
 	return x509.ParseCertificate(derBytes)
-}
-
-// sliceContains returns true if needle is in haystack.
-func sliceContains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
 
 // Interface guards

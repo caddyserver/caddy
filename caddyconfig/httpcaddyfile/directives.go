@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -100,17 +101,6 @@ var defaultDirectiveOrder = []string{
 // plugins or by the user via the "order" global option.
 var directiveOrder = defaultDirectiveOrder
 
-// directiveIsOrdered returns true if dir is
-// a known, ordered (sorted) directive.
-func directiveIsOrdered(dir string) bool {
-	for _, d := range directiveOrder {
-		if d == dir {
-			return true
-		}
-	}
-	return false
-}
-
 // RegisterDirective registers a unique directive dir with an
 // associated unmarshaling (setup) function. When directive dir
 // is encountered in a Caddyfile, setupFunc will be called to
@@ -161,7 +151,7 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // EXPERIMENTAL: This API may change or be removed.
 func RegisterDirectiveOrder(dir string, position Positional, standardDir string) {
 	// check if directive was already ordered
-	if directiveIsOrdered(dir) {
+	if slices.Contains(directiveOrder, dir) {
 		panic("directive '" + dir + "' already ordered")
 	}
 
