@@ -18,6 +18,7 @@ package caddy
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"slices"
@@ -47,7 +48,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			socketFilesMu.Lock()
 			defer socketFilesMu.Unlock()
 
-			socketFdWide := uintptr(fd)
+			socketFdWide := uintptr(socketFd)
 			var ok bool
 
 			socketFile, ok = socketFiles[socketFdWide]
