@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -281,12 +282,9 @@ type fileInfo struct {
 
 // HasExt returns true if the filename has any of the given suffixes, case-insensitive.
 func (fi fileInfo) HasExt(exts ...string) bool {
-	for _, ext := range exts {
-		if strings.HasSuffix(strings.ToLower(fi.Name), strings.ToLower(ext)) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(exts, func(ext string) bool {
+		return strings.HasSuffix(strings.ToLower(fi.Name), strings.ToLower(ext))
+	})
 }
 
 // HumanSize returns the size of the file as a

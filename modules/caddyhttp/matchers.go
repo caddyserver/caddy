@@ -764,12 +764,7 @@ func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchMethod) Match(r *http.Request) bool {
-	for _, method := range m {
-		if r.Method == method {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m, r.Method)
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL

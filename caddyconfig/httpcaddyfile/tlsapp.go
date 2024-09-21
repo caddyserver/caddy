@@ -710,12 +710,9 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 // automationPolicyHasAllPublicNames returns true if all the names on the policy
 // do NOT qualify for public certs OR are tailscale domains.
 func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
-	for _, subj := range ap.SubjectsRaw {
-		if !subjectQualifiesForPublicCert(ap, subj) || isTailscaleDomain(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.SubjectsRaw, func(i string) bool {
+		return !subjectQualifiesForPublicCert(ap, i) || isTailscaleDomain(i)
+	})
 }
 
 func isTailscaleDomain(name string) bool {
