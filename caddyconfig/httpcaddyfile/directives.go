@@ -162,12 +162,7 @@ func RegisterDirectiveOrder(dir string, position Positional, standardDir string)
 	// check if directive exists in standard distribution, since
 	// we can't allow plugins to depend on one another; we can't
 	// guarantee the order that plugins are loaded in.
-	foundStandardDir := false
-	for _, d := range defaultDirectiveOrder {
-		if d == standardDir {
-			foundStandardDir = true
-		}
-	}
+	foundStandardDir := slices.Contains(defaultDirectiveOrder, standardDir)
 	if !foundStandardDir {
 		panic("the 3rd argument '" + standardDir + "' must be a directive that exists in the standard distribution of Caddy")
 	}

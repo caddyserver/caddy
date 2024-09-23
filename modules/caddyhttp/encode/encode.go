@@ -24,6 +24,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -441,12 +442,9 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 		}
 
 		// set server preference
-		prefOrder := -1
-		for i, p := range preferredOrder {
-			if encName == p {
-				prefOrder = len(preferredOrder) - i
-				break
-			}
+		prefOrder := slices.Index(preferredOrder, encName)
+		if prefOrder > -1 {
+			prefOrder = len(preferredOrder) - prefOrder
 		}
 
 		prefs = append(prefs, encodingPreference{

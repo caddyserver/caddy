@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -397,12 +398,8 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Scheme = "https"
 
 		// if the port is in the except list, flip back to HTTP
-		if ht, ok := h.Transport.(*HTTPTransport); ok {
-			for _, exceptPort := range ht.TLS.ExceptPorts {
-				if exceptPort == port {
-					u.Scheme = "http"
-				}
-			}
+		if ht, ok := h.Transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
+			u.Scheme = "http"
 		}
 	}
 

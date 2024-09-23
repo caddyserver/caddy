@@ -58,19 +58,20 @@ func (st ServerType) buildTLSApp(
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
 				for _, addr := range sb.keys {
-					if addr.Host == "" {
-						// this server block has a hostless key, now
-						// go through and add all the hosts to the set
-						for _, otherAddr := range sb.keys {
-							if otherAddr.Original == addr.Original {
-								continue
-							}
-							if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
-								httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
-							}
-						}
-						break
+					if addr.Host != "" {
+						continue
 					}
+					// this server block has a hostless key, now
+					// go through and add all the hosts to the set
+					for _, otherAddr := range sb.keys {
+						if otherAddr.Original == addr.Original {
+							continue
+						}
+						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+						}
+					}
+					break
 				}
 			}
 		}
@@ -581,7 +582,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			if !automationPolicyHasAllPublicNames(aps[i]) {
 				// if this automation policy has internal names, we might as well remove it
 				// so auto-https can implicitly use the internal issuer
-				aps = append(aps[:i], aps[i+1:]...)
+				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
 		}
@@ -598,7 +599,7 @@ outer:
 		for j := i + 1; j < len(aps); j++ {
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(aps[i], aps[j]) {
-				aps = append(aps[:j], aps[j+1:]...)
+				aps = slices.Delete(aps, j, j+1)
 				// must re-evaluate current i against next j; can't skip it!
 				// even if i decrements to -1, will be incremented to 0 immediately
 				i--
@@ -628,7 +629,7 @@ outer:
 					// cause example.com to be served by the less specific policy for
 					// '*.com', which might be different (yes we've seen this happen)
 					if automationPolicyShadows(i, aps) >= j {
-						aps = append(aps[:i], aps[i+1:]...)
+						aps = slices.Delete(aps, i, i+1)
 						i--
 						continue outer
 					}
@@ -639,7 +640,7 @@ outer:
 							aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
 						}
 					}
-					aps = append(aps[:j], aps[j+1:]...)
+					aps = slices.Delete(aps, j, j+1)
 					j--
 				}
 			}
@@ -659,13 +660,9 @@ func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 		return false
 	}
 	for _, aSubj := range a.SubjectsRaw {
-		var inSuperset bool
-		for _, bSubj := range b.SubjectsRaw {
-			if certmagic.MatchWildcard(aSubj, bSubj) {
-				inSuperset = true
-				break
-			}
-		}
+		inSuperset := slices.ContainsFunc(b.SubjectsRaw, func(bSubj string) bool {
+			return certmagic.MatchWildcard(aSubj, bSubj)
+		})
 		if !inSuperset {
 			return false
 		}

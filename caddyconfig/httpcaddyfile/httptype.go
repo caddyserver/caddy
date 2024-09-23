@@ -1354,17 +1354,8 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 
 		// add this server block's keys to the matcher
 		// pair if it doesn't already exist
-		if addr.Host != "" {
-			var found bool
-			for _, h := range chosenMatcherPair.hostm {
-				if h == addr.Host {
-					found = true
-					break
-				}
-			}
-			if !found {
-				chosenMatcherPair.hostm = append(chosenMatcherPair.hostm, addr.Host)
-			}
+		if addr.Host != "" && !slices.Contains(chosenMatcherPair.hostm, addr.Host) {
+			chosenMatcherPair.hostm = append(chosenMatcherPair.hostm, addr.Host)
 		}
 	}
 
