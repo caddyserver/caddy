@@ -318,7 +318,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// modified during handling
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
 	loggableReq := zap.Object("request", LoggableHTTPRequest{
-		Request:              r.Copy(r.Context()),
+		Request:              r.Clone(r.Context()),
 		ShouldLogCredentials: shouldLogCredentials,
 	})
 	errLog := s.errorLogger.WithLazy(loggableReq)
