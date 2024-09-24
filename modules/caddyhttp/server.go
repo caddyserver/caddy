@@ -318,10 +318,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// modified during handling
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
 	loggableReq := zap.Object("request", LoggableHTTPRequest{
-		Request:              r,
+		Request:              r.Copy(r.Context()),
 		ShouldLogCredentials: shouldLogCredentials,
 	})
-	errLog := s.errorLogger.With(loggableReq)
+	errLog := s.errorLogger.WithLazy(loggableReq)
 
 	var duration time.Duration
 
