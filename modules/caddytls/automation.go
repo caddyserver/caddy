@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
@@ -373,12 +374,9 @@ func (ap *AutomationPolicy) Subjects() []string {
 
 // AllInternalSubjects returns true if all the subjects on this policy are internal.
 func (ap *AutomationPolicy) AllInternalSubjects() bool {
-	for _, subj := range ap.subjects {
-		if !certmagic.SubjectIsInternal(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.subjects, func(s string) bool {
+		return !certmagic.SubjectIsInternal(s)
+	})
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {

@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -321,12 +322,9 @@ func (MatchRemoteIP) parseIPRange(str string) ([]netip.Prefix, error) {
 }
 
 func (MatchRemoteIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
-	for _, ipRange := range ranges {
-		if ipRange.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ranges, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ip)
+	})
 }
 
 // UnmarshalCaddyfile sets up the MatchRemoteIP from Caddyfile tokens. Syntax:
@@ -439,12 +437,9 @@ func (MatchLocalIP) parseIPRange(str string) ([]netip.Prefix, error) {
 }
 
 func (MatchLocalIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
-	for _, ipRange := range ranges {
-		if ipRange.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ranges, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ip)
+	})
 }
 
 // UnmarshalCaddyfile sets up the MatchLocalIP from Caddyfile tokens. Syntax:
