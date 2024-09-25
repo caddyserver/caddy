@@ -289,24 +289,15 @@ func applyServerOptions(
 
 	for key, server := range servers {
 		// find the options that apply to this server
-		opts := func() *serverOptions {
-			for _, entry := range serverOpts {
-				if entry.ListenerAddress == "" {
-					return &entry
-				}
-				for _, listener := range server.Listen {
-					if entry.ListenerAddress == listener {
-						return &entry
-					}
-				}
-			}
-			return nil
-		}()
+		optsIndex := slices.IndexFunc(serverOpts, func(s serverOptions) bool {
+			return s.ListenerAddress == "" || slices.Contains(server.Listen, s.ListenerAddress)
+		})
 
 		// if none apply, then move to the next server
-		if opts == nil {
+		if optsIndex == -1 {
 			continue
 		}
+		opts := serverOpts[optsIndex]
 
 		// set all the options
 		server.ListenerWrappersRaw = opts.ListenerWrappersRaw

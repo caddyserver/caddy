@@ -548,12 +548,9 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 }
 
 func (s *Server) hasTLSClientAuth() bool {
-	for _, cp := range s.TLSConnPolicies {
-		if cp.ClientAuthentication != nil && cp.ClientAuthentication.Active() {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.TLSConnPolicies, func(cp *caddytls.ConnectionPolicy) bool {
+		return cp.ClientAuthentication != nil && cp.ClientAuthentication.Active()
+	})
 }
 
 // findLastRouteWithHostMatcher returns the index of the last route
@@ -977,12 +974,9 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 // isTrustedClientIP returns true if the given IP address is
 // in the list of trusted IP ranges.
 func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
-	for _, ipRange := range trusted {
-		if ipRange.Contains(ipAddr) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(trusted, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ipAddr)
+	})
 }
 
 // trustedRealClientIP finds the client IP from the request assuming it is
