@@ -588,7 +588,7 @@ func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 // hasHostCatchAllKey returns true if sb has a key that
 // omits a host portion, i.e. it "catches all" hosts.
 func (sb serverBlock) hasHostCatchAllKey() bool {
-	return slices.ContainsFunc(sb.keys, func(addr Address) bool {
+	return slices.ContainsFunc(sb.parsedKeys, func(addr Address) bool {
 		return addr.Host == ""
 	})
 }
@@ -596,7 +596,7 @@ func (sb serverBlock) hasHostCatchAllKey() bool {
 // isAllHTTP returns true if all sb keys explicitly specify
 // the http:// scheme
 func (sb serverBlock) isAllHTTP() bool {
-	return !slices.ContainsFunc(sb.keys, func(addr Address) bool {
+	return !slices.ContainsFunc(sb.parsedKeys, func(addr Address) bool {
 		return addr.Scheme != "http"
 	})
 }
