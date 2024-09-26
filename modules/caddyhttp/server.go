@@ -313,16 +313,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// encode the request for logging purposes before
+	// clone the request for logging purposes before
 	// it enters any handler chain; this is necessary
 	// to capture the original request in case it gets
 	// modified during handling
+	// cloning the request and using .WithLazy is considerably faster
+	// than using .With, which will JSON encode the request immediately
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
 	loggableReq := zap.Object("request", LoggableHTTPRequest{
-		Request:              r,
+		Request:              r.Clone(r.Context()),
 		ShouldLogCredentials: shouldLogCredentials,
 	})
-	errLog := s.errorLogger.With(loggableReq)
+	errLog := s.errorLogger.WithLazy(loggableReq)
 
 	var duration time.Duration
 
