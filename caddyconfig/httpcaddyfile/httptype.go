@@ -806,7 +806,7 @@ func (st *ServerType) serversFromPairings(
 					if idx := strings.Index(baseDomain, "."); idx != -1 {
 						baseDomain = baseDomain[idx+1:]
 					}
-					if !strings.HasPrefix(addr.Host, "*.") && sliceContains(wildcardHosts, baseDomain) {
+					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
 						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}

@@ -54,7 +54,7 @@ func (st ServerType) buildTLSApp(
 	// key, so that they don't get forgotten/omitted by auto-HTTPS
 	// (since they won't appear in route matchers)
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	if !sliceContains(autoHTTPS, "off") {
+	if !slices.Contains(autoHTTPS, "off") {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
 				for _, addr := range sb.parsedKeys {
@@ -351,7 +351,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	if !sliceContains(autoHTTPS, "off") && !sliceContains(autoHTTPS, "disable_certs") {
+	if !slices.Contains(autoHTTPS, "off") && !slices.Contains(autoHTTPS, "disable_certs") {
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
@@ -420,7 +420,7 @@ func (st ServerType) buildTLSApp(
 		// consolidate automation policies that are the exact same
 		tlsApp.Automation.Policies = consolidateAutomationPolicies(
 			tlsApp.Automation.Policies,
-			sliceContains(autoHTTPS, "prefer_wildcard"),
+			slices.Contains(autoHTTPS, "prefer_wildcard"),
 		)
 
 		// ensure automation policies don't overlap subjects (this should be
@@ -662,7 +662,7 @@ outer:
 							continue
 						}
 						if certmagic.MatchWildcard(aps[i].SubjectsRaw[iSubj], aps[j].SubjectsRaw[jSubj]) {
-							iSubjs = append(iSubjs[:iSubj], iSubjs[iSubj+1:]...)
+							iSubjs = slices.Delete(iSubjs, iSubj, iSubj+1)
 							iSubj--
 							break
 						}
@@ -672,7 +672,7 @@ outer:
 
 				// remove i if it has no subjects left
 				if len(aps[i].SubjectsRaw) == 0 {
-					aps = append(aps[:i], aps[i+1:]...)
+					aps = slices.Delete(aps, i, i+1)
 					i--
 					continue outer
 				}
