@@ -57,13 +57,13 @@ func (st ServerType) buildTLSApp(
 	if autoHTTPS != "off" {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
-				for _, addr := range sb.keys {
+				for _, addr := range sb.parsedKeys {
 					if addr.Host != "" {
 						continue
 					}
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
-					for _, otherAddr := range sb.keys {
+					for _, otherAddr := range sb.parsedKeys {
 						if otherAddr.Original == addr.Original {
 							continue
 						}
