@@ -383,6 +383,67 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			urlTarget:  "https://example.com/foo",
 			wantResult: true,
 		},
+		{
+			name: "vars value (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars({'foo': 'bar'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars matches placeholder, needs escape (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars({'\{http.request.uri.path}': '/foo'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars error wrong syntax (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars('foo', 'bar')`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "vars error no args (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars()`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "vars_regexp value (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('foo', 'ba?r')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp value with name (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('name', 'foo', 'ba?r')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp matches placeholder, needs escape (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('\{http.request.uri.path}', '/fo?o')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp error no args (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp()`,
+			},
+			wantErr: true,
+		},
 	}
 )
 
@@ -406,6 +467,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 			}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+				"foo": "bar",
+			})
 			req = req.WithContext(ctx)
 			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
@@ -446,6 +510,9 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 			}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+				"foo": "bar",
+			})
 			req = req.WithContext(ctx)
 			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 			if tc.clientCertificate != nil {
