@@ -88,13 +88,18 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
-			name: "header error (MatchHeader)",
+			name: "header error, invalid escape sequence (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\\{foobar}'})`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "header error, needs to be JSON syntax with field as key (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header('foo')`,
 			},
-			urlTarget:  "https://example.com/foo",
-			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "header_regexp matches (MatchHeaderRE)",
@@ -128,9 +133,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `header_regexp('foo')`,
 			},
-			urlTarget:  "https://example.com/foo",
-			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "host matches localhost (MatchHost)",
@@ -161,8 +164,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `host(80)`,
 			},
-			urlTarget: "http://localhost:80",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "method does not match (MatchMethod)",
@@ -187,9 +189,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `method()`,
 			},
-			urlTarget:  "https://foo.example.com",
-			httpMethod: "PUT",
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "path matches substring (MatchPath)",
@@ -284,24 +284,21 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `protocol()`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "protocol invocation error too many args (MatchProtocol)",
 			expression: &MatchExpression{
 				Expr: `protocol('grpc', 'https')`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "protocol invocation error wrong arg type (MatchProtocol)",
 			expression: &MatchExpression{
 				Expr: `protocol(true)`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query does not match against a specific value (MatchQuery)",
@@ -348,40 +345,35 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `query({1: "1"})`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error typed struct instead of map (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query(Message{field: "1"})`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error bad map value type (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": 1})`,
 			},
-			urlTarget: "https://example.com/foo/?debug=1",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error no args (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query()`,
 			},
-			urlTarget: "https://example.com/foo/?debug=1",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "remote_ip error no args (MatchRemoteIP)",
 			expression: &MatchExpression{
 				Expr: `remote_ip()`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "remote_ip single IP match (MatchRemoteIP)",
