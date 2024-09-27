@@ -314,11 +314,10 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 		}
 	}
 	if len(lnCfgVals) == 0 {
-		if defaultBind, ok := options["default_bind"].([]string); ok {
-			lnCfgVals = []addressesWithProtocols{{
-				addresses: defaultBind,
-				protocols: nil,
-			}}
+		if defaultBindValues, ok := options["default_bind"].([]ConfigValue); ok {
+			for _, defaultBindValue := range defaultBindValues {
+				lnCfgVals = append(lnCfgVals, defaultBindValue.Value.(addressesWithProtocols))
+			}
 		} else {
 			lnCfgVals = []addressesWithProtocols{{
 				addresses: []string{""},

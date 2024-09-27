@@ -402,6 +402,20 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			options[opt] = append(existingOpts, logOpts...)
 			continue
 		}
+		// Also fold multiple "default_bind" options together into an
+		// array so that server blocks can have multiple binds by default.
+		if opt == "default_bind" {
+			existingOpts, ok := options[opt].([]ConfigValue)
+			if !ok {
+				existingOpts = []ConfigValue{}
+			}
+			defaultBindOpts, ok := val.([]ConfigValue)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type from 'default_bind' global options: %T", val)
+			}
+			options[opt] = append(existingOpts, defaultBindOpts...)
+			continue
+		}
 
 		options[opt] = val
 	}

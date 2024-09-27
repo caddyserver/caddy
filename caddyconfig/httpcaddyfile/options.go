@@ -31,7 +31,7 @@ func init() {
 	RegisterGlobalOption("debug", parseOptTrue)
 	RegisterGlobalOption("http_port", parseOptHTTPPort)
 	RegisterGlobalOption("https_port", parseOptHTTPSPort)
-	RegisterGlobalOption("default_bind", parseOptStringList)
+	RegisterGlobalOption("default_bind", parseOptDefaultBind)
 	RegisterGlobalOption("grace_period", parseOptDuration)
 	RegisterGlobalOption("shutdown_delay", parseOptDuration)
 	RegisterGlobalOption("default_sni", parseOptSingleString)
@@ -284,13 +284,32 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 	return val, nil
 }
 
-func parseOptStringList(d *caddyfile.Dispenser, _ any) (any, error) {
+func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-	val := d.RemainingArgs()
-	if len(val) == 0 {
-		return "", d.ArgErr()
+
+	var addresses, protocols []string
+	addresses = d.RemainingArgs()
+
+	if len(addresses) == 0 {
+		addresses = append(addresses, "")
 	}
-	return val, nil
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "protocols":
+			protocols = d.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, d.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, d.Errf("unknown subdirective: %s", d.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
