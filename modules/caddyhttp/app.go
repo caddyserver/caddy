@@ -530,7 +530,10 @@ func (app *App) Start() error {
 					if err != nil {
 						return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 					}
-					ln := lnAny.(net.Listener)
+					ln, ok := lnAny.(net.Listener)
+					if !ok {
+						return fmt.Errorf("network '%s' cannot handle HTTP/1 or HTTP/2 connections", listenAddr.Network)
+					}
 
 					if useTLS {
 						// create TLS listener - this enables and terminates TLS
