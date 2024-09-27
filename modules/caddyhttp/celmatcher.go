@@ -126,6 +126,10 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	// light (and possibly naïve) syntactic sugar
 	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
 
+	// as a second pass, we'll strip the escape character from an escaped
+	// placeholder, so that it can be used as an input to other CEL functions
+	m.expandedExpr = escapedPlaceholderRegexp.ReplaceAllString(m.expandedExpr, escapedPlaceholderExpansion)
+
 	// our type adapter expands CEL's standard type support
 	m.ta = celTypeAdapter{}
 
@@ -701,8 +705,15 @@ func isCELStringListLiteral(e ast.Expr) bool {
 // expressions with a proper CEL function call; this is
 // just for syntactic sugar.
 var (
-	placeholderRegexp    = regexp.MustCompile(`{([a-zA-Z][\w.-]+)}`)
-	placeholderExpansion = `caddyPlaceholder(request, "${1}")`
+	// The placeholder may not be preceded by a backslash; the expansion
+	// will include the preceding character if it is not a backslash.
+	placeholderRegexp    = regexp.MustCompile(`([^\\]|^){([a-zA-Z][\w.-]+)}`)
+	placeholderExpansion = `${1}caddyPlaceholder(request, "${2}")`
+
+	// As a second pass, we need to strip the escape character in front of
+	// the placeholder, if it exists.
+	escapedPlaceholderRegexp    = regexp.MustCompile(`\\{([a-zA-Z][\w.-]+)}`)
+	escapedPlaceholderExpansion = `{${1}}`
 
 	CELTypeJSON = cel.MapType(cel.StringType, cel.DynType)
 )

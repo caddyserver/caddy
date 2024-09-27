@@ -70,6 +70,24 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
+			name: "header matches an escaped placeholder value (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\\\{foobar}'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"{foobar}"}},
+			wantResult: true,
+		},
+		{
+			name: "header matches an placeholder replaced during the header matcher (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\{http.request.uri.path}'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"/foo"}},
+			wantResult: true,
+		},
+		{
 			name: "header error (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header('foo')`,
