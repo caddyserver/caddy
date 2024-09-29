@@ -49,7 +49,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60
+          version: latest
 
           # Windows times out frequently after about 5m50s if we don't set a longer timeout.
           args: --timeout 10m

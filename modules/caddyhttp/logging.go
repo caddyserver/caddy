@@ -193,7 +193,7 @@ func (sa *StringArray) UnmarshalJSON(b []byte) error {
 // to use, the error log message, and any extra fields.
 // If err is a HandlerError, the returned values will
 // have richer information.
-func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
+func errLogValues(err error) (status int, msg string, fields func() []zapcore.Field) {
 	var handlerErr HandlerError
 	if errors.As(err, &handlerErr) {
 		status = handlerErr.StatusCode
@@ -202,10 +202,12 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 		} else {
 			msg = handlerErr.Err.Error()
 		}
-		fields = []zapcore.Field{
-			zap.Int("status", handlerErr.StatusCode),
-			zap.String("err_id", handlerErr.ID),
-			zap.String("err_trace", handlerErr.Trace),
+		fields = func() []zapcore.Field {
+			return []zapcore.Field{
+				zap.Int("status", handlerErr.StatusCode),
+				zap.String("err_id", handlerErr.ID),
+				zap.String("err_trace", handlerErr.Trace),
+			}
 		}
 		return
 	}

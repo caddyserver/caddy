@@ -33,6 +33,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -326,7 +327,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 
 	fileSystem, ok := m.fsmap.Get(fsName)
 	if !ok {
-		m.logger.Error("use of unregistered filesystem", zap.String("fs", fsName))
+		if c := m.logger.Check(zapcore.ErrorLevel, "use of unregistered filesystem"); c != nil {
+			c.Write(zap.String("fs", fsName))
+		}
 		return false
 	}
 	type matchCandidate struct {
@@ -356,7 +359,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			return val, nil
 		})
 		if err != nil {
-			m.logger.Error("evaluating placeholders", zap.Error(err))
+			if c := m.logger.Check(zapcore.ErrorLevel, "evaluating placeholders"); c != nil {
+				c.Write(zap.Error(err))
+			}
+
 			expandedFile = file // "oh well," I guess?
 		}
 
@@ -379,7 +385,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		} else {
 			globResults, err = fs.Glob(fileSystem, fullPattern)
 			if err != nil {
-				m.logger.Error("expanding glob", zap.Error(err))
+				if c := m.logger.Check(zapcore.ErrorLevel, "expanding glob"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 

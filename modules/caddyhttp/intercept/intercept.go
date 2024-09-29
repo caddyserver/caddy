@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -165,7 +166,9 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	}
 	repl.Set("http.intercept.status_code", rec.Status())
 
-	ir.logger.Debug("handling response", zap.Int("handler", rec.handlerIndex))
+	if c := ir.logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
+		c.Write(zap.Int("handler", rec.handlerIndex))
+	}
 
 	// pass the request through the response handler routes
 	return rec.handler.Routes.Compile(next).ServeHTTP(w, r)
