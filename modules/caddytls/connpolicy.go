@@ -558,8 +558,8 @@ type ClientAuthentication struct {
 //		verifier               <module>
 //	}
 //
-// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided. Otherwise,
-// it defaults to `require`.
+// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided.
+// Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
 		// consume any tokens on the same line, if any.
