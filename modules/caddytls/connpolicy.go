@@ -762,7 +762,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
 			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil || clientauth.CA != nil {
+			clientauth.CARaw != nil || clientauth.ca != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
