@@ -1,7 +1,9 @@
 :80
 
-file_server browse {
-	sort size desc
+file_server {
+	browse {
+		sort size desc
+	}
 }
 ----------
 {
@@ -16,14 +18,15 @@ file_server browse {
 						{
 							"handle": [
 								{
-									"browse": {},
+									"browse": {
+										"sort": [
+											"size",
+											"desc"
+										]
+									},
 									"handler": "file_server",
 									"hide": [
 										"./Caddyfile"
-									],
-									"sort": [
-										"size",
-										"desc"
 									]
 								}
 							]

@@ -1,3 +1,8 @@
+// The below line is required to enable post-quantum key agreement in Go 1.23
+// by default without insisting on setting a minimum version of 1.23 in go.mod.
+// See https://github.com/caddyserver/caddy/issues/6540#issuecomment-2313094905
+//go:debug tlskyber=1
+
 // Copyright 2015 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

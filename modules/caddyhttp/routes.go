@@ -159,6 +159,9 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 		r.Handlers = append(r.Handlers, handler.(MiddlewareHandler))
 	}
 
+	// Make ProvisionHandlers idempotent by clearing the middleware field
+	r.middleware = []Middleware{}
+
 	// pre-compile the middleware handler chain
 	for _, midhandler := range r.Handlers {
 		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, metrics))

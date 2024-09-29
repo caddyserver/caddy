@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -57,9 +59,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		info, err := entry.Info()
 		if err != nil {
-			fsrv.logger.Error("could not get info about directory entry",
-				zap.String("name", entry.Name()),
-				zap.String("root", root))
+			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
+				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+			}
 			continue
 		}
 
@@ -280,12 +282,9 @@ type fileInfo struct {
 
 // HasExt returns true if the filename has any of the given suffixes, case-insensitive.
 func (fi fileInfo) HasExt(exts ...string) bool {
-	for _, ext := range exts {
-		if strings.HasSuffix(strings.ToLower(fi.Name), strings.ToLower(ext)) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(exts, func(ext string) bool {
+		return strings.HasSuffix(strings.ToLower(fi.Name), strings.ToLower(ext))
+	})
 }
 
 // HumanSize returns the size of the file as a

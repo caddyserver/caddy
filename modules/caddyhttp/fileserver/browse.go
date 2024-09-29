@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -52,14 +53,25 @@ var BrowseTemplate string
 type Browse struct {
 	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
+
 	// Determines whether or not targets of symlinks should be revealed.
 	RevealSymlinks bool `json:"reveal_symlinks,omitempty"`
+
+	// Override the default sort.
+	// It includes the following options:
+	//   - sort_by: name(default), namedirfirst, size, time
+	//   - order: asc(default), desc
+	// eg.:
+	//   - `sort time desc` will sort by time in descending order
+	//   - `sort size` will sort by size in ascending order
+	// The first option must be `sort_by` and the second option must be `order` (if exists).
+	SortOptions []string `json:"sort,omitempty"`
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	fsrv.logger.Debug("browse enabled; listing directory contents",
-		zap.String("path", dirPath),
-		zap.String("root", root))
+	if c := fsrv.logger.Check(zapcore.DebugLevel, "browse enabled; listing directory contents"); c != nil {
+		c.Write(zap.String("path", dirPath), zap.String("root", root))
+	}
 
 	// Navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs to
@@ -81,7 +93,9 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "redirecting to trailing slash to preserve hrefs"); c != nil {
+				c.Write(zap.String("request_path", r.URL.Path))
+			}
 			return redirect(w, r, origReq.URL.Path+"/")
 		}
 	}
@@ -210,7 +224,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 
 	// The configs in Caddyfile have lower priority than Query params,
 	// so put it at first.
-	for idx, item := range fsrv.SortOptions {
+	for idx, item := range fsrv.Browse.SortOptions {
 		// Only `sort` & `order`, 2 params are allowed
 		if idx >= 2 {
 			break

@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/caddyserver/certmagic"
@@ -110,17 +111,12 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 	pos := Positional(d.Val())
 
-	newOrder := directiveOrder
+	// if directive already had an order, drop it
+	newOrder := slices.DeleteFunc(directiveOrder, func(d string) bool {
+		return d == dirName
+	})
 
-	// if directive exists, first remove it
-	for i, d := range newOrder {
-		if d == dirName {
-			newOrder = append(newOrder[:i], newOrder[i+1:]...)
-			break
-		}
-	}
-
-	// act on the positional
+	// act on the positional; if it's First or Last, we're done right away
 	switch pos {
 	case First:
 		newOrder = append([]string{dirName}, newOrder...)
@@ -129,6 +125,7 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 		directiveOrder = newOrder
 		return newOrder, nil
+
 	case Last:
 		newOrder = append(newOrder, dirName)
 		if d.NextArg() {
@@ -136,8 +133,11 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 		directiveOrder = newOrder
 		return newOrder, nil
+
+	// if it's Before or After, continue
 	case Before:
 	case After:
+
 	default:
 		return nil, d.Errf("unknown positional '%s'", pos)
 	}
@@ -151,17 +151,17 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, d.ArgErr()
 	}
 
-	// insert directive into proper position
-	for i, d := range newOrder {
-		if d == otherDir {
-			if pos == Before {
-				newOrder = append(newOrder[:i], append([]string{dirName}, newOrder[i:]...)...)
-			} else if pos == After {
-				newOrder = append(newOrder[:i+1], append([]string{dirName}, newOrder[i+1:]...)...)
-			}
-			break
-		}
+	// get the position of the target directive
+	targetIndex := slices.Index(newOrder, otherDir)
+	if targetIndex == -1 {
+		return nil, d.Errf("directive '%s' not found", otherDir)
 	}
+	// if we're inserting after, we need to increment the index to go after
+	if pos == After {
+		targetIndex++
+	}
+	// insert the directive into the new order
+	newOrder = slices.Insert(newOrder, targetIndex, dirName)
 
 	directiveOrder = newOrder
 
