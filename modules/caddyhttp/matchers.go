@@ -355,6 +355,11 @@ outer:
 	return false
 }
 
+// MatchWithError returns true if r matches m.
+func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -627,6 +632,11 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	return matches
 }
 
+// MatchWithError returns true if r matches m.
+func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -685,6 +695,11 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 	cleanedPath := cleanPath(r.URL.Path)
 
 	return m.MatchRegexp.Match(cleanedPath, repl)
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -765,6 +780,11 @@ func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match returns true if r matches m.
 func (m MatchMethod) Match(r *http.Request) bool {
 	return slices.Contains(m, r.Method)
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchMethod) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -867,6 +887,11 @@ func (m MatchQuery) Match(r *http.Request) bool {
 	return matchedKeys == len(m)
 }
 
+// MatchWithError returns true if r matches m.
+func (m MatchQuery) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -942,6 +967,11 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (m MatchHeader) Match(r *http.Request) bool {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	return matchHeaders(r.Header, http.Header(m), r.Host, repl)
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchHeader) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -1093,6 +1123,11 @@ func (m MatchHeaderRE) Match(r *http.Request) bool {
 	return true
 }
 
+// MatchWithError returns true if r matches m.
+func (m MatchHeaderRE) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // Provision compiles m's regular expressions.
 func (m MatchHeaderRE) Provision(ctx caddy.Context) error {
 	for _, rm := range m {
@@ -1214,6 +1249,11 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 	return false
 }
 
+// MatchWithError returns true if r matches m.
+func (m MatchProtocol) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchProtocol) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// iterate to merge multiple matchers into one
@@ -1268,6 +1308,11 @@ func (m MatchTLS) Match(r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchTLS) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // UnmarshalCaddyfile parses Caddyfile tokens for this matcher. Syntax:
@@ -1354,6 +1399,11 @@ func (m MatchNot) Match(r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchNot) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // MatchRegexp is an embedable type for matching
@@ -1528,20 +1578,29 @@ const MatcherErrorVarKey = "matchers.error"
 
 // Interface guards
 var (
-	_ RequestMatcher    = (*MatchHost)(nil)
-	_ caddy.Provisioner = (*MatchHost)(nil)
-	_ RequestMatcher    = (*MatchPath)(nil)
-	_ RequestMatcher    = (*MatchPathRE)(nil)
-	_ caddy.Provisioner = (*MatchPathRE)(nil)
-	_ RequestMatcher    = (*MatchMethod)(nil)
-	_ RequestMatcher    = (*MatchQuery)(nil)
-	_ RequestMatcher    = (*MatchHeader)(nil)
-	_ RequestMatcher    = (*MatchHeaderRE)(nil)
-	_ caddy.Provisioner = (*MatchHeaderRE)(nil)
-	_ RequestMatcher    = (*MatchProtocol)(nil)
-	_ RequestMatcher    = (*MatchNot)(nil)
-	_ caddy.Provisioner = (*MatchNot)(nil)
-	_ caddy.Provisioner = (*MatchRegexp)(nil)
+	_ RequestMatcher          = (*MatchHost)(nil)
+	_ RequestMatcherWithError = (*MatchHost)(nil)
+	_ caddy.Provisioner       = (*MatchHost)(nil)
+	_ RequestMatcher          = (*MatchPath)(nil)
+	_ RequestMatcherWithError = (*MatchPath)(nil)
+	_ RequestMatcher          = (*MatchPathRE)(nil)
+	_ RequestMatcherWithError = (*MatchPathRE)(nil)
+	_ caddy.Provisioner       = (*MatchPathRE)(nil)
+	_ RequestMatcher          = (*MatchMethod)(nil)
+	_ RequestMatcherWithError = (*MatchMethod)(nil)
+	_ RequestMatcher          = (*MatchQuery)(nil)
+	_ RequestMatcherWithError = (*MatchQuery)(nil)
+	_ RequestMatcher          = (*MatchHeader)(nil)
+	_ RequestMatcherWithError = (*MatchHeader)(nil)
+	_ RequestMatcher          = (*MatchHeaderRE)(nil)
+	_ RequestMatcherWithError = (*MatchHeaderRE)(nil)
+	_ caddy.Provisioner       = (*MatchHeaderRE)(nil)
+	_ RequestMatcher          = (*MatchProtocol)(nil)
+	_ RequestMatcherWithError = (*MatchProtocol)(nil)
+	_ RequestMatcher          = (*MatchNot)(nil)
+	_ RequestMatcherWithError = (*MatchNot)(nil)
+	_ caddy.Provisioner       = (*MatchNot)(nil)
+	_ caddy.Provisioner       = (*MatchRegexp)(nil)
 
 	_ caddyfile.Unmarshaler = (*MatchHost)(nil)
 	_ caddyfile.Unmarshaler = (*MatchPath)(nil)
