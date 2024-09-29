@@ -207,6 +207,11 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	return false
 }
 
+// MatchWithError returns true if r matches m.
+func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -326,6 +331,11 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL

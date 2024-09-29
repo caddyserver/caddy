@@ -202,17 +202,25 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchExpression) Match(r *http.Request) bool {
+	match, err := m.MatchWithError(r)
+	if err != nil {
+		SetVar(r.Context(), MatcherErrorVarKey, err)
+	}
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchExpression) MatchWithError(r *http.Request) (bool, error) {
 	celReq := celHTTPRequest{r}
 	out, _, err := m.prg.Eval(celReq)
 	if err != nil {
 		m.log.Error("evaluating expression", zap.Error(err))
-		SetVar(r.Context(), MatcherErrorVarKey, err)
-		return false
+		return false, err
 	}
 	if outBool, ok := out.Value().(bool); ok {
-		return outBool
+		return outBool, nil
 	}
-	return false
+	return false, nil
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
@@ -494,6 +502,13 @@ func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.Int
 				// If needed this call could be changed to convert the value
 				// to a *http.Request using CEL's ConvertToNative method.
 				httpReq := celReq.Value().(celHTTPRequest)
+				if m, ok := matcher.(RequestMatcherWithError); ok {
+					match, err := m.MatchWithError(httpReq.Request)
+					if err != nil {
+						return types.WrapErr(err)
+					}
+					return types.Bool(match)
+				}
 				return types.Bool(matcher.Match(httpReq.Request))
 			},
 		), nil
@@ -509,6 +524,13 @@ func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions
 			return types.WrapErr(err)
 		}
 		httpReq := celReq.Value().(celHTTPRequest)
+		if m, ok := matcher.(RequestMatcherWithError); ok {
+			match, err := m.MatchWithError(httpReq.Request)
+			if err != nil {
+				return types.WrapErr(err)
+			}
+			return types.Bool(match)
+		}
 		return types.Bool(matcher.Match(httpReq.Request))
 	}
 }
@@ -733,9 +755,10 @@ const MatcherNameCtxKey = "matcher_name"
 
 // Interface guards
 var (
-	_ caddy.Provisioner     = (*MatchExpression)(nil)
-	_ RequestMatcher        = (*MatchExpression)(nil)
-	_ caddyfile.Unmarshaler = (*MatchExpression)(nil)
-	_ json.Marshaler        = (*MatchExpression)(nil)
-	_ json.Unmarshaler      = (*MatchExpression)(nil)
+	_ caddy.Provisioner       = (*MatchExpression)(nil)
+	_ RequestMatcher          = (*MatchExpression)(nil)
+	_ RequestMatcherWithError = (*MatchExpression)(nil)
+	_ caddyfile.Unmarshaler   = (*MatchExpression)(nil)
+	_ json.Marshaler          = (*MatchExpression)(nil)
+	_ json.Unmarshaler        = (*MatchExpression)(nil)
 )

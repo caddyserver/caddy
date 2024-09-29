@@ -313,12 +313,21 @@ func (m MatchFile) Validate() error {
 //   - http.matchers.file.type: file or directory
 //   - http.matchers.file.remainder: Portion remaining after splitting file path (if configured)
 func (m MatchFile) Match(r *http.Request) bool {
+	match, err := m.selectFile(r)
+	if err != nil {
+		caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
+	}
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchFile) MatchWithError(r *http.Request) (bool, error) {
 	return m.selectFile(r)
 }
 
 // selectFile chooses a file according to m.TryPolicy by appending
 // the paths in m.TryFiles to m.Root, with placeholder replacements.
-func (m MatchFile) selectFile(r *http.Request) (matched bool) {
+func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	root := filepath.Clean(repl.ReplaceAll(m.Root, "."))
@@ -330,7 +339,7 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		if c := m.logger.Check(zapcore.ErrorLevel, "use of unregistered filesystem"); c != nil {
 			c.Write(zap.String("fs", fsName))
 		}
-		return false
+		return false, nil
 	}
 	type matchCandidate struct {
 		fullpath, relative, splitRemainder string
@@ -422,14 +431,13 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 	case "", tryPolicyFirstExist:
 		for _, pattern := range m.TryFiles {
 			if err := parseErrorCode(pattern); err != nil {
-				caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
-				return
+				return false, err
 			}
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
 					setPlaceholders(c, info)
-					return true
+					return true, nil
 				}
 			}
 		}
@@ -450,10 +458,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			}
 		}
 		if largestInfo == nil {
-			return false
+			return false, nil
 		}
 		setPlaceholders(largest, largestInfo)
-		return true
+		return true, nil
 
 	case tryPolicySmallestSize:
 		var smallestSize int64
@@ -471,10 +479,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			}
 		}
 		if smallestInfo == nil {
-			return false
+			return false, nil
 		}
 		setPlaceholders(smallest, smallestInfo)
-		return true
+		return true, nil
 
 	case tryPolicyMostRecentlyMod:
 		var recent matchCandidate
@@ -491,13 +499,13 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			}
 		}
 		if recentInfo == nil {
-			return false
+			return false, nil
 		}
 		setPlaceholders(recent, recentInfo)
-		return true
+		return true, nil
 	}
 
-	return
+	return false, nil
 }
 
 // parseErrorCode checks if the input is a status

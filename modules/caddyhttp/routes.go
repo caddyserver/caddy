@@ -254,18 +254,13 @@ func wrapRoute(route Route) Middleware {
 			nextCopy := next
 
 			// route must match at least one of the matcher sets
-			if !route.MatcherSets.AnyMatch(req) {
+			matches, err := route.MatcherSets.AnyMatchWithError(req)
+			if err != nil {
 				// allow matchers the opportunity to short circuit
 				// the request and trigger the error handling chain
-				err, ok := GetVar(req.Context(), MatcherErrorVarKey).(error)
-				if ok {
-					// clear out the error from context, otherwise
-					// it will cascade to the error routes (#4916)
-					SetVar(req.Context(), MatcherErrorVarKey, nil)
-					// return the matcher's error
-					return err
-				}
-
+				return err
+			}
+			if !matches {
 				// call the next handler, and skip this one,
 				// since the matcher didn't match
 				return nextCopy.ServeHTTP(rw, req)
@@ -354,6 +349,30 @@ func (mset MatcherSet) Match(r *http.Request) bool {
 	return true
 }
 
+// MatchWithError returns true if r matches m.
+func (mset MatcherSet) MatchWithError(r *http.Request) (bool, error) {
+	for _, m := range mset {
+		if me, ok := m.(RequestMatcherWithError); ok {
+			match, err := me.MatchWithError(r)
+			if err != nil || !match {
+				return match, err
+			}
+		} else {
+			if !m.Match(r) {
+				// for backwards compatibility
+				err, ok := GetVar(r.Context(), MatcherErrorVarKey).(error)
+				if ok {
+					// clear out the error from context since we've consumed it
+					SetVar(r.Context(), MatcherErrorVarKey, nil)
+					return false, err
+				}
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
 // RawMatcherSets is a group of matcher sets
 // in their raw, JSON form.
 type RawMatcherSets []caddy.ModuleMap
@@ -366,6 +385,8 @@ type MatcherSets []MatcherSet
 // AnyMatch returns true if req matches any of the
 // matcher sets in ms or if there are no matchers,
 // in which case the request always matches.
+//
+// Deprecated: Use AnyMatchWithError instead.
 func (ms MatcherSets) AnyMatch(req *http.Request) bool {
 	for _, m := range ms {
 		if m.Match(req) {
@@ -373,6 +394,20 @@ func (ms MatcherSets) AnyMatch(req *http.Request) bool {
 		}
 	}
 	return len(ms) == 0
+}
+
+// AnyMatchWithError returns true if req matches any of the
+// matcher sets in ms or if there are no matchers, in which
+// case the request always matches. If any matcher returns
+// an error, we cut short and return the error.
+func (ms MatcherSets) AnyMatchWithError(req *http.Request) (bool, error) {
+	for _, m := range ms {
+		match, err := m.MatchWithError(req)
+		if err != nil || match {
+			return match, err
+		}
+	}
+	return len(ms) == 0, nil
 }
 
 // FromInterface fills ms from an 'any' value obtained from LoadModule.

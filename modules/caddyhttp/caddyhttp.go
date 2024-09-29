@@ -40,6 +40,18 @@ type RequestMatcher interface {
 	Match(*http.Request) bool
 }
 
+// RequestMatcherWithError is like RequestMatcher but can return an error.
+// An error during matching will abort the request middleware chain and
+// invoke the error middleware chain.
+//
+// This will eventually replace RequestMatcher. Matcher modules
+// should implement both interfaces, and once all modules have
+// been updated to use RequestMatcherWithError, the RequestMatcher
+// interface may eventually be dropped.
+type RequestMatcherWithError interface {
+	MatchWithError(*http.Request) (bool, error)
+}
+
 // Handler is like http.Handler except ServeHTTP may return an error.
 //
 // If any handler encounters an error, it should be returned for proper
