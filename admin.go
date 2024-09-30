@@ -313,7 +313,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	}
 	if admin.Origins == nil {
 		if addr.isLoopback() {
-			if addr.IsUnixNetwork() {
+			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
 				// RFC 2616, Section 14.26:
 				// "A client MUST include a Host header field in all HTTP/1.1 request
 				// messages. If the requested URI does not include an Internet host
@@ -351,7 +351,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 				uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
 			}
 		}
-		if !addr.IsUnixNetwork() {
+		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
