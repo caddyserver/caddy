@@ -270,10 +270,6 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx 
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
-		if provisioner, ok := router.(Provisioner); ok {
-			provisioner.Provision(ctx)
-		}
-		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}

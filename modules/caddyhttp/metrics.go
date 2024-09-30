@@ -22,10 +22,8 @@ type Metrics struct {
 	// managed by Caddy.
 	PerHost bool `json:"per_host,omitempty"`
 
-	init              sync.Once
-	configSuccess     prometheus.Gauge `json:"-"`
-	configSuccessTime prometheus.Gauge `json:"-"`
-	httpMetrics       *httpMetrics     `json:"-"`
+	init        sync.Once
+	httpMetrics *httpMetrics `json:"-"`
 }
 
 type httpMetrics struct {

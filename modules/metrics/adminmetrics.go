@@ -34,6 +34,8 @@ func init() {
 // Admin API is disabled.
 type AdminMetrics struct {
 	registry *prometheus.Registry
+
+	metricsHandler http.Handler
 }
 
 // CaddyModule returns the Caddy module information.
@@ -50,18 +52,18 @@ func (m *AdminMetrics) Provision(ctx caddy.Context) error {
 	if m.registry == nil {
 		return errors.New("no metrics registry found")
 	}
-
+	m.metricsHandler = createMetricsHandler(nil, false, m.registry)
 	return nil
 }
 
 // Routes returns a route for the /metrics endpoint.
 func (m *AdminMetrics) Routes() []caddy.AdminRoute {
-	metricsHandler := createMetricsHandler(nil, false, m.registry)
-	h := caddy.AdminHandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		metricsHandler.ServeHTTP(w, r)
-		return nil
-	})
-	return []caddy.AdminRoute{{Pattern: "/metrics", Handler: h}}
+	return []caddy.AdminRoute{{Pattern: "/metrics", Handler: caddy.AdminHandlerFunc(m.serveHTTP)}}
+}
+
+func (m *AdminMetrics) serveHTTP(w http.ResponseWriter, r *http.Request) error {
+	m.metricsHandler.ServeHTTP(w, r)
+	return nil
 }
 
 // Interface guards
