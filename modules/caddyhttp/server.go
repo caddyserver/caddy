@@ -220,6 +220,10 @@ type Server struct {
 	// Default: `[h1 h2 h3]`
 	Protocols []string `json:"protocols,omitempty"`
 
+	// ListenProtocols overrides Protocols for each parallel address in Listen.
+	// A nil value or element indicates that Protocols will be used instead.
+	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	Metrics *Metrics `json:"metrics,omitempty"`
@@ -597,7 +601,11 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	addr.Network = getHTTP3Network(addr.Network)
+	h3net, err := getHTTP3Network(addr.Network)
+	if err != nil {
+		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
+	}
+	addr.Network = h3net
 	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
@@ -849,7 +857,21 @@ func (s *Server) logRequest(
 
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
-	return slices.Contains(s.Protocols, proto)
+	if s.ListenProtocols == nil {
+		if slices.Contains(s.Protocols, proto) {
+			return true
+		}
+	} else {
+		for _, lnProtocols := range s.ListenProtocols {
+			for _, lnProtocol := range lnProtocols {
+				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // Listeners returns the server's listeners. These are active listeners,
@@ -1089,9 +1111,14 @@ const (
 )
 
 var networkTypesHTTP3 = map[string]string{
-	"unix": "unixgram",
-	"tcp4": "udp4",
-	"tcp6": "udp6",
+	"unixgram": "unixgram",
+	"udp":      "udp",
+	"udp4":     "udp4",
+	"udp6":     "udp6",
+	"tcp":      "udp",
+	"tcp4":     "udp4",
+	"tcp6":     "udp6",
+	"fdgram":   "fdgram",
 }
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
@@ -1106,11 +1133,10 @@ func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
 	networkTypesHTTP3[originalNetwork] = h3Network
 }
 
-func getHTTP3Network(originalNetwork string) string {
+func getHTTP3Network(originalNetwork string) (string, error) {
 	h3Network, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]
 	if !ok {
-		// TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
-		return "udp"
+		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
-	return h3Network
+	return h3Network, nil
 }

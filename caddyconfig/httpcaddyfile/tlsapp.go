@@ -57,13 +57,13 @@ func (st ServerType) buildTLSApp(
 	if autoHTTPS != "off" {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
-				for _, addr := range sb.keys {
+				for _, addr := range sb.parsedKeys {
 					if addr.Host != "" {
 						continue
 					}
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
-					for _, otherAddr := range sb.keys {
+					for _, otherAddr := range sb.parsedKeys {
 						if otherAddr.Original == addr.Original {
 							continue
 						}
@@ -93,7 +93,11 @@ func (st ServerType) buildTLSApp(
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
-		if !listenersUseAnyPortOtherThan(p.addresses, httpPort) {
+		var addresses []string
+		for _, addressWithProtocols := range p.addressesWithProtocols {
+			addresses = append(addresses, addressWithProtocols.address)
+		}
+		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
 			continue
 		}
 
@@ -183,8 +187,8 @@ func (st ServerType) buildTLSApp(
 					if acmeIssuer.Challenges.BindHost == "" {
 						// only binding to one host is supported
 						var bindHost string
-						if bindHosts, ok := cfgVal.Value.([]string); ok && len(bindHosts) > 0 {
-							bindHost = bindHosts[0]
+						if asserted, ok := cfgVal.Value.(addressesWithProtocols); ok && len(asserted.addresses) > 0 {
+							bindHost = asserted.addresses[0]
 						}
 						acmeIssuer.Challenges.BindHost = bindHost
 					}
