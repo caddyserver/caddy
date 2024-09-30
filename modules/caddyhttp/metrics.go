@@ -100,15 +100,6 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 		Help:      "Histogram of times to first byte in response bodies.",
 		Buckets:   durationBuckets,
 	}, httpLabels)
-
-	metrics.configSuccess = promauto.With(registry).NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_successful",
-		Help: "Whether the last configuration reload attempt was successful.",
-	})
-	metrics.configSuccessTime = promauto.With(registry).NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_success_timestamp_seconds",
-		Help: "Timestamp of the last successful configuration reload.",
-	})
 }
 
 // serverNameFromContext extracts the current server name from the context.

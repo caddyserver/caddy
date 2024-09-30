@@ -80,7 +80,6 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 				}
 			}
 		}
-		globalMetrics.configSuccess.Set(0)
 	}
 	newCtx.Context = c
 	newCtx.initMetrics()

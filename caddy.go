@@ -399,6 +399,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 func run(newCfg *Config, start bool) (Context, error) {
 	ctx, err := provisionContext(newCfg, start)
 	if err != nil {
+		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 
@@ -410,6 +411,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 	// some of the other apps at runtime
 	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
 	if err != nil {
+		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 
@@ -435,6 +437,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 		return nil
 	}()
 	if err != nil {
+		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 	globalMetrics.configSuccess.Set(1)
@@ -472,6 +475,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
 	defer func() {
 		if err != nil {
+			globalMetrics.configSuccess.Set(0)
 			// if there were any errors during startup,
 			// we should cancel the new context we created
 			// since the associated config won't be used;
@@ -498,7 +502,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 
 	// start the admin endpoint (and stop any prior one)
 	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg)
+		err = replaceLocalAdminServer(newCfg, ctx)
 		if err != nil {
 			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
 		}
