@@ -15,7 +15,10 @@
 package metrics
 
 import (
+	"errors"
 	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -29,7 +32,9 @@ func init() {
 // is permanently mounted to the admin API endpoint at "/metrics".
 // See the Metrics module for a configurable endpoint that is usable if the
 // Admin API is disabled.
-type AdminMetrics struct{}
+type AdminMetrics struct {
+	registry *prometheus.Registry
+}
 
 // CaddyModule returns the Caddy module information.
 func (AdminMetrics) CaddyModule() caddy.ModuleInfo {
@@ -39,9 +44,19 @@ func (AdminMetrics) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision -
+func (m *AdminMetrics) Provision(ctx caddy.Context) error {
+	m.registry = ctx.GetMetricsRegistry()
+	if m.registry == nil {
+		return errors.New("no metrics registry found")
+	}
+
+	return nil
+}
+
 // Routes returns a route for the /metrics endpoint.
 func (m *AdminMetrics) Routes() []caddy.AdminRoute {
-	metricsHandler := createMetricsHandler(nil, false)
+	metricsHandler := createMetricsHandler(nil, false, m.registry)
 	h := caddy.AdminHandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		metricsHandler.ServeHTTP(w, r)
 		return nil
@@ -51,5 +66,6 @@ func (m *AdminMetrics) Routes() []caddy.AdminRoute {
 
 // Interface guards
 var (
+	_ caddy.Provisioner = (*AdminMetrics)(nil)
 	_ caddy.AdminRouter = (*AdminMetrics)(nil)
 )
