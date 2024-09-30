@@ -23,7 +23,7 @@ type Metrics struct {
 	PerHost bool `json:"per_host,omitempty"`
 
 	init              sync.Once
-	configSuccess     prometheus.Gauge `json:"-"` //  TODO:
+	configSuccess     prometheus.Gauge `json:"-"`
 	configSuccessTime prometheus.Gauge `json:"-"`
 	httpMetrics       *httpMetrics     `json:"-"`
 }
