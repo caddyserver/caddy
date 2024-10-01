@@ -40,7 +40,7 @@ type ListenerWrapper struct {
 	Allow []string `json:"allow,omitempty"`
 	allow []netip.Prefix
 
-	// Denby is an optional list of CIDR ranges to
+	// Deny is an optional list of CIDR ranges to
 	// deny PROXY headers from.
 	Deny []string `json:"deny,omitempty"`
 	deny []netip.Prefix
@@ -50,7 +50,7 @@ type ListenerWrapper struct {
 	// Policy definitions are here: https://pkg.go.dev/github.com/pires/go-proxyproto@v0.7.0#Policy
 	FallbackPolicy Policy `json:"fallback_policy,omitempty"`
 
-	policy goproxy.PolicyFunc
+	policy goproxy.ConnPolicyFunc
 }
 
 // Provision sets up the listener wrapper.
@@ -69,13 +69,14 @@ func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
 		}
 		pp.deny = append(pp.deny, ipnet)
 	}
-	pp.policy = func(upstream net.Addr) (goproxy.Policy, error) {
+
+	pp.policy = func(options goproxy.ConnPolicyOptions) (goproxy.Policy, error) {
 		// trust unix sockets
-		if network := upstream.Network(); caddy.IsUnixNetwork(network) {
+		if network := options.Upstream.Network(); caddy.IsUnixNetwork(network) || caddy.IsFdNetwork(network) {
 			return goproxy.USE, nil
 		}
 		ret := pp.FallbackPolicy
-		host, _, err := net.SplitHostPort(upstream.String())
+		host, _, err := net.SplitHostPort(options.Upstream.String())
 		if err != nil {
 			return goproxy.REJECT, err
 		}
@@ -106,6 +107,6 @@ func (pp *ListenerWrapper) WrapListener(l net.Listener) net.Listener {
 		Listener:          l,
 		ReadHeaderTimeout: time.Duration(pp.Timeout),
 	}
-	pl.Policy = pp.policy
+	pl.ConnPolicy = pp.policy
 	return pl
 }

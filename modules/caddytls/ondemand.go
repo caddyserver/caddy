@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -156,10 +157,13 @@ func (p PermissionByHTTP) CertificateAllowed(ctx context.Context, name string) e
 		remote = chi.Conn.RemoteAddr().String()
 	}
 
-	p.logger.Debug("asking permission endpoint",
-		zap.String("remote", remote),
-		zap.String("domain", name),
-		zap.String("url", askURLString))
+	if c := p.logger.Check(zapcore.DebugLevel, "asking permission endpoint"); c != nil {
+		c.Write(
+			zap.String("remote", remote),
+			zap.String("domain", name),
+			zap.String("url", askURLString),
+		)
+	}
 
 	resp, err := onDemandAskClient.Get(askURLString)
 	if err != nil {
@@ -168,11 +172,14 @@ func (p PermissionByHTTP) CertificateAllowed(ctx context.Context, name string) e
 	}
 	resp.Body.Close()
 
-	p.logger.Debug("response from permission endpoint",
-		zap.String("remote", remote),
-		zap.String("domain", name),
-		zap.String("url", askURLString),
-		zap.Int("status", resp.StatusCode))
+	if c := p.logger.Check(zapcore.DebugLevel, "response from permission endpoint"); c != nil {
+		c.Write(
+			zap.String("remote", remote),
+			zap.String("domain", name),
+			zap.String("url", askURLString),
+			zap.Int("status", resp.StatusCode),
+		)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, ErrPermissionDenied, askEndpoint, resp.StatusCode)

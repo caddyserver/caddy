@@ -292,6 +292,10 @@ type BaseLog struct {
 	// The encoder is how the log entries are formatted or encoded.
 	EncoderRaw json.RawMessage `json:"encoder,omitempty" caddy:"namespace=caddy.logging.encoders inline_key=format"`
 
+	// Tees entries through a zap.Core module which can extract
+	// log entry metadata and fields for further processing.
+	CoreRaw json.RawMessage `json:"core,omitempty" caddy:"namespace=caddy.logging.cores inline_key=module"`
+
 	// Level is the minimum level to emit, and is inclusive.
 	// Possible levels: DEBUG, INFO, WARN, ERROR, PANIC, and FATAL
 	Level string `json:"level,omitempty"`
@@ -366,6 +370,14 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 		cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	}
 	cl.buildCore()
+	if cl.CoreRaw != nil {
+		mod, err := ctx.LoadModule(cl, "CoreRaw")
+		if err != nil {
+			return fmt.Errorf("loading log core module: %v", err)
+		}
+		core := mod.(zapcore.Core)
+		cl.core = zapcore.NewTee(cl.core, core)
+	}
 	return nil
 }
 

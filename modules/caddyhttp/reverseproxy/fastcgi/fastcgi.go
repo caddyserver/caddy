@@ -148,10 +148,13 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		zap.Object("request", loggableReq),
 		zap.Object("env", loggableEnv),
 	)
-	logger.Debug("roundtrip",
-		zap.String("dial", address),
-		zap.Object("env", loggableEnv),
-		zap.Object("request", loggableReq))
+	if c := t.logger.Check(zapcore.DebugLevel, "roundtrip"); c != nil {
+		c.Write(
+			zap.String("dial", address),
+			zap.Object("env", loggableEnv),
+			zap.Object("request", loggableReq),
+		)
+	}
 
 	// connect to the backend
 	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}

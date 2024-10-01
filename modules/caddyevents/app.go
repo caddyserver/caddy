@@ -124,18 +124,19 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.subscriptions = make(map[string]map[caddy.ModuleID][]Handler)
 
 	for _, sub := range app.Subscriptions {
-		if sub.HandlersRaw != nil {
-			handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
-			if err != nil {
-				return fmt.Errorf("loading event subscriber modules: %v", err)
-			}
-			for _, h := range handlersIface.([]any) {
-				sub.Handlers = append(sub.Handlers, h.(Handler))
-			}
-			if len(sub.Handlers) == 0 {
-				// pointless to bind without any handlers
-				return fmt.Errorf("no handlers defined")
-			}
+		if sub.HandlersRaw == nil {
+			continue
+		}
+		handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
+		if err != nil {
+			return fmt.Errorf("loading event subscriber modules: %v", err)
+		}
+		for _, h := range handlersIface.([]any) {
+			sub.Handlers = append(sub.Handlers, h.(Handler))
+		}
+		if len(sub.Handlers) == 0 {
+			// pointless to bind without any handlers
+			return fmt.Errorf("no handlers defined")
 		}
 	}
 
@@ -354,6 +355,11 @@ type Event struct {
 	name   string
 	origin caddy.Module
 }
+
+func (e Event) ID() uuid.UUID        { return e.id }
+func (e Event) Timestamp() time.Time { return e.ts }
+func (e Event) Name() string         { return e.name }
+func (e Event) Origin() caddy.Module { return e.origin }
 
 // CloudEvent exports event e as a structure that, when
 // serialized as JSON, is compatible with the

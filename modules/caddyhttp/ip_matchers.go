@@ -26,9 +26,11 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // MatchRemoteIP matches requests by the remote IP address,
@@ -79,7 +81,7 @@ func (m *MatchRemoteIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Err("the 'forwarded' option is no longer supported; use the 'client_ip' matcher instead")
 			}
 			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 				continue
 			}
 			m.Ranges = append(m.Ranges, d.Val())
@@ -143,15 +145,23 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	}
 	address := r.RemoteAddr
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
-		m.logger.Error("getting remote IP", zap.Error(err))
+		if c := m.logger.Check(zapcore.ErrorLevel, "getting remote "); c != nil {
+			c.Write(zap.Error(err))
+		}
+
 		return false
 	}
 	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	if !matches && !zoneFilter {
-		m.logger.Debug("zone ID from remote IP did not match", zap.String("zone", zoneID))
+		if c := m.logger.Check(zapcore.DebugLevel, "zone ID from remote IP did not match"); c != nil {
+			c.Write(zap.String("zone", zoneID))
+		}
 	}
 	return matches
 }
@@ -170,7 +180,7 @@ func (m *MatchClientIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextArg() {
 			if d.Val() == "private_ranges" {
-				m.Ranges = append(m.Ranges, PrivateRangesCIDR()...)
+				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
 				continue
 			}
 			m.Ranges = append(m.Ranges, d.Val())
@@ -228,6 +238,9 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchClientIP) Match(r *http.Request) bool {
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	}
 	address := GetVar(r.Context(), ClientIPVarKey).(string)
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
@@ -244,7 +257,9 @@ func (m MatchClientIP) Match(r *http.Request) bool {
 func provisionCidrsZonesFromRanges(ranges []string) ([]*netip.Prefix, []string, error) {
 	cidrs := []*netip.Prefix{}
 	zones := []string{}
+	repl := caddy.NewReplacer()
 	for _, str := range ranges {
+		str = repl.ReplaceAll(str, "")
 		// Exclude the zone_id from the IP
 		if strings.Contains(str, "%") {
 			split := strings.Split(str, "%")

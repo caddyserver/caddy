@@ -43,13 +43,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '~1.22.3'
+          go-version: '~1.23'
           check-latest: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.55
+          version: latest
 
           # Windows times out frequently after about 5m50s if we don't set a longer timeout.
           args: --timeout 10m
@@ -63,5 +63,5 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-input: '~1.22.3'
+          go-version-input: '~1.23.0'
           check-latest: true
