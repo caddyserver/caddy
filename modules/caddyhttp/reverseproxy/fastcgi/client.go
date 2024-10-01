@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -184,10 +185,13 @@ func (f clientCloser) Close() error {
 		return f.rwc.Close()
 	}
 
+	logLevel := zapcore.WarnLevel
 	if f.status >= 400 {
-		f.logger.Error("stderr", zap.ByteString("body", stderr))
-	} else {
-		f.logger.Warn("stderr", zap.ByteString("body", stderr))
+		logLevel = zapcore.ErrorLevel
+	}
+
+	if c := f.logger.Check(logLevel, "stderr"); c != nil {
+		c.Write(zap.ByteString("body", stderr))
 	}
 
 	return f.rwc.Close()

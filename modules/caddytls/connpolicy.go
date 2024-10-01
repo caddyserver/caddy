@@ -28,6 +28,7 @@ import (
 
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -338,8 +339,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 		cfg.KeyLogWriter = logFile.(io.Writer)
 
-		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
-			zap.String("log_filename", filename))
+		if c := tlsApp.logger.Check(zapcore.WarnLevel, "TLS SECURITY COMPROMISED: secrets logging is enabled!"); c != nil {
+			c.Write(zap.String("log_filename", filename))
+		}
 	}
 
 	setDefaultTLSParams(cfg)
@@ -553,16 +555,10 @@ type ClientAuthentication struct {
 //	 	trust_pool			   <module> {
 //			...
 //		}
-//		trusted_leaf_cert      <base64_der>
-//		trusted_leaf_cert_file <filename>
 //		verifier               <module>
 //	}
 //
-// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
-// - `trusted_leaf_certs`
-// - `trusted_leaf_cert_file`
-// - `trust_pool`
-//
+// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided.
 // Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
@@ -766,7 +762,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
 			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil {
+			clientauth.CARaw != nil || clientauth.ca != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert

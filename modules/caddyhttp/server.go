@@ -25,6 +25,7 @@ import (
 	"net/netip"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/quic-go/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -218,6 +220,10 @@ type Server struct {
 	// Default: `[h1 h2 h3]`
 	Protocols []string `json:"protocols,omitempty"`
 
+	// ListenProtocols overrides Protocols for each parallel address in Listen.
+	// A nil value or element indicates that Protocols will be used instead.
+	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	Metrics *Metrics `json:"metrics,omitempty"`
@@ -275,7 +281,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor < 3 {
 			err := s.h3server.SetQUICHeaders(w.Header())
 			if err != nil {
-				s.logger.Error("setting HTTP/3 Alt-Svc header", zap.Error(err))
+				if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 	}
@@ -283,9 +291,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject very long methods; probably a mistake or an attack
 	if len(r.Method) > 32 {
 		if s.shouldLogRequest(r) {
-			s.accessLogger.Debug("rejecting request with long method",
-				zap.String("method_trunc", r.Method[:32]),
-				zap.String("remote_addr", r.RemoteAddr))
+			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
+				c.Write(
+					zap.String("method_trunc", r.Method[:32]),
+					zap.String("remote_addr", r.RemoteAddr),
+				)
+			}
 		}
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -300,20 +311,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		//nolint:bodyclose
 		err := http.NewResponseController(w).EnableFullDuplex()
 		if err != nil {
-			s.logger.Warn("failed to enable full duplex", zap.Error(err))
+			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		}
 	}
 
-	// encode the request for logging purposes before
+	// clone the request for logging purposes before
 	// it enters any handler chain; this is necessary
 	// to capture the original request in case it gets
 	// modified during handling
+	// cloning the request and using .WithLazy is considerably faster
+	// than using .With, which will JSON encode the request immediately
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
 	loggableReq := zap.Object("request", LoggableHTTPRequest{
-		Request:              r,
+		Request:              r.Clone(r.Context()),
 		ShouldLogCredentials: shouldLogCredentials,
 	})
-	errLog := s.errorLogger.With(loggableReq)
+	errLog := s.errorLogger.WithLazy(loggableReq)
 
 	var duration time.Duration
 
@@ -379,6 +394,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// add HTTP error information to request context
 	r = s.Errors.WithError(r, err)
 
+	var fields []zapcore.Field
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
 		err2 := s.errorHandlerChain.ServeHTTP(w, r)
@@ -386,17 +402,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// user's error route handled the error response
 			// successfully, so now just log the error
 			for _, logger := range errLoggers {
-				logger.Debug(errMsg, errFields...)
+				if c := logger.Check(zapcore.DebugLevel, errMsg); c != nil {
+					if fields == nil {
+						fields = errFields()
+					}
+
+					c.Write(fields...)
+				}
 			}
 		} else {
 			// well... this is awkward
-			errFields = append([]zapcore.Field{
-				zap.String("error", err2.Error()),
-				zap.Namespace("first_error"),
-				zap.String("msg", errMsg),
-			}, errFields...)
 			for _, logger := range errLoggers {
-				logger.Error("error handling handler error", errFields...)
+				if c := logger.Check(zapcore.ErrorLevel, "error handling handler error"); c != nil {
+					if fields == nil {
+						fields = errFields()
+						fields = append([]zapcore.Field{
+							zap.String("error", err2.Error()),
+							zap.Namespace("first_error"),
+							zap.String("msg", errMsg),
+						}, fields...)
+					}
+					c.Write(fields...)
+				}
 			}
 			if handlerErr, ok := err.(HandlerError); ok {
 				w.WriteHeader(handlerErr.StatusCode)
@@ -405,11 +432,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
+		logLevel := zapcore.DebugLevel
+		if errStatus >= 500 {
+			logLevel = zapcore.ErrorLevel
+		}
+
 		for _, logger := range errLoggers {
-			if errStatus >= 500 {
-				logger.Error(errMsg, errFields...)
-			} else {
-				logger.Debug(errMsg, errFields...)
+			if c := logger.Check(logLevel, errMsg); c != nil {
+				if fields == nil {
+					fields = errFields()
+				}
+				c.Write(fields...)
 			}
 		}
 		w.WriteHeader(errStatus)
@@ -517,12 +550,9 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 }
 
 func (s *Server) hasTLSClientAuth() bool {
-	for _, cp := range s.TLSConnPolicies {
-		if cp.ClientAuthentication != nil && cp.ClientAuthentication.Active() {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.TLSConnPolicies, func(cp *caddytls.ConnectionPolicy) bool {
+		return cp.ClientAuthentication != nil && cp.ClientAuthentication.Active()
+	})
 }
 
 // findLastRouteWithHostMatcher returns the index of the last route
@@ -571,7 +601,11 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	addr.Network = getHTTP3Network(addr.Network)
+	h3net, err := getHTTP3Network(addr.Network)
+	if err != nil {
+		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
+	}
+	addr.Network = h3net
 	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
@@ -598,9 +632,9 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			}),
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
-			// TODO: remove this config when draft versions are no longer supported (we have no need to support drafts)
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
+				Tracer:   qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
@@ -746,7 +780,9 @@ func (s *Server) logTrace(mh MiddlewareHandler) {
 	if s.Logs == nil || !s.Logs.Trace {
 		return
 	}
-	s.traceLogger.Debug(caddy.GetModuleName(mh), zap.Any("module", mh))
+	if c := s.traceLogger.Check(zapcore.DebugLevel, caddy.GetModuleName(mh)); c != nil {
+		c.Write(zap.Any("module", mh))
+	}
 }
 
 // logRequest logs the request to access logs, unless skipped.
@@ -759,60 +795,82 @@ func (s *Server) logRequest(
 		return
 	}
 
-	repl.Set("http.response.status", wrec.Status()) // will be 0 if no response is written by us (Go will write 200 to client)
-	repl.Set("http.response.size", wrec.Size())
+	status := wrec.Status()
+	size := wrec.Size()
+
+	repl.Set("http.response.status", status) // will be 0 if no response is written by us (Go will write 200 to client)
+	repl.Set("http.response.size", size)
 	repl.Set("http.response.duration", duration)
 	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	userID, _ := repl.GetString("http.auth.user.id")
-
-	reqBodyLength := 0
-	if bodyReader != nil {
-		reqBodyLength = bodyReader.Length
-	}
-
-	extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
-
-	fieldCount := 6
-	fields := make([]zapcore.Field, 0, fieldCount+len(extra.fields))
-	fields = append(fields,
-		zap.Int("bytes_read", reqBodyLength),
-		zap.String("user_id", userID),
-		zap.Duration("duration", *duration),
-		zap.Int("size", wrec.Size()),
-		zap.Int("status", wrec.Status()),
-		zap.Object("resp_headers", LoggableHTTPHeader{
-			Header:               wrec.Header(),
-			ShouldLogCredentials: shouldLogCredentials,
-		}))
-	fields = append(fields, extra.fields...)
 
 	loggers := []*zap.Logger{accLog}
 	if s.Logs != nil {
 		loggers = s.Logs.wrapLogger(accLog, r)
 	}
 
-	// wrapping may return multiple loggers, so we log to all of them
+	message := "handled request"
+	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+		message = "NOP"
+	}
+
+	logLevel := zapcore.InfoLevel
+	if status >= 500 {
+		logLevel = zapcore.ErrorLevel
+	}
+
+	var fields []zapcore.Field
 	for _, logger := range loggers {
-		logAtLevel := logger.Info
-		if wrec.Status() >= 500 {
-			logAtLevel = logger.Error
+		c := logger.Check(logLevel, message)
+		if c == nil {
+			continue
 		}
-		message := "handled request"
-		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
-			message = "NOP"
+
+		if fields == nil {
+			userID, _ := repl.GetString("http.auth.user.id")
+
+			reqBodyLength := 0
+			if bodyReader != nil {
+				reqBodyLength = bodyReader.Length
+			}
+
+			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+
+			fieldCount := 6
+			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
+			fields = append(fields,
+				zap.Int("bytes_read", reqBodyLength),
+				zap.String("user_id", userID),
+				zap.Duration("duration", *duration),
+				zap.Int("size", size),
+				zap.Int("status", status),
+				zap.Object("resp_headers", LoggableHTTPHeader{
+					Header:               wrec.Header(),
+					ShouldLogCredentials: shouldLogCredentials,
+				}),
+			)
+			fields = append(fields, extra.fields...)
 		}
-		logAtLevel(message, fields...)
+
+		c.Write(fields...)
 	}
 }
 
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
-	for _, p := range s.Protocols {
-		if p == proto {
+	if s.ListenProtocols == nil {
+		if slices.Contains(s.Protocols, proto) {
 			return true
 		}
+	} else {
+		for _, lnProtocols := range s.ListenProtocols {
+			for _, lnProtocol := range lnProtocols {
+				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
+					return true
+				}
+			}
+		}
 	}
+
 	return false
 }
 
@@ -918,12 +976,9 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 // isTrustedClientIP returns true if the given IP address is
 // in the list of trusted IP ranges.
 func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
-	for _, ipRange := range trusted {
-		if ipRange.Contains(ipAddr) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(trusted, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ipAddr)
+	})
 }
 
 // trustedRealClientIP finds the client IP from the request assuming it is
@@ -1056,9 +1111,14 @@ const (
 )
 
 var networkTypesHTTP3 = map[string]string{
-	"unix": "unixgram",
-	"tcp4": "udp4",
-	"tcp6": "udp6",
+	"unixgram": "unixgram",
+	"udp":      "udp",
+	"udp4":     "udp4",
+	"udp6":     "udp6",
+	"tcp":      "udp",
+	"tcp4":     "udp4",
+	"tcp6":     "udp6",
+	"fdgram":   "fdgram",
 }
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
@@ -1073,11 +1133,10 @@ func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
 	networkTypesHTTP3[originalNetwork] = h3Network
 }
 
-func getHTTP3Network(originalNetwork string) string {
+func getHTTP3Network(originalNetwork string) (string, error) {
 	h3Network, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]
 	if !ok {
-		// TODO: Maybe a better default is to not enable HTTP/3 if we do not know the network?
-		return "udp"
+		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
-	return h3Network
+	return h3Network, nil
 }

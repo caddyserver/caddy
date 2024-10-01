@@ -72,7 +72,7 @@ func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
 
 	pp.policy = func(options goproxy.ConnPolicyOptions) (goproxy.Policy, error) {
 		// trust unix sockets
-		if network := options.Upstream.Network(); caddy.IsUnixNetwork(network) {
+		if network := options.Upstream.Network(); caddy.IsUnixNetwork(network) || caddy.IsFdNetwork(network) {
 			return goproxy.USE, nil
 		}
 		ret := pp.FallbackPolicy

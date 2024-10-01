@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"fmt"
+	"slices"
 )
 
 type adjacency map[string][]string
@@ -91,12 +92,7 @@ func (i *importGraph) areConnected(from, to string) bool {
 	if !ok {
 		return false
 	}
-	for _, v := range al {
-		if v == to {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(al, to)
 }
 
 func (i *importGraph) willCycle(from, to string) bool {

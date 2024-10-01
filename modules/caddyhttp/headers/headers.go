@@ -135,13 +135,14 @@ type HeaderOps struct {
 func (ops *HeaderOps) Provision(_ caddy.Context) error {
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
-			if r.SearchRegexp != "" {
-				re, err := regexp.Compile(r.SearchRegexp)
-				if err != nil {
-					return fmt.Errorf("replacement %d for header field '%s': %v", i, fieldName, err)
-				}
-				replacements[i].re = re
+			if r.SearchRegexp == "" {
+				continue
 			}
+			re, err := regexp.Compile(r.SearchRegexp)
+			if err != nil {
+				return fmt.Errorf("replacement %d for header field '%s': %v", i, fieldName, err)
+			}
+			replacements[i].re = re
 		}
 	}
 	return nil
