@@ -93,12 +93,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
-//	    buffer_requests
-//	    buffer_responses
-//	    max_buffer_size    <size>
+//	    request_buffers    <size>
+//	    response_buffers   <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
-//	    trace_logs
+//	    verbose_logs
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
