@@ -183,12 +183,12 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		}
 	}
 
-	if ln == nil {
-		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
-	}
-
 	if err != nil {
 		return nil, err
+	}
+
+	if ln == nil {
+		return nil, fmt.Errorf("unsupported network type: %s", na.Network)
 	}
 
 	if IsUnixNetwork(na.Network) {
