@@ -710,7 +710,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024*2))
 		if err != nil {
 			return nil, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}
