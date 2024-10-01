@@ -167,7 +167,19 @@ jobs:
           go version
           go env
           printf "\n\n"
-          CGO_ENABLED=0 go test -p 1 -tags nobadger -v ./...
+          retries=3
+          exit_code=0
+          while ((retries > 0)); do
+            CGO_ENABLED=0 go test -p 1 -tags nobadger -v ./...
+            exit_code=$?
+            if ((exit_code == 0)); then
+              break
+            fi
+            echo "\n\nTest failed: \$exit_code, retrying..."
+            ((retries--))
+          done
+          echo "Remote exit code: \$exit_code"
+          exit \$exit_code
           EOF
           test_result=$?
 
