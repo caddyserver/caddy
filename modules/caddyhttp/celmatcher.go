@@ -171,6 +171,9 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 		cel.Variable(CELRequestVarName, httpRequestObjectType),
 		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
+		ext.Bindings(),
+		ext.Lists(),
+		ext.Math(),
 		matcherLib,
 	)
 	if err != nil {
