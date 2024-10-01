@@ -163,12 +163,12 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// create the CEL environment
 	env, err := cel.NewEnv(
-		cel.Function(placeholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
-			placeholderFuncName+"_httpRequest_string",
+		cel.Function(CELPlaceholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
+			CELPlaceholderFuncName+"_httpRequest_string",
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
 		)),
-		cel.Variable("request", httpRequestObjectType),
+		cel.Variable(CELRequestVarName, httpRequestObjectType),
 		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
 		matcherLib,
@@ -251,7 +251,7 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 		return types.NewErr(
 			"invalid request of type '%v' to %s(request, placeholderVarName)",
 			lhs.Type(),
-			placeholderFuncName,
+			CELPlaceholderFuncName,
 		)
 	}
 	phStr, ok := rhs.(types.String)
@@ -259,7 +259,7 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 		return types.NewErr(
 			"invalid placeholder variable name of type '%v' to %s(request, placeholderVarName)",
 			rhs.Type(),
-			placeholderFuncName,
+			CELPlaceholderFuncName,
 		)
 	}
 
@@ -279,7 +279,7 @@ var httpRequestCELType = cel.ObjectType("http.Request", traits.ReceiverType)
 type celHTTPRequest struct{ *http.Request }
 
 func (cr celHTTPRequest) ResolveName(name string) (any, bool) {
-	if name == "request" {
+	if name == CELRequestVarName {
 		return cr, true
 	}
 	return nil, false
@@ -461,15 +461,15 @@ func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.Int
 		callArgs := call.Args()
 		reqAttr, ok := callArgs[0].(interpreter.InterpretableAttribute)
 		if !ok {
-			return nil, errors.New("missing 'request' argument")
+			return nil, errors.New("missing 'req' argument")
 		}
 		nsAttr, ok := reqAttr.Attr().(interpreter.NamespacedAttribute)
 		if !ok {
-			return nil, errors.New("missing 'request' argument")
+			return nil, errors.New("missing 'req' argument")
 		}
 		varNames := nsAttr.CandidateVariableNames()
-		if len(varNames) != 1 || len(varNames) == 1 && varNames[0] != "request" {
-			return nil, errors.New("missing 'request' argument")
+		if len(varNames) != 1 || len(varNames) == 1 && varNames[0] != CELRequestVarName {
+			return nil, errors.New("missing 'req' argument")
 		}
 		matcherData, ok := callArgs[1].(interpreter.InterpretableConst)
 		if !ok {
@@ -528,7 +528,7 @@ func celMatcherStringListMacroExpander(funcName string) cel.MacroFactory {
 				return nil, eh.NewError(arg.ID(), "matcher arguments must be string constants")
 			}
 		}
-		return eh.NewCall(funcName, eh.NewIdent("request"), eh.NewList(matchArgs...)), nil
+		return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), eh.NewList(matchArgs...)), nil
 	}
 }
 
@@ -542,7 +542,7 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 			return nil, eh.NewError(0, "matcher requires one argument")
 		}
 		if isCELStringExpr(args[0]) {
-			return eh.NewCall(funcName, eh.NewIdent("request"), args[0]), nil
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), args[0]), nil
 		}
 		return nil, eh.NewError(args[0].ID(), "matcher argument must be a string literal")
 	}
@@ -576,7 +576,7 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 					return nil, eh.NewError(entry.AsMapEntry().Value().ID(), "matcher map values must be string or list literals")
 				}
 			}
-			return eh.NewCall(funcName, eh.NewIdent("request"), arg), nil
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), arg), nil
 		case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.SelectKind:
 			// appeasing the linter :)
 		}
@@ -650,7 +650,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == "caddyPlaceholder" {
+		if call.FunctionName() == CELPlaceholderFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
@@ -708,7 +708,7 @@ var (
 	// The placeholder may not be preceded by a backslash; the expansion
 	// will include the preceding character if it is not a backslash.
 	placeholderRegexp    = regexp.MustCompile(`([^\\]|^){([a-zA-Z][\w.-]+)}`)
-	placeholderExpansion = `${1}caddyPlaceholder(request, "${2}")`
+	placeholderExpansion = `${1}placeholder(req, "${2}")`
 
 	// As a second pass, we need to strip the escape character in front of
 	// the placeholder, if it exists.
@@ -721,7 +721,10 @@ var (
 var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
-const placeholderFuncName = "caddyPlaceholder"
+const CELPlaceholderFuncName = "placeholder"
+
+// The name of the CEL request variable.
+const CELRequestVarName = "req"
 
 const MatcherNameCtxKey = "matcher_name"
 

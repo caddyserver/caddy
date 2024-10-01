@@ -225,7 +225,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) == 0 {
 			return eh.NewCall("file",
-				eh.NewIdent("request"),
+				eh.NewIdent(caddyhttp.CELRequestVarName),
 				eh.NewMap(),
 			), nil
 		}
@@ -233,7 +233,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			arg := args[0]
 			if isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg) {
 				return eh.NewCall("file",
-					eh.NewIdent("request"),
+					eh.NewIdent(caddyhttp.CELRequestVarName),
 					eh.NewMap(eh.NewMapEntry(
 						eh.NewLiteral(types.String("try_files")),
 						eh.NewList(arg),
@@ -242,7 +242,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 				), nil
 			}
 			if isCELTryFilesLiteral(arg) {
-				return eh.NewCall("file", eh.NewIdent("request"), arg), nil
+				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), arg), nil
 			}
 			return nil, &common.Error{
 				Location: eh.OffsetLocation(arg.ID()),
@@ -259,7 +259,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			}
 		}
 		return eh.NewCall("file",
-			eh.NewIdent("request"),
+			eh.NewIdent(caddyhttp.CELRequestVarName),
 			eh.NewMap(eh.NewMapEntry(
 				eh.NewLiteral(types.String("try_files")),
 				eh.NewList(args...),
@@ -634,7 +634,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == "caddyPlaceholder" {
+		if call.FunctionName() == caddyhttp.CELPlaceholderFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
