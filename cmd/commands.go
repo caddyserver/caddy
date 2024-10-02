@@ -438,8 +438,7 @@ EXPERIMENTAL: May be changed or removed.
 		},
 	})
 
-	defaultFactory.Use(func(rootCmd *cobra.Command) {
-		RegisterCommand(Command{
+	RegisterCommand(Command{
 			Name:  "manpage",
 			Usage: "--directory <path>",
 			Short: "Generates the manual pages for Caddy commands",
