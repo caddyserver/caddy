@@ -34,6 +34,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -312,7 +313,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	}
 	if admin.Origins == nil {
 		if addr.isLoopback() {
-			if addr.IsUnixNetwork() {
+			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
 				// RFC 2616, Section 14.26:
 				// "A client MUST include a Host header field in all HTTP/1.1 request
 				// messages. If the requested URI does not include an Internet host
@@ -350,7 +351,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 				uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
 			}
 		}
-		if !addr.IsUnixNetwork() {
+		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
@@ -675,13 +676,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					// key recognized; make sure its HTTP request is permitted
 					for _, accessPerm := range adminAccess.Permissions {
 						// verify method
-						methodFound := accessPerm.Methods == nil
-						for _, method := range accessPerm.Methods {
-							if method == r.Method {
-								methodFound = true
-								break
-							}
-						}
+						methodFound := accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method)
 						if !methodFound {
 							return APIError{
 								HTTPStatus: http.StatusForbidden,
@@ -877,13 +872,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // a trustworthy/expected value. This helps to mitigate DNS
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
-	var allowed bool
-	for _, allowedOrigin := range h.allowedOrigins {
-		if r.Host == allowedOrigin.Host {
-			allowed = true
-			break
-		}
-	}
+	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
+		return r.Host == u.Host
+	})
 	if !allowed {
 		return APIError{
 			HTTPStatus: http.StatusForbidden,

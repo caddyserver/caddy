@@ -24,6 +24,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,7 +113,8 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/x-ttf*",
 					"application/xhtml+xml*",
 					"application/xml*",
-					"font/*",
+					"font/ttf*",
+					"font/otf*",
 					"image/svg+xml*",
 					"image/vnd.microsoft.icon*",
 					"image/x-icon*",
@@ -264,6 +266,14 @@ func (rw *responseWriter) FlushError() error {
 		// therefore add the Content-Encoding header; this happens in the first call
 		// to rw.Write (see bug in #4314)
 		return nil
+	}
+	// also flushes the encoder, if any
+	// see: https://github.com/jjiang-stripe/caddy-slow-gzip
+	if rw.w != nil {
+		err := rw.w.Flush()
+		if err != nil {
+			return err
+		}
 	}
 	//nolint:bodyclose
 	return http.NewResponseController(rw.ResponseWriter).Flush()
@@ -432,12 +442,9 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 		}
 
 		// set server preference
-		prefOrder := -1
-		for i, p := range preferredOrder {
-			if encName == p {
-				prefOrder = len(preferredOrder) - i
-				break
-			}
+		prefOrder := slices.Index(preferredOrder, encName)
+		if prefOrder > -1 {
+			prefOrder = len(preferredOrder) - prefOrder
 		}
 
 		prefs = append(prefs, encodingPreference{
@@ -474,6 +481,7 @@ type encodingPreference struct {
 type Encoder interface {
 	io.WriteCloser
 	Reset(io.Writer)
+	Flush() error // encoder by default buffers data to maximize compressing rate
 }
 
 // Encoding is a type which can create encoders of its kind

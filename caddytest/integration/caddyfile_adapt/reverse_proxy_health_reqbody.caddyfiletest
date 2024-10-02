@@ -1,0 +1,40 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	health_uri /health
+	health_request_body "test body"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"health_checks": {
+										"active": {
+											"body": "test body",
+											"uri": "/health"
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

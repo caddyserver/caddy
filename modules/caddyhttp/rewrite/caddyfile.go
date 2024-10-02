@@ -106,7 +106,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 
 	switch args[0] {
 	case "strip_prefix":
-		if len(args) > 2 {
+		if len(args) != 2 {
 			return nil, h.ArgErr()
 		}
 		rewr.StripPathPrefix = args[1]
@@ -115,7 +115,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 		}
 
 	case "strip_suffix":
-		if len(args) > 2 {
+		if len(args) != 2 {
 			return nil, h.ArgErr()
 		}
 		rewr.StripPathSuffix = args[1]

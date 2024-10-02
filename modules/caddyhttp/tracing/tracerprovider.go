@@ -7,6 +7,7 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // globalTracerProvider stores global tracer provider and is responsible for graceful shutdown when nobody is using it.
@@ -47,7 +48,9 @@ func (t *tracerProvider) cleanupTracerProvider(logger *zap.Logger) error {
 		if t.tracerProvider != nil {
 			// tracerProvider.ForceFlush SHOULD be invoked according to https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#forceflush
 			if err := t.tracerProvider.ForceFlush(context.Background()); err != nil {
-				logger.Error("forcing flush", zap.Error(err))
+				if c := logger.Check(zapcore.ErrorLevel, "forcing flush"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 
 			// tracerProvider.Shutdown MUST be invoked according to https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/sdk.md#shutdown

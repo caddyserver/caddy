@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -64,17 +65,6 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
-}
-
-// Skipped returns true if name is in skipSlice, which
-// should be either the Skip or SkipCerts field on ahc.
-func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
-	for _, n := range skipSlice {
-		if name == n {
-			return true
-		}
-	}
-	return false
 }
 
 // automaticHTTPSPhase1 provisions all route matchers, determines
@@ -158,7 +148,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
-							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+							if !slices.Contains(srv.AutoHTTPS.Skip, d) {
 								serverDomainSet[d] = struct{}{}
 							}
 						}
@@ -193,7 +183,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		} else {
 			for d := range serverDomainSet {
 				if certmagic.SubjectQualifiesForCert(d) &&
-					!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					!slices.Contains(srv.AutoHTTPS.SkipCerts, d) {
 					// if a certificate for this name is already loaded,
 					// don't obtain another one for it, unless we are
 					// supposed to ignore loaded certificates

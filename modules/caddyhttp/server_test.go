@@ -121,6 +121,29 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	}
 }
 
+func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
+	s := &Server{}
+
+	extra := new(ExtraLogFields)
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	wrec := NewResponseRecorder(rec, nil, nil)
+
+	duration := 50 * time.Millisecond
+	repl := NewTestReplacer(req)
+	bodyReader := &lengthReader{Source: req.Body}
+
+	accLog := zap.NewNop()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+	}
+}
+
 func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
 	s := &Server{}
 

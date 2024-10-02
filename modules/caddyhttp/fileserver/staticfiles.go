@@ -15,6 +15,7 @@
 package fileserver
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -235,6 +237,24 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.precompressors[ae] = p
 	}
 
+	if fsrv.Browse != nil {
+		// check sort options
+		for idx, sortOption := range fsrv.Browse.SortOptions {
+			switch idx {
+			case 0:
+				if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
+					return fmt.Errorf("the first option must be one of the following: %s, %s, %s, %s, but got %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOption)
+				}
+			case 1:
+				if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
+					return fmt.Errorf("the second option must be one of the following: %s, %s, but got %s", sortOrderAsc, sortOrderDesc, sortOption)
+				}
+			default:
+				return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -267,11 +287,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
 	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
 
-	fsrv.logger.Debug("sanitized path join",
-		zap.String("site_root", root),
-		zap.String("fs", fsName),
-		zap.String("request_path", r.URL.Path),
-		zap.String("result", filename))
+	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
+		c.Write(
+			zap.String("site_root", root),
+			zap.String("fs", fsName),
+			zap.String("request_path", r.URL.Path),
+			zap.String("result", filename),
+		)
+	}
 
 	// get information about the file
 	info, err := fs.Stat(fileSystem, filename)
@@ -294,9 +317,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
 			if fileHidden(indexPath, filesToHide) {
 				// pretend this file doesn't exist
-				fsrv.logger.Debug("hiding index file",
-					zap.String("filename", indexPath),
-					zap.Strings("files_to_hide", filesToHide))
+				if c := fsrv.logger.Check(zapcore.DebugLevel, "hiding index file"); c != nil {
+					c.Write(
+						zap.String("filename", indexPath),
+						zap.Strings("files_to_hide", filesToHide),
+					)
+				}
 				continue
 			}
 
@@ -316,7 +342,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			info = indexInfo
 			filename = indexPath
 			implicitIndexFile = true
-			fsrv.logger.Debug("located index file", zap.String("filename", filename))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "located index file"); c != nil {
+				c.Write(zap.String("filename", filename))
+			}
 			break
 		}
 	}
@@ -324,9 +352,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// if still referencing a directory, delegate
 	// to browse or return an error
 	if info.IsDir() {
-		fsrv.logger.Debug("no index file in directory",
-			zap.String("path", filename),
-			zap.Strings("index_filenames", fsrv.IndexNames))
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "no index file in directory"); c != nil {
+			c.Write(
+				zap.String("path", filename),
+				zap.Strings("index_filenames", fsrv.IndexNames),
+			)
+		}
 		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
 			return fsrv.serveBrowse(fileSystem, root, filename, w, r, next)
 		}
@@ -336,9 +367,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// one last check to ensure the file isn't hidden (we might
 	// have changed the filename from when we last checked)
 	if fileHidden(filename, filesToHide) {
-		fsrv.logger.Debug("hiding file",
-			zap.String("filename", filename),
-			zap.Strings("files_to_hide", filesToHide))
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "hiding file"); c != nil {
+			c.Write(
+				zap.String("filename", filename),
+				zap.Strings("files_to_hide", filesToHide),
+			)
+		}
 		return fsrv.notFound(w, r, next)
 	}
 
@@ -356,15 +390,21 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 			if implicitIndexFile && !strings.HasSuffix(origReq.URL.Path, "/") {
 				to := origReq.URL.Path + "/"
-				fsrv.logger.Debug("redirecting to canonical URI (adding trailing slash for directory)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
+				if c := fsrv.logger.Check(zapcore.DebugLevel, "redirecting to canonical URI (adding trailing slash for directory"); c != nil {
+					c.Write(
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to),
+					)
+				}
 				return redirect(w, r, to)
 			} else if !implicitIndexFile && strings.HasSuffix(origReq.URL.Path, "/") {
 				to := origReq.URL.Path[:len(origReq.URL.Path)-1]
-				fsrv.logger.Debug("redirecting to canonical URI (removing trailing slash for file)",
-					zap.String("from_path", origReq.URL.Path),
-					zap.String("to_path", to))
+				if c := fsrv.logger.Check(zapcore.DebugLevel, "redirecting to canonical URI (removing trailing slash for file"); c != nil {
+					c.Write(
+						zap.String("from_path", origReq.URL.Path),
+						zap.String("to_path", to),
+					)
+				}
 				return redirect(w, r, to)
 			}
 		}
@@ -392,13 +432,19 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		compressedFilename := filename + precompress.Suffix()
 		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
-			fsrv.logger.Debug("precompressed file not accessible", zap.String("filename", compressedFilename), zap.Error(err))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
+				c.Write(zap.String("filename", compressedFilename), zap.Error(err))
+			}
 			continue
 		}
-		fsrv.logger.Debug("opening compressed sidecar file", zap.String("filename", compressedFilename), zap.Error(err))
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "opening compressed sidecar file"); c != nil {
+			c.Write(zap.String("filename", compressedFilename), zap.Error(err))
+		}
 		file, err = fsrv.openFile(fileSystem, compressedFilename, w)
 		if err != nil {
-			fsrv.logger.Warn("opening precompressed file failed", zap.String("filename", compressedFilename), zap.Error(err))
+			if c := fsrv.logger.Check(zapcore.WarnLevel, "opening precompressed file failed"); c != nil {
+				c.Write(zap.String("filename", compressedFilename), zap.Error(err))
+			}
 			if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
 				return err
 			}
@@ -429,7 +475,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// no precompressed file found, use the actual file
 	if file == nil {
-		fsrv.logger.Debug("opening file", zap.String("filename", filename))
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "opening file"); c != nil {
+			c.Write(zap.String("filename", filename))
+		}
 
 		// open the file
 		file, err = fsrv.openFile(fileSystem, filename, w)
@@ -529,10 +577,14 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
-			fsrv.logger.Debug("file not found", zap.String("filename", filename), zap.Error(err))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "file not found"); c != nil {
+				c.Write(zap.String("filename", filename), zap.Error(err))
+			}
 			return nil, caddyhttp.Error(http.StatusNotFound, err)
 		} else if errors.Is(err, fs.ErrPermission) {
-			fsrv.logger.Debug("permission denied", zap.String("filename", filename), zap.Error(err))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "permission denied"); c != nil {
+				c.Write(zap.String("filename", filename), zap.Error(err))
+			}
 			return nil, caddyhttp.Error(http.StatusForbidden, err)
 		}
 		// maybe the server is under load and ran out of file descriptors?
@@ -540,7 +592,9 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 		//nolint:gosec
 		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
-		fsrv.logger.Debug("retry after backoff", zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "retry after backoff"); c != nil {
+			c.Write(zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))
+		}
 		return nil, caddyhttp.Error(http.StatusServiceUnavailable, err)
 	}
 	return file, nil
@@ -690,6 +744,10 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 		if err != nil {
 			return "", fmt.Errorf("cannot read etag from file %s: %v", etagFilename, err)
 		}
+
+		// Etags should not contain newline characters
+		etag = bytes.ReplaceAll(etag, []byte("\n"), []byte{})
+
 		return string(etag), nil
 	}
 	return "", nil

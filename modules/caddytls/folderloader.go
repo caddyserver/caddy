@@ -150,6 +150,12 @@ func tlsCertFromCertAndKeyPEMBundle(bundle []byte) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("no private key block found")
 	}
 
+	// if the start of the key file looks like an encrypted private key,
+	// reject it with a helpful error message
+	if strings.HasPrefix(string(keyPEMBytes[:40]), "ENCRYPTED") {
+		return tls.Certificate{}, fmt.Errorf("encrypted private keys are not supported; please decrypt the key first")
+	}
+
 	cert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("making X509 key pair: %v", err)
