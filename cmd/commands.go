@@ -439,7 +439,7 @@ EXPERIMENTAL: May be changed or removed.
 	})
 
 	defaultFactory.Use(func(rootCmd *cobra.Command) {
-		RegisterCommand(Command{
+		rootCmd.AddCommand(caddyCmdToCobra(Command{
 			Name:  "manpage",
 			Usage: "--directory <path>",
 			Short: "Generates the manual pages for Caddy commands",
@@ -469,7 +469,7 @@ argument of --directory. If the directory does not exist, it will be created.
 					return caddy.ExitCodeSuccess, nil
 				})
 			},
-		})
+		}))
 
 		// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
 		rootCmd.AddCommand(&cobra.Command{
