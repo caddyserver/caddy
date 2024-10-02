@@ -447,6 +447,10 @@ func (t *TLS) Manage(names []string) error {
 	for ap, names := range policyToNames {
 		err := ap.magic.ManageAsync(t.ctx.Context, names)
 		if err != nil {
+			const maxNamesToDisplay = 100
+			if len(names) > maxNamesToDisplay {
+				names = append(names[:maxNamesToDisplay], fmt.Sprintf("(%d more...)", len(names)-maxNamesToDisplay))
+			}
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
 		for _, name := range names {

@@ -539,11 +539,6 @@ func (app *App) Start() error {
 						return fmt.Errorf("network '%s' cannot handle HTTP/1 or HTTP/2 connections", listenAddr.Network)
 					}
 
-					if useTLS {
-						// create TLS listener - this enables and terminates TLS
-						ln = tls.NewListener(ln, tlsCfg)
-					}
-
 					// wrap listener before TLS (up to the TLS placeholder wrapper)
 					var lnWrapperIdx int
 					for i, lnWrapper := range srv.listenerWrappers {
@@ -552,6 +547,11 @@ func (app *App) Start() error {
 							break
 						}
 						ln = lnWrapper.WrapListener(ln)
+					}
+
+					if useTLS {
+						// create TLS listener - this enables and terminates TLS
+						ln = tls.NewListener(ln, tlsCfg)
 					}
 
 					// finish wrapping listener where we left off before TLS

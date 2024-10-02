@@ -171,6 +171,12 @@ issues:
     - path: modules/logging/filters.go
       linters:
         - dupl
+    - path: modules/caddyhttp/matchers.go
+      linters:
+        - dupl
+    - path: modules/caddyhttp/vars.go
+      linters:
+        - dupl
     - path: _test\.go
       linters:
         - errcheck
