@@ -534,8 +534,8 @@ func (st *ServerType) serversFromPairings(
 	if hsp, ok := options["https_port"].(int); ok {
 		httpsPort = strconv.Itoa(hsp)
 	}
-	autoHTTPS := "on"
-	if ah, ok := options["auto_https"].(string); ok {
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
 		autoHTTPS = ah
 	}
 
@@ -594,17 +594,37 @@ func (st *ServerType) serversFromPairings(
 		}
 
 		// handle the auto_https global option
-		if autoHTTPS != "on" {
-			srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-			switch autoHTTPS {
+		for _, val := range autoHTTPS {
+			switch val {
 			case "off":
+				if srv.AutoHTTPS == nil {
+					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+				}
 				srv.AutoHTTPS.Disabled = true
+
 			case "disable_redirects":
+				if srv.AutoHTTPS == nil {
+					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+				}
 				srv.AutoHTTPS.DisableRedir = true
+
 			case "disable_certs":
+				if srv.AutoHTTPS == nil {
+					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+				}
 				srv.AutoHTTPS.DisableCerts = true
+
 			case "ignore_loaded_certs":
+				if srv.AutoHTTPS == nil {
+					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+				}
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
+
+			case "prefer_wildcard":
+				if srv.AutoHTTPS == nil {
+					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
+				}
+				srv.AutoHTTPS.PreferWildcard = true
 			}
 		}
 
@@ -673,7 +693,7 @@ func (st *ServerType) serversFromPairings(
 		})
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
-		autoHTTPSWillAddConnPolicy := autoHTTPS != "off"
+		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
 
 		// if needed, the ServerLogConfig is initialized beforehand so
 		// that all server blocks can populate it with data, even when not
@@ -757,6 +777,13 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
+			wildcardHosts := []string{}
+			for _, addr := range sblock.parsedKeys {
+				if strings.HasPrefix(addr.Host, "*.") {
+					wildcardHosts = append(wildcardHosts, addr.Host[2:])
+				}
+			}
+
 			for _, addr := range sblock.parsedKeys {
 				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
@@ -769,6 +796,18 @@ func (st *ServerType) serversFromPairings(
 						if !slices.Contains(srv.AutoHTTPS.Skip, addr.Host) {
 							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 						}
+					}
+				}
+
+				// If prefer wildcard is enabled, then we add hosts that are
+				// already covered by the wildcard to the skip list
+				if srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard && addr.Scheme == "https" {
+					baseDomain := addr.Host
+					if idx := strings.Index(baseDomain, "."); idx != -1 {
+						baseDomain = baseDomain[idx+1:]
+					}
+					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
+						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
 
@@ -919,7 +958,10 @@ func (st *ServerType) serversFromPairings(
 		if addressQualifiesForTLS &&
 			!hasCatchAllTLSConnPolicy &&
 			(len(srv.TLSConnPolicies) > 0 || !autoHTTPSWillAddConnPolicy || defaultSNI != "" || fallbackSNI != "") {
-			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{DefaultSNI: defaultSNI, FallbackSNI: fallbackSNI})
+			srv.TLSConnPolicies = append(srv.TLSConnPolicies, &caddytls.ConnectionPolicy{
+				DefaultSNI:  defaultSNI,
+				FallbackSNI: fallbackSNI,
+			})
 		}
 
 		// tidy things up a bit

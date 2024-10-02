@@ -45,8 +45,8 @@ func (st ServerType) buildTLSApp(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
-	autoHTTPS := "on"
-	if ah, ok := options["auto_https"].(string); ok {
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
 		autoHTTPS = ah
 	}
 
@@ -54,13 +54,14 @@ func (st ServerType) buildTLSApp(
 	// key, so that they don't get forgotten/omitted by auto-HTTPS
 	// (since they won't appear in route matchers)
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	if autoHTTPS != "off" {
+	if !slices.Contains(autoHTTPS, "off") {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
 				for _, addr := range sb.parsedKeys {
 					if addr.Host != "" {
 						continue
 					}
+
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
 					for _, otherAddr := range sb.parsedKeys {
@@ -350,7 +351,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	if autoHTTPS != "off" && autoHTTPS != "disable_certs" {
+	if !slices.Contains(autoHTTPS, "off") && !slices.Contains(autoHTTPS, "disable_certs") {
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
@@ -417,7 +418,10 @@ func (st ServerType) buildTLSApp(
 		}
 
 		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(
+			tlsApp.Automation.Policies,
+			slices.Contains(autoHTTPS, "prefer_wildcard"),
+		)
 
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
@@ -563,7 +567,7 @@ func newBaseAutomationPolicy(
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy, preferWildcard bool) []*caddytls.AutomationPolicy {
 	// sort from most specific to least specific; we depend on this ordering
 	sort.SliceStable(aps, func(i, j int) bool {
 		if automationPolicyIsSubset(aps[i], aps[j]) {
@@ -646,6 +650,31 @@ outer:
 					}
 					aps = slices.Delete(aps, j, j+1)
 					j--
+				}
+			}
+
+			if preferWildcard {
+				// remove subjects from i if they're covered by a wildcard in j
+				iSubjs := aps[i].SubjectsRaw
+				for iSubj := 0; iSubj < len(iSubjs); iSubj++ {
+					for jSubj := range aps[j].SubjectsRaw {
+						if !strings.HasPrefix(aps[j].SubjectsRaw[jSubj], "*.") {
+							continue
+						}
+						if certmagic.MatchWildcard(aps[i].SubjectsRaw[iSubj], aps[j].SubjectsRaw[jSubj]) {
+							iSubjs = slices.Delete(iSubjs, iSubj, iSubj+1)
+							iSubj--
+							break
+						}
+					}
+				}
+				aps[i].SubjectsRaw = iSubjs
+
+				// remove i if it has no subjects left
+				if len(aps[i].SubjectsRaw) == 0 {
+					aps = slices.Delete(aps, i, i+1)
+					i--
+					continue outer
 				}
 			}
 		}

@@ -452,15 +452,22 @@ func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
 
 func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-	if !d.Next() {
+	val := d.RemainingArgs()
+	if len(val) == 0 {
 		return "", d.ArgErr()
 	}
-	val := d.Val()
-	if d.Next() {
-		return "", d.ArgErr()
-	}
-	if val != "off" && val != "disable_redirects" && val != "disable_certs" && val != "ignore_loaded_certs" {
-		return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', or 'ignore_loaded_certs'")
+	for _, v := range val {
+		switch v {
+		case "off":
+		case "disable_redirects":
+		case "disable_certs":
+		case "ignore_loaded_certs":
+		case "prefer_wildcard":
+			break
+
+		default:
+			return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', 'ignore_loaded_certs', or 'prefer_wildcard'")
+		}
 	}
 	return val, nil
 }
