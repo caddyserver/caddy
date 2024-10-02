@@ -711,7 +711,7 @@ var (
 	// The placeholder may not be preceded by a backslash; the expansion
 	// will include the preceding character if it is not a backslash.
 	placeholderRegexp    = regexp.MustCompile(`([^\\]|^){([a-zA-Z][\w.-]+)}`)
-	placeholderExpansion = `${1}placeholder(req, "${2}")`
+	placeholderExpansion = `${1}ph(req, "${2}")`
 
 	// As a second pass, we need to strip the escape character in front of
 	// the placeholder, if it exists.
@@ -724,7 +724,7 @@ var (
 var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
-const CELPlaceholderFuncName = "placeholder"
+const CELPlaceholderFuncName = "ph"
 
 // The name of the CEL request variable.
 const CELRequestVarName = "req"
