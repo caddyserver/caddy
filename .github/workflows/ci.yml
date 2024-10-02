@@ -206,6 +206,6 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: build --single-target --auto-snapshot
+          args: build --single-target --snapshot
         env:
           TAG: ""
