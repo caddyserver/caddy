@@ -23,6 +23,8 @@ import (
 	"reflect"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
 
@@ -47,6 +49,7 @@ type Context struct {
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
 	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
+	metricsRegistry *prometheus.Registry
 }
 
 // NewContext provides a new context derived from the given
@@ -58,7 +61,7 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg}
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -79,6 +82,7 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 		}
 	}
 	newCtx.Context = c
+	newCtx.initMetrics()
 	return newCtx, wrappedCancel
 }
 
@@ -95,6 +99,22 @@ func (ctx *Context) Filesystems() FileSystems {
 		return &filesystems.FilesystemMap{}
 	}
 	return ctx.cfg.filesystems
+}
+
+// Returns the active metrics registry for the context
+// EXPERIMENTAL: This API is subject to change.
+func (ctx *Context) GetMetricsRegistry() *prometheus.Registry {
+	return ctx.metricsRegistry
+}
+
+func (ctx *Context) initMetrics() {
+	ctx.metricsRegistry.MustRegister(
+		collectors.NewBuildInfoCollector(),
+		adminMetrics.requestCount,
+		adminMetrics.requestErrors,
+		globalMetrics.configSuccess,
+		globalMetrics.configSuccessTime,
+	)
 }
 
 // OnExit executes f when the process exits gracefully.

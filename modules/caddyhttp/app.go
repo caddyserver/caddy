@@ -347,6 +347,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
+			if srv.Metrics != nil {
+				srv.Metrics.init = sync.Once{}
+				srv.Metrics.httpMetrics = &httpMetrics{}
+			}
 			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)

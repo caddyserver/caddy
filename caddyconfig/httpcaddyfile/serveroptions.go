@@ -240,13 +240,13 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
 			serverOpts.Metrics = new(caddyhttp.Metrics)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "per_host":
+					serverOpts.Metrics.PerHost = true
+				}
+			}
 
 		case "trace":
 			if d.NextArg() {
