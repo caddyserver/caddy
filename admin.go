@@ -214,7 +214,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -270,7 +270,6 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admi
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
-		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
@@ -382,7 +381,9 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // for the admin endpoint exists in cfg, a default one is used, so
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
-func replaceLocalAdminServer(cfg *Config) error {
+// Critically note that some elements and functionality of the context
+// may not be ready, e.g. storage. Tread carefully.
+func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
@@ -424,7 +425,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 		return err
 	}
 
-	handler := cfg.Admin.newAdminHandler(addr, false)
+	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
 
 	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
@@ -545,7 +546,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
-	handler := cfg.Admin.newAdminHandler(addr, true)
+	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
 
 	// create client certificate pool for TLS mutual auth, and extract public keys
 	// so that we can enforce access controls at the application layer
