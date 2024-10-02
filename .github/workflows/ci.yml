@@ -202,3 +202,18 @@ jobs:
         with:
           version: latest
           args: check
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "~1.23"
+          check-latest: true
+      - name: Install xcaddy
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          xcaddy version
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: build --single-target --snapshot
+        env:
+          TAG: "master"
