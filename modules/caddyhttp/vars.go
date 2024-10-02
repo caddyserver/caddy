@@ -203,6 +203,11 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	return false
 }
 
+// MatchWithError returns true if r matches m.
+func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
+}
+
 // MatchVarsRE matches the value of the context variables by a given regular expression.
 //
 // Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
@@ -300,6 +305,11 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
+	return m.Match(r), nil
 }
 
 // Validate validates m's regular expressions.
