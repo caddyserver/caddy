@@ -108,6 +108,11 @@ var supportedCertKeyTypes = map[string]certmagic.KeyType{
 // implementation exists (e.g. P256). The latter ones can be
 // found here:
 // https://github.com/golang/go/tree/master/src/crypto/elliptic
+//
+// Temporily we ignore these default, to take advantage of X25519Kyber768
+// in Go's defaults (X25519Kyber768, X25519, P-256, P-384, P-521), which
+// isn't exported. See https://github.com/caddyserver/caddy/issues/6540
+// nolint:unused
 var defaultCurves = []tls.CurveID{
 	tls.X25519,
 	tls.CurveP256,

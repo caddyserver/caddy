@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -50,7 +51,6 @@ type Intercept struct {
 	//
 	// Three new placeholders are available in this handler chain:
 	// - `{http.intercept.status_code}` The status code from the response
-	// - `{http.intercept.status_text}` The status text from the response
 	// - `{http.intercept.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
@@ -161,12 +161,14 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// set up the replacer so that parts of the original response can be
 	// used for routing decisions
-	for field, value := range r.Header {
+	for field, value := range rec.Header() {
 		repl.Set("http.intercept.header."+field, strings.Join(value, ","))
 	}
 	repl.Set("http.intercept.status_code", rec.Status())
 
-	ir.logger.Debug("handling response", zap.Int("handler", rec.handlerIndex))
+	if c := ir.logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
+		c.Write(zap.Int("handler", rec.handlerIndex))
+	}
 
 	// pass the request through the response handler routes
 	return rec.handler.Routes.Compile(next).ServeHTTP(w, r)

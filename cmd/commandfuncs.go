@@ -74,6 +74,10 @@ func cmdStart(fl Flags) (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	// we should be able to run caddy in relative paths
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
 	if configFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", configFlag)
 	}
@@ -656,6 +660,8 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 			return nil, err
 		}
 		parsedAddr.Host = addr
+	} else if parsedAddr.IsFdNetwork() {
+		origin = "http://127.0.0.1"
 	}
 
 	// form the request
@@ -663,13 +669,13 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}
-	if parsedAddr.IsUnixNetwork() {
+	if parsedAddr.IsUnixNetwork() || parsedAddr.IsFdNetwork() {
 		// We used to conform to RFC 2616 Section 14.26 which requires
 		// an empty host header when there is no host, as is the case
-		// with unix sockets. However, Go required a Host value so we
-		// used a hack of a space character as the host (it would see
-		// the Host was non-empty, then trim the space later). As of
-		// Go 1.20.6 (July 2023), this hack no longer works. See:
+		// with unix sockets and socket fds. However, Go required a
+		// Host value so we used a hack of a space character as the host
+		// (it would see the Host was non-empty, then trim the space later).
+		// As of Go 1.20.6 (July 2023), this hack no longer works. See:
 		// https://github.com/golang/go/issues/60374
 		// See also the discussion here:
 		// https://github.com/golang/go/issues/61431
@@ -710,7 +716,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024*2))
 		if err != nil {
 			return nil, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}

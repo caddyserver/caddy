@@ -1,7 +1,9 @@
 linters-settings:
   errcheck:
-    ignore: fmt:.*,go.uber.org/zap/zapcore:^Add.*
-    ignoretests: true
+    exclude-functions:
+      - fmt.*
+      - (go.uber.org/zap/zapcore.ObjectEncoder).AddObject
+      - (go.uber.org/zap/zapcore.ObjectEncoder).AddArray
   gci:
     sections:
       - standard # Standard section: captures all standard packages.
@@ -33,7 +35,6 @@ linters:
     - errcheck
     - errname
     - exhaustive
-    - exportloopref
     - gci
     - gofmt
     - goimports
@@ -130,18 +131,22 @@ linters:
 run:
   # default concurrency is a available CPU number.
   # concurrency: 4 # explicitly omit this value to fully utilize available resources.
-  deadline: 5m
+  timeout: 5m
   issues-exit-code: 1
   tests: false
 
 # output configuration options
 output:
-  format: 'colored-line-number'
+  formats:
+    - format: 'colored-line-number'
   print-issued-lines: true
   print-linter-name: true
 
 issues:
   exclude-rules:
+    - text: 'G115' # TODO: Either we should fix the issues or nuke the linter if it's bad
+      linters:
+        - gosec
     # we aren't calling unknown URL
     - text: 'G107' # G107: Url provided to HTTP request as taint input
       linters:
@@ -166,3 +171,12 @@ issues:
     - path: modules/logging/filters.go
       linters:
         - dupl
+    - path: modules/caddyhttp/matchers.go
+      linters:
+        - dupl
+    - path: modules/caddyhttp/vars.go
+      linters:
+        - dupl
+    - path: _test\.go
+      linters:
+        - errcheck

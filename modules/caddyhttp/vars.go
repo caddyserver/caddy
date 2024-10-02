@@ -18,7 +18,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
+
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/types/ref"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -203,6 +207,28 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	return false
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//
+//	expression vars({'{magic_number}': ['3', '5']})
+//	expression vars({'{foo}': 'single_value'})
+func (VarsMatcher) CELLibrary(_ caddy.Context) (cel.Library, error) {
+	return CELMatcherImpl(
+		"vars",
+		"vars_matcher_request_map",
+		[]*cel.Type{CELTypeJSON},
+		func(data ref.Val) (RequestMatcher, error) {
+			mapStrListStr, err := CELValueToMapStrList(data)
+			if err != nil {
+				return nil, err
+			}
+			return VarsMatcher(mapStrListStr), nil
+		},
+	)
+}
+
 // MatchVarsRE matches the value of the context variables by a given regular expression.
 //
 // Upon a match, it adds placeholders to the request: `{http.regexp.name.capture_group}`
@@ -300,6 +326,69 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//
+//	expression vars_regexp('foo', '{magic_number}', '[0-9]+')
+//	expression vars_regexp('{magic_number}', '[0-9]+')
+func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	unnamedPattern, err := CELMatcherImpl(
+		"vars_regexp",
+		"vars_regexp_request_string_string",
+		[]*cel.Type{cel.StringType, cel.StringType},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			params, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			strParams := params.([]string)
+			matcher := MatchVarsRE{}
+			matcher[strParams[0]] = &MatchRegexp{
+				Pattern: strParams[1],
+				Name:    ctx.Value(MatcherNameCtxKey).(string),
+			}
+			err = matcher.Provision(ctx)
+			return matcher, err
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	namedPattern, err := CELMatcherImpl(
+		"vars_regexp",
+		"vars_regexp_request_string_string_string",
+		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
+		func(data ref.Val) (RequestMatcher, error) {
+			refStringList := reflect.TypeOf([]string{})
+			params, err := data.ConvertToNative(refStringList)
+			if err != nil {
+				return nil, err
+			}
+			strParams := params.([]string)
+			name := strParams[0]
+			if name == "" {
+				name = ctx.Value(MatcherNameCtxKey).(string)
+			}
+			matcher := MatchVarsRE{}
+			matcher[strParams[1]] = &MatchRegexp{
+				Pattern: strParams[2],
+				Name:    name,
+			}
+			err = matcher.Provision(ctx)
+			return matcher, err
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	envOpts := append(unnamedPattern.CompileOptions(), namedPattern.CompileOptions()...)
+	prgOpts := append(unnamedPattern.ProgramOptions(), namedPattern.ProgramOptions()...)
+	return NewMatcherCELLibrary(envOpts, prgOpts), nil
 }
 
 // Validate validates m's regular expressions.

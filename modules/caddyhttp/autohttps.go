@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -64,17 +65,12 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
-}
 
-// Skipped returns true if name is in skipSlice, which
-// should be either the Skip or SkipCerts field on ahc.
-func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
-	for _, n := range skipSlice {
-		if name == n {
-			return true
-		}
-	}
-	return false
+	// If true, automatic HTTPS will prefer wildcard names
+	// and ignore non-wildcard names if both are available.
+	// This allows for writing a config with top-level host
+	// matchers without having those names produce certificates.
+	PreferWildcard bool `json:"prefer_wildcard,omitempty"`
 }
 
 // automaticHTTPSPhase1 provisions all route matchers, determines
@@ -158,11 +154,32 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
-							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+							if !slices.Contains(srv.AutoHTTPS.Skip, d) {
 								serverDomainSet[d] = struct{}{}
 							}
 						}
 					}
+				}
+			}
+		}
+
+		if srv.AutoHTTPS.PreferWildcard {
+			wildcards := make(map[string]struct{})
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					wildcards[d[2:]] = struct{}{}
+				}
+			}
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					continue
+				}
+				base := d
+				if idx := strings.Index(d, "."); idx != -1 {
+					base = d[idx+1:]
+				}
+				if _, ok := wildcards[base]; ok {
+					delete(serverDomainSet, d)
 				}
 			}
 		}
@@ -193,7 +210,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		} else {
 			for d := range serverDomainSet {
 				if certmagic.SubjectQualifiesForCert(d) &&
-					!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					!slices.Contains(srv.AutoHTTPS.SkipCerts, d) {
 					// if a certificate for this name is already loaded,
 					// don't obtain another one for it, unless we are
 					// supposed to ignore loaded certificates
@@ -742,7 +759,7 @@ func (app *App) automaticHTTPSPhase2() error {
 	)
 	err := app.tlsApp.Manage(app.allCertDomains)
 	if err != nil {
-		return fmt.Errorf("managing certificates for %v: %s", app.allCertDomains, err)
+		return fmt.Errorf("managing certificates for %d domains: %s", len(app.allCertDomains), err)
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil

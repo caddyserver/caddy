@@ -229,11 +229,13 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	if changeHost {
 		if handler.Headers == nil {
-			handler.Headers = &headers.Handler{
-				Request: &headers.HeaderOps{
-					Set: http.Header{},
-				},
-			}
+			handler.Headers = new(headers.Handler)
+		}
+		if handler.Headers.Request == nil {
+			handler.Headers.Request = new(headers.HeaderOps)
+		}
+		if handler.Headers.Request.Set == nil {
+			handler.Headers.Request.Set = http.Header{}
 		}
 		handler.Headers.Request.Set.Set("Host", "{http.reverse_proxy.upstream.hostport}")
 	}
