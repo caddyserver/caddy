@@ -732,7 +732,7 @@ func (app *App) automaticHTTPSPhase2() error {
 	)
 	err := app.tlsApp.Manage(app.allCertDomains)
 	if err != nil {
-		return fmt.Errorf("managing certificates for %v: %s", app.allCertDomains, err)
+		return fmt.Errorf("managing certificates for %d domains: %s", len(app.allCertDomains), err)
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil
