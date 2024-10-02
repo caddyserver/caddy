@@ -3,8 +3,9 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel"
 	"net/http"
+
+	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
