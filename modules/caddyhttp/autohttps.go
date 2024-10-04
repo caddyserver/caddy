@@ -320,11 +320,21 @@ uniqueDomainsLoop:
 			}
 		}
 
-		// if no automation policy exists for the name yet, we
-		// will associate it with an implicit one
+		// if no automation policy exists for the name yet, we will associate it with an implicit one;
+		// we handle tailscale domains specially, and we also separate out identifiers that need the
+		// internal issuer (self-signed certs); certmagic does not consider public IP addresses to be
+		// disqualified for public certs, because there are public CAs that will issue certs for IPs.
+		// However, with auto-HTTPS, many times there is no issuer explicitly defined, and the default
+		// issuers do not (currently, as of 2024) issue IP certificates; so assign all IP subjects to
+		// the internal issuer when there are no explicit automation policies
+		shouldUseInternal := func(ident string) bool {
+			usingDefaultIssuersAndIsIP := certmagic.SubjectIsIP(ident) &&
+				(app.tlsApp == nil || app.tlsApp.Automation == nil || len(app.tlsApp.Automation.Policies) == 0)
+			return !certmagic.SubjectQualifiesForPublicCert(d) || usingDefaultIssuersAndIsIP
+		}
 		if isTailscaleDomain(d) {
 			tailscale = append(tailscale, d)
-		} else if !certmagic.SubjectQualifiesForPublicCert(d) {
+		} else if shouldUseInternal(d) {
 			internal = append(internal, d)
 		}
 	}
