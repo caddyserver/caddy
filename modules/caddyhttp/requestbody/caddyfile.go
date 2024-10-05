@@ -68,14 +68,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			rb.WriteTimeout = timeout
 
-		case "replace":
-			var replaceStr string
-			if !h.AllArgs(&replaceStr) {
+		case "set":
+			var setStr string
+			if !h.AllArgs(&setStr) {
 				return nil, h.ArgErr()
 			}
-			rb.Replace = replaceStr
+			rb.Set = setStr
 		default:
-			return nil, h.Errf("unrecognized request_body subdirective '%s'", h.Val())
+			return nil, h.Errf("unrecognized set_body subdirective '%s'", h.Val())
 		}
 	}
 

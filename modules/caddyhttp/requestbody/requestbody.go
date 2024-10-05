@@ -42,7 +42,7 @@ type RequestBody struct {
 	// EXPERIMENTAL. Subject to change/removal.
 	WriteTimeout time.Duration `json:"write_timeout,omitempty"`
 
-	Replace string `json:"replace,omitempty"`
+	Set string `json:"set,omitempty"`
 
 	logger *zap.Logger
 }
@@ -61,15 +61,15 @@ func (rb *RequestBody) Provision(ctx caddy.Context) error {
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if rb.Replace != "" {
+	if rb.Set != "" {
 		err := r.Body.Close()
 		if err != nil {
 			return err
 		}
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-		replacedBody := repl.ReplaceAll(rb.Replace, "")
+		replacedBody := repl.ReplaceAll(rb.Set, "")
 		r.Body = io.NopCloser(strings.NewReader(replacedBody))
-		r.ContentLength = int64(len(rb.Replace))
+		r.ContentLength = int64(len(rb.Set))
 	}
 	if r.Body == nil {
 		return next.ServeHTTP(w, r)
