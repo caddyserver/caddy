@@ -137,7 +137,7 @@ func parseUpstreamDialAddress(upstreamAddr string) (parsedAddr, error) {
 		}
 		// we can assume a port if only a hostname is specified, but use of a
 		// placeholder without a port likely means a port will be filled in
-		if port == "" && !strings.Contains(host, "{") && !caddy.IsUnixNetwork(network) {
+		if port == "" && !strings.Contains(host, "{") && !caddy.IsUnixNetwork(network) && !caddy.IsFdNetwork(network) {
 			port = "80"
 		}
 	}

@@ -555,6 +555,10 @@ func TestParseAll(t *testing.T) {
 			{"localhost:1234", "http://host2"},
 		}},
 
+		{`foo.example.com   ,   example.com`, false, [][]string{
+			{"foo.example.com", "example.com"},
+		}},
+
 		{`localhost:1234, http://host2,`, true, [][]string{}},
 
 		{`http://host1.com, http://host2.com {
@@ -614,8 +618,8 @@ func TestParseAll(t *testing.T) {
 		}
 		for j, block := range blocks {
 			if len(block.Keys) != len(test.keys[j]) {
-				t.Errorf("Test %d: Expected %d keys in block %d, got %d",
-					i, len(test.keys[j]), j, len(block.Keys))
+				t.Errorf("Test %d: Expected %d keys in block %d, got %d: %v",
+					i, len(test.keys[j]), j, len(block.Keys), block.Keys)
 				continue
 			}
 			for k, addr := range block.GetKeysText() {

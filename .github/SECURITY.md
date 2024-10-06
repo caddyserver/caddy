@@ -5,11 +5,11 @@ The Caddy project would like to make sure that it stays on top of all practicall
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.x     | ✔️ |
-| 1.x     | :x:                |
-| < 1.x   | :x:                |
+| Version  | Supported |
+| -------- | ----------|
+| 2.latest | ✔️        |
+| 1.x      | :x:       |
+| < 1.x    | :x:       |
 
 
 ## Acceptable Scope

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -126,7 +127,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	// defer work until a variable is actually evaluated by using replacer's Map callback
 	repl.Map(func(key string) (any, bool) {
 		// return early if the variable is not even a configured destination
-		destIdx := h.destinationIndex(key)
+		destIdx := slices.Index(h.Destinations, key)
 		if destIdx < 0 {
 			return nil, false
 		}
@@ -168,17 +169,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	})
 
 	return next.ServeHTTP(w, r)
-}
-
-// destinationIndex returns the positional index of the destination
-// is name is a known destination; otherwise it returns -1.
-func (h Handler) destinationIndex(name string) int {
-	for i, dest := range h.Destinations {
-		if dest == name {
-			return i
-		}
-	}
-	return -1
 }
 
 // Mapping describes a mapping from input to outputs.

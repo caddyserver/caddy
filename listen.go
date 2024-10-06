@@ -18,7 +18,11 @@ package caddy
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,15 +30,54 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(network, addr string) (any, error) {
+func reuseUnixSocket(_, _ string) (any, error) {
 	return nil, nil
 }
 
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
-	switch network {
-	case "udp", "udp4", "udp6", "unixgram":
+	var socketFile *os.File
+
+	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	if fd {
+		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
+
+		func() {
+			socketFilesMu.Lock()
+			defer socketFilesMu.Unlock()
+
+			socketFdWide := uintptr(socketFd)
+			var ok bool
+
+			socketFile, ok = socketFiles[socketFdWide]
+
+			if !ok {
+				socketFile = os.NewFile(socketFdWide, lnKey)
+				if socketFile != nil {
+					socketFiles[socketFdWide] = socketFile
+				}
+			}
+		}()
+
+		if socketFile == nil {
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", socketFd)
+		}
+	}
+
+	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
+	if datagram {
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, network, address)
+			var (
+				pc  net.PacketConn
+				err error
+			)
+			if fd {
+				pc, err = net.FilePacketConn(socketFile)
+			} else {
+				pc, err = config.ListenPacket(ctx, network, address)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -44,20 +87,27 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			return nil, err
 		}
 		return &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}, nil
+	}
 
-	default:
-		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			ln, err := config.Listen(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedListener{Listener: ln, key: lnKey}, nil
-		})
+	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+		var (
+			ln  net.Listener
+			err error
+		)
+		if fd {
+			ln, err = net.FileListener(socketFile)
+		} else {
+			ln, err = config.Listen(ctx, network, address)
+		}
 		if err != nil {
 			return nil, err
 		}
-		return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
+		return &sharedListener{Listener: ln, key: lnKey}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -260,3 +310,9 @@ var (
 		Unwrap() net.PacketConn
 	}) = (*fakeClosePacketConn)(nil)
 )
+
+// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
+var socketFiles = map[uintptr]*os.File{}
+
+// socketFilesMu synchronizes socketFiles insertions
+var socketFilesMu sync.Mutex

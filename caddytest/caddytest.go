@@ -31,8 +31,8 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
-// Defaults store any configuration required to make the tests run
-type Defaults struct {
+// Config store any configuration required to make the tests run
+type Config struct {
 	// Port we expect caddy to listening on
 	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
@@ -44,7 +44,7 @@ type Defaults struct {
 }
 
 // Default testing values
-var Default = Defaults{
+var Default = Config{
 	AdminPort:          2999, // different from what a real server also running on a developer's machine might be
 	Certificates:       []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
 	TestRequestTimeout: 5 * time.Second,
@@ -61,6 +61,7 @@ type Tester struct {
 	Client       *http.Client
 	configLoaded bool
 	t            testing.TB
+	config       Config
 }
 
 // NewTester will create a new testing client with an attached cookie jar
@@ -78,7 +79,27 @@ func NewTester(t testing.TB) *Tester {
 		},
 		configLoaded: false,
 		t:            t,
+		config:       Default,
 	}
+}
+
+// WithDefaultOverrides this will override the default test configuration with the provided values.
+func (tc *Tester) WithDefaultOverrides(overrides Config) *Tester {
+	if overrides.AdminPort != 0 {
+		tc.config.AdminPort = overrides.AdminPort
+	}
+	if len(overrides.Certificates) > 0 {
+		tc.config.Certificates = overrides.Certificates
+	}
+	if overrides.TestRequestTimeout != 0 {
+		tc.config.TestRequestTimeout = overrides.TestRequestTimeout
+		tc.Client.Timeout = overrides.TestRequestTimeout
+	}
+	if overrides.LoadRequestTimeout != 0 {
+		tc.config.LoadRequestTimeout = overrides.LoadRequestTimeout
+	}
+
+	return tc
 }
 
 type configLoadError struct {
@@ -113,7 +134,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		return nil
 	}
 
-	err := validateTestPrerequisites(tc.t)
+	err := validateTestPrerequisites(tc)
 	if err != nil {
 		tc.t.Skipf("skipping tests as failed integration prerequisites. %s", err)
 		return nil
@@ -121,7 +142,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 
 	tc.t.Cleanup(func() {
 		if tc.t.Failed() && tc.configLoaded {
-			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
 			if err != nil {
 				tc.t.Log("unable to read the current config")
 				return
@@ -151,10 +172,10 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		tc.t.Logf("After: %s", rawConfig)
 	}
 	client := &http.Client{
-		Timeout: Default.LoadRequestTimeout,
+		Timeout: tc.config.LoadRequestTimeout,
 	}
 	start := time.Now()
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", Default.AdminPort), strings.NewReader(rawConfig))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", tc.config.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		tc.t.Errorf("failed to create request. %s", err)
 		return err
@@ -205,11 +226,11 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 	}
 
 	client := &http.Client{
-		Timeout: Default.LoadRequestTimeout,
+		Timeout: tc.config.LoadRequestTimeout,
 	}
 
 	fetchConfig := func(client *http.Client) any {
-		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
 		if err != nil {
 			return nil
 		}
@@ -237,30 +258,30 @@ func (tc *Tester) ensureConfigRunning(rawConfig string, configType string) error
 }
 
 const initConfig = `{
-	admin localhost:2999
+	admin localhost:%d
 }
 `
 
 // validateTestPrerequisites ensures the certificates are available in the
 // designated path and Caddy sub-process is running.
-func validateTestPrerequisites(t testing.TB) error {
+func validateTestPrerequisites(tc *Tester) error {
 	// check certificates are found
-	for _, certName := range Default.Certificates {
+	for _, certName := range tc.config.Certificates {
 		if _, err := os.Stat(getIntegrationDir() + certName); errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("caddy integration test certificates (%s) not found", certName)
 		}
 	}
 
-	if isCaddyAdminRunning() != nil {
+	if isCaddyAdminRunning(tc) != nil {
 		// setup the init config file, and set the cleanup afterwards
 		f, err := os.CreateTemp("", "")
 		if err != nil {
 			return err
 		}
-		t.Cleanup(func() {
+		tc.t.Cleanup(func() {
 			os.Remove(f.Name())
 		})
-		if _, err := f.WriteString(initConfig); err != nil {
+		if _, err := f.WriteString(fmt.Sprintf(initConfig, tc.config.AdminPort)); err != nil {
 			return err
 		}
 
@@ -271,23 +292,23 @@ func validateTestPrerequisites(t testing.TB) error {
 		}()
 
 		// wait for caddy to start serving the initial config
-		for retries := 10; retries > 0 && isCaddyAdminRunning() != nil; retries-- {
+		for retries := 10; retries > 0 && isCaddyAdminRunning(tc) != nil; retries-- {
 			time.Sleep(1 * time.Second)
 		}
 	}
 
 	// one more time to return the error
-	return isCaddyAdminRunning()
+	return isCaddyAdminRunning(tc)
 }
 
-func isCaddyAdminRunning() error {
+func isCaddyAdminRunning(tc *Tester) error {
 	// assert that caddy is running
 	client := &http.Client{
-		Timeout: Default.LoadRequestTimeout,
+		Timeout: tc.config.LoadRequestTimeout,
 	}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", Default.AdminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
 	if err != nil {
-		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", Default.AdminPort)
+		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", tc.config.AdminPort)
 	}
 	resp.Body.Close()
 

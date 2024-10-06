@@ -1,0 +1,39 @@
+{
+	metrics
+	servers :80 {
+		metrics {
+			per_host
+		}
+	}
+}
+:80 {
+	respond "Hello"
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			},
+			"metrics": {
+				"per_host": true
+			}
+		}
+	}
+}

@@ -42,7 +42,7 @@
 									"handler": "static_response",
 									"headers": {
 										"Location": [
-											"{http.request.orig_uri.path}/"
+											"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
 										]
 									},
 									"status_code": 308
@@ -58,6 +58,7 @@
 											"{http.request.uri.path}/index.php",
 											"index.php"
 										],
+										"try_policy": "first_exist_fallback",
 										"split_path": [
 											".php"
 										]

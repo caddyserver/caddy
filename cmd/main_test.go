@@ -235,7 +235,7 @@ func Test_isCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			
+
 			name: "json is not caddyfile but not error",
 			args: args{
 				configFile:  "./Caddyfile.json",
@@ -245,7 +245,7 @@ func Test_isCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			
+
 			name: "prefix of Caddyfile and ./ with any extension is Caddyfile",
 			args: args{
 				configFile:  "./Caddyfile.prd",
@@ -255,7 +255,7 @@ func Test_isCaddyfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			
+
 			name: "prefix of Caddyfile without ./ with any extension is Caddyfile",
 			args: args{
 				configFile:  "Caddyfile.prd",

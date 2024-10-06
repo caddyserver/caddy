@@ -33,6 +33,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -93,12 +94,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
-//	    buffer_requests
-//	    buffer_responses
-//	    max_buffer_size    <size>
+//	    request_buffers    <size>
+//	    response_buffers   <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
-//	    trace_logs
+//	    verbose_logs
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -980,7 +980,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    read_buffer             <size>
 //	    write_buffer            <size>
 //	    max_response_header     <size>
-//	    forward_proxy_url       <url>
+//	    network_proxy           <module> {
+//	        ...
+//	    }
 //	    dial_timeout            <duration>
 //	    dial_fallback_delay     <duration>
 //	    response_header_timeout <duration>
@@ -991,6 +993,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    tls_insecure_skip_verify
 //	    tls_timeout <duration>
 //	    tls_trusted_ca_certs <cert_files...>
+//	    tls_trust_pool <module> {
+//	        ...
+//	    }
 //	    tls_server_name <sni>
 //	    tls_renegotiation <level>
 //	    tls_except_ports <ports...>
@@ -1069,10 +1074,24 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 
 		case "forward_proxy_url":
+			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use 'network_proxy <url>' instead.")
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			h.ForwardProxyURL = d.Val()
+			u := network.ProxyFromURL{URL: d.Val()}
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
+
+		case "network_proxy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "caddy.network_proxy." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
 
 		case "dial_timeout":
 			if !d.NextArg() {

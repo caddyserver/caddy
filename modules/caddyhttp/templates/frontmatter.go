@@ -40,6 +40,7 @@ func extractFrontMatter(input string) (map[string]any, string, error) {
 		if firstLine == fmType.FenceOpen {
 			closingFence = fmType.FenceClose
 			fmParser = fmType.ParseFunc
+			break
 		}
 	}
 

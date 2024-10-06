@@ -299,11 +299,11 @@ func ToString(val any) string {
 	case int64:
 		return strconv.Itoa(int(v))
 	case uint:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint32:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint64:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(v, 10)
 	case float32:
 		return strconv.FormatFloat(float64(v), 'f', -1, 32)
 	case float64:

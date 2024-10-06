@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"slices"
 
 	"github.com/caddyserver/certmagic"
 
@@ -72,15 +73,9 @@ nextChoice:
 		}
 
 		if len(p.SubjectOrganization) > 0 {
-			var found bool
-			for _, subjOrg := range p.SubjectOrganization {
-				for _, org := range cert.Leaf.Subject.Organization {
-					if subjOrg == org {
-						found = true
-						break
-					}
-				}
-			}
+			found := slices.ContainsFunc(p.SubjectOrganization, func(s string) bool {
+				return slices.Contains(cert.Leaf.Subject.Organization, s)
+			})
 			if !found {
 				continue
 			}

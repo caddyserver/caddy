@@ -99,6 +99,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			handler.Response.Deferred = true
 			continue
 		}
+		if field == "match" {
+			responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
+			err := caddyhttp.ParseNamedResponseMatcher(h.NewFromNextSegment(), responseMatchers)
+			if err != nil {
+				return nil, err
+			}
+			matcher := responseMatchers["match"]
+			handler.Response.Require = &matcher
+			continue
+		}
 		if hasArgs {
 			return nil, h.Err("cannot specify headers in both arguments and block") // because it would be weird
 		}

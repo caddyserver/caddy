@@ -15,11 +15,13 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -54,13 +56,17 @@ func (MatchServerName) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI.
 func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
-	repl := caddy.NewReplacer()
+	var repl *caddy.Replacer
 	// caddytls.TestServerNameMatcher calls this function without any context
 	if ctx := hello.Context(); ctx != nil {
 		// In some situations the existing context may have no replacer
 		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
 			repl = replAny.(*caddy.Replacer)
 		}
+	}
+
+	if repl == nil {
+		repl = caddy.NewReplacer()
 	}
 
 	for _, name := range m {
@@ -223,13 +229,26 @@ func (MatchServerNameRE) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI using a regular expression.
 func (m MatchServerNameRE) Match(hello *tls.ClientHelloInfo) bool {
-	repl := caddy.NewReplacer()
-	// caddytls.TestServerNameMatcher calls this function without any context
-	if ctx := hello.Context(); ctx != nil {
+	// Note: caddytls.TestServerNameMatcher calls this function without any context
+	ctx := hello.Context()
+	if ctx == nil {
+		// layer4.Connection implements GetContext() to pass its context here,
+		// since hello.Context() returns nil
+		if mayHaveContext, ok := hello.Conn.(interface{ GetContext() context.Context }); ok {
+			ctx = mayHaveContext.GetContext()
+		}
+	}
+
+	var repl *caddy.Replacer
+	if ctx != nil {
 		// In some situations the existing context may have no replacer
 		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
 			repl = replAny.(*caddy.Replacer)
 		}
+	}
+
+	if repl == nil {
+		repl = caddy.NewReplacer()
 	}
 
 	return m.MatchRegexp.Match(hello.ServerName, repl)
@@ -321,12 +340,9 @@ func (MatchRemoteIP) parseIPRange(str string) ([]netip.Prefix, error) {
 }
 
 func (MatchRemoteIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
-	for _, ipRange := range ranges {
-		if ipRange.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ranges, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ip)
+	})
 }
 
 // UnmarshalCaddyfile sets up the MatchRemoteIP from Caddyfile tokens. Syntax:
@@ -439,12 +455,9 @@ func (MatchLocalIP) parseIPRange(str string) ([]netip.Prefix, error) {
 }
 
 func (MatchLocalIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
-	for _, ipRange := range ranges {
-		if ipRange.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ranges, func(prefix netip.Prefix) bool {
+		return prefix.Contains(ip)
+	})
 }
 
 // UnmarshalCaddyfile sets up the MatchLocalIP from Caddyfile tokens. Syntax:

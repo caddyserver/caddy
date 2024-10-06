@@ -24,9 +24,9 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,8 +37,10 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -89,6 +91,7 @@ type HTTPTransport struct {
 	//  forward_proxy_url -> upstream
 	//
 	// Default: http.ProxyFromEnvironment
+	// DEPRECATED: Use NetworkProxyRaw|`network_proxy` instead. Subject to removal.
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
@@ -140,8 +143,24 @@ type HTTPTransport struct {
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
 
+	// The module that provides the network (forward) proxy
+	// URL that the HTTP transport will use to proxy
+	// requests to the upstream. See [http.Transport.Proxy](https://pkg.go.dev/net/http#Transport.Proxy)
+	// for information regarding supported protocols.
+	//
+	// Providing a value to this parameter results in requests
+	// flowing through the reverse_proxy in the following way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  [proxy provided by the module] -> upstream
+	//
+	// If nil, defaults to reading the `HTTP_PROXY`,
+	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
+
 	h2cTransport *http2.Transport
-	h3Transport  *http3.RoundTripper // TODO: EXPERIMENTAL (May 2024)
+	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -327,16 +346,22 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	// negotiate any HTTP/SOCKS proxy for the HTTP transport
-	var proxy func(*http.Request) (*url.URL, error)
+	proxy := http.ProxyFromEnvironment
 	if h.ForwardProxyURL != "" {
-		pUrl, err := url.Parse(h.ForwardProxyURL)
+		caddyCtx.Logger().Warn("forward_proxy_url is deprecated; use network_proxy instead")
+		u := network.ProxyFromURL{URL: h.ForwardProxyURL}
+		h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
+	}
+	if len(h.NetworkProxyRaw) != 0 {
+		proxyMod, err := caddyCtx.LoadModule(h, "ForwardProxyRaw")
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
+			return nil, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
-		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
-		proxy = http.ProxyURL(pUrl)
-	} else {
-		proxy = http.ProxyFromEnvironment
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			proxy = m.ProxyFunc()
+		} else {
+			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	rt := &http.Transport{
@@ -381,7 +406,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.DisableCompression = !*h.Compression
 	}
 
-	if sliceContains(h.Versions, "2") {
+	if slices.Contains(h.Versions, "2") {
 		if err := http2.ConfigureTransport(rt); err != nil {
 			return nil, err
 		}
@@ -392,7 +417,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// do (that'd add latency and complexity, besides, we expect that
 	// site owners  control the backends), so it must be exclusive
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
-		h.h3Transport = new(http3.RoundTripper)
+		h.h3Transport = new(http3.Transport)
 		if h.TLS != nil {
 			var err error
 			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
@@ -400,13 +425,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
 			}
 		}
-	} else if len(h.Versions) > 1 && sliceContains(h.Versions, "3") {
+	} else if len(h.Versions) > 1 && slices.Contains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}
 
 	// if h2c is enabled, configure its transport (std lib http.Transport
 	// does not "HTTP/2 over cleartext TCP")
-	if sliceContains(h.Versions, "h2c") {
+	if slices.Contains(h.Versions, "h2c") {
 		// crafting our own http2.Transport doesn't allow us to utilize
 		// most of the customizations/preferences on the http.Transport,
 		// because, for some reason, only http2.ConfigureTransport()
@@ -544,11 +569,11 @@ type TLSConfig struct {
 	// Certificate authority module which provides the certificate pool of trusted certificates
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// Optional list of base64-encoded DER-encoded CA certificates to trust.
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// List of PEM-encoded CA certificate files to add to the same trust
 	// store as RootCAPool (or root_ca_pool in the JSON).
 	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`
@@ -781,16 +806,6 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 
 	// parse the DER-encoded certificate
 	return x509.ParseCertificate(derBytes)
-}
-
-// sliceContains returns true if needle is in haystack.
-func sliceContains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
 
 // Interface guards

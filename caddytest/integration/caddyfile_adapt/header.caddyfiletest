@@ -12,10 +12,14 @@
 	@images path /images/*
 	header @images {
 		Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+		match {
+			status 200
+		}
 	}
 	header {
 		+Link "Foo"
 		+Link "Bar"
+		match status 200
 	}
 	header >Set Defer
 	header >Replace Deferred Replacement
@@ -42,6 +46,11 @@
 								{
 									"handler": "headers",
 									"response": {
+										"require": {
+											"status_code": [
+												200
+											]
+										},
 										"set": {
 											"Cache-Control": [
 												"public, max-age=3600, stale-while-revalidate=86400"
@@ -135,6 +144,11 @@
 											"Link": [
 												"Foo",
 												"Bar"
+											]
+										},
+										"require": {
+											"status_code": [
+												200
 											]
 										}
 									}

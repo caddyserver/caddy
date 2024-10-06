@@ -1,0 +1,95 @@
+:8884
+
+php_fastcgi localhost:9000 {
+	# some php_fastcgi-specific subdirectives
+	split .php .php5
+	env VAR1 value1
+	env VAR2 value2
+	root /var/www
+	try_files {path} index.php
+	dial_timeout 3s
+	read_timeout 10s
+	write_timeout 20s
+
+	# passed through to reverse_proxy (directive order doesn't matter!)
+	lb_policy random
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"file": {
+										"try_files": [
+											"{http.request.uri.path}",
+											"index.php"
+										],
+										"try_policy": "first_exist_fallback",
+										"split_path": [
+											".php",
+											".php5"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "rewrite",
+									"uri": "{http.matchers.file.relative}"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"*.php",
+										"*.php5"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"selection_policy": {
+											"policy": "random"
+										}
+									},
+									"transport": {
+										"dial_timeout": 3000000000,
+										"env": {
+											"VAR1": "value1",
+											"VAR2": "value2"
+										},
+										"protocol": "fastcgi",
+										"read_timeout": 10000000000,
+										"root": "/var/www",
+										"split_path": [
+											".php",
+											".php5"
+										],
+										"write_timeout": 20000000000
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

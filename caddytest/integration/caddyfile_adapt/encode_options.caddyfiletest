@@ -21,6 +21,8 @@ encode {
 	zstd
 	gzip 5
 }
+
+encode
 ----------
 {
 	"apps": {
@@ -69,6 +71,17 @@ encode {
 										"gzip": {
 											"level": 5
 										},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"prefer": [
+										"zstd",
+										"gzip"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {},
 										"zstd": {}
 									},
 									"handler": "encode",

@@ -1,0 +1,23 @@
+{
+	log {
+		sampling {
+			interval 300
+			first 50
+			thereafter 40
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"sampling": {
+					"interval": 300,
+					"first": 50,
+					"thereafter": 40
+				}
+			}
+		}
+	}
+}

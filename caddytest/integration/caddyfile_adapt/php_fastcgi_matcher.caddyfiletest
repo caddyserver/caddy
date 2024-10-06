@@ -33,7 +33,7 @@ php_fastcgi @test localhost:9000
 																	"handler": "static_response",
 																	"headers": {
 																		"Location": [
-																			"{http.request.orig_uri.path}/"
+																			"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
 																		]
 																	},
 																	"status_code": 308
@@ -73,7 +73,8 @@ php_fastcgi @test localhost:9000
 																			"{http.request.uri.path}",
 																			"{http.request.uri.path}/index.php",
 																			"index.php"
-																		]
+																		],
+																		"try_policy": "first_exist_fallback"
 																	}
 																}
 															]
