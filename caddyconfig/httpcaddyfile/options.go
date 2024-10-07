@@ -394,36 +394,10 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 			ond.PermissionRaw = caddyconfig.JSONModuleObject(perm, "module", modName, nil)
 
 		case "interval":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			dur, err := caddy.ParseDuration(d.Val())
-			if err != nil {
-				return nil, err
-			}
-			if ond == nil {
-				ond = new(caddytls.OnDemandConfig)
-			}
-			if ond.RateLimit == nil {
-				ond.RateLimit = new(caddytls.RateLimit)
-			}
-			ond.RateLimit.Interval = caddy.Duration(dur)
+			return nil, d.Errf("the on_demand_tls 'interval' option is no longer supported, remove it from your config")
 
 		case "burst":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			burst, err := strconv.Atoi(d.Val())
-			if err != nil {
-				return nil, err
-			}
-			if ond == nil {
-				ond = new(caddytls.OnDemandConfig)
-			}
-			if ond.RateLimit == nil {
-				ond.RateLimit = new(caddytls.RateLimit)
-			}
-			ond.RateLimit.Burst = burst
+			return nil, d.Errf("the on_demand_tls 'burst' option is no longer supported, remove it from your config")
 
 		default:
 			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
