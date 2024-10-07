@@ -322,12 +322,6 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 					return err
 				}
 
-				// check the rate limiter last because
-				// doing so makes a reservation
-				if !onDemandRateLimiter.Allow() {
-					return fmt.Errorf("on-demand rate limit exceeded")
-				}
-
 				return nil
 			},
 			Managers: ap.Managers,

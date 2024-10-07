@@ -38,12 +38,11 @@ func init() {
 
 // OnDemandConfig configures on-demand TLS, for obtaining
 // needed certificates at handshake-time. Because this
-// feature can easily be abused, you should use this to
-// establish rate limits and/or an internal endpoint that
-// Caddy can "ask" if it should be allowed to manage
-// certificates for a given hostname.
+// feature can easily be abused, Caddy must ask permission
+// to your application whether a particular domain is allowed
+// to have a certificate issued for it.
 type OnDemandConfig struct {
-	// DEPRECATED. WILL BE REMOVED SOON. Use 'permission' instead.
+	// DEPRECATED. WILL BE REMOVED SOON. Use 'permission' instead with the `http` module.
 	Ask string `json:"ask,omitempty"`
 
 	// REQUIRED. A module that will determine whether a
@@ -51,25 +50,6 @@ type OnDemandConfig struct {
 	// or obtained from an issuer on demand.
 	PermissionRaw json.RawMessage `json:"permission,omitempty" caddy:"namespace=tls.permission inline_key=module"`
 	permission    OnDemandPermission
-
-	// DEPRECATED. An optional rate limit to throttle
-	// the checking of storage and the issuance of
-	// certificates from handshakes if not already in
-	// storage. WILL BE REMOVED IN A FUTURE RELEASE.
-	RateLimit *RateLimit `json:"rate_limit,omitempty"`
-}
-
-// DEPRECATED. WILL LIKELY BE REMOVED SOON.
-// Instead of using this rate limiter, use a proper tool such as a
-// level 3 or 4 firewall and/or a permission module to apply rate limits.
-type RateLimit struct {
-	// A duration value. Storage may be checked and a certificate may be
-	// obtained 'burst' times during this interval.
-	Interval caddy.Duration `json:"interval,omitempty"`
-
-	// How many times during an interval storage can be checked or a
-	// certificate can be obtained.
-	Burst int `json:"burst,omitempty"`
 }
 
 // OnDemandPermission is a type that can give permission for
@@ -195,8 +175,7 @@ var ErrPermissionDenied = errors.New("certificate not allowed by permission modu
 
 // These perpetual values are used for on-demand TLS.
 var (
-	onDemandRateLimiter = certmagic.NewRateLimiter(0, 0)
-	onDemandAskClient   = &http.Client{
+	onDemandAskClient = &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return fmt.Errorf("following http redirects is not allowed")
