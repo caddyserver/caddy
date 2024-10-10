@@ -240,6 +240,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
+			caddy.Log().Warn("The nested 'metrics' option inside `servers` is deprecated and will be removed in the next major version. Use the global 'metrics' option instead.")
 			serverOpts.Metrics = new(caddyhttp.Metrics)
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
 				switch d.Val() {

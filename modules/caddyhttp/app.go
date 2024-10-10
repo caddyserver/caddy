@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -142,6 +143,10 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
+	// If set, metrics observations will be enabled.
+	// This setting is EXPERIMENTAL and subject to change.
+	Metrics *Metrics `json:"metrics,omitempty"`
+
 	ctx    caddy.Context
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
@@ -184,6 +189,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 		return err
 	}
 
+	if app.Metrics != nil {
+		app.Metrics.init = sync.Once{}
+		app.Metrics.httpMetrics = &httpMetrics{}
+	}
 	// prepare each server
 	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
@@ -195,6 +204,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
+
+		if srv.Metrics != nil {
+			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
+			app.Metrics = cmp.Or[*Metrics](app.Metrics, &Metrics{
+				init:        sync.Once{},
+				httpMetrics: &httpMetrics{},
+			})
+			app.Metrics.PerHost = app.Metrics.PerHost || srv.Metrics.PerHost
+		}
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
@@ -342,16 +360,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
-
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			if srv.Metrics != nil {
-				srv.Metrics.init = sync.Once{}
-				srv.Metrics.httpMetrics = &httpMetrics{}
-			}
-			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
+			err := srv.Routes.ProvisionHandlers(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
@@ -370,7 +383,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// provision the named routes (they get compiled at runtime)
 		for name, route := range srv.NamedRoutes {
-			err := route.Provision(ctx, srv.Metrics)
+			err := route.Provision(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up named route '%s' handlers: %v", name, srvName, err)
 			}
