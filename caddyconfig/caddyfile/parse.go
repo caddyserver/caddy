@@ -264,8 +264,13 @@ func (p *parser) addresses() error {
 				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", value)
 			}
 
-			token.Text = value
-			p.block.Keys = append(p.block.Keys, token)
+			// After the above, a comma surrounded by spaces would result
+			// in an empty token which we should ignore
+			if value != "" {
+				// Add the token as a site address
+				token.Text = value
+				p.block.Keys = append(p.block.Keys, token)
+			}
 		}
 
 		// Advance token and possibly break out of loop or return error
