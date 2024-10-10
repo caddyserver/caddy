@@ -25,7 +25,12 @@ import (
 )
 
 // ListenerWrapper provides PROXY protocol support to Caddy by implementing
-// the caddy.ListenerWrapper interface. It must be loaded before the `tls` listener.
+// the caddy.ListenerWrapper interface. If a connection is received via Unix
+// socket, it's trusted. Otherwise, it's checked against the Allow/Deny lists,
+// then it's handled by the FallbackPolicy.
+//
+// It must be loaded before the `tls` listener because the PROXY protocol
+// encapsulates the TLS data.
 //
 // Credit goes to https://github.com/mastercactapus/caddy2-proxyprotocol for having
 // initially implemented this as a plugin.
@@ -45,8 +50,35 @@ type ListenerWrapper struct {
 	Deny []string `json:"deny,omitempty"`
 	deny []netip.Prefix
 
-	// Accepted values are: ignore, use, reject, require, skip
-	// default: ignore
+	// FallbackPolicy specifies the policy to use if the downstream
+	// IP address is not in the Allow list nor is in the Deny list.
+	//
+	// NOTE: The generated docs which describe the value of this
+	// field is wrong because of how this type unmarshals JSON in a
+	// custom way. The field expects a string, not a number.
+	//
+	// Accepted values are: IGNORE, USE, REJECT, REQUIRE, SKIP
+	//
+	// - IGNORE: address from PROXY header, but accept connection
+	//
+	// - USE: address from PROXY header
+	//
+	// - REJECT: connection when PROXY header is sent
+	//   Note: even though the first read on the connection returns an error if
+	//   a PROXY header is present, subsequent reads do not. It is the task of
+	//   the code using the connection to handle that case properly.
+	//
+	// - REQUIRE: connection to send PROXY header, reject if not present
+	//   Note: even though the first read on the connection returns an error if
+	//   a PROXY header is not present, subsequent reads do not. It is the task
+	//   of the code using the connection to handle that case properly.
+	//
+	// - SKIP: accepts a connection without requiring the PROXY header.
+	//   Note: an example usage can be found in the SkipProxyHeaderForCIDR
+	//   function.
+	//
+	// Default: IGNORE
+	//
 	// Policy definitions are here: https://pkg.go.dev/github.com/pires/go-proxyproto@v0.7.0#Policy
 	FallbackPolicy Policy `json:"fallback_policy,omitempty"`
 
