@@ -38,7 +38,8 @@ func init() {
 	RegisterGlobalOption("fallback_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
-	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
+	RegisterGlobalOption("storage_check", parseStorageCheck)
+	RegisterGlobalOption("storage_clean_interval", parseStorageCleanInterval)
 	RegisterGlobalOption("renew_interval", parseOptDuration)
 	RegisterGlobalOption("ocsp_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
@@ -185,6 +186,40 @@ func parseOptStorage(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, d.Errf("module %s is not a caddy.StorageConverter", modID)
 	}
 	return storage, nil
+}
+
+func parseStorageCheck(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val != "off" {
+		return "", d.Errf("storage_check must be 'off'")
+	}
+	return val, nil
+}
+
+func parseStorageCleanInterval(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val == "off" {
+		return false, nil
+	}
+	dur, err := caddy.ParseDuration(d.Val())
+	if err != nil {
+		return nil, d.Errf("failed to parse storage_clean_interval, must be a duration or 'off' %w", err)
+	}
+	return caddy.Duration(dur), nil
 }
 
 func parseOptDuration(d *caddyfile.Dispenser, _ any) (any, error) {
