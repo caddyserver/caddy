@@ -1392,7 +1392,15 @@ func (m *MatchNot) Provision(ctx caddy.Context) error {
 	for _, modMap := range matcherSets.([]map[string]any) {
 		var ms MatcherSet
 		for _, modIface := range modMap {
-			ms = append(ms, modIface.(RequestMatcher))
+			if mod, ok := modIface.(RequestMatcherWithError); ok {
+				ms = append(ms, mod)
+				continue
+			}
+			if mod, ok := modIface.(RequestMatcher); ok {
+				ms = append(ms, mod)
+				continue
+			}
+			return fmt.Errorf("module is not a request matcher: %T", modIface)
 		}
 		m.MatcherSets = append(m.MatcherSets, ms)
 	}
@@ -1536,7 +1544,7 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // ParseCaddyfileNestedMatcher parses the Caddyfile tokens for a nested
 // matcher set, and returns its raw module map value.
 func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
-	matcherMap := make(map[string]RequestMatcher)
+	matcherMap := make(map[string]any)
 
 	// in case there are multiple instances of the same matcher, concatenate
 	// their tokens (we expect that UnmarshalCaddyfile should be able to
@@ -1561,11 +1569,15 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 		if err != nil {
 			return nil, err
 		}
-		rm, ok := unm.(RequestMatcher)
-		if !ok {
-			return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+		if rm, ok := unm.(RequestMatcherWithError); ok {
+			matcherMap[matcherName] = rm
+			continue
 		}
-		matcherMap[matcherName] = rm
+		if rm, ok := unm.(RequestMatcher); ok {
+			matcherMap[matcherName] = rm
+			continue
+		}
+		return nil, fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 	}
 
 	// we should now have a functional matcher, but we also

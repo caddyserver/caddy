@@ -336,15 +336,26 @@ func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) M
 // MatcherSet is a set of matchers which
 // must all match in order for the request
 // to be matched successfully.
-type MatcherSet []RequestMatcher
+type MatcherSet []any
 
 // Match returns true if the request matches all
 // matchers in mset or if there are no matchers.
 func (mset MatcherSet) Match(r *http.Request) bool {
 	for _, m := range mset {
-		if !m.Match(r) {
-			return false
+		if me, ok := m.(RequestMatcherWithError); ok {
+			match, _ := me.MatchWithError(r)
+			if !match {
+				return false
+			}
+			continue
 		}
+		if me, ok := m.(RequestMatcher); ok {
+			if !me.Match(r) {
+				return false
+			}
+			continue
+		}
+		return false
 	}
 	return true
 }
@@ -357,8 +368,10 @@ func (mset MatcherSet) MatchWithError(r *http.Request) (bool, error) {
 			if err != nil || !match {
 				return match, err
 			}
-		} else {
-			if !m.Match(r) {
+			continue
+		}
+		if me, ok := m.(RequestMatcher); ok {
+			if !me.Match(r) {
 				// for backwards compatibility
 				err, ok := GetVar(r.Context(), MatcherErrorVarKey).(error)
 				if ok {
@@ -368,7 +381,9 @@ func (mset MatcherSet) MatchWithError(r *http.Request) (bool, error) {
 				}
 				return false, nil
 			}
+			continue
 		}
+		return false, fmt.Errorf("matcher is not a RequestMatcher or RequestMatcherWithError: %#v", m)
 	}
 	return true, nil
 }
@@ -401,11 +416,15 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 	for _, matcherSetIfaces := range matcherSets.([]map[string]any) {
 		var matcherSet MatcherSet
 		for _, matcher := range matcherSetIfaces {
-			reqMatcher, ok := matcher.(RequestMatcher)
-			if !ok {
-				return fmt.Errorf("decoded module is not a RequestMatcher: %#v", matcher)
+			if m, ok := matcher.(RequestMatcherWithError); ok {
+				matcherSet = append(matcherSet, m)
+				continue
 			}
-			matcherSet = append(matcherSet, reqMatcher)
+			if m, ok := matcher.(RequestMatcher); ok {
+				matcherSet = append(matcherSet, m)
+				continue
+			}
+			return fmt.Errorf("decoded module is not a RequestMatcher or RequestMatcherWithError: %#v", matcher)
 		}
 		*ms = append(*ms, matcherSet)
 	}
