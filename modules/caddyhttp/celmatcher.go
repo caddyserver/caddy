@@ -388,7 +388,7 @@ type CELLibraryProducer interface {
 // limited set of function signatures. For strong type validation you may need
 // to provide a custom macro which does a more detailed analysis of the CEL
 // literal provided to the macro as an argument.
-func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fac CELMatcherFactory) (cel.Library, error) {
+func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fac any) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
 	var macro parser.Macro
 	switch len(matcherDataTypes) {
@@ -432,7 +432,11 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 }
 
 // CELMatcherFactory converts a constant CEL value into a RequestMatcher.
-type CELMatcherFactory func(data ref.Val) (RequestMatcher, error)
+// DEPRECATED: Use CELMatcherWithErrorFactory instead.
+type CELMatcherFactory = func(data ref.Val) (RequestMatcher, error)
+
+// CELMatcherWithErrorFactory converts a constant CEL value into a RequestMatcherWithError.
+type CELMatcherWithErrorFactory = func(data ref.Val) (RequestMatcherWithError, error)
 
 // matcherCELLibrary is a simplistic configurable cel.Library implementation.
 type matcherCELLibrary struct {
@@ -460,7 +464,7 @@ func (lib *matcherCELLibrary) ProgramOptions() []cel.ProgramOption {
 // that takes a single argument, and optimizes the implementation to precompile
 // the matcher and return a function that references the precompiled and
 // provisioned matcher.
-func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.InterpretableDecorator {
+func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDecorator {
 	return func(i interpreter.Interpretable) (interpreter.Interpretable, error) {
 		call, ok := i.(interpreter.InterpretableCall)
 		if !ok {
@@ -489,49 +493,92 @@ func CELMatcherDecorator(funcName string, fac CELMatcherFactory) interpreter.Int
 			// and matcher provisioning should be handled at dynamically.
 			return i, nil
 		}
-		matcher, err := fac(matcherData.Value())
-		if err != nil {
-			return nil, err
-		}
-		return interpreter.NewCall(
-			i.ID(), funcName, funcName+"_opt",
-			[]interpreter.Interpretable{reqAttr},
-			func(args ...ref.Val) ref.Val {
-				// The request value, guaranteed to be of type celHTTPRequest
-				celReq := args[0]
-				// If needed this call could be changed to convert the value
-				// to a *http.Request using CEL's ConvertToNative method.
-				httpReq := celReq.Value().(celHTTPRequest)
-				if m, ok := matcher.(RequestMatcherWithError); ok {
-					match, err := m.MatchWithError(httpReq.Request)
+
+		if factory, ok := fac.(CELMatcherWithErrorFactory); ok {
+			matcher, err := factory(matcherData.Value())
+			if err != nil {
+				return nil, err
+			}
+			return interpreter.NewCall(
+				i.ID(), funcName, funcName+"_opt",
+				[]interpreter.Interpretable{reqAttr},
+				func(args ...ref.Val) ref.Val {
+					// The request value, guaranteed to be of type celHTTPRequest
+					celReq := args[0]
+					// If needed this call could be changed to convert the value
+					// to a *http.Request using CEL's ConvertToNative method.
+					httpReq := celReq.Value().(celHTTPRequest)
+					match, err := matcher.MatchWithError(httpReq.Request)
 					if err != nil {
 						return types.WrapErr(err)
 					}
 					return types.Bool(match)
-				}
-				return types.Bool(matcher.Match(httpReq.Request))
-			},
-		), nil
+				},
+			), nil
+		}
+
+		if factory, ok := fac.(CELMatcherFactory); ok {
+			matcher, err := factory(matcherData.Value())
+			if err != nil {
+				return nil, err
+			}
+			return interpreter.NewCall(
+				i.ID(), funcName, funcName+"_opt",
+				[]interpreter.Interpretable{reqAttr},
+				func(args ...ref.Val) ref.Val {
+					// The request value, guaranteed to be of type celHTTPRequest
+					celReq := args[0]
+					// If needed this call could be changed to convert the value
+					// to a *http.Request using CEL's ConvertToNative method.
+					httpReq := celReq.Value().(celHTTPRequest)
+					if m, ok := matcher.(RequestMatcherWithError); ok {
+						match, err := m.MatchWithError(httpReq.Request)
+						if err != nil {
+							return types.WrapErr(err)
+						}
+						return types.Bool(match)
+					}
+					return types.Bool(matcher.Match(httpReq.Request))
+				},
+			), nil
+		}
+
+		return nil, fmt.Errorf("invalid matcher factory, must be CELMatcherFactory or CELMatcherWithErrorFactory: %T", fac)
 	}
 }
 
 // CELMatcherRuntimeFunction creates a function binding for when the input to the matcher
 // is dynamically resolved rather than a set of static constant values.
-func CELMatcherRuntimeFunction(funcName string, fac CELMatcherFactory) functions.BinaryOp {
+func CELMatcherRuntimeFunction(funcName string, fac any) functions.BinaryOp {
 	return func(celReq, matcherData ref.Val) ref.Val {
-		matcher, err := fac(matcherData)
-		if err != nil {
-			return types.WrapErr(err)
-		}
-		httpReq := celReq.Value().(celHTTPRequest)
-		if m, ok := matcher.(RequestMatcherWithError); ok {
-			match, err := m.MatchWithError(httpReq.Request)
+		if factory, ok := fac.(CELMatcherWithErrorFactory); ok {
+			matcher, err := factory(matcherData)
+			if err != nil {
+				return types.WrapErr(err)
+			}
+			httpReq := celReq.Value().(celHTTPRequest)
+			match, err := matcher.MatchWithError(httpReq.Request)
 			if err != nil {
 				return types.WrapErr(err)
 			}
 			return types.Bool(match)
 		}
-		return types.Bool(matcher.Match(httpReq.Request))
+		if factory, ok := fac.(CELMatcherFactory); ok {
+			matcher, err := factory(matcherData)
+			if err != nil {
+				return types.WrapErr(err)
+			}
+			httpReq := celReq.Value().(celHTTPRequest)
+			if m, ok := matcher.(RequestMatcherWithError); ok {
+				match, err := m.MatchWithError(httpReq.Request)
+				if err != nil {
+					return types.WrapErr(err)
+				}
+				return types.Bool(match)
+			}
+			return types.Bool(matcher.Match(httpReq.Request))
+		}
+		return types.NewErr("CELMatcherRuntimeFunction invalid matcher factory: %T", fac)
 	}
 }
 

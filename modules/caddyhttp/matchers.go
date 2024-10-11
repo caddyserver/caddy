@@ -372,7 +372,7 @@ func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"host",
 		"host_match_request_list",
 		[]*cel.Type{cel.ListType(cel.StringType)},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -654,7 +654,7 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -716,7 +716,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"path_regexp",
 		"path_regexp_request_string",
 		[]*cel.Type{cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			pattern := data.(types.String)
 			matcher := MatchPathRE{MatchRegexp{
 				Name:    ctx.Value(MatcherNameCtxKey).(string),
@@ -733,7 +733,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"path_regexp",
 		"path_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -802,7 +802,7 @@ func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"method",
 		"method_request_list",
 		[]*cel.Type{cel.ListType(cel.StringType)},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -909,7 +909,7 @@ func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"query",
 		"query_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
@@ -993,7 +993,7 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"header",
 		"header_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
@@ -1169,7 +1169,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"header_regexp",
 		"header_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -1192,7 +1192,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"header_regexp",
 		"header_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -1287,7 +1287,7 @@ func (MatchProtocol) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"protocol",
 		"protocol_request_string",
 		[]*cel.Type{cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			protocolStr, ok := data.(types.String)
 			if !ok {
 				return nil, errors.New("protocol argument was not a string")
@@ -1603,6 +1603,10 @@ const regexpPlaceholderPrefix = "http.regexp"
 // holds an optional error emitted from a request matcher,
 // to short-circuit the handler chain, since matchers cannot
 // return errors via the RequestMatcher interface.
+//
+// DEPRECATED: Matchers should implement RequestMatcherWithError
+// which can return an error directly, instead of smuggling it
+// through the vars map.
 const MatcherErrorVarKey = "matchers.error"
 
 // Interface guards

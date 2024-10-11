@@ -108,7 +108,7 @@ func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -218,7 +218,7 @@ func (MatchClientIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {

@@ -711,7 +711,7 @@ const (
 
 // Interface guards
 var (
-	_ caddy.Validator              = (*MatchFile)(nil)
-	_ caddyhttp.RequestMatcher     = (*MatchFile)(nil)
-	_ caddyhttp.CELLibraryProducer = (*MatchFile)(nil)
+	_ caddy.Validator                   = (*MatchFile)(nil)
+	_ caddyhttp.RequestMatcherWithError = (*MatchFile)(nil)
+	_ caddyhttp.CELLibraryProducer      = (*MatchFile)(nil)
 )
