@@ -569,19 +569,24 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	return false, proxyErr
 }
 
-const canonicalWsHeaderPrefix = "Sec-Websocket"
+// only 5 headers to check
+var wsHeaderMapping = map[string]string{
+	"Sec-Websocket-Accept":     "Sec-WebSocket-Accept",
+	"Sec-Websocket-Extensions": "Sec-WebSocket-Extensions",
+	"Sec-Websocket-Key":        "Sec-WebSocket-Key",
+	"Sec-Websocket-Protocol":   "Sec-WebSocket-Protocol",
+	"Sec-Websocket-Version":    "Sec-WebSocket-Version",
+}
 
 // websocket header replacer, normally server doesn't care about this difference,
 // but some do, and RFC use the case too
 // gorilla/websocket, gobwas/ws all use this case too.
 // see https://caddy.community/t/websockets-fail-venus-os-cerbo-gx-victron/25685
-var wsHeaderReplacer = strings.NewReplacer(canonicalWsHeaderPrefix, "Sec-WebSocket")
-
 func normalizeWsHeader(header http.Header) {
-	for k, v := range header {
-		if strings.HasPrefix(k, canonicalWsHeaderPrefix) {
-			header[wsHeaderReplacer.Replace(k)] = v
+	for k, rk := range wsHeaderMapping {
+		if v, ok := header[k]; ok {
 			delete(header, k)
+			header[rk] = v
 		}
 	}
 }
