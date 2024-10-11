@@ -569,8 +569,9 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	return false, proxyErr
 }
 
-// only 5 headers to check
-var wsHeaderMapping = map[string]string{
+// Mapping of the canonical form of the headers, to the RFC 6455 form,
+// i.e. `WebSocket` with uppercase 'S'.
+var websocketHeaderMapping = map[string]string{
 	"Sec-Websocket-Accept":     "Sec-WebSocket-Accept",
 	"Sec-Websocket-Extensions": "Sec-WebSocket-Extensions",
 	"Sec-Websocket-Key":        "Sec-WebSocket-Key",
@@ -578,12 +579,13 @@ var wsHeaderMapping = map[string]string{
 	"Sec-Websocket-Version":    "Sec-WebSocket-Version",
 }
 
-// websocket header replacer, normally server doesn't care about this difference,
-// but some do, and RFC use the case too
-// gorilla/websocket, gobwas/ws all use this case too.
-// see https://caddy.community/t/websockets-fail-venus-os-cerbo-gx-victron/25685
-func normalizeWsHeader(header http.Header) {
-	for k, rk := range wsHeaderMapping {
+// normalizeWebsocketHeaders ensures we use the standard casing as per
+// RFC 6455, i.e. `WebSocket` with uppercase 'S'. Most servers don't
+// care about this difference (read headers case insensitively), but
+// some do, so this maximizes compatibility with upstreams.
+// See https://github.com/caddyserver/caddy/pull/6621
+func normalizeWebsocketHeaders(header http.Header) {
+	for k, rk := range websocketHeaderMapping {
 		if v, ok := header[k]; ok {
 			delete(header, k)
 			header[rk] = v
@@ -677,8 +679,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpType)
-		// use the correct case for websocket headers
-		normalizeWsHeader(req.Header)
+		normalizeWebsocketHeaders(req.Header)
 	}
 
 	// Set up the PROXY protocol info
