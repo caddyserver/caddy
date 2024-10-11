@@ -225,7 +225,7 @@ func (VarsMatcher) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"vars",
 		"vars_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
@@ -352,7 +352,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -375,7 +375,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
