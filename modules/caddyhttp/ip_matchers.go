@@ -145,9 +145,20 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
-	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	matches, err := m.MatchWithError(r)
+	if err != nil {
+		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
+	return matches
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
+	// if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified")
+	}
+
 	address := r.RemoteAddr
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
@@ -155,7 +166,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			c.Write(zap.Error(err))
 		}
 
-		return false
+		return false, nil
 	}
 	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	if !matches && !zoneFilter {
@@ -163,12 +174,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			c.Write(zap.String("zone", zoneID))
 		}
 	}
-	return matches
-}
-
-// MatchWithError returns true if r matches m.
-func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return matches, nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -243,25 +249,31 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchClientIP) Match(r *http.Request) bool {
-	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
-	}
-	address := GetVar(r.Context(), ClientIPVarKey).(string)
-	clientIP, zoneID, err := parseIPZoneFromString(address)
+	matches, err := m.MatchWithError(r)
 	if err != nil {
-		m.logger.Error("getting client IP", zap.Error(err))
-		return false
-	}
-	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
-	if !matches && !zoneFilter {
-		m.logger.Debug("zone ID from client IP did not match", zap.String("zone", zoneID))
+		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
 	return matches
 }
 
 // MatchWithError returns true if r matches m.
 func (m MatchClientIP) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	// if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified")
+	}
+
+	address := GetVar(r.Context(), ClientIPVarKey).(string)
+	clientIP, zoneID, err := parseIPZoneFromString(address)
+	if err != nil {
+		m.logger.Error("getting client IP", zap.Error(err))
+		return false, nil
+	}
+	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
+	if !matches && !zoneFilter {
+		m.logger.Debug("zone ID from client IP did not match", zap.String("zone", zoneID))
+	}
+	return matches, nil
 }
 
 func provisionCidrsZonesFromRanges(ranges []string) ([]*netip.Prefix, []string, error) {
