@@ -756,7 +756,6 @@ const MatcherNameCtxKey = "matcher_name"
 // Interface guards
 var (
 	_ caddy.Provisioner       = (*MatchExpression)(nil)
-	_ RequestMatcher          = (*MatchExpression)(nil)
 	_ RequestMatcherWithError = (*MatchExpression)(nil)
 	_ caddyfile.Unmarshaler   = (*MatchExpression)(nil)
 	_ json.Marshaler          = (*MatchExpression)(nil)

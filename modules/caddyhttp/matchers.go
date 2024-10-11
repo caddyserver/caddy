@@ -296,6 +296,12 @@ func (m MatchHost) Provision(_ caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchHost) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
 	reqHost, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		// OK; probably didn't have a port
@@ -315,7 +321,7 @@ func (m MatchHost) Match(r *http.Request) bool {
 			return m[i] >= reqHost
 		})
 		if pos < len(m) && m[pos] == reqHost {
-			return true
+			return true, nil
 		}
 	}
 
@@ -346,18 +352,13 @@ outer:
 					continue outer
 				}
 			}
-			return true
+			return true, nil
 		} else if strings.EqualFold(reqHost, host) {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
-}
-
-// MatchWithError returns true if r matches m.
-func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return false, nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -416,6 +417,12 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchPath) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// Even though RFC 9110 says that path matching is case-sensitive
 	// (https://www.rfc-editor.org/rfc/rfc9110.html#section-4.2.3),
 	// we do case-insensitive matching to mitigate security issues
@@ -441,7 +448,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
 		if matchPattern == "*" {
-			return true
+			return true, nil
 		}
 
 		// Clean the path, merge doubled slashes, etc.
@@ -469,7 +476,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 		if strings.Contains(matchPattern, "%") {
 			reqPathForPattern := CleanPath(r.URL.EscapedPath(), mergeSlashes)
 			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
-				return true
+				return true, nil
 			}
 
 			// doing prefix/suffix/substring matches doesn't make sense
@@ -488,7 +495,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 			strings.HasPrefix(matchPattern, "*") &&
 			strings.HasSuffix(matchPattern, "*") {
 			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
-				return true
+				return true, nil
 			}
 			continue
 		}
@@ -500,7 +507,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 			// treat it as a fast suffix match
 			if strings.HasPrefix(matchPattern, "*") {
 				if strings.HasSuffix(reqPathForPattern, matchPattern[1:]) {
-					return true
+					return true, nil
 				}
 				continue
 			}
@@ -509,7 +516,7 @@ func (m MatchPath) Match(r *http.Request) bool {
 			// treat it as a fast prefix match
 			if strings.HasSuffix(matchPattern, "*") {
 				if strings.HasPrefix(reqPathForPattern, matchPattern[:len(matchPattern)-1]) {
-					return true
+					return true, nil
 				}
 				continue
 			}
@@ -520,10 +527,10 @@ func (m MatchPath) Match(r *http.Request) bool {
 		// because we can't handle it anyway
 		matches, _ := path.Match(matchPattern, reqPathForPattern)
 		if matches {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
@@ -632,11 +639,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	return matches
 }
 
-// MatchWithError returns true if r matches m.
-func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
-}
-
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -687,6 +689,12 @@ func (MatchPathRE) CaddyModule() caddy.ModuleInfo {
 
 // Match returns true if r matches m.
 func (m MatchPathRE) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// Clean the path, merges doubled slashes, etc.
@@ -694,12 +702,7 @@ func (m MatchPathRE) Match(r *http.Request) bool {
 	// the path matcher. See #4407
 	cleanedPath := cleanPath(r.URL.Path)
 
-	return m.MatchRegexp.Match(cleanedPath, repl)
-}
-
-// MatchWithError returns true if r matches m.
-func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return m.MatchRegexp.Match(cleanedPath, repl), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -779,12 +782,13 @@ func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchMethod) Match(r *http.Request) bool {
-	return slices.Contains(m, r.Method)
+	match, _ := m.MatchWithError(r)
+	return match
 }
 
 // MatchWithError returns true if r matches m.
 func (m MatchMethod) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return slices.Contains(m, r.Method), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -843,10 +847,17 @@ func (m *MatchQuery) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m. An empty m matches an empty query string.
 func (m MatchQuery) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+// An empty m matches an empty query string.
+func (m MatchQuery) MatchWithError(r *http.Request) (bool, error) {
 	// If no query keys are configured, this only
 	// matches an empty query string.
 	if len(m) == 0 {
-		return len(r.URL.Query()) == 0
+		return len(r.URL.Query()) == 0, nil
 	}
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -863,7 +874,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		// "Relying on parser alignment for security is doomed." Overall conclusion is that
 		// splitting on & and rejecting ; in key=value pairs is safer than accepting raw ;.
 		// We regard the Go team's decision as sound and thus reject malformed query strings.
-		return false
+		return false, nil
 	}
 
 	// Count the amount of matched keys, to ensure we AND
@@ -874,7 +885,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 		param = repl.ReplaceAll(param, "")
 		paramVal, found := parsed[param]
 		if !found {
-			return false
+			return false, nil
 		}
 		for _, v := range vals {
 			v = repl.ReplaceAll(v, "")
@@ -884,12 +895,7 @@ func (m MatchQuery) Match(r *http.Request) bool {
 			}
 		}
 	}
-	return matchedKeys == len(m)
-}
-
-// MatchWithError returns true if r matches m.
-func (m MatchQuery) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return matchedKeys == len(m), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -965,13 +971,14 @@ func (m *MatchHeader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchHeader) Match(r *http.Request) bool {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	return matchHeaders(r.Header, http.Header(m), r.Host, repl)
+	match, _ := m.MatchWithError(r)
+	return match
 }
 
 // MatchWithError returns true if r matches m.
 func (m MatchHeader) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	return matchHeaders(r.Header, http.Header(m), r.Host, repl), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -1105,6 +1112,12 @@ func (m *MatchHeaderRE) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Match returns true if r matches m.
 func (m MatchHeaderRE) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchHeaderRE) MatchWithError(r *http.Request) (bool, error) {
 	for field, rm := range m {
 		actualFieldVals := getHeaderFieldVals(r.Header, field, r.Host)
 		match := false
@@ -1117,15 +1130,10 @@ func (m MatchHeaderRE) Match(r *http.Request) bool {
 			}
 		}
 		if !match {
-			return false
+			return false, nil
 		}
 	}
-	return true
-}
-
-// MatchWithError returns true if r matches m.
-func (m MatchHeaderRE) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	return true, nil
 }
 
 // Provision compiles m's regular expressions.
@@ -1222,36 +1230,37 @@ func (MatchProtocol) CaddyModule() caddy.ModuleInfo {
 
 // Match returns true if r matches m.
 func (m MatchProtocol) Match(r *http.Request) bool {
-	switch string(m) {
-	case "grpc":
-		return strings.HasPrefix(r.Header.Get("content-type"), "application/grpc")
-	case "https":
-		return r.TLS != nil
-	case "http":
-		return r.TLS == nil
-	case "http/1.0":
-		return r.ProtoMajor == 1 && r.ProtoMinor == 0
-	case "http/1.0+":
-		return r.ProtoAtLeast(1, 0)
-	case "http/1.1":
-		return r.ProtoMajor == 1 && r.ProtoMinor == 1
-	case "http/1.1+":
-		return r.ProtoAtLeast(1, 1)
-	case "http/2":
-		return r.ProtoMajor == 2
-	case "http/2+":
-		return r.ProtoAtLeast(2, 0)
-	case "http/3":
-		return r.ProtoMajor == 3
-	case "http/3+":
-		return r.ProtoAtLeast(3, 0)
-	}
-	return false
+	match, _ := m.MatchWithError(r)
+	return match
 }
 
 // MatchWithError returns true if r matches m.
 func (m MatchProtocol) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	switch string(m) {
+	case "grpc":
+		return strings.HasPrefix(r.Header.Get("content-type"), "application/grpc"), nil
+	case "https":
+		return r.TLS != nil, nil
+	case "http":
+		return r.TLS == nil, nil
+	case "http/1.0":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 0, nil
+	case "http/1.0+":
+		return r.ProtoAtLeast(1, 0), nil
+	case "http/1.1":
+		return r.ProtoMajor == 1 && r.ProtoMinor == 1, nil
+	case "http/1.1+":
+		return r.ProtoAtLeast(1, 1), nil
+	case "http/2":
+		return r.ProtoMajor == 2, nil
+	case "http/2+":
+		return r.ProtoAtLeast(2, 0), nil
+	case "http/3":
+		return r.ProtoMajor == 3, nil
+	case "http/3+":
+		return r.ProtoAtLeast(3, 0), nil
+	}
+	return false, nil
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
@@ -1298,21 +1307,22 @@ func (MatchTLS) CaddyModule() caddy.ModuleInfo {
 
 // Match returns true if r matches m.
 func (m MatchTLS) Match(r *http.Request) bool {
-	if r.TLS == nil {
-		return false
-	}
-	if m.HandshakeComplete != nil {
-		if (!*m.HandshakeComplete && r.TLS.HandshakeComplete) ||
-			(*m.HandshakeComplete && !r.TLS.HandshakeComplete) {
-			return false
-		}
-	}
-	return true
+	match, _ := m.MatchWithError(r)
+	return match
 }
 
 // MatchWithError returns true if r matches m.
 func (m MatchTLS) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	if r.TLS == nil {
+		return false, nil
+	}
+	if m.HandshakeComplete != nil {
+		if (!*m.HandshakeComplete && r.TLS.HandshakeComplete) ||
+			(*m.HandshakeComplete && !r.TLS.HandshakeComplete) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // UnmarshalCaddyfile parses Caddyfile tokens for this matcher. Syntax:
@@ -1393,17 +1403,24 @@ func (m *MatchNot) Provision(ctx caddy.Context) error {
 // the embedded matchers, false is returned if any of its matcher
 // sets return true.
 func (m MatchNot) Match(r *http.Request) bool {
-	for _, ms := range m.MatcherSets {
-		if ms.Match(r) {
-			return false
-		}
-	}
-	return true
+	match, _ := m.MatchWithError(r)
+	return match
 }
 
-// MatchWithError returns true if r matches m.
+// MatchWithError returns true if r matches m. Since this matcher
+// negates the embedded matchers, false is returned if any of its
+// matcher sets return true.
 func (m MatchNot) MatchWithError(r *http.Request) (bool, error) {
-	return m.Match(r), nil
+	for _, ms := range m.MatcherSets {
+		matches, err := ms.MatchWithError(r)
+		if err != nil {
+			return false, err
+		}
+		if matches {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // MatchRegexp is an embedable type for matching
@@ -1578,26 +1595,17 @@ const MatcherErrorVarKey = "matchers.error"
 
 // Interface guards
 var (
-	_ RequestMatcher          = (*MatchHost)(nil)
 	_ RequestMatcherWithError = (*MatchHost)(nil)
 	_ caddy.Provisioner       = (*MatchHost)(nil)
-	_ RequestMatcher          = (*MatchPath)(nil)
 	_ RequestMatcherWithError = (*MatchPath)(nil)
-	_ RequestMatcher          = (*MatchPathRE)(nil)
 	_ RequestMatcherWithError = (*MatchPathRE)(nil)
 	_ caddy.Provisioner       = (*MatchPathRE)(nil)
-	_ RequestMatcher          = (*MatchMethod)(nil)
 	_ RequestMatcherWithError = (*MatchMethod)(nil)
-	_ RequestMatcher          = (*MatchQuery)(nil)
 	_ RequestMatcherWithError = (*MatchQuery)(nil)
-	_ RequestMatcher          = (*MatchHeader)(nil)
 	_ RequestMatcherWithError = (*MatchHeader)(nil)
-	_ RequestMatcher          = (*MatchHeaderRE)(nil)
 	_ RequestMatcherWithError = (*MatchHeaderRE)(nil)
 	_ caddy.Provisioner       = (*MatchHeaderRE)(nil)
-	_ RequestMatcher          = (*MatchProtocol)(nil)
 	_ RequestMatcherWithError = (*MatchProtocol)(nil)
-	_ RequestMatcher          = (*MatchNot)(nil)
 	_ RequestMatcherWithError = (*MatchNot)(nil)
 	_ caddy.Provisioner       = (*MatchNot)(nil)
 	_ caddy.Provisioner       = (*MatchRegexp)(nil)
