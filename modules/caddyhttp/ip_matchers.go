@@ -145,11 +145,11 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
-	matches, err := m.MatchWithError(r)
+	match, err := m.MatchWithError(r)
 	if err != nil {
 		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
-	return matches
+	return match
 }
 
 // MatchWithError returns true if r matches m.
@@ -249,11 +249,11 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchClientIP) Match(r *http.Request) bool {
-	matches, err := m.MatchWithError(r)
+	match, err := m.MatchWithError(r)
 	if err != nil {
 		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
-	return matches
+	return match
 }
 
 // MatchWithError returns true if r matches m.
@@ -348,13 +348,11 @@ func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefi
 
 // Interface guards
 var (
-	_ RequestMatcher          = (*MatchRemoteIP)(nil)
 	_ RequestMatcherWithError = (*MatchRemoteIP)(nil)
 	_ caddy.Provisioner       = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler   = (*MatchRemoteIP)(nil)
 	_ CELLibraryProducer      = (*MatchRemoteIP)(nil)
 
-	_ RequestMatcher          = (*MatchClientIP)(nil)
 	_ RequestMatcherWithError = (*MatchClientIP)(nil)
 	_ caddy.Provisioner       = (*MatchClientIP)(nil)
 	_ caddyfile.Unmarshaler   = (*MatchClientIP)(nil)
