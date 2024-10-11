@@ -569,6 +569,23 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	return false, proxyErr
 }
 
+const canonicalWsHeaderPrefix = "Sec-Websocket"
+
+// websocket header replacer, normally server doesn't care about this difference,
+// but some do, and RFC use the case too
+// gorilla/websocket, gobwas/ws all use this case too.
+// see https://caddy.community/t/websockets-fail-venus-os-cerbo-gx-victron/25685
+var wsHeaderReplacer = strings.NewReplacer(canonicalWsHeaderPrefix, "Sec-WebSocket")
+
+func normalizeWsHeader(header http.Header) {
+	for k, v := range header {
+		if strings.HasPrefix(k, canonicalWsHeaderPrefix) {
+			header[wsHeaderReplacer.Replace(k)] = v
+			delete(header, k)
+		}
+	}
+}
+
 // prepareRequest clones req so that it can be safely modified without
 // changing the original request or introducing data races. It then
 // modifies it so that it is ready to be proxied, except for directing
@@ -655,6 +672,8 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpType)
+		// use the correct case for websocket headers
+		normalizeWsHeader(req.Header)
 	}
 
 	// Set up the PROXY protocol info
