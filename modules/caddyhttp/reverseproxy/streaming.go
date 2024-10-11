@@ -63,11 +63,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		return
 	}
 
-	normalizeWebsocketHeaders(res.Header)
-
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
+	normalizeWebsocketHeaders(rw.Header())
 	rw.WriteHeader(res.StatusCode)
 
 	logger.Debug("upgrading connection")
