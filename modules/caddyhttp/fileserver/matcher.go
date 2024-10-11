@@ -430,9 +430,13 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	switch m.TryPolicy {
 	case "", tryPolicyFirstExist:
 		for _, pattern := range m.TryFiles {
+			// If the pattern is a status code, emit an error,
+			// which short-circuits the middleware pipeline and
+			// writes an HTTP error response.
 			if err := parseErrorCode(pattern); err != nil {
 				return false, err
 			}
+
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
