@@ -1124,7 +1124,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 				return false
 			}
 
-			match, err := lb.RetryMatch.AnyMatchWithError(req)
+			match, err := lb.RetryMatch.AnyMatch(req)
 			if err != nil {
 				logger.Error("error matching request for retry", zap.Error(err))
 				return false

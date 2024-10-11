@@ -254,7 +254,7 @@ func wrapRoute(route Route) Middleware {
 			nextCopy := next
 
 			// route must match at least one of the matcher sets
-			matches, err := route.MatcherSets.AnyMatchWithError(req)
+			matches, err := route.MatcherSets.AnyMatch(req)
 			if err != nil {
 				// allow matchers the opportunity to short circuit
 				// the request and trigger the error handling chain
@@ -382,25 +382,11 @@ type RawMatcherSets []caddy.ModuleMap
 // the sets.
 type MatcherSets []MatcherSet
 
-// AnyMatch returns true if req matches any of the
-// matcher sets in ms or if there are no matchers,
-// in which case the request always matches.
-//
-// Deprecated: Use AnyMatchWithError instead.
-func (ms MatcherSets) AnyMatch(req *http.Request) bool {
-	for _, m := range ms {
-		if m.Match(req) {
-			return true
-		}
-	}
-	return len(ms) == 0
-}
-
-// AnyMatchWithError returns true if req matches any of the
-// matcher sets in ms or if there are no matchers, in which
-// case the request always matches. If any matcher returns
-// an error, we cut short and return the error.
-func (ms MatcherSets) AnyMatchWithError(req *http.Request) (bool, error) {
+// AnyMatch returns true if req matches any of the matcher sets
+// in ms or if there are no matchers, in which case the request
+// always matches. If any matcher returns an error, we cut short
+// and return the error.
+func (ms MatcherSets) AnyMatch(req *http.Request) (bool, error) {
 	for _, m := range ms {
 		match, err := m.MatchWithError(req)
 		if err != nil || match {
