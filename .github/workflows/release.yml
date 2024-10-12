@@ -13,13 +13,13 @@ jobs:
         os: 
           - ubuntu-latest
         go: 
-          - '1.22'
+          - '1.23'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.22'
-          GO_SEMVER: '~1.22.3'
+        - go: '1.23'
+          GO_SEMVER: '~1.23.0'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
@@ -104,6 +104,10 @@ jobs:
       uses: anchore/sbom-action/download-syft@main
     - name: Syft version
       run: syft version
+    - name: Install xcaddy
+      run: |
+        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+        xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v6

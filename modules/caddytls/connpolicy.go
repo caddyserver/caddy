@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -76,6 +78,14 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 			for _, validator := range clientCertValidations.([]any) {
 				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
 			}
+		}
+
+		if len(pol.HandshakeContextRaw) > 0 {
+			modIface, err := ctx.LoadModule(pol, "HandshakeContextRaw")
+			if err != nil {
+				return fmt.Errorf("loading handshake context module: %v", err)
+			}
+			cp[i].handshakeContext = modIface.(HandshakeContext)
 		}
 	}
 
@@ -136,6 +146,7 @@ type ConnectionPolicy struct {
 	// How to match this policy with a TLS ClientHello. If
 	// this policy is the first to match, it will be used.
 	MatchersRaw caddy.ModuleMap `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
+	matchers    []ConnectionMatcher
 
 	// How to choose a certificate if more than one matched
 	// the given ServerName (SNI) value.
@@ -191,6 +202,12 @@ type ConnectionPolicy struct {
 	// This feature is EXPERIMENTAL and subject to change or removal.
 	InsecureSecretsLog string `json:"insecure_secrets_log,omitempty"`
 
+	// A module that can manipulate the context passed into CertMagic's
+	// certificate management functions during TLS handshakes.
+	// EXPERIMENTAL - subject to change or removal.
+	HandshakeContextRaw json.RawMessage `json:"handshake_context,omitempty" caddy:"namespace=tls.context inline_key=module"`
+	handshakeContext    HandshakeContext
+
 	// TLSConfig is the fully-formed, standard lib TLS config
 	// used to serve TLS connections. Provision all
 	// ConnectionPolicies to populate this. It is exported only
@@ -198,8 +215,15 @@ type ConnectionPolicy struct {
 	// if necessary (like to adjust NextProtos to disable HTTP/2),
 	// and may be unexported in the future.
 	TLSConfig *tls.Config `json:"-"`
+}
 
-	matchers []ConnectionMatcher
+type HandshakeContext interface {
+	// HandshakeContext returns a context to pass into CertMagic's
+	// GetCertificate function used to serve, load, and manage certs
+	// during TLS handshakes. Generally you'll start with the context
+	// from the ClientHelloInfo, but you may use other information
+	// from it as well. Return an error to abort the handshake.
+	HandshakeContext(*tls.ClientHelloInfo) (context.Context, error)
 }
 
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
@@ -239,7 +263,18 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			}
 			cfg.DefaultServerName = p.DefaultSNI
 			cfg.FallbackServerName = p.FallbackSNI
-			return cfg.GetCertificate(hello)
+
+			// TODO: experimental: if a handshake context module is configured, allow it
+			// to modify the context before passing it into CertMagic's GetCertificate
+			ctx := hello.Context()
+			if p.handshakeContext != nil {
+				ctx, err = p.handshakeContext.HandshakeContext(hello)
+				if err != nil {
+					return nil, fmt.Errorf("handshake context: %v", err)
+				}
+			}
+
+			return cfg.GetCertificateWithContext(ctx, hello)
 		},
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
@@ -338,8 +373,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 		cfg.KeyLogWriter = logFile.(io.Writer)
 
-		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
-			zap.String("log_filename", filename))
+		if c := tlsApp.logger.Check(zapcore.WarnLevel, "TLS SECURITY COMPROMISED: secrets logging is enabled!"); c != nil {
+			c.Write(zap.String("log_filename", filename))
+		}
 	}
 
 	setDefaultTLSParams(cfg)
@@ -553,16 +589,10 @@ type ClientAuthentication struct {
 //	 	trust_pool			   <module> {
 //			...
 //		}
-//		trusted_leaf_cert      <base64_der>
-//		trusted_leaf_cert_file <filename>
 //		verifier               <module>
 //	}
 //
-// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
-// - `trusted_leaf_certs`
-// - `trusted_leaf_cert_file`
-// - `trust_pool`
-//
+// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided.
 // Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
@@ -766,7 +796,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
 			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil {
+			clientauth.CARaw != nil || clientauth.ca != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -841,7 +871,15 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, cfg.CipherSuites...)
 
 	if len(cfg.CurvePreferences) == 0 {
-		cfg.CurvePreferences = defaultCurves
+		// We would want to write
+		//
+		//	cfg.CurvePreferences = defaultCurves
+		//
+		// but that would disable the post-quantum key agreement X25519Kyber768
+		// supported in Go 1.23, for which the CurveID is not exported.
+		// Instead, we'll set CurvePreferences to nil, which will enable PQC.
+		// See https://github.com/caddyserver/caddy/issues/6540
+		cfg.CurvePreferences = nil
 	}
 
 	if cfg.MinVersion == 0 {

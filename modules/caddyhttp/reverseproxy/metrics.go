@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var reverseProxyMetrics = struct {
@@ -48,9 +49,12 @@ func (m *metricsUpstreamsHealthyUpdater) Init() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				reverseProxyMetrics.logger.Error("upstreams healthy metrics updater panicked",
-					zap.Any("error", err),
-					zap.ByteString("stack", debug.Stack()))
+				if c := reverseProxyMetrics.logger.Check(zapcore.ErrorLevel, "upstreams healthy metrics updater panicked"); c != nil {
+					c.Write(
+						zap.Any("error", err),
+						zap.ByteString("stack", debug.Stack()),
+					)
+				}
 			}
 		}()
 

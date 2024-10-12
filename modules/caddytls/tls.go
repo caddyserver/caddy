@@ -27,6 +27,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
@@ -187,17 +188,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
-	// on-demand rate limiting (TODO: deprecated, and should be removed later; rate limiting is ineffective now that permission modules are required)
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.RateLimit != nil {
-		t.logger.Warn("DEPRECATED: on_demand.rate_limit will be removed in a future release; use permission modules or external certificate managers instead")
-		onDemandRateLimiter.SetMaxEvents(t.Automation.OnDemand.RateLimit.Burst)
-		onDemandRateLimiter.SetWindow(time.Duration(t.Automation.OnDemand.RateLimit.Interval))
-	} else {
-		// remove any existing rate limiter
-		onDemandRateLimiter.SetWindow(0)
-		onDemandRateLimiter.SetMaxEvents(0)
-	}
-
 	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
 	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
 		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
@@ -323,8 +313,9 @@ func (t *TLS) Start() error {
 	if t.Automation.OnDemand == nil || (t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.permission == nil) {
 		for _, ap := range t.Automation.Policies {
 			if ap.OnDemand && ap.isWildcardOrDefault() {
-				t.logger.Warn("YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place",
-					zap.String("docs", "https://caddyserver.com/docs/automatic-https#on-demand-tls"))
+				if c := t.logger.Check(zapcore.WarnLevel, "YOUR SERVER MAY BE VULNERABLE TO ABUSE: on-demand TLS is enabled, but no protections are in place"); c != nil {
+					c.Write(zap.String("docs", "https://caddyserver.com/docs/automatic-https#on-demand-tls"))
+				}
 				break
 			}
 		}
@@ -408,9 +399,12 @@ func (t *TLS) Cleanup() error {
 		// give the new TLS app a "kick" to manage certs that it is configured for
 		// with its own configuration instead of the one we just evicted
 		if err := nextTLSApp.Manage(reManage); err != nil {
-			t.logger.Error("re-managing unloaded certificates with new config",
-				zap.Strings("subjects", reManage),
-				zap.Error(err))
+			if c := t.logger.Check(zapcore.ErrorLevel, "re-managing unloaded certificates with new config"); c != nil {
+				c.Write(
+					zap.Strings("subjects", reManage),
+					zap.Error(err),
+				)
+			}
 		}
 	} else {
 		// no more TLS app running, so delete in-memory cert cache
@@ -442,6 +436,10 @@ func (t *TLS) Manage(names []string) error {
 	for ap, names := range policyToNames {
 		err := ap.magic.ManageAsync(t.ctx.Context, names)
 		if err != nil {
+			const maxNamesToDisplay = 100
+			if len(names) > maxNamesToDisplay {
+				names = append(names[:maxNamesToDisplay], fmt.Sprintf("(%d more...)", len(names)-maxNamesToDisplay))
+			}
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
 		for _, name := range names {
@@ -653,7 +651,9 @@ func (t *TLS) cleanStorageUnits() {
 
 	id, err := caddy.InstanceID()
 	if err != nil {
-		t.logger.Warn("unable to get instance ID; storage clean stamps will be incomplete", zap.Error(err))
+		if c := t.logger.Check(zapcore.WarnLevel, "unable to get instance ID; storage clean stamps will be incomplete"); c != nil {
+			c.Write(zap.Error(err))
+		}
 	}
 	options := certmagic.CleanStorageOptions{
 		Logger:                 t.logger,
@@ -669,7 +669,9 @@ func (t *TLS) cleanStorageUnits() {
 	if err != nil {
 		// probably don't want to return early, since we should still
 		// see if any other storages can get cleaned up
-		t.logger.Error("could not clean default/global storage", zap.Error(err))
+		if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
+			c.Write(zap.Error(err))
+		}
 	}
 
 	// then clean each storage defined in ACME automation policies
@@ -679,7 +681,9 @@ func (t *TLS) cleanStorageUnits() {
 				continue
 			}
 			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
-				t.logger.Error("could not clean storage configured in automation policy", zap.Error(err))
+				if c := t.logger.Check(zapcore.ErrorLevel, "could not clean storage configured in automation policy"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 	}

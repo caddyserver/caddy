@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/dustin/go-humanize"
 
@@ -180,7 +181,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				if proto != "h1" && proto != "h2" && proto != "h2c" && proto != "h3" {
 					return nil, d.Errf("unknown protocol '%s': expected h1, h2, h2c, or h3", proto)
 				}
-				if sliceContains(serverOpts.Protocols, proto) {
+				if slices.Contains(serverOpts.Protocols, proto) {
 					return nil, d.Errf("protocol %s specified more than once", proto)
 				}
 				serverOpts.Protocols = append(serverOpts.Protocols, proto)
@@ -229,7 +230,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 		case "client_ip_headers":
 			headers := d.RemainingArgs()
 			for _, header := range headers {
-				if sliceContains(serverOpts.ClientIPHeaders, header) {
+				if slices.Contains(serverOpts.ClientIPHeaders, header) {
 					return nil, d.Errf("client IP header %s specified more than once", header)
 				}
 				serverOpts.ClientIPHeaders = append(serverOpts.ClientIPHeaders, header)
@@ -239,13 +240,13 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
 			serverOpts.Metrics = new(caddyhttp.Metrics)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "per_host":
+					serverOpts.Metrics.PerHost = true
+				}
+			}
 
 		case "trace":
 			if d.NextArg() {
@@ -288,24 +289,15 @@ func applyServerOptions(
 
 	for key, server := range servers {
 		// find the options that apply to this server
-		opts := func() *serverOptions {
-			for _, entry := range serverOpts {
-				if entry.ListenerAddress == "" {
-					return &entry
-				}
-				for _, listener := range server.Listen {
-					if entry.ListenerAddress == listener {
-						return &entry
-					}
-				}
-			}
-			return nil
-		}()
+		optsIndex := slices.IndexFunc(serverOpts, func(s serverOptions) bool {
+			return s.ListenerAddress == "" || slices.Contains(server.Listen, s.ListenerAddress)
+		})
 
 		// if none apply, then move to the next server
-		if opts == nil {
+		if optsIndex == -1 {
 			continue
 		}
+		opts := serverOpts[optsIndex]
 
 		// set all the options
 		server.ListenerWrappersRaw = opts.ListenerWrappersRaw

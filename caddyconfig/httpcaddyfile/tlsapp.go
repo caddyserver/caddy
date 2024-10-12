@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,8 +45,8 @@ func (st ServerType) buildTLSApp(
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
 	}
-	autoHTTPS := "on"
-	if ah, ok := options["auto_https"].(string); ok {
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
 		autoHTTPS = ah
 	}
 
@@ -53,23 +54,25 @@ func (st ServerType) buildTLSApp(
 	// key, so that they don't get forgotten/omitted by auto-HTTPS
 	// (since they won't appear in route matchers)
 	httpsHostsSharedWithHostlessKey := make(map[string]struct{})
-	if autoHTTPS != "off" {
+	if !slices.Contains(autoHTTPS, "off") {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
-				for _, addr := range sb.keys {
-					if addr.Host == "" {
-						// this server block has a hostless key, now
-						// go through and add all the hosts to the set
-						for _, otherAddr := range sb.keys {
-							if otherAddr.Original == addr.Original {
-								continue
-							}
-							if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
-								httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
-							}
-						}
-						break
+				for _, addr := range sb.parsedKeys {
+					if addr.Host != "" {
+						continue
 					}
+
+					// this server block has a hostless key, now
+					// go through and add all the hosts to the set
+					for _, otherAddr := range sb.parsedKeys {
+						if otherAddr.Original == addr.Original {
+							continue
+						}
+						if otherAddr.Host != "" && otherAddr.Scheme != "http" && otherAddr.Port != httpPort {
+							httpsHostsSharedWithHostlessKey[otherAddr.Host] = struct{}{}
+						}
+					}
+					break
 				}
 			}
 		}
@@ -91,7 +94,11 @@ func (st ServerType) buildTLSApp(
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
-		if !listenersUseAnyPortOtherThan(p.addresses, httpPort) {
+		var addresses []string
+		for _, addressWithProtocols := range p.addressesWithProtocols {
+			addresses = append(addresses, addressWithProtocols.address)
+		}
+		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
 			continue
 		}
 
@@ -181,8 +188,8 @@ func (st ServerType) buildTLSApp(
 					if acmeIssuer.Challenges.BindHost == "" {
 						// only binding to one host is supported
 						var bindHost string
-						if bindHosts, ok := cfgVal.Value.([]string); ok && len(bindHosts) > 0 {
-							bindHost = bindHosts[0]
+						if asserted, ok := cfgVal.Value.(addressesWithProtocols); ok && len(asserted.addresses) > 0 {
+							bindHost = asserted.addresses[0]
 						}
 						acmeIssuer.Challenges.BindHost = bindHost
 					}
@@ -344,7 +351,7 @@ func (st ServerType) buildTLSApp(
 	internalAP := &caddytls.AutomationPolicy{
 		IssuersRaw: []json.RawMessage{json.RawMessage(`{"module":"internal"}`)},
 	}
-	if autoHTTPS != "off" && autoHTTPS != "disable_certs" {
+	if !slices.Contains(autoHTTPS, "off") && !slices.Contains(autoHTTPS, "disable_certs") {
 		for h := range httpsHostsSharedWithHostlessKey {
 			al = append(al, h)
 			if !certmagic.SubjectQualifiesForPublicCert(h) {
@@ -411,7 +418,10 @@ func (st ServerType) buildTLSApp(
 		}
 
 		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(
+			tlsApp.Automation.Policies,
+			slices.Contains(autoHTTPS, "prefer_wildcard"),
+		)
 
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
@@ -465,7 +475,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalACMECA != nil && acmeIssuer.CA == "" {
 		acmeIssuer.CA = globalACMECA.(string)
 	}
-	if globalACMECARoot != nil && !sliceContains(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string)) {
+	if globalACMECARoot != nil && !slices.Contains(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string)) {
 		acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string))
 	}
 	if globalACMEDNS != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) {
@@ -557,7 +567,7 @@ func newBaseAutomationPolicy(
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy, preferWildcard bool) []*caddytls.AutomationPolicy {
 	// sort from most specific to least specific; we depend on this ordering
 	sort.SliceStable(aps, func(i, j int) bool {
 		if automationPolicyIsSubset(aps[i], aps[j]) {
@@ -580,7 +590,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			if !automationPolicyHasAllPublicNames(aps[i]) {
 				// if this automation policy has internal names, we might as well remove it
 				// so auto-https can implicitly use the internal issuer
-				aps = append(aps[:i], aps[i+1:]...)
+				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
 		}
@@ -597,7 +607,7 @@ outer:
 		for j := i + 1; j < len(aps); j++ {
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(aps[i], aps[j]) {
-				aps = append(aps[:j], aps[j+1:]...)
+				aps = slices.Delete(aps, j, j+1)
 				// must re-evaluate current i against next j; can't skip it!
 				// even if i decrements to -1, will be incremented to 0 immediately
 				i--
@@ -627,19 +637,44 @@ outer:
 					// cause example.com to be served by the less specific policy for
 					// '*.com', which might be different (yes we've seen this happen)
 					if automationPolicyShadows(i, aps) >= j {
-						aps = append(aps[:i], aps[i+1:]...)
+						aps = slices.Delete(aps, i, i+1)
 						i--
 						continue outer
 					}
 				} else {
 					// avoid repeated subjects
 					for _, subj := range aps[j].SubjectsRaw {
-						if !sliceContains(aps[i].SubjectsRaw, subj) {
+						if !slices.Contains(aps[i].SubjectsRaw, subj) {
 							aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
 						}
 					}
-					aps = append(aps[:j], aps[j+1:]...)
+					aps = slices.Delete(aps, j, j+1)
 					j--
+				}
+			}
+
+			if preferWildcard {
+				// remove subjects from i if they're covered by a wildcard in j
+				iSubjs := aps[i].SubjectsRaw
+				for iSubj := 0; iSubj < len(iSubjs); iSubj++ {
+					for jSubj := range aps[j].SubjectsRaw {
+						if !strings.HasPrefix(aps[j].SubjectsRaw[jSubj], "*.") {
+							continue
+						}
+						if certmagic.MatchWildcard(aps[i].SubjectsRaw[iSubj], aps[j].SubjectsRaw[jSubj]) {
+							iSubjs = slices.Delete(iSubjs, iSubj, iSubj+1)
+							iSubj--
+							break
+						}
+					}
+				}
+				aps[i].SubjectsRaw = iSubjs
+
+				// remove i if it has no subjects left
+				if len(aps[i].SubjectsRaw) == 0 {
+					aps = slices.Delete(aps, i, i+1)
+					i--
+					continue outer
 				}
 			}
 		}
@@ -658,13 +693,9 @@ func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 		return false
 	}
 	for _, aSubj := range a.SubjectsRaw {
-		var inSuperset bool
-		for _, bSubj := range b.SubjectsRaw {
-			if certmagic.MatchWildcard(aSubj, bSubj) {
-				inSuperset = true
-				break
-			}
-		}
+		inSuperset := slices.ContainsFunc(b.SubjectsRaw, func(bSubj string) bool {
+			return certmagic.MatchWildcard(aSubj, bSubj)
+		})
 		if !inSuperset {
 			return false
 		}
@@ -709,12 +740,9 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 // automationPolicyHasAllPublicNames returns true if all the names on the policy
 // do NOT qualify for public certs OR are tailscale domains.
 func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
-	for _, subj := range ap.SubjectsRaw {
-		if !subjectQualifiesForPublicCert(ap, subj) || isTailscaleDomain(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.SubjectsRaw, func(i string) bool {
+		return !subjectQualifiesForPublicCert(ap, i) || isTailscaleDomain(i)
+	})
 }
 
 func isTailscaleDomain(name string) bool {

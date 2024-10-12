@@ -26,6 +26,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -150,12 +151,17 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 	address := r.RemoteAddr
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
-		m.logger.Error("getting remote IP", zap.Error(err))
+		if c := m.logger.Check(zapcore.ErrorLevel, "getting remote "); c != nil {
+			c.Write(zap.Error(err))
+		}
+
 		return false
 	}
 	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	if !matches && !zoneFilter {
-		m.logger.Debug("zone ID from remote IP did not match", zap.String("zone", zoneID))
+		if c := m.logger.Check(zapcore.DebugLevel, "zone ID from remote IP did not match"); c != nil {
+			c.Write(zap.String("zone", zoneID))
+		}
 	}
 	return matches
 }
