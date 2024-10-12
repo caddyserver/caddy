@@ -329,8 +329,13 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	// use a map to prevent duplication
 	listeners := map[string]map[string]struct{}{}
 	for _, lnCfgVal := range lnCfgVals {
-		for _, lnHost := range lnCfgVal.addresses {
-			networkAddr, err := caddy.ParseNetworkAddressFromHostPort(lnHost, lnPort)
+		for _, lnAddr := range lnCfgVal.addresses {
+			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
+			fmt.Println("AAAAA", "A", lnAddr, "A", lnNetw, "A", lnHost, "A", err)
+			if err != nil {
+				return nil, fmt.Errorf("splitting listener address: %v %s", err, lnAddr)
+			}
+			networkAddr, err := caddy.ParseNetworkAddress(caddy.JoinNetworkAddress(lnNetw, lnHost, lnPort))
 			if err != nil {
 				return nil, fmt.Errorf("parsing network address: %v", err)
 			}
