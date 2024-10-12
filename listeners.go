@@ -392,9 +392,8 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if err != nil {
 		// in general, if there was an error, it was likely "missing port",
 		// so try adding a bogus port to take advantage of standard library's
-		// robust parser, then strip the artificial port.
-		host, port, err = net.SplitHostPort(net.JoinHostPort(a, "0"))
-		port = ""
+		// robust parser.
+		host, _, err = net.SplitHostPort(net.JoinHostPort(a, "0"))
 	}
 
 	if err != nil {
