@@ -65,6 +65,12 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
+
+	// If true, automatic HTTPS will prefer wildcard names
+	// and ignore non-wildcard names if both are available.
+	// This allows for writing a config with top-level host
+	// matchers without having those names produce certificates.
+	PreferWildcard bool `json:"prefer_wildcard,omitempty"`
 }
 
 // automaticHTTPSPhase1 provisions all route matchers, determines
@@ -153,6 +159,27 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 							}
 						}
 					}
+				}
+			}
+		}
+
+		if srv.AutoHTTPS.PreferWildcard {
+			wildcards := make(map[string]struct{})
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					wildcards[d[2:]] = struct{}{}
+				}
+			}
+			for d := range serverDomainSet {
+				if strings.HasPrefix(d, "*.") {
+					continue
+				}
+				base := d
+				if idx := strings.Index(d, "."); idx != -1 {
+					base = d[idx+1:]
+				}
+				if _, ok := wildcards[base]; ok {
+					delete(serverDomainSet, d)
 				}
 			}
 		}
@@ -293,11 +320,21 @@ uniqueDomainsLoop:
 			}
 		}
 
-		// if no automation policy exists for the name yet, we
-		// will associate it with an implicit one
+		// if no automation policy exists for the name yet, we will associate it with an implicit one;
+		// we handle tailscale domains specially, and we also separate out identifiers that need the
+		// internal issuer (self-signed certs); certmagic does not consider public IP addresses to be
+		// disqualified for public certs, because there are public CAs that will issue certs for IPs.
+		// However, with auto-HTTPS, many times there is no issuer explicitly defined, and the default
+		// issuers do not (currently, as of 2024) issue IP certificates; so assign all IP subjects to
+		// the internal issuer when there are no explicit automation policies
+		shouldUseInternal := func(ident string) bool {
+			usingDefaultIssuersAndIsIP := certmagic.SubjectIsIP(ident) &&
+				(app.tlsApp == nil || app.tlsApp.Automation == nil || len(app.tlsApp.Automation.Policies) == 0)
+			return !certmagic.SubjectQualifiesForPublicCert(d) || usingDefaultIssuersAndIsIP
+		}
 		if isTailscaleDomain(d) {
 			tailscale = append(tailscale, d)
-		} else if !certmagic.SubjectQualifiesForPublicCert(d) {
+		} else if shouldUseInternal(d) {
 			internal = append(internal, d)
 		}
 	}
@@ -732,7 +769,7 @@ func (app *App) automaticHTTPSPhase2() error {
 	)
 	err := app.tlsApp.Manage(app.allCertDomains)
 	if err != nil {
-		return fmt.Errorf("managing certificates for %v: %s", app.allCertDomains, err)
+		return fmt.Errorf("managing certificates for %d domains: %s", len(app.allCertDomains), err)
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil

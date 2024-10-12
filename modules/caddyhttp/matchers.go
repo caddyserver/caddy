@@ -1562,8 +1562,8 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
-	// _ CELLibraryProducer = (*VarsMatcher)(nil)
-	// _ CELLibraryProducer = (*MatchVarsRE)(nil)
+	_ CELLibraryProducer = (*VarsMatcher)(nil)
+	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 
 	_ json.Marshaler   = (*MatchNot)(nil)
 	_ json.Unmarshaler = (*MatchNot)(nil)
