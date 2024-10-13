@@ -37,7 +37,7 @@ func init() {
 // A route matcher MUST NOT modify the request, with the
 // only exception being its context.
 //
-// DEPRECATED: Matchers should now implement RequestMatcherWithError.
+// Deprecated: Matchers should now implement RequestMatcherWithError.
 // You may remove any interface guards for RequestMatcher
 // but keep your Match() methods for backwards compatibility.
 type RequestMatcher interface {

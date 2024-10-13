@@ -1604,7 +1604,7 @@ const regexpPlaceholderPrefix = "http.regexp"
 // to short-circuit the handler chain, since matchers cannot
 // return errors via the RequestMatcher interface.
 //
-// DEPRECATED: Matchers should implement RequestMatcherWithError
+// Deprecated: Matchers should implement RequestMatcherWithError
 // which can return an error directly, instead of smuggling it
 // through the vars map.
 const MatcherErrorVarKey = "matchers.error"

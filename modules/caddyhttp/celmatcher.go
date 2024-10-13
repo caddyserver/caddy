@@ -432,7 +432,7 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 }
 
 // CELMatcherFactory converts a constant CEL value into a RequestMatcher.
-// DEPRECATED: Use CELMatcherWithErrorFactory instead.
+// Deprecated: Use CELMatcherWithErrorFactory instead.
 type CELMatcherFactory = func(data ref.Val) (RequestMatcher, error)
 
 // CELMatcherWithErrorFactory converts a constant CEL value into a RequestMatcherWithError.
