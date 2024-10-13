@@ -173,7 +173,7 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
 
-	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcher, error) {
+	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcherWithError, error) {
 		values, err := caddyhttp.CELValueToMapStrList(data)
 		if err != nil {
 			return nil, err
@@ -315,6 +315,7 @@ func (m MatchFile) Validate() error {
 func (m MatchFile) Match(r *http.Request) bool {
 	match, err := m.selectFile(r)
 	if err != nil {
+		// nolint:staticcheck
 		caddyhttp.SetVar(r.Context(), caddyhttp.MatcherErrorVarKey, err)
 	}
 	return match
