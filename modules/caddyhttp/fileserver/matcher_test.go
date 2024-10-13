@@ -354,6 +354,14 @@ var expressionTests = []struct {
 		urlTarget:  "https://example.com/nopenope.txt",
 		wantResult: false,
 	},
+	{
+		name: "file match long pattern foo.txt with try_policy (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"try_policy": "most_recently_modified"})`,
+		},
+		urlTarget:  "https://example.com/foo.txt",
+		wantResult: true,
+	},
 }
 
 func TestMatchExpressionMatch(t *testing.T) {
