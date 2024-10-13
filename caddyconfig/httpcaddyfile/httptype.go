@@ -1532,6 +1532,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
 			return nil
 		}
+		// nolint:staticcheck
 		if rm, ok := unm.(caddyhttp.RequestMatcher); ok {
 			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
 			return nil
