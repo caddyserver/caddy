@@ -154,9 +154,12 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 
 // MatchWithError returns true if r matches m.
 func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
-	// if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	// if handshake is not finished, we infer 0-RTT that has
+	// not verified remote IP; could be spoofed, so we throw
+	// HTTP 425 status to tell the client to try again after
+	// the handshake is complete
 	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified")
+		return false, Error(http.StatusTooEarly, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified"))
 	}
 
 	address := r.RemoteAddr
@@ -258,9 +261,12 @@ func (m MatchClientIP) Match(r *http.Request) bool {
 
 // MatchWithError returns true if r matches m.
 func (m MatchClientIP) MatchWithError(r *http.Request) (bool, error) {
-	// if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	// if handshake is not finished, we infer 0-RTT that has
+	// not verified remote IP; could be spoofed, so we throw
+	// HTTP 425 status to tell the client to try again after
+	// the handshake is complete
 	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified")
+		return false, Error(http.StatusTooEarly, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified"))
 	}
 
 	address := GetVar(r.Context(), ClientIPVarKey).(string)
