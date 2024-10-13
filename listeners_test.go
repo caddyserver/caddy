@@ -471,7 +471,7 @@ func TestJoinHostPort(t *testing.T) {
 			expect: "/run/php/php7.3-fpm.sock",
 		},
 	} {
-		actual := tc.pa.JoinHostPort(tc.offset)
+		actual := tc.pa.JoinAt(tc.offset)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
 		}

@@ -390,7 +390,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() {
 		listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
 		for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
-			listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))
+			listenAddrs = append(listenAddrs, listenAddr.JoinAt(offset))
 		}
 
 		for i, addr := range listenAddrs {

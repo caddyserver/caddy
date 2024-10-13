@@ -201,12 +201,12 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 		switch netaddr.Network {
 		case "tcp", "tcp4", "tcp6":
-			dialer.LocalAddr, err = net.ResolveTCPAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			dialer.LocalAddr, err = net.ResolveTCPAddr(netaddr.Network, netaddr.JoinAt(0))
 			if err != nil {
 				return nil, err
 			}
 		case "unix", "unixgram", "unixpacket":
-			dialer.LocalAddr, err = net.ResolveUnixAddr(netaddr.Network, netaddr.JoinHostPort(0))
+			dialer.LocalAddr, err = net.ResolveUnixAddr(netaddr.Network, netaddr.JoinAt(0))
 			if err != nil {
 				return nil, err
 			}
@@ -230,7 +230,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
 				addr := h.Resolver.netAddrs[weakrand.Intn(len(h.Resolver.netAddrs))]
-				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
+				return d.DialContext(ctx, addr.Network, addr.JoinAt(0))
 			},
 		}
 	}

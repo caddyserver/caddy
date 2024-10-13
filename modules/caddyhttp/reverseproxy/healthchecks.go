@@ -343,7 +343,7 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				}
 				return
 			}
-			hostAddr := addr.JoinHostPort(0)
+			hostAddr := addr.JoinAt(0)
 			dialAddr := hostAddr
 			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
 				// this will be used as the Host portion of a http.Request URL, and
