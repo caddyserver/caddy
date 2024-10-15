@@ -89,6 +89,17 @@ Requirements:
 
 - [Go 1.22.3 or newer](https://golang.org/dl/)
 
+### Automating Caddy Builds with Plugins
+
+For an alternative way to build Caddy with custom plugins, test configurations, and manage installations, the [Caddy Build Automation](https://github.com/Hansen333/caddy-automate) project provides a `Makefile`-based approach. It automates the build process with `xcaddy`, including configuration testing and backup management.
+
+Key features include:
+- **Custom Plugin Management**: Add or remove plugins for the Caddy build.
+- **Automated Testing**: Validate the Caddy configuration before installation.
+- **Backup and Restore**: Automatically back up the current Caddy binary before installing a new version.
+
+For more details, visit the project [here](https://github.com/Hansen333/caddy-automate).
+
 ### For development
 
 _**Note:** These steps [will not embed proper version information](https://github.com/golang/go/issues/29228). For that, please follow the instructions in the next section._
