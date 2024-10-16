@@ -74,6 +74,9 @@ foo.example.com {
 						}
 					],
 					"automatic_https": {
+						"skip": [
+							"foo.example.com"
+						],
 						"prefer_wildcard": true
 					}
 				}
