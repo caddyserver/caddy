@@ -614,22 +614,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
 		s.h3server = &http3.Server{
-			// Currently when closing a http3.Server, only listeners are closed. But caddy reuses these listeners
-			// if possible, requests are still read and handled by the old handler. Close these connections manually.
-			// see issue: https://github.com/caddyserver/caddy/issues/6195
-			// Will interrupt ongoing requests.
-			// TODO: remove the handler wrap after http3.Server.CloseGracefully is implemented, see App.Stop
-			Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				select {
-				case <-s.ctx.Done():
-					if quicConn, ok := request.Context().Value(quicConnCtxKey).(quic.Connection); ok {
-						//nolint:errcheck
-						quicConn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeRequestRejected), "")
-					}
-				default:
-					s.ServeHTTP(writer, request)
-				}
-			}),
+			Handler:        s,
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
@@ -637,9 +622,6 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 				Tracer:   qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
-			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
-				return context.WithValue(ctx, quicConnCtxKey, c)
-			},
 		}
 	}
 
@@ -1098,10 +1080,6 @@ const (
 
 	// For referencing underlying net.Conn
 	ConnCtxKey caddy.CtxKey = "conn"
-
-	// For referencing underlying quic.Connection
-	// TODO: export if needed later
-	quicConnCtxKey caddy.CtxKey = "quic_conn"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
