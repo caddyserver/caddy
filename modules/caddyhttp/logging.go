@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -32,14 +33,23 @@ import (
 // customized per-request-host.
 type ServerLogConfig struct {
 	// The default logger name for all logs emitted by this server for
-	// hostnames that are not in the LoggerNames (logger_names) map.
+	// hostnames that are not in the logger_names map.
 	DefaultLoggerName string `json:"default_logger_name,omitempty"`
 
-	// LoggerNames maps request hostnames to a custom logger name.
-	// For example, a mapping of "example.com" to "example" would
-	// cause access logs from requests with a Host of example.com
-	// to be emitted by a logger named "http.log.access.example".
-	LoggerNames map[string]string `json:"logger_names,omitempty"`
+	// LoggerNames maps request hostnames to one or more custom logger
+	// names. For example, a mapping of `"example.com": ["example"]` would
+	// cause access logs from requests with a Host of example.com to be
+	// emitted by a logger named "http.log.access.example". If there are
+	// multiple logger names, then the log will be emitted to all of them.
+	// If the logger name is an empty, the default logger is used, i.e.
+	// the logger "http.log.access".
+	//
+	// Keys must be hostnames (without ports), and may contain wildcards
+	// to match subdomains. The value is an array of logger names.
+	//
+	// For backwards compatibility, if the value is a string, it is treated
+	// as a single-element array.
+	LoggerNames map[string]StringArray `json:"logger_names,omitempty"`
 
 	// By default, all requests to this server will be logged if
 	// access logging is enabled. This field lists the request
@@ -47,7 +57,7 @@ type ServerLogConfig struct {
 	SkipHosts []string `json:"skip_hosts,omitempty"`
 
 	// If true, requests to any host not appearing in the
-	// LoggerNames (logger_names) map will not be logged.
+	// logger_names map will not be logged.
 	SkipUnmappedHosts bool `json:"skip_unmapped_hosts,omitempty"`
 
 	// If true, credentials that are otherwise omitted, will be logged.
@@ -55,35 +65,67 @@ type ServerLogConfig struct {
 	// and this includes some request and response headers, i.e `Cookie`,
 	// `Set-Cookie`, `Authorization`, and `Proxy-Authorization`.
 	ShouldLogCredentials bool `json:"should_log_credentials,omitempty"`
+
+	// Log each individual handler that is invoked.
+	// Requires that the log emit at DEBUG level.
+	//
+	// NOTE: This may log the configuration of your
+	// HTTP handler modules; do not enable this in
+	// insecure contexts when there is sensitive
+	// data in the configuration.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	Trace bool `json:"trace,omitempty"`
 }
 
-// wrapLogger wraps logger in a logger named according to user preferences for the given host.
-func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, host string) *zap.Logger {
-	if loggerName := slc.getLoggerName(host); loggerName != "" {
-		return logger.Named(loggerName)
+// wrapLogger wraps logger in one or more logger named
+// according to user preferences for the given host.
+func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*zap.Logger {
+	// using the `log_name` directive or the `access_logger_names` variable,
+	// the logger names can be overridden for the current request
+	if names := GetVar(req.Context(), AccessLoggerNameVarKey); names != nil {
+		if namesSlice, ok := names.([]any); ok {
+			loggers := make([]*zap.Logger, 0, len(namesSlice))
+			for _, loggerName := range namesSlice {
+				// no name, use the default logger
+				if loggerName == "" {
+					loggers = append(loggers, logger)
+					continue
+				}
+				// make a logger with the given name
+				loggers = append(loggers, logger.Named(loggerName.(string)))
+			}
+			return loggers
+		}
 	}
-	return logger
+
+	// get the hostname from the request, with the port number stripped
+	host, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host = req.Host
+	}
+
+	// get the logger names for this host from the config
+	hosts := slc.getLoggerHosts(host)
+
+	// make a list of named loggers, or the default logger
+	loggers := make([]*zap.Logger, 0, len(hosts))
+	for _, loggerName := range hosts {
+		// no name, use the default logger
+		if loggerName == "" {
+			loggers = append(loggers, logger)
+			continue
+		}
+		// make a logger with the given name
+		loggers = append(loggers, logger.Named(loggerName))
+	}
+	return loggers
 }
 
-func (slc ServerLogConfig) getLoggerName(host string) string {
-	tryHost := func(key string) (string, bool) {
-		// first try exact match
-		if loggerName, ok := slc.LoggerNames[key]; ok {
-			return loggerName, ok
-		}
-		// strip port and try again (i.e. Host header of "example.com:1234" should
-		// match "example.com" if there is no "example.com:1234" in the map)
-		hostOnly, _, err := net.SplitHostPort(key)
-		if err != nil {
-			return "", false
-		}
-		loggerName, ok := slc.LoggerNames[hostOnly]
-		return loggerName, ok
-	}
-
+func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 	// try the exact hostname first
-	if loggerName, ok := tryHost(host); ok {
-		return loggerName
+	if hosts, ok := slc.LoggerNames[host]; ok {
+		return hosts
 	}
 
 	// try matching wildcard domains if other non-specific loggers exist
@@ -94,33 +136,64 @@ func (slc ServerLogConfig) getLoggerName(host string) string {
 		}
 		labels[i] = "*"
 		wildcardHost := strings.Join(labels, ".")
-		if loggerName, ok := tryHost(wildcardHost); ok {
-			return loggerName
+		if hosts, ok := slc.LoggerNames[wildcardHost]; ok {
+			return hosts
 		}
 	}
 
-	return slc.DefaultLoggerName
+	return []string{slc.DefaultLoggerName}
 }
 
 func (slc *ServerLogConfig) clone() *ServerLogConfig {
 	clone := &ServerLogConfig{
 		DefaultLoggerName:    slc.DefaultLoggerName,
-		LoggerNames:          make(map[string]string),
+		LoggerNames:          make(map[string]StringArray),
 		SkipHosts:            append([]string{}, slc.SkipHosts...),
 		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
 		ShouldLogCredentials: slc.ShouldLogCredentials,
 	}
 	for k, v := range slc.LoggerNames {
-		clone.LoggerNames[k] = v
+		clone.LoggerNames[k] = append([]string{}, v...)
 	}
 	return clone
+}
+
+// StringArray is a slices of strings, but also accepts
+// a single string as a value when JSON unmarshaling,
+// converting it to a slice of one string.
+type StringArray []string
+
+// UnmarshalJSON satisfies json.Unmarshaler.
+func (sa *StringArray) UnmarshalJSON(b []byte) error {
+	var jsonObj any
+	err := json.Unmarshal(b, &jsonObj)
+	if err != nil {
+		return err
+	}
+	switch obj := jsonObj.(type) {
+	case string:
+		*sa = StringArray([]string{obj})
+		return nil
+	case []any:
+		s := make([]string, 0, len(obj))
+		for _, v := range obj {
+			value, ok := v.(string)
+			if !ok {
+				return errors.New("unsupported type")
+			}
+			s = append(s, value)
+		}
+		*sa = StringArray(s)
+		return nil
+	}
+	return errors.New("unsupported type")
 }
 
 // errLogValues inspects err and returns the status code
 // to use, the error log message, and any extra fields.
 // If err is a HandlerError, the returned values will
 // have richer information.
-func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
+func errLogValues(err error) (status int, msg string, fields func() []zapcore.Field) {
 	var handlerErr HandlerError
 	if errors.As(err, &handlerErr) {
 		status = handlerErr.StatusCode
@@ -129,10 +202,12 @@ func errLogValues(err error) (status int, msg string, fields []zapcore.Field) {
 		} else {
 			msg = handlerErr.Err.Error()
 		}
-		fields = []zapcore.Field{
-			zap.Int("status", handlerErr.StatusCode),
-			zap.String("err_id", handlerErr.ID),
-			zap.String("err_trace", handlerErr.Trace),
+		fields = func() []zapcore.Field {
+			return []zapcore.Field{
+				zap.Int("status", handlerErr.StatusCode),
+				zap.String("err_id", handlerErr.ID),
+				zap.String("err_trace", handlerErr.Trace),
+			}
 		}
 		return
 	}
@@ -170,4 +245,7 @@ const (
 
 	// For adding additional fields to the access logs
 	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"
+
+	// Variable name used to indicate the logger to be used
+	AccessLoggerNameVarKey string = "access_logger_names"
 )

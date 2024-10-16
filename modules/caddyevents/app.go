@@ -124,18 +124,19 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.subscriptions = make(map[string]map[caddy.ModuleID][]Handler)
 
 	for _, sub := range app.Subscriptions {
-		if sub.HandlersRaw != nil {
-			handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
-			if err != nil {
-				return fmt.Errorf("loading event subscriber modules: %v", err)
-			}
-			for _, h := range handlersIface.([]any) {
-				sub.Handlers = append(sub.Handlers, h.(Handler))
-			}
-			if len(sub.Handlers) == 0 {
-				// pointless to bind without any handlers
-				return fmt.Errorf("no handlers defined")
-			}
+		if sub.HandlersRaw == nil {
+			continue
+		}
+		handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
+		if err != nil {
+			return fmt.Errorf("loading event subscriber modules: %v", err)
+		}
+		for _, h := range handlersIface.([]any) {
+			sub.Handlers = append(sub.Handlers, h.(Handler))
+		}
+		if len(sub.Handlers) == 0 {
+			// pointless to bind without any handlers
+			return fmt.Errorf("no handlers defined")
 		}
 	}
 
@@ -261,7 +262,9 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	logger.Debug("event", zap.Any("data", e.Data))
+	logger = logger.With(zap.Any("data", e.Data))
+
+	logger.Debug("event")
 
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
@@ -281,6 +284,12 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 					return e
 				default:
 				}
+
+				// this log can be a useful sanity check to ensure your handlers are in fact being invoked
+				// (see https://github.com/mholt/caddy-events-exec/issues/6)
+				logger.Debug("invoking subscribed handler",
+					zap.String("subscribed_to", eventName),
+					zap.Any("handler", handler))
 
 				if err := handler.Handle(ctx, e); err != nil {
 					aborted := errors.Is(err, ErrAborted)
@@ -346,6 +355,11 @@ type Event struct {
 	name   string
 	origin caddy.Module
 }
+
+func (e Event) ID() uuid.UUID        { return e.id }
+func (e Event) Timestamp() time.Time { return e.ts }
+func (e Event) Name() string         { return e.name }
+func (e Event) Origin() caddy.Module { return e.origin }
 
 // CloudEvent exports event e as a structure that, when
 // serialized as JSON, is compatible with the

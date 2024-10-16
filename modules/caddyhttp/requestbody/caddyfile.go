@@ -15,6 +15,8 @@
 package requestbody
 
 import (
+	"time"
+
 	"github.com/dustin/go-humanize"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -44,8 +46,30 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			rb.MaxSize = int64(size)
 
+		case "read_timeout":
+			var timeoutStr string
+			if !h.AllArgs(&timeoutStr) {
+				return nil, h.ArgErr()
+			}
+			timeout, err := time.ParseDuration(timeoutStr)
+			if err != nil {
+				return nil, h.Errf("parsing read_timeout: %v", err)
+			}
+			rb.ReadTimeout = timeout
+
+		case "write_timeout":
+			var timeoutStr string
+			if !h.AllArgs(&timeoutStr) {
+				return nil, h.ArgErr()
+			}
+			timeout, err := time.ParseDuration(timeoutStr)
+			if err != nil {
+				return nil, h.Errf("parsing write_timeout: %v", err)
+			}
+			rb.WriteTimeout = timeout
+
 		default:
-			return nil, h.Errf("unrecognized servers option '%s'", h.Val())
+			return nil, h.Errf("unrecognized request_body subdirective '%s'", h.Val())
 		}
 	}
 

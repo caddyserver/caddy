@@ -23,6 +23,8 @@ import (
 	"reflect"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
 
@@ -47,6 +49,7 @@ type Context struct {
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
 	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
+	metricsRegistry *prometheus.Registry
 }
 
 // NewContext provides a new context derived from the given
@@ -58,7 +61,7 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg}
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -79,6 +82,7 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 		}
 	}
 	newCtx.Context = c
+	newCtx.initMetrics()
 	return newCtx, wrappedCancel
 }
 
@@ -95,6 +99,22 @@ func (ctx *Context) Filesystems() FileSystems {
 		return &filesystems.FilesystemMap{}
 	}
 	return ctx.cfg.filesystems
+}
+
+// Returns the active metrics registry for the context
+// EXPERIMENTAL: This API is subject to change.
+func (ctx *Context) GetMetricsRegistry() *prometheus.Registry {
+	return ctx.metricsRegistry
+}
+
+func (ctx *Context) initMetrics() {
+	ctx.metricsRegistry.MustRegister(
+		collectors.NewBuildInfoCollector(),
+		adminMetrics.requestCount,
+		adminMetrics.requestErrors,
+		globalMetrics.configSuccess,
+		globalMetrics.configSuccessTime,
+	)
 }
 
 // OnExit executes f when the process exits gracefully.
@@ -453,24 +473,28 @@ func (ctx Context) App(name string) (any, error) {
 	return modVal, nil
 }
 
-// AppIfConfigured returns an app by its name if it has been
-// configured. Can be called instead of App() to avoid
-// instantiating an empty app when that's not desirable. If
-// the app has not been loaded, nil is returned.
-//
-// We return any type instead of the App type because it is not
-// intended for the caller of this method to be the one to start
-// or stop App modules. The caller is expected to assert to the
-// concrete type.
-func (ctx Context) AppIfConfigured(name string) any {
+// AppIfConfigured is like App, but it returns an error if the
+// app has not been configured. This is useful when the app is
+// required and its absence is a configuration error; or when
+// the app is optional and you don't want to instantiate a
+// new one that hasn't been explicitly configured. If the app
+// is not in the configuration, the error wraps ErrNotConfigured.
+func (ctx Context) AppIfConfigured(name string) (any, error) {
 	if ctx.cfg == nil {
-		// this can happen if the currently-active context
-		// is being accessed, but no config has successfully
-		// been loaded yet
-		return nil
+		return nil, fmt.Errorf("app module %s: %w", name, ErrNotConfigured)
 	}
-	return ctx.cfg.apps[name]
+	if app, ok := ctx.cfg.apps[name]; ok {
+		return app, nil
+	}
+	appRaw := ctx.cfg.AppsRaw[name]
+	if appRaw == nil {
+		return nil, fmt.Errorf("app module %s: %w", name, ErrNotConfigured)
+	}
+	return ctx.App(name)
 }
+
+// ErrNotConfigured indicates a module is not configured.
+var ErrNotConfigured = fmt.Errorf("module not configured")
 
 // Storage returns the configured Caddy storage implementation.
 func (ctx Context) Storage() certmagic.Storage {
@@ -555,4 +579,16 @@ func (ctx Context) Module() Module {
 		return nil
 	}
 	return ctx.ancestry[len(ctx.ancestry)-1]
+}
+
+// WithValue returns a new context with the given key-value pair.
+func (ctx *Context) WithValue(key, value any) Context {
+	return Context{
+		Context:         context.WithValue(ctx.Context, key, value),
+		moduleInstances: ctx.moduleInstances,
+		cfg:             ctx.cfg,
+		ancestry:        ctx.ancestry,
+		cleanupFuncs:    ctx.cleanupFuncs,
+		exitFuncs:       ctx.exitFuncs,
+	}
 }

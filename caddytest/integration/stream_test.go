@@ -334,7 +334,7 @@ func TestH2ToH1ChunkedResponse(t *testing.T) {
 		ProtoMinor: 0,
 		Header:     make(http.Header),
 	}
-	// underlying transport will automaticlly add gzip
+	// underlying transport will automatically add gzip
 	// req.Header.Set("Accept-Encoding", "gzip")
 	go func() {
 		fmt.Fprint(w, expectedBody)

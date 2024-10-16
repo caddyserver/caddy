@@ -89,6 +89,52 @@ func TestServerNameMatcher(t *testing.T) {
 	}
 }
 
+func TestServerNameREMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		pattern string
+		input   string
+		expect  bool
+	}{
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "example.com",
+			expect:  true,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "foo.com",
+			expect:  false,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "",
+			expect:  false,
+		},
+		{
+			pattern: "",
+			input:   "",
+			expect:  true,
+		},
+		{
+			pattern: "^example\\.(com|net)$",
+			input:   "foo.example.com",
+			expect:  false,
+		},
+	} {
+		chi := &tls.ClientHelloInfo{ServerName: tc.input}
+		mre := MatchServerNameRE{MatchRegexp{Pattern: tc.pattern}}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if mre.Provision(ctx) != nil {
+			t.Errorf("Test %d: Failed to provision a regexp matcher (pattern=%v)", i, tc.pattern)
+		}
+		actual := mre.Match(chi)
+		if actual != tc.expect {
+			t.Errorf("Test %d: Expected %t but got %t (input=%s match=%v)",
+				i, tc.expect, actual, tc.input, tc.pattern)
+		}
+	}
+}
+
 func TestRemoteIPMatcher(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
@@ -165,12 +211,84 @@ func TestRemoteIPMatcher(t *testing.T) {
 	}
 }
 
+func TestLocalIPMatcher(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	for i, tc := range []struct {
+		ranges []string
+		input  string
+		expect bool
+	}{
+		{
+			ranges: []string{"127.0.0.1"},
+			input:  "127.0.0.1:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.1"},
+			input:  "127.0.0.2:12345",
+			expect: false,
+		},
+		{
+			ranges: []string{"127.0.0.1/16"},
+			input:  "127.0.1.23:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.1", "192.168.1.105"},
+			input:  "192.168.1.105:12345",
+			expect: true,
+		},
+		{
+			input:  "127.0.0.1:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.1"},
+			input:  "127.0.0.1:12345",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.2"},
+			input:  "127.0.0.3:12345",
+			expect: false,
+		},
+		{
+			ranges: []string{"127.0.0.2"},
+			input:  "127.0.0.2",
+			expect: true,
+		},
+		{
+			ranges: []string{"127.0.0.2"},
+			input:  "127.0.0.300",
+			expect: false,
+		},
+	} {
+		matcher := MatchLocalIP{Ranges: tc.ranges}
+		err := matcher.Provision(ctx)
+		if err != nil {
+			t.Fatalf("Test %d: Provision failed: %v", i, err)
+		}
+
+		addr := testAddr(tc.input)
+		chi := &tls.ClientHelloInfo{Conn: testConn{addr: addr}}
+
+		actual := matcher.Match(chi)
+		if actual != tc.expect {
+			t.Errorf("Test %d: Expected %t but got %t (input=%s ranges=%v)",
+				i, tc.expect, actual, tc.input, tc.ranges)
+		}
+	}
+}
+
 type testConn struct {
 	*net.TCPConn
 	addr testAddr
 }
 
 func (tc testConn) RemoteAddr() net.Addr { return tc.addr }
+func (tc testConn) LocalAddr() net.Addr  { return tc.addr }
 
 type testAddr string
 

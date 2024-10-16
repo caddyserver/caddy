@@ -30,6 +30,10 @@ type Dispenser struct {
 	tokens  []Token
 	cursor  int
 	nesting int
+
+	// A map of arbitrary context data that can be used
+	// to pass through some information to unmarshalers.
+	context map[string]any
 }
 
 // NewDispenser returns a Dispenser filled with the given tokens.
@@ -411,7 +415,7 @@ func (d *Dispenser) EOFErr() error {
 
 // Err generates a custom parse-time error with a message of msg.
 func (d *Dispenser) Err(msg string) error {
-	return d.Errf(msg)
+	return d.WrapErr(errors.New(msg))
 }
 
 // Errf is like Err, but for formatted error messages
@@ -454,6 +458,34 @@ func (d *Dispenser) DeleteN(amount int) []Token {
 	return d.tokens
 }
 
+// SetContext sets a key-value pair in the context map.
+func (d *Dispenser) SetContext(key string, value any) {
+	if d.context == nil {
+		d.context = make(map[string]any)
+	}
+	d.context[key] = value
+}
+
+// GetContext gets the value of a key in the context map.
+func (d *Dispenser) GetContext(key string) any {
+	if d.context == nil {
+		return nil
+	}
+	return d.context[key]
+}
+
+// GetContextString gets the value of a key in the context map
+// as a string, or an empty string if the key does not exist.
+func (d *Dispenser) GetContextString(key string) string {
+	if d.context == nil {
+		return ""
+	}
+	if val, ok := d.context[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
 // isNewLine determines whether the current token is on a different
 // line (higher line number) than the previous token. It handles imported
 // tokens correctly. If there isn't a previous token, it returns true.
@@ -485,3 +517,5 @@ func (d *Dispenser) isNextOnNewLine() bool {
 	next := d.tokens[d.cursor+1]
 	return isNextOnNewLine(curr, next)
 }
+
+const MatcherNameCtxKey = "matcher_name"

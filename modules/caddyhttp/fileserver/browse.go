@@ -30,8 +30,10 @@ import (
 	"sync"
 	"text/tabwriter"
 	"text/template"
+	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -51,14 +53,25 @@ var BrowseTemplate string
 type Browse struct {
 	// Filename of the template to use instead of the embedded browse template.
 	TemplateFile string `json:"template_file,omitempty"`
+
 	// Determines whether or not targets of symlinks should be revealed.
 	RevealSymlinks bool `json:"reveal_symlinks,omitempty"`
+
+	// Override the default sort.
+	// It includes the following options:
+	//   - sort_by: name(default), namedirfirst, size, time
+	//   - order: asc(default), desc
+	// eg.:
+	//   - `sort time desc` will sort by time in descending order
+	//   - `sort size` will sort by size in ascending order
+	// The first option must be `sort_by` and the second option must be `order` (if exists).
+	SortOptions []string `json:"sort,omitempty"`
 }
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	fsrv.logger.Debug("browse enabled; listing directory contents",
-		zap.String("path", dirPath),
-		zap.String("root", root))
+	if c := fsrv.logger.Check(zapcore.DebugLevel, "browse enabled; listing directory contents"); c != nil {
+		c.Write(zap.String("path", dirPath), zap.String("root", root))
+	}
 
 	// Navigation on the client-side gets messed up if the
 	// URL doesn't end in a trailing slash because hrefs to
@@ -80,7 +93,9 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	origReq := r.Context().Value(caddyhttp.OriginalRequestCtxKey).(http.Request)
 	if r.URL.Path == "" || path.Base(origReq.URL.Path) == path.Base(r.URL.Path) {
 		if !strings.HasSuffix(origReq.URL.Path, "/") {
-			fsrv.logger.Debug("redirecting to trailing slash to preserve hrefs", zap.String("request_path", r.URL.Path))
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "redirecting to trailing slash to preserve hrefs"); c != nil {
+				c.Write(zap.String("request_path", r.URL.Path))
+			}
 			return redirect(w, r, origReq.URL.Path+"/")
 		}
 	}
@@ -104,6 +119,18 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
+	w.Header().Add("Vary", "Accept, Accept-Encoding")
+
+	// speed up browser/client experience and caching by supporting If-Modified-Since
+	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
+		ifModSince, err := time.ParseInLocation(http.TimeFormat, ifModSinceStr, time.Local)
+		lastModTrunc := listing.lastModified.Truncate(time.Second)
+		if err == nil && (lastModTrunc.Equal(ifModSince) || lastModTrunc.Before(ifModSince)) {
+			w.WriteHeader(http.StatusNotModified)
+			return nil
+		}
+	}
+
 	fsrv.browseApplyQueryParams(w, r, listing)
 
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -111,6 +138,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	defer bufPool.Put(buf)
 
 	acceptHeader := strings.ToLower(strings.Join(r.Header["Accept"], ","))
+	w.Header().Set("Last-Modified", listing.lastModified.Format(http.TimeFormat))
 
 	switch {
 	case strings.Contains(acceptHeader, "application/json"):
@@ -192,11 +220,34 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 // browseApplyQueryParams applies query parameters to the listing.
 // It mutates the listing and may set cookies.
 func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
+	var orderParam, sortParam string
+
+	// The configs in Caddyfile have lower priority than Query params,
+	// so put it at first.
+	for idx, item := range fsrv.Browse.SortOptions {
+		// Only `sort` & `order`, 2 params are allowed
+		if idx >= 2 {
+			break
+		}
+		switch item {
+		case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
+			sortParam = item
+		case sortOrderAsc, sortOrderDesc:
+			orderParam = item
+		}
+	}
+
 	layoutParam := r.URL.Query().Get("layout")
-	sortParam := r.URL.Query().Get("sort")
-	orderParam := r.URL.Query().Get("order")
 	limitParam := r.URL.Query().Get("limit")
 	offsetParam := r.URL.Query().Get("offset")
+	sortParamTmp := r.URL.Query().Get("sort")
+	if sortParamTmp != "" {
+		sortParam = sortParamTmp
+	}
+	orderParamTmp := r.URL.Query().Get("order")
+	if orderParamTmp != "" {
+		orderParam = orderParamTmp
+	}
 
 	switch layoutParam {
 	case "list", "grid", "":
@@ -219,11 +270,11 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	// then figure out the order
 	switch orderParam {
 	case "":
-		orderParam = "asc"
+		orderParam = sortOrderAsc
 		if orderCookie, orderErr := r.Cookie("order"); orderErr == nil {
 			orderParam = orderCookie.Value
 		}
-	case "asc", "desc":
+	case sortOrderAsc, sortOrderDesc:
 		http.SetCookie(w, &http.Cookie{Name: "order", Value: orderParam, Secure: r.TLS != nil})
 	}
 

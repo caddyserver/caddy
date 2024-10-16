@@ -42,9 +42,13 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
-// ReadFrom implements io.ReaderFrom. It simply calls io.Copy,
-// which uses io.ReaderFrom if available.
+// ReadFrom implements io.ReaderFrom. It retries to use io.ReaderFrom if available,
+// then fallback to io.Copy.
+// see: https://github.com/caddyserver/caddy/issues/6546
 func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
 	return io.Copy(rww.ResponseWriter, r)
 }
 
@@ -66,6 +70,8 @@ type responseRecorder struct {
 	size         int
 	wroteHeader  bool
 	stream       bool
+
+	readSize *int
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be
@@ -217,13 +223,13 @@ func (rr *responseRecorder) Buffered() bool {
 }
 
 func (rr *responseRecorder) WriteResponse() error {
-	if rr.stream {
-		return nil
-	}
 	if rr.statusCode == 0 {
 		// could happen if no handlers actually wrote anything,
 		// and this prevents a panic; status must be > 0
-		rr.statusCode = http.StatusOK
+		rr.WriteHeader(http.StatusOK)
+	}
+	if rr.stream {
+		return nil
 	}
 	rr.ResponseWriterWrapper.WriteHeader(rr.statusCode)
 	_, err := io.Copy(rr.ResponseWriterWrapper, rr.buf)
@@ -240,6 +246,12 @@ func (rr *responseRecorder) FlushError() error {
 	return nil
 }
 
+// Private interface so it can only be used in this package
+// #TODO: maybe export it later
+func (rr *responseRecorder) setReadSize(size *int) {
+	rr.readSize = size
+}
+
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
@@ -249,6 +261,17 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	// Per http documentation, returned bufio.Writer is empty, but bufio.Read maybe not
 	conn = &hijackedConn{conn, rr}
 	brw.Writer.Reset(conn)
+
+	buffered := brw.Reader.Buffered()
+	if buffered != 0 {
+		conn.(*hijackedConn).updateReadSize(buffered)
+		data, _ := brw.Peek(buffered)
+		brw.Reader.Reset(io.MultiReader(bytes.NewReader(data), conn))
+		// peek to make buffered data appear, as Reset will make it 0
+		_, _ = brw.Peek(buffered)
+	} else {
+		brw.Reader.Reset(conn)
+	}
 	return conn, brw, nil
 }
 
@@ -256,6 +279,24 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 type hijackedConn struct {
 	net.Conn
 	rr *responseRecorder
+}
+
+func (hc *hijackedConn) updateReadSize(n int) {
+	if hc.rr.readSize != nil {
+		*hc.rr.readSize += n
+	}
+}
+
+func (hc *hijackedConn) Read(p []byte) (int, error) {
+	n, err := hc.Conn.Read(p)
+	hc.updateReadSize(n)
+	return n, err
+}
+
+func (hc *hijackedConn) WriteTo(w io.Writer) (int64, error) {
+	n, err := io.Copy(w, hc.Conn)
+	hc.updateReadSize(int(n))
+	return n, err
 }
 
 func (hc *hijackedConn) Write(p []byte) (int, error) {
@@ -298,4 +339,6 @@ var (
 	_ io.ReaderFrom = (*ResponseWriterWrapper)(nil)
 	_ io.ReaderFrom = (*responseRecorder)(nil)
 	_ io.ReaderFrom = (*hijackedConn)(nil)
+
+	_ io.WriterTo = (*hijackedConn)(nil)
 )

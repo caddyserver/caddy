@@ -33,6 +33,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -224,7 +225,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 	return func(eh parser.ExprHelper, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) == 0 {
 			return eh.NewCall("file",
-				eh.NewIdent("request"),
+				eh.NewIdent(caddyhttp.CELRequestVarName),
 				eh.NewMap(),
 			), nil
 		}
@@ -232,7 +233,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			arg := args[0]
 			if isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg) {
 				return eh.NewCall("file",
-					eh.NewIdent("request"),
+					eh.NewIdent(caddyhttp.CELRequestVarName),
 					eh.NewMap(eh.NewMapEntry(
 						eh.NewLiteral(types.String("try_files")),
 						eh.NewList(arg),
@@ -241,7 +242,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 				), nil
 			}
 			if isCELTryFilesLiteral(arg) {
-				return eh.NewCall("file", eh.NewIdent("request"), arg), nil
+				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), arg), nil
 			}
 			return nil, &common.Error{
 				Location: eh.OffsetLocation(arg.ID()),
@@ -258,7 +259,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			}
 		}
 		return eh.NewCall("file",
-			eh.NewIdent("request"),
+			eh.NewIdent(caddyhttp.CELRequestVarName),
 			eh.NewMap(eh.NewMapEntry(
 				eh.NewLiteral(types.String("try_files")),
 				eh.NewList(args...),
@@ -326,7 +327,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 
 	fileSystem, ok := m.fsmap.Get(fsName)
 	if !ok {
-		m.logger.Error("use of unregistered filesystem", zap.String("fs", fsName))
+		if c := m.logger.Check(zapcore.ErrorLevel, "use of unregistered filesystem"); c != nil {
+			c.Write(zap.String("fs", fsName))
+		}
 		return false
 	}
 	type matchCandidate struct {
@@ -356,7 +359,10 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 			return val, nil
 		})
 		if err != nil {
-			m.logger.Error("evaluating placeholders", zap.Error(err))
+			if c := m.logger.Check(zapcore.ErrorLevel, "evaluating placeholders"); c != nil {
+				c.Write(zap.Error(err))
+			}
+
 			expandedFile = file // "oh well," I guess?
 		}
 
@@ -379,7 +385,9 @@ func (m MatchFile) selectFile(r *http.Request) (matched bool) {
 		} else {
 			globResults, err = fs.Glob(fileSystem, fullPattern)
 			if err != nil {
-				m.logger.Error("expanding glob", zap.Error(err))
+				if c := m.logger.Check(zapcore.ErrorLevel, "expanding glob"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 
@@ -626,7 +634,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == "caddyPlaceholder" {
+		if call.FunctionName() == caddyhttp.CELPlaceholderFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:

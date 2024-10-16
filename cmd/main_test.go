@@ -168,3 +168,113 @@ here"
 		}
 	}
 }
+
+func Test_isCaddyfile(t *testing.T) {
+	type args struct {
+		configFile  string
+		adapterName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "bare Caddyfile without adapter",
+			args: args{
+				configFile:  "Caddyfile",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "local Caddyfile without adapter",
+			args: args{
+				configFile:  "./Caddyfile",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "local caddyfile with adapter",
+			args: args{
+				configFile:  "./Caddyfile",
+				adapterName: "caddyfile",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "ends with .caddyfile with adapter",
+			args: args{
+				configFile:  "./conf.caddyfile",
+				adapterName: "caddyfile",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "ends with .caddyfile without adapter",
+			args: args{
+				configFile:  "./conf.caddyfile",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "config is Caddyfile.yaml with adapter",
+			args: args{
+				configFile:  "./Caddyfile.yaml",
+				adapterName: "yaml",
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+
+			name: "json is not caddyfile but not error",
+			args: args{
+				configFile:  "./Caddyfile.json",
+				adapterName: "",
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+
+			name: "prefix of Caddyfile and ./ with any extension is Caddyfile",
+			args: args{
+				configFile:  "./Caddyfile.prd",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+
+			name: "prefix of Caddyfile without ./ with any extension is Caddyfile",
+			args: args{
+				configFile:  "Caddyfile.prd",
+				adapterName: "",
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isCaddyfile(tt.args.configFile, tt.args.adapterName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("isCaddyfile() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("isCaddyfile() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,7 @@ var defaultDirectiveOrder = []string{
 	"log_append",
 	"skip_log", // TODO: deprecated, renamed to log_skip
 	"log_skip",
+	"log_name",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
@@ -73,6 +75,7 @@ var defaultDirectiveOrder = []string{
 	"request_header",
 	"encode",
 	"push",
+	"intercept",
 	"templates",
 
 	// special routing & dispatching directives
@@ -97,17 +100,6 @@ var defaultDirectiveOrder = []string{
 // in HTTP routes, after being modified by either the
 // plugins or by the user via the "order" global option.
 var directiveOrder = defaultDirectiveOrder
-
-// directiveIsOrdered returns true if dir is
-// a known, ordered (sorted) directive.
-func directiveIsOrdered(dir string) bool {
-	for _, d := range directiveOrder {
-		if d == dir {
-			return true
-		}
-	}
-	return false
-}
 
 // RegisterDirective registers a unique directive dir with an
 // associated unmarshaling (setup) function. When directive dir
@@ -159,7 +151,7 @@ func RegisterHandlerDirective(dir string, setupFunc UnmarshalHandlerFunc) {
 // EXPERIMENTAL: This API may change or be removed.
 func RegisterDirectiveOrder(dir string, position Positional, standardDir string) {
 	// check if directive was already ordered
-	if directiveIsOrdered(dir) {
+	if slices.Contains(directiveOrder, dir) {
 		panic("directive '" + dir + "' already ordered")
 	}
 
@@ -170,12 +162,7 @@ func RegisterDirectiveOrder(dir string, position Positional, standardDir string)
 	// check if directive exists in standard distribution, since
 	// we can't allow plugins to depend on one another; we can't
 	// guarantee the order that plugins are loaded in.
-	foundStandardDir := false
-	for _, d := range defaultDirectiveOrder {
-		if d == standardDir {
-			foundStandardDir = true
-		}
-	}
+	foundStandardDir := slices.Contains(defaultDirectiveOrder, standardDir)
 	if !foundStandardDir {
 		panic("the 3rd argument '" + standardDir + "' must be a directive that exists in the standard distribution of Caddy")
 	}
@@ -529,9 +516,9 @@ func sortRoutes(routes []ConfigValue) {
 // a "pile" of config values, keyed by class name,
 // as well as its parsed keys for convenience.
 type serverBlock struct {
-	block caddyfile.ServerBlock
-	pile  map[string][]ConfigValue // config values obtained from directives
-	keys  []Address
+	block      caddyfile.ServerBlock
+	pile       map[string][]ConfigValue // config values obtained from directives
+	parsedKeys []Address
 }
 
 // hostsFromKeys returns a list of all the non-empty hostnames found in
@@ -548,7 +535,7 @@ type serverBlock struct {
 func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
 	// ensure each entry in our list is unique
 	hostMap := make(map[string]struct{})
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Host == "" {
 			if !loggerMode {
 				// server block contains a key like ":443", i.e. the host portion
@@ -580,7 +567,7 @@ func (sb serverBlock) hostsFromKeys(loggerMode bool) []string {
 func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 	// ensure each entry in our list is unique
 	hostMap := make(map[string]struct{})
-	for _, addr := range sb.keys {
+	for _, addr := range sb.parsedKeys {
 		if addr.Host == "" {
 			continue
 		}
@@ -601,23 +588,17 @@ func (sb serverBlock) hostsFromKeysNotHTTP(httpPort string) []string {
 // hasHostCatchAllKey returns true if sb has a key that
 // omits a host portion, i.e. it "catches all" hosts.
 func (sb serverBlock) hasHostCatchAllKey() bool {
-	for _, addr := range sb.keys {
-		if addr.Host == "" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(sb.parsedKeys, func(addr Address) bool {
+		return addr.Host == ""
+	})
 }
 
 // isAllHTTP returns true if all sb keys explicitly specify
 // the http:// scheme
 func (sb serverBlock) isAllHTTP() bool {
-	for _, addr := range sb.keys {
-		if addr.Scheme != "http" {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(sb.parsedKeys, func(addr Address) bool {
+		return addr.Scheme != "http"
+	})
 }
 
 // Positional are the supported modes for ordering directives.

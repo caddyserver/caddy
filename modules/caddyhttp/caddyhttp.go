@@ -76,7 +76,10 @@ type MiddlewareHandler interface {
 }
 
 // emptyHandler is used as a no-op handler.
-var emptyHandler Handler = HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil })
+var emptyHandler Handler = HandlerFunc(func(_ http.ResponseWriter, req *http.Request) error {
+	SetVar(req.Context(), "unhandled", true)
+	return nil
+})
 
 // An implicit suffix middleware that, if reached, sets the StatusCode to the
 // error stored in the ErrorCtxKey. This is to prevent situations where the
@@ -120,7 +123,7 @@ type ResponseHandler struct {
 	Routes RouteList `json:"routes,omitempty"`
 }
 
-// Provision sets up the routse in rh.
+// Provision sets up the routes in rh.
 func (rh *ResponseHandler) Provision(ctx caddy.Context) error {
 	if rh.Routes != nil {
 		err := rh.Routes.Provision(ctx)
@@ -226,13 +229,22 @@ func StatusCodeMatches(actual, configured int) bool {
 // in the implementation of http.Dir. The root is assumed to
 // be a trusted path, but reqPath is not; and the output will
 // never be outside of root. The resulting path can be used
-// with the local file system.
+// with the local file system. If root is empty, the current
+// directory is assumed. If the cleaned request path is deemed
+// not local according to lexical processing (i.e. ignoring links),
+// it will be rejected as unsafe and only the root will be returned.
 func SanitizedPathJoin(root, reqPath string) string {
 	if root == "" {
 		root = "."
 	}
 
-	path := filepath.Join(root, path.Clean("/"+reqPath))
+	relPath := path.Clean("/" + reqPath)[1:] // clean path and trim the leading /
+	if relPath != "" && !filepath.IsLocal(relPath) {
+		// path is unsafe (see https://github.com/golang/go/issues/56336#issuecomment-1416214885)
+		return root
+	}
+
+	path := filepath.Join(root, filepath.FromSlash(relPath))
 
 	// filepath.Join also cleans the path, and cleaning strips
 	// the trailing slash, so we need to re-add it afterwards.

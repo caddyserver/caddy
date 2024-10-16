@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -77,6 +79,14 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 				cp[i].ClientAuthentication.verifiers = append(cp[i].ClientAuthentication.verifiers, validator.(ClientCertificateVerifier))
 			}
 		}
+
+		if len(pol.HandshakeContextRaw) > 0 {
+			modIface, err := ctx.LoadModule(pol, "HandshakeContextRaw")
+			if err != nil {
+				return fmt.Errorf("loading handshake context module: %v", err)
+			}
+			cp[i].handshakeContext = modIface.(HandshakeContext)
+		}
 	}
 
 	return nil
@@ -119,6 +129,9 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 						continue policyLoop
 					}
 				}
+				if pol.Drop {
+					return nil, fmt.Errorf("dropping connection")
+				}
 				return pol.TLSConfig, nil
 			}
 
@@ -133,6 +146,7 @@ type ConnectionPolicy struct {
 	// How to match this policy with a TLS ClientHello. If
 	// this policy is the first to match, it will be used.
 	MatchersRaw caddy.ModuleMap `json:"match,omitempty" caddy:"namespace=tls.handshake_match"`
+	matchers    []ConnectionMatcher
 
 	// How to choose a certificate if more than one matched
 	// the given ServerName (SNI) value.
@@ -155,6 +169,9 @@ type ConnectionPolicy struct {
 
 	// Maximum TLS protocol version to allow. Default: `tls1.3`
 	ProtocolMax string `json:"protocol_max,omitempty"`
+
+	// Reject TLS connections. EXPERIMENTAL: May change.
+	Drop bool `json:"drop,omitempty"`
 
 	// Enables and configures TLS client authentication.
 	ClientAuthentication *ClientAuthentication `json:"client_authentication,omitempty"`
@@ -185,6 +202,12 @@ type ConnectionPolicy struct {
 	// This feature is EXPERIMENTAL and subject to change or removal.
 	InsecureSecretsLog string `json:"insecure_secrets_log,omitempty"`
 
+	// A module that can manipulate the context passed into CertMagic's
+	// certificate management functions during TLS handshakes.
+	// EXPERIMENTAL - subject to change or removal.
+	HandshakeContextRaw json.RawMessage `json:"handshake_context,omitempty" caddy:"namespace=tls.context inline_key=module"`
+	handshakeContext    HandshakeContext
+
 	// TLSConfig is the fully-formed, standard lib TLS config
 	// used to serve TLS connections. Provision all
 	// ConnectionPolicies to populate this. It is exported only
@@ -192,8 +215,15 @@ type ConnectionPolicy struct {
 	// if necessary (like to adjust NextProtos to disable HTTP/2),
 	// and may be unexported in the future.
 	TLSConfig *tls.Config `json:"-"`
+}
 
-	matchers []ConnectionMatcher
+type HandshakeContext interface {
+	// HandshakeContext returns a context to pass into CertMagic's
+	// GetCertificate function used to serve, load, and manage certs
+	// during TLS handshakes. Generally you'll start with the context
+	// from the ClientHelloInfo, but you may use other information
+	// from it as well. Return an error to abort the handshake.
+	HandshakeContext(*tls.ClientHelloInfo) (context.Context, error)
 }
 
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
@@ -233,7 +263,18 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 			}
 			cfg.DefaultServerName = p.DefaultSNI
 			cfg.FallbackServerName = p.FallbackSNI
-			return cfg.GetCertificate(hello)
+
+			// TODO: experimental: if a handshake context module is configured, allow it
+			// to modify the context before passing it into CertMagic's GetCertificate
+			ctx := hello.Context()
+			if p.handshakeContext != nil {
+				ctx, err = p.handshakeContext.HandshakeContext(hello)
+				if err != nil {
+					return nil, fmt.Errorf("handshake context: %v", err)
+				}
+			}
+
+			return cfg.GetCertificateWithContext(ctx, hello)
 		},
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
@@ -332,8 +373,9 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 
 		cfg.KeyLogWriter = logFile.(io.Writer)
 
-		tlsApp.logger.Warn("TLS SECURITY COMPROMISED: secrets logging is enabled!",
-			zap.String("log_filename", filename))
+		if c := tlsApp.logger.Check(zapcore.WarnLevel, "TLS SECURITY COMPROMISED: secrets logging is enabled!"); c != nil {
+			c.Write(zap.String("log_filename", filename))
+		}
 	}
 
 	setDefaultTLSParams(cfg)
@@ -355,6 +397,136 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.ClientAuthentication == nil &&
 		p.DefaultSNI == "" &&
 		p.InsecureSecretsLog == ""
+}
+
+// UnmarshalCaddyfile sets up the ConnectionPolicy from Caddyfile tokens. Syntax:
+//
+//	connection_policy {
+//		alpn                  <values...>
+//		cert_selection {
+//			...
+//		}
+//		ciphers               <cipher_suites...>
+//		client_auth {
+//			...
+//		}
+//		curves                <curves...>
+//		default_sni           <server_name>
+//		match {
+//			...
+//		}
+//		protocols             <min> [<max>]
+//		# EXPERIMENTAL:
+//		drop
+//		fallback_sni          <server_name>
+//		insecure_secrets_log  <log_file>
+//	}
+func (cp *ConnectionPolicy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	_, wrapper := d.Next(), d.Val()
+
+	// No same-line options are supported
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+
+	var hasCertSelection, hasClientAuth, hasDefaultSNI, hasDrop,
+		hasFallbackSNI, hasInsecureSecretsLog, hasMatch, hasProtocols bool
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		optionName := d.Val()
+		switch optionName {
+		case "alpn":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.ALPN = append(cp.ALPN, d.RemainingArgs()...)
+		case "cert_selection":
+			if hasCertSelection {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			p := &CustomCertSelectionPolicy{}
+			if err := p.UnmarshalCaddyfile(d.NewFromNextSegment()); err != nil {
+				return err
+			}
+			cp.CertSelection, hasCertSelection = p, true
+		case "client_auth":
+			if hasClientAuth {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			ca := &ClientAuthentication{}
+			if err := ca.UnmarshalCaddyfile(d.NewFromNextSegment()); err != nil {
+				return err
+			}
+			cp.ClientAuthentication, hasClientAuth = ca, true
+		case "ciphers":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.CipherSuites = append(cp.CipherSuites, d.RemainingArgs()...)
+		case "curves":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			cp.Curves = append(cp.Curves, d.RemainingArgs()...)
+		case "default_sni":
+			if hasDefaultSNI {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.DefaultSNI, hasDefaultSNI = d.NextArg(), d.Val(), true
+		case "drop": // EXPERIMENTAL
+			if hasDrop {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			cp.Drop, hasDrop = true, true
+		case "fallback_sni": // EXPERIMENTAL
+			if hasFallbackSNI {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.FallbackSNI, hasFallbackSNI = d.NextArg(), d.Val(), true
+		case "insecure_secrets_log": // EXPERIMENTAL
+			if hasInsecureSecretsLog {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			_, cp.InsecureSecretsLog, hasInsecureSecretsLog = d.NextArg(), d.Val(), true
+		case "match":
+			if hasMatch {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+			if err != nil {
+				return err
+			}
+			cp.MatchersRaw, hasMatch = matcherSet, true
+		case "protocols":
+			if hasProtocols {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() == 0 || d.CountRemainingArgs() > 2 {
+				return d.ArgErr()
+			}
+			_, cp.ProtocolMin, hasProtocols = d.NextArg(), d.Val(), true
+			if d.NextArg() {
+				cp.ProtocolMax = d.Val()
+			}
+		default:
+			return d.ArgErr()
+		}
+
+		// No nested blocks are supported
+		if d.NextBlock(nesting + 1) {
+			return d.Errf("malformed %s option '%s': blocks are not supported", wrapper, optionName)
+		}
+	}
+
+	return nil
 }
 
 // ClientAuthentication configures TLS client auth.
@@ -417,15 +589,10 @@ type ClientAuthentication struct {
 //	 	trust_pool			   <module> {
 //			...
 //		}
-//		trusted_leaf_cert      <base64_der>
-//		trusted_leaf_cert_file <filename>
+//		verifier               <module>
 //	}
 //
-// If `mode` is not provided, it defaults to `require_and_verify` if any of the following are provided:
-// - `trusted_leaf_certs`
-// - `trusted_leaf_cert_file`
-// - `trust_pool`
-//
+// If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided.
 // Otherwise, it defaults to `require`.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
@@ -442,6 +609,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 				return d.ArgErr()
 			}
 		case "trusted_ca_cert":
+			caddy.Log().Warn("The 'trusted_ca_cert' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
@@ -455,6 +623,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 			}
 			ca.TrustedLeafCerts = append(ca.TrustedLeafCerts, d.Val())
 		case "trusted_ca_cert_file":
+			caddy.Log().Warn("The 'trusted_ca_cert_file' field is deprecated. Use the 'trust_pool' field instead.")
 			if len(ca.CARaw) != 0 {
 				return d.Err("cannot specify both 'trust_pool' and 'trusted_ca_cert' or 'trusted_ca_cert_file'")
 			}
@@ -508,7 +677,7 @@ func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 
 			_, ok := unm.(ClientCertificateVerifier)
 			if !ok {
-				return d.Errf("module '%s' is not a caddytls.ClientCertificatVerifier", modID)
+				return d.Errf("module '%s' is not a caddytls.ClientCertificateVerifier", modID)
 			}
 			ca.VerifiersRaw = append(ca.VerifiersRaw, caddyconfig.JSONModuleObject(unm, "verifier", vType, nil))
 		default:
@@ -627,7 +796,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
 			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil {
+			clientauth.CARaw != nil || clientauth.ca != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -702,7 +871,15 @@ func setDefaultTLSParams(cfg *tls.Config) {
 	cfg.CipherSuites = append([]uint16{tls.TLS_FALLBACK_SCSV}, cfg.CipherSuites...)
 
 	if len(cfg.CurvePreferences) == 0 {
-		cfg.CurvePreferences = defaultCurves
+		// We would want to write
+		//
+		//	cfg.CurvePreferences = defaultCurves
+		//
+		// but that would disable the post-quantum key agreement X25519Kyber768
+		// supported in Go 1.23, for which the CurveID is not exported.
+		// Instead, we'll set CurvePreferences to nil, which will enable PQC.
+		// See https://github.com/caddyserver/caddy/issues/6540
+		cfg.CurvePreferences = nil
 	}
 
 	if cfg.MinVersion == 0 {
@@ -810,4 +987,46 @@ func (d destructableWriter) Destruct() error { return d.Close() }
 
 var secretsLogPool = caddy.NewUsagePool()
 
-var _ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
+// Interface guards
+var (
+	_ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
+	_ caddyfile.Unmarshaler = (*ConnectionPolicy)(nil)
+)
+
+// ParseCaddyfileNestedMatcherSet parses the Caddyfile tokens for a nested
+// matcher set, and returns its raw module map value.
+func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
+	matcherMap := make(map[string]ConnectionMatcher)
+
+	tokensByMatcherName := make(map[string][]caddyfile.Token)
+	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+		matcherName := d.Val()
+		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
+	}
+
+	for matcherName, tokens := range tokensByMatcherName {
+		dd := caddyfile.NewDispenser(tokens)
+		dd.Next() // consume wrapper name
+
+		unm, err := caddyfile.UnmarshalModule(dd, "tls.handshake_match."+matcherName)
+		if err != nil {
+			return nil, err
+		}
+		cm, ok := unm.(ConnectionMatcher)
+		if !ok {
+			return nil, fmt.Errorf("matcher module '%s' is not a connection matcher", matcherName)
+		}
+		matcherMap[matcherName] = cm
+	}
+
+	matcherSet := make(caddy.ModuleMap)
+	for name, matcher := range matcherMap {
+		jsonBytes, err := json.Marshal(matcher)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling %T matcher: %v", matcher, err)
+		}
+		matcherSet[name] = jsonBytes
+	}
+
+	return matcherSet, nil
+}

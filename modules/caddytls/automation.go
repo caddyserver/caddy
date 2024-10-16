@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -97,7 +99,7 @@ type AutomationPolicy struct {
 	SubjectsRaw []string `json:"subjects,omitempty"`
 
 	// The modules that may issue certificates. Default: internal if all
-	// subjects do not qualify for public certificates; othewise acme and
+	// subjects do not qualify for public certificates; otherwise acme and
 	// zerossl.
 	IssuersRaw []json.RawMessage `json:"issuers,omitempty" caddy:"namespace=tls.issuance inline_key=module"`
 
@@ -170,6 +172,9 @@ type AutomationPolicy struct {
 	subjects []string
 	magic    *certmagic.Config
 	storage  certmagic.Storage
+
+	// Whether this policy had explicit managers configured directly on it.
+	hadExplicitManagers bool
 }
 
 // Provision sets up ap and builds its underlying CertMagic config.
@@ -201,8 +206,8 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// store them on the policy before putting it on the config
 
 	// load and provision any cert manager modules
-	hadExplicitManagers := len(ap.ManagersRaw) > 0
 	if ap.ManagersRaw != nil {
+		ap.hadExplicitManagers = true
 		vals, err := tlsApp.ctx.LoadModule(ap, "ManagersRaw")
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
@@ -262,9 +267,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
 		// permission module configured
 		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
-		failClosed := noProtections && hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
+		failClosed := noProtections && !ap.hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
 		if noProtections {
-			if !hadExplicitManagers {
+			if !ap.hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
 				return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
 			}
@@ -289,29 +294,32 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 						remoteIP, _, _ = net.SplitHostPort(remote.String())
 					}
 				}
-				tlsApp.logger.Debug("asking for permission for on-demand certificate",
-					zap.String("remote_ip", remoteIP),
-					zap.String("domain", name))
+				if c := tlsApp.logger.Check(zapcore.DebugLevel, "asking for permission for on-demand certificate"); c != nil {
+					c.Write(
+						zap.String("remote_ip", remoteIP),
+						zap.String("domain", name),
+					)
+				}
 
 				// ask the permission module if this cert is allowed
 				if err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, ErrPermissionDenied) {
-						tlsApp.logger.Debug("on-demand certificate issuance denied",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.DebugLevel, "on-demand certificate issuance denied"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					} else {
-						tlsApp.logger.Error("failed to get permission for on-demand certificate",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.ErrorLevel, "failed to get permission for on-demand certificate"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					}
 					return err
-				}
-
-				// check the rate limiter last because
-				// doing so makes a reservation
-				if !onDemandRateLimiter.Allow() {
-					return fmt.Errorf("on-demand rate limit exceeded")
 				}
 
 				return nil
@@ -360,12 +368,9 @@ func (ap *AutomationPolicy) Subjects() []string {
 
 // AllInternalSubjects returns true if all the subjects on this policy are internal.
 func (ap *AutomationPolicy) AllInternalSubjects() bool {
-	for _, subj := range ap.subjects {
-		if !certmagic.SubjectIsInternal(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.subjects, func(s string) bool {
+		return !certmagic.SubjectIsInternal(s)
+	})
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {

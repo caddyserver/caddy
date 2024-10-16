@@ -57,10 +57,11 @@ type Upstream struct {
 	// HeaderAffinity string
 	// IPAffinity     string
 
-	activeHealthCheckPort int
-	healthCheckPolicy     *PassiveHealthChecks
-	cb                    CircuitBreaker
-	unhealthy             int32 // accessed atomically; status from active health checker
+	activeHealthCheckPort     int
+	activeHealthCheckUpstream string
+	healthCheckPolicy         *PassiveHealthChecks
+	cb                        CircuitBreaker
+	unhealthy                 int32 // accessed atomically; status from active health checker
 }
 
 // (pointer receiver necessary to avoid a race condition, since
