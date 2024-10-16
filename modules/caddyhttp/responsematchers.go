@@ -41,7 +41,7 @@ func (rm ResponseMatcher) Match(statusCode int, hdr http.Header) bool {
 	if !rm.matchStatusCode(statusCode) {
 		return false
 	}
-	return matchHeaders(hdr, rm.Headers, "", nil)
+	return matchHeaders(hdr, rm.Headers, "", []string{}, nil)
 }
 
 func (rm ResponseMatcher) matchStatusCode(statusCode int) bool {
