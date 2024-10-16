@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"go.opentelemetry.io/otel"
+
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -37,20 +39,19 @@ type openTelemetryWrapper struct {
 
 	handler http.Handler
 
-	spanName string
+	spanName                 string
+	injectServerTimingHeader bool
 }
 
 // newOpenTelemetryWrapper is responsible for the openTelemetryWrapper initialization using provided configuration.
-func newOpenTelemetryWrapper(
-	ctx context.Context,
-	spanName string,
-) (openTelemetryWrapper, error) {
+func newOpenTelemetryWrapper(ctx context.Context, spanName string, injectServerTimingHeader bool) (openTelemetryWrapper, error) {
 	if spanName == "" {
 		spanName = defaultSpanName
 	}
 
 	ot := openTelemetryWrapper{
-		spanName: spanName,
+		injectServerTimingHeader: injectServerTimingHeader,
+		spanName:                 spanName,
 	}
 
 	version, _ := caddy.Version()
@@ -64,7 +65,9 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
 
-	ot.propagators = autoprop.NewTextMapPropagator()
+	prop := autoprop.NewTextMapPropagator()
+	otel.SetTextMapPropagator(prop)
+	ot.propagators = prop
 
 	tracerProvider := globalTracerProvider.getTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
@@ -84,15 +87,24 @@ func newOpenTelemetryWrapper(
 // serveHTTP injects a tracing context and call the next handler.
 func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
+
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
 		traceID := spanCtx.TraceID().String()
+		spanID := spanCtx.SpanID().String()
 		// Add a trace_id placeholder, accessible via `{http.vars.trace_id}`.
 		caddyhttp.SetVar(ctx, "trace_id", traceID)
+		// Add a span_id placeholder, accessible via `{http.vars.span_id}`.
+		caddyhttp.SetVar(ctx, "span_id", spanID)
 		// Add the trace id to the log fields for the request.
 		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
 			extra.Add(zap.String("traceID", traceID))
+			extra.Add(zap.String("spanID", spanID))
+		}
+
+		// Add the server-timing header so clients can make the connection
+		if ot.injectServerTimingHeader {
+			w.Header().Set("server-timing", fmt.Sprintf("traceparent;desc=\"00-%s-%s-%s\"", traceID, spanID, spanCtx.TraceFlags().String()))
 		}
 	}
 	next := ctx.Value(nextCallCtxKey).(*nextCall)
