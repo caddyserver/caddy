@@ -689,16 +689,7 @@ func (app *App) Stop() error {
 			return
 		}
 
-		// First close h3server then close listeners unlike stdlib for several reasons:
-		// 1, udp has only a single socket, once closed, no more data can be read and
-		// written. In contrast, closing tcp listeners won't affect established connections.
-		// This have something to do with graceful shutdown when upstream implements it.
-		// 2, h3server will only close listeners it's registered (quic listeners). Closing
-		// listener first and these listeners maybe unregistered thus won't be closed. caddy
-		// distinguishes quic-listener and underlying datagram sockets.
-
-		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
-		if err := server.h3server.Close(); err != nil {
+		if err := server.h3server.Shutdown(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
