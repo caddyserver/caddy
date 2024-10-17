@@ -330,6 +330,8 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				fcgiTransport.CaptureStderr = true
 
 			case "body_buffer_disabled":
+				args := dispenser.RemainingArgs()
+				dispenser.DeleteN(len(args) + 1)
 				fcgiTransport.BodyBufferDisabled = true
 
 			case "body_buffer_memory_limit":
@@ -341,6 +343,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.Errf("bad buffer size %s: %v", dispenser.Val(), err)
 				}
 				fcgiTransport.BodyBufferMemoryLimit = int64(size)
+				dispenser.DeleteN(2)
 
 			case "file_buffer_size_limit":
 				if !dispenser.NextArg() {
@@ -351,12 +354,14 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					return nil, dispenser.Errf("bad buffer size %s: %v", dispenser.Val(), err)
 				}
 				fcgiTransport.FileBufferSizeLimit = int64(size)
+				dispenser.DeleteN(2)
 
 			case "file_buffer_filepath":
 				if !dispenser.NextArg() {
 					return nil, dispenser.ArgErr()
 				}
 				fcgiTransport.FileBufferFilepath = dispenser.Val()
+				dispenser.DeleteN(2)
 			}
 		}
 	}
