@@ -157,12 +157,12 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	writer.recType = Stdin
 	if req != nil {
 		_, err = io.Copy(writer, req)
+		if err != nil {
+			return nil, err
+		}
 		// body length mismatch
 		if lr, ok := req.(*io.LimitedReader); ok && lr.N > 0 {
 			return nil, io.ErrUnexpectedEOF
-		}
-		if err != nil {
-			return nil, err
 		}
 	}
 	err = writer.FlushStream()
