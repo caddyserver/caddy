@@ -1,0 +1,268 @@
+{
+	auto_https prefer_wildcard
+}
+
+# Covers two domains
+*.one.example.com {
+	tls {
+		dns mock
+	}
+	respond "one fallback"
+}
+
+# Is covered, should not get its own AP
+foo.one.example.com {
+	respond "foo one"
+}
+
+# This one has its own tls config so it doesn't get covered (escape hatch)
+bar.one.example.com {
+	respond "bar one"
+	tls bar@bar.com
+}
+
+# Covers nothing but AP gets consolidated with the first
+*.two.example.com {
+	tls {
+		dns mock
+	}
+	respond "two fallback"
+}
+
+# Is HTTP so it should not cover
+http://*.three.example.com {
+	respond "three fallback"
+}
+
+# Has no wildcard coverage so it gets an AP
+foo.three.example.com {
+	respond "foo three"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.three.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "foo three",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"foo.one.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "foo one",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"bar.one.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "bar one",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.one.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "one fallback",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.two.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "two fallback",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip_certificates": [
+							"foo.one.example.com",
+							"bar.one.example.com"
+						],
+						"prefer_wildcard": true
+					}
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.three.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "three fallback",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"prefer_wildcard": true
+					}
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"foo.three.example.com"
+						]
+					},
+					{
+						"subjects": [
+							"bar.one.example.com"
+						],
+						"issuers": [
+							{
+								"email": "bar@bar.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "bar@bar.com",
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"*.one.example.com",
+							"*.two.example.com"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"name": "mock"
+										}
+									}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
