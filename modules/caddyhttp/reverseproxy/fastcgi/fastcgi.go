@@ -91,7 +91,7 @@ type Transport struct {
 	// total disk storage allowed by the request body buffer
 	FileBufferSizeLimit int64 `json:"file_buffer_size_limit,omitempty"`
 	// the path to store the temporary files for the request body buffer
-	FileBufferFilepath string `json:"file_buffer_filepath"`
+	FileBufferFilepath string `json:"file_buffer_filepath,omitempty"`
 
 	serverSoftware  string
 	logger          *zap.Logger
