@@ -209,6 +209,7 @@ func newErrorResponse(status int) *http.Response {
 	statusText := http.StatusText(status)
 	resp := &http.Response{
 		Status:        statusText,
+		StatusCode:    status,
 		Header:        make(http.Header),
 		Body:          io.NopCloser(strings.NewReader(statusText)),
 		ContentLength: int64(len(statusText)),
