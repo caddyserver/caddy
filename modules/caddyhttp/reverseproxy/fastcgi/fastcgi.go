@@ -15,10 +15,14 @@
 package fastcgi
 
 import (
+	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -80,8 +84,18 @@ type Transport struct {
 	// be used instead.
 	CaptureStderr bool `json:"capture_stderr,omitempty"`
 
-	serverSoftware string
-	logger         *zap.Logger
+	// disable buffering of the request body that doesn't have a content length
+	BodyBufferDisabled bool `json:"body_buffer_disabled,omitempty"`
+	// memory limit for buffering the request body, the rest will be buffered by temporary files
+	BodyBufferMemoryLimit int64 `json:"body_buffer_memory_limit,omitempty"`
+	// total disk storage allowed by the request body buffer
+	FileBufferSizeLimit int64 `json:"file_buffer_size_limit,omitempty"`
+	// the path to store the temporary files for the request body buffer
+	FileBufferFilepath string `json:"file_buffer_filepath"`
+
+	serverSoftware  string
+	logger          *zap.Logger
+	tempFileLimiter *fileQuotaLimiter
 }
 
 // CaddyModule returns the Caddy module information.
@@ -91,6 +105,15 @@ func (Transport) CaddyModule() caddy.ModuleInfo {
 		New: func() caddy.Module { return new(Transport) },
 	}
 }
+
+const (
+	defaultDialTimeout = 3 * time.Second
+	// nginx default for 64bit platforms
+	// https://nginx.org/en/docs/http/ngx_http_core_module.html#client_body_buffer_size
+	defaultMemBufferSize = 1 << 14 // 16KB
+	// nginx doesn't have an option to limit the total file buffer size
+	defaultFileBufferSize = 100 << 20 // 100MB
+)
 
 // Provision sets up t.
 func (t *Transport) Provision(ctx caddy.Context) error {
@@ -106,10 +129,141 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 	// Set a relatively short default dial timeout.
 	// This is helpful to make load-balancer retries more speedy.
 	if t.DialTimeout == 0 {
-		t.DialTimeout = caddy.Duration(3 * time.Second)
+		t.DialTimeout = caddy.Duration(defaultDialTimeout)
+	}
+
+	if !t.BodyBufferDisabled {
+		if t.FileBufferFilepath == "" {
+			t.FileBufferFilepath = os.TempDir()
+		}
+		// test if temporary file can be created
+		file, err := os.CreateTemp(t.FileBufferFilepath, "caddy-fastcgi-buffer-")
+		if err != nil {
+			return fmt.Errorf("failed to create temporary file: %v", err)
+		}
+		file.Close()
+		os.Remove(file.Name())
+
+		if t.BodyBufferMemoryLimit == 0 {
+			t.BodyBufferMemoryLimit = defaultMemBufferSize
+		}
+		if t.FileBufferSizeLimit == 0 {
+			t.FileBufferSizeLimit = defaultFileBufferSize
+		}
+		t.tempFileLimiter = newFileQuotaLimiter(t.FileBufferSizeLimit)
 	}
 
 	return nil
+}
+
+type bufferedBody struct {
+	memBuf          *bytes.Buffer
+	fileBuf         *os.File
+	filesize        int64
+	tempFileLimiter *fileQuotaLimiter
+}
+
+func (b *bufferedBody) Read(p []byte) (int, error) {
+	if b.memBuf != nil {
+		if b.memBuf.Len() != 0 {
+			return b.memBuf.Read(p)
+		}
+		bufPool.Put(b.memBuf)
+		b.memBuf = nil
+	}
+	if b.fileBuf != nil {
+		n, err := b.fileBuf.Read(p)
+		if err != nil {
+			// close the file and remove it
+			b.fileBuf.Close()
+			os.Remove(b.fileBuf.Name())
+			b.tempFileLimiter.release(b.filesize)
+			b.fileBuf = nil
+			return n, err
+		}
+	}
+	return 0, io.EOF
+}
+
+func (b *bufferedBody) Close() error {
+	if b.memBuf != nil {
+		bufPool.Put(b.memBuf)
+		b.memBuf = nil
+	}
+	if b.fileBuf != nil {
+		b.fileBuf.Close()
+		os.Remove(b.fileBuf.Name())
+		b.tempFileLimiter.release(b.filesize)
+		b.fileBuf = nil
+	}
+	return nil
+}
+
+var errFileBufferExceeded = errors.New("temporary file buffer limit exceeded")
+
+func (t Transport) bufferBodyToFile(file *os.File, req io.Reader) (int64, error) {
+	buf := streamingBufPool.Get().(*[]byte)
+	defer streamingBufPool.Put(buf)
+
+	var size int64
+	for {
+		reserved := t.tempFileLimiter.acquire(readBufSize)
+		if !reserved {
+			return size, errFileBufferExceeded
+		}
+		n, er := req.Read(*buf)
+		if n > 0 {
+			nw, ew := file.Write((*buf)[:n])
+			size += int64(nw)
+			t.tempFileLimiter.release(int64(readBufSize - nw))
+			if ew != nil {
+				return size, ew
+			}
+		}
+		if er != nil {
+			if er == io.EOF {
+				return size, nil
+			}
+			return size, er
+		}
+	}
+}
+
+func (t Transport) bufferBody(req io.Reader) (int64, io.ReadCloser, error) {
+	if closer, ok := req.(io.Closer); ok {
+		defer closer.Close()
+	}
+
+	memBuf := bufPool.Get().(*bytes.Buffer)
+	memBuf.Reset()
+	size, err := io.CopyN(memBuf, req, t.BodyBufferMemoryLimit)
+	var body bufferedBody // should be closed in case buffering fails
+	body.memBuf = memBuf
+	// error while reading the body
+	if err != nil {
+		// fully buffered in memory
+		if err == io.EOF {
+			return size, &body, nil
+		}
+		body.Close()
+		return 0, nil, err
+	}
+
+	// temporary file is needed here.
+	fileBuf, err := os.CreateTemp(t.FileBufferFilepath, "caddy-fastcgi-buffer-")
+	if err != nil {
+		body.Close()
+		return 0, nil, err
+	}
+	body.fileBuf = fileBuf
+	// buffer the rest of the body to the file
+	fSize, err := t.bufferBodyToFile(fileBuf, req)
+	body.filesize = fSize
+	if err != nil {
+		body.Close()
+		return 0, nil, err
+	}
+	return size + fSize, &body, nil
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -171,10 +325,12 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	// create the client that will facilitate the protocol
 	client := client{
-		rwc:    conn,
-		reqID:  1,
-		logger: logger,
-		stderr: t.CaptureStderr,
+		rwc:        conn,
+		reqID:      1,
+		logger:     logger,
+		stderr:     t.CaptureStderr,
+		buffer:     !t.BodyBufferDisabled,
+		bufferFunc: t.bufferBody,
 	}
 
 	// read/write timeouts

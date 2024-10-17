@@ -128,9 +128,11 @@ var pad [maxPad]byte
 type client struct {
 	rwc net.Conn
 	// keepAlive bool // TODO: implement
-	reqID  uint16
-	stderr bool
-	logger *zap.Logger
+	reqID      uint16
+	stderr     bool
+	logger     *zap.Logger
+	buffer     bool
+	bufferFunc func(io.Reader) (int64, io.ReadCloser, error)
 }
 
 // Do made the request and returns a io.Reader that translates the data read
@@ -155,6 +157,10 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	writer.recType = Stdin
 	if req != nil {
 		_, err = io.Copy(writer, req)
+		// body length mismatch
+		if lr, ok := req.(*io.LimitedReader); ok && lr.N > 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -197,9 +203,67 @@ func (f clientCloser) Close() error {
 	return f.rwc.Close()
 }
 
+// create a response that describes the error message, it's passed to the client.
+// caller should close the connection to fastcgi server
+func newErrorResponse(status int) *http.Response {
+	statusText := http.StatusText(status)
+	resp := &http.Response{
+		Status:        statusText,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(strings.NewReader(statusText)),
+		ContentLength: int64(len(statusText)),
+	}
+	resp.Header.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+	resp.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	resp.Header.Set("X-Content-Type-Options", "nosniff")
+	return resp
+}
+
+// check for invalid content_length to determine if the request should be buffered
+func checkContentLength(p map[string]string) (int64, bool) {
+	clStr, ok := p["CONTENT_LENGTH"]
+	if !ok {
+		return 0, false
+	}
+	cl, err := strconv.ParseInt(clStr, 10, 64)
+	if err != nil || cl < 0 {
+		return 0, false
+	}
+	return cl, true
+}
+
 // Request returns a HTTP Response with Header and Body
 // from fcgi responder
 func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
+	// defer closing the request body if it's an io.Closer
+	if closer, ok := req.(io.Closer); ok {
+		defer closer.Close()
+	}
+
+	// check for content_length and buffer the request if needed
+	cl, ok := checkContentLength(p)
+	if !ok {
+		// buffering disabled
+		if !c.buffer {
+			c.rwc.Close()
+			return newErrorResponse(http.StatusLengthRequired), nil
+		} else {
+			// buffer the request
+			size, rc, err := c.bufferFunc(req)
+			if err != nil {
+				if err == errFileBufferExceeded {
+					c.rwc.Close()
+					return newErrorResponse(http.StatusRequestEntityTooLarge), nil
+				}
+				return nil, err
+			}
+			defer rc.Close()
+			p["CONTENT_LENGTH"] = strconv.FormatInt(size, 10)
+		}
+	} else {
+		req = io.LimitReader(req, cl)
+	}
+
 	r, err := c.Do(p, req)
 	if err != nil {
 		return
@@ -302,7 +366,7 @@ func (c *client) Post(p map[string]string, method string, bodyType string, body 
 // PostForm issues a POST to the fcgi responder, with form
 // as a string key to a list values (url.Values)
 func (c *client) PostForm(p map[string]string, data url.Values) (resp *http.Response, err error) {
-	body := bytes.NewReader([]byte(data.Encode()))
+	body := strings.NewReader(data.Encode())
 	return c.Post(p, "POST", "application/x-www-form-urlencoded", body, int64(body.Len()))
 }
 

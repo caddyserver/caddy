@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -43,7 +45,10 @@ func init() {
 //	    dial_timeout <duration>
 //	    read_timeout <duration>
 //	    write_timeout <duration>
-//	    capture_stderr
+//	    body_buffer_disabled
+//	    body_buffer_memory_limit <size>
+//	    file_buffer_size_limit <size>
+//	    file_buffer_filepath <path>
 //	}
 func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume transport name
@@ -112,6 +117,35 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			t.CaptureStderr = true
+
+		case "body_buffer_disabled":
+			t.BodyBufferDisabled = true
+
+		case "body_buffer_memory_limit":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(d.Val())
+			if err != nil {
+				return d.Errf("bad buffer size %s: %v", d.Val(), err)
+			}
+			t.BodyBufferMemoryLimit = int64(size)
+
+		case "file_buffer_size_limit":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(d.Val())
+			if err != nil {
+				return d.Errf("bad buffer size %s: %v", d.Val(), err)
+			}
+			t.FileBufferSizeLimit = int64(size)
+
+		case "file_buffer_filepath":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			t.FileBufferFilepath = d.Val()
 
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())
@@ -294,6 +328,35 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				args := dispenser.RemainingArgs()
 				dispenser.DeleteN(len(args) + 1)
 				fcgiTransport.CaptureStderr = true
+
+			case "body_buffer_disabled":
+				fcgiTransport.BodyBufferDisabled = true
+
+			case "body_buffer_memory_limit":
+				if !dispenser.NextArg() {
+					return nil, dispenser.ArgErr()
+				}
+				size, err := humanize.ParseBytes(dispenser.Val())
+				if err != nil {
+					return nil, dispenser.Errf("bad buffer size %s: %v", dispenser.Val(), err)
+				}
+				fcgiTransport.BodyBufferMemoryLimit = int64(size)
+
+			case "file_buffer_size_limit":
+				if !dispenser.NextArg() {
+					return nil, dispenser.ArgErr()
+				}
+				size, err := humanize.ParseBytes(dispenser.Val())
+				if err != nil {
+					return nil, dispenser.Errf("bad buffer size %s: %v", dispenser.Val(), err)
+				}
+				fcgiTransport.FileBufferSizeLimit = int64(size)
+
+			case "file_buffer_filepath":
+				if !dispenser.NextArg() {
+					return nil, dispenser.ArgErr()
+				}
+				fcgiTransport.FileBufferFilepath = dispenser.Val()
 			}
 		}
 	}

@@ -24,3 +24,16 @@ var bufPool = sync.Pool{
 		return new(bytes.Buffer)
 	},
 }
+
+const readBufSize = 4096
+
+var streamingBufPool = sync.Pool{
+	New: func() any {
+		// The Pool's New function should generally only return pointer
+		// types, since a pointer can be put into the return interface
+		// value without an allocation
+		// - (from the package docs)
+		b := make([]byte, readBufSize)
+		return &b
+	},
+}
