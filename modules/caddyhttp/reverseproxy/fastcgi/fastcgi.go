@@ -239,6 +239,7 @@ func (t Transport) bufferBody(req io.Reader) (int64, io.ReadCloser, error) {
 	size, err := io.CopyN(memBuf, req, t.BodyBufferMemoryLimit)
 	var body bufferedBody // should be closed in case buffering fails
 	body.memBuf = memBuf
+	body.tempFileLimiter = t.tempFileLimiter
 	// error while reading the body
 	if err != nil {
 		// fully buffered in memory
