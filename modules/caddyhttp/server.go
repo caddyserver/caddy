@@ -226,6 +226,7 @@ type Server struct {
 
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
+	// DEPRECATED: Use the app-level `metrics` field.
 	Metrics *Metrics `json:"metrics,omitempty"`
 
 	name string

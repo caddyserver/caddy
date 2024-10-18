@@ -1,4 +1,5 @@
 {
+	metrics
 	servers :80 {
 		metrics {
 			per_host
@@ -8,6 +9,7 @@
 :80 {
 	respond "Hello"
 }
+
 ----------
 {
 	"apps": {
