@@ -305,25 +305,6 @@ func IsFdNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "fd")
 }
 
-// normally we would simply append the port,
-// but if host is IPv6, we need to ensure it
-// is enclosed in [ ]; net.JoinHostPort does
-// this for us, but host might also have a
-// network type in front (e.g. "tcp/") leading
-// to "[tcp/::1]" which causes parsing failures
-// later; what we need is "tcp/[::1]", so we have
-// to split the network and host, then re-combine
-func ParseNetworkAddressFromHostPort(host, port string) (NetworkAddress, error) {
-	network, addr, ok := strings.Cut(host, "/")
-	if !ok {
-		addr = network
-		network = ""
-	}
-	addr = strings.Trim(addr, "[]") // IPv6
-	networkAddr := JoinNetworkAddress(network, addr, port)
-	return ParseNetworkAddress(networkAddr)
-}
-
 // ParseNetworkAddress parses addr into its individual
 // components. The input string is expected to be of
 // the form "network/host:port-range" where any part is
@@ -399,25 +380,28 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if slashFound {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
+		if IsUnixNetwork(network) || IsFdNetwork(network) {
+			host = a
+			return
+		}
 	}
-	if IsUnixNetwork(network) || IsFdNetwork(network) {
-		host = a
-		return
-	}
+
 	host, port, err = net.SplitHostPort(a)
-	if err == nil || a == "" {
-		return
-	}
-	// in general, if there was an error, it was likely "missing port",
-	// so try adding a bogus port to take advantage of standard library's
-	// robust parser, then strip the artificial port before returning
-	// (don't overwrite original error though; might still be relevant)
-	var err2 error
-	host, port, err2 = net.SplitHostPort(a + ":0")
-	if err2 == nil {
-		err = nil
+	firstErr := err
+
+	if err != nil {
+		// in general, if there was an error, it was likely "missing port",
+		// so try removing square brackets around an IPv6 host, adding a bogus
+		// port to take advantage of standard library's robust parser, then
+		// strip the artificial port.
+		host, _, err = net.SplitHostPort(net.JoinHostPort(strings.Trim(a, "[]"), "0"))
 		port = ""
 	}
+
+	if err != nil {
+		err = errors.Join(firstErr, err)
+	}
+
 	return
 }
 
