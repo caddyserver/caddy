@@ -61,7 +61,8 @@ func cmdAddPackage(fl Flags) (int, error) {
 
 	for _, arg := range fl.Args() {
 		if _, ok := pluginPkgs[arg]; ok {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("package is already added")
+			fmt.Printf("[WARNING] package %s is already added", arg)
+			continue
 		}
 		pluginPkgs[arg] = struct{}{}
 	}
@@ -85,7 +86,8 @@ func cmdRemovePackage(fl Flags) (int, error) {
 	for _, arg := range fl.Args() {
 		if _, ok := pluginPkgs[arg]; !ok {
 			// package does not exist
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("package is not added")
+			fmt.Printf("[WARNING] package %s is not added", arg)
+			continue
 		}
 		delete(pluginPkgs, arg)
 	}
