@@ -489,7 +489,11 @@ func TestMatchExpressionMatch(t *testing.T) {
 				}
 			}
 
-			if tc.expression.Match(req) != tc.wantResult {
+			matches, err := tc.expression.MatchWithError(req)
+			if err != nil {
+				t.Errorf("MatchExpression.Match() error = %v", err)
+			}
+			if matches != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
 			}
 		})
@@ -532,7 +536,7 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				tc.expression.Match(req)
+				tc.expression.MatchWithError(req)
 			}
 		})
 	}

@@ -130,7 +130,10 @@ func TestFileMatcher(t *testing.T) {
 		req := &http.Request{URL: u}
 		repl := caddyhttp.NewTestReplacer(req)
 
-		result := m.Match(req)
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+		}
 		if result != tc.matched {
 			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
@@ -240,7 +243,10 @@ func TestPHPFileMatcher(t *testing.T) {
 		req := &http.Request{URL: u}
 		repl := caddyhttp.NewTestReplacer(req)
 
-		result := m.Match(req)
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+		}
 		if result != tc.matched {
 			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
@@ -379,7 +385,12 @@ func TestMatchExpressionMatch(t *testing.T) {
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 			req = req.WithContext(ctx)
 
-			if tc.expression.Match(req) != tc.wantResult {
+			matches, err := tc.expression.MatchWithError(req)
+			if err != nil {
+				t.Errorf("MatchExpression.Match() error = %v", err)
+				return
+			}
+			if matches != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
 			}
 		})
