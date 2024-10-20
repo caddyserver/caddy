@@ -332,7 +332,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 		for _, lnAddr := range lnCfgVal.addresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
 			if err != nil {
-				return nil, fmt.Errorf("splitting listener address: %v %s", err, lnAddr)
+				return nil, fmt.Errorf("splitting listener address: %v", err)
 			}
 			networkAddr, err := caddy.ParseNetworkAddress(caddy.JoinNetworkAddress(lnNetw, lnHost, lnPort))
 			if err != nil {
