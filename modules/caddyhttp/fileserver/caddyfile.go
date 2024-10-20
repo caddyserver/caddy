@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -58,6 +59,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    browse        [<template_file>]
 //	    precompressed <formats...>
 //	    status        <status>
+//	    file_limit    <limit>
 //	    disable_canonical_uris
 //	}
 //
@@ -167,6 +169,17 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			falseBool := false
 			fsrv.CanonicalURIs = &falseBool
+
+		case "file_limit":
+			fileLimit := d.RemainingArgs()
+			if len(fileLimit) != 1 {
+				return d.Err("file_limit should have an integer value")
+			}
+			val, _ := strconv.Atoi(fileLimit[0])
+			if fsrv.Browse.FileLimit != 0 {
+				return d.Err("file_limit is already enabled")
+			}
+			fsrv.Browse.FileLimit = val
 
 		case "pass_thru":
 			if d.NextArg() {
