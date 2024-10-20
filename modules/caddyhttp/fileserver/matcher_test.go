@@ -289,6 +289,7 @@ var expressionTests = []struct {
 	wantErr           bool
 	wantResult        bool
 	clientCertificate []byte
+	expectedPath      string
 }{
 	{
 		name: "file error no args (MatchFile)",
@@ -354,6 +355,15 @@ var expressionTests = []struct {
 		urlTarget:  "https://example.com/nopenope.txt",
 		wantResult: false,
 	},
+	{
+		name: "file match long pattern foo.txt with try_policy (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": "./testdata", "try_policy": "largest_size", "try_files": ["foo.txt", "large.txt"]})`,
+		},
+		urlTarget:    "https://example.com/",
+		wantResult:   true,
+		expectedPath: "/large.txt",
+	},
 }
 
 func TestMatchExpressionMatch(t *testing.T) {
@@ -381,6 +391,16 @@ func TestMatchExpressionMatch(t *testing.T) {
 
 			if tc.expression.Match(req) != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
+			}
+
+			if tc.expectedPath != "" {
+				path, ok := repl.Get("http.matchers.file.relative")
+				if !ok {
+					t.Errorf("MatchExpression.Match() expected to return path '%s', but got none", tc.expectedPath)
+				}
+				if path != tc.expectedPath {
+					t.Errorf("MatchExpression.Match() expected to return path '%s', but got '%s'", tc.expectedPath, path)
+				}
 			}
 		})
 	}
