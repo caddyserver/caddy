@@ -212,7 +212,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 }
 
 func (reconn *redialerConn) dial() (net.Conn, error) {
-	return net.DialTimeout(reconn.nw.addr.Network, reconn.nw.addr.JoinAt(0), reconn.timeout)
+	return net.DialTimeout(reconn.nw.addr.Network, reconn.nw.addr.JoinHostPort(0), reconn.timeout)
 }
 
 // Interface guards

@@ -351,7 +351,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 			}
 		}
 		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
-			uniqueOrigins[addr.JoinAt(0)] = struct{}{}
+			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
 	allowed := make([]*url.URL, 0, len(uniqueOrigins))

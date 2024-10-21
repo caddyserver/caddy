@@ -521,7 +521,7 @@ func (app *App) Start() error {
 			_, h3ok := protocolsUnique["h3"]
 
 			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
-				hostport := listenAddr.JoinAt(portOffset)
+				hostport := listenAddr.JoinHostPort(portOffset)
 
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
@@ -641,7 +641,7 @@ func (app *App) Stop() error {
 		for _, server := range app.Servers {
 			for _, na := range server.addresses {
 				for _, addr := range na.Expand() {
-					if caddy.ListenerUsage(addr.Network, addr.JoinAt(0)) < 2 {
+					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
 						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
 						server.shutdownAtMu.Lock()
 						server.shutdownAt = scheduledTime

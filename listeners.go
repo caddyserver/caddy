@@ -165,7 +165,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	} else if na.IsFdNetwork() {
 		address = na.Host
 	} else {
-		address = na.JoinAt(portOffset)
+		address = na.JoinHostPort(portOffset)
 	}
 
 	if strings.HasPrefix(na.Network, "ip") {
@@ -216,9 +216,9 @@ func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
 }
 
-// JoinAt is like net.JoinHostPort, but where the port
+// JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
-func (na NetworkAddress) JoinAt(offset uint) string {
+func (na NetworkAddress) JoinHostPort(offset uint) string {
 	if na.IsUnixNetwork() || na.IsFdNetwork() {
 		return na.Host
 	}
@@ -431,7 +431,7 @@ func JoinNetworkAddress(network, host, port string) string {
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
-	lnKey := listenerKey("quic"+na.Network, na.JoinAt(portOffset))
+	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		lnAny, err := na.Listen(ctx, portOffset, config)

@@ -308,7 +308,7 @@ func (ash Handler) makeClient() (acme.Client, error) {
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 				//nolint:gosec
 				addr := ash.resolvers[weakrand.Intn(len(ash.resolvers))]
-				return dialer.DialContext(ctx, addr.Network, addr.JoinAt(0))
+				return dialer.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
 	} else {

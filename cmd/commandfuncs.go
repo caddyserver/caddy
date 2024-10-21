@@ -647,7 +647,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
 		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
 	}
-	origin := "http://" + parsedAddr.JoinAt(0)
+	origin := "http://" + parsedAddr.JoinHostPort(0)
 	if parsedAddr.IsUnixNetwork() {
 		origin = "http://127.0.0.1" // bogus host is a hack so that http.NewRequest() is happy
 
@@ -704,7 +704,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	client := http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial(parsedAddr.Network, parsedAddr.JoinAt(0))
+				return net.Dial(parsedAddr.Network, parsedAddr.JoinHostPort(0))
 			},
 		},
 	}

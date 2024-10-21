@@ -119,7 +119,7 @@ func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
 	return DialInfo{
 		Upstream: u,
 		Network:  addr.Network,
-		Address:  addr.JoinAt(0),
+		Address:  addr.JoinHostPort(0),
 		Host:     addr.Host,
 		Port:     strconv.Itoa(int(addr.StartPort)),
 	}, nil
