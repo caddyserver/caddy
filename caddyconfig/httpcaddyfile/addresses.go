@@ -31,7 +31,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// mapAddressToServerBlocks returns a map of listener address to list of server
+// mapAddressToProtocolToServerBlocks returns a map of listener address to list of server
 // blocks that will be served on that address. To do this, each server block is
 // expanded so that each one is considered individually, although keys of a
 // server block that share the same address stay grouped together so the config
