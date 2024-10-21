@@ -108,7 +108,7 @@ func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -145,9 +145,23 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchRemoteIP) Match(r *http.Request) bool {
-	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	match, err := m.MatchWithError(r)
+	if err != nil {
+		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
+	// if handshake is not finished, we infer 0-RTT that has
+	// not verified remote IP; could be spoofed, so we throw
+	// HTTP 425 status to tell the client to try again after
+	// the handshake is complete
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false, Error(http.StatusTooEarly, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified"))
+	}
+
 	address := r.RemoteAddr
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
@@ -155,7 +169,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			c.Write(zap.Error(err))
 		}
 
-		return false
+		return false, nil
 	}
 	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	if !matches && !zoneFilter {
@@ -163,7 +177,7 @@ func (m MatchRemoteIP) Match(r *http.Request) bool {
 			c.Write(zap.String("zone", zoneID))
 		}
 	}
-	return matches
+	return matches, nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -207,7 +221,7 @@ func (MatchClientIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -238,20 +252,34 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchClientIP) Match(r *http.Request) bool {
-	if r.TLS != nil && !r.TLS.HandshakeComplete {
-		return false // if handshake is not finished, we infer 0-RTT that has not verified remote IP; could be spoofed
+	match, err := m.MatchWithError(r)
+	if err != nil {
+		SetVar(r.Context(), MatcherErrorVarKey, err)
 	}
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchClientIP) MatchWithError(r *http.Request) (bool, error) {
+	// if handshake is not finished, we infer 0-RTT that has
+	// not verified remote IP; could be spoofed, so we throw
+	// HTTP 425 status to tell the client to try again after
+	// the handshake is complete
+	if r.TLS != nil && !r.TLS.HandshakeComplete {
+		return false, Error(http.StatusTooEarly, fmt.Errorf("TLS handshake not complete, remote IP cannot be verified"))
+	}
+
 	address := GetVar(r.Context(), ClientIPVarKey).(string)
 	clientIP, zoneID, err := parseIPZoneFromString(address)
 	if err != nil {
 		m.logger.Error("getting client IP", zap.Error(err))
-		return false
+		return false, nil
 	}
 	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	if !matches && !zoneFilter {
 		m.logger.Debug("zone ID from client IP did not match", zap.String("zone", zoneID))
 	}
-	return matches
+	return matches, nil
 }
 
 func provisionCidrsZonesFromRanges(ranges []string) ([]*netip.Prefix, []string, error) {
@@ -326,13 +354,13 @@ func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefi
 
 // Interface guards
 var (
-	_ RequestMatcher        = (*MatchRemoteIP)(nil)
-	_ caddy.Provisioner     = (*MatchRemoteIP)(nil)
-	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
-	_ CELLibraryProducer    = (*MatchRemoteIP)(nil)
+	_ RequestMatcherWithError = (*MatchRemoteIP)(nil)
+	_ caddy.Provisioner       = (*MatchRemoteIP)(nil)
+	_ caddyfile.Unmarshaler   = (*MatchRemoteIP)(nil)
+	_ CELLibraryProducer      = (*MatchRemoteIP)(nil)
 
-	_ RequestMatcher        = (*MatchClientIP)(nil)
-	_ caddy.Provisioner     = (*MatchClientIP)(nil)
-	_ caddyfile.Unmarshaler = (*MatchClientIP)(nil)
-	_ CELLibraryProducer    = (*MatchClientIP)(nil)
+	_ RequestMatcherWithError = (*MatchClientIP)(nil)
+	_ caddy.Provisioner       = (*MatchClientIP)(nil)
+	_ caddyfile.Unmarshaler   = (*MatchClientIP)(nil)
+	_ CELLibraryProducer      = (*MatchClientIP)(nil)
 )

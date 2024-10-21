@@ -72,7 +72,7 @@ type HealthChecks struct {
 // health checks (that is, health checks which occur in a
 // background goroutine independently).
 type ActiveHealthChecks struct {
-	// DEPRECATED: Use 'uri' instead. This field will be removed. TODO: remove this field
+	// Deprecated: Use 'uri' instead. This field will be removed. TODO: remove this field
 	Path string `json:"path,omitempty"`
 
 	// The URI (path and query) to use for health checks
