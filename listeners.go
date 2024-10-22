@@ -676,7 +676,7 @@ func listenerKey(network, addr string) string {
 // The listeners must be capable of overlapping: with Caddy, new configs are loaded
 // before old ones are unloaded, so listeners may overlap briefly if the configs
 // both need the same listener. EXPERIMENTAL and subject to change.
-type ListenerFunc func(ctx context.Context, network, host, port string, portOffset uint, cfg net.ListenConfig) (any, error)
+type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
 var networkTypes = map[string]ListenerFunc{}
 
