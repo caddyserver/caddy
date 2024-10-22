@@ -66,7 +66,14 @@ type Browse struct {
 	//   - `sort size` will sort by size in ascending order
 	// The first option must be `sort_by` and the second option must be `order` (if exists).
 	SortOptions []string `json:"sort,omitempty"`
+
+	// FileLimit limits the number of up to n DirEntry values in directory order.
+	FileLimit int `json:"file_limit,omitempty"`
 }
+
+const (
+	defaultDirEntryLimit = 10000
+)
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "browse enabled; listing directory contents"); c != nil {
@@ -206,7 +213,11 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 }
 
 func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
-	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
+	dirLimit := defaultDirEntryLimit
+	if fsrv.Browse.FileLimit != 0 {
+		dirLimit = fsrv.Browse.FileLimit
+	}
+	files, err := dir.ReadDir(dirLimit)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}

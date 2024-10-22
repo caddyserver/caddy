@@ -66,6 +66,7 @@ respond with a file listing.`,
 			cmd.Flags().BoolP("templates", "t", false, "Enable template rendering")
 			cmd.Flags().BoolP("access-log", "a", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
+			cmd.Flags().IntP("file-limit", "f", defaultDirEntryLimit, "Max directories to read")
 			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
 			cmd.Flags().StringSliceP("precompressed", "p", []string{}, "Specify precompression file extensions. Compression preference implied from flag order.")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
@@ -91,6 +92,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	browse := fs.Bool("browse")
 	templates := fs.Bool("templates")
 	accessLog := fs.Bool("access-log")
+	fileLimit := fs.Int("file-limit")
 	debug := fs.Bool("debug")
 	revealSymlinks := fs.Bool("reveal-symlinks")
 	compress := !fs.Bool("no-compress")
@@ -151,7 +153,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	}
 
 	if browse {
-		handler.Browse = &Browse{RevealSymlinks: revealSymlinks}
+		handler.Browse = &Browse{RevealSymlinks: revealSymlinks, FileLimit: fileLimit}
 	}
 
 	handlers = append(handlers, caddyconfig.JSONModuleObject(handler, "handler", "file_server", nil))

@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -129,6 +130,16 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 							return d.Errf("unknown sort option '%s'", dVal)
 						}
 					}
+				case "file_limit":
+					fileLimit := d.RemainingArgs()
+					if len(fileLimit) != 1 {
+						return d.Err("file_limit should have an integer value")
+					}
+					val, _ := strconv.Atoi(fileLimit[0])
+					if fsrv.Browse.FileLimit != 0 {
+						return d.Err("file_limit is already enabled")
+					}
+					fsrv.Browse.FileLimit = val
 				default:
 					return d.Errf("unknown subdirective '%s'", d.Val())
 				}
