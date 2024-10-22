@@ -1,0 +1,36 @@
+:80
+
+file_server {
+	browse {
+		file_limit 4000
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"browse": {
+										"file_limit": 4000
+									},
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

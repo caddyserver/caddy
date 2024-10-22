@@ -72,7 +72,7 @@ type Browse struct {
 }
 
 const (
-	defaultMaxDirLimit = 10000
+	defaultDirEntryLimit = 10000
 )
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -213,7 +213,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 }
 
 func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
-	dirLimit := defaultMaxDirLimit
+	dirLimit := defaultDirEntryLimit
 	if fsrv.Browse.FileLimit != 0 {
 		dirLimit = fsrv.Browse.FileLimit
 	}
