@@ -51,6 +51,9 @@ func (r LoggableHTTPRequest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 		Header:               r.Header,
 		ShouldLogCredentials: r.ShouldLogCredentials,
 	})
+	if r.TransferEncoding != nil {
+		enc.AddArray("transfer_encoding", LoggableStringArray(r.TransferEncoding))
+	}
 	if r.TLS != nil {
 		enc.AddObject("tls", LoggableTLSConnState(*r.TLS))
 	}
