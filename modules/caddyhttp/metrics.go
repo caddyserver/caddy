@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -133,8 +134,8 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
 
 	if h.metrics.PerHost {
-		labels["host"] = r.Host
-		statusLabels["host"] = r.Host
+		labels["host"] = strings.ToLower(r.Host)
+		statusLabels["host"] = strings.ToLower(r.Host)
 	}
 
 	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
