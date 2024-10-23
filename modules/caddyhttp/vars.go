@@ -166,8 +166,14 @@ func (m *VarsMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // Match matches a request based on variables in the context,
 // or placeholders if the key is not a variable.
 func (m VarsMatcher) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	if len(m) == 0 {
-		return true
+		return true, nil
 	}
 
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
@@ -200,11 +206,11 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 				varStr = fmt.Sprintf("%v", vv)
 			}
 			if varStr == matcherValExpanded {
-				return true
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -219,7 +225,7 @@ func (VarsMatcher) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"vars",
 		"vars_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			mapStrListStr, err := CELValueToMapStrList(data)
 			if err != nil {
 				return nil, err
@@ -294,6 +300,12 @@ func (m MatchVarsRE) Provision(ctx caddy.Context) error {
 
 // Match returns true if r matches m.
 func (m MatchVarsRE) Match(r *http.Request) bool {
+	match, _ := m.MatchWithError(r)
+	return match
+}
+
+// MatchWithError returns true if r matches m.
+func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for key, val := range m {
@@ -322,10 +334,10 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 
 		valExpanded := repl.ReplaceAll(varStr, "")
 		if match := val.Match(valExpanded, repl); match {
-			return match
+			return match, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -340,7 +352,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -363,7 +375,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcher, error) {
+		func(data ref.Val) (RequestMatcherWithError, error) {
 			refStringList := reflect.TypeOf([]string{})
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
@@ -435,8 +447,10 @@ func SetVar(ctx context.Context, key string, value any) {
 
 // Interface guards
 var (
-	_ MiddlewareHandler     = (*VarsMiddleware)(nil)
-	_ caddyfile.Unmarshaler = (*VarsMiddleware)(nil)
-	_ RequestMatcher        = (*VarsMatcher)(nil)
-	_ caddyfile.Unmarshaler = (*VarsMatcher)(nil)
+	_ MiddlewareHandler       = (*VarsMiddleware)(nil)
+	_ caddyfile.Unmarshaler   = (*VarsMiddleware)(nil)
+	_ RequestMatcherWithError = (*VarsMatcher)(nil)
+	_ caddyfile.Unmarshaler   = (*VarsMatcher)(nil)
+	_ RequestMatcherWithError = (*MatchVarsRE)(nil)
+	_ caddyfile.Unmarshaler   = (*MatchVarsRE)(nil)
 )
