@@ -26,7 +26,6 @@ package fastcgi
 import (
 	"bufio"
 	"bytes"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"io"
 	"mime/multipart"
 	"net"
@@ -42,6 +41,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
