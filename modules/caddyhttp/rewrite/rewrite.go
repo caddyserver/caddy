@@ -259,6 +259,9 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+		if !strings.HasPrefix(prefix, "/") {
+			prefix = "/" + prefix
+		}
 		mergeSlashes := !strings.Contains(prefix, "//")
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
