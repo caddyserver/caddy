@@ -110,9 +110,6 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 			return nil, h.ArgErr()
 		}
 		rewr.StripPathPrefix = args[1]
-		if !strings.HasPrefix(rewr.StripPathPrefix, "/") {
-			rewr.StripPathPrefix = "/" + rewr.StripPathPrefix
-		}
 
 	case "strip_suffix":
 		if len(args) != 2 {
