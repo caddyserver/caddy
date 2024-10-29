@@ -360,6 +360,11 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) 
 	}
 	err = ca.storage.Store(ca.ctx, ca.storageKeyIntermediateCert(), interCertPEM)
 	if err != nil {
+		info, statErr := ca.storage.Stat(ca.ctx, ca.storageKeyIntermediateCert())
+		// Check if there is an empty file and delete it if so
+		if statErr == nil && info.Size == 0 {
+			ca.storage.Delete(ca.ctx, ca.storageKeyIntermediateCert())
+		}
 		return nil, nil, fmt.Errorf("saving intermediate certificate: %v", err)
 	}
 	interKeyPEM, err := certmagic.PEMEncodePrivateKey(interKey)
