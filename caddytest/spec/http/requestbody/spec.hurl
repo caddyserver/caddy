@@ -25,6 +25,7 @@ http://localhost:8000 {
 
 GET https://localhost:9443
 [Options]
+delay: 1s
 insecure: true
 ```
 Hello
