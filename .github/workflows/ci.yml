@@ -222,7 +222,7 @@ jobs:
     - name: Run tests with Hurl
       run: |
         mkdir hurl-report
-        find . -name *.hurl -exec hurl --cacert $HOME/.local/share/caddy/pki/authorities/local/root.crt --jobs 1 --variables-file caddytest/spec/hurl_vars.properties --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
+        find . -name *.hurl -exec hurl --jobs 1 --variables-file caddytest/spec/hurl_vars.properties --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
     
     - name: Publish Test Results
       uses: EnricoMi/publish-unit-test-result-action@v2
