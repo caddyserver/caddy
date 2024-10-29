@@ -25,7 +25,6 @@ http://localhost:8000 {
 
 GET https://localhost:9443
 [Options]
-cacert: /home/codespace/.local/share/caddy/pki/authorities/local/root.crt
 ```
 Hello
 ```
