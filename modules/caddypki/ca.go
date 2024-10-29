@@ -363,7 +363,10 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) 
 		info, statErr := ca.storage.Stat(ca.ctx, ca.storageKeyIntermediateCert())
 		// Check if there is an empty file and delete it if so
 		if statErr == nil && info.Size == 0 {
-			ca.storage.Delete(ca.ctx, ca.storageKeyIntermediateCert())
+			delErr := ca.storage.Delete(ca.ctx, ca.storageKeyIntermediateCert())
+			if delErr != nil {
+				return nil, nil, fmt.Errorf("saving intermediate certificate: %v, delete empty certificate: %v", err, delErr)
+			}
 		}
 		return nil, nil, fmt.Errorf("saving intermediate certificate: %v", err)
 	}
