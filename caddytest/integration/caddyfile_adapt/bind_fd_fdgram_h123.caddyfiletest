@@ -1,0 +1,142 @@
+{
+	auto_https disable_redirects
+	admin off
+}
+
+http://localhost {
+	bind fd/{env.CADDY_HTTP_FD} {
+		protocols h1
+	}
+	log
+	respond "Hello, HTTP!"
+}
+
+https://localhost {
+	bind fd/{env.CADDY_HTTPS_FD} {
+		protocols h1 h2
+	}
+	bind fdgram/{env.CADDY_HTTP3_FD} {
+		protocols h3
+	}
+	log
+	respond "Hello, HTTPS!"
+}
+----------
+{
+	"admin": {
+		"disabled": true
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						"fd/{env.CADDY_HTTPS_FD}",
+						"fdgram/{env.CADDY_HTTP3_FD}"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Hello, HTTPS!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"disable_redirects": true
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								""
+							]
+						}
+					},
+					"listen_protocols": [
+						[
+							"h1",
+							"h2"
+						],
+						[
+							"h3"
+						]
+					]
+				},
+				"srv1": {
+					"automatic_https": {
+						"disable_redirects": true
+					}
+				},
+				"srv2": {
+					"listen": [
+						"fd/{env.CADDY_HTTP_FD}"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Hello, HTTP!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"disable_redirects": true,
+						"skip": [
+							"localhost"
+						]
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								""
+							]
+						}
+					},
+					"listen_protocols": [
+						[
+							"h1"
+						]
+					]
+				}
+			}
+		}
+	}
+}

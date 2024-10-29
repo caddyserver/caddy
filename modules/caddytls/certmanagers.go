@@ -12,6 +12,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/tailscale/tscert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -46,7 +47,9 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 		return nil, nil // pass-thru: Tailscale can't offer a cert for this name
 	}
 	if err != nil {
-		ts.logger.Warn("could not get status; will try to get certificate anyway", zap.Error(err))
+		if c := ts.logger.Check(zapcore.WarnLevel, "could not get status; will try to get certificate anyway"); c != nil {
+			c.Write(zap.Error(err))
+		}
 	}
 	return tscert.GetCertificateWithContext(ctx, hello)
 }

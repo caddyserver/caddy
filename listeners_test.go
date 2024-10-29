@@ -31,7 +31,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 	}{
 		{
 			input:     "",
-			expectErr: true,
+			expectHost: "",
 		},
 		{
 			input:      "foo",
@@ -42,7 +42,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 		},
 		{
 			input:     "::",
-			expectErr: true,
+			expectHost: "::",
 		},
 		{
 			input:      "[::]",
@@ -77,7 +77,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 		{
 			input:         "udp/",
 			expectNetwork: "udp",
-			expectErr:     true,
+			expectHost:    "",
 		},
 		{
 			input:         "unix//foo/bar",
@@ -185,7 +185,8 @@ func TestParseNetworkAddress(t *testing.T) {
 	}{
 		{
 			input:     "",
-			expectErr: true,
+			expectAddr: NetworkAddress{
+			},
 		},
 		{
 			input:          ":",
@@ -311,7 +312,8 @@ func TestParseNetworkAddressWithDefaults(t *testing.T) {
 	}{
 		{
 			input:     "",
-			expectErr: true,
+			expectAddr: NetworkAddress{
+			},
 		},
 		{
 			input:          ":",

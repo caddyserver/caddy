@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
 
 	"github.com/caddyserver/caddy/v2"
@@ -439,7 +440,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			if h.LoadBalancing != nil {
 				lbWait = time.Duration(h.LoadBalancing.TryInterval)
 			}
-			h.logger.Debug("retrying", zap.Error(proxyErr), zap.Duration("after", lbWait))
+			if c := h.logger.Check(zapcore.DebugLevel, "retrying"); c != nil {
+				c.Write(zap.Error(proxyErr), zap.Duration("after", lbWait))
+			}
 		}
 		retries++
 	}
@@ -466,13 +469,17 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	if h.DynamicUpstreams != nil {
 		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
 		if err != nil {
-			h.logger.Error("failed getting dynamic upstreams; falling back to static upstreams", zap.Error(err))
+			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		} else {
 			upstreams = dUpstreams
 			for _, dUp := range dUpstreams {
 				h.provisionUpstream(dUp)
 			}
-			h.logger.Debug("provisioned dynamic upstreams", zap.Int("count", len(dUpstreams)))
+			if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
+				c.Write(zap.Int("count", len(dUpstreams)))
+			}
 			defer func() {
 				// these upstreams are dynamic, so they are only used for this iteration
 				// of the proxy loop; be sure to let them go away when we're done with them
@@ -503,9 +510,12 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, fmt.Errorf("making dial info: %v", err)
 	}
 
-	h.logger.Debug("selected upstream",
-		zap.String("dial", dialInfo.Address),
-		zap.Int("total_upstreams", len(upstreams)))
+	if c := h.logger.Check(zapcore.DebugLevel, "selected upstream"); c != nil {
+		c.Write(
+			zap.String("dial", dialInfo.Address),
+			zap.Int("total_upstreams", len(upstreams)),
+		)
+	}
 
 	// attach to the request information about how to dial the upstream;
 	// this is necessary because the information cannot be sufficiently
@@ -557,6 +567,30 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	}
 
 	return false, proxyErr
+}
+
+// Mapping of the canonical form of the headers, to the RFC 6455 form,
+// i.e. `WebSocket` with uppercase 'S'.
+var websocketHeaderMapping = map[string]string{
+	"Sec-Websocket-Accept":     "Sec-WebSocket-Accept",
+	"Sec-Websocket-Extensions": "Sec-WebSocket-Extensions",
+	"Sec-Websocket-Key":        "Sec-WebSocket-Key",
+	"Sec-Websocket-Protocol":   "Sec-WebSocket-Protocol",
+	"Sec-Websocket-Version":    "Sec-WebSocket-Version",
+}
+
+// normalizeWebsocketHeaders ensures we use the standard casing as per
+// RFC 6455, i.e. `WebSocket` with uppercase 'S'. Most servers don't
+// care about this difference (read headers case insensitively), but
+// some do, so this maximizes compatibility with upstreams.
+// See https://github.com/caddyserver/caddy/pull/6621
+func normalizeWebsocketHeaders(header http.Header) {
+	for k, rk := range websocketHeaderMapping {
+		if v, ok := header[k]; ok {
+			delete(header, k)
+			header[rk] = v
+		}
+	}
 }
 
 // prepareRequest clones req so that it can be safely modified without
@@ -645,6 +679,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpType)
+		normalizeWebsocketHeaders(req.Header)
 	}
 
 	// Set up the PROXY protocol info
@@ -772,17 +807,26 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+	var (
+		roundTripMutex sync.Mutex
+		roundTripDone  bool
+	)
 	trace := &httptrace.ClientTrace{
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			roundTripMutex.Lock()
+			defer roundTripMutex.Unlock()
+			if roundTripDone {
+				// If RoundTrip has returned, don't try to further modify
+				// the ResponseWriter's header map.
+				return nil
+			}
 			h := rw.Header()
 			copyHeader(h, http.Header(header))
 			rw.WriteHeader(code)
 
 			// Clear headers coming from the backend
 			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
-			for k := range header {
-				delete(h, k)
-			}
+			clear(h)
 
 			return nil
 		},
@@ -798,11 +842,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		req = req.WithContext(context.WithoutCancel(req.Context()))
 	}
 
-	// do the round-trip; emit debug log with values we know are
-	// safe, or if there is no error, emit fuller log entry
+	// do the round-trip
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
+
+	// record that the round trip is done for the 1xx response handler
+	roundTripMutex.Lock()
+	roundTripDone = true
+	roundTripMutex.Unlock()
+
+	// emit debug log with values we know are safe,
+	// or if there is no error, emit fuller log entry
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Duration("duration", duration),
@@ -811,16 +862,22 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			ShouldLogCredentials: shouldLogCredentials,
 		}),
 	)
+
 	if err != nil {
-		logger.Debug("upstream roundtrip", zap.Error(err))
+		if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+			c.Write(zap.Error(err))
+		}
 		return err
 	}
-	logger.Debug("upstream roundtrip",
-		zap.Object("headers", caddyhttp.LoggableHTTPHeader{
-			Header:               res.Header,
-			ShouldLogCredentials: shouldLogCredentials,
-		}),
-		zap.Int("status", res.StatusCode))
+	if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+		c.Write(
+			zap.Object("headers", caddyhttp.LoggableHTTPHeader{
+				Header:               res.Header,
+				ShouldLogCredentials: shouldLogCredentials,
+			}),
+			zap.Int("status", res.StatusCode),
+		)
+	}
 
 	// duration until upstream wrote response headers (roundtrip duration)
 	repl.Set("http.reverse_proxy.upstream.latency", duration)
@@ -879,7 +936,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 		repl.Set("http.reverse_proxy.status_text", res.Status)
 
-		logger.Debug("handling response", zap.Int("handler", i))
+		if c := logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
+			c.Write(zap.Int("handler", i))
+		}
 
 		// we make some data available via request context to child routes
 		// so that they may inherit some options and functions from the
@@ -975,7 +1034,9 @@ func (h *Handler) finalizeResponse(
 	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
-		logger.Debug("closed response body from upstream", zap.Error(errClose))
+		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {
+			c.Write(zap.Error(errClose))
+		}
 	}
 	if err != nil {
 		// we're streaming the response and we've already written headers, so
@@ -983,7 +1044,9 @@ func (h *Handler) finalizeResponse(
 		// we'll just log the error and abort the stream here and panic just as
 		// the standard lib's proxy to propagate the stream error.
 		// see issue https://github.com/caddyserver/caddy/issues/5951
-		logger.Warn("aborting with incomplete response", zap.Error(err))
+		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
+			c.Write(zap.Error(err))
+		}
 		// no extra logging from stdlib
 		panic(http.ErrAbortHandler)
 	}

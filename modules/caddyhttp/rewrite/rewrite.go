@@ -133,19 +133,17 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	const message = "rewrote request"
 
-	if rewr.logger.Check(zap.DebugLevel, message) == nil {
+	c := rewr.logger.Check(zap.DebugLevel, message)
+	if c == nil {
 		rewr.Rewrite(r, repl)
 		return next.ServeHTTP(w, r)
 	}
 
-	logger := rewr.logger.With(
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
-	)
-
 	changed := rewr.Rewrite(r, repl)
 
 	if changed {
-		logger.Debug(message,
+		c.Write(
+			zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)

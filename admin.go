@@ -34,6 +34,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -213,7 +214,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -269,7 +270,6 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admi
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
-		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
@@ -312,7 +312,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	}
 	if admin.Origins == nil {
 		if addr.isLoopback() {
-			if addr.IsUnixNetwork() {
+			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
 				// RFC 2616, Section 14.26:
 				// "A client MUST include a Host header field in all HTTP/1.1 request
 				// messages. If the requested URI does not include an Internet host
@@ -350,7 +350,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 				uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
 			}
 		}
-		if !addr.IsUnixNetwork() {
+		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
@@ -381,7 +381,9 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // for the admin endpoint exists in cfg, a default one is used, so
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
-func replaceLocalAdminServer(cfg *Config) error {
+// Critically note that some elements and functionality of the context
+// may not be ready, e.g. storage. Tread carefully.
+func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
@@ -423,7 +425,7 @@ func replaceLocalAdminServer(cfg *Config) error {
 		return err
 	}
 
-	handler := cfg.Admin.newAdminHandler(addr, false)
+	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
 
 	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
@@ -544,7 +546,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
-	handler := cfg.Admin.newAdminHandler(addr, true)
+	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
 
 	// create client certificate pool for TLS mutual auth, and extract public keys
 	// so that we can enforce access controls at the application layer
@@ -675,13 +677,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					// key recognized; make sure its HTTP request is permitted
 					for _, accessPerm := range adminAccess.Permissions {
 						// verify method
-						methodFound := accessPerm.Methods == nil
-						for _, method := range accessPerm.Methods {
-							if method == r.Method {
-								methodFound = true
-								break
-							}
-						}
+						methodFound := accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method)
 						if !methodFound {
 							return APIError{
 								HTTPStatus: http.StatusForbidden,
@@ -877,13 +873,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // a trustworthy/expected value. This helps to mitigate DNS
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
-	var allowed bool
-	for _, allowedOrigin := range h.allowedOrigins {
-		if r.Host == allowedOrigin.Host {
-			allowed = true
-			break
-		}
-	}
+	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
+		return r.Host == u.Host
+	})
 	if !allowed {
 		return APIError{
 			HTTPStatus: http.StatusForbidden,
