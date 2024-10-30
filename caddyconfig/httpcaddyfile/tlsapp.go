@@ -92,6 +92,25 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
+	// collect all hosts that have a wildcard in them, and arent HTTP
+	wildcardHosts := []string{}
+	for _, p := range pairings {
+		var addresses []string
+		for _, addressWithProtocols := range p.addressesWithProtocols {
+			addresses = append(addresses, addressWithProtocols.address)
+		}
+		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
+			continue
+		}
+		for _, sblock := range p.serverBlocks {
+			for _, addr := range sblock.parsedKeys {
+				if strings.HasPrefix(addr.Host, "*.") {
+					wildcardHosts = append(wildcardHosts, addr.Host[2:])
+				}
+			}
+		}
+	}
+
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
 		var addresses []string
@@ -111,6 +130,12 @@ func (st ServerType) buildTLSApp(
 
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
+			if err != nil {
+				return nil, warnings, err
+			}
+
+			// make a plain copy so we can compare whether we made any changes
+			apCopy, err := newBaseAutomationPolicy(options, warnings, true)
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -217,9 +242,21 @@ func (st ServerType) buildTLSApp(
 				catchAllAP = ap
 			}
 
+			hostsNotHTTP := sblock.hostsFromKeysNotHTTP(httpPort)
+			sort.Strings(hostsNotHTTP) // solely for deterministic test results
+
+			// if the we prefer wildcards and the AP is unchanged,
+			// then we can skip this AP because it should be covered
+			// by an AP with a wildcard
+			if slices.Contains(autoHTTPS, "prefer_wildcard") {
+				if hostsCoveredByWildcard(hostsNotHTTP, wildcardHosts) &&
+					reflect.DeepEqual(ap, apCopy) {
+					continue
+				}
+			}
+
 			// associate our new automation policy with this server block's hosts
-			ap.SubjectsRaw = sblock.hostsFromKeysNotHTTP(httpPort)
-			sort.Strings(ap.SubjectsRaw) // solely for deterministic test results
+			ap.SubjectsRaw = hostsNotHTTP
 
 			// if a combination of public and internal names were given
 			// for this same server block and no issuer was specified, we
@@ -258,6 +295,7 @@ func (st ServerType) buildTLSApp(
 					ap2.IssuersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(caddytls.InternalIssuer{}, "module", "internal", &warnings)}
 				}
 			}
+
 			if tlsApp.Automation == nil {
 				tlsApp.Automation = new(caddytls.AutomationConfig)
 			}
@@ -418,10 +456,7 @@ func (st ServerType) buildTLSApp(
 		}
 
 		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(
-			tlsApp.Automation.Policies,
-			slices.Contains(autoHTTPS, "prefer_wildcard"),
-		)
+		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
 
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
@@ -567,7 +602,7 @@ func newBaseAutomationPolicy(
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy, preferWildcard bool) []*caddytls.AutomationPolicy {
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
 	// sort from most specific to least specific; we depend on this ordering
 	sort.SliceStable(aps, func(i, j int) bool {
 		if automationPolicyIsSubset(aps[i], aps[j]) {
@@ -652,31 +687,6 @@ outer:
 					j--
 				}
 			}
-
-			if preferWildcard {
-				// remove subjects from i if they're covered by a wildcard in j
-				iSubjs := aps[i].SubjectsRaw
-				for iSubj := 0; iSubj < len(iSubjs); iSubj++ {
-					for jSubj := range aps[j].SubjectsRaw {
-						if !strings.HasPrefix(aps[j].SubjectsRaw[jSubj], "*.") {
-							continue
-						}
-						if certmagic.MatchWildcard(aps[i].SubjectsRaw[iSubj], aps[j].SubjectsRaw[jSubj]) {
-							iSubjs = slices.Delete(iSubjs, iSubj, iSubj+1)
-							iSubj--
-							break
-						}
-					}
-				}
-				aps[i].SubjectsRaw = iSubjs
-
-				// remove i if it has no subjects left
-				if len(aps[i].SubjectsRaw) == 0 {
-					aps = slices.Delete(aps, i, i+1)
-					i--
-					continue outer
-				}
-			}
 		}
 	}
 
@@ -747,4 +757,21 @@ func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 
 func isTailscaleDomain(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
+}
+
+func hostsCoveredByWildcard(hosts []string, wildcards []string) bool {
+	if len(hosts) == 0 || len(wildcards) == 0 {
+		return false
+	}
+	for _, host := range hosts {
+		for _, wildcard := range wildcards {
+			if strings.HasPrefix(host, "*.") {
+				continue
+			}
+			if certmagic.MatchWildcard(host, "*."+wildcard) {
+				return true
+			}
+		}
+	}
+	return false
 }
