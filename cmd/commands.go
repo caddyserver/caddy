@@ -409,12 +409,13 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 
 	RegisterCommand(Command{
 		Name:  "add-package",
-		Usage: "<packages...>",
+		Usage: "<package[@version]...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are
-already included. EXPERIMENTAL: May be changed or removed.
+added, with an optional version specified (e.g., "package@version"). Retains
+existing packages. Returns an error if any of the specified packages are already
+included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
