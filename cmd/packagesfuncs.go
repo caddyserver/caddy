@@ -50,7 +50,7 @@ func splitModule(arg string) (module, version string, err error) {
 	const versionSplit = "@"
 
 	// accommodate module paths that have @ in them, but we can only tolerate that if there's also
-	// a version, otherwise we don't know if it's a version separator or part of the file path (see #109)
+	// a version, otherwise we don't know if it's a version separator or part of the file path
 	lastVersionSplit := strings.LastIndex(arg, versionSplit)
 	if lastVersionSplit < 0 {
 		module = arg
