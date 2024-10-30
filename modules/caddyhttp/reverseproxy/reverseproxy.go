@@ -807,17 +807,26 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
+	var (
+		roundTripMutex sync.Mutex
+		roundTripDone  bool
+	)
 	trace := &httptrace.ClientTrace{
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			roundTripMutex.Lock()
+			defer roundTripMutex.Unlock()
+			if roundTripDone {
+				// If RoundTrip has returned, don't try to further modify
+				// the ResponseWriter's header map.
+				return nil
+			}
 			h := rw.Header()
 			copyHeader(h, http.Header(header))
 			rw.WriteHeader(code)
 
 			// Clear headers coming from the backend
 			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
-			for k := range header {
-				delete(h, k)
-			}
+			clear(h)
 
 			return nil
 		},
@@ -833,11 +842,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		req = req.WithContext(context.WithoutCancel(req.Context()))
 	}
 
-	// do the round-trip; emit debug log with values we know are
-	// safe, or if there is no error, emit fuller log entry
+	// do the round-trip
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
+
+	// record that the round trip is done for the 1xx response handler
+	roundTripMutex.Lock()
+	roundTripDone = true
+	roundTripMutex.Unlock()
+
+	// emit debug log with values we know are safe,
+	// or if there is no error, emit fuller log entry
 	logger := h.logger.With(
 		zap.String("upstream", di.Upstream.String()),
 		zap.Duration("duration", duration),

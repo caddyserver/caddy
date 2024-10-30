@@ -200,9 +200,7 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	for _, fieldName := range ops.Delete {
 		fieldName = repl.ReplaceKnown(fieldName, "")
 		if fieldName == "*" {
-			for existingField := range hdr {
-				delete(hdr, existingField)
-			}
+			clear(hdr)
 		}
 	}
 

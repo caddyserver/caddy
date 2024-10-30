@@ -24,6 +24,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -53,6 +54,7 @@ func init() {
 	RegisterGlobalOption("local_certs", parseOptTrue)
 	RegisterGlobalOption("key_type", parseOptSingleString)
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
+	RegisterGlobalOption("metrics", parseMetricsOptions)
 	RegisterGlobalOption("servers", parseServerOptions)
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 	RegisterGlobalOption("cert_lifetime", parseOptDuration)
@@ -444,6 +446,24 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 	}
 	return val, nil
+}
+
+func unmarshalCaddyfileMetricsOptions(d *caddyfile.Dispenser) (any, error) {
+	d.Next() // consume option name
+	metrics := new(caddyhttp.Metrics)
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "per_host":
+			metrics.PerHost = true
+		default:
+			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
+		}
+	}
+	return metrics, nil
+}
+
+func parseMetricsOptions(d *caddyfile.Dispenser, _ any) (any, error) {
+	return unmarshalCaddyfileMetricsOptions(d)
 }
 
 func parseServerOptions(d *caddyfile.Dispenser, _ any) (any, error) {

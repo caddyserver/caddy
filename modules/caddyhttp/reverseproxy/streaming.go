@@ -103,7 +103,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	start := time.Now()
 	defer func() {
 		conn.Close()
-		if c := logger.Check(zapcore.DebugLevel, "hijack failed on protocol switch"); c != nil {
+		if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
 			c.Write(zap.Duration("duration", time.Since(start)))
 		}
 	}()
