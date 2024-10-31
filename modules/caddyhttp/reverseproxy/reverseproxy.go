@@ -1364,8 +1364,9 @@ type delayClientDoneContext struct {
 	context.Context
 	roundTripDone chan struct{}
 	done          chan struct{}
-	mu            sync.Mutex   // To protect access to the done channel
-	doneSet       atomic.Value // To indicate whether done has been switched to ctx.Done
+	mu            sync.Mutex     // To protect access to the done channel
+	doneSet       atomic.Value   // To indicate whether done has been switched to ctx.Done
+	wg            sync.WaitGroup // To wait for the closing of the delay goroutine
 }
 
 func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) *delayClientDoneContext {
@@ -1374,44 +1375,51 @@ func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) 
 		roundTripDone: make(chan struct{}),
 		done:          make(chan struct{}),
 	}
+	d.doneSet.Store(false)
 
 	closeDone := func(set bool) {
 		d.mu.Lock()
 		if !d.doneSet.Load().(bool) {
-			close(d.done)
 			if set {
 				d.doneSet.Store(true)
 			}
+			close(d.done)
 		}
 		d.mu.Unlock()
 	}
 
-	// This goroutine will close d.done after the round trip is done if the context is cancelled OR the parent context is done.
+	d.wg.Add(1)
+	// This goroutine will close d.done after the round trip is done if the context is cancelled OR the parent context is done OR the round trip is done
 	go func() {
 		select {
 		case <-ctx.Done():
 			<-d.roundTripDone
-			closeDone(false)
+			closeDone(true)
 		case <-parentDone:
 			closeDone(false)
 		case <-d.roundTripDone:
 			// if the round trip is done, we shouldn`t leave this goroutine running, revert the done channel to the ctx.Done()
 			closeDone(true)
 		}
+		d.wg.Done()
 	}()
 	return d
 }
 
 func (c *delayClientDoneContext) RoundTripDone() {
-	close(c.roundTripDone)
+	c.mu.Lock()
+	if c.roundTripDone != nil {
+		close(c.roundTripDone)
+	}
+	c.mu.Unlock()
+	c.wg.Wait() // Wait for the go routine to finish
 }
 
 func (c *delayClientDoneContext) Done() <-chan struct{} {
 	if c.doneSet.Load().(bool) {
 		return c.Context.Done()
-	} else {
-		return c.done
 	}
+	return c.done
 }
 
 // LoadBalancing has parameters related to load balancing.
