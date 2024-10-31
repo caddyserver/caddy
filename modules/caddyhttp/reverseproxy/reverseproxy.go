@@ -840,8 +840,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// user probably wants us to finish sending the data to the upstream regardless,
 	// and we should expect client disconnection in low-latency streaming scenarios
 	// (see issue #4922)
+	var delayCtx *delayClientDoneContext
 	if h.CloseAfterReceivedBody {
-		req = req.WithContext(NewDelayClientDoneContext(req.Context(), h.ctx.Done()))
+		delayCtx = NewDelayClientDoneContext(req.Context(), h.ctx.Done())
+		req = req.WithContext(delayCtx)
 	}
 
 	// do the round-trip
@@ -850,7 +852,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	duration := time.Since(start)
 
 	if h.CloseAfterReceivedBody {
-		req.Context().(*delayClientDoneContext).RoundTripDone()
+		delayCtx.RoundTripDone()
 	}
 
 	// record that the round trip is done for the 1xx response handler
