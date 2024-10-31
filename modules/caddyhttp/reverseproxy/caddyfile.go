@@ -93,6 +93,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
+//	    close_after_received_body
 //	    request_buffers    <size>
 //	    response_buffers   <size>
 //	    stream_timeout     <duration>
@@ -644,7 +645,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.FlushInterval = caddy.Duration(dur)
 			}
-
+		case "close_after_received_body":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.CloseAfterReceivedBody {
+				return d.Err("close_after_received_body already specified")
+			}
+			h.CloseAfterReceivedBody = true
 		case "request_buffers", "response_buffers":
 			subdir := d.Val()
 			if !d.NextArg() {
