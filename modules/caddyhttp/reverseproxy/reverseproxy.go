@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -108,12 +109,14 @@ type Handler struct {
 	// response is recognized as a streaming response, or if its
 	// content length is -1; for such responses, writes are flushed
 	// to the client immediately.
-	//
-	// Normally, a request will be canceled if the client disconnects
-	// before the response is received from the backend. If explicitly
-	// set to -1, client disconnection will be ignored and the request
-	// will be completed to help facilitate low-latency streaming.
 	FlushInterval caddy.Duration `json:"flush_interval,omitempty"`
+
+	// Normally, a request will be canceled if the client disconnects
+	// before the response is received from the backend. If enabled,
+	// client disconnection will be ignored and the request with the
+	// backend will carry on until the backend terminates it. This
+	// can help facilitate low-latency streaming. See #4922 and #4952.
+	CloseAfterReceivedBody bool `json:"close_after_received_body,omitempty"`
 
 	// A list of IP ranges (supports CIDR notation) from which
 	// X-Forwarded-* header values should be trusted. By default,
@@ -833,19 +836,22 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
-	// if FlushInterval is explicitly configured to -1 (i.e. flush continuously to achieve
-	// low-latency streaming), don't let the transport cancel the request if the client
-	// disconnects: user probably wants us to finish sending the data to the upstream
-	// regardless, and we should expect client disconnection in low-latency streaming
-	// scenarios (see issue #4922)
-	if h.FlushInterval == -1 {
-		req = req.WithContext(context.WithoutCancel(req.Context()))
+	// if enabled, don't let the transport cancel the request if the client disconnects:
+	// user probably wants us to finish sending the data to the upstream regardless,
+	// and we should expect client disconnection in low-latency streaming scenarios
+	// (see issue #4922)
+	if h.CloseAfterReceivedBody {
+		req = req.WithContext(NewDelayClientDoneContext(req.Context(), h.ctx.Done()))
 	}
 
 	// do the round-trip
 	start := time.Now()
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
+
+	if h.CloseAfterReceivedBody {
+		req.Context().(*delayClientDoneContext).RoundTripDone()
+	}
 
 	// record that the round trip is done for the 1xx response handler
 	roundTripMutex.Lock()
@@ -1346,6 +1352,66 @@ func statusError(err error) error {
 		statusCode = 499
 	}
 	return caddyhttp.Error(statusCode, err)
+}
+
+// delayClientGoneContext is a special context.Context type
+// intended for use when doing a RoundTrip where you don't
+// want a client disconnection to cancel the request during
+// the roundtrip. We delay the context.Done() channel until
+// the round trip is done, or until the parent context is
+// done, whichever comes first.
+type delayClientDoneContext struct {
+	context.Context
+	roundTripDone chan struct{}
+	done          chan struct{}
+	mu            sync.Mutex   // To protect access to the done channel
+	doneSet       atomic.Value // To indicate whether done has been switched to ctx.Done
+}
+
+func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) *delayClientDoneContext {
+	d := &delayClientDoneContext{
+		Context:       ctx,
+		roundTripDone: make(chan struct{}),
+		done:          make(chan struct{}),
+	}
+
+	closeDone := func(set bool) {
+		d.mu.Lock()
+		if !d.doneSet.Load().(bool) {
+			close(d.done)
+			if set {
+				d.doneSet.Store(true)
+			}
+		}
+		d.mu.Unlock()
+	}
+
+	// This goroutine will close d.done after the round trip is done if the context is cancelled OR the parent context is done.
+	go func() {
+		select {
+		case <-ctx.Done():
+			<-d.roundTripDone
+			closeDone(false)
+		case <-parentDone:
+			closeDone(false)
+		case <-d.roundTripDone:
+			// if the round trip is done, we shouldn`t leave this goroutine running, revert the done channel to the ctx.Done()
+			closeDone(true)
+		}
+	}()
+	return d
+}
+
+func (c *delayClientDoneContext) RoundTripDone() {
+	close(c.roundTripDone)
+}
+
+func (c *delayClientDoneContext) Done() <-chan struct{} {
+	if c.doneSet.Load().(bool) {
+		return c.Context.Done()
+	} else {
+		return c.done
+	}
 }
 
 // LoadBalancing has parameters related to load balancing.
