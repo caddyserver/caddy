@@ -244,7 +244,7 @@ jobs:
     - name: Publish Coverage Profile
       uses: actions/upload-artifact@v4
       with:
-        path: hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.*
+        path: hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
         compression-level: 0
 
   s390x-test:
