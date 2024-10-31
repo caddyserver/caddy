@@ -17,7 +17,7 @@ func TestDelayClientDoneContext(t *testing.T) {
 			if !shouldCloseDoneBeforeRoundTrip {
 				t.Errorf("Expected done channel to not be closed before round trip")
 			}
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(25 * time.Millisecond):
 			if shouldCloseDoneBeforeRoundTrip {
 				t.Errorf("Expected done channel to be closed before round trip")
 			}
@@ -31,7 +31,7 @@ func TestDelayClientDoneContext(t *testing.T) {
 			if !shouldCloseDoneAfterRoundTrip {
 				t.Errorf("Expected done channel to not be closed after round trip")
 			}
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(25 * time.Millisecond):
 			if shouldCloseDoneAfterRoundTrip {
 				t.Errorf("Expected done channel to be closed after round trip")
 			}
@@ -68,7 +68,7 @@ func TestDelayClientDoneContext(t *testing.T) {
 		testContextCancellation(t, ctx, make(chan struct{}), false, false)
 	})
 
-	t.Run("Test with round trip and then context cancel", func(t *testing.T) {
+	t.Run("Test with round trip done and then context cancel", func(t *testing.T) {
 		// Create a context
 		ctx, cancel := context.WithCancel(context.Background())
 
