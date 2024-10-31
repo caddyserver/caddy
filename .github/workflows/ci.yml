@@ -237,15 +237,14 @@ jobs:
       run: |
         export GOCOVERDIR=./coverdir
         ./cmd/caddy/caddy stop
-        go tool covdata textfmt -i=coverdir -o hurl-report/cover-profile.txt
-        go tool cover -html hurl-report/cover-profile.txt -o hurl-report/cover.html
+        go tool covdata textfmt -i=coverdir -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
+        go tool cover -html hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
 
 
     - name: Publish Coverage Profile
       uses: actions/upload-artifact@v4
       with:
-        name: caddy_cover_${{ steps.vars.outputs.short_sha }}.html
-        path: "./hurl-report/cover.html"
+        path: hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.*
         compression-level: 0
 
   s390x-test:
