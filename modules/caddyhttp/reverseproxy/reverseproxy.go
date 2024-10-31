@@ -1381,6 +1381,7 @@ func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) 
 		d.mu.Lock()
 		if !d.doneSet.Load().(bool) {
 			if set {
+				// if the round trip is done, we shouldn`t leave this goroutine running, revert the done channel to the ctx.Done()
 				d.doneSet.Store(true)
 			}
 			close(d.done)
@@ -1398,7 +1399,6 @@ func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) 
 		case <-parentDone:
 			closeDone(false)
 		case <-d.roundTripDone:
-			// if the round trip is done, we shouldn`t leave this goroutine running, revert the done channel to the ctx.Done()
 			closeDone(true)
 		}
 		d.wg.Done()
@@ -1416,6 +1416,7 @@ func (c *delayClientDoneContext) RoundTripDone() {
 }
 
 func (c *delayClientDoneContext) Done() <-chan struct{} {
+	// If the round trip is done, we should return the ctx.Done() channel
 	if c.doneSet.Load().(bool) {
 		return c.Context.Done()
 	}
