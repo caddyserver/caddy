@@ -1,17 +1,23 @@
 package integration
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
 func TestReverseProxyLowLatencyStreaming(t *testing.T) {
 	tester := caddytest.NewTester(t)
+
 	tester.InitServer(`{
   "logging": {
     "logs": {
@@ -30,16 +36,6 @@ func TestReverseProxyLowLatencyStreaming(t *testing.T) {
     "http": {
       "grace_period": "60s",
       "servers": {
-        "files": {
-          "listen": [":8881"],
-          "routes": [{
-            "match": [ { "host": ["*"]}],
-            "handle": [{"handler": "file_server", "root": "/tmp", "browse": {}}]
-          }],
-          "automatic_https": {
-            "disable": true
-          }
-        },
         "public": {
           "listen": [
             ":8880"
@@ -96,13 +92,24 @@ func TestReverseProxyLowLatencyStreaming(t *testing.T) {
 }
 	`, "json")
 
+	var fullFile = []byte(strings.Repeat("\x00", 500))
+
+	done := make(chan struct{})
+	// start the server
+	server := testLowLatencyUpload(t, fullFile, done)
+	go server.ListenAndServe()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
+
 	// Connect to the server
 	conn, err := net.Dial("tcp", "localhost:8880")
 	if err != nil {
 		fmt.Println("Error connecting:", err)
 		return
 	}
-	defer conn.Close()
 	fmt.Println("Connected to server")
 
 	// Send the HTTP headers
@@ -145,7 +152,49 @@ func TestReverseProxyLowLatencyStreaming(t *testing.T) {
 		fmt.Println("Error sending final chunk:", err)
 		return
 	}
-
+	conn.Close()
 	// Close the connection
 	fmt.Println("Connection closed")
+
+	<-done
+}
+
+func testLowLatencyUpload(t *testing.T, testFileBytes []byte, done chan struct{}) *http.Server {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if request method is PUT
+		if r.Method != http.MethodPut {
+			http.Error(w, "Only PUT method is allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		fmt.Println("Received PUT request")
+
+		// wait 1 second to simulate processing
+		time.Sleep(1 * time.Second)
+
+		// Create a buffer to store the incoming data
+		var buffer bytes.Buffer
+
+		// Write the incoming chunked data to the buffer
+		_, err := io.Copy(&buffer, r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to write data to buffer: %v", err), http.StatusInternalServerError)
+			return
+		}
+		fmt.Println("Data written to buffer successfully")
+
+		// Verify the received data matches testFile
+		if bytes.Equal(buffer.Bytes(), testFileBytes) {
+			fmt.Println("Data received matches the expected content")
+		} else {
+			t.Errorf("Data received does not match the expected content")
+		}
+		close(done)
+	})
+
+	server := &http.Server{
+		Addr:    "localhost:8881",
+		Handler: handler,
+	}
+	return server
 }
