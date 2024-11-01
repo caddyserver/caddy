@@ -172,20 +172,34 @@ func testLowLatencyUpload(t *testing.T, testFileBytes []byte, done chan struct{}
 		// wait 1 second to simulate processing
 		time.Sleep(1 * time.Second)
 
+		// Create a context with a timeout
+		ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second) // Set your desired timeout
+		defer cancel()
+
 		// Create a buffer to store the incoming data
 		var buffer bytes.Buffer
 
-		// Write the incoming chunked data to the buffer
-		_, err := io.Copy(&buffer, r.Body)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to write data to buffer: %v", err), http.StatusInternalServerError)
-			return
+		// Use a separate goroutine to perform the copy
+		doneCopy := make(chan error)
+
+		go func() {
+			_, err := io.Copy(&buffer, r.Body)
+			doneCopy <- err
+		}()
+
+		select {
+		case err := <-doneCopy:
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to write data to buffer: %v", err), http.StatusInternalServerError)
+				return
+			}
+			fmt.Println("Data written to buffer successfully")
+		case <-ctx.Done():
 		}
-		fmt.Println("Data written to buffer successfully")
 
 		// Verify the received data matches testFile
 		if bytes.Equal(buffer.Bytes(), testFileBytes) {
-			fmt.Println("Data received matches the expected content")
+			fmt.Println("Data received matches the expected content", buffer.Len(), len(testFileBytes))
 		} else {
 			t.Errorf("Data received does not match the expected content")
 		}
