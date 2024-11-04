@@ -497,7 +497,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		if proxyErr == nil {
 			proxyErr = caddyhttp.Error(http.StatusServiceUnavailable, errNoUpstream)
 		}
-		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
+		if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r, h.logger) {
 			return true, proxyErr
 		}
 		return false, proxyErr
@@ -563,7 +563,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	h.countFailure(upstream)
 
 	// if we've tried long enough, break
-	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r) {
+	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r, h.logger) {
 		return true, proxyErr
 	}
 
@@ -1091,7 +1091,7 @@ func (h *Handler) finalizeResponse(
 // If true is returned, it has already blocked long enough before
 // the next retry (i.e. no more sleeping is needed). If false is
 // returned, the handler should stop trying to proxy the request.
-func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int, proxyErr error, req *http.Request) bool {
+func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int, proxyErr error, req *http.Request, logger *zap.Logger) bool {
 	// no retries are configured
 	if lb.TryDuration == 0 && lb.Retries == 0 {
 		return false
@@ -1126,7 +1126,12 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 				return false
 			}
 
-			if !lb.RetryMatch.AnyMatch(req) {
+			match, err := lb.RetryMatch.AnyMatchWithError(req)
+			if err != nil {
+				logger.Error("error matching request for retry", zap.Error(err))
+				return false
+			}
+			if !match {
 				return false
 			}
 		}

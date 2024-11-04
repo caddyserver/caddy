@@ -1466,9 +1466,9 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 
 	// iterate each pairing of host and path matchers and
 	// put them into a map for JSON encoding
-	var matcherSets []map[string]caddyhttp.RequestMatcher
+	var matcherSets []map[string]caddyhttp.RequestMatcherWithError
 	for _, mp := range matcherPairs {
-		matcherSet := make(map[string]caddyhttp.RequestMatcher)
+		matcherSet := make(map[string]caddyhttp.RequestMatcherWithError)
 		if len(mp.hostm) > 0 {
 			matcherSet["host"] = mp.hostm
 		}
@@ -1527,12 +1527,17 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		if err != nil {
 			return err
 		}
-		rm, ok := unm.(caddyhttp.RequestMatcher)
-		if !ok {
-			return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+
+		if rm, ok := unm.(caddyhttp.RequestMatcherWithError); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
 		}
-		matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
-		return nil
+		// nolint:staticcheck
+		if rm, ok := unm.(caddyhttp.RequestMatcher); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
+		}
+		return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 	}
 
 	// if the next token is quoted, we can assume it's not a matcher name
@@ -1576,7 +1581,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	return nil
 }
 
-func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
+func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcherWithError) (caddy.ModuleMap, error) {
 	msEncoded := make(caddy.ModuleMap)
 	for matcherName, val := range matchers {
 		jsonBytes, err := json.Marshal(val)

@@ -535,21 +535,21 @@ type ClientAuthentication struct {
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
 	ca    CA
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// A list of base64 DER-encoded CA certificates
 	// against which to validate client certificates.
 	// Client certs which are not signed by any of
 	// these CAs will be rejected.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// TrustedCACertPEMFiles is a list of PEM file names
 	// from which to load certificates of trusted CAs.
 	// Client certificates which are not signed by any of
 	// these CA certificates will be rejected.
 	TrustedCACertPEMFiles []string `json:"trusted_ca_certs_pem_files,omitempty"`
 
-	// DEPRECATED: This field is deprecated and will be removed in
+	// Deprecated: This field is deprecated and will be removed in
 	// a future version. Please use the `validators` field instead
 	// with the tls.client_auth.verifier.leaf module instead.
 	//
