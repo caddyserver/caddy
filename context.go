@@ -555,12 +555,8 @@ func (ctx Context) Slogger() *slog.Logger {
 	if mod == nil {
 		return slog.New(zapslog.NewHandler(Log().Core(), nil))
 	}
-
-	return slog.New(zapslog.NewHandler(
-		ctx.cfg.Logging.Logger(mod).Core(),
-		&zapslog.HandlerOptions{
-			LoggerName: string(mod.CaddyModule().ID),
-		},
+	return slog.New(zapslog.NewHandler(ctx.cfg.Logging.Logger(mod).Core(),
+		zapslog.WithName(string(mod.CaddyModule().ID)),
 	))
 }
 
