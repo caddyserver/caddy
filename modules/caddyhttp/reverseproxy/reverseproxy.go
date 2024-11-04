@@ -1367,7 +1367,7 @@ type delayClientDoneContext struct {
 	roundTripDone chan struct{}
 	done          chan struct{}
 	mu            sync.Mutex     // To protect access to the done channel
-	doneSet       atomic.Value   // To indicate whether done has been switched to ctx.Done
+	doneSet       atomic.Bool    // To indicate whether done has been switched to ctx.Done
 	wg            sync.WaitGroup // To wait for the closing of the delay goroutine
 }
 
@@ -1377,11 +1377,10 @@ func NewDelayClientDoneContext(ctx context.Context, parentDone <-chan struct{}) 
 		roundTripDone: make(chan struct{}),
 		done:          make(chan struct{}),
 	}
-	d.doneSet.Store(false)
 
 	closeDone := func(set bool) {
 		d.mu.Lock()
-		if !d.doneSet.Load().(bool) {
+		if !d.doneSet.Load() {
 			if set {
 				// if the round trip is done, we shouldn`t leave this goroutine running, revert the done channel to the ctx.Done()
 				d.doneSet.Store(true)
@@ -1419,7 +1418,7 @@ func (c *delayClientDoneContext) RoundTripDone() {
 
 func (c *delayClientDoneContext) Done() <-chan struct{} {
 	// If the round trip is done, we should return the ctx.Done() channel
-	if c.doneSet.Load().(bool) {
+	if c.doneSet.Load() {
 		return c.Context.Done()
 	}
 	return c.done
