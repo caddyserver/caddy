@@ -1,6 +1,6 @@
 app.example.com {
 	forward_auth authelia:9091 {
-		uri /api/verify?rd=https://authelia.example.com
+		uri /api/authz/forward-auth
 		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
 	}
 
@@ -42,23 +42,115 @@ app.example.com {
 																{
 																	"handle": [
 																		{
+																			"handler": "vars"
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
 																			"handler": "headers",
 																			"request": {
 																				"set": {
 																					"Remote-Email": [
 																						"{http.reverse_proxy.header.Remote-Email}"
-																					],
+																					]
+																				}
+																			}
+																		}
+																	],
+																	"match": [
+																		{
+																			"not": [
+																				{
+																					"vars": {
+																						"{http.reverse_proxy.header.Remote-Email}": [
+																							""
+																						]
+																					}
+																				}
+																			]
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"set": {
 																					"Remote-Groups": [
 																						"{http.reverse_proxy.header.Remote-Groups}"
-																					],
+																					]
+																				}
+																			}
+																		}
+																	],
+																	"match": [
+																		{
+																			"not": [
+																				{
+																					"vars": {
+																						"{http.reverse_proxy.header.Remote-Groups}": [
+																							""
+																						]
+																					}
+																				}
+																			]
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"set": {
 																					"Remote-Name": [
 																						"{http.reverse_proxy.header.Remote-Name}"
-																					],
+																					]
+																				}
+																			}
+																		}
+																	],
+																	"match": [
+																		{
+																			"not": [
+																				{
+																					"vars": {
+																						"{http.reverse_proxy.header.Remote-Name}": [
+																							""
+																						]
+																					}
+																				}
+																			]
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"set": {
 																					"Remote-User": [
 																						"{http.reverse_proxy.header.Remote-User}"
 																					]
 																				}
 																			}
+																		}
+																	],
+																	"match": [
+																		{
+																			"not": [
+																				{
+																					"vars": {
+																						"{http.reverse_proxy.header.Remote-User}": [
+																							""
+																						]
+																					}
+																				}
+																			]
 																		}
 																	]
 																}
@@ -80,7 +172,7 @@ app.example.com {
 													},
 													"rewrite": {
 														"method": "GET",
-														"uri": "/api/verify?rd=https://authelia.example.com"
+														"uri": "/api/authz/forward-auth"
 													},
 													"upstreams": [
 														{
