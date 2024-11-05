@@ -349,6 +349,16 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.OnDemand = onDemand
 	}
 
+	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
+	if sc, ok := options["storage_check"].(string); ok && sc == "off" {
+		tlsApp.DisableStorageCheck = true
+	}
+
+	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
+	if sci, ok := options["storage_clean_interval"].(bool); ok && !sci {
+		tlsApp.DisableStorageClean = true
+	}
+
 	// set the storage clean interval if configured
 	if storageCleanInterval, ok := options["storage_clean_interval"].(caddy.Duration); ok {
 		if tlsApp.Automation == nil {
