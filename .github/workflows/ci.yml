@@ -194,6 +194,7 @@ jobs:
 
   goreleaser-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'caddyserver' && github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -216,4 +217,4 @@ jobs:
           version: latest
           args: build --single-target --snapshot
         env:
-          TAG: "master"
+          TAG: ${{ github.head_ref || github.ref_name }}
