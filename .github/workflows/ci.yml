@@ -230,4 +230,4 @@ jobs:
           version: latest
           args: build --single-target --snapshot
         env:
-          TAG: "$short_sha"
+          TAG: "${{ steps.vars.outputs.short_sha }}"
