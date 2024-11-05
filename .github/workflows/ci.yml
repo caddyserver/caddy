@@ -194,23 +194,10 @@ jobs:
 
   goreleaser-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'caddyserver' && github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Print Go version and environment
-        id: vars
-        shell: bash
-        run: |
-          printf "Using go at: $(which go)\n"
-          printf "Go version: $(go version)\n"
-          printf "\n\nGo environment:\n\n"
-          go env
-          printf "\n\nSystem environment:\n\n"
-          env
-          printf "Git version: $(git version)\n\n"
-          # Calculate the short SHA1 hash of the git commit
-          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -230,4 +217,4 @@ jobs:
           version: latest
           args: build --single-target --snapshot
         env:
-          TAG: "${{ steps.vars.outputs.short_sha }}"
+          TAG: ${{ github.head_ref || github.ref_name }}
