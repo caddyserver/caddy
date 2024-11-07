@@ -136,8 +136,15 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		return pool[0]
 	}
 	var index, totalWeight int
+	var weights []int
+
+	for _, w := range r.Weights {
+		if w > 0 {
+			weights = append(weights, w)
+		}
+	}
 	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
-	for i, weight := range r.Weights {
+	for i, weight := range weights {
 		totalWeight += weight
 		if currentWeight < totalWeight {
 			index = i
@@ -145,9 +152,9 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		}
 	}
 
-	upstreams := make([]*Upstream, 0, len(r.Weights))
-	for _, upstream := range pool {
-		if !upstream.Available() {
+	upstreams := make([]*Upstream, 0, len(weights))
+	for i, upstream := range pool {
+		if !upstream.Available() || r.Weights[i] == 0 {
 			continue
 		}
 		upstreams = append(upstreams, upstream)
