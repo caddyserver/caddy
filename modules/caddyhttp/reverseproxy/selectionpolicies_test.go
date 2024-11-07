@@ -165,7 +165,7 @@ func TestWeightedRoundRobinPolicyWithZeroWeight(t *testing.T) {
 	if h != pool[2] {
 		t.Error("Expect select only available host.")
 	}
-
+	// mark second host as up
 	pool[1].setHealthy(true)
 
 	h = wrrPolicy.Select(pool, req, nil)
@@ -173,6 +173,14 @@ func TestWeightedRoundRobinPolicyWithZeroWeight(t *testing.T) {
 		t.Error("Expect select first host on availability.")
 	}
 
+	// test next select in full cycle
+	expected := []*Upstream{pool[1], pool[2], pool[1], pool[1], pool[2], pool[1]}
+	for i, want := range expected {
+		got := wrrPolicy.Select(pool, req, nil)
+		if want != got {
+			t.Errorf("Selection %d: got host[%s], want host[%s]", i+1, got, want)
+		}
+	}
 }
 
 func TestLeastConnPolicy(t *testing.T) {
