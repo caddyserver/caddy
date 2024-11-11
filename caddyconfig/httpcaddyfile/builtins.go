@@ -981,6 +981,50 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
+		case "sampling":
+			d := h.Dispenser.NewFromNextSegment()
+			for d.NextArg() {
+				// consume any tokens on the same line, if any.
+			}
+
+			sampling := &caddy.LogSampling{}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				subdir := d.Val()
+				switch subdir {
+				case "interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					interval, err := time.ParseDuration(d.Val() + "ns")
+					if err != nil {
+						return nil, d.Errf("failed to parse interval: %v", err)
+					}
+					sampling.Interval = interval
+				case "first":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					first, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse first: %v", err)
+					}
+					sampling.First = first
+				case "thereafter":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					thereafter, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse thereafter: %v", err)
+					}
+					sampling.Thereafter = thereafter
+				default:
+					return nil, d.Errf("unrecognized subdirective: %s", subdir)
+				}
+			}
+
+			cl.Sampling = sampling
+
 		case "core":
 			if !h.NextArg() {
 				return nil, h.ArgErr()
