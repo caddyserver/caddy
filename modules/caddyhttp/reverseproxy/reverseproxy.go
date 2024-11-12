@@ -549,7 +549,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// ding the health status of the upstream (an error can still
 	// occur after the roundtrip if, for example, a response handler
 	// after the roundtrip returns an error)
-	if succ, ok := proxyErr.(roundtripSucceeded); ok {
+	if succ, ok := proxyErr.(roundtripSucceededError); ok {
 		return true, succ.error
 	}
 
@@ -953,10 +953,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			res.Body.Close()
 		}
 
-		// wrap any route error in roundtripSucceeded so caller knows that
+		// wrap any route error in roundtripSucceededError so caller knows that
 		// the roundtrip was successful and to not retry
 		if routeErr != nil {
-			return roundtripSucceeded{routeErr}
+			return roundtripSucceededError{routeErr}
 		}
 
 		// we're done handling the response, and we don't want to
@@ -1433,9 +1433,9 @@ type TLSTransport interface {
 	EnableTLS(base *TLSConfig) error
 }
 
-// roundtripSucceeded is an error type that is returned if the
+// roundtripSucceededError is an error type that is returned if the
 // roundtrip succeeded, but an error occurred after-the-fact.
-type roundtripSucceeded struct{ error }
+type roundtripSucceededError struct{ error }
 
 // bodyReadCloser is a reader that, upon closing, will return
 // its buffer to the pool and close the underlying body reader.
