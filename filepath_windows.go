@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build windows
+
 package caddy
 
-import "io/fs"
+import (
+	"path/filepath"
+)
 
-type FileSystems interface {
-	Register(k string, v fs.FS)
-	Unregister(k string)
-	Get(k string) (v fs.FS, ok bool)
-	Default() fs.FS
+// FastAbs can't be optimized on Windows because the
+// syscall.FullPath function takes an input.
+func FastAbs(path string) (string, error) {
+	return filepath.Abs(path)
 }
