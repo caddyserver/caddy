@@ -204,7 +204,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	// absolute paths before the server starts for very slight performance improvement
 	for i, h := range fsrv.Hide {
 		if !strings.Contains(h, "{") && strings.Contains(h, separator) {
-			if abs, err := filepath.Abs(h); err == nil {
+			if abs, err := caddy.FastAbs(h); err == nil {
 				fsrv.Hide[i] = abs
 			}
 		}
@@ -636,7 +636,7 @@ func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
 		if strings.Contains(hide[i], separator) {
-			abs, err := filepath.Abs(hide[i])
+			abs, err := caddy.FastAbs(hide[i])
 			if err == nil {
 				hide[i] = abs
 			}
@@ -655,7 +655,7 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	// all path comparisons use the complete absolute path if possible
-	filenameAbs, err := filepath.Abs(filename)
+	filenameAbs, err := caddy.FastAbs(filename)
 	if err == nil {
 		filename = filenameAbs
 	}
