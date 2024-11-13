@@ -20,7 +20,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/dustin/go-humanize"
@@ -133,7 +132,7 @@ func (fw *FileWriter) Provision(ctx caddy.Context) error {
 }
 
 func (fw FileWriter) String() string {
-	fpath, err := filepath.Abs(fw.Filename)
+	fpath, err := caddy.FastAbs(fw.Filename)
 	if err == nil {
 		return fpath
 	}

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/mholt/acmez/v2"
@@ -358,7 +357,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		filename, err = filepath.Abs(filename)
+		filename, err = caddy.FastAbs(filename)
 		if err != nil {
 			return err
 		}
