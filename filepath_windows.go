@@ -18,8 +18,10 @@ import (
 	"path/filepath"
 )
 
-// FastAbs can't be optimized on Windows because the
-// syscall.FullPath function takes an input.
+// FastAbs can't be optimized on Windows because there
+// are special file paths that require the use of syscall.FullPath
+// to handle correctly.
+// Just call stdlib's implementation which uses that function.
 func FastAbs(path string) (string, error) {
 	return filepath.Abs(path)
 }
