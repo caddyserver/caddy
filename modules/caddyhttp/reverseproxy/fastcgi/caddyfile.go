@@ -317,13 +317,15 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			tryFiles = []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile}
 		} else {
 			longIndexPattern := "{http.request.uri.path}/" + indexFile
+			disableDirRedir = true
+
 			for _, tf := range tryFiles {
 				if tf == longIndexPattern {
+					disableDirRedir = false
+
 					break
 				}
 			}
-
-			disableDirRedir = true
 		}
 
 		if !disableDirRedir {
