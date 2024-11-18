@@ -331,7 +331,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			// route to redirect to canonical path if index PHP file
 			redirMatcherSet := caddy.ModuleMap{
 				"file": h.JSON(fileserver.MatchFile{
-					TryFiles: []string{"{http.request.uri.path}/" + indexFile},
+					TryFiles: []string{dirIndex},
 				}),
 				"not": h.JSON(caddyhttp.MatchNot{
 					MatcherSetsRaw: []caddy.ModuleMap{
