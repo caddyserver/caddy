@@ -274,7 +274,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 			tryPolicy = h.Val()
 
 			switch tryPolicy {
-			case tryPolicyFirstExist, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod:
+			case tryPolicyFirstExist, tryPolicyFirstExistFallback, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod:
 			default:
 				return nil, h.Errf("unrecognized try policy: %s", tryPolicy)
 			}

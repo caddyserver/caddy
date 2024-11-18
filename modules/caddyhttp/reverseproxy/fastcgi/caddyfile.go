@@ -16,9 +16,6 @@ package fastcgi
 
 import (
 	"encoding/json"
-	"net/http"
-	"strconv"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -27,6 +24,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/fileserver"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
 func init() {
@@ -312,12 +312,18 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	if indexFile != "off" {
 		dirRedir := false
 		dirIndex := "{http.request.uri.path}/" + indexFile
+		tryPolicy := "first_exist_fallback"
 
 		// if tryFiles wasn't overridden, use a reasonable default
 		if len(tryFiles) == 0 {
 			tryFiles = []string{"{http.request.uri.path}", dirIndex, indexFile}
 			dirRedir = true
 		} else {
+			if !strings.HasSuffix(tryFiles[len(tryFiles)-1], ".php") {
+				// use first_exist strategy if the last file is not a PHP file
+				tryPolicy = ""
+			}
+
 			for _, tf := range tryFiles {
 				if tf == dirIndex {
 					dirRedir = true
@@ -357,6 +363,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		rewriteMatcherSet := caddy.ModuleMap{
 			"file": h.JSON(fileserver.MatchFile{
 				TryFiles:  tryFiles,
+				TryPolicy: tryPolicy,
 				SplitPath: extensions,
 			}),
 		}
