@@ -73,7 +73,8 @@ php_fastcgi @test localhost:9000
 																			"{http.request.uri.path}",
 																			"{http.request.uri.path}/index.php",
 																			"index.php"
-																		]
+																		],
+																		"try_policy": "first_exist_fallback"
 																	}
 																}
 															]
