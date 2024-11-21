@@ -16,6 +16,10 @@ package fastcgi
 
 import (
 	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -24,9 +28,6 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/fileserver"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 func init() {
