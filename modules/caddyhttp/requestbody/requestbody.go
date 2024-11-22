@@ -94,8 +94,10 @@ type errorWrapper struct {
 
 func (ew errorWrapper) Read(p []byte) (n int, err error) {
 	n, err = ew.ReadCloser.Read(p)
-	if err != nil && err.Error() == "http: request body too large" {
-		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
+	if err != nil {
+		if _, ok := err.(*http.MaxBytesError); ok {
+			err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
+		}
 	}
 	return
 }
