@@ -110,6 +110,8 @@ func (ctx *Context) GetMetricsRegistry() *prometheus.Registry {
 func (ctx *Context) initMetrics() {
 	ctx.metricsRegistry.MustRegister(
 		collectors.NewBuildInfoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
 		adminMetrics.requestCount,
 		adminMetrics.requestErrors,
 		globalMetrics.configSuccess,
