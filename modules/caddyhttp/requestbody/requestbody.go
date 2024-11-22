@@ -15,6 +15,7 @@
 package requestbody
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -94,7 +95,8 @@ type errorWrapper struct {
 
 func (ew errorWrapper) Read(p []byte) (n int, err error) {
 	n, err = ew.ReadCloser.Read(p)
-	if err != nil && err.Error() == "http: request body too large" {
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
 		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
 	}
 	return
