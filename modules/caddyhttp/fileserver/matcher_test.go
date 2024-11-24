@@ -416,3 +416,24 @@ func TestMatchExpressionMatch(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkFileMatcher(b *testing.B) {
+	m := &MatchFile{
+		fsmap:    &filesystems.FilesystemMap{},
+		Root:     "./testdata",
+		TryFiles: []string{"{http.request.uri.path}"},
+	}
+
+	u, _ := url.Parse("/foo.txt")
+	req := &http.Request{URL: u}
+	caddyhttp.NewTestReplacer(req)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ok, _ := m.MatchWithError(req)
+		if !ok {
+			panic("unexpected match result")
+		}
+	}
+}

@@ -416,15 +416,26 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 
 	// setPlaceholders creates the placeholders for the matched file
 	setPlaceholders := func(candidate matchCandidate, info fs.FileInfo) {
-		repl.Set("http.matchers.file.relative", filepath.ToSlash(candidate.relative))
-		repl.Set("http.matchers.file.absolute", filepath.ToSlash(candidate.fullpath))
-		repl.Set("http.matchers.file.remainder", filepath.ToSlash(candidate.splitRemainder))
+		isDir := info.IsDir()
+		repl.Map(func(key string) (any, bool) {
+			switch key {
+			case "http.matchers.file.relative":
+				return filepath.ToSlash(candidate.relative), true
+			case "http.matchers.file.absolute":
+				return filepath.ToSlash(candidate.fullpath), true
+			case "http.matchers.file.remainder":
+				return filepath.ToSlash(candidate.splitRemainder), true
+			case "http.matchers.file.type":
+				if isDir {
+					return "directory", true
+				}
 
-		fileType := "file"
-		if info.IsDir() {
-			fileType = "directory"
-		}
-		repl.Set("http.matchers.file.type", fileType)
+				return "file", true
+
+			default:
+				return nil, false
+			}
+		})
 	}
 
 	// match file according to the configured policy
