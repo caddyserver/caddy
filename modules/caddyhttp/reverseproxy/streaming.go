@@ -23,7 +23,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"io"
 	weakrand "math/rand"
 	"mime"
@@ -34,6 +33,8 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http/httpguts"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 type h2ReadWriteCloser struct {
@@ -86,13 +87,13 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		conn io.ReadWriteCloser
 		brw  *bufio.ReadWriter
 	)
-	// websocket over http2, assuming backend doesn't support this, the request will be modifided to http1.1 upgrade
+	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if body, ok := caddyhttp.GetVar(req.Context(), "h2_websocket_body").(io.ReadCloser); ok {
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
-		rw.Header().Del("Sec-Websocket-Accept")
+		delete(rw.Header(), "Sec-WebSocket-Accept")
 		rw.WriteHeader(http.StatusOK)
 
 		flushErr := http.NewResponseController(rw).Flush()

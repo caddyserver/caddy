@@ -400,7 +400,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
-	// websocket over http2, assuming backend doesn't support this, the request will be modifided to http1.1 upgrade
+	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") != "" {
 		clonedReq.Header.Del(":protocol")
@@ -415,7 +415,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if randErr != nil {
 			return randErr
 		}
-		clonedReq.Header.Set("Sec-Websocket-Key", base64.StdEncoding.EncodeToString(key))
+		clonedReq.Header["Sec-WebSocket-Key"] = []string{base64.StdEncoding.EncodeToString(key)}
 	}
 
 	// we will need the original headers and Host value if
