@@ -49,6 +49,7 @@ func (rwc h2ReadWriteCloser) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 
+	//nolint:bodyclose
 	err = http.NewResponseController(rwc.ResponseWriter).Flush()
 	if err != nil {
 		return 0, err
@@ -106,6 +107,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 			c.Write(zap.Int("http_version", 2))
 		}
 
+		//nolint:bodyclose
 		flushErr := http.NewResponseController(rw).Flush()
 		if flushErr != nil {
 			if c := h.logger.Check(zap.ErrorLevel, "failed to flush http2 websocket response"); c != nil {
