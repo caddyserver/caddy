@@ -1,11 +1,12 @@
 example.com {
-    respond <<EOF
+	respond <<EOF
     <html>
       <head><title>Foo</title>
       <body>Foo</body>
     </html>
     EOF 200
 }
+
 ----------
 {
 	"apps": {

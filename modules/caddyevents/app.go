@@ -124,18 +124,19 @@ func (app *App) Provision(ctx caddy.Context) error {
 	app.subscriptions = make(map[string]map[caddy.ModuleID][]Handler)
 
 	for _, sub := range app.Subscriptions {
-		if sub.HandlersRaw != nil {
-			handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
-			if err != nil {
-				return fmt.Errorf("loading event subscriber modules: %v", err)
-			}
-			for _, h := range handlersIface.([]any) {
-				sub.Handlers = append(sub.Handlers, h.(Handler))
-			}
-			if len(sub.Handlers) == 0 {
-				// pointless to bind without any handlers
-				return fmt.Errorf("no handlers defined")
-			}
+		if sub.HandlersRaw == nil {
+			continue
+		}
+		handlersIface, err := ctx.LoadModule(sub, "HandlersRaw")
+		if err != nil {
+			return fmt.Errorf("loading event subscriber modules: %v", err)
+		}
+		for _, h := range handlersIface.([]any) {
+			sub.Handlers = append(sub.Handlers, h.(Handler))
+		}
+		if len(sub.Handlers) == 0 {
+			// pointless to bind without any handlers
+			return fmt.Errorf("no handlers defined")
 		}
 	}
 
@@ -261,7 +262,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	logger = logger.With(zap.Any("data", e.Data))
+	logger = logger.WithLazy(zap.Any("data", e.Data))
 
 	logger.Debug("event")
 

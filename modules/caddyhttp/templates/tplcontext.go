@@ -88,6 +88,7 @@ func (c *TemplateContext) NewTemplate(tplName string) *template.Template {
 		"fileStat":         c.funcFileStat,
 		"env":              c.funcEnv,
 		"placeholder":      c.funcPlaceholder,
+		"ph":               c.funcPlaceholder, // shortcut
 		"fileExists":       c.funcFileExists,
 		"httpError":        c.funcHTTPError,
 		"humanize":         c.funcHumanize,

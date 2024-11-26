@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v2"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -292,29 +294,32 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 						remoteIP, _, _ = net.SplitHostPort(remote.String())
 					}
 				}
-				tlsApp.logger.Debug("asking for permission for on-demand certificate",
-					zap.String("remote_ip", remoteIP),
-					zap.String("domain", name))
+				if c := tlsApp.logger.Check(zapcore.DebugLevel, "asking for permission for on-demand certificate"); c != nil {
+					c.Write(
+						zap.String("remote_ip", remoteIP),
+						zap.String("domain", name),
+					)
+				}
 
 				// ask the permission module if this cert is allowed
 				if err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, ErrPermissionDenied) {
-						tlsApp.logger.Debug("on-demand certificate issuance denied",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.DebugLevel, "on-demand certificate issuance denied"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					} else {
-						tlsApp.logger.Error("failed to get permission for on-demand certificate",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.ErrorLevel, "failed to get permission for on-demand certificate"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					}
 					return err
-				}
-
-				// check the rate limiter last because
-				// doing so makes a reservation
-				if !onDemandRateLimiter.Allow() {
-					return fmt.Errorf("on-demand rate limit exceeded")
 				}
 
 				return nil
@@ -363,12 +368,9 @@ func (ap *AutomationPolicy) Subjects() []string {
 
 // AllInternalSubjects returns true if all the subjects on this policy are internal.
 func (ap *AutomationPolicy) AllInternalSubjects() bool {
-	for _, subj := range ap.subjects {
-		if !certmagic.SubjectIsInternal(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.subjects, func(s string) bool {
+		return !certmagic.SubjectIsInternal(s)
+	})
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {

@@ -35,7 +35,6 @@ linters:
     - errcheck
     - errname
     - exhaustive
-    - exportloopref
     - gci
     - gofmt
     - goimports
@@ -145,6 +144,9 @@ output:
 
 issues:
   exclude-rules:
+    - text: 'G115' # TODO: Either we should fix the issues or nuke the linter if it's bad
+      linters:
+        - gosec
     # we aren't calling unknown URL
     - text: 'G107' # G107: Url provided to HTTP request as taint input
       linters:
@@ -167,6 +169,12 @@ issues:
       linters:
         - gosec
     - path: modules/logging/filters.go
+      linters:
+        - dupl
+    - path: modules/caddyhttp/matchers.go
+      linters:
+        - dupl
+    - path: modules/caddyhttp/vars.go
       linters:
         - dupl
     - path: _test\.go

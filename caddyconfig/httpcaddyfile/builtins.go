@@ -56,10 +56,30 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...>
+//		bind <addresses...> [{
+//	   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
-	return []ConfigValue{{Class: "bind", Value: h.RemainingArgs()}}, nil
+	var addresses, protocols []string
+	addresses = h.RemainingArgs()
+
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "protocols":
+			protocols = h.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, h.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 // parseTLS parses the tls directive. Syntax:
@@ -960,6 +980,50 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				}
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
+
+		case "sampling":
+			d := h.Dispenser.NewFromNextSegment()
+			for d.NextArg() {
+				// consume any tokens on the same line, if any.
+			}
+
+			sampling := &caddy.LogSampling{}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				subdir := d.Val()
+				switch subdir {
+				case "interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					interval, err := time.ParseDuration(d.Val() + "ns")
+					if err != nil {
+						return nil, d.Errf("failed to parse interval: %v", err)
+					}
+					sampling.Interval = interval
+				case "first":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					first, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse first: %v", err)
+					}
+					sampling.First = first
+				case "thereafter":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					thereafter, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse thereafter: %v", err)
+					}
+					sampling.Thereafter = thereafter
+				default:
+					return nil, d.Errf("unrecognized subdirective: %s", subdir)
+				}
+			}
+
+			cl.Sampling = sampling
 
 		case "core":
 			if !h.NextArg() {
