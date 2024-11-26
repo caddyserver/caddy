@@ -102,9 +102,15 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		delete(rw.Header(), "Sec-WebSocket-Accept")
 		rw.WriteHeader(http.StatusOK)
 
+		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
+			c.Write(zap.Int("http_version", 2))
+		}
+
 		flushErr := http.NewResponseController(rw).Flush()
 		if flushErr != nil {
-			h.logger.Error("failed to flush http2 websocket response", zap.Error(flushErr))
+			if c := h.logger.Check(zap.ErrorLevel, "failed to flush http2 websocket response"); c != nil {
+				c.Write(zap.Error(flushErr))
+			}
 			return
 		}
 		conn = h2ReadWriteCloser{req.Body, rw}
@@ -113,22 +119,27 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	} else {
 		rw.WriteHeader(res.StatusCode)
 
-    //nolint:bodyclose
-    conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
-    if errors.Is(hijackErr, http.ErrNotSupported) {
-      if c := logger.Check(zapcore.ErrorLevel, "can't switch protocols using non-Hijacker ResponseWriter"); c != nil {
-        c.Write(zap.String("type", fmt.Sprintf("%T", rw)))
-      }
-      return
-    }
+		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
+			c.Write(zap.Int("http_version", req.ProtoMajor))
+		}
 
-    if hijackErr != nil {
-      if c := logger.Check(zapcore.ErrorLevel, "hijack failed on protocol switch"); c != nil {
-        c.Write(zap.Error(hijackErr))
-      }
-      return
-    }
-  }
+		var hijackErr error
+		//nolint:bodyclose
+		conn, brw, hijackErr = http.NewResponseController(rw).Hijack()
+		if errors.Is(hijackErr, http.ErrNotSupported) {
+			if c := h.logger.Check(zap.ErrorLevel, "can't switch protocols using non-Hijacker ResponseWriter"); c != nil {
+				c.Write(zap.String("type", fmt.Sprintf("%T", rw)))
+			}
+			return
+		}
+
+		if hijackErr != nil {
+			if c := h.logger.Check(zap.ErrorLevel, "hijack failed on protocol switch"); c != nil {
+				c.Write(zap.Error(hijackErr))
+			}
+			return
+		}
+	}
 
 	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
 	backConnCloseCh := make(chan struct{})
