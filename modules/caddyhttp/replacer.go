@@ -186,6 +186,11 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return path.Ext(req.URL.Path), true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
+			case "http.request.uri.prefixed_query":
+				if req.URL.RawQuery == "" {
+					return "", true
+				}
+				return "?" + req.URL.RawQuery, true
 			case "http.request.duration":
 				start := GetVar(req.Context(), "start_time").(time.Time)
 				return time.Since(start), true

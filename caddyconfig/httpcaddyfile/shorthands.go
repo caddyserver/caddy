@@ -60,6 +60,7 @@ func placeholderShorthands() []string {
 		"{method}", "{http.request.method}",
 		"{path}", "{http.request.uri.path}",
 		"{query}", "{http.request.uri.query}",
+		"{prefixed_query}", "{http.request.uri.prefixed_query}",
 		"{remote}", "{http.request.remote}",
 		"{remote_host}", "{http.request.remote.host}",
 		"{remote_port}", "{http.request.remote.port}",
