@@ -244,6 +244,12 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.orig_uri.query":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				return or.URL.RawQuery, true
+			case "http.request.orig_uri.prefixed_query":
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				if or.URL.RawQuery == "" {
+					return "", true
+				}
+				return "?" + or.URL.RawQuery, true
 			}
 
 			// remote IP range/prefix (e.g. keep top 24 bits of 1.2.3.4  => "1.2.3.0/24")
