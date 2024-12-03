@@ -58,6 +58,7 @@
 											"{http.request.uri.path}/index.php",
 											"index.php"
 										],
+										"try_policy": "first_exist_fallback",
 										"split_path": [
 											".php"
 										]
