@@ -59,6 +59,7 @@ php_fastcgi localhost:9000 {
 											"{http.request.uri.path}/index.php5",
 											"index.php5"
 										],
+										"try_policy": "first_exist_fallback",
 										"split_path": [
 											".php",
 											".php5"

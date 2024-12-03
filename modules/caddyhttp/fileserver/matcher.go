@@ -90,6 +90,7 @@ type MatchFile struct {
 	// How to choose a file in TryFiles. Can be:
 	//
 	// - first_exist
+	// - first_exist_fallback
 	// - smallest_size
 	// - largest_size
 	// - most_recently_modified
@@ -415,13 +416,13 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
-	setPlaceholders := func(candidate matchCandidate, info fs.FileInfo) {
+	setPlaceholders := func(candidate matchCandidate, isDir bool) {
 		repl.Set("http.matchers.file.relative", filepath.ToSlash(candidate.relative))
 		repl.Set("http.matchers.file.absolute", filepath.ToSlash(candidate.fullpath))
 		repl.Set("http.matchers.file.remainder", filepath.ToSlash(candidate.splitRemainder))
 
 		fileType := "file"
-		if info.IsDir() {
+		if isDir {
 			fileType = "directory"
 		}
 		repl.Set("http.matchers.file.type", fileType)
@@ -429,8 +430,13 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 
 	// match file according to the configured policy
 	switch m.TryPolicy {
-	case "", tryPolicyFirstExist:
-		for _, pattern := range m.TryFiles {
+	case "", tryPolicyFirstExist, tryPolicyFirstExistFallback:
+		maxI := -1
+		if m.TryPolicy == tryPolicyFirstExistFallback {
+			maxI = len(m.TryFiles) - 1
+		}
+
+		for i, pattern := range m.TryFiles {
 			// If the pattern is a status code, emit an error,
 			// which short-circuits the middleware pipeline and
 			// writes an HTTP error response.
@@ -440,8 +446,15 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
+				// Skip the IO if using fallback policy and it's the latest item
+				if i == maxI {
+					setPlaceholders(c, false)
+
+					return true, nil
+				}
+
 				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
-					setPlaceholders(c, info)
+					setPlaceholders(c, info.IsDir())
 					return true, nil
 				}
 			}
@@ -465,7 +478,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		if largestInfo == nil {
 			return false, nil
 		}
-		setPlaceholders(largest, largestInfo)
+		setPlaceholders(largest, largestInfo.IsDir())
 		return true, nil
 
 	case tryPolicySmallestSize:
@@ -486,7 +499,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		if smallestInfo == nil {
 			return false, nil
 		}
-		setPlaceholders(smallest, smallestInfo)
+		setPlaceholders(smallest, smallestInfo.IsDir())
 		return true, nil
 
 	case tryPolicyMostRecentlyMod:
@@ -506,7 +519,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		if recentInfo == nil {
 			return false, nil
 		}
-		setPlaceholders(recent, recentInfo)
+		setPlaceholders(recent, recentInfo.IsDir())
 		return true, nil
 	}
 
@@ -708,10 +721,11 @@ var globSafeRepl = strings.NewReplacer(
 )
 
 const (
-	tryPolicyFirstExist      = "first_exist"
-	tryPolicyLargestSize     = "largest_size"
-	tryPolicySmallestSize    = "smallest_size"
-	tryPolicyMostRecentlyMod = "most_recently_modified"
+	tryPolicyFirstExist         = "first_exist"
+	tryPolicyFirstExistFallback = "first_exist_fallback"
+	tryPolicyLargestSize        = "largest_size"
+	tryPolicySmallestSize       = "smallest_size"
+	tryPolicyMostRecentlyMod    = "most_recently_modified"
 )
 
 // Interface guards
