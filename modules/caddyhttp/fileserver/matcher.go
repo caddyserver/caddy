@@ -297,6 +297,7 @@ func (m MatchFile) Validate() error {
 	switch m.TryPolicy {
 	case "",
 		tryPolicyFirstExist,
+		tryPolicyFirstExistFallback,
 		tryPolicyLargestSize,
 		tryPolicySmallestSize,
 		tryPolicyMostRecentlyMod:
