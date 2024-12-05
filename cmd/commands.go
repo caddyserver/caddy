@@ -388,6 +388,7 @@ When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
 			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
 			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
