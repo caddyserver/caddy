@@ -156,7 +156,7 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			if _, ok := enc.writerPools[encName]; !ok {
 				continue // encoding not offered
 			}
-			w = enc.openResponseWriter(encName, w)
+			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
 			defer w.(*responseWriter).Close()
 
 			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
@@ -201,14 +201,14 @@ func (enc *Encode) addEncoding(e Encoding) error {
 // openResponseWriter creates a new response writer that may (or may not)
 // encode the response with encodingName. The returned response writer MUST
 // be closed after the handler completes.
-func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter) *responseWriter {
+func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter, isConnect bool) *responseWriter {
 	var rw responseWriter
-	return enc.initResponseWriter(&rw, encodingName, w)
+	return enc.initResponseWriter(&rw, encodingName, w, isConnect bool)
 }
 
 // initResponseWriter initializes the responseWriter instance
 // allocated in openResponseWriter, enabling mid-stack inlining.
-func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
+func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter, isConnect bool) *responseWriter {
 	if rww, ok := wrappedRW.(*caddyhttp.ResponseWriterWrapper); ok {
 		rw.ResponseWriter = rww
 	} else {
@@ -216,6 +216,7 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 	}
 	rw.encodingName = encodingName
 	rw.config = enc
+	rw.isConnect = isConnect
 
 	return rw
 }
@@ -230,6 +231,7 @@ type responseWriter struct {
 	config       *Encode
 	statusCode   int
 	wroteHeader  bool
+	isConnect    bool
 }
 
 // WriteHeader stores the status to write when the time comes
@@ -243,6 +245,14 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
 	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
 		rw.Header().Add("Vary", "Accept-Encoding")
+	}
+
+	// write status immediately if status is 2xx and the request is CONNECT
+	// since it means the response is successful.
+	// see: https://github.com/caddyserver/caddy/issues/6733#issuecomment-2525058845 
+	if rw.isConnect && 200 <= status && status <= 299 {
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
 	}
 
 	// write status immediately when status code is informational
