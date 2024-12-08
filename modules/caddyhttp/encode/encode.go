@@ -203,7 +203,7 @@ func (enc *Encode) addEncoding(e Encoding) error {
 // be closed after the handler completes.
 func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter, isConnect bool) *responseWriter {
 	var rw responseWriter
-	return enc.initResponseWriter(&rw, encodingName, w, isConnect bool)
+	return enc.initResponseWriter(&rw, encodingName, w, isConnect)
 }
 
 // initResponseWriter initializes the responseWriter instance
