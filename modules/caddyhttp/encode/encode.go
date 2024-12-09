@@ -270,6 +270,12 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 // FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
 // ResponseWriterWrapper until headers were written.
 func (rw *responseWriter) FlushError() error {
+	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
+	// otherwise, wait until header is written.
+	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
+		rw.WriteHeader(http.StatusOK)
+	}
+
 	if !rw.wroteHeader {
 		// flushing the underlying ResponseWriter will write header and status code,
 		// but we need to delay that until we can determine if we must encode and
@@ -296,6 +302,12 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	// ignore zero data writes, probably head request
 	if len(p) == 0 {
 		return 0, nil
+	}
+
+	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
+	// otherwise, determine if the response should be compressed.
+	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
+		rw.WriteHeader(http.StatusOK)
 	}
 
 	// sniff content-type and determine content-length
