@@ -97,8 +97,8 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 
-	if len(prefer) == 0 {
-		prefer = []string{"zstd", "gzip"}
+	if len(prefer) == 0 && len(remainingArgs) == 0 {
+		remainingArgs = []string{"zstd", "gzip"}
 	}
 
 	for _, arg := range remainingArgs {
