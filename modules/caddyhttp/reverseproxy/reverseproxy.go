@@ -398,13 +398,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
-	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") != "" {
+	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket" {
 		clonedReq.Header.Del(":protocol")
 		// keep the body for later use. http1.1 upgrade uses http.NoBody
 		caddyhttp.SetVar(clonedReq.Context(), "h2_websocket_body", clonedReq.Body)
 		clonedReq.Body = http.NoBody
 		clonedReq.Method = http.MethodGet
-		clonedReq.Header.Set("Upgrade", r.Header.Get(":protocol"))
+		clonedReq.Header.Set("Upgrade", "websocket")
 		clonedReq.Header.Set("Connection", "Upgrade")
 		key := make([]byte, 16)
 		_, randErr := rand.Read(key)
