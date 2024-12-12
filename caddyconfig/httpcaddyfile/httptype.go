@@ -706,6 +706,16 @@ func (st *ServerType) serversFromPairings(
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
 
+		// collect all hosts that have a wildcard in them
+		wildcardHosts := []string{}
+		for _, sblock := range p.serverBlocks {
+			for _, addr := range sblock.parsedKeys {
+				if strings.HasPrefix(addr.Host, "*.") {
+					wildcardHosts = append(wildcardHosts, addr.Host[2:])
+				}
+			}
+		}
+
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
 		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
 
@@ -791,13 +801,6 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
-			wildcardHosts := []string{}
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-
 			for _, addr := range sblock.parsedKeys {
 				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
@@ -810,18 +813,6 @@ func (st *ServerType) serversFromPairings(
 						if !slices.Contains(srv.AutoHTTPS.Skip, addr.Host) {
 							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 						}
-					}
-				}
-
-				// If prefer wildcard is enabled, then we add hosts that are
-				// already covered by the wildcard to the skip list
-				if srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard && addr.Scheme == "https" {
-					baseDomain := addr.Host
-					if idx := strings.Index(baseDomain, "."); idx != -1 {
-						baseDomain = baseDomain[idx+1:]
-					}
-					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
-						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
 
@@ -841,6 +832,19 @@ func (st *ServerType) serversFromPairings(
 					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
 				}
+
+				// If prefer wildcard is enabled, then we add hosts that are
+				// already covered by the wildcard to the skip list
+				if addressQualifiesForTLS && srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard {
+					baseDomain := addr.Host
+					if idx := strings.Index(baseDomain, "."); idx != -1 {
+						baseDomain = baseDomain[idx+1:]
+					}
+					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
+						srv.AutoHTTPS.SkipCerts = append(srv.AutoHTTPS.SkipCerts, addr.Host)
+					}
+				}
+
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
 				// may not need to add one for this server
 				autoHTTPSWillAddConnPolicy = autoHTTPSWillAddConnPolicy &&
@@ -1462,9 +1466,9 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 
 	// iterate each pairing of host and path matchers and
 	// put them into a map for JSON encoding
-	var matcherSets []map[string]caddyhttp.RequestMatcher
+	var matcherSets []map[string]caddyhttp.RequestMatcherWithError
 	for _, mp := range matcherPairs {
-		matcherSet := make(map[string]caddyhttp.RequestMatcher)
+		matcherSet := make(map[string]caddyhttp.RequestMatcherWithError)
 		if len(mp.hostm) > 0 {
 			matcherSet["host"] = mp.hostm
 		}
@@ -1523,12 +1527,17 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		if err != nil {
 			return err
 		}
-		rm, ok := unm.(caddyhttp.RequestMatcher)
-		if !ok {
-			return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+
+		if rm, ok := unm.(caddyhttp.RequestMatcherWithError); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
 		}
-		matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
-		return nil
+		// nolint:staticcheck
+		if rm, ok := unm.(caddyhttp.RequestMatcher); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
+		}
+		return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 	}
 
 	// if the next token is quoted, we can assume it's not a matcher name
@@ -1572,7 +1581,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	return nil
 }
 
-func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
+func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcherWithError) (caddy.ModuleMap, error) {
 	msEncoded := make(caddy.ModuleMap)
 	for matcherName, val := range matchers {
 		jsonBytes, err := json.Marshal(val)

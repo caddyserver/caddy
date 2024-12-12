@@ -262,7 +262,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		return nil, false
 	})
 
-	logger = logger.With(zap.Any("data", e.Data))
+	logger = logger.WithLazy(zap.Any("data", e.Data))
 
 	logger.Debug("event")
 

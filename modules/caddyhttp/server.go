@@ -61,6 +61,7 @@ type Server struct {
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// ReadHeaderTimeout is like ReadTimeout but for request headers.
+	// Default is 1 minute.
 	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
 
 	// WriteTimeout is how long to allow a write to a client. Note

@@ -30,7 +30,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(network, addr string) (any, error) {
+func reuseUnixSocket(_, _ string) (any, error) {
 	return nil, nil
 }
 
