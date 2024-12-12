@@ -139,7 +139,7 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 	}
 
 	// check to see if plugin provides listener
-	if ln, err := getListenerFromPlugin(ctx, na.Network, na.JoinHostPort(portOffset), config); ln != nil || err != nil {
+	if ln, err := getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
 		return ln, err
 	}
 
@@ -658,11 +658,11 @@ var unixSocketsMu sync.Mutex
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
 // no plugin can provide a listener.
-func getListenerFromPlugin(ctx context.Context, network, addr string, config net.ListenConfig) (any, error) {
+func getListenerFromPlugin(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
 	// get listener from plugin if network type is registered
 	if getListener, ok := networkTypes[network]; ok {
 		Log().Debug("getting listener from plugin", zap.String("network", network))
-		return getListener(ctx, network, addr, config)
+		return getListener(ctx, network, host, port, portOffset, config)
 	}
 
 	return nil, nil
@@ -676,7 +676,7 @@ func listenerKey(network, addr string) string {
 // The listeners must be capable of overlapping: with Caddy, new configs are loaded
 // before old ones are unloaded, so listeners may overlap briefly if the configs
 // both need the same listener. EXPERIMENTAL and subject to change.
-type ListenerFunc func(ctx context.Context, network, addr string, cfg net.ListenConfig) (any, error)
+type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
 var networkTypes = map[string]ListenerFunc{}
 
