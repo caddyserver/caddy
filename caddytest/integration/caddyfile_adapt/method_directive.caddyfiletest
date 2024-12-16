@@ -1,0 +1,27 @@
+:8080 {
+	method FOO
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "rewrite",
+									"method": "FOO"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

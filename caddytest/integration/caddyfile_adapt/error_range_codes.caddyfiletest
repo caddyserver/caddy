@@ -1,0 +1,120 @@
+{
+	http_port 3010
+}
+localhost:3010 {
+	root * /srv
+	error /private* "Unauthorized" 410
+	error /hidden* "Not found" 404
+
+	handle_errors 4xx {
+		respond "Error in the [400 .. 499] range"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"http_port": 3010,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":3010"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/srv"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Unauthorized",
+													"handler": "error",
+													"status_code": 410
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/private*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"error": "Not found",
+													"handler": "error",
+													"status_code": 404
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/hidden*"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"errors": {
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"body": "Error in the [400 .. 499] range",
+														"handler": "static_response"
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} \u003e= 400 \u0026\u0026 {http.error.status_code} \u003c= 499"
+													}
+												]
+											}
+										]
+									}
+								],
+								"terminal": true
+							}
+						]
+					}
+				}
+			}
+		}
+	}
+}

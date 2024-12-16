@@ -9,7 +9,6 @@ import (
 func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
 		input       string
-		expectWarn  bool
 		expectError bool
 	}{
 		{
@@ -18,7 +17,6 @@ func TestMatcherSyntax(t *testing.T) {
 				query showdebug=1
 			}
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -27,7 +25,6 @@ func TestMatcherSyntax(t *testing.T) {
 				query bad format
 			}
 			`,
-			expectWarn:  false,
 			expectError: true,
 		},
 		{
@@ -38,7 +35,6 @@ func TestMatcherSyntax(t *testing.T) {
 				}
 			}
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -47,8 +43,21 @@ func TestMatcherSyntax(t *testing.T) {
 				not path /somepath*
 			}
 			`,
-			expectWarn:  false,
 			expectError: false,
+		},
+		{
+			input: `http://localhost
+			@debug not path /somepath*
+			`,
+			expectError: false,
+		},
+		{
+			input: `@matcher {
+				path /matcher-not-allowed/outside-of-site-block/*
+			}
+			http://localhost
+			`,
+			expectError: true,
 		},
 	} {
 
@@ -56,12 +65,7 @@ func TestMatcherSyntax(t *testing.T) {
 			ServerType: ServerType{},
 		}
 
-		_, warnings, err := adapter.Adapt([]byte(tc.input), nil)
-
-		if len(warnings) > 0 != tc.expectWarn {
-			t.Errorf("Test %d warning expectation failed Expected: %v, got %v", i, tc.expectWarn, warnings)
-			continue
-		}
+		_, _, err := adapter.Adapt([]byte(tc.input), nil)
 
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
@@ -103,7 +107,6 @@ func TestSpecificity(t *testing.T) {
 func TestGlobalOptions(t *testing.T) {
 	for i, tc := range []struct {
 		input       string
-		expectWarn  bool
 		expectError bool
 	}{
 		{
@@ -113,7 +116,6 @@ func TestGlobalOptions(t *testing.T) {
 				}
 				:80
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -123,7 +125,6 @@ func TestGlobalOptions(t *testing.T) {
 				}
 				:80
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -133,7 +134,6 @@ func TestGlobalOptions(t *testing.T) {
 				}
 				:80
 			`,
-			expectWarn:  false,
 			expectError: false,
 		},
 		{
@@ -145,7 +145,54 @@ func TestGlobalOptions(t *testing.T) {
 				}
 				:80
 			`,
-			expectWarn:  false,
+			expectError: true,
+		},
+		{
+			input: `
+				{
+					admin {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectError: false,
+		},
+		{
+			input: `
+				{
+					admin 192.168.1.1:2020 127.0.0.1:2020 {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
+			expectError: true,
+		},
+		{
+			input: `
+				{
+					admin off {
+						enforce_origin
+						origins 192.168.1.1:2020 127.0.0.1:2020
+					}
+				}
+				:80
+			`,
 			expectError: true,
 		},
 	} {
@@ -154,12 +201,7 @@ func TestGlobalOptions(t *testing.T) {
 			ServerType: ServerType{},
 		}
 
-		_, warnings, err := adapter.Adapt([]byte(tc.input), nil)
-
-		if len(warnings) > 0 != tc.expectWarn {
-			t.Errorf("Test %d warning expectation failed Expected: %v, got %v", i, tc.expectWarn, warnings)
-			continue
-		}
+		_, _, err := adapter.Adapt([]byte(tc.input), nil)
 
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)

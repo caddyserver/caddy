@@ -1,0 +1,100 @@
+:80
+
+# All the options
+encode gzip zstd {
+	minimum_length 256
+	match {
+		status 2xx 4xx 500
+		header Content-Type text/*
+		header Content-Type application/json*
+		header Content-Type application/javascript*
+		header Content-Type application/xhtml+xml*
+		header Content-Type application/atom+xml*
+		header Content-Type application/rss+xml*
+		header Content-Type application/wasm*
+		header Content-Type image/svg+xml*
+	}
+}
+
+# Long way with a block for each encoding
+encode {
+	zstd
+	gzip 5
+}
+
+encode
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"encodings": {
+										"gzip": {},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"match": {
+										"headers": {
+											"Content-Type": [
+												"text/*",
+												"application/json*",
+												"application/javascript*",
+												"application/xhtml+xml*",
+												"application/atom+xml*",
+												"application/rss+xml*",
+												"application/wasm*",
+												"image/svg+xml*"
+											]
+										},
+										"status_code": [
+											2,
+											4,
+											500
+										]
+									},
+									"minimum_length": 256,
+									"prefer": [
+										"gzip",
+										"zstd"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {
+											"level": 5
+										},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"prefer": [
+										"zstd",
+										"gzip"
+									]
+								},
+								{
+									"encodings": {
+										"gzip": {},
+										"zstd": {}
+									},
+									"handler": "encode",
+									"prefer": [
+										"zstd",
+										"gzip"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

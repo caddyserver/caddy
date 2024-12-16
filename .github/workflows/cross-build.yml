@@ -1,0 +1,73 @@
+name: Cross-Build
+
+on:
+  push:
+    branches:
+      - master
+      - 2.*
+  pull_request:
+    branches:
+      - master
+      - 2.*
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: 
+          - 'aix'
+          - 'linux'
+          - 'solaris'
+          - 'illumos'
+          - 'dragonfly'
+          - 'freebsd'
+          - 'openbsd'
+          - 'windows'
+          - 'darwin'
+          - 'netbsd'
+        go: 
+          - '1.22'
+          - '1.23'
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.22'
+          GO_SEMVER: '~1.22.3'
+
+        - go: '1.23'
+          GO_SEMVER: '~1.23.0'
+
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.GO_SEMVER }}
+          check-latest: true
+
+      - name: Print Go version and environment
+        id: vars
+        run: |
+          printf "Using go at: $(which go)\n"
+          printf "Go version: $(go version)\n"
+          printf "\n\nGo environment:\n\n"
+          go env
+          printf "\n\nSystem environment:\n\n"
+          env
+
+      - name: Run Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goos == 'aix' && 'ppc64' || 'amd64' }}
+        shell: bash
+        continue-on-error: true
+        working-directory: ./cmd/caddy
+        run: |
+          GOOS=$GOOS GOARCH=$GOARCH go build -tags=nobadger,nomysql,nopgx -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null

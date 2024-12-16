@@ -15,8 +15,9 @@
 package caddyhttp
 
 import (
+	"errors"
 	"fmt"
-	mathrand "math/rand"
+	weakrand "math/rand"
 	"path"
 	"runtime"
 	"strings"
@@ -30,7 +31,8 @@ import (
 // set will be populated.
 func Error(statusCode int, err error) HandlerError {
 	const idLen = 9
-	if he, ok := err.(HandlerError); ok {
+	var he HandlerError
+	if errors.As(err, &he) {
 		if he.ID == "" {
 			he.ID = randString(idLen, true)
 		}
@@ -77,6 +79,9 @@ func (e HandlerError) Error() string {
 	return strings.TrimSpace(s)
 }
 
+// Unwrap returns the underlying error value. See the `errors` package for info.
+func (e HandlerError) Unwrap() error { return e.Err }
+
 // randString returns a string of n random characters.
 // It is not even remotely secure OR a proper distribution.
 // But it's good enough for some things. It excludes certain
@@ -92,7 +97,8 @@ func randString(n int, sameCase bool) string {
 	}
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = dict[mathrand.Int63()%int64(len(dict))]
+		//nolint:gosec
+		b[i] = dict[weakrand.Int63()%int64(len(dict))]
 	}
 	return string(b)
 }

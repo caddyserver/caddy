@@ -1,0 +1,87 @@
+(logging) {
+	log {
+		output file /var/log/caddy/{args[0]}.access.log
+	}
+}
+
+a.example.com {
+	import logging a.example.com
+}
+
+b.example.com {
+	import logging b.example.com
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0",
+					"http.log.access.log1"
+				]
+			},
+			"log0": {
+				"writer": {
+					"filename": "/var/log/caddy/a.example.com.access.log",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			},
+			"log1": {
+				"writer": {
+					"filename": "/var/log/caddy/b.example.com.access.log",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log1"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"b.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"a.example.com": [
+								"log0"
+							],
+							"b.example.com": [
+								"log1"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

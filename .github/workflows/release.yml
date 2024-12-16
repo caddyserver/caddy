@@ -10,22 +10,48 @@ jobs:
     name: Release
     strategy:
       matrix:
-        os: [ ubuntu-latest ]
-        go-version: [ 1.14.x ]
+        os: 
+          - ubuntu-latest
+        go: 
+          - '1.23'
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.23'
+          GO_SEMVER: '~1.23.0'
+
     runs-on: ${{ matrix.os }}
+    # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
+    # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings
+    permissions:
+      id-token: write
+      # https://docs.github.com/en/rest/overview/permissions-required-for-github-apps#permission-on-contents
+      # "Releases" is part of `contents`, so it needs the `write`
+      contents: write
 
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v1
-      with:
-        go-version: ${{ matrix.go-version }}
-
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    # So GoReleaser can generate the changelog properly
-    - name: Unshallowify the repo clone
-      run: git fetch --prune --unshallow
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.GO_SEMVER }}
+        check-latest: true
+
+    # Force fetch upstream tags -- because 65 minutes
+    # tl;dr: actions/checkout@v4 runs this line:
+    #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
+    # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
+    #   git fetch --prune --unshallow
+    # which doesn't overwrite that tag because that would be destructive.
+    # Credit to @francislavoie for the investigation.
+    # https://github.com/actions/checkout/issues/290#issuecomment-680260080
+    - name: Force fetch upstream tags
+      run: git fetch --tags --force
 
     # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
     - name: Print Go version and environment
@@ -37,32 +63,116 @@ jobs:
         go env
         printf "\n\nSystem environment:\n\n"
         env
-        echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
-        echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
-        echo "::set-output name=go_cache::$(go env GOCACHE)"
+        echo "version_tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-    - name: Cache the build cache
-      uses: actions/cache@v1
-      with:
-        path: ${{ steps.vars.outputs.go_cache }}
-        key: ${{ runner.os }}-go-release-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-release
+        # Add "pip install" CLI tools to PATH
+        echo ~/.local/bin >> $GITHUB_PATH
 
+        # Parse semver
+        TAG=${GITHUB_REF/refs\/tags\//}
+        SEMVER_RE='[^0-9]*\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)\([0-9A-Za-z\.-]*\)'
+        TAG_MAJOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\1#"`
+        TAG_MINOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\2#"`
+        TAG_PATCH=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\3#"`
+        TAG_SPECIAL=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\4#"`
+        echo "tag_major=${TAG_MAJOR}" >> $GITHUB_OUTPUT
+        echo "tag_minor=${TAG_MINOR}" >> $GITHUB_OUTPUT
+        echo "tag_patch=${TAG_PATCH}" >> $GITHUB_OUTPUT
+        echo "tag_special=${TAG_SPECIAL}" >> $GITHUB_OUTPUT
+
+    # Cloudsmith CLI tooling for pushing releases
+    # See https://help.cloudsmith.io/docs/cli
+    - name: Install Cloudsmith CLI
+      run: pip install --upgrade cloudsmith-cli
+
+    - name: Validate commits and tag signatures
+      run: |
+        
+        # Import Matt Holt's key
+        curl 'https://github.com/mholt.gpg' | gpg --import
+
+        echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
+        # tags are only accepted if signed by Matt's key
+        git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
+
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@main
+    - name: Cosign version
+      run: cosign version
+    - name: Install Syft
+      uses: anchore/sbom-action/download-syft@main
+    - name: Syft version
+      run: syft version
+    - name: Install xcaddy
+      run: |
+        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+        xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v1
+      uses: goreleaser/goreleaser-action@v6
       with:
         version: latest
-        args: release --rm-dist
+        args: release --clean --timeout 60m
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
+        COSIGN_EXPERIMENTAL: 1
 
+    # Only publish on non-special tags (e.g. non-beta)
+    # We will continue to push to Gemfury for the foreseeable future, although
+    # Cloudsmith is probably better, to not break things for existing users of Gemfury.
+    # See https://gemfury.com/caddy/deb:caddy
     - name: Publish .deb to Gemfury
+      if: ${{ steps.vars.outputs.tag_special == '' }}
       env:
         GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
       run: |
         for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
           curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
+        done
+
+    # Publish only special tags (unstable/beta/rc) to the "testing" repo
+    # See https://cloudsmith.io/~caddy/repos/testing/
+    - name: Publish .deb to Cloudsmith (special tags)
+      if: ${{ steps.vars.outputs.tag_special != '' }}
+      env:
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
+        done
+
+    # Publish stable tags to Cloudsmith to both repos, "stable" and "testing"
+    # See https://cloudsmith.io/~caddy/repos/stable/
+    - name: Publish .deb to Cloudsmith (stable tags)
+      if: ${{ steps.vars.outputs.tag_special == '' }}
+      env:
+        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      run: |
+        for filename in dist/*.deb; do
+          # armv6 and armv7 are both "armhf" so we can skip the duplicate
+          if [[ "$filename" == *"armv6"* ]]; then
+            echo "Skipping $filename"
+            continue
+          fi
+
+          echo "Pushing $filename to 'stable'"
+          cloudsmith push deb caddy/stable/any-distro/any-version $filename
+
+          echo "Pushing $filename to 'testing'"
+          cloudsmith push deb caddy/testing/any-distro/any-version $filename
         done

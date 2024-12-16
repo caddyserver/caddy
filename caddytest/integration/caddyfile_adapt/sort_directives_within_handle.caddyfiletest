@@ -1,0 +1,169 @@
+*.example.com {
+	@foo host foo.example.com
+	handle @foo {
+		handle_path /strip {
+			respond "this should be first"
+		}
+		handle_path /strip* {
+			respond "this should be second"
+		}
+		handle {
+			respond "this should be last"
+		}
+	}
+	handle {
+		respond "this should be last"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group6",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"group": "group3",
+															"handle": [
+																{
+																	"handler": "subroute",
+																	"routes": [
+																		{
+																			"handle": [
+																				{
+																					"handler": "rewrite",
+																					"strip_path_prefix": "/strip"
+																				}
+																			]
+																		},
+																		{
+																			"handle": [
+																				{
+																					"body": "this should be first",
+																					"handler": "static_response"
+																				}
+																			]
+																		}
+																	]
+																}
+															],
+															"match": [
+																{
+																	"path": [
+																		"/strip"
+																	]
+																}
+															]
+														},
+														{
+															"group": "group3",
+															"handle": [
+																{
+																	"handler": "subroute",
+																	"routes": [
+																		{
+																			"handle": [
+																				{
+																					"handler": "rewrite",
+																					"strip_path_prefix": "/strip"
+																				}
+																			]
+																		},
+																		{
+																			"handle": [
+																				{
+																					"body": "this should be second",
+																					"handler": "static_response"
+																				}
+																			]
+																		}
+																	]
+																}
+															],
+															"match": [
+																{
+																	"path": [
+																		"/strip*"
+																	]
+																}
+															]
+														},
+														{
+															"group": "group3",
+															"handle": [
+																{
+																	"handler": "subroute",
+																	"routes": [
+																		{
+																			"handle": [
+																				{
+																					"body": "this should be last",
+																					"handler": "static_response"
+																				}
+																			]
+																		}
+																	]
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"host": [
+														"foo.example.com"
+													]
+												}
+											]
+										},
+										{
+											"group": "group6",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"body": "this should be last",
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

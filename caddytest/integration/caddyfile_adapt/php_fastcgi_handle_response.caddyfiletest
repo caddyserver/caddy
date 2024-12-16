@@ -1,0 +1,146 @@
+:8881 {
+	php_fastcgi app:9000 {
+		env FOO bar
+
+		@error status 4xx
+		handle_response @error {
+			root * /errors
+			rewrite * /{http.reverse_proxy.status_code}.html
+			file_server
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"file": {
+										"try_files": [
+											"{http.request.uri.path}/index.php"
+										]
+									},
+									"not": [
+										{
+											"path": [
+												"*/"
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "static_response",
+									"headers": {
+										"Location": [
+											"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
+										]
+									},
+									"status_code": 308
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"file": {
+										"try_files": [
+											"{http.request.uri.path}",
+											"{http.request.uri.path}/index.php",
+											"index.php"
+										],
+										"try_policy": "first_exist_fallback",
+										"split_path": [
+											".php"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "rewrite",
+									"uri": "{http.matchers.file.relative}"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"*.php"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handle_response": [
+										{
+											"match": {
+												"status_code": [
+													4
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "vars",
+															"root": "/errors"
+														}
+													]
+												},
+												{
+													"group": "group0",
+													"handle": [
+														{
+															"handler": "rewrite",
+															"uri": "/{http.reverse_proxy.status_code}.html"
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "file_server",
+															"hide": [
+																"./Caddyfile"
+															]
+														}
+													]
+												}
+											]
+										}
+									],
+									"handler": "reverse_proxy",
+									"transport": {
+										"env": {
+											"FOO": "bar"
+										},
+										"protocol": "fastcgi",
+										"split_path": [
+											".php"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "app:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

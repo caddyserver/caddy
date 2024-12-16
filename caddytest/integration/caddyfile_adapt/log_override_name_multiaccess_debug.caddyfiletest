@@ -1,0 +1,93 @@
+{
+	debug
+
+	log access-console {
+		include http.log.access.foo
+		output file access-localhost.log
+		format console
+	}
+
+	log access-json {
+		include http.log.access.foo
+		output file access-localhost.json
+		format json
+	}
+}
+
+http://localhost:8881 {
+	log foo
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"access-console": {
+				"writer": {
+					"filename": "access-localhost.log",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "console"
+				},
+				"level": "DEBUG",
+				"include": [
+					"http.log.access.foo"
+				]
+			},
+			"access-json": {
+				"writer": {
+					"filename": "access-localhost.json",
+					"output": "file"
+				},
+				"encoder": {
+					"format": "json"
+				},
+				"level": "DEBUG",
+				"include": [
+					"http.log.access.foo"
+				]
+			},
+			"default": {
+				"level": "DEBUG",
+				"exclude": [
+					"http.log.access.foo"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"localhost"
+						]
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								"foo"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

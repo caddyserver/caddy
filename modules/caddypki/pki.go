@@ -17,8 +17,9 @@ package caddypki
 import (
 	"fmt"
 
-	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
@@ -26,10 +27,17 @@ func init() {
 }
 
 // PKI provides Public Key Infrastructure facilities for Caddy.
+//
+// This app can define certificate authorities (CAs) which are capable
+// of signing certificates. Other modules can be configured to use
+// the CAs defined by this app for issuing certificates or getting
+// key information needed for establishing trust.
 type PKI struct {
-	// The CAs to manage. Each CA is keyed by an ID that is used
-	// to uniquely identify it from other CAs. The default CA ID
-	// is "local".
+	// The certificate authorities to manage. Each CA is keyed by an
+	// ID that is used to uniquely identify it from other CAs.
+	// At runtime, the GetCA() method should be used instead to ensure
+	// the default CA is provisioned if it hadn't already been.
+	// The default CA ID is "local".
 	CAs map[string]*CA `json:"certificate_authorities,omitempty"`
 
 	ctx caddy.Context
@@ -47,13 +55,7 @@ func (PKI) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the configuration for the PKI app.
 func (p *PKI) Provision(ctx caddy.Context) error {
 	p.ctx = ctx
-	p.log = ctx.Logger(p)
-
-	// if this app is initialized at all, ensure there's
-	// at least a default CA that can be used
-	if len(p.CAs) == 0 {
-		p.CAs = map[string]*CA{defaultCAID: new(CA)}
-	}
+	p.log = ctx.Logger()
 
 	for caID, ca := range p.CAs {
 		err := ca.Provision(ctx, caID, p.log)
@@ -62,7 +64,27 @@ func (p *PKI) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// if this app is initialized at all, ensure there's at
+	// least a default CA that can be used: the standard CA
+	// which is used implicitly for signing local-use certs
+	if len(p.CAs) == 0 {
+		err := p.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning CA '%s': %v", DefaultCAID, err)
+		}
+	}
+
 	return nil
+}
+
+// ProvisionDefaultCA sets up the default CA.
+func (p *PKI) ProvisionDefaultCA(ctx caddy.Context) error {
+	if p.CAs == nil {
+		p.CAs = make(map[string]*CA)
+	}
+
+	p.CAs[DefaultCAID] = new(CA)
+	return p.CAs[DefaultCAID].Provision(ctx, DefaultCAID, p.log)
 }
 
 // Start starts the PKI app.
@@ -70,7 +92,7 @@ func (p *PKI) Start() error {
 	// install roots to trust store, if not disabled
 	for _, ca := range p.CAs {
 		if ca.InstallTrust != nil && !*ca.InstallTrust {
-			ca.log.Warn("root certificate trust store installation disabled; unconfigured clients may show warnings",
+			ca.log.Info("root certificate trust store installation disabled; unconfigured clients may show warnings",
 				zap.String("path", ca.rootCertPath))
 			continue
 		}
@@ -96,6 +118,28 @@ func (p *PKI) Start() error {
 // Stop stops the PKI app.
 func (p *PKI) Stop() error {
 	return nil
+}
+
+// GetCA retrieves a CA by ID. If the ID is the default
+// CA ID, and it hasn't been provisioned yet, it will
+// be provisioned.
+func (p *PKI) GetCA(ctx caddy.Context, id string) (*CA, error) {
+	ca, ok := p.CAs[id]
+	if !ok {
+		// for anything other than the default CA ID, error out if it wasn't configured
+		if id != DefaultCAID {
+			return nil, fmt.Errorf("no certificate authority configured with id: %s", id)
+		}
+
+		// for the default CA ID, provision it, because we want it to "just work"
+		err := p.ProvisionDefaultCA(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision default CA: %s", err)
+		}
+		ca = p.CAs[id]
+	}
+
+	return ca, nil
 }
 
 // Interface guards

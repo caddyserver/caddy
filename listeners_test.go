@@ -17,6 +17,8 @@ package caddy
 import (
 	"reflect"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func TestSplitNetworkAddress(t *testing.T) {
@@ -29,11 +31,26 @@ func TestSplitNetworkAddress(t *testing.T) {
 	}{
 		{
 			input:     "",
-			expectErr: true,
+			expectHost: "",
 		},
 		{
-			input:     "foo",
-			expectErr: true,
+			input:      "foo",
+			expectHost: "foo",
+		},
+		{
+			input: ":", // empty host & empty port
+		},
+		{
+			input:     "::",
+			expectHost: "::",
+		},
+		{
+			input:      "[::]",
+			expectHost: "::",
+		},
+		{
+			input:      ":1234",
+			expectPort: "1234",
 		},
 		{
 			input:      "foo:1234",
@@ -60,7 +77,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 		{
 			input:         "udp/",
 			expectNetwork: "udp",
-			expectErr:     true,
+			expectHost:    "",
 		},
 		{
 			input:         "unix//foo/bar",
@@ -80,10 +97,10 @@ func TestSplitNetworkAddress(t *testing.T) {
 	} {
 		actualNetwork, actualHost, actualPort, err := SplitNetworkAddress(tc.input)
 		if tc.expectErr && err == nil {
-			t.Errorf("Test %d: Expected error but got: %v", i, err)
+			t.Errorf("Test %d: Expected error but got %v", i, err)
 		}
 		if !tc.expectErr && err != nil {
-			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+			t.Errorf("Test %d: Expected no error but got %v", i, err)
 		}
 		if actualNetwork != tc.expectNetwork {
 			t.Errorf("Test %d: Expected network '%s' but got '%s'", i, tc.expectNetwork, actualNetwork)
@@ -160,38 +177,58 @@ func TestJoinNetworkAddress(t *testing.T) {
 
 func TestParseNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
-		input      string
-		expectAddr NetworkAddress
-		expectErr  bool
+		input          string
+		defaultNetwork string
+		defaultPort    uint
+		expectAddr     NetworkAddress
+		expectErr      bool
 	}{
 		{
 			input:     "",
-			expectErr: true,
-		},
-		{
-			input:     ":",
-			expectErr: true,
-		},
-		{
-			input: ":1234",
 			expectAddr: NetworkAddress{
-				Network:   "tcp",
+			},
+		},
+		{
+			input:          ":",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network: "udp",
+			},
+		},
+		{
+			input:          "[::]",
+			defaultNetwork: "udp",
+			defaultPort:    53,
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "::",
+				StartPort: 53,
+				EndPort:   53,
+			},
+		},
+		{
+			input:          ":1234",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network:   "udp",
 				Host:      "",
 				StartPort: 1234,
 				EndPort:   1234,
 			},
 		},
 		{
-			input: "tcp/:1234",
+			input:          "udp/:1234",
+			defaultNetwork: "udp",
 			expectAddr: NetworkAddress{
-				Network:   "tcp",
+				Network:   "udp",
 				Host:      "",
 				StartPort: 1234,
 				EndPort:   1234,
 			},
 		},
 		{
-			input: "tcp6/:1234",
+			input:          "tcp6/:1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp6",
 				Host:      "",
@@ -200,7 +237,8 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input: "tcp4/localhost:1234",
+			input:          "tcp4/localhost:1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp4",
 				Host:      "localhost",
@@ -209,14 +247,16 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input: "unix//foo/bar",
+			input:          "unix//foo/bar",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network: "unix",
 				Host:    "/foo/bar",
 			},
 		},
 		{
-			input: "localhost:1234-1234",
+			input:          "localhost:1234-1234",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp",
 				Host:      "localhost",
@@ -225,11 +265,13 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input:     "localhost:2-1",
-			expectErr: true,
+			input:          "localhost:2-1",
+			defaultNetwork: "tcp",
+			expectErr:      true,
 		},
 		{
-			input: "localhost:0",
+			input:          "localhost:0",
+			defaultNetwork: "tcp",
 			expectAddr: NetworkAddress{
 				Network:   "tcp",
 				Host:      "localhost",
@@ -238,11 +280,139 @@ func TestParseNetworkAddress(t *testing.T) {
 			},
 		},
 		{
-			input:     "localhost:1-999999999999",
-			expectErr: true,
+			input:          "localhost:1-999999999999",
+			defaultNetwork: "tcp",
+			expectErr:      true,
 		},
 	} {
-		actualAddr, err := ParseNetworkAddress(tc.input)
+		actualAddr, err := ParseNetworkAddressWithDefaults(tc.input, tc.defaultNetwork, tc.defaultPort)
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d: Expected error but got: %v", i, err)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+		}
+
+		if actualAddr.Network != tc.expectAddr.Network {
+			t.Errorf("Test %d: Expected network '%v' but got '%v'", i, tc.expectAddr, actualAddr)
+		}
+		if !reflect.DeepEqual(tc.expectAddr, actualAddr) {
+			t.Errorf("Test %d: Expected addresses %v but got %v", i, tc.expectAddr, actualAddr)
+		}
+	}
+}
+
+func TestParseNetworkAddressWithDefaults(t *testing.T) {
+	for i, tc := range []struct {
+		input          string
+		defaultNetwork string
+		defaultPort    uint
+		expectAddr     NetworkAddress
+		expectErr      bool
+	}{
+		{
+			input:     "",
+			expectAddr: NetworkAddress{
+			},
+		},
+		{
+			input:          ":",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network: "udp",
+			},
+		},
+		{
+			input:          "[::]",
+			defaultNetwork: "udp",
+			defaultPort:    53,
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "::",
+				StartPort: 53,
+				EndPort:   53,
+			},
+		},
+		{
+			input:          ":1234",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "udp/:1234",
+			defaultNetwork: "udp",
+			expectAddr: NetworkAddress{
+				Network:   "udp",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "tcp6/:1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp6",
+				Host:      "",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "tcp4/localhost:1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp4",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "unix//foo/bar",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network: "unix",
+				Host:    "/foo/bar",
+			},
+		},
+		{
+			input:          "localhost:1234-1234",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 1234,
+				EndPort:   1234,
+			},
+		},
+		{
+			input:          "localhost:2-1",
+			defaultNetwork: "tcp",
+			expectErr:      true,
+		},
+		{
+			input:          "localhost:0",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 0,
+				EndPort:   0,
+			},
+		},
+		{
+			input:          "localhost:1-999999999999",
+			defaultNetwork: "tcp",
+			expectErr:      true,
+		},
+	} {
+		actualAddr, err := ParseNetworkAddressWithDefaults(tc.input, tc.defaultNetwork, tc.defaultPort)
 		if tc.expectErr && err == nil {
 			t.Errorf("Test %d: Expected error but got: %v", i, err)
 		}
@@ -304,6 +474,183 @@ func TestJoinHostPort(t *testing.T) {
 		actual := tc.pa.JoinHostPort(tc.offset)
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
+		}
+	}
+}
+
+func TestExpand(t *testing.T) {
+	for i, tc := range []struct {
+		input  NetworkAddress
+		expect []NetworkAddress
+	}{
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2000,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   2002,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2000,
+					EndPort:   2000,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2001,
+					EndPort:   2001,
+				},
+				{
+					Network:   "tcp",
+					Host:      "localhost",
+					StartPort: 2002,
+					EndPort:   2002,
+				},
+			},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 2000,
+				EndPort:   1999,
+			},
+			expect: []NetworkAddress{},
+		},
+		{
+			input: NetworkAddress{
+				Network:   "unix",
+				Host:      "/foo/bar",
+				StartPort: 0,
+				EndPort:   0,
+			},
+			expect: []NetworkAddress{
+				{
+					Network:   "unix",
+					Host:      "/foo/bar",
+					StartPort: 0,
+					EndPort:   0,
+				},
+			},
+		},
+	} {
+		actual := tc.input.Expand()
+		if !reflect.DeepEqual(actual, tc.expect) {
+			t.Errorf("Test %d: Expected %+v but got %+v", i, tc.expect, actual)
+		}
+	}
+}
+
+func TestSplitUnixSocketPermissionsBits(t *testing.T) {
+	for i, tc := range []struct {
+		input          string
+		expectNetwork  string
+		expectPath     string
+		expectFileMode string
+		expectErr      bool
+	}{
+		{
+			input:          "./foo.socket",
+			expectPath:     "./foo.socket",
+			expectFileMode: "--w-------",
+		},
+		{
+			input:          `.\relative\path.socket`,
+			expectPath:     `.\relative\path.socket`,
+			expectFileMode: "--w-------",
+		},
+		{
+			// literal colon in resulting address
+			// and defaulting to 0200 bits
+			input:          "./foo.socket:0666",
+			expectPath:     "./foo.socket:0666",
+			expectFileMode: "--w-------",
+		},
+		{
+			input:          "./foo.socket|0220",
+			expectPath:     "./foo.socket",
+			expectFileMode: "--w--w----",
+		},
+		{
+			input:          "/var/run/foo|222",
+			expectPath:     "/var/run/foo",
+			expectFileMode: "--w--w--w-",
+		},
+		{
+			input:          "./foo.socket|0660",
+			expectPath:     "./foo.socket",
+			expectFileMode: "-rw-rw----",
+		},
+		{
+			input:          "./foo.socket|0666",
+			expectPath:     "./foo.socket",
+			expectFileMode: "-rw-rw-rw-",
+		},
+		{
+			input:          "/var/run/foo|666",
+			expectPath:     "/var/run/foo",
+			expectFileMode: "-rw-rw-rw-",
+		},
+		{
+			input:          `c:\absolute\path.socket|220`,
+			expectPath:     `c:\absolute\path.socket`,
+			expectFileMode: "--w--w----",
+		},
+		{
+			// symbolic permission representation is not supported for now
+			input:     "./foo.socket|u=rw,g=rw,o=rw",
+			expectErr: true,
+		},
+		{
+			// octal (base-8) permission representation has to be between
+			// `0` for no read, no write, no exec (`---`) and
+			// `7` for read (4), write (2), exec (1) (`rwx` => `4+2+1 = 7`)
+			input:     "./foo.socket|888",
+			expectErr: true,
+		},
+		{
+			// too many colons in address
+			input:     "./foo.socket|123456|0660",
+			expectErr: true,
+		},
+		{
+			// owner is missing write perms
+			input:     "./foo.socket|0522",
+			expectErr: true,
+		},
+	} {
+		actualPath, actualFileMode, err := internal.SplitUnixSocketPermissionsBits(tc.input)
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d: Expected error but got: %v", i, err)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d: Expected no error but got: %v", i, err)
+		}
+		if actualPath != tc.expectPath {
+			t.Errorf("Test %d: Expected path '%s' but got '%s'", i, tc.expectPath, actualPath)
+		}
+		// fileMode.Perm().String() parses 0 to "----------"
+		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
+			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
 		}
 	}
 }

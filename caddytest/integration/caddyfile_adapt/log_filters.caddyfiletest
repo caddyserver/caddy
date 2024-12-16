@@ -1,0 +1,136 @@
+:80
+
+log {
+	output stdout
+	format filter {
+		wrap console
+
+		# long form, with "fields" wrapper
+		fields {
+			uri query {
+				replace foo REDACTED
+				delete bar
+				hash baz
+			}
+		}
+
+		# short form, flatter structure
+		request>headers>Authorization replace REDACTED
+		request>headers>Server delete
+		request>headers>Cookie cookie {
+			replace foo REDACTED
+			delete bar
+			hash baz
+		}
+		request>remote_ip ip_mask {
+			ipv4 24
+			ipv6 32
+		}
+		request>client_ip ip_mask 16 32
+		request>headers>Regexp regexp secret REDACTED
+		request>headers>Hash hash
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"output": "stdout"
+				},
+				"encoder": {
+					"fields": {
+						"request\u003eclient_ip": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 16,
+							"ipv6_cidr": 32
+						},
+						"request\u003eheaders\u003eAuthorization": {
+							"filter": "replace",
+							"value": "REDACTED"
+						},
+						"request\u003eheaders\u003eCookie": {
+							"actions": [
+								{
+									"name": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"name": "bar",
+									"type": "delete"
+								},
+								{
+									"name": "baz",
+									"type": "hash"
+								}
+							],
+							"filter": "cookie"
+						},
+						"request\u003eheaders\u003eHash": {
+							"filter": "hash"
+						},
+						"request\u003eheaders\u003eRegexp": {
+							"filter": "regexp",
+							"regexp": "secret",
+							"value": "REDACTED"
+						},
+						"request\u003eheaders\u003eServer": {
+							"filter": "delete"
+						},
+						"request\u003eremote_ip": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 24,
+							"ipv6_cidr": 32
+						},
+						"uri": {
+							"actions": [
+								{
+									"parameter": "foo",
+									"type": "replace",
+									"value": "REDACTED"
+								},
+								{
+									"parameter": "bar",
+									"type": "delete"
+								},
+								{
+									"parameter": "baz",
+									"type": "hash"
+								}
+							],
+							"filter": "query"
+						}
+					},
+					"format": "filter",
+					"wrap": {
+						"format": "console"
+					}
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}

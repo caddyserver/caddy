@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +43,18 @@ func (FolderLoader) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision implements caddy.Provisioner.
+func (fl FolderLoader) Provision(ctx caddy.Context) error {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+	}
+	for k, path := range fl {
+		fl[k] = repl.ReplaceKnown(path, "")
+	}
+	return nil
+}
+
 // LoadCertificates loads all the certificates+keys in the directories
 // listed in fl from all files ending with .pem. This method of loading
 // certificates expects the certificate and key to be bundled into the
@@ -62,9 +73,13 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 				return nil
 			}
 
-			cert, err := x509CertFromCertAndKeyPEMFile(fpath)
+			bundle, err := os.ReadFile(fpath)
 			if err != nil {
 				return err
+			}
+			cert, err := tlsCertFromCertAndKeyPEMBundle(bundle)
+			if err != nil {
+				return fmt.Errorf("%s: %w", fpath, err)
 			}
 
 			certs = append(certs, Certificate{Certificate: cert})
@@ -78,12 +93,7 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 	return certs, nil
 }
 
-func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
-	bundle, err := ioutil.ReadFile(fpath)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
+func tlsCertFromCertAndKeyPEMBundle(bundle []byte) (tls.Certificate, error) {
 	certBuilder, keyBuilder := new(bytes.Buffer), new(bytes.Buffer)
 	var foundKey bool // use only the first key in the file
 
@@ -97,47 +107,64 @@ func x509CertFromCertAndKeyPEMFile(fpath string) (tls.Certificate, error) {
 
 		if derBlock.Type == "CERTIFICATE" {
 			// Re-encode certificate as PEM, appending to certificate chain
-			pem.Encode(certBuilder, derBlock)
+			if err := pem.Encode(certBuilder, derBlock); err != nil {
+				return tls.Certificate{}, err
+			}
 		} else if derBlock.Type == "EC PARAMETERS" {
 			// EC keys generated from openssl can be composed of two blocks:
 			// parameters and key (parameter block should come first)
 			if !foundKey {
 				// Encode parameters
-				pem.Encode(keyBuilder, derBlock)
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
+					return tls.Certificate{}, err
+				}
 
 				// Key must immediately follow
 				derBlock, bundle = pem.Decode(bundle)
 				if derBlock == nil || derBlock.Type != "EC PRIVATE KEY" {
-					return tls.Certificate{}, fmt.Errorf("%s: expected elliptic private key to immediately follow EC parameters", fpath)
+					return tls.Certificate{}, fmt.Errorf("expected elliptic private key to immediately follow EC parameters")
 				}
-				pem.Encode(keyBuilder, derBlock)
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
+					return tls.Certificate{}, err
+				}
 				foundKey = true
 			}
 		} else if derBlock.Type == "PRIVATE KEY" || strings.HasSuffix(derBlock.Type, " PRIVATE KEY") {
 			// RSA key
 			if !foundKey {
-				pem.Encode(keyBuilder, derBlock)
+				if err := pem.Encode(keyBuilder, derBlock); err != nil {
+					return tls.Certificate{}, err
+				}
 				foundKey = true
 			}
 		} else {
-			return tls.Certificate{}, fmt.Errorf("%s: unrecognized PEM block type: %s", fpath, derBlock.Type)
+			return tls.Certificate{}, fmt.Errorf("unrecognized PEM block type: %s", derBlock.Type)
 		}
 	}
 
 	certPEMBytes, keyPEMBytes := certBuilder.Bytes(), keyBuilder.Bytes()
 	if len(certPEMBytes) == 0 {
-		return tls.Certificate{}, fmt.Errorf("%s: failed to parse PEM data", fpath)
+		return tls.Certificate{}, fmt.Errorf("failed to parse PEM data")
 	}
 	if len(keyPEMBytes) == 0 {
-		return tls.Certificate{}, fmt.Errorf("%s: no private key block found", fpath)
+		return tls.Certificate{}, fmt.Errorf("no private key block found")
+	}
+
+	// if the start of the key file looks like an encrypted private key,
+	// reject it with a helpful error message
+	if strings.HasPrefix(string(keyPEMBytes[:40]), "ENCRYPTED") {
+		return tls.Certificate{}, fmt.Errorf("encrypted private keys are not supported; please decrypt the key first")
 	}
 
 	cert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
 	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("%s: making X509 key pair: %v", fpath, err)
+		return tls.Certificate{}, fmt.Errorf("making X509 key pair: %v", err)
 	}
 
 	return cert, nil
 }
 
-var _ CertificateLoader = (FolderLoader)(nil)
+var (
+	_ CertificateLoader = (FolderLoader)(nil)
+	_ caddy.Provisioner = (FolderLoader)(nil)
+)

@@ -1,0 +1,37 @@
+{
+	auto_https off
+}
+
+localhost
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{}
+					],
+					"automatic_https": {
+						"disable": true
+					}
+				}
+			}
+		}
+	}
+}

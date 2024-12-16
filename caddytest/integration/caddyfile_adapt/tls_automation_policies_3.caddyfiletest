@@ -1,0 +1,90 @@
+# https://caddy.community/t/caddyfile-having-individual-sites-differ-from-global-options/11297
+{
+	local_certs
+}
+
+a.example.com {
+	tls internal
+}
+
+b.example.com {
+	tls abc@example.com
+}
+
+c.example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"b.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"c.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"b.example.com"
+						],
+						"issuers": [
+							{
+								"email": "abc@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "abc@example.com",
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

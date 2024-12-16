@@ -1,15 +1,19 @@
 _gitignore/
 *.log
 Caddyfile
+Caddyfile.*
 !caddyfile/
+!caddyfile.go
 
 # artifacts from pprof tooling
 *.prof
 *.test
 
-# build artifacts
+# build artifacts and helpers
 cmd/caddy/caddy
 cmd/caddy/caddy.exe
+cmd/caddy/tmp/*.exe
+cmd/caddy/.env
 
 # mac specific
 .DS_Store
@@ -21,3 +25,7 @@ vendor
 dist
 caddy-build
 caddy-dist
+
+# IDE files
+.idea/
+.vscode/

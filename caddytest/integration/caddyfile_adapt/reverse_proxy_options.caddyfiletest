@@ -1,0 +1,133 @@
+https://example.com {
+	reverse_proxy /path https://localhost:54321 {
+		header_up Host {upstream_hostport}
+		header_up Foo bar
+
+		method GET
+		rewrite /rewritten?uri={uri}
+
+		request_buffers 4KB
+
+		transport http {
+			read_buffer 10MB
+			write_buffer 20MB
+			max_response_header 30MB
+			dial_timeout 3s
+			dial_fallback_delay 5s
+			response_header_timeout 8s
+			expect_continue_timeout 9s
+			resolvers 8.8.8.8 8.8.4.4
+
+			versions h2c 2
+			compression off
+			max_conns_per_host 5
+			keepalive_idle_conns_per_host 2
+			keepalive_interval 30s
+
+			tls_renegotiation freely
+			tls_except_ports 8181 8182
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"headers": {
+														"request": {
+															"set": {
+																"Foo": [
+																	"bar"
+																],
+																"Host": [
+																	"{http.reverse_proxy.upstream.hostport}"
+																]
+															}
+														}
+													},
+													"request_buffers": 4000,
+													"rewrite": {
+														"method": "GET",
+														"uri": "/rewritten?uri={http.request.uri}"
+													},
+													"transport": {
+														"compression": false,
+														"dial_fallback_delay": 5000000000,
+														"dial_timeout": 3000000000,
+														"expect_continue_timeout": 9000000000,
+														"keep_alive": {
+															"max_idle_conns_per_host": 2,
+															"probe_interval": 30000000000
+														},
+														"max_conns_per_host": 5,
+														"max_response_header_size": 30000000,
+														"protocol": "http",
+														"read_buffer_size": 10000000,
+														"resolver": {
+															"addresses": [
+																"8.8.8.8",
+																"8.8.4.4"
+															]
+														},
+														"response_header_timeout": 8000000000,
+														"tls": {
+															"except_ports": [
+																"8181",
+																"8182"
+															],
+															"renegotiation": "freely"
+														},
+														"versions": [
+															"h2c",
+															"2"
+														],
+														"write_buffer_size": 20000000
+													},
+													"upstreams": [
+														{
+															"dial": "localhost:54321"
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/path"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

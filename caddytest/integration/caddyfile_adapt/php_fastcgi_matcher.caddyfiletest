@@ -1,0 +1,128 @@
+:8884
+
+# the use of a host matcher here should cause this
+# site block to be wrapped in a subroute, even though
+# the site block does not have a hostname; this is
+# to prevent auto-HTTPS from picking up on this host
+# matcher because it is not a key on the site block
+@test host example.com
+php_fastcgi @test localhost:9000
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"handler": "static_response",
+																	"headers": {
+																		"Location": [
+																			"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
+																		]
+																	},
+																	"status_code": 308
+																}
+															],
+															"match": [
+																{
+																	"file": {
+																		"try_files": [
+																			"{http.request.uri.path}/index.php"
+																		]
+																	},
+																	"not": [
+																		{
+																			"path": [
+																				"*/"
+																			]
+																		}
+																	]
+																}
+															]
+														},
+														{
+															"handle": [
+																{
+																	"handler": "rewrite",
+																	"uri": "{http.matchers.file.relative}"
+																}
+															],
+															"match": [
+																{
+																	"file": {
+																		"split_path": [
+																			".php"
+																		],
+																		"try_files": [
+																			"{http.request.uri.path}",
+																			"{http.request.uri.path}/index.php",
+																			"index.php"
+																		],
+																		"try_policy": "first_exist_fallback"
+																	}
+																}
+															]
+														},
+														{
+															"handle": [
+																{
+																	"handler": "reverse_proxy",
+																	"transport": {
+																		"protocol": "fastcgi",
+																		"split_path": [
+																			".php"
+																		]
+																	},
+																	"upstreams": [
+																		{
+																			"dial": "localhost:9000"
+																		}
+																	]
+																}
+															],
+															"match": [
+																{
+																	"path": [
+																		"*.php"
+																	]
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"host": [
+														"example.com"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

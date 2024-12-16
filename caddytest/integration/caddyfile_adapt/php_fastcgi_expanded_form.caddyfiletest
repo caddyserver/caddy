@@ -1,0 +1,133 @@
+:8886
+
+route {
+	# Add trailing slash for directory requests
+	@canonicalPath {
+		file {
+			try_files {path}/index.php
+		}
+		not path */
+	}
+	redir @canonicalPath {orig_path}/{orig_?query} 308
+
+	# If the requested file does not exist, try index files
+	@indexFiles {
+		file {
+			try_files {path} {path}/index.php index.php
+			split_path .php
+		}
+	}
+	rewrite @indexFiles {file_match.relative}
+
+	# Proxy PHP files to the FastCGI responder
+	@phpFiles {
+		path *.php
+	}
+	reverse_proxy @phpFiles 127.0.0.1:9000 {
+		transport fastcgi {
+			split .php
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8886"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"headers": {
+														"Location": [
+															"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
+														]
+													},
+													"status_code": 308
+												}
+											],
+											"match": [
+												{
+													"file": {
+														"try_files": [
+															"{http.request.uri.path}/index.php"
+														]
+													},
+													"not": [
+														{
+															"path": [
+																"*/"
+															]
+														}
+													]
+												}
+											]
+										},
+										{
+											"group": "group0",
+											"handle": [
+												{
+													"handler": "rewrite",
+													"uri": "{http.matchers.file.relative}"
+												}
+											],
+											"match": [
+												{
+													"file": {
+														"split_path": [
+															".php"
+														],
+														"try_files": [
+															"{http.request.uri.path}",
+															"{http.request.uri.path}/index.php",
+															"index.php"
+														]
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"transport": {
+														"protocol": "fastcgi",
+														"split_path": [
+															".php"
+														]
+													},
+													"upstreams": [
+														{
+															"dial": "127.0.0.1:9000"
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"*.php"
+													]
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

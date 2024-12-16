@@ -1,0 +1,56 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	trusted_proxies 127.0.0.1
+}
+
+reverse_proxy 127.0.0.1:65535 {
+	trusted_proxies private_ranges
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"trusted_proxies": [
+										"127.0.0.1"
+									],
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								},
+								{
+									"handler": "reverse_proxy",
+									"trusted_proxies": [
+										"192.168.0.0/16",
+										"172.16.0.0/12",
+										"10.0.0.0/8",
+										"127.0.0.1/8",
+										"fd00::/8",
+										"::1"
+									],
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

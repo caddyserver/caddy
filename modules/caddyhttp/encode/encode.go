@@ -20,10 +20,11 @@
 package encode
 
 import (
-	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,11 +44,15 @@ type Encode struct {
 	// will be chosen based on the client's Accept-Encoding header.
 	EncodingsRaw caddy.ModuleMap `json:"encodings,omitempty" caddy:"namespace=http.encoders"`
 
-	// If the client has no strong preference, choose this encoding. TODO: Not yet implemented
-	// Prefer    []string `json:"prefer,omitempty"`
+	// If the client has no strong preference, choose these encodings in order.
+	Prefer []string `json:"prefer,omitempty"`
 
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
+
+	// Only encode responses that match against this ResponseMmatcher.
+	// The default is a collection of text-based Content-Type headers.
+	Matcher *caddyhttp.ResponseMatcher `json:"match,omitempty"`
 
 	writerPools map[string]*sync.Pool // TODO: these pools do not get reused through config reloads...
 }
@@ -66,7 +71,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading encoder modules: %v", err)
 	}
-	for modName, modIface := range mods.(map[string]interface{}) {
+	for modName, modIface := range mods.(map[string]any) {
 		err = enc.addEncoding(modIface.(Encoding))
 		if err != nil {
 			return fmt.Errorf("adding encoding %s: %v", modName, err)
@@ -75,17 +80,101 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 	if enc.MinLength == 0 {
 		enc.MinLength = defaultMinLength
 	}
+
+	if enc.Matcher == nil {
+		// common text-based content types
+		// list based on https://developers.cloudflare.com/speed/optimization/content/brotli/content-compression/#compression-between-cloudflare-and-website-visitors
+		enc.Matcher = &caddyhttp.ResponseMatcher{
+			Headers: http.Header{
+				"Content-Type": []string{
+					"application/atom+xml*",
+					"application/eot*",
+					"application/font*",
+					"application/geo+json*",
+					"application/graphql+json*",
+					"application/javascript*",
+					"application/json*",
+					"application/ld+json*",
+					"application/manifest+json*",
+					"application/opentype*",
+					"application/otf*",
+					"application/rss+xml*",
+					"application/truetype*",
+					"application/ttf*",
+					"application/vnd.api+json*",
+					"application/vnd.ms-fontobject*",
+					"application/wasm*",
+					"application/x-httpd-cgi*",
+					"application/x-javascript*",
+					"application/x-opentype*",
+					"application/x-otf*",
+					"application/x-perl*",
+					"application/x-protobuf*",
+					"application/x-ttf*",
+					"application/xhtml+xml*",
+					"application/xml*",
+					"font/ttf*",
+					"font/otf*",
+					"image/svg+xml*",
+					"image/vnd.microsoft.icon*",
+					"image/x-icon*",
+					"multipart/bag*",
+					"multipart/mixed*",
+					"text/*",
+				},
+			},
+		}
+	}
+
 	return nil
 }
 
-func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	for _, encName := range acceptedEncodings(r) {
+// Validate ensures that enc's configuration is valid.
+func (enc *Encode) Validate() error {
+	check := make(map[string]bool)
+	for _, encName := range enc.Prefer {
 		if _, ok := enc.writerPools[encName]; !ok {
-			continue // encoding not offered
+			return fmt.Errorf("encoding %s not enabled", encName)
 		}
-		w = enc.openResponseWriter(encName, w)
-		defer w.(*responseWriter).Close()
-		break
+
+		if _, ok := check[encName]; ok {
+			return fmt.Errorf("encoding %s is duplicated in prefer", encName)
+		}
+		check[encName] = true
+	}
+
+	return nil
+}
+
+func isEncodeAllowed(h http.Header) bool {
+	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
+}
+
+func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if isEncodeAllowed(r.Header) {
+		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+			if _, ok := enc.writerPools[encName]; !ok {
+				continue // encoding not offered
+			}
+			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
+			defer w.(*responseWriter).Close()
+
+			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
+			// by appending a hyphen and the encoder name; the problem is, the client will
+			// send back that Etag in a If-None-Match header, but upstream handlers that set
+			// the Etag in the first place don't know that we appended to their Etag! so here
+			// we have to strip our addition so the upstream handlers can still honor client
+			// caches without knowing about our changes...
+			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
+				ourSuffix := "-" + encName + `"`
+				if strings.HasSuffix(etag, ourSuffix) {
+					etag = strings.TrimSuffix(etag, ourSuffix) + `"`
+					r.Header.Set("If-None-Match", etag)
+				}
+			}
+
+			break
+		}
 	}
 	return next.ServeHTTP(w, r)
 }
@@ -102,7 +191,7 @@ func (enc *Encode) addEncoding(e Encoding) error {
 		enc.writerPools = make(map[string]*sync.Pool)
 	}
 	enc.writerPools[ae] = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return e.NewEncoder()
 		},
 	}
@@ -112,22 +201,22 @@ func (enc *Encode) addEncoding(e Encoding) error {
 // openResponseWriter creates a new response writer that may (or may not)
 // encode the response with encodingName. The returned response writer MUST
 // be closed after the handler completes.
-func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter) *responseWriter {
+func (enc *Encode) openResponseWriter(encodingName string, w http.ResponseWriter, isConnect bool) *responseWriter {
 	var rw responseWriter
-	return enc.initResponseWriter(&rw, encodingName, w)
+	return enc.initResponseWriter(&rw, encodingName, w, isConnect)
 }
 
 // initResponseWriter initializes the responseWriter instance
 // allocated in openResponseWriter, enabling mid-stack inlining.
-func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter) *responseWriter {
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-
-	// The allocation of ResponseWriterWrapper might be optimized as well.
-	rw.ResponseWriterWrapper = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, wrappedRW http.ResponseWriter, isConnect bool) *responseWriter {
+	if rww, ok := wrappedRW.(*caddyhttp.ResponseWriterWrapper); ok {
+		rw.ResponseWriter = rww
+	} else {
+		rw.ResponseWriter = &caddyhttp.ResponseWriterWrapper{ResponseWriter: wrappedRW}
+	}
 	rw.encodingName = encodingName
-	rw.buf = buf
 	rw.config = enc
+	rw.isConnect = isConnect
 
 	return rw
 }
@@ -136,39 +225,106 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 // using the encoding represented by encodingName and
 // configured by config.
 type responseWriter struct {
-	*caddyhttp.ResponseWriterWrapper
+	http.ResponseWriter
 	encodingName string
 	w            Encoder
-	buf          *bytes.Buffer
 	config       *Encode
 	statusCode   int
+	wroteHeader  bool
+	isConnect    bool
 }
 
 // WriteHeader stores the status to write when the time comes
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+
+	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
+	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
+	// we would miss the Vary header in this case when compression was also enabled; note that we set this
+	// header in the responseWriter.init() method but that is only called if we are writing a response body
+	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
+		rw.Header().Add("Vary", "Accept-Encoding")
+	}
+
+	// write status immediately if status is 2xx and the request is CONNECT
+	// since it means the response is successful.
+	// see: https://github.com/caddyserver/caddy/issues/6733#issuecomment-2525058845
+	if rw.isConnect && 200 <= status && status <= 299 {
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
+	}
+
+	// write status immediately when status code is informational
+	// see: https://caddy.community/t/disappear-103-early-hints-response-with-encode-enable-caddy-v2-7-6/23081/5
+	if 100 <= status && status <= 199 {
+		rw.ResponseWriter.WriteHeader(status)
+	}
+}
+
+// Match determines, if encoding should be done based on the ResponseMatcher.
+func (enc *Encode) Match(rw *responseWriter) bool {
+	return enc.Matcher.Match(rw.statusCode, rw.Header())
+}
+
+// FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
+// ResponseWriterWrapper until headers were written.
+func (rw *responseWriter) FlushError() error {
+	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
+	// otherwise, wait until header is written.
+	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
+		rw.WriteHeader(http.StatusOK)
+	}
+
+	if !rw.wroteHeader {
+		// flushing the underlying ResponseWriter will write header and status code,
+		// but we need to delay that until we can determine if we must encode and
+		// therefore add the Content-Encoding header; this happens in the first call
+		// to rw.Write (see bug in #4314)
+		return nil
+	}
+	// also flushes the encoder, if any
+	// see: https://github.com/jjiang-stripe/caddy-slow-gzip
+	if rw.w != nil {
+		err := rw.w.Flush()
+		if err != nil {
+			return err
+		}
+	}
+	//nolint:bodyclose
+	return http.NewResponseController(rw.ResponseWriter).Flush()
 }
 
 // Write writes to the response. If the response qualifies,
 // it is encoded using the encoder, which is initialized
 // if not done so already.
 func (rw *responseWriter) Write(p []byte) (int, error) {
-	var n, written int
-	var err error
+	// ignore zero data writes, probably head request
+	if len(p) == 0 {
+		return 0, nil
+	}
 
-	if rw.buf != nil && rw.config.MinLength > 0 {
-		written = rw.buf.Len()
-		_, err := rw.buf.Write(p)
-		if err != nil {
-			return 0, err
+	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
+	// otherwise, determine if the response should be compressed.
+	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
+		rw.WriteHeader(http.StatusOK)
+	}
+
+	// sniff content-type and determine content-length
+	if !rw.wroteHeader && rw.config.MinLength > 0 {
+		var gtMinLength bool
+		if len(p) > rw.config.MinLength {
+			gtMinLength = true
+		} else if cl, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil && cl > rw.config.MinLength {
+			gtMinLength = true
 		}
-		rw.init()
-		p = rw.buf.Bytes()
-		defer func() {
-			bufPool.Put(rw.buf)
-			rw.buf = nil
-		}()
+
+		if gtMinLength {
+			if rw.Header().Get("Content-Type") == "" {
+				rw.Header().Set("Content-Type", http.DetectContentType(p))
+			}
+			rw.init()
+		}
 	}
 
 	// before we write to the response, we need to make
@@ -177,92 +333,107 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	// and if so, that means we haven't written the
 	// header OR the default status code will be written
 	// by the standard library
-	if rw.statusCode > 0 {
-		rw.ResponseWriter.WriteHeader(rw.statusCode)
-		rw.statusCode = 0
+	if !rw.wroteHeader {
+		if rw.statusCode != 0 {
+			rw.ResponseWriter.WriteHeader(rw.statusCode)
+		}
+		rw.wroteHeader = true
 	}
 
-	switch {
-	case rw.w != nil:
-		n, err = rw.w.Write(p)
-	default:
-		n, err = rw.ResponseWriter.Write(p)
+	if rw.w != nil {
+		return rw.w.Write(p)
+	} else {
+		return rw.ResponseWriter.Write(p)
 	}
-	n -= written
-	if n < 0 {
-		n = 0
-	}
-	return n, err
 }
 
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
-	var err error
-	// only attempt to write the remaining buffered response
-	// if there are any bytes left to write; otherwise, if
-	// the handler above us returned an error without writing
-	// anything, we'd write to the response when we instead
-	// should simply let the error propagate back down; this
-	// is why the check for rw.buf.Len() > 0 is crucial
-	if rw.buf != nil && rw.buf.Len() > 0 {
-		rw.init()
-		p := rw.buf.Bytes()
-		defer func() {
-			bufPool.Put(rw.buf)
-			rw.buf = nil
-		}()
-		switch {
-		case rw.w != nil:
-			_, err = rw.w.Write(p)
-		default:
-			_, err = rw.ResponseWriter.Write(p)
+	// didn't write, probably head request
+	if !rw.wroteHeader {
+		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
+		if err == nil && cl > rw.config.MinLength {
+			rw.init()
 		}
-	} else if rw.statusCode != 0 {
-		// it is possible that a body was not written, and
-		// a header was not even written yet, even though
-		// we are closing; ensure the proper status code is
-		// written exactly once, or we risk breaking requests
-		// that rely on If-None-Match, for example
-		rw.ResponseWriter.WriteHeader(rw.statusCode)
-		rw.statusCode = 0
+
+		// issue #5059, don't write status code if not set explicitly.
+		if rw.statusCode != 0 {
+			rw.ResponseWriter.WriteHeader(rw.statusCode)
+		}
+		rw.wroteHeader = true
 	}
+
+	var err error
 	if rw.w != nil {
-		err2 := rw.w.Close()
-		if err2 != nil && err == nil {
-			err = err2
-		}
+		err = rw.w.Close()
+		rw.w.Reset(nil)
 		rw.config.writerPools[rw.encodingName].Put(rw.w)
 		rw.w = nil
 	}
 	return err
 }
 
-// init should be called before we write a response, if rw.buf has contents.
-func (rw *responseWriter) init() {
-	if rw.Header().Get("Content-Encoding") == "" && rw.buf.Len() >= rw.config.MinLength {
-		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
-		rw.w.Reset(rw.ResponseWriter)
-		rw.Header().Del("Content-Length") // https://github.com/golang/go/issues/14975
-		rw.Header().Set("Content-Encoding", rw.encodingName)
-		rw.Header().Add("Vary", "Accept-Encoding")
-	}
-	rw.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
+// Unwrap returns the underlying ResponseWriter.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }
 
-// acceptedEncodings returns the list of encodings that the
-// client supports, in descending order of preference. If
+// init should be called before we write a response, if rw.buf has contents.
+func (rw *responseWriter) init() {
+	hdr := rw.Header()
+	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
+		rw.config.Match(rw) {
+		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
+		rw.w.Reset(rw.ResponseWriter)
+		hdr.Del("Content-Length") // https://github.com/golang/go/issues/14975
+		hdr.Set("Content-Encoding", rw.encodingName)
+		if !hasVaryValue(hdr, "Accept-Encoding") {
+			hdr.Add("Vary", "Accept-Encoding")
+		}
+		hdr.Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
+
+		// strong ETags need to be distinct depending on the encoding ("selected representation")
+		// see RFC 9110 section 8.8.3.3:
+		// https://www.rfc-editor.org/rfc/rfc9110.html#name-example-entity-tags-varying
+		// I don't know a great way to do this... how about appending? That's a neat trick!
+		// (We have to strip the value we append from If-None-Match headers before
+		// sending subsequent requests back upstream, however, since upstream handlers
+		// don't know about our appending to their Etag since they've already done their work)
+		if etag := hdr.Get("Etag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+			etag = fmt.Sprintf(`%s-%s"`, strings.TrimSuffix(etag, `"`), rw.encodingName)
+			hdr.Set("Etag", etag)
+		}
+	}
+}
+
+func hasVaryValue(hdr http.Header, target string) bool {
+	for _, vary := range hdr.Values("Vary") {
+		vals := strings.Split(vary, ",")
+		for _, val := range vals {
+			if strings.EqualFold(strings.TrimSpace(val), target) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// AcceptedEncodings returns the list of encodings that the
+// client supports, in descending order of preference.
+// The client preference via q-factor and the server
+// preference via Prefer setting are taken into account. If
 // the Sec-WebSocket-Key header is present then non-identity
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
-func acceptedEncodings(r *http.Request) []string {
+func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
 	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
 		return []string{}
 	}
 
-	var prefs []encodingPreference
+	prefs := []encodingPreference{}
 
 	for _, accepted := range strings.Split(acceptEncHeader, ",") {
 		parts := strings.Split(accepted, ";")
@@ -292,18 +463,26 @@ func acceptedEncodings(r *http.Request) []string {
 			continue
 		}
 
+		// set server preference
+		prefOrder := slices.Index(preferredOrder, encName)
+		if prefOrder > -1 {
+			prefOrder = len(preferredOrder) - prefOrder
+		}
+
 		prefs = append(prefs, encodingPreference{
-			encoding: encName,
-			q:        qFactor,
+			encoding:    encName,
+			q:           qFactor,
+			preferOrder: prefOrder,
 		})
 	}
 
-	// sort preferences by descending q-factor
-	sort.Slice(prefs, func(i, j int) bool { return prefs[i].q > prefs[j].q })
-
-	// TODO: If no preference, or same pref for all encodings,
-	// and not websocket, use default encoding ordering (enc.Prefer)
-	// for those which are accepted by the client
+	// sort preferences by descending q-factor first, then by preferOrder
+	sort.Slice(prefs, func(i, j int) bool {
+		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
+			return prefs[i].preferOrder > prefs[j].preferOrder
+		}
+		return prefs[i].q > prefs[j].q
+	})
 
 	prefEncNames := make([]string, len(prefs))
 	for i := range prefs {
@@ -315,14 +494,16 @@ func acceptedEncodings(r *http.Request) []string {
 
 // encodingPreference pairs an encoding with its q-factor.
 type encodingPreference struct {
-	encoding string
-	q        float64
+	encoding    string
+	q           float64
+	preferOrder int
 }
 
 // Encoder is a type which can encode a stream of data.
 type Encoder interface {
 	io.WriteCloser
 	Reset(io.Writer)
+	Flush() error // encoder by default buffers data to maximize compressing rate
 }
 
 // Encoding is a type which can create encoders of its kind
@@ -332,10 +513,11 @@ type Encoding interface {
 	NewEncoder() Encoder
 }
 
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
+// Precompressed is a type which returns filename suffix of precompressed
+// file and Accept-Encoding header to use when serving this file.
+type Precompressed interface {
+	AcceptEncoding() string
+	Suffix() string
 }
 
 // defaultMinLength is the minimum length at which to compress content.
@@ -344,6 +526,6 @@ const defaultMinLength = 512
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*Encode)(nil)
+	_ caddy.Validator             = (*Encode)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Encode)(nil)
-	_ caddyhttp.HTTPInterfaces    = (*responseWriter)(nil)
 )

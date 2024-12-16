@@ -1,0 +1,112 @@
+http://localhost:2020 {
+	log
+	log_skip /first-hidden*
+	log_skip /second-hidden*
+	respond 200
+}
+
+:2020 {
+	respond 418
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":2020"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"log_skip": true
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/second-hidden*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"log_skip": true
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/first-hidden*"
+													]
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 200
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"status_code": 418
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"localhost"
+						]
+					},
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								""
+							]
+						},
+						"skip_unmapped_hosts": true
+					}
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,62 @@
+a.example.com {
+}
+
+b.example.com {
+}
+
+:443 {
+	tls {
+		on_demand
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"b.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.example.com",
+							"b.example.com"
+						]
+					},
+					{
+						"on_demand": true
+					}
+				]
+			}
+		}
+	}
+}

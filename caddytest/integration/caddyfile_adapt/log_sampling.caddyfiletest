@@ -1,0 +1,45 @@
+:80 {
+	log {
+		sampling {
+			interval 300
+			first 50
+			thereafter 40
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"sampling": {
+					"interval": 300,
+					"first": 50,
+					"thereafter": 40
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+}

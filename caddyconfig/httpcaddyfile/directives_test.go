@@ -31,20 +31,23 @@ func TestHostsFromKeys(t *testing.T) {
 			[]Address{
 				{Original: ":2015", Port: "2015"},
 			},
-			[]string{}, []string{},
+			[]string{},
+			[]string{},
 		},
 		{
 			[]Address{
 				{Original: ":443", Port: "443"},
 			},
-			[]string{}, []string{},
+			[]string{},
+			[]string{},
 		},
 		{
 			[]Address{
 				{Original: "foo", Host: "foo"},
 				{Original: ":2015", Port: "2015"},
 			},
-			[]string{}, []string{"foo"},
+			[]string{},
+			[]string{"foo"},
 		},
 		{
 			[]Address{
@@ -75,7 +78,7 @@ func TestHostsFromKeys(t *testing.T) {
 			[]string{"example.com:2015"},
 		},
 	} {
-		sb := serverBlock{keys: tc.keys}
+		sb := serverBlock{parsedKeys: tc.keys}
 
 		// test in normal mode
 		actual := sb.hostsFromKeys(false)

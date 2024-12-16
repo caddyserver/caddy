@@ -15,9 +15,10 @@
 package filestorage
 
 import (
+	"github.com/caddyserver/certmagic"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -48,14 +49,31 @@ func (s *FileStorage) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
 		return d.Err("expected tokens")
 	}
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
+	if d.NextArg() {
 		s.Root = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
+	}
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "root":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if s.Root != "" {
+				return d.Err("root already set")
+			}
+			s.Root = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+		default:
+			return d.Errf("unrecognized parameter '%s'", d.Val())
 		}
+	}
+	if s.Root == "" {
+		return d.Err("missing root path (to use default, omit storage config entirely)")
 	}
 	return nil
 }

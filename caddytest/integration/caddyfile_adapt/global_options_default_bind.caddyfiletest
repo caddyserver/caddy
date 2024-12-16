@@ -1,0 +1,54 @@
+{
+	default_bind tcp4/0.0.0.0 tcp6/[::]
+}
+
+example.com {
+}
+
+example.org:12345 {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						"tcp4/0.0.0.0:12345",
+						"tcp6/[::]:12345"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.org"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						"tcp4/0.0.0.0:443",
+						"tcp6/[::]:443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,92 @@
+{
+	servers {
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+		timeouts {
+			read_body 30s
+			read_header 30s
+			write 30s
+			idle 30s
+		}
+		max_header_size 100MB
+		enable_full_duplex
+		log_credentials
+		protocols h1 h2 h2c h3
+		strict_sni_host
+		trusted_proxies static private_ranges
+		client_ip_headers Custom-Real-Client-IP X-Forwarded-For
+		client_ip_headers A-Third-One
+	}
+}
+
+foo.com {
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"listener_wrappers": [
+						{
+							"wrapper": "http_redirect"
+						},
+						{
+							"wrapper": "tls"
+						}
+					],
+					"read_timeout": 30000000000,
+					"read_header_timeout": 30000000000,
+					"write_timeout": 30000000000,
+					"idle_timeout": 30000000000,
+					"max_header_bytes": 100000000,
+					"enable_full_duplex": true,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"strict_sni_host": true,
+					"trusted_proxies": {
+						"ranges": [
+							"192.168.0.0/16",
+							"172.16.0.0/12",
+							"10.0.0.0/8",
+							"127.0.0.1/8",
+							"fd00::/8",
+							"::1"
+						],
+						"source": "static"
+					},
+					"client_ip_headers": [
+						"Custom-Real-Client-IP",
+						"X-Forwarded-For",
+						"A-Third-One"
+					],
+					"logs": {
+						"should_log_credentials": true
+					},
+					"protocols": [
+						"h1",
+						"h2",
+						"h2c",
+						"h3"
+					]
+				}
+			}
+		}
+	}
+}

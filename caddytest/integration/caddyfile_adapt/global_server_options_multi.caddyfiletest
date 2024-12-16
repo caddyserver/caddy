@@ -1,0 +1,82 @@
+{
+	servers {
+		timeouts {
+			idle 90s
+		}
+		strict_sni_host insecure_off
+	}
+	servers :80 {
+		timeouts {
+			idle 60s
+		}
+	}
+	servers :443 {
+		timeouts {
+			idle 30s
+		}
+		strict_sni_host
+	}
+}
+
+foo.com {
+}
+
+http://bar.com {
+}
+
+:8080 {
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"idle_timeout": 30000000000,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"strict_sni_host": true
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"idle_timeout": 60000000000,
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"bar.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":8080"
+					],
+					"idle_timeout": 90000000000,
+					"strict_sni_host": false
+				}
+			}
+		}
+	}
+}

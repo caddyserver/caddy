@@ -15,87 +15,116 @@
 package fileserver
 
 import (
-	"net/url"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
-func TestSanitizedPathJoin(t *testing.T) {
-	// For easy reference:
-	// %2e = .
-	// %2f = /
-	// %5c = \
+func TestFileHidden(t *testing.T) {
 	for i, tc := range []struct {
-		inputRoot string
+		inputHide []string
 		inputPath string
-		expect    string
+		expect    bool
 	}{
 		{
+			inputHide: nil,
 			inputPath: "",
-			expect:    ".",
+			expect:    false,
 		},
 		{
-			inputPath: "/",
-			expect:    ".",
+			inputHide: []string{".gitignore"},
+			inputPath: "/.gitignore",
+			expect:    true,
 		},
 		{
+			inputHide: []string{".git"},
+			inputPath: "/.gitignore",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/.git"},
+			inputPath: "/.gitignore",
+			expect:    false,
+		},
+		{
+			inputHide: []string{".git"},
+			inputPath: "/.git",
+			expect:    true,
+		},
+		{
+			inputHide: []string{".git"},
+			inputPath: "/.git/foo",
+			expect:    true,
+		},
+		{
+			inputHide: []string{".git"},
+			inputPath: "/foo/.git/bar",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/prefix"},
+			inputPath: "/prefix/foo",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/foo/*/bar"},
+			inputPath: "/foo/asdf/bar",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"*.txt"},
+			inputPath: "/foo/bar.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar/baz.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar.txt",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo/bar/*.txt"},
+			inputPath: "/foo/bar/index.html",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo"},
 			inputPath: "/foo",
-			expect:    "foo",
+			expect:    true,
 		},
 		{
-			inputPath: "/foo/bar",
-			expect:    filepath.Join("foo", "bar"),
+			inputHide: []string{"/foo"},
+			inputPath: "/foobar",
+			expect:    false,
 		},
 		{
-			inputRoot: "/a",
-			inputPath: "/foo/bar",
-			expect:    filepath.Join("/", "a", "foo", "bar"),
+			inputHide: []string{"first", "second"},
+			inputPath: "/second",
+			expect:    true,
 		},
-		{
-			inputPath: "/foo/../bar",
-			expect:    "bar",
-		},
-		{
-			inputRoot: "/a/b",
-			inputPath: "/foo/../bar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
-		},
-		{
-			inputRoot: "/a/b",
-			inputPath: "/..%2fbar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
-		},
-		{
-			inputRoot: "/a/b",
-			inputPath: "/%2e%2e%2fbar",
-			expect:    filepath.Join("/", "a", "b", "bar"),
-		},
-		{
-			inputRoot: "/a/b",
-			inputPath: "/%2e%2e%2f%2e%2e%2f",
-			expect:    filepath.Join("/", "a", "b"),
-		},
-		{
-			inputRoot: "C:\\www",
-			inputPath: "/foo/bar",
-			expect:    filepath.Join("C:\\www", "foo", "bar"),
-		},
-		// TODO: test more windows paths... on windows... sigh.
 	} {
-		// we don't *need* to use an actual parsed URL, but it
-		// adds some authenticity to the tests since real-world
-		// values will be coming in from URLs; thus, the test
-		// corpus can contain paths as encoded by clients, which
-		// more closely emulates the actual attack vector
-		u, err := url.Parse("http://test:9999" + tc.inputPath)
-		if err != nil {
-			t.Fatalf("Test %d: invalid URL: %v", i, err)
+		if runtime.GOOS == "windows" {
+			if strings.HasPrefix(tc.inputPath, "/") {
+				tc.inputPath, _ = filepath.Abs(tc.inputPath)
+			}
+			tc.inputPath = filepath.FromSlash(tc.inputPath)
+			for i := range tc.inputHide {
+				if strings.HasPrefix(tc.inputHide[i], "/") {
+					tc.inputHide[i], _ = filepath.Abs(tc.inputHide[i])
+				}
+				tc.inputHide[i] = filepath.FromSlash(tc.inputHide[i])
+			}
 		}
-		actual := sanitizedPathJoin(tc.inputRoot, u.Path)
+
+		actual := fileHidden(tc.inputPath, tc.inputHide)
 		if actual != tc.expect {
-			t.Errorf("Test %d: [%s %s] => %s (expected %s)", i, tc.inputRoot, tc.inputPath, actual, tc.expect)
+			t.Errorf("Test %d: Does %v hide %s? Got %t but expected %t",
+				i, tc.inputHide, tc.inputPath, actual, tc.expect)
 		}
 	}
 }
-
-// TODO: test fileHidden

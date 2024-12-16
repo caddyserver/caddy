@@ -1,0 +1,168 @@
+{
+	skip_install_trust
+	pki {
+		ca {
+			name "Local"
+			root_cn "Custom Local Root Name"
+			intermediate_cn "Custom Local Intermediate Name"
+			root {
+				cert /path/to/cert.pem
+				key /path/to/key.pem
+				format pem_file
+			}
+			intermediate {
+				cert /path/to/cert.pem
+				key /path/to/key.pem
+				format pem_file
+			}
+		}
+		ca foo {
+			name "Foo"
+			root_cn "Custom Foo Root Name"
+			intermediate_cn "Custom Foo Intermediate Name"
+		}
+	}
+}
+
+a.example.com {
+	tls internal
+}
+
+acme.example.com {
+	acme_server {
+		ca foo
+	}
+}
+
+acme-bar.example.com {
+	acme_server {
+		ca bar
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"acme-bar.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "bar",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"acme.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"ca": "foo",
+													"handler": "acme_server"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"pki": {
+			"certificate_authorities": {
+				"bar": {
+					"install_trust": false
+				},
+				"foo": {
+					"name": "Foo",
+					"root_common_name": "Custom Foo Root Name",
+					"intermediate_common_name": "Custom Foo Intermediate Name",
+					"install_trust": false
+				},
+				"local": {
+					"name": "Local",
+					"root_common_name": "Custom Local Root Name",
+					"intermediate_common_name": "Custom Local Intermediate Name",
+					"install_trust": false,
+					"root": {
+						"certificate": "/path/to/cert.pem",
+						"private_key": "/path/to/key.pem",
+						"format": "pem_file"
+					},
+					"intermediate": {
+						"certificate": "/path/to/cert.pem",
+						"private_key": "/path/to/key.pem",
+						"format": "pem_file"
+					}
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"acme-bar.example.com",
+							"acme.example.com"
+						]
+					},
+					{
+						"subjects": [
+							"a.example.com"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

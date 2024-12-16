@@ -1,0 +1,56 @@
+# example from issue #4640
+http://foo:8447, http://127.0.0.1:8447 {
+	reverse_proxy 127.0.0.1:8080
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8447"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo",
+										"127.0.0.1"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"upstreams": [
+														{
+															"dial": "127.0.0.1:8080"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"foo",
+							"127.0.0.1"
+						]
+					}
+				}
+			}
+		}
+	}
+}

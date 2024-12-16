@@ -1,0 +1,117 @@
+*.example.com {
+	log {
+		hostnames foo.example.com bar.example.com
+		output file /foo-bar.txt
+	}
+	log {
+		hostnames baz.example.com
+		output file /baz.txt
+	}
+}
+
+example.com:8443 {
+	log {
+		output file /port.txt
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0",
+					"http.log.access.log1",
+					"http.log.access.log2"
+				]
+			},
+			"log0": {
+				"writer": {
+					"filename": "/foo-bar.txt",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			},
+			"log1": {
+				"writer": {
+					"filename": "/baz.txt",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log1"
+				]
+			},
+			"log2": {
+				"writer": {
+					"filename": "/port.txt",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log2"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"bar.example.com": [
+								"log0"
+							],
+							"baz.example.com": [
+								"log1"
+							],
+							"foo.example.com": [
+								"log0"
+							]
+						}
+					}
+				},
+				"srv1": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"example.com": [
+								"log2"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

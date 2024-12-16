@@ -1,0 +1,86 @@
+{
+	local_certs
+}
+
+*.tld, *.*.tld {
+	tls {
+		on_demand
+	}
+}
+
+foo.tld, www.foo.tld {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.tld",
+										"www.foo.tld"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.tld",
+										"*.*.tld"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"foo.tld",
+							"www.foo.tld"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"*.*.tld",
+							"*.tld"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						],
+						"on_demand": true
+					},
+					{
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

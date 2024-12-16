@@ -1,0 +1,206 @@
+:8881
+
+forward_auth localhost:9000 {
+	uri /auth
+	copy_headers A>1 B C>3 {
+		D
+		E>5
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handle_response": [
+										{
+											"match": {
+												"status_code": [
+													2
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "vars"
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"1": [
+																		"{http.reverse_proxy.header.A}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.A}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"B": [
+																		"{http.reverse_proxy.header.B}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.B}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"3": [
+																		"{http.reverse_proxy.header.C}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.C}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"D": [
+																		"{http.reverse_proxy.header.D}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.D}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"5": [
+																		"{http.reverse_proxy.header.E}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.E}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									],
+									"handler": "reverse_proxy",
+									"headers": {
+										"request": {
+											"set": {
+												"X-Forwarded-Method": [
+													"{http.request.method}"
+												],
+												"X-Forwarded-Uri": [
+													"{http.request.uri}"
+												]
+											}
+										}
+									},
+									"rewrite": {
+										"method": "GET",
+										"uri": "/auth"
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:9000"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

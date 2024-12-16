@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"context"
 	"os"
 	"os/signal"
 
@@ -47,35 +48,15 @@ func trapSignalsCrossPlatform() {
 			}
 
 			Log().Info("shutting down", zap.String("signal", "SIGINT"))
-			go gracefulStop("SIGINT")
+			go exitProcessFromSignal("SIGINT")
 		}
 	}()
 }
 
-// gracefulStop exits the process as gracefully as possible.
-// It always exits, even if there are errors shutting down.
-func gracefulStop(sigName string) {
-	exitCode := ExitCodeSuccess
-	defer func() {
-		Log().Info("shutdown done", zap.String("signal", sigName))
-		os.Exit(exitCode)
-	}()
-
-	err := stopAndCleanup()
-	if err != nil {
-		Log().Error("stopping config",
-			zap.String("signal", sigName),
-			zap.Error(err))
-		exitCode = ExitCodeFailedQuit
-	}
-
-	err = stopAdminServer(adminServer)
-	if err != nil {
-		Log().Error("stopping admin endpoint",
-			zap.String("signal", sigName),
-			zap.Error(err))
-		exitCode = ExitCodeFailedQuit
-	}
+// exitProcessFromSignal exits the process from a system signal.
+func exitProcessFromSignal(sigName string) {
+	logger := Log().With(zap.String("signal", sigName))
+	exitProcess(context.TODO(), logger)
 }
 
 // Exit codes. Generally, you should NOT

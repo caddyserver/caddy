@@ -30,11 +30,30 @@ func init() {
 // of not needing to store them on disk at all.
 type PEMLoader []CertKeyPEMPair
 
+// Provision implements caddy.Provisioner.
+func (pl PEMLoader) Provision(ctx caddy.Context) error {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok {
+		repl = caddy.NewReplacer()
+	}
+	for k, pair := range pl {
+		for i, tag := range pair.Tags {
+			pair.Tags[i] = repl.ReplaceKnown(tag, "")
+		}
+		pl[k] = CertKeyPEMPair{
+			CertificatePEM: repl.ReplaceKnown(pair.CertificatePEM, ""),
+			KeyPEM:         repl.ReplaceKnown(pair.KeyPEM, ""),
+			Tags:           pair.Tags,
+		}
+	}
+	return nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (PEMLoader) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "tls.certificates.load_pem",
-		New: func() caddy.Module { return PEMLoader{} },
+		New: func() caddy.Module { return new(PEMLoader) },
 	}
 }
 
@@ -69,4 +88,7 @@ func (pl PEMLoader) LoadCertificates() ([]Certificate, error) {
 }
 
 // Interface guard
-var _ CertificateLoader = (PEMLoader)(nil)
+var (
+	_ CertificateLoader = (PEMLoader)(nil)
+	_ caddy.Provisioner = (PEMLoader)(nil)
+)

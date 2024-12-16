@@ -1,0 +1,69 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	health_headers {
+		Host example.com
+		X-Header-Key 95ca39e3cbe7
+		X-Header-Keys VbG4NZwWnipo 335Q9/MhqcNU3s2TO
+		X-Empty-Value
+		Same-Key 1
+		Same-Key 2
+		X-System-Hostname {system.hostname}
+	}
+	health_uri /health
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"health_checks": {
+										"active": {
+											"headers": {
+												"Host": [
+													"example.com"
+												],
+												"Same-Key": [
+													"1",
+													"2"
+												],
+												"X-Empty-Value": [
+													""
+												],
+												"X-Header-Key": [
+													"95ca39e3cbe7"
+												],
+												"X-Header-Keys": [
+													"VbG4NZwWnipo",
+													"335Q9/MhqcNU3s2TO"
+												],
+												"X-System-Hostname": [
+													"{system.hostname}"
+												]
+											},
+											"uri": "/health"
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

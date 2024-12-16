@@ -1,0 +1,71 @@
+localhost
+
+respond "hello from localhost"
+tls {
+	client_auth {
+		mode request
+		trust_pool file {
+			pem_file ../caddy.ca.cer
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hello from localhost",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"localhost"
+								]
+							},
+							"client_authentication": {
+								"ca": {
+									"pem_files": [
+										"../caddy.ca.cer"
+									],
+									"provider": "file"
+								},
+								"mode": "request"
+							}
+						},
+						{}
+					]
+				}
+			}
+		}
+	}
+}

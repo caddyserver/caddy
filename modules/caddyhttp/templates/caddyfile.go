@@ -15,6 +15,9 @@
 package templates
 
 import (
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -25,31 +28,52 @@ func init() {
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//     templates [<matcher>] {
-//         mime <types...>
-//         between <open_delim> <close_delim>
-//         root <path>
-//     }
-//
+//	templates [<matcher>] {
+//	    mime <types...>
+//	    between <open_delim> <close_delim>
+//	    root <path>
+//	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
 	t := new(Templates)
-	for h.Next() {
-		for h.NextBlock(0) {
-			switch h.Val() {
-			case "mime":
-				t.MIMETypes = h.RemainingArgs()
-				if len(t.MIMETypes) == 0 {
-					return nil, h.ArgErr()
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "mime":
+			t.MIMETypes = h.RemainingArgs()
+			if len(t.MIMETypes) == 0 {
+				return nil, h.ArgErr()
+			}
+		case "between":
+			t.Delimiters = h.RemainingArgs()
+			if len(t.Delimiters) != 2 {
+				return nil, h.ArgErr()
+			}
+		case "root":
+			if !h.Args(&t.FileRoot) {
+				return nil, h.ArgErr()
+			}
+		case "extensions":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			if t.ExtensionsRaw != nil {
+				return nil, h.Err("extensions already specified")
+			}
+			for nesting := h.Nesting(); h.NextBlock(nesting); {
+				extensionModuleName := h.Val()
+				modID := "http.handlers.templates.functions." + extensionModuleName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
 				}
-			case "between":
-				t.Delimiters = h.RemainingArgs()
-				if len(t.Delimiters) != 2 {
-					return nil, h.ArgErr()
+				cf, ok := unm.(CustomFunctions)
+				if !ok {
+					return nil, h.Errf("module %s (%T) does not provide template functions", modID, unm)
 				}
-			case "root":
-				if !h.Args(&t.FileRoot) {
-					return nil, h.ArgErr()
+				if t.ExtensionsRaw == nil {
+					t.ExtensionsRaw = make(caddy.ModuleMap)
 				}
+				t.ExtensionsRaw[extensionModuleName] = caddyconfig.JSON(cf, nil)
 			}
 		}
 	}

@@ -1,0 +1,336 @@
+:80 {
+	@matcher {
+		method GET
+	}
+	respond @matcher "get"
+
+	@matcher2 method POST
+	respond @matcher2 "post"
+
+	@matcher3 not method PUT
+	respond @matcher3 "not put"
+
+	@matcher4 vars "{http.request.uri}" "/vars-matcher"
+	respond @matcher4 "from vars matcher"
+
+	@matcher5 vars_regexp static "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
+	respond @matcher5 "from vars_regexp matcher with name"
+
+	@matcher6 vars_regexp "{http.request.uri}" `\.([a-f0-9]{6})\.(css|js)$`
+	respond @matcher6 "from vars_regexp matcher without name"
+
+	@matcher7 `path('/foo*') && method('GET')`
+	respond @matcher7 "inline expression matcher shortcut"
+
+	@matcher8 {
+		header Foo bar
+		header Foo foobar
+		header Bar foo
+	}
+	respond @matcher8 "header matcher merging values of the same field"
+
+	@matcher9 {
+		query foo=bar foo=baz bar=foo
+		query bar=baz
+	}
+	respond @matcher9 "query matcher merging pairs with the same keys"
+
+	@matcher10 {
+		header !Foo
+		header Bar foo
+	}
+	respond @matcher10 "header matcher with null field matcher"
+
+	@matcher11 remote_ip private_ranges
+	respond @matcher11 "remote_ip matcher with private ranges"
+
+	@matcher12 client_ip private_ranges
+	respond @matcher12 "client_ip matcher with private ranges"
+
+	@matcher13 {
+		remote_ip 1.1.1.1
+		remote_ip 2.2.2.2
+	}
+	respond @matcher13 "remote_ip merged"
+
+	@matcher14 {
+		client_ip 1.1.1.1
+		client_ip 2.2.2.2
+	}
+	respond @matcher14 "client_ip merged"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"method": [
+										"GET"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "get",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"method": [
+										"POST"
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "post",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"method": [
+												"PUT"
+											]
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "not put",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars": {
+										"{http.request.uri}": [
+											"/vars-matcher"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars matcher",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars_regexp": {
+										"{http.request.uri}": {
+											"name": "static",
+											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
+										}
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars_regexp matcher with name",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"vars_regexp": {
+										"{http.request.uri}": {
+											"name": "matcher6",
+											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
+										}
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "from vars_regexp matcher without name",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"expression": {
+										"expr": "path('/foo*') \u0026\u0026 method('GET')",
+										"name": "matcher7"
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "inline expression matcher shortcut",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo"
+										],
+										"Foo": [
+											"bar",
+											"foobar"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "header matcher merging values of the same field",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"query": {
+										"bar": [
+											"foo",
+											"baz"
+										],
+										"foo": [
+											"bar",
+											"baz"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "query matcher merging pairs with the same keys",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"Bar": [
+											"foo"
+										],
+										"Foo": null
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "header matcher with null field matcher",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"remote_ip": {
+										"ranges": [
+											"192.168.0.0/16",
+											"172.16.0.0/12",
+											"10.0.0.0/8",
+											"127.0.0.1/8",
+											"fd00::/8",
+											"::1"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "remote_ip matcher with private ranges",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"client_ip": {
+										"ranges": [
+											"192.168.0.0/16",
+											"172.16.0.0/12",
+											"10.0.0.0/8",
+											"127.0.0.1/8",
+											"fd00::/8",
+											"::1"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "client_ip matcher with private ranges",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"remote_ip": {
+										"ranges": [
+											"1.1.1.1",
+											"2.2.2.2"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "remote_ip merged",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"client_ip": {
+										"ranges": [
+											"1.1.1.1",
+											"2.2.2.2"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "client_ip merged",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

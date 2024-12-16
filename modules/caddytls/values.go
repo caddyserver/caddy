@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/klauspost/cpuid"
+	"github.com/klauspost/cpuid/v2"
 )
 
 // CipherSuiteNameSupported returns true if name is
@@ -75,7 +75,7 @@ var defaultCipherSuitesWithoutAESNI = []uint16{
 //
 // See https://github.com/caddyserver/caddy/issues/1674
 func getOptimalDefaultCipherSuites() []uint16 {
-	if cpuid.CPU.AesNi() {
+	if cpuid.CPU.Supports(cpuid.AESNI) {
 		return defaultCipherSuitesWithAESNI
 	}
 	return defaultCipherSuitesWithoutAESNI
@@ -108,6 +108,11 @@ var supportedCertKeyTypes = map[string]certmagic.KeyType{
 // implementation exists (e.g. P256). The latter ones can be
 // found here:
 // https://github.com/golang/go/tree/master/src/crypto/elliptic
+//
+// Temporily we ignore these default, to take advantage of X25519Kyber768
+// in Go's defaults (X25519Kyber768, X25519, P-256, P-384, P-521), which
+// isn't exported. See https://github.com/caddyserver/caddy/issues/6540
+// nolint:unused
 var defaultCurves = []tls.CurveID{
 	tls.X25519,
 	tls.CurveP256,
@@ -122,6 +127,7 @@ var SupportedProtocols = map[string]uint16{
 // unsupportedProtocols is a map of unsupported protocols.
 // Used for logging only, not enforcement.
 var unsupportedProtocols = map[string]uint16{
+	//nolint:staticcheck
 	"ssl3.0": tls.VersionSSL30,
 	"tls1.0": tls.VersionTLS10,
 	"tls1.1": tls.VersionTLS11,

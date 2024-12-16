@@ -1,0 +1,50 @@
+{
+	preferred_chains smallest
+}
+
+example.com
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"module": "acme",
+								"preferred_chains": {
+									"smallest": true
+								}
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

@@ -24,7 +24,7 @@ import (
 // Adapter is a type which can adapt a configuration to Caddy JSON.
 // It returns the results and any warnings, or an error.
 type Adapter interface {
-	Adapt(body []byte, options map[string]interface{}) ([]byte, []Warning, error)
+	Adapt(body []byte, options map[string]any) ([]byte, []Warning, error)
 }
 
 // Warning represents a warning or notice related to conversion.
@@ -35,12 +35,20 @@ type Warning struct {
 	Message   string `json:"message,omitempty"`
 }
 
+func (w Warning) String() string {
+	var directive string
+	if w.Directive != "" {
+		directive = fmt.Sprintf(" (%s)", w.Directive)
+	}
+	return fmt.Sprintf("%s:%d%s: %s", w.File, w.Line, directive, w.Message)
+}
+
 // JSON encodes val as JSON, returning it as a json.RawMessage. Any
 // marshaling errors (which are highly unlikely with correct code)
 // are converted to warnings. This is convenient when filling config
 // structs that require a json.RawMessage, without having to worry
 // about errors.
-func JSON(val interface{}, warnings *[]Warning) json.RawMessage {
+func JSON(val any, warnings *[]Warning) json.RawMessage {
 	b, err := json.Marshal(val)
 	if err != nil {
 		if warnings != nil {
@@ -51,15 +59,14 @@ func JSON(val interface{}, warnings *[]Warning) json.RawMessage {
 	return b
 }
 
-// JSONModuleObject is like JSON, except it marshals val into a JSON object
-// and then adds a key to that object named fieldName with the value fieldVal.
-// This is useful for JSON-encoding module values where the module name has to
-// be described within the object by a certain key; for example,
-// "responder": "file_server" for a file server HTTP responder. The val must
-// encode into a map[string]interface{} (i.e. it must be a struct or map),
-// and any errors are converted into warnings, so this can be conveniently
-// used when filling a struct. For correct code, there should be no errors.
-func JSONModuleObject(val interface{}, fieldName, fieldVal string, warnings *[]Warning) json.RawMessage {
+// JSONModuleObject is like JSON(), except it marshals val into a JSON object
+// with an added key named fieldName with the value fieldVal. This is useful
+// for encoding module values where the module name has to be described within
+// the object by a certain key; for example, `"handler": "file_server"` for a
+// file server HTTP handler (fieldName="handler" and fieldVal="file_server").
+// The val parameter must encode into a map[string]any (i.e. it must be
+// a struct or map). Any errors are converted into warnings.
+func JSONModuleObject(val any, fieldName, fieldVal string, warnings *[]Warning) json.RawMessage {
 	// encode to a JSON object first
 	enc, err := json.Marshal(val)
 	if err != nil {
@@ -70,7 +77,7 @@ func JSONModuleObject(val interface{}, fieldName, fieldVal string, warnings *[]W
 	}
 
 	// then decode the object
-	var tmp map[string]interface{}
+	var tmp map[string]any
 	err = json.Unmarshal(enc, &tmp)
 	if err != nil {
 		if warnings != nil {
@@ -92,12 +99,6 @@ func JSONModuleObject(val interface{}, fieldName, fieldVal string, warnings *[]W
 	}
 
 	return result
-}
-
-// JSONIndent is used to JSON-marshal the final resulting Caddy
-// configuration in a consistent, human-readable way.
-func JSONIndent(val interface{}) ([]byte, error) {
-	return json.MarshalIndent(val, "", "\t")
 }
 
 // RegisterAdapter registers a config adapter with the given name.

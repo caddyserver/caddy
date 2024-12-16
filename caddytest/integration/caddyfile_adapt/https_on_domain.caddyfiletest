@@ -1,0 +1,54 @@
+a.caddy.localhost {
+	respond /version 200 {
+		body "hello from localhost"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.caddy.localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hello from localhost",
+													"handler": "static_response",
+													"status_code": 200
+												}
+											],
+											"match": [
+												{
+													"path": [
+														"/version"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

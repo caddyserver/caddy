@@ -1,0 +1,55 @@
+:8884
+
+reverse_proxy h2c://localhost:8080
+
+reverse_proxy unix+h2c//run/app.sock
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"transport": {
+										"protocol": "http",
+										"versions": [
+											"h2c",
+											"2"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:8080"
+										}
+									]
+								},
+								{
+									"handler": "reverse_proxy",
+									"transport": {
+										"protocol": "http",
+										"versions": [
+											"h2c",
+											"2"
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "unix//run/app.sock"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,54 @@
+a.example.com {
+	tls {
+		issuer internal {
+			ca foo
+			lifetime 24h
+			sign_with_root
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.example.com"
+						],
+						"issuers": [
+							{
+								"ca": "foo",
+								"lifetime": 86400000000000,
+								"module": "internal",
+								"sign_with_root": true
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

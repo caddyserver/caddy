@@ -58,6 +58,10 @@ func (al adminLoad) Routes() []caddy.AdminRoute {
 			Pattern: "/load",
 			Handler: caddy.AdminHandlerFunc(al.handleLoad),
 		},
+		{
+			Pattern: "/adapt",
+			Handler: caddy.AdminHandlerFunc(al.handleAdapt),
+		},
 	}
 }
 
@@ -69,8 +73,8 @@ func (al adminLoad) Routes() []caddy.AdminRoute {
 func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		return caddy.APIError{
-			Code: http.StatusMethodNotAllowed,
-			Err:  fmt.Errorf("method not allowed"),
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
 		}
 	}
 
@@ -81,8 +85,8 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	_, err := io.Copy(buf, r.Body)
 	if err != nil {
 		return caddy.APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("reading request body: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("reading request body: %v", err),
 		}
 	}
 	body := buf.Bytes()
@@ -90,45 +94,21 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	// if the config is formatted other than Caddy's native
 	// JSON, we need to adapt it before loading it
 	if ctHeader := r.Header.Get("Content-Type"); ctHeader != "" {
-		ct, _, err := mime.ParseMediaType(ctHeader)
+		result, warnings, err := adaptByContentType(ctHeader, body)
 		if err != nil {
 			return caddy.APIError{
-				Code: http.StatusBadRequest,
-				Err:  fmt.Errorf("invalid Content-Type: %v", err),
+				HTTPStatus: http.StatusBadRequest,
+				Err:        err,
 			}
 		}
-		if !strings.HasSuffix(ct, "/json") {
-			slashIdx := strings.Index(ct, "/")
-			if slashIdx < 0 {
-				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("malformed Content-Type"),
-				}
-			}
-			adapterName := ct[slashIdx+1:]
-			cfgAdapter := GetAdapter(adapterName)
-			if cfgAdapter == nil {
-				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("unrecognized config adapter '%s'", adapterName),
-				}
-			}
-			result, warnings, err := cfgAdapter.Adapt(body, nil)
+		if len(warnings) > 0 {
+			respBody, err := json.Marshal(warnings)
 			if err != nil {
-				return caddy.APIError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("adapting config using %s adapter: %v", adapterName, err),
-				}
+				caddy.Log().Named("admin.api.load").Error(err.Error())
 			}
-			if len(warnings) > 0 {
-				respBody, err := json.Marshal(warnings)
-				if err != nil {
-					caddy.Log().Named("admin.api.load").Error(err.Error())
-				}
-				_, _ = w.Write(respBody)
-			}
-			body = result
+			_, _ = w.Write(respBody)
 		}
+		body = result
 	}
 
 	forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
@@ -136,8 +116,8 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	err = caddy.Load(body, forceReload)
 	if err != nil {
 		return caddy.APIError{
-			Code: http.StatusBadRequest,
-			Err:  fmt.Errorf("loading config: %v", err),
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("loading config: %v", err),
 		}
 	}
 
@@ -146,8 +126,89 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// handleAdapt adapts the given Caddy config to JSON and responds with the result.
+func (adminLoad) handleAdapt(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodPost {
+		return caddy.APIError{
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
+		}
+	}
+
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	_, err := io.Copy(buf, r.Body)
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("reading request body: %v", err),
+		}
+	}
+
+	result, warnings, err := adaptByContentType(r.Header.Get("Content-Type"), buf.Bytes())
+	if err != nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        err,
+		}
+	}
+
+	out := struct {
+		Warnings []Warning       `json:"warnings,omitempty"`
+		Result   json.RawMessage `json:"result"`
+	}{
+		Warnings: warnings,
+		Result:   result,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(out)
+}
+
+// adaptByContentType adapts body to Caddy JSON using the adapter specified by contentType.
+// If contentType is empty or ends with "/json", the input will be returned, as a no-op.
+func adaptByContentType(contentType string, body []byte) ([]byte, []Warning, error) {
+	// assume JSON as the default
+	if contentType == "" {
+		return body, nil, nil
+	}
+
+	ct, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, nil, caddy.APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("invalid Content-Type: %v", err),
+		}
+	}
+
+	// if already JSON, no need to adapt
+	if strings.HasSuffix(ct, "/json") {
+		return body, nil, nil
+	}
+
+	// adapter name should be suffix of MIME type
+	_, adapterName, slashFound := strings.Cut(ct, "/")
+	if !slashFound {
+		return nil, nil, fmt.Errorf("malformed Content-Type")
+	}
+
+	cfgAdapter := GetAdapter(adapterName)
+	if cfgAdapter == nil {
+		return nil, nil, fmt.Errorf("unrecognized config adapter '%s'", adapterName)
+	}
+
+	result, warnings, err := cfgAdapter.Adapt(body, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("adapting config using %s adapter: %v", adapterName, err)
+	}
+
+	return result, warnings, nil
+}
+
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }

@@ -1,0 +1,75 @@
+# Health with query in the uri
+:8443 {
+	reverse_proxy localhost:54321 {
+		health_uri /health?ready=1
+		health_status 2xx
+	}
+}
+
+# Health without query in the uri
+:8444 {
+	reverse_proxy localhost:54321 {
+		health_uri /health
+		health_status 200
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"health_checks": {
+										"active": {
+											"expect_status": 2,
+											"uri": "/health?ready=1"
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:54321"
+										}
+									]
+								}
+							]
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8444"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"health_checks": {
+										"active": {
+											"expect_status": 200,
+											"uri": "/health"
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "localhost:54321"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -17,12 +17,20 @@ package caddypki
 import (
 	"crypto/x509"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"time"
 
 	"go.uber.org/zap"
 )
 
 func (p *PKI) maintenance() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] PKI maintenance: %v\n%s", err, debug.Stack())
+		}
+	}()
+
 	ticker := time.NewTicker(10 * time.Minute) // TODO: make configurable
 	defer ticker.Stop()
 
@@ -42,7 +50,7 @@ func (p *PKI) renewCerts() {
 		if err != nil {
 			p.log.Error("renewing intermediate certificates",
 				zap.Error(err),
-				zap.String("ca", ca.id))
+				zap.String("ca", ca.ID))
 		}
 	}
 }
@@ -51,7 +59,7 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
 
-	log := p.log.With(zap.String("ca", ca.id))
+	log := p.log.With(zap.String("ca", ca.ID))
 
 	// only maintain the root if it's not manually provided in the config
 	if ca.Root == nil {

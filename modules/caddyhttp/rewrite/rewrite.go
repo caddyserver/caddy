@@ -18,25 +18,39 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"go.uber.org/zap"
 )
 
 func init() {
 	caddy.RegisterModule(Rewrite{})
 }
 
-// Rewrite is a middleware which can rewrite HTTP requests.
+// Rewrite is a middleware which can rewrite/mutate HTTP requests.
 //
-// The Method and URI properties are "setters": the request URI
-// will be set to the given values. Other properties are "modifiers":
-// they modify existing files but do not explicitly specify what the
-// result will be. It is atypical to combine the use of setters and
+// The Method and URI properties are "setters" (the request URI
+// will be overwritten with the given values). Other properties are
+// "modifiers" (they modify existing values in a differentiable
+// way). It is atypical to combine the use of setters and
 // modifiers in a single rewrite.
+//
+// To ensure consistent behavior, prefix and suffix stripping is
+// performed in the URL-decoded (unescaped, normalized) space by
+// default except for the specific bytes where an escape sequence
+// is used in the prefix or suffix pattern.
+//
+// For all modifiers, paths are cleaned before being modified so that
+// multiple, consecutive slashes are collapsed into a single slash,
+// and dot elements are resolved and removed. In the special case
+// of a prefix, suffix, or substring containing "//" (repeated slashes),
+// slashes will not be merged while cleaning the path so that
+// the rewrite can be interpreted literally.
 type Rewrite struct {
 	// Changes the request's HTTP verb.
 	Method string `json:"method,omitempty"`
@@ -58,13 +72,25 @@ type Rewrite struct {
 	URI string `json:"uri,omitempty"`
 
 	// Strips the given prefix from the beginning of the URI path.
+	// The prefix should be written in normalized (unescaped) form,
+	// but if an escaping (`%xx`) is used, the path will be required
+	// to have that same escape at that position in order to match.
 	StripPathPrefix string `json:"strip_path_prefix,omitempty"`
 
 	// Strips the given suffix from the end of the URI path.
+	// The suffix should be written in normalized (unescaped) form,
+	// but if an escaping (`%xx`) is used, the path will be required
+	// to have that same escape at that position in order to match.
 	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
 	// Performs substring replacements on the URI.
-	URISubstring []replacer `json:"uri_substring,omitempty"`
+	URISubstring []substrReplacer `json:"uri_substring,omitempty"`
+
+	// Performs regular expression replacements on the URI path.
+	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
+
+	// Mutates the query string of the URI.
+	Query *queryOps `json:"query,omitempty"`
 
 	logger *zap.Logger
 }
@@ -79,21 +105,45 @@ func (Rewrite) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up rewr.
 func (rewr *Rewrite) Provision(ctx caddy.Context) error {
-	rewr.logger = ctx.Logger(rewr)
+	rewr.logger = ctx.Logger()
+
+	for i, rep := range rewr.PathRegexp {
+		if rep.Find == "" {
+			return fmt.Errorf("path_regexp find cannot be empty")
+		}
+		re, err := regexp.Compile(rep.Find)
+		if err != nil {
+			return fmt.Errorf("compiling regular expression %d: %v", i, err)
+		}
+		rep.re = re
+	}
+	if rewr.Query != nil {
+		for _, replacementOp := range rewr.Query.Replace {
+			err := replacementOp.Provision(ctx)
+			if err != nil {
+				return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+			}
+		}
+	}
+
 	return nil
 }
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	const message = "rewrote request"
 
-	logger := rewr.logger.With(
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
-	)
+	c := rewr.logger.Check(zap.DebugLevel, message)
+	if c == nil {
+		rewr.Rewrite(r, repl)
+		return next.ServeHTTP(w, r)
+	}
 
-	changed := rewr.rewrite(r, repl, logger)
+	changed := rewr.Rewrite(r, repl)
 
 	if changed {
-		logger.Debug("rewrote request",
+		c.Write(
+			zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
@@ -105,7 +155,7 @@ func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 // rewrite performs the rewrites on r using repl, which should
 // have been obtained from r, but is passed in for efficiency.
 // It returns true if any changes were made to r.
-func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.Logger) bool {
+func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	oldMethod := r.Method
 	oldURI := r.RequestURI
 
@@ -119,13 +169,20 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// find the bounds of each part of the URI that exist
 		pathStart, qsStart, fragStart := -1, -1, -1
 		pathEnd, qsEnd := -1, -1
+	loop:
 		for i, ch := range uri {
 			switch {
 			case ch == '?' && qsStart < 0:
 				pathEnd, qsStart = i, i+1
-			case ch == '#' && fragStart < 0:
-				qsEnd, fragStart = i, i+1
-			case pathStart < 0 && qsStart < 0 && fragStart < 0:
+			case ch == '#' && fragStart < 0: // everything after fragment is fragment (very clear in RFC 3986 section 4.2)
+				if qsStart < 0 {
+					pathEnd = i
+				} else {
+					qsEnd = i
+				}
+				fragStart = i + 1
+				break loop
+			case pathStart < 0 && qsStart < 0:
 				pathStart = i
 			}
 		}
@@ -152,16 +209,23 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// in a temporary variable so that they all read the
 		// same version of the URI
 		var newPath, newQuery, newFrag string
+
 		if path != "" {
+			// replace the `path` placeholder to escaped path
+			pathPlaceholder := "{http.request.uri.path}"
+			if strings.Contains(path, pathPlaceholder) {
+				path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
+			}
+
 			newPath = repl.ReplaceAll(path, "")
 		}
 
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
-		if quPos := strings.Index(newPath, "?"); quPos > -1 {
+		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
-			newPath, injectedQuery = newPath[:quPos], newPath[quPos+1:]
+			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
 				query = injectedQuery
@@ -178,7 +242,11 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 		// update the URI with the new components
 		// only after building them
 		if pathStart >= 0 {
-			r.URL.Path = newPath
+			if path, err := url.PathUnescape(newPath); err != nil {
+				r.URL.Path = newPath
+			} else {
+				r.URL.Path = path
+			}
 		}
 		if qsStart >= 0 {
 			r.URL.RawQuery = newQuery
@@ -191,16 +259,37 @@ func (rewr Rewrite) rewrite(r *http.Request, repl *caddy.Replacer, logger *zap.L
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		if !strings.HasPrefix(prefix, "/") {
+			prefix = "/" + prefix
+		}
+		mergeSlashes := !strings.Contains(prefix, "//")
+		changePath(r, func(escapedPath string) string {
+			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
+			return trimPathPrefix(escapedPath, prefix)
+		})
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
-		r.URL.Path = strings.TrimSuffix(r.URL.Path, suffix)
+		mergeSlashes := !strings.Contains(suffix, "//")
+		changePath(r, func(escapedPath string) string {
+			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
+			return reverse(trimPathPrefix(reverse(escapedPath), reverse(suffix)))
+		})
 	}
 
 	// substring replacements in URI
 	for _, rep := range rewr.URISubstring {
 		rep.do(r, repl)
+	}
+
+	// regular expression replacements on the path
+	for _, rep := range rewr.PathRegexp {
+		rep.do(r, repl)
+	}
+
+	// apply query operations
+	if rewr.Query != nil {
+		rewr.Query.do(r, repl)
 	}
 
 	// update the encoded copy of the URI
@@ -235,7 +324,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 
 		// consume the component and write the result
 		comp := qs[:end]
-		comp, _ = repl.ReplaceFunc(comp, func(name string, val interface{}) (interface{}, error) {
+		comp, _ = repl.ReplaceFunc(comp, func(name string, val any) (any, error) {
 			if name == "http.request.uri.query" && wroteVal {
 				return val, nil // already escaped
 			}
@@ -276,12 +365,69 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 	return sb.String()
 }
 
-// replacer describes a simple and fast substring replacement.
-type replacer struct {
-	// The substring to find. Supports placeholders.
+// trimPathPrefix is like strings.TrimPrefix, but customized for advanced URI
+// path prefix matching. The string prefix will be trimmed from the beginning
+// of escapedPath if escapedPath starts with prefix. Rather than a naive 1:1
+// comparison of each byte to determine if escapedPath starts with prefix,
+// both strings are iterated in lock-step, and if prefix has a '%' encoding
+// at a particular position, escapedPath must also have the same encoding
+// representation for that character. In other words, if the prefix string
+// uses the escaped form for a character, escapedPath must literally use the
+// same escape at that position. Otherwise, all character comparisons are
+// performed in normalized/unescaped space.
+func trimPathPrefix(escapedPath, prefix string) string {
+	var iPath, iPrefix int
+	for {
+		if iPath >= len(escapedPath) || iPrefix >= len(prefix) {
+			break
+		}
+
+		prefixCh := prefix[iPrefix]
+		ch := string(escapedPath[iPath])
+
+		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
+			var err error
+			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
+			if err != nil {
+				// should be impossible unless EscapedPath() is returning invalid values!
+				return escapedPath
+			}
+			iPath += 2
+		}
+
+		// prefix comparisons are case-insensitive to consistency with
+		// path matcher, which is case-insensitive for good reasons
+		if !strings.EqualFold(ch, string(prefixCh)) {
+			return escapedPath
+		}
+
+		iPath++
+		iPrefix++
+	}
+
+	// if we iterated through the entire prefix, we found it, so trim it
+	if iPath >= len(prefix) {
+		return escapedPath[iPath:]
+	}
+
+	// otherwise we did not find the prefix
+	return escapedPath
+}
+
+func reverse(s string) string {
+	r := []rune(s)
+	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return string(r)
+}
+
+// substrReplacer describes either a simple and fast substring replacement.
+type substrReplacer struct {
+	// A substring to find. Supports placeholders.
 	Find string `json:"find,omitempty"`
 
-	// The substring to replace. Supports placeholders.
+	// The substring to replace with. Supports placeholders.
 	Replace string `json:"replace,omitempty"`
 
 	// Maximum number of replacements per string.
@@ -289,10 +435,10 @@ type replacer struct {
 	Limit int `json:"limit,omitempty"`
 }
 
-// do performs the replacement on r and returns true if any changes were made.
-func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
-	if rep.Find == "" || rep.Replace == "" {
-		return false
+// do performs the substring replacement on r.
+func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
+	if rep.Find == "" {
+		return
 	}
 
 	lim := rep.Limit
@@ -303,13 +449,176 @@ func (rep replacer) do(r *http.Request, repl *caddy.Replacer) bool {
 	find := repl.ReplaceAll(rep.Find, "")
 	replace := repl.ReplaceAll(rep.Replace, "")
 
-	oldPath := r.URL.Path
-	oldQuery := r.URL.RawQuery
+	mergeSlashes := !strings.Contains(rep.Find, "//")
 
-	r.URL.Path = strings.Replace(oldPath, find, replace, lim)
-	r.URL.RawQuery = strings.Replace(oldQuery, find, replace, lim)
+	changePath(r, func(pathOrRawPath string) string {
+		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
+	})
 
-	return r.URL.Path != oldPath && r.URL.RawQuery != oldQuery
+	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
+}
+
+// regexReplacer describes a replacement using a regular expression.
+type regexReplacer struct {
+	// The regular expression to find.
+	Find string `json:"find,omitempty"`
+
+	// The substring to replace with. Supports placeholders and
+	// regular expression capture groups.
+	Replace string `json:"replace,omitempty"`
+
+	re *regexp.Regexp
+}
+
+func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
+	if rep.Find == "" || rep.re == nil {
+		return
+	}
+	replace := repl.ReplaceAll(rep.Replace, "")
+	changePath(r, func(pathOrRawPath string) string {
+		return rep.re.ReplaceAllString(pathOrRawPath, replace)
+	})
+}
+
+func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
+	req.URL.RawPath = newVal(req.URL.EscapedPath())
+	if p, err := url.PathUnescape(req.URL.RawPath); err == nil && p != "" {
+		req.URL.Path = p
+	} else {
+		req.URL.Path = newVal(req.URL.Path)
+	}
+	// RawPath is only set if it's different from the normalized Path (std lib)
+	if req.URL.RawPath == req.URL.Path {
+		req.URL.RawPath = ""
+	}
+}
+
+// queryOps describes the operations to perform on query keys: add, set, rename and delete.
+type queryOps struct {
+	// Renames a query key from Key to Val, without affecting the value.
+	Rename []queryOpsArguments `json:"rename,omitempty"`
+
+	// Sets query parameters; overwrites a query key with the given value.
+	Set []queryOpsArguments `json:"set,omitempty"`
+
+	// Adds query parameters; does not overwrite an existing query field,
+	// and only appends an additional value for that key if any already exist.
+	Add []queryOpsArguments `json:"add,omitempty"`
+
+	// Replaces query parameters.
+	Replace []*queryOpsReplacement `json:"replace,omitempty"`
+
+	// Deletes a given query key by name.
+	Delete []string `json:"delete,omitempty"`
+}
+
+// Provision compiles the query replace operation regex.
+func (replacement *queryOpsReplacement) Provision(_ caddy.Context) error {
+	if replacement.SearchRegexp != "" {
+		re, err := regexp.Compile(replacement.SearchRegexp)
+		if err != nil {
+			return fmt.Errorf("replacement for query field '%s': %v", replacement.Key, err)
+		}
+		replacement.re = re
+	}
+	return nil
+}
+
+func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
+	query := r.URL.Query()
+	for _, renameParam := range q.Rename {
+		key := repl.ReplaceAll(renameParam.Key, "")
+		val := repl.ReplaceAll(renameParam.Val, "")
+		if key == "" || val == "" {
+			continue
+		}
+		query[val] = query[key]
+		delete(query, key)
+	}
+
+	for _, setParam := range q.Set {
+		key := repl.ReplaceAll(setParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(setParam.Val, "")
+		query[key] = []string{val}
+	}
+
+	for _, addParam := range q.Add {
+		key := repl.ReplaceAll(addParam.Key, "")
+		if key == "" {
+			continue
+		}
+		val := repl.ReplaceAll(addParam.Val, "")
+		query[key] = append(query[key], val)
+	}
+
+	for _, replaceParam := range q.Replace {
+		key := repl.ReplaceAll(replaceParam.Key, "")
+		search := repl.ReplaceKnown(replaceParam.Search, "")
+		replace := repl.ReplaceKnown(replaceParam.Replace, "")
+
+		// replace all query keys...
+		if key == "*" {
+			for fieldName, vals := range query {
+				for i := range vals {
+					if replaceParam.re != nil {
+						query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
+					} else {
+						query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
+					}
+				}
+			}
+			continue
+		}
+
+		for fieldName, vals := range query {
+			for i := range vals {
+				if replaceParam.re != nil {
+					query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
+				} else {
+					query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
+				}
+			}
+		}
+	}
+
+	for _, deleteParam := range q.Delete {
+		param := repl.ReplaceAll(deleteParam, "")
+		if param == "" {
+			continue
+		}
+		delete(query, param)
+	}
+
+	r.URL.RawQuery = query.Encode()
+}
+
+type queryOpsArguments struct {
+	// A key in the query string. Note that query string keys may appear multiple times.
+	Key string `json:"key,omitempty"`
+
+	// The value for the given operation; for add and set, this is
+	// simply the value of the query, and for rename this is the
+	// query key to rename to.
+	Val string `json:"val,omitempty"`
+}
+
+type queryOpsReplacement struct {
+	// The key to replace in the query string.
+	Key string `json:"key,omitempty"`
+
+	// The substring to search for.
+	Search string `json:"search,omitempty"`
+
+	// The regular expression to search with.
+	SearchRegexp string `json:"search_regexp,omitempty"`
+
+	// The string with which to replace matches.
+	Replace string `json:"replace,omitempty"`
+
+	re *regexp.Regexp
 }
 
 // Interface guard

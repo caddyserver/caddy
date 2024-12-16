@@ -1,0 +1,120 @@
+:8884 {
+	reverse_proxy {
+		dynamic a foo 9000
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name foo
+			port 9000
+			refresh 5m
+			resolvers 8.8.8.8 8.8.4.4
+			dial_timeout 2s
+			dial_fallback_delay 300ms
+			versions ipv6
+		}
+	}
+}
+
+:8885 {
+	reverse_proxy {
+		dynamic srv _api._tcp.example.com
+	}
+
+	reverse_proxy {
+		dynamic srv {
+			service api
+			proto tcp
+			name example.com
+			refresh 5m
+			resolvers 8.8.8.8 8.8.4.4
+			dial_timeout 1s
+			dial_fallback_delay -1s
+		}
+	}
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"dynamic_upstreams": {
+										"name": "foo",
+										"port": "9000",
+										"source": "a"
+									},
+									"handler": "reverse_proxy"
+								},
+								{
+									"dynamic_upstreams": {
+										"dial_fallback_delay": 300000000,
+										"dial_timeout": 2000000000,
+										"name": "foo",
+										"port": "9000",
+										"refresh": 300000000000,
+										"resolver": {
+											"addresses": [
+												"8.8.8.8",
+												"8.8.4.4"
+											]
+										},
+										"source": "a",
+										"versions": {
+											"ipv6": true
+										}
+									},
+									"handler": "reverse_proxy"
+								}
+							]
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8885"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"dynamic_upstreams": {
+										"name": "_api._tcp.example.com",
+										"source": "srv"
+									},
+									"handler": "reverse_proxy"
+								},
+								{
+									"dynamic_upstreams": {
+										"dial_fallback_delay": -1000000000,
+										"dial_timeout": 1000000000,
+										"name": "example.com",
+										"proto": "tcp",
+										"refresh": 300000000000,
+										"resolver": {
+											"addresses": [
+												"8.8.8.8",
+												"8.8.4.4"
+											]
+										},
+										"service": "api",
+										"source": "srv"
+									},
+									"handler": "reverse_proxy"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,144 @@
+{
+	email my.email@example.com
+}
+
+:82 {
+	redir https://example.com{uri}
+}
+
+:83 {
+	redir https://example.com{uri}
+}
+
+:84 {
+	redir https://example.com{uri}
+}
+
+abc.de {
+	redir https://example.com{uri}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"abc.de"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "static_response",
+													"headers": {
+														"Location": [
+															"https://example.com{http.request.uri}"
+														]
+													},
+													"status_code": 302
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":82"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "static_response",
+									"headers": {
+										"Location": [
+											"https://example.com{http.request.uri}"
+										]
+									},
+									"status_code": 302
+								}
+							]
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":83"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "static_response",
+									"headers": {
+										"Location": [
+											"https://example.com{http.request.uri}"
+										]
+									},
+									"status_code": 302
+								}
+							]
+						}
+					]
+				},
+				"srv3": {
+					"listen": [
+						":84"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "static_response",
+									"headers": {
+										"Location": [
+											"https://example.com{http.request.uri}"
+										]
+									},
+									"status_code": 302
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"email": "my.email@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "my.email@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

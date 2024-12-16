@@ -15,60 +15,101 @@
 package caddyauth
 
 import (
-	"encoding/base64"
-	"flag"
+	"bufio"
+	"bytes"
 	"fmt"
+	"os"
+	"os/signal"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	"github.com/caddyserver/caddy/v2"
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/crypto/scrypt"
 )
 
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Func:  cmdHashPassword,
-		Usage: "--plaintext <password> [--salt <string>] [--algorithm <name>]",
+		Usage: "[--plaintext <password>] [--algorithm <name>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
 hash is written to stdout as a base64 string.
 
---algorithm may be bcrypt or scrypt. If script, the default
-parameters are used.
+--plaintext, when omitted, will be read from stdin. If
+Caddy is attached to a controlling tty, the plaintext will
+not be echoed.
 
-Use the --salt flag for algorithms which require a salt to
-be provided (scrypt).
+--algorithm currently only supports 'bcrypt', and is the default.
 `,
-		Flags: func() *flag.FlagSet {
-			fs := flag.NewFlagSet("hash-password", flag.ExitOnError)
-			fs.String("algorithm", "bcrypt", "Name of the hash algorithm")
-			fs.String("plaintext", "", "The plaintext password")
-			fs.String("salt", "", "The password salt")
-			return fs
-		}(),
+		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
+			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
+			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
+		},
 	})
 }
 
 func cmdHashPassword(fs caddycmd.Flags) (int, error) {
+	var err error
+
 	algorithm := fs.String("algorithm")
 	plaintext := []byte(fs.String("plaintext"))
-	salt := []byte(fs.String("salt"))
 
 	if len(plaintext) == 0 {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("password is required")
+		fd := int(os.Stdin.Fd())
+		if term.IsTerminal(fd) {
+			// ensure the terminal state is restored on SIGINT
+			state, _ := term.GetState(fd)
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, os.Interrupt)
+			go func() {
+				<-c
+				_ = term.Restore(fd, state)
+				os.Exit(caddy.ExitCodeFailedStartup)
+			}()
+			defer signal.Stop(c)
+
+			fmt.Fprint(os.Stderr, "Enter password: ")
+			plaintext, err = term.ReadPassword(fd)
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
+			fmt.Fprint(os.Stderr, "Confirm password: ")
+			confirmation, err := term.ReadPassword(fd)
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
+			if !bytes.Equal(plaintext, confirmation) {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("password does not match")
+			}
+		} else {
+			rd := bufio.NewReader(os.Stdin)
+			plaintext, err = rd.ReadBytes('\n')
+			if err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+
+			plaintext = plaintext[:len(plaintext)-1] // Trailing newline
+		}
+
+		if len(plaintext) == 0 {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("plaintext is required")
+		}
 	}
 
 	var hash []byte
-	var err error
+	var hashString string
 	switch algorithm {
 	case "bcrypt":
-		hash, err = bcrypt.GenerateFromPassword(plaintext, bcrypt.DefaultCost)
-	case "scrypt":
-		def := ScryptHash{}
-		def.SetDefaults()
-		hash, err = scrypt.Key(plaintext, salt, def.N, def.R, def.P, def.KeyLength)
+		hash, err = BcryptHash{}.Hash(plaintext)
+		hashString = string(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
 	}
@@ -76,9 +117,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	hashBase64 := base64.StdEncoding.EncodeToString(hash)
-
-	fmt.Println(hashBase64)
+	fmt.Println(hashString)
 
 	return 0, nil
 }

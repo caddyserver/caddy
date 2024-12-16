@@ -1,0 +1,80 @@
+localhost
+
+respond "hello from localhost"
+tls {
+	issuer acme {
+		dns_ttl 5m10s
+	}
+	issuer zerossl api_key {
+		dns_ttl 10m20s
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hello from localhost",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"localhost"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"ttl": 310000000000
+									}
+								},
+								"module": "acme"
+							},
+							{
+								"api_key": "api_key",
+								"cname_validation": {
+									"ttl": 620000000000
+								},
+								"module": "zerossl"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

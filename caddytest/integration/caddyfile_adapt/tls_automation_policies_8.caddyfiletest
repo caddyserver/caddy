@@ -1,0 +1,99 @@
+# (this Caddyfile is contrived, but based on issues #4176 and #4198)
+
+http://example.com {
+}
+
+https://example.com {
+	tls abc@example.com
+}
+
+http://localhost:8081 {
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv2": {
+					"listen": [
+						":8081"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip": [
+							"localhost"
+						]
+					}
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"email": "abc@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "abc@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

@@ -1,0 +1,127 @@
+example.com
+
+map {host} {my_placeholder} {magic_number} {
+	# Should output boolean "true" and an integer
+	example.com true 3
+
+	# Should output a string and null
+	foo.example.com "string value"
+
+	# Should output two strings (quoted int)
+	(.*)\.example.com "${1} subdomain" "5"
+
+	# Should output null and a string (quoted int)
+	~.*\.net$ - `7`
+
+	# Should output a float and the string "false"
+	~.*\.xyz$ 123.456 "false"
+
+	# Should output two strings, second being escaped quote
+	default "unknown domain" \"""
+}
+
+vars foo bar
+vars {
+	abc true
+	def 1
+	ghi 2.3
+	jkl "mn op"
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"defaults": [
+														"unknown domain",
+														"\""
+													],
+													"destinations": [
+														"{my_placeholder}",
+														"{magic_number}"
+													],
+													"handler": "map",
+													"mappings": [
+														{
+															"input": "example.com",
+															"outputs": [
+																true,
+																3
+															]
+														},
+														{
+															"input": "foo.example.com",
+															"outputs": [
+																"string value",
+																null
+															]
+														},
+														{
+															"input": "(.*)\\.example.com",
+															"outputs": [
+																"${1} subdomain",
+																"5"
+															]
+														},
+														{
+															"input_regexp": ".*\\.net$",
+															"outputs": [
+																null,
+																"7"
+															]
+														},
+														{
+															"input_regexp": ".*\\.xyz$",
+															"outputs": [
+																123.456,
+																"false"
+															]
+														}
+													],
+													"source": "{http.request.host}"
+												},
+												{
+													"abc": true,
+													"def": 1,
+													"ghi": 2.3,
+													"handler": "vars",
+													"jkl": "mn op"
+												},
+												{
+													"foo": "bar",
+													"handler": "vars"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

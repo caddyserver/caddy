@@ -15,8 +15,7 @@
 package caddyfile
 
 import (
-	"io"
-	"log"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -305,14 +304,10 @@ func TestDispenser_ArgErr_Err(t *testing.T) {
 	if !strings.Contains(err.Error(), "foobar") {
 		t.Errorf("Expected error message with custom message in it ('foobar'); got '%v'", err)
 	}
-}
 
-// NewTestDispenser parses input into tokens and creates a new
-// Disenser for test purposes only; any errors are fatal.
-func NewTestDispenser(input string) *Dispenser {
-	tokens, err := allTokens("Testfile", []byte(input))
-	if err != nil && err != io.EOF {
-		log.Fatalf("getting all tokens from input: %v", err)
+	ErrBarIsFull := errors.New("bar is full")
+	bookingError := d.Errf("unable to reserve: %w", ErrBarIsFull)
+	if !errors.Is(bookingError, ErrBarIsFull) {
+		t.Errorf("Errf(): should be able to unwrap the error chain")
 	}
-	return NewDispenser(tokens)
 }

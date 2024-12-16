@@ -1,0 +1,57 @@
+localhost
+
+tls {
+	issuer acme {
+		preferred_chains {
+			any_common_name "Generic CA 1" "Generic CA 2"
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"localhost"
+						],
+						"issuers": [
+							{
+								"module": "acme",
+								"preferred_chains": {
+									"any_common_name": [
+										"Generic CA 1",
+										"Generic CA 2"
+									]
+								}
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

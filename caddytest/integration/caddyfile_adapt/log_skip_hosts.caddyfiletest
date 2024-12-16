@@ -1,0 +1,80 @@
+one.example.com {
+	log
+}
+
+two.example.com {
+}
+
+three.example.com {
+}
+
+example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"three.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"one.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"two.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"one.example.com": [
+								""
+							]
+						},
+						"skip_hosts": [
+							"example.com",
+							"three.example.com",
+							"two.example.com"
+						]
+					}
+				}
+			}
+		}
+	}
+}

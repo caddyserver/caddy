@@ -1,0 +1,109 @@
+{
+	auto_https prefer_wildcard
+}
+
+*.example.com {
+	tls {
+		dns mock
+	}
+	respond "fallback"
+}
+
+foo.example.com {
+	respond "foo"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "foo",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "fallback",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"skip_certificates": [
+							"foo.example.com"
+						],
+						"prefer_wildcard": true
+					}
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"*.example.com"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"name": "mock"
+										}
+									}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

@@ -1,0 +1,34 @@
+{
+	auto_https ignore_loaded_certs
+}
+
+localhost
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"automatic_https": {
+						"ignore_loaded_certificates": true
+					}
+				}
+			}
+		}
+	}
+}

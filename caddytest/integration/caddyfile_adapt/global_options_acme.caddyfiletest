@@ -1,0 +1,98 @@
+{
+	debug
+	http_port 8080
+	https_port 8443
+	default_sni localhost
+	order root first
+	storage file_system {
+		root /data
+	}
+	acme_ca https://example.com
+	acme_eab {
+		key_id 4K2scIVbBpNd-78scadB2g
+		mac_key abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+	}
+	acme_ca_root /path/to/ca.crt
+	email test@example.com
+	admin off
+	on_demand_tls {
+		ask https://example.com
+	}
+	storage_clean_interval 7d
+	renew_interval 1d
+	ocsp_interval 2d
+
+	key_type ed25519
+}
+
+:80
+----------
+{
+	"admin": {
+		"disabled": true
+	},
+	"logging": {
+		"logs": {
+			"default": {
+				"level": "DEBUG"
+			}
+		}
+	},
+	"storage": {
+		"module": "file_system",
+		"root": "/data"
+	},
+	"apps": {
+		"http": {
+			"http_port": 8080,
+			"https_port": 8443,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"ca": "https://example.com",
+								"challenges": {
+									"http": {
+										"alternate_port": 8080
+									},
+									"tls-alpn": {
+										"alternate_port": 8443
+									}
+								},
+								"email": "test@example.com",
+								"external_account": {
+									"key_id": "4K2scIVbBpNd-78scadB2g",
+									"mac_key": "abcdefghijklmnopqrstuvwx-abcdefghijklnopqrstuvwxyz12ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+								},
+								"module": "acme",
+								"trusted_roots_pem_files": [
+									"/path/to/ca.crt"
+								]
+							}
+						],
+						"key_type": "ed25519"
+					}
+				],
+				"on_demand": {
+					"permission": {
+						"endpoint": "https://example.com",
+						"module": "http"
+					}
+				},
+				"ocsp_interval": 172800000000000,
+				"renew_interval": 86400000000000,
+				"storage_clean_interval": 604800000000000
+			}
+		}
+	}
+}

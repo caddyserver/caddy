@@ -1,0 +1,5 @@
+[*]
+end_of_line = lf
+
+[caddytest/integration/caddyfile_adapt/*.caddyfiletest]
+indent_style = tab

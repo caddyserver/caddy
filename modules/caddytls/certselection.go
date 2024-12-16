@@ -20,8 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"slices"
 
 	"github.com/caddyserver/certmagic"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 // CustomCertSelectionPolicy represents a policy for selecting the certificate
@@ -58,7 +61,8 @@ nextChoice:
 		if len(p.SerialNumber) > 0 {
 			var found bool
 			for _, sn := range p.SerialNumber {
-				if cert.Leaf.SerialNumber.Cmp(&sn.Int) == 0 {
+				snInt := sn.Int // avoid taking address of iteration variable (gosec warning)
+				if cert.Leaf.SerialNumber.Cmp(&snInt) == 0 {
 					found = true
 					break
 				}
@@ -69,15 +73,9 @@ nextChoice:
 		}
 
 		if len(p.SubjectOrganization) > 0 {
-			var found bool
-			for _, subjOrg := range p.SubjectOrganization {
-				for _, org := range cert.Leaf.Subject.Organization {
-					if subjOrg == org {
-						found = true
-						break
-					}
-				}
-			}
+			found := slices.ContainsFunc(p.SubjectOrganization, func(s string) bool {
+				return slices.Contains(cert.Leaf.Subject.Organization, s)
+			})
 			if !found {
 				continue
 			}
@@ -121,6 +119,79 @@ nextChoice:
 	return certmagic.DefaultCertificateSelector(hello, viable)
 }
 
+// UnmarshalCaddyfile sets up the CustomCertSelectionPolicy from Caddyfile tokens. Syntax:
+//
+//	cert_selection {
+//		all_tags             <values...>
+//		any_tag              <values...>
+//		public_key_algorithm <dsa|ecdsa|rsa>
+//		serial_number        <big_integers...>
+//		subject_organization <values...>
+//	}
+func (p *CustomCertSelectionPolicy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	_, wrapper := d.Next(), d.Val() // consume wrapper name
+
+	// No same-line options are supported
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+
+	var hasPublicKeyAlgorithm bool
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		optionName := d.Val()
+		switch optionName {
+		case "all_tags":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			p.AllTags = append(p.AllTags, d.RemainingArgs()...)
+		case "any_tag":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			p.AnyTag = append(p.AnyTag, d.RemainingArgs()...)
+		case "public_key_algorithm":
+			if hasPublicKeyAlgorithm {
+				return d.Errf("duplicate %s option '%s'", wrapper, optionName)
+			}
+			if d.CountRemainingArgs() != 1 {
+				return d.ArgErr()
+			}
+			d.NextArg()
+			if err := p.PublicKeyAlgorithm.UnmarshalJSON([]byte(d.Val())); err != nil {
+				return d.Errf("parsing %s option '%s': %v", wrapper, optionName, err)
+			}
+			hasPublicKeyAlgorithm = true
+		case "serial_number":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			for d.NextArg() {
+				val, bi := d.Val(), bigInt{}
+				_, ok := bi.SetString(val, 10)
+				if !ok {
+					return d.Errf("parsing %s option '%s': invalid big.int value %s", wrapper, optionName, val)
+				}
+				p.SerialNumber = append(p.SerialNumber, bi)
+			}
+		case "subject_organization":
+			if d.CountRemainingArgs() == 0 {
+				return d.ArgErr()
+			}
+			p.SubjectOrganization = append(p.SubjectOrganization, d.RemainingArgs()...)
+		default:
+			return d.ArgErr()
+		}
+
+		// No nested blocks are supported
+		if d.NextBlock(nesting + 1) {
+			return d.Errf("malformed %s option '%s': blocks are not supported", wrapper, optionName)
+		}
+	}
+
+	return nil
+}
+
 // bigInt is a big.Int type that interops with JSON encodings as a string.
 type bigInt struct{ big.Int }
 
@@ -143,3 +214,6 @@ func (bi *bigInt) UnmarshalJSON(p []byte) error {
 	}
 	return nil
 }
+
+// Interface guard
+var _ caddyfile.Unmarshaler = (*CustomCertSelectionPolicy)(nil)

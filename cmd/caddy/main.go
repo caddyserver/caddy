@@ -1,3 +1,8 @@
+// The below line is required to enable post-quantum key agreement in Go 1.23
+// by default without insisting on setting a minimum version of 1.23 in go.mod.
+// See https://github.com/caddyserver/caddy/issues/6540#issuecomment-2313094905
+//go:debug tlskyber=1
+
 // Copyright 2015 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +24,13 @@
 // There is no need to modify the Caddy source code to customize your
 // builds. You can easily build a custom Caddy with these simple steps:
 //
-//   1. Copy this file (main.go) into a new folder
-//   2. Edit the imports below to include the modules you want plugged in
-//   3. Run `go mod init caddy`
-//   4. Run `go install` or `go build` - you now have a custom binary!
+//  1. Copy this file (main.go) into a new folder
+//  2. Edit the imports below to include the modules you want plugged in
+//  3. Run `go mod init caddy`
+//  4. Run `go install` or `go build` - you now have a custom binary!
 //
+// Or you can use xcaddy which does it all for you as a command:
+// https://github.com/caddyserver/xcaddy
 package main
 
 import (

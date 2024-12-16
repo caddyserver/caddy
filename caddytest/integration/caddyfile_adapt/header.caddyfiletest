@@ -1,0 +1,174 @@
+:80 {
+	header Denis "Ritchie"
+	header +Edsger "Dijkstra"
+	header ?John "von Neumann"
+	header -Wolfram
+	header {
+		Grace: "Hopper" # some users habitually suffix field names with a colon
+		+Ray "Solomonoff"
+		?Tim "Berners-Lee"
+		defer
+	}
+	@images path /images/*
+	header @images {
+		Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+	}
+	header {
+		+Link "Foo"
+		+Link "Bar"
+	}
+	header >Set Defer
+	header >Replace Deferred Replacement
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/images/*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"set": {
+											"Cache-Control": [
+												"public, max-age=3600, stale-while-revalidate=86400"
+											]
+										}
+									}
+								}
+							]
+						},
+						{
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"set": {
+											"Denis": [
+												"Ritchie"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Edsger": [
+												"Dijkstra"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"require": {
+											"headers": {
+												"John": null
+											}
+										},
+										"set": {
+											"John": [
+												"von Neumann"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"delete": [
+											"Wolfram"
+										]
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Ray": [
+												"Solomonoff"
+											]
+										},
+										"deferred": true,
+										"set": {
+											"Grace": [
+												"Hopper"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"require": {
+											"headers": {
+												"Tim": null
+											}
+										},
+										"set": {
+											"Tim": [
+												"Berners-Lee"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"add": {
+											"Link": [
+												"Foo",
+												"Bar"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"set": {
+											"Set": [
+												"Defer"
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"deferred": true,
+										"replace": {
+											"Replace": [
+												{
+													"replace": "Replacement",
+													"search_regexp": "Deferred"
+												}
+											]
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

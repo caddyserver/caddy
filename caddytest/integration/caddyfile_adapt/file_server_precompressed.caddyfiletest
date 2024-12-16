@@ -1,0 +1,61 @@
+:80
+
+file_server {
+	precompressed zstd br gzip
+}
+
+file_server {
+	precompressed
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"precompressed": {
+										"br": {},
+										"gzip": {},
+										"zstd": {}
+									},
+									"precompressed_order": [
+										"zstd",
+										"br",
+										"gzip"
+									]
+								},
+								{
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"precompressed": {
+										"br": {},
+										"gzip": {},
+										"zstd": {}
+									},
+									"precompressed_order": [
+										"br",
+										"zstd",
+										"gzip"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

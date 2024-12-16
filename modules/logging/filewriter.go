@@ -15,21 +15,64 @@
 package logging
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
-	"path/filepath"
 	"strconv"
-	"time"
+
+	"github.com/dustin/go-humanize"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/dustin/go-humanize"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func init() {
 	caddy.RegisterModule(FileWriter{})
+}
+
+// fileMode is a string made of 1 to 4 octal digits representing
+// a numeric mode as specified with the `chmod` unix command.
+// `"0777"` and `"777"` are thus equivalent values.
+type fileMode os.FileMode
+
+// UnmarshalJSON satisfies json.Unmarshaler.
+func (m *fileMode) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return io.EOF
+	}
+
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	mode, err := parseFileMode(s)
+	if err != nil {
+		return err
+	}
+
+	*m = fileMode(mode)
+	return err
+}
+
+// MarshalJSON satisfies json.Marshaler.
+func (m *fileMode) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("\"%04o\"", *m)), nil
+}
+
+// parseFileMode parses a file mode string,
+// adding support for `chmod` unix command like
+// 1 to 4 digital octal values.
+func parseFileMode(s string) (os.FileMode, error) {
+	modeStr := fmt.Sprintf("%04s", s)
+	mode, err := strconv.ParseUint(modeStr, 8, 32)
+	if err != nil {
+		return 0, err
+	}
+	return os.FileMode(mode), nil
 }
 
 // FileWriter can write logs to files. By default, log files
@@ -39,6 +82,10 @@ func init() {
 type FileWriter struct {
 	// Filename is the name of the file to write.
 	Filename string `json:"filename,omitempty"`
+
+	// The file permissions mode.
+	// 0600 by default.
+	Mode fileMode `json:"mode,omitempty"`
 
 	// Roll toggles log rolling or rotation, which is
 	// enabled by default.
@@ -85,7 +132,7 @@ func (fw *FileWriter) Provision(ctx caddy.Context) error {
 }
 
 func (fw FileWriter) String() string {
-	fpath, err := filepath.Abs(fw.Filename)
+	fpath, err := caddy.FastAbs(fw.Filename)
 	if err == nil {
 		return fpath
 	}
@@ -99,6 +146,10 @@ func (fw FileWriter) WriterKey() string {
 
 // OpenWriter opens a new file writer.
 func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
+	if fw.Mode == 0 {
+		fw.Mode = 0o600
+	}
+
 	// roll log files by default
 	if fw.Roll == nil || *fw.Roll {
 		if fw.RollSizeMB == 0 {
@@ -115,6 +166,19 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 			fw.RollKeepDays = 90
 		}
 
+		// create the file if it does not exist with the right mode.
+		// lumberjack will reuse the file mode across log rotation.
+		f_tmp, err := os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(fw.Mode))
+		if err != nil {
+			return nil, err
+		}
+		f_tmp.Close()
+		// ensure already existing files have the right mode,
+		// since OpenFile will not set the mode in such case.
+		if err = os.Chmod(fw.Filename, os.FileMode(fw.Mode)); err != nil {
+			return nil, err
+		}
+
 		return &lumberjack.Logger{
 			Filename:   fw.Filename,
 			MaxSize:    fw.RollSizeMB,
@@ -126,72 +190,111 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	}
 
 	// otherwise just open a regular file
-	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(fw.Mode))
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//     file <filename> {
-//         roll_disabled
-//         roll_size     <size>
-//         roll_keep     <num>
-//         roll_keep_for <days>
-//     }
+//	file <filename> {
+//	    mode          <mode>
+//	    roll_disabled
+//	    roll_size     <size>
+//	    roll_uncompressed
+//	    roll_local_time
+//	    roll_keep     <num>
+//	    roll_keep_for <days>
+//	}
 //
-// The roll_size value will be rounded down to number of megabytes (MiB).
-// The roll_keep_for duration will be rounded down to number of days.
+// The roll_size value has megabyte resolution.
+// Fractional values are rounded up to the next whole megabyte (MiB).
+//
+// By default, compression is enabled, but can be turned off by setting
+// the roll_uncompressed option.
+//
+// The roll_keep_for duration has day resolution.
+// Fractional values are rounded up to the next whole number of days.
+//
+// If any of the mode, roll_size, roll_keep, or roll_keep_for subdirectives are
+// omitted or set to a zero value, then Caddy's default value for that
+// subdirective is used.
 func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		if !d.NextArg() {
-			return d.ArgErr()
-		}
-		fw.Filename = d.Val()
-		if d.NextArg() {
-			return d.ArgErr()
-		}
+	d.Next() // consume writer name
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	fw.Filename = d.Val()
+	if d.NextArg() {
+		return d.ArgErr()
+	}
 
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "roll_disabled":
-				var f bool
-				fw.Roll = &f
-				if d.NextArg() {
-					return d.ArgErr()
-				}
-
-			case "roll_size":
-				var sizeStr string
-				if !d.AllArgs(&sizeStr) {
-					return d.ArgErr()
-				}
-				size, err := humanize.ParseBytes(sizeStr)
-				if err != nil {
-					return d.Errf("parsing size: %v", err)
-				}
-				fw.RollSizeMB = int(size)/1024/1024 + 1
-
-			case "roll_keep":
-				var keepStr string
-				if !d.AllArgs(&keepStr) {
-					return d.ArgErr()
-				}
-				keep, err := strconv.Atoi(keepStr)
-				if err != nil {
-					return d.Errf("parsing roll_keep number: %v", err)
-				}
-				fw.RollKeep = keep
-
-			case "roll_keep_for":
-				var keepForStr string
-				if !d.AllArgs(&keepForStr) {
-					return d.ArgErr()
-				}
-				keepFor, err := time.ParseDuration(keepForStr)
-				if err != nil {
-					return d.Errf("parsing roll_keep_for duration: %v", err)
-				}
-				fw.RollKeepDays = int(keepFor.Hours()) / 24
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "mode":
+			var modeStr string
+			if !d.AllArgs(&modeStr) {
+				return d.ArgErr()
 			}
+			mode, err := parseFileMode(modeStr)
+			if err != nil {
+				return d.Errf("parsing mode: %v", err)
+			}
+			fw.Mode = fileMode(mode)
+
+		case "roll_disabled":
+			var f bool
+			fw.Roll = &f
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "roll_size":
+			var sizeStr string
+			if !d.AllArgs(&sizeStr) {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return d.Errf("parsing size: %v", err)
+			}
+			fw.RollSizeMB = int(math.Ceil(float64(size) / humanize.MiByte))
+
+		case "roll_uncompressed":
+			var f bool
+			fw.RollCompress = &f
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "roll_local_time":
+			fw.RollLocalTime = true
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
+		case "roll_keep":
+			var keepStr string
+			if !d.AllArgs(&keepStr) {
+				return d.ArgErr()
+			}
+			keep, err := strconv.Atoi(keepStr)
+			if err != nil {
+				return d.Errf("parsing roll_keep number: %v", err)
+			}
+			fw.RollKeep = keep
+
+		case "roll_keep_for":
+			var keepForStr string
+			if !d.AllArgs(&keepForStr) {
+				return d.ArgErr()
+			}
+			keepFor, err := caddy.ParseDuration(keepForStr)
+			if err != nil {
+				return d.Errf("parsing roll_keep_for duration: %v", err)
+			}
+			if keepFor < 0 {
+				return d.Errf("negative roll_keep_for duration: %v", keepFor)
+			}
+			fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
 		}
 	}
 	return nil

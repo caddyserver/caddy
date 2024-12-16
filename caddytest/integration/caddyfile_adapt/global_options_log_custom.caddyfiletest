@@ -1,0 +1,35 @@
+{
+	log custom-logger {
+		format filter {
+			wrap console
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 32
+				}
+			}
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"custom-logger": {
+				"encoder": {
+					"fields": {
+						"request\u003eremote_ip": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 24,
+							"ipv6_cidr": 32
+						}
+					},
+					"format": "filter",
+					"wrap": {
+						"format": "console"
+					}
+				}
+			}
+		}
+	}
+}

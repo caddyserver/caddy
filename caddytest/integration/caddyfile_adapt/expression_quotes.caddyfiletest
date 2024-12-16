@@ -1,0 +1,162 @@
+(snippet) {
+	@g `{http.error.status_code} == 404`
+}
+
+example.com
+
+@a expression {http.error.status_code} == 400
+abort @a
+
+@b expression {http.error.status_code} == "401"
+abort @b
+
+@c expression {http.error.status_code} == `402`
+abort @c
+
+@d expression "{http.error.status_code} == 403"
+abort @d
+
+@e expression `{http.error.status_code} == 404`
+abort @e
+
+@f `{http.error.status_code} == 404`
+abort @f
+
+import snippet
+abort @g
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": "{http.error.status_code} == 400"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": "{http.error.status_code} == \"401\""
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": "{http.error.status_code} == `402`"
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": {
+														"expr": "{http.error.status_code} == 403",
+														"name": "d"
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": {
+														"expr": "{http.error.status_code} == 404",
+														"name": "e"
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": {
+														"expr": "{http.error.status_code} == 404",
+														"name": "f"
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"abort": true,
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"expression": {
+														"expr": "{http.error.status_code} == 404",
+														"name": "g"
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

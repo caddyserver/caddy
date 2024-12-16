@@ -1,0 +1,26 @@
+{
+	log first {
+		output file foo.log
+	}
+	log second {
+		format json
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"first": {
+				"writer": {
+					"filename": "foo.log",
+					"output": "file"
+				}
+			},
+			"second": {
+				"encoder": {
+					"format": "json"
+				}
+			}
+		}
+	}
+}

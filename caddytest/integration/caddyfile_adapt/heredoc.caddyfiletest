@@ -1,0 +1,51 @@
+example.com {
+	respond <<EOF
+    <html>
+      <head><title>Foo</title>
+      <body>Foo</body>
+    </html>
+    EOF 200
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "\u003chtml\u003e\n  \u003chead\u003e\u003ctitle\u003eFoo\u003c/title\u003e\n  \u003cbody\u003eFoo\u003c/body\u003e\n\u003c/html\u003e",
+													"handler": "static_response",
+													"status_code": 200
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

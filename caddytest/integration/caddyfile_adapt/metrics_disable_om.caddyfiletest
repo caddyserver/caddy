@@ -1,0 +1,36 @@
+:80 {
+	metrics /metrics {
+		disable_openmetrics
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"path": [
+										"/metrics"
+									]
+								}
+							],
+							"handle": [
+								{
+									"disable_openmetrics": true,
+									"handler": "metrics"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

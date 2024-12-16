@@ -1,0 +1,63 @@
+localhost:80
+
+respond * "{header.content-type} {labels.0} {query.p} {path.0} {re.name.0}"
+
+@match path_regexp ^/foo(.*)$
+respond @match "{re.1}"
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "{http.regexp.1}",
+													"handler": "static_response"
+												}
+											],
+											"match": [
+												{
+													"path_regexp": {
+														"name": "match",
+														"pattern": "^/foo(.*)$"
+													}
+												}
+											]
+										},
+										{
+											"handle": [
+												{
+													"body": "{http.request.header.content-type} {http.request.host.labels.0} {http.request.uri.query.p} {http.request.uri.path.0} {http.regexp.name.0}",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

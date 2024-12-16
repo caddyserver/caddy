@@ -1,0 +1,25 @@
+{
+	persist_config off
+}
+
+:8881 {
+}
+----------
+{
+	"admin": {
+		"config": {
+			"persist": false
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8881"
+					]
+				}
+			}
+		}
+	}
+}

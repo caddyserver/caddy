@@ -1,0 +1,80 @@
+{
+	debug
+	http_port 8080
+	https_port 8443
+	default_sni localhost
+	order root first
+	storage file_system {
+		root /data
+	}
+	acme_ca https://example.com
+	acme_ca_root /path/to/ca.crt
+
+	email test@example.com
+	admin {
+		origins localhost:2019 [::1]:2019 127.0.0.1:2019 192.168.10.128
+	}
+	on_demand_tls {
+		ask https://example.com
+	}
+	local_certs
+	key_type ed25519
+}
+
+:80
+----------
+{
+	"admin": {
+		"listen": "localhost:2019",
+		"origins": [
+			"localhost:2019",
+			"[::1]:2019",
+			"127.0.0.1:2019",
+			"192.168.10.128"
+		]
+	},
+	"logging": {
+		"logs": {
+			"default": {
+				"level": "DEBUG"
+			}
+		}
+	},
+	"storage": {
+		"module": "file_system",
+		"root": "/data"
+	},
+	"apps": {
+		"http": {
+			"http_port": 8080,
+			"https_port": 8443,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						],
+						"key_type": "ed25519"
+					}
+				],
+				"on_demand": {
+					"permission": {
+						"endpoint": "https://example.com",
+						"module": "http"
+					}
+				}
+			}
+		}
+	}
+}

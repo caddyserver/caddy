@@ -26,13 +26,17 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
+	"runtime/debug"
 	"time"
+
+	"github.com/caddyserver/certmagic"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
 )
 
 func init() {
@@ -52,6 +56,7 @@ type Provider struct {
 	storage    certmagic.Storage
 	stekConfig *caddytls.SessionTicketService
 	timer      *time.Timer
+	ctx        caddy.Context
 }
 
 // CaddyModule returns the Caddy module information.
@@ -64,6 +69,8 @@ func (Provider) CaddyModule() caddy.ModuleInfo {
 
 // Provision provisions s.
 func (s *Provider) Provision(ctx caddy.Context) error {
+	s.ctx = ctx
+
 	// unpack the storage module to use, if different from the default
 	if s.Storage != nil {
 		val, err := ctx.LoadModule(s, "Storage")
@@ -111,7 +118,7 @@ func (s *Provider) Next(doneChan <-chan struct{}) <-chan [][32]byte {
 
 func (s *Provider) loadSTEK() (distributedSTEK, error) {
 	var sg distributedSTEK
-	gobBytes, err := s.storage.Load(stekFileName)
+	gobBytes, err := s.storage.Load(s.ctx, stekFileName)
 	if err != nil {
 		return sg, err // don't wrap, in case error is certmagic.ErrNotExist
 	}
@@ -129,7 +136,7 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 	if err != nil {
 		return fmt.Errorf("encoding STEK gob: %v", err)
 	}
-	err = s.storage.Store(stekFileName, buf.Bytes())
+	err = s.storage.Store(s.ctx, stekFileName, buf.Bytes())
 	if err != nil {
 		return fmt.Errorf("storing STEK gob: %v", err)
 	}
@@ -141,12 +148,17 @@ func (s *Provider) storeSTEK(dstek distributedSTEK) error {
 // current STEK is outdated (NextRotation time is in the past),
 // then it is rotated and persisted. The resulting STEK is returned.
 func (s *Provider) getSTEK() (distributedSTEK, error) {
-	s.storage.Lock(stekLockName)
-	defer s.storage.Unlock(stekLockName)
+	err := s.storage.Lock(s.ctx, stekLockName)
+	if err != nil {
+		return distributedSTEK{}, fmt.Errorf("failed to acquire storage lock: %v", err)
+	}
+
+	//nolint:errcheck
+	defer s.storage.Unlock(s.ctx, stekLockName)
 
 	// load the current STEKs from storage
 	dstek, err := s.loadSTEK()
-	if _, isNotExist := err.(certmagic.ErrNotExist); isNotExist {
+	if errors.Is(err, fs.ErrNotExist) {
 		// if there is none, then make some right away
 		dstek, err = s.rotateKeys(dstek)
 		if err != nil {
@@ -193,6 +205,11 @@ func (s *Provider) rotateKeys(oldSTEK distributedSTEK) (distributedSTEK, error) 
 // rotate rotates keys on a regular basis, sending each updated set of
 // keys down keysChan, until doneChan is closed.
 func (s *Provider) rotate(doneChan <-chan struct{}, keysChan chan<- [][32]byte) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] distributed STEK rotation: %v\n%s", err, debug.Stack())
+		}
+	}()
 	for {
 		select {
 		case <-s.timer.C:
