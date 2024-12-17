@@ -214,7 +214,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Context) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively

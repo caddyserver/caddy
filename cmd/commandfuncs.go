@@ -560,10 +560,15 @@ func cmdValidateConfig(fl Flags) (int, error) {
 
 func cmdFmt(fl Flags) (int, error) {
 	configFile := fl.Arg(0)
-	if configFile == "" {
-		configFile = "Caddyfile"
+	configFlag := fl.String("config")
+	if (len(fl.Args()) > 1) || (configFlag != "" && configFile != "") {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("fmt does not support multiple files %s %s", configFlag, strings.Join(fl.Args(), " "))
 	}
-
+	if configFile == "" && configFlag == "" {
+		configFile = "Caddyfile"
+	} else if configFile == "" {
+		configFile = configFlag
+	}
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)

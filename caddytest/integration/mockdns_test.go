@@ -34,7 +34,7 @@ func (MockDNSProvider) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// AppendsRecords appends DNS records to the zone.
+// AppendRecords appends DNS records to the zone.
 func (MockDNSProvider) AppendRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
 	return nil, nil
 }
