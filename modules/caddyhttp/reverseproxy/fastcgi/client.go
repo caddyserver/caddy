@@ -41,6 +41,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -136,6 +138,15 @@ type client struct {
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
+	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang
+	if clStr, ok := p["CONTENT_LENGTH"]; !ok {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, nil)
+	} else if _, err := strconv.ParseUint(clStr, 10, 64); err != nil {
+		// stdlib won't return a negative Content-Length, but we check just in case,
+		// the most likely cause is from a missing content length, which is -1
+		return nil, caddyhttp.Error(http.StatusLengthRequired, err)
+	}
+
 	writer := &streamWriter{c: c}
 	writer.buf = bufPool.Get().(*bytes.Buffer)
 	writer.buf.Reset()
