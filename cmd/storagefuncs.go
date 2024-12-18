@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 
 	"github.com/caddyserver/certmagic"
@@ -190,12 +191,20 @@ func cmdExportStorage(fl Flags) (int, error) {
 	for _, k := range keys {
 		info, err := stor.Stat(ctx, k)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				caddy.Log().Warn(fmt.Sprintf("key: %s removed while export is in-progress", k))
+				continue
+			}
 			return caddy.ExitCodeFailedQuit, err
 		}
 
 		if info.IsTerminal {
 			v, err := stor.Load(ctx, k)
 			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					caddy.Log().Warn(fmt.Sprintf("key: %s removed while export is in-progress", k))
+					continue
+				}
 				return caddy.ExitCodeFailedQuit, err
 			}
 

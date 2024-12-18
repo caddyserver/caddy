@@ -42,7 +42,7 @@ func init() {
 // to your application whether a particular domain is allowed
 // to have a certificate issued for it.
 type OnDemandConfig struct {
-	// DEPRECATED. WILL BE REMOVED SOON. Use 'permission' instead with the `http` module.
+	// Deprecated. WILL BE REMOVED SOON. Use 'permission' instead with the `http` module.
 	Ask string `json:"ask,omitempty"`
 
 	// REQUIRED. A module that will determine whether a

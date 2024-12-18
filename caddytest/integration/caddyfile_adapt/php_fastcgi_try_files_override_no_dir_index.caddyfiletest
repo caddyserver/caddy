@@ -6,7 +6,7 @@ php_fastcgi localhost:9000 {
 	env VAR1 value1
 	env VAR2 value2
 	root /var/www
-	try_files {path} {path}/index.php =404
+	try_files {path} index.php
 	dial_timeout 3s
 	read_timeout 10s
 	write_timeout 20s
@@ -29,39 +29,10 @@ php_fastcgi localhost:9000 {
 								{
 									"file": {
 										"try_files": [
-											"{http.request.uri.path}/index.php"
-										]
-									},
-									"not": [
-										{
-											"path": [
-												"*/"
-											]
-										}
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "static_response",
-									"headers": {
-										"Location": [
-											"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
-										]
-									},
-									"status_code": 308
-								}
-							]
-						},
-						{
-							"match": [
-								{
-									"file": {
-										"try_files": [
 											"{http.request.uri.path}",
-											"{http.request.uri.path}/index.php",
-											"=404"
+											"index.php"
 										],
+										"try_policy": "first_exist_fallback",
 										"split_path": [
 											".php",
 											".php5"

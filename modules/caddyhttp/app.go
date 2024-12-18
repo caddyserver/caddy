@@ -401,6 +401,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.IdleTimeout == 0 {
 			srv.IdleTimeout = defaultIdleTimeout
 		}
+		if srv.ReadHeaderTimeout == 0 {
+			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -770,11 +773,20 @@ func (app *App) httpsPort() int {
 	return app.HTTPSPort
 }
 
-// defaultIdleTimeout is the default HTTP server timeout
-// for closing idle connections; useful to avoid resource
-// exhaustion behind hungry CDNs, for example (we've had
-// several complaints without this).
-const defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+const (
+	// defaultIdleTimeout is the default HTTP server timeout
+	// for closing idle connections; useful to avoid resource
+	// exhaustion behind hungry CDNs, for example (we've had
+	// several complaints without this).
+	defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+
+	// defaultReadHeaderTimeout is the default timeout for
+	// reading HTTP headers from clients. Headers are generally
+	// small, often less than 1 KB, so it shouldn't take a
+	// long time even on legitimately slow connections or
+	// busy servers to read it.
+	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+)
 
 // Interface guards
 var (
