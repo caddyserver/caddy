@@ -365,7 +365,7 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 		rw.WriteHeader(http.StatusOK)
 	}
 
-	rr, ok := rw.ResponseWriter.(io.ReaderFrom)
+	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
 	// sendfile can't be used anyway
 	if !ok {
 		return io.Copy(writerOnly{rw}, r)
@@ -386,7 +386,7 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 		nr, err := io.Copy(rw.w, r)
 		return nr + ns, err
 	}
-	nr, err := rr.ReadFrom(r)
+	nr, err := rf.ReadFrom(r)
 	return nr + ns, err
 }
 
