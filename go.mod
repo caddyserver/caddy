@@ -9,15 +9,15 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.21.5-0.20241105180249-4293198e094d
+	github.com/caddyserver/certmagic v0.21.5-0.20241219182349-258b5328e49e
 	github.com/caddyserver/zerossl v0.1.3
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/google/cel-go v0.21.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.17.11
-	github.com/klauspost/cpuid/v2 v2.2.8
-	github.com/mholt/acmez/v2 v2.0.3
+	github.com/klauspost/cpuid/v2 v2.2.9
+	github.com/mholt/acmez/v3 v3.0.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/quic-go/quic-go v0.48.2
 	github.com/smallstep/certificates v0.26.1
@@ -37,9 +37,9 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
 	go.uber.org/zap/exp v0.3.0
-	golang.org/x/crypto v0.30.0
+	golang.org/x/crypto v0.31.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20241104001025-71ed71b4faf9
-	golang.org/x/net v0.32.0
+	golang.org/x/net v0.33.0
 	golang.org/x/sync v0.10.0
 	golang.org/x/term v0.27.0
 	golang.org/x/time v0.7.0
