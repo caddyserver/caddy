@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -13,10 +14,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddytest"
-	"github.com/mholt/acmez/v2"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3"
+	"github.com/mholt/acmez/v3/acme"
 	smallstepacme "github.com/smallstep/certificates/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 )
 
 const acmeChallengePort = 9081
@@ -48,7 +50,7 @@ func TestACMEServerWithDefaults(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -117,7 +119,7 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
