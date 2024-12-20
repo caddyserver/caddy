@@ -978,7 +978,7 @@ func (m MatchHeader) Match(r *http.Request) bool {
 // MatchWithError returns true if r matches m.
 func (m MatchHeader) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	return matchHeaders(r.Header, http.Header(m), r.Host, repl), nil
+	return matchHeaders(r.Header, http.Header(m), r.Host, r.TransferEncoding, repl), nil
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
@@ -1004,12 +1004,16 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 }
 
 // getHeaderFieldVals returns the field values for the given fieldName from input.
-// The host parameter should be obtained from the http.Request.Host field since
-// net/http removes it from the header map.
-func getHeaderFieldVals(input http.Header, fieldName, host string) []string {
+// The host parameter should be obtained from the http.Request.Host field, and the
+// transferEncoding from http.Request.TransferEncoding, since net/http removes them
+// from the header map.
+func getHeaderFieldVals(input http.Header, fieldName, host string, transferEncoding []string) []string {
 	fieldName = textproto.CanonicalMIMEHeaderKey(fieldName)
 	if fieldName == "Host" && host != "" {
 		return []string{host}
+	}
+	if fieldName == "Transfer-Encoding" && input[fieldName] == nil {
+		return transferEncoding
 	}
 	return input[fieldName]
 }
@@ -1017,9 +1021,9 @@ func getHeaderFieldVals(input http.Header, fieldName, host string) []string {
 // matchHeaders returns true if input matches the criteria in against without regex.
 // The host parameter should be obtained from the http.Request.Host field since
 // net/http removes it from the header map.
-func matchHeaders(input, against http.Header, host string, repl *caddy.Replacer) bool {
+func matchHeaders(input, against http.Header, host string, transferEncoding []string, repl *caddy.Replacer) bool {
 	for field, allowedFieldVals := range against {
-		actualFieldVals := getHeaderFieldVals(input, field, host)
+		actualFieldVals := getHeaderFieldVals(input, field, host, transferEncoding)
 		if allowedFieldVals != nil && len(allowedFieldVals) == 0 && actualFieldVals != nil {
 			// a non-nil but empty list of allowed values means
 			// match if the header field exists at all
@@ -1119,7 +1123,7 @@ func (m MatchHeaderRE) Match(r *http.Request) bool {
 // MatchWithError returns true if r matches m.
 func (m MatchHeaderRE) MatchWithError(r *http.Request) (bool, error) {
 	for field, rm := range m {
-		actualFieldVals := getHeaderFieldVals(r.Header, field, r.Host)
+		actualFieldVals := getHeaderFieldVals(r.Header, field, r.Host, r.TransferEncoding)
 		match := false
 	fieldVal:
 		for _, actualFieldVal := range actualFieldVals {
