@@ -388,6 +388,7 @@ When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
 			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
 			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
@@ -409,12 +410,13 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 
 	RegisterCommand(Command{
 		Name:  "add-package",
-		Usage: "<packages...>",
+		Usage: "<package[@version]...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are
-already included. EXPERIMENTAL: May be changed or removed.
+added, with an optional version specified (e.g., "package@version"). Retains
+existing packages. Returns an error if any of the specified packages are already
+included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")

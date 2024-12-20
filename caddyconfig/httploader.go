@@ -35,7 +35,7 @@ func init() {
 // If the response is not a JSON config, a config adapter must be specified
 // either in the loader config (`adapter`), or in the Content-Type HTTP header
 // returned in the HTTP response from the server. The Content-Type header is
-// read just like the admin API's `/load` endpoint. Uf you don't have control
+// read just like the admin API's `/load` endpoint. If you don't have control
 // over the HTTP server (but can still trust its response), you can override
 // the Content-Type header by setting the `adapter` property in this config.
 type HTTPLoader struct {

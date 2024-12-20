@@ -130,7 +130,10 @@ func TestFileMatcher(t *testing.T) {
 		req := &http.Request{URL: u}
 		repl := caddyhttp.NewTestReplacer(req)
 
-		result := m.Match(req)
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+		}
 		if result != tc.matched {
 			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
@@ -240,7 +243,10 @@ func TestPHPFileMatcher(t *testing.T) {
 		req := &http.Request{URL: u}
 		repl := caddyhttp.NewTestReplacer(req)
 
-		result := m.Match(req)
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+		}
 		if result != tc.matched {
 			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
 		}
@@ -289,6 +295,7 @@ var expressionTests = []struct {
 	wantErr           bool
 	wantResult        bool
 	clientCertificate []byte
+	expectedPath      string
 }{
 	{
 		name: "file error no args (MatchFile)",
@@ -354,6 +361,15 @@ var expressionTests = []struct {
 		urlTarget:  "https://example.com/nopenope.txt",
 		wantResult: false,
 	},
+	{
+		name: "file match long pattern foo.txt with try_policy (MatchFile)",
+		expression: &caddyhttp.MatchExpression{
+			Expr: `file({"root": "./testdata", "try_policy": "largest_size", "try_files": ["foo.txt", "large.txt"]})`,
+		},
+		urlTarget:    "https://example.com/",
+		wantResult:   true,
+		expectedPath: "/large.txt",
+	},
 }
 
 func TestMatchExpressionMatch(t *testing.T) {
@@ -379,8 +395,23 @@ func TestMatchExpressionMatch(t *testing.T) {
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 			req = req.WithContext(ctx)
 
-			if tc.expression.Match(req) != tc.wantResult {
+			matches, err := tc.expression.MatchWithError(req)
+			if err != nil {
+				t.Errorf("MatchExpression.Match() error = %v", err)
+				return
+			}
+			if matches != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
+			}
+
+			if tc.expectedPath != "" {
+				path, ok := repl.Get("http.matchers.file.relative")
+				if !ok {
+					t.Errorf("MatchExpression.Match() expected to return path '%s', but got none", tc.expectedPath)
+				}
+				if path != tc.expectedPath {
+					t.Errorf("MatchExpression.Match() expected to return path '%s', but got '%s'", tc.expectedPath, path)
+				}
 			}
 		})
 	}

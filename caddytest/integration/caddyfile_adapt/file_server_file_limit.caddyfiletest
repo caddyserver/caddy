@@ -1,12 +1,9 @@
-{
-	servers :80 {
-		metrics {
-			per_host
-		}
+:80
+
+file_server {
+	browse {
+		file_limit 4000
 	}
-}
-:80 {
-	respond "Hello"
 }
 ----------
 {
@@ -21,16 +18,18 @@
 						{
 							"handle": [
 								{
-									"body": "Hello",
-									"handler": "static_response"
+									"browse": {
+										"file_limit": 4000
+									},
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									]
 								}
 							]
 						}
 					]
 				}
-			},
-			"metrics": {
-				"per_host": true
 			}
 		}
 	}
