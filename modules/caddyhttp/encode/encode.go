@@ -360,12 +360,6 @@ const sniffLen = 512
 // It's based on stdlin http1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
-	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
-	// otherwise, determine if the response should be compressed.
-	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
-		rw.WriteHeader(http.StatusOK)
-	}
-
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
 	// sendfile can't be used anyway
 	if !ok {
