@@ -347,6 +347,7 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	}
 }
 
+// used to mask ReadFrom method
 type writerOnly struct {
 	io.Writer
 }
@@ -368,14 +369,19 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
 	// sendfile can't be used anyway
 	if !ok {
+		// mask ReadFrom to avoid infinite recursion
 		return io.Copy(writerOnly{rw}, r)
 	}
 
 	var ns int64
 	// try to sniff the content type and determine if the response should be compressed
 	if !rw.wroteHeader && rw.config.MinLength > 0 {
-		var err error
-		ns, err = io.Copy(writerOnly{rw}, io.LimitReader(r, sniffLen))
+		var (
+			err error
+			buf [sniffLen]byte
+		)
+		// mask ReadFrom to let Write determine if the response should be compressed
+		ns, err = io.CopyBuffer(writerOnly{rw}, io.LimitReader(r, sniffLen), buf[:])
 		if err != nil || ns < sniffLen {
 			return ns, err
 		}
