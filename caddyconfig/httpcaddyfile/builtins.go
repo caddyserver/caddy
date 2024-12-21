@@ -84,7 +84,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 
 // parseTLS parses the tls directive. Syntax:
 //
-//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	tls [<email>|internal|force_automate]|[<cert_file> <key_file>] {
 //	    protocols <min> [<max>]
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
@@ -107,6 +107,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
 //	    reuse_private_keys
+//	    force_automate
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -126,6 +127,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certManagers []certmagic.Manager
 	var onDemand bool
 	var reusePrivateKeys bool
+	var forceAutomate bool
 
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
@@ -133,8 +135,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	case 1:
 		if firstLine[0] == "internal" {
 			internalIssuer = new(caddytls.InternalIssuer)
+		} else if firstLine[0] == "force_automate" {
+			forceAutomate = true
 		} else if !strings.Contains(firstLine[0], "@") {
-			return nil, h.Err("single argument must either be 'internal' or an email address")
+			return nil, h.Err("single argument must either be 'internal', 'force_automate', or an email address")
 		} else {
 			acmeIssuer = &caddytls.ACMEIssuer{
 				Email: firstLine[0],
@@ -565,6 +569,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	if reusePrivateKeys {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
+	// if enabled, the names in the site addresses will be
+	// added to the automation policies
+	if forceAutomate {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.force_automate",
 			Value: true,
 		})
 	}

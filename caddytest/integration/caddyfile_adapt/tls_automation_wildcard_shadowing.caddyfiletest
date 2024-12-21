@@ -1,0 +1,102 @@
+subdomain.example.com {
+	respond "Subdomain!"
+}
+
+*.example.com {
+	tls cert.pem key.pem
+	respond "Wildcard!"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"subdomain.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Subdomain!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Wildcard!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"*.example.com"
+								]
+							},
+							"certificate_selection": {
+								"any_tag": [
+									"cert0"
+								]
+							}
+						},
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"load_files": [
+					{
+						"certificate": "cert.pem",
+						"key": "key.pem",
+						"tags": [
+							"cert0"
+						]
+					}
+				]
+			}
+		}
+	}
+}
