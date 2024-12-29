@@ -19,6 +19,7 @@
 package reverseproxy
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -31,8 +32,30 @@ import (
 	"unsafe"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+type h2ReadWriteCloser struct {
+	io.ReadCloser
+	http.ResponseWriter
+}
+
+func (rwc h2ReadWriteCloser) Write(p []byte) (n int, err error) {
+	n, err = rwc.ResponseWriter.Write(p)
+	if err != nil {
+		return 0, err
+	}
+
+	//nolint:bodyclose
+	err = http.NewResponseController(rwc.ResponseWriter).Flush()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
 
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, rw http.ResponseWriter, req *http.Request, res *http.Response) {
 	reqUpType := upgradeType(req.Header)
@@ -41,14 +64,18 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// Taken from https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
 	// We know reqUpType is ASCII, it's checked by the caller.
 	if !asciiIsPrint(resUpType) {
-		logger.Debug("backend tried to switch to invalid protocol",
-			zap.String("backend_upgrade", resUpType))
+		if c := logger.Check(zapcore.DebugLevel, "backend tried to switch to invalid protocol"); c != nil {
+			c.Write(zap.String("backend_upgrade", resUpType))
+		}
 		return
 	}
 	if !asciiEqualFold(reqUpType, resUpType) {
-		logger.Debug("backend tried to switch to unexpected protocol via Upgrade header",
-			zap.String("backend_upgrade", resUpType),
-			zap.String("requested_upgrade", reqUpType))
+		if c := logger.Check(zapcore.DebugLevel, "backend tried to switch to unexpected protocol via Upgrade header"); c != nil {
+			c.Write(
+				zap.String("backend_upgrade", resUpType),
+				zap.String("requested_upgrade", reqUpType),
+			)
+		}
 		return
 	}
 
@@ -61,20 +88,59 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
-	rw.WriteHeader(res.StatusCode)
+	normalizeWebsocketHeaders(rw.Header())
 
-	logger.Debug("upgrading connection")
+	var (
+		conn io.ReadWriteCloser
+		brw  *bufio.ReadWriter
+	)
+	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// TODO: once we can reliably detect backend support this, it can be removed for those backends
+	if body, ok := caddyhttp.GetVar(req.Context(), "h2_websocket_body").(io.ReadCloser); ok {
+		req.Body = body
+		rw.Header().Del("Upgrade")
+		rw.Header().Del("Connection")
+		delete(rw.Header(), "Sec-WebSocket-Accept")
+		rw.WriteHeader(http.StatusOK)
 
-	//nolint:bodyclose
-	conn, brw, hijackErr := http.NewResponseController(rw).Hijack()
-	if errors.Is(hijackErr, http.ErrNotSupported) {
-		h.logger.Error("can't switch protocols using non-Hijacker ResponseWriter", zap.String("type", fmt.Sprintf("%T", rw)))
-		return
-	}
+		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
+			c.Write(zap.Int("http_version", 2))
+		}
 
-	if hijackErr != nil {
-		h.logger.Error("hijack failed on protocol switch", zap.Error(hijackErr))
-		return
+		//nolint:bodyclose
+		flushErr := http.NewResponseController(rw).Flush()
+		if flushErr != nil {
+			if c := h.logger.Check(zap.ErrorLevel, "failed to flush http2 websocket response"); c != nil {
+				c.Write(zap.Error(flushErr))
+			}
+			return
+		}
+		conn = h2ReadWriteCloser{req.Body, rw}
+		// bufio is not needed, use minimal buffer
+		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
+	} else {
+		rw.WriteHeader(res.StatusCode)
+
+		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
+			c.Write(zap.Int("http_version", req.ProtoMajor))
+		}
+
+		var hijackErr error
+		//nolint:bodyclose
+		conn, brw, hijackErr = http.NewResponseController(rw).Hijack()
+		if errors.Is(hijackErr, http.ErrNotSupported) {
+			if c := h.logger.Check(zap.ErrorLevel, "can't switch protocols using non-Hijacker ResponseWriter"); c != nil {
+				c.Write(zap.String("type", fmt.Sprintf("%T", rw)))
+			}
+			return
+		}
+
+		if hijackErr != nil {
+			if c := h.logger.Check(zap.ErrorLevel, "hijack failed on protocol switch"); c != nil {
+				c.Write(zap.Error(hijackErr))
+			}
+			return
+		}
 	}
 
 	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
@@ -93,11 +159,15 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	start := time.Now()
 	defer func() {
 		conn.Close()
-		logger.Debug("connection closed", zap.Duration("duration", time.Since(start)))
+		if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
+			c.Write(zap.Duration("duration", time.Since(start)))
+		}
 	}()
 
 	if err := brw.Flush(); err != nil {
-		logger.Debug("response flush", zap.Error(err))
+		if c := logger.Check(zapcore.DebugLevel, "response flush"); c != nil {
+			c.Write(zap.Error(err))
+		}
 		return
 	}
 
@@ -107,7 +177,9 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		data, _ := brw.Peek(buffered)
 		_, err := backConn.Write(data)
 		if err != nil {
-			logger.Debug("backConn write failed", zap.Error(err))
+			if c := logger.Check(zapcore.DebugLevel, "backConn write failed"); c != nil {
+				c.Write(zap.Error(err))
+			}
 			return
 		}
 	}
@@ -148,9 +220,13 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	go spc.copyFromBackend(errc)
 	select {
 	case err := <-errc:
-		logger.Debug("streaming error", zap.Error(err))
+		if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
+			c.Write(zap.Error(err))
+		}
 	case time := <-timeoutc:
-		logger.Debug("stream timed out", zap.Time("timeout", time))
+		if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
+			c.Write(zap.Time("timeout", time))
+		}
 	}
 }
 
@@ -247,7 +323,9 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 		logger.Debug("waiting to read from upstream")
 		nr, rerr := src.Read(buf)
 		logger := logger.With(zap.Int("read", nr))
-		logger.Debug("read from upstream", zap.Error(rerr))
+		if c := logger.Check(zapcore.DebugLevel, "read from upstream"); c != nil {
+			c.Write(zap.Error(rerr))
+		}
 		if rerr != nil && rerr != io.EOF && rerr != context.Canceled {
 			// TODO: this could be useful to know (indeed, it revealed an error in our
 			// fastcgi PoC earlier; but it's this single error report here that necessitates
@@ -256,7 +334,9 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 			// something we need to report to the client, but read errors are a problem on our
 			// end for sure. so we need to decide what we want.)
 			// p.logf("copyBuffer: ReverseProxy read error during body copy: %v", rerr)
-			h.logger.Error("reading from backend", zap.Error(rerr))
+			if c := logger.Check(zapcore.ErrorLevel, "reading from backend"); c != nil {
+				c.Write(zap.Error(rerr))
+			}
 		}
 		if nr > 0 {
 			logger.Debug("writing to downstream")
@@ -264,10 +344,13 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 			if nw > 0 {
 				written += int64(nw)
 			}
-			logger.Debug("wrote to downstream",
-				zap.Int("written", nw),
-				zap.Int64("written_total", written),
-				zap.Error(werr))
+			if c := logger.Check(zapcore.DebugLevel, "wrote to downstream"); c != nil {
+				c.Write(
+					zap.Int("written", nw),
+					zap.Int64("written_total", written),
+					zap.Error(werr),
+				)
+			}
 			if werr != nil {
 				return written, fmt.Errorf("writing: %w", werr)
 			}
@@ -347,13 +430,17 @@ func (h *Handler) cleanupConnections() error {
 	if len(h.connections) > 0 {
 		delay := time.Duration(h.StreamCloseDelay)
 		h.connectionsCloseTimer = time.AfterFunc(delay, func() {
-			h.logger.Debug("closing streaming connections after delay",
-				zap.Duration("delay", delay))
+			if c := h.logger.Check(zapcore.DebugLevel, "closing streaming connections after delay"); c != nil {
+				c.Write(zap.Duration("delay", delay))
+			}
 			err := h.closeConnections()
 			if err != nil {
-				h.logger.Error("failed to closed connections after delay",
-					zap.Error(err),
-					zap.Duration("delay", delay))
+				if c := h.logger.Check(zapcore.ErrorLevel, "failed to closed connections after delay"); c != nil {
+					c.Write(
+						zap.Error(err),
+						zap.Duration("delay", delay),
+					)
+				}
 			}
 		})
 	}
@@ -494,7 +581,9 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n, err = m.dst.Write(p)
-	m.logger.Debug("wrote bytes", zap.Int("n", n), zap.Error(err))
+	if c := m.logger.Check(zapcore.DebugLevel, "wrote bytes"); c != nil {
+		c.Write(zap.Int("n", n), zap.Error(err))
+	}
 	if m.latency < 0 {
 		m.logger.Debug("flushing immediately")
 		//nolint:errcheck
@@ -510,7 +599,9 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 	} else {
 		m.t.Reset(m.latency)
 	}
-	m.logger.Debug("timer set for delayed flush", zap.Duration("duration", m.latency))
+	if c := m.logger.Check(zapcore.DebugLevel, "timer set for delayed flush"); c != nil {
+		c.Write(zap.Duration("duration", m.latency))
+	}
 	m.flushPending = true
 	return
 }

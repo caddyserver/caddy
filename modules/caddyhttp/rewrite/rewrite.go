@@ -131,15 +131,19 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 
 func (rewr Rewrite) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	const message = "rewrote request"
 
-	logger := rewr.logger.With(
-		zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
-	)
+	c := rewr.logger.Check(zap.DebugLevel, message)
+	if c == nil {
+		rewr.Rewrite(r, repl)
+		return next.ServeHTTP(w, r)
+	}
 
 	changed := rewr.Rewrite(r, repl)
 
 	if changed {
-		logger.Debug("rewrote request",
+		c.Write(
+			zap.Object("request", caddyhttp.LoggableHTTPRequest{Request: r}),
 			zap.String("method", r.Method),
 			zap.String("uri", r.RequestURI),
 		)
@@ -255,6 +259,9 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	// strip path prefix or suffix
 	if rewr.StripPathPrefix != "" {
 		prefix := repl.ReplaceAll(rewr.StripPathPrefix, "")
+		if !strings.HasPrefix(prefix, "/") {
+			prefix = "/" + prefix
+		}
 		mergeSlashes := !strings.Contains(prefix, "//")
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)

@@ -104,6 +104,10 @@ jobs:
       uses: anchore/sbom-action/download-syft@main
     - name: Syft version
       run: syft version
+    - name: Install xcaddy
+      run: |
+        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+        xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v6

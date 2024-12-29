@@ -15,9 +15,11 @@
 package caddyhttp
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strconv"
@@ -141,6 +143,10 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
+	// If set, metrics observations will be enabled.
+	// This setting is EXPERIMENTAL and subject to change.
+	Metrics *Metrics `json:"metrics,omitempty"`
+
 	ctx    caddy.Context
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
@@ -183,6 +189,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 		return err
 	}
 
+	if app.Metrics != nil {
+		app.Metrics.init = sync.Once{}
+		app.Metrics.httpMetrics = &httpMetrics{}
+	}
 	// prepare each server
 	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
@@ -195,6 +205,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
 
+		if srv.Metrics != nil {
+			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
+			app.Metrics = cmp.Or[*Metrics](app.Metrics, &Metrics{
+				init:        sync.Once{},
+				httpMetrics: &httpMetrics{},
+			})
+			app.Metrics.PerHost = app.Metrics.PerHost || srv.Metrics.PerHost
+		}
+
 		// only enable access logs if configured
 		if srv.Logs != nil {
 			srv.accessLogger = app.logger.Named("log.access")
@@ -203,15 +222,73 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 		}
 
-		// the Go standard library does not let us serve only HTTP/2 using
-		// http.Server; we would probably need to write our own server
-		if !srv.protocol("h1") && (srv.protocol("h2") || srv.protocol("h2c")) {
-			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
-		}
-
 		// if no protocols configured explicitly, enable all except h2c
 		if len(srv.Protocols) == 0 {
 			srv.Protocols = []string{"h1", "h2", "h3"}
+		}
+
+		srvProtocolsUnique := map[string]struct{}{}
+		for _, srvProtocol := range srv.Protocols {
+			srvProtocolsUnique[srvProtocol] = struct{}{}
+		}
+		_, h1ok := srvProtocolsUnique["h1"]
+		_, h2ok := srvProtocolsUnique["h2"]
+		_, h2cok := srvProtocolsUnique["h2c"]
+
+		// the Go standard library does not let us serve only HTTP/2 using
+		// http.Server; we would probably need to write our own server
+		if !h1ok && (h2ok || h2cok) {
+			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
+		}
+
+		if srv.ListenProtocols != nil {
+			if len(srv.ListenProtocols) != len(srv.Listen) {
+				return fmt.Errorf("server %s: listener protocols count does not match address count: %d != %d",
+					srvName, len(srv.ListenProtocols), len(srv.Listen))
+			}
+
+			for i, lnProtocols := range srv.ListenProtocols {
+				if lnProtocols != nil {
+					// populate empty listen protocols with server protocols
+					lnProtocolsDefault := false
+					var lnProtocolsInclude []string
+					srvProtocolsInclude := maps.Clone(srvProtocolsUnique)
+
+					// keep existing listener protocols unless they are empty
+					for _, lnProtocol := range lnProtocols {
+						if lnProtocol == "" {
+							lnProtocolsDefault = true
+						} else {
+							lnProtocolsInclude = append(lnProtocolsInclude, lnProtocol)
+							delete(srvProtocolsInclude, lnProtocol)
+						}
+					}
+
+					// append server protocols to listener protocols if any listener protocols were empty
+					if lnProtocolsDefault {
+						for _, srvProtocol := range srv.Protocols {
+							if _, ok := srvProtocolsInclude[srvProtocol]; ok {
+								lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
+							}
+						}
+					}
+
+					lnProtocolsIncludeUnique := map[string]struct{}{}
+					for _, lnProtocol := range lnProtocolsInclude {
+						lnProtocolsIncludeUnique[lnProtocol] = struct{}{}
+					}
+					_, h1ok := lnProtocolsIncludeUnique["h1"]
+					_, h2ok := lnProtocolsIncludeUnique["h2"]
+					_, h2cok := lnProtocolsIncludeUnique["h2c"]
+
+					// check if any listener protocols contain h2 or h2c without h1
+					if !h1ok && (h2ok || h2cok) {
+						return fmt.Errorf("server %s, listener %d: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
+					}
+
+					srv.ListenProtocols[i] = lnProtocolsInclude
+				}
+			}
 		}
 
 		// if not explicitly configured by the user, disallow TLS
@@ -283,12 +360,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
-
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
+			err := srv.Routes.ProvisionHandlers(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
@@ -307,7 +383,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// provision the named routes (they get compiled at runtime)
 		for name, route := range srv.NamedRoutes {
-			err := route.Provision(ctx, srv.Metrics)
+			err := route.Provision(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up named route '%s' handlers: %v", name, srvName, err)
 			}
@@ -324,6 +400,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// closes them, so if we don't close them it leads to resource exhaustion
 		if srv.IdleTimeout == 0 {
 			srv.IdleTimeout = defaultIdleTimeout
+		}
+		if srv.ReadHeaderTimeout == 0 {
+			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
 	}
 	ctx.Context = oldContext
@@ -344,7 +423,7 @@ func (app *App) Validate() error {
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us
 			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
-				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.Itoa(int(listenAddr.StartPort+i)))
+				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(listenAddr.StartPort+i), 10))
 				if sn, ok := lnAddrs[addr]; ok {
 					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
 				}
@@ -422,99 +501,118 @@ func (app *App) Start() error {
 			srv.server.Handler = h2c.NewHandler(srv, h2server)
 		}
 
-		for _, lnAddr := range srv.Listen {
+		for lnIndex, lnAddr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(lnAddr)
 			if err != nil {
 				return fmt.Errorf("%s: parsing listen address '%s': %v", srvName, lnAddr, err)
 			}
+
 			srv.addresses = append(srv.addresses, listenAddr)
 
-			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
-				// create the listener for this socket
-				hostport := listenAddr.JoinHostPort(portOffset)
-				lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
-				if err != nil {
-					return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
-				}
-				ln := lnAny.(net.Listener)
+			protocols := srv.Protocols
+			if srv.ListenProtocols != nil && srv.ListenProtocols[lnIndex] != nil {
+				protocols = srv.ListenProtocols[lnIndex]
+			}
 
-				// wrap listener before TLS (up to the TLS placeholder wrapper)
-				var lnWrapperIdx int
-				for i, lnWrapper := range srv.listenerWrappers {
-					if _, ok := lnWrapper.(*tlsPlaceholderWrapper); ok {
-						lnWrapperIdx = i + 1 // mark the next wrapper's spot
-						break
-					}
-					ln = lnWrapper.WrapListener(ln)
-				}
+			protocolsUnique := map[string]struct{}{}
+			for _, protocol := range protocols {
+				protocolsUnique[protocol] = struct{}{}
+			}
+			_, h1ok := protocolsUnique["h1"]
+			_, h2ok := protocolsUnique["h2"]
+			_, h2cok := protocolsUnique["h2c"]
+			_, h3ok := protocolsUnique["h3"]
+
+			for portOffset := uint(0); portOffset < listenAddr.PortRangeSize(); portOffset++ {
+				hostport := listenAddr.JoinHostPort(portOffset)
 
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
-				if useTLS {
-					// create TLS listener - this enables and terminates TLS
-					ln = tls.NewListener(ln, tlsCfg)
 
-					// enable HTTP/3 if configured
-					if srv.protocol("h3") {
-						// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
-						// a different transport mechanism... which is fine, but the OS doesn't
-						// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
-						// are still one file on the system. So even though "unixpacket" and
-						// "unixgram" are different network types just as "tcp" and "udp" are,
-						// the OS will not let us use the same file as both STREAM and DGRAM.
-						if len(srv.Protocols) > 1 && listenAddr.IsUnixNetwork() {
-							app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
-								zap.String("file", hostport))
-							for i := range srv.Protocols {
-								if srv.Protocols[i] == "h3" {
-									srv.Protocols = append(srv.Protocols[:i], srv.Protocols[i+1:]...)
-									break
-								}
-							}
-						} else {
-							app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-							if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
-								return err
-							}
+				// enable HTTP/3 if configured
+				if h3ok && useTLS {
+					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+					if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
+						return err
+					}
+				}
+
+				if h3ok && !useTLS {
+					// Can only serve h3 with TLS enabled
+					app.logger.Warn("HTTP/3 skipped because it requires TLS",
+						zap.String("network", listenAddr.Network),
+						zap.String("addr", hostport))
+				}
+
+				if h1ok || h2ok && useTLS || h2cok {
+					// create the listener for this socket
+					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
+					if err != nil {
+						return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
+					}
+					ln, ok := lnAny.(net.Listener)
+					if !ok {
+						return fmt.Errorf("network '%s' cannot handle HTTP/1 or HTTP/2 connections", listenAddr.Network)
+					}
+
+					// wrap listener before TLS (up to the TLS placeholder wrapper)
+					var lnWrapperIdx int
+					for i, lnWrapper := range srv.listenerWrappers {
+						if _, ok := lnWrapper.(*tlsPlaceholderWrapper); ok {
+							lnWrapperIdx = i + 1 // mark the next wrapper's spot
+							break
 						}
+						ln = lnWrapper.WrapListener(ln)
+					}
+
+					if useTLS {
+						// create TLS listener - this enables and terminates TLS
+						ln = tls.NewListener(ln, tlsCfg)
+					}
+
+					// finish wrapping listener where we left off before TLS
+					for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
+						ln = srv.listenerWrappers[i].WrapListener(ln)
+					}
+
+					// handle http2 if use tls listener wrapper
+					if h2ok {
+						http2lnWrapper := &http2Listener{
+							Listener: ln,
+							server:   srv.server,
+							h2server: h2server,
+						}
+						srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
+						ln = http2lnWrapper
+					}
+
+					// if binding to port 0, the OS chooses a port for us;
+					// but the user won't know the port unless we print it
+					if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+						app.logger.Info("port 0 listener",
+							zap.String("input_address", lnAddr),
+							zap.String("actual_address", ln.Addr().String()))
+					}
+
+					app.logger.Debug("starting server loop",
+						zap.String("address", ln.Addr().String()),
+						zap.Bool("tls", useTLS),
+						zap.Bool("http3", srv.h3server != nil))
+
+					srv.listeners = append(srv.listeners, ln)
+
+					// enable HTTP/1 if configured
+					if h1ok {
+						//nolint:errcheck
+						go srv.server.Serve(ln)
 					}
 				}
 
-				// finish wrapping listener where we left off before TLS
-				for i := lnWrapperIdx; i < len(srv.listenerWrappers); i++ {
-					ln = srv.listenerWrappers[i].WrapListener(ln)
-				}
-
-				// handle http2 if use tls listener wrapper
-				if useTLS {
-					http2lnWrapper := &http2Listener{
-						Listener: ln,
-						server:   srv.server,
-						h2server: h2server,
-					}
-					srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
-					ln = http2lnWrapper
-				}
-
-				// if binding to port 0, the OS chooses a port for us;
-				// but the user won't know the port unless we print it
-				if !listenAddr.IsUnixNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
-					app.logger.Info("port 0 listener",
-						zap.String("input_address", lnAddr),
-						zap.String("actual_address", ln.Addr().String()))
-				}
-
-				app.logger.Debug("starting server loop",
-					zap.String("address", ln.Addr().String()),
-					zap.Bool("tls", useTLS),
-					zap.Bool("http3", srv.h3server != nil))
-
-				srv.listeners = append(srv.listeners, ln)
-
-				// enable HTTP/1 if configured
-				if srv.protocol("h1") {
-					//nolint:errcheck
-					go srv.server.Serve(ln)
+				if h2ok && !useTLS {
+					// Can only serve h2 with TLS enabled
+					app.logger.Warn("HTTP/2 skipped because it requires TLS",
+						zap.String("network", listenAddr.Network),
+						zap.String("addr", hostport))
 				}
 			}
 		}
@@ -607,16 +705,7 @@ func (app *App) Stop() error {
 			return
 		}
 
-		// First close h3server then close listeners unlike stdlib for several reasons:
-		// 1, udp has only a single socket, once closed, no more data can be read and
-		// written. In contrast, closing tcp listeners won't affect established connections.
-		// This have something to do with graceful shutdown when upstream implements it.
-		// 2, h3server will only close listeners it's registered (quic listeners). Closing
-		// listener first and these listeners maybe unregistered thus won't be closed. caddy
-		// distinguishes quic-listener and underlying datagram sockets.
-
-		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
-		if err := server.h3server.Close(); err != nil {
+		if err := server.h3server.Shutdown(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -684,11 +773,20 @@ func (app *App) httpsPort() int {
 	return app.HTTPSPort
 }
 
-// defaultIdleTimeout is the default HTTP server timeout
-// for closing idle connections; useful to avoid resource
-// exhaustion behind hungry CDNs, for example (we've had
-// several complaints without this).
-const defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+const (
+	// defaultIdleTimeout is the default HTTP server timeout
+	// for closing idle connections; useful to avoid resource
+	// exhaustion behind hungry CDNs, for example (we've had
+	// several complaints without this).
+	defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+
+	// defaultReadHeaderTimeout is the default timeout for
+	// reading HTTP headers from clients. Headers are generally
+	// small, often less than 1 KB, so it shouldn't take a
+	// long time even on legitimately slow connections or
+	// busy servers to read it.
+	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+)
 
 // Interface guards
 var (

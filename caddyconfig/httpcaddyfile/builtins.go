@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -56,15 +56,35 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...>
+//		bind <addresses...> [{
+//	   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
-	return []ConfigValue{{Class: "bind", Value: h.RemainingArgs()}}, nil
+	var addresses, protocols []string
+	addresses = h.RemainingArgs()
+
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "protocols":
+			protocols = h.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, h.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 // parseTLS parses the tls directive. Syntax:
 //
-//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	tls [<email>|internal|force_automate]|[<cert_file> <key_file>] {
 //	    protocols <min> [<max>]
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
@@ -87,6 +107,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
 //	    reuse_private_keys
+//	    force_automate
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -106,6 +127,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certManagers []certmagic.Manager
 	var onDemand bool
 	var reusePrivateKeys bool
+	var forceAutomate bool
 
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
@@ -113,8 +135,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	case 1:
 		if firstLine[0] == "internal" {
 			internalIssuer = new(caddytls.InternalIssuer)
+		} else if firstLine[0] == "force_automate" {
+			forceAutomate = true
 		} else if !strings.Contains(firstLine[0], "@") {
-			return nil, h.Err("single argument must either be 'internal' or an email address")
+			return nil, h.Err("single argument must either be 'internal', 'force_automate', or an email address")
 		} else {
 			acmeIssuer = &caddytls.ACMEIssuer{
 				Email: firstLine[0],
@@ -549,6 +573,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	// if enabled, the names in the site addresses will be
+	// added to the automation policies
+	if forceAutomate {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.force_automate",
+			Value: true,
+		})
+	}
+
 	// custom certificate selection
 	if len(certSelector.AnyTag) > 0 {
 		cp.CertSelection = &certSelector
@@ -960,6 +993,50 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				}
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
+
+		case "sampling":
+			d := h.Dispenser.NewFromNextSegment()
+			for d.NextArg() {
+				// consume any tokens on the same line, if any.
+			}
+
+			sampling := &caddy.LogSampling{}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				subdir := d.Val()
+				switch subdir {
+				case "interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					interval, err := time.ParseDuration(d.Val() + "ns")
+					if err != nil {
+						return nil, d.Errf("failed to parse interval: %v", err)
+					}
+					sampling.Interval = interval
+				case "first":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					first, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse first: %v", err)
+					}
+					sampling.First = first
+				case "thereafter":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					thereafter, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse thereafter: %v", err)
+					}
+					sampling.Thereafter = thereafter
+				default:
+					return nil, d.Errf("unrecognized subdirective: %s", subdir)
+				}
+			}
+
+			cl.Sampling = sampling
 
 		case "core":
 			if !h.NextArg() {

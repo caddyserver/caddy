@@ -70,4 +70,4 @@ jobs:
         continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
-          GOOS=$GOOS GOARCH=$GOARCH go build -tags nobadger -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
+          GOOS=$GOOS GOARCH=$GOARCH go build -tags=nobadger,nomysql,nopgx -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null

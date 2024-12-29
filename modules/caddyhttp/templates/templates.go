@@ -81,6 +81,12 @@ func init() {
 // {{placeholder "http.error.status_code"}}
 // ```
 //
+// As a shortcut, `ph` is an alias for `placeholder`.
+//
+// ```
+// {{ph "http.request.method"}}
+// ```
+//
 // ##### `.Host`
 //
 // Returns the hostname portion (no port) of the Host header of the HTTP request.

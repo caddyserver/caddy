@@ -28,8 +28,9 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/caddyserver/zerossl"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -336,7 +337,9 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
 	}
 
-	iss.logger.Info("generated EAB credentials", zap.String("key_id", result.EABKID))
+	if c := iss.logger.Check(zapcore.InfoLevel, "generated EAB credentials"); c != nil {
+		c.Write(zap.String("key_id", result.EABKID))
+	}
 
 	return &acme.EAB{
 		KeyID:  result.EABKID,
