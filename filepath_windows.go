@@ -14,11 +14,14 @@
 
 package caddy
 
-import "io/fs"
+import (
+	"path/filepath"
+)
 
-type FileSystems interface {
-	Register(k string, v fs.FS)
-	Unregister(k string)
-	Get(k string) (v fs.FS, ok bool)
-	Default() fs.FS
+// FastAbs can't be optimized on Windows because there
+// are special file paths that require the use of syscall.FullPath
+// to handle correctly.
+// Just call stdlib's implementation which uses that function.
+func FastAbs(path string) (string, error) {
+	return filepath.Abs(path)
 }

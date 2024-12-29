@@ -1,16 +1,10 @@
-{
-	auto_https prefer_wildcard
+subdomain.example.com {
+	respond "Subdomain!"
 }
 
 *.example.com {
-	tls {
-		dns mock
-	}
-	respond "fallback"
-}
-
-foo.example.com {
-	respond "foo"
+	tls cert.pem key.pem
+	respond "Wildcard!"
 }
 ----------
 {
@@ -26,7 +20,7 @@ foo.example.com {
 							"match": [
 								{
 									"host": [
-										"foo.example.com"
+										"subdomain.example.com"
 									]
 								}
 							],
@@ -37,7 +31,7 @@ foo.example.com {
 										{
 											"handle": [
 												{
-													"body": "foo",
+													"body": "Subdomain!",
 													"handler": "static_response"
 												}
 											]
@@ -62,7 +56,7 @@ foo.example.com {
 										{
 											"handle": [
 												{
-													"body": "fallback",
+													"body": "Wildcard!",
 													"handler": "static_response"
 												}
 											]
@@ -73,33 +67,32 @@ foo.example.com {
 							"terminal": true
 						}
 					],
-					"automatic_https": {
-						"skip_certificates": [
-							"foo.example.com"
-						],
-						"prefer_wildcard": true
-					}
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"*.example.com"
+								]
+							},
+							"certificate_selection": {
+								"any_tag": [
+									"cert0"
+								]
+							}
+						},
+						{}
+					]
 				}
 			}
 		},
 		"tls": {
-			"automation": {
-				"policies": [
+			"certificates": {
+				"load_files": [
 					{
-						"subjects": [
-							"*.example.com"
-						],
-						"issuers": [
-							{
-								"challenges": {
-									"dns": {
-										"provider": {
-											"name": "mock"
-										}
-									}
-								},
-								"module": "acme"
-							}
+						"certificate": "cert.pem",
+						"key": "key.pem",
+						"tags": [
+							"cert0"
 						]
 					}
 				]

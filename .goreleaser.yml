@@ -192,6 +192,9 @@ nfpms:
       preremove: ./caddy-dist/scripts/preremove.sh
       postremove: ./caddy-dist/scripts/postremove.sh
 
+    provides:
+      - httpd
+
 release:
   github:
     owner: caddyserver

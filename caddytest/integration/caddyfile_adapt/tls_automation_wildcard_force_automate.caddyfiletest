@@ -1,0 +1,180 @@
+automated1.example.com {
+	tls force_automate
+	respond "Automated!"
+}
+
+automated2.example.com {
+	tls force_automate
+	respond "Automated!"
+}
+
+shadowed.example.com {
+	respond "Shadowed!"
+}
+
+*.example.com {
+	tls cert.pem key.pem
+	respond "Wildcard!"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"automated1.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Automated!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"automated2.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Automated!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"shadowed.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Shadowed!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Wildcard!",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"automated1.example.com"
+								]
+							}
+						},
+						{
+							"match": {
+								"sni": [
+									"automated2.example.com"
+								]
+							}
+						},
+						{
+							"match": {
+								"sni": [
+									"*.example.com"
+								]
+							},
+							"certificate_selection": {
+								"any_tag": [
+									"cert0"
+								]
+							}
+						},
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"automated1.example.com",
+					"automated2.example.com"
+				],
+				"load_files": [
+					{
+						"certificate": "cert.pem",
+						"key": "key.pem",
+						"tags": [
+							"cert0"
+						]
+					}
+				]
+			}
+		}
+	}
+}

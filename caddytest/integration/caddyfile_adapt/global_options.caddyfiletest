@@ -9,6 +9,8 @@
 	storage file_system {
 		root /data
 	}
+	storage_check off
+	storage_clean_interval off
 	acme_ca https://example.com
 	acme_ca_root /path/to/ca.crt
 	ocsp_stapling off
@@ -73,7 +75,9 @@
 					}
 				}
 			},
-			"disable_ocsp_stapling": true
+			"disable_ocsp_stapling": true,
+			"disable_storage_check": true,
+			"disable_storage_clean": true
 		}
 	}
 }
