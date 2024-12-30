@@ -423,6 +423,7 @@ func (st ServerType) buildTLSApp(
 		}
 		al = append(al, name)
 	}
+	slices.Sort(al) // to stabilize the adapt output
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
 	}
