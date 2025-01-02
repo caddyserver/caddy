@@ -725,8 +725,10 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
-	// let the rest of the program know we're quitting
-	atomic.StoreInt32(exiting, 1)
+	// let the rest of the program know we're quitting; only do it once
+	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+		return
+	}
 
 	// give the OS or service/process manager our 2 weeks' notice: we quit
 	if err := notify.Stopping(); err != nil {

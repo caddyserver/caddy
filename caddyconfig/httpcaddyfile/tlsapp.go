@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -94,6 +94,9 @@ func (st ServerType) buildTLSApp(
 
 	// collect all hosts that have a wildcard in them, and arent HTTP
 	wildcardHosts := []string{}
+	// hosts that have been explicitly marked to be automated,
+	// even if covered by another wildcard
+	forcedAutomatedNames := make(map[string]struct{})
 	for _, p := range pairings {
 		var addresses []string
 		for _, addressWithProtocols := range p.addressesWithProtocols {
@@ -148,6 +151,13 @@ func (st ServerType) buildTLSApp(
 			// on-demand tls
 			if _, ok := sblock.pile["tls.on_demand"]; ok {
 				ap.OnDemand = true
+			}
+
+			// collect hosts that are forced to be automated
+			if _, ok := sblock.pile["tls.force_automate"]; ok {
+				for _, host := range sblockHosts {
+					forcedAutomatedNames[host] = struct{}{}
+				}
 			}
 
 			// reuse private keys tls
@@ -407,6 +417,13 @@ func (st ServerType) buildTLSApp(
 			}
 		}
 	}
+	for name := range forcedAutomatedNames {
+		if slices.Contains(al, name) {
+			continue
+		}
+		al = append(al, name)
+	}
+	slices.Sort(al) // to stabilize the adapt output
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
 	}

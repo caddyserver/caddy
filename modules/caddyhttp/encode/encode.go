@@ -347,6 +347,49 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	}
 }
 
+// used to mask ReadFrom method
+type writerOnly struct {
+	io.Writer
+}
+
+// copied from stdlib
+const sniffLen = 512
+
+// ReadFrom will try to use sendfile to copy from the reader to the response writer.
+// It's only used if the response writer implements io.ReaderFrom and the data can't be compressed.
+// It's based on stdlin http1.1 response writer implementation.
+// https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
+func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
+	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
+	// sendfile can't be used anyway
+	if !ok {
+		// mask ReadFrom to avoid infinite recursion
+		return io.Copy(writerOnly{rw}, r)
+	}
+
+	var ns int64
+	// try to sniff the content type and determine if the response should be compressed
+	if !rw.wroteHeader && rw.config.MinLength > 0 {
+		var (
+			err error
+			buf [sniffLen]byte
+		)
+		// mask ReadFrom to let Write determine if the response should be compressed
+		ns, err = io.CopyBuffer(writerOnly{rw}, io.LimitReader(r, sniffLen), buf[:])
+		if err != nil || ns < sniffLen {
+			return ns, err
+		}
+	}
+
+	// the response will be compressed, no sendfile support
+	if rw.w != nil {
+		nr, err := io.Copy(rw.w, r)
+		return nr + ns, err
+	}
+	nr, err := rf.ReadFrom(r)
+	return nr + ns, err
+}
+
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
