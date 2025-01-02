@@ -1221,13 +1221,14 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if limit > 0 {
-		n, err := io.CopyN(buf, originalBody, limit)
-		if (err != nil && err != io.EOF) || n == limit {
+		var err error
+		written, err = io.CopyN(buf, originalBody, limit)
+		if (err != nil && err != io.EOF) || written == limit {
 			return bodyReadCloser{
 				Reader: io.MultiReader(buf, originalBody),
 				buf:    buf,
 				body:   originalBody,
-			}, n
+			}, written
 		}
 	} else {
 		written, _ = io.Copy(buf, originalBody)
