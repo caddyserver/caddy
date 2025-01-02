@@ -173,10 +173,18 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 			return nil, err
 		}
 		f_tmp.Close()
+
 		// ensure already existing files have the right mode,
 		// since OpenFile will not set the mode in such case.
-		if err = os.Chmod(fw.Filename, os.FileMode(fw.Mode)); err != nil {
-			return nil, err
+		// only chmod if the mode needs to be changed, however
+		info, err := f_tmp.Stat()
+		if err == nil {
+			desiredMode := os.FileMode(fw.Mode)
+			if info.Mode()&os.ModePerm != desiredMode&os.ModePerm {
+				if err = os.Chmod(fw.Filename, desiredMode); err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		return &lumberjack.Logger{
