@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy/fastcgi"
 	"io"
 	"net"
 	"net/http"
@@ -246,7 +245,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.Transport = mod.(http.RoundTripper)
 		// enable request buffering for fastcgi if not configured
 		// TODO: better default buffering for fastcgi requests without content length
-		if _, ok := h.Transport.(*fastcgi.Transport); ok && h.RequestBuffers == 0 {
+		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
 			h.RequestBuffers = 4096
 		}
 	}
