@@ -37,6 +37,7 @@ import (
 	"github.com/google/cel-go/interpreter/functions"
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -642,8 +643,9 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 				if !isStringPlaceholder {
 					return nil, eh.NewError(entry.ID(), "matcher map keys must be string literals")
 				}
+				isNull := entry.AsMapEntry().Value().AsLiteral().Type() == types.NullType
 				isStringListPlaceholder := isCELStringExpr(entry.AsMapEntry().Value()) ||
-					isCELStringListLiteral(entry.AsMapEntry().Value())
+					isCELStringListLiteral(entry.AsMapEntry().Value()) || isNull
 				if !isStringListPlaceholder {
 					return nil, eh.NewError(entry.AsMapEntry().Value().ID(), "matcher map values must be string or list literals")
 				}
@@ -674,6 +676,8 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 	mapStrListStr := make(map[string][]string, len(mapStrIface))
 	for k, v := range mapStrIface {
 		switch val := v.(type) {
+		case structpb.NullValue:
+			mapStrListStr[k] = nil
 		case string:
 			mapStrListStr[k] = []string{val}
 		case types.String:
@@ -787,7 +791,7 @@ var (
 	escapedPlaceholderRegexp    = regexp.MustCompile(`\\{([a-zA-Z][\w.-]+)}`)
 	escapedPlaceholderExpansion = `{${1}}`
 
-	CELTypeJSON = cel.MapType(cel.StringType, cel.DynType)
+	CELTypeJSON = cel.MapType(cel.StringType, cel.AnyType)
 )
 
 var httpRequestObjectType = cel.ObjectType("http.Request")
