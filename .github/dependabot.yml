@@ -5,3 +5,12 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      go.opentelemetry.io:
+        patterns:
+          - "go.opentelemetry.io/*"
+    open-pull-requests-limit: 20
