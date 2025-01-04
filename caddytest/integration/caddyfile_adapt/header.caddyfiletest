@@ -12,6 +12,9 @@
 	@images path /images/*
 	header @images {
 		Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+		match {
+			status 200
+		}
 	}
 	header {
 		+Link "Foo"
@@ -42,6 +45,11 @@
 								{
 									"handler": "headers",
 									"response": {
+										"require": {
+											"status_code": [
+												200
+											]
+										},
 										"set": {
 											"Cache-Control": [
 												"public, max-age=3600, stale-while-revalidate=86400"
