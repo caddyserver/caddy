@@ -529,6 +529,25 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 
+				// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
+				// a different transport mechanism... which is fine, but the OS doesn't
+				// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
+				// are still one file on the system. So even though "unixpacket" and
+				// "unixgram" are different network types just as "tcp" and "udp" are,
+				// the OS will not let us use the same file as both STREAM and DGRAM.
+				if h3ok && listenAddr.IsUnixNetwork() {
+					app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
+						zap.String("file", hostport))
+					for i := range srv.Protocols {
+						if srv.Protocols[i] == "h3" {
+							srv.Protocols = append(srv.Protocols[:i], srv.Protocols[i+1:]...)
+							break
+						}
+					}
+					delete(protocolsUnique, "h3")
+					h3ok = false
+				}
+
 				// enable HTTP/3 if configured
 				if h3ok && useTLS {
 					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
