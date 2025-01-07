@@ -941,6 +941,31 @@ func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (l *LeafCertClientAuth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.NextArg()
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		modName := d.Val()
+		if !strings.HasPrefix(modName, "load_") {
+			return d.Err("expected a leaf certificate loader module name prefixed with `load_`")
+		}
+		modName = strings.TrimPrefix(modName, "load_")
+		mod, err := caddyfile.UnmarshalModule(d, "tls.leaf_cert_loader."+modName)
+		if err != nil {
+			return d.WrapErr(err)
+		}
+		vMod, ok := mod.(LeafCertificateLoader)
+		if !ok {
+			return fmt.Errorf("leaf module '%s' is not a leaf certificate loader", vMod)
+		}
+		l.LeafCertificateLoadersRaw = append(
+			l.LeafCertificateLoadersRaw,
+			caddyconfig.JSONModuleObject(vMod, "loader", modName, nil),
+		)
+	}
+	return nil
+}
+
 func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	if len(rawCerts) == 0 {
 		return fmt.Errorf("no client certificate provided")
@@ -1004,6 +1029,7 @@ var secretsLogPool = caddy.NewUsagePool()
 var (
 	_ caddyfile.Unmarshaler = (*ClientAuthentication)(nil)
 	_ caddyfile.Unmarshaler = (*ConnectionPolicy)(nil)
+	_ caddyfile.Unmarshaler = (*LeafCertClientAuth)(nil)
 )
 
 // ParseCaddyfileNestedMatcherSet parses the Caddyfile tokens for a nested
