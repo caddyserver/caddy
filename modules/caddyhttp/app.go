@@ -529,21 +529,6 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 
-				// enable HTTP/3 if configured
-				if h3ok && useTLS {
-					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-					if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
-						return err
-					}
-				}
-
-				if h3ok && !useTLS {
-					// Can only serve h3 with TLS enabled
-					app.logger.Warn("HTTP/3 skipped because it requires TLS",
-						zap.String("network", listenAddr.Network),
-						zap.String("addr", hostport))
-				}
-
 				if h1ok || h2ok && useTLS || h2cok {
 					// create the listener for this socket
 					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
@@ -613,6 +598,33 @@ func (app *App) Start() error {
 					app.logger.Warn("HTTP/2 skipped because it requires TLS",
 						zap.String("network", listenAddr.Network),
 						zap.String("addr", hostport))
+				}
+
+				if h3ok {
+					// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
+					// a different transport mechanism... which is fine, but the OS doesn't
+					// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
+					// are still one file on the system. So even though "unixpacket" and
+					// "unixgram" are different network types just as "tcp" and "udp" are,
+					// the OS will not let us use the same file as both STREAM and DGRAM.
+					if listenAddr.IsUnixNetwork() {
+						app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
+							zap.String("file", hostport))
+						continue
+					}
+
+					if useTLS {
+						// enable HTTP/3 if configured
+						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+						if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
+							return err
+						}
+					} else {
+						// Can only serve h3 with TLS enabled
+						app.logger.Warn("HTTP/3 skipped because it requires TLS",
+							zap.String("network", listenAddr.Network),
+							zap.String("addr", hostport))
+					}
 				}
 			}
 		}
