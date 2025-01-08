@@ -157,7 +157,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 
 	// create the file if it does not exist; create with the configured mode, or default
 	// to restrictive if not set. (lumberjack will reuse the file mode across log rotation)
-	if err := os.MkdirAll(filepath.Dir(fw.Filename), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fw.Filename), 0o700); err != nil {
 		return nil, err
 	}
 	file, err := os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, modeIfCreating)
