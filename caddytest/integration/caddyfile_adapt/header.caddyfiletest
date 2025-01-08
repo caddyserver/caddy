@@ -19,6 +19,7 @@
 	header {
 		+Link "Foo"
 		+Link "Bar"
+		match status 200
 	}
 	header >Set Defer
 	header >Replace Deferred Replacement
@@ -143,6 +144,11 @@
 											"Link": [
 												"Foo",
 												"Bar"
+											]
+										},
+										"require": {
+											"status_code": [
+												200
 											]
 										}
 									}
