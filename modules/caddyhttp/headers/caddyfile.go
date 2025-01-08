@@ -101,7 +101,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 		}
 		if field == "match" {
 			responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
-			caddyhttp.ParseNamedResponseMatcher(h.NewFromNextSegment(), responseMatchers)
+			err := caddyhttp.ParseNamedResponseMatcher(h.NewFromNextSegment(), responseMatchers)
+			if err != nil {
+				return nil, err
+			}
 			matcher := responseMatchers["match"]
 			handler.Response.Require = &matcher
 			continue
