@@ -211,6 +211,11 @@ func errLogValues(err error) (status int, msg string, fields func() []zapcore.Fi
 		}
 		return
 	}
+	fields = func() []zapcore.Field {
+		return []zapcore.Field{
+			zap.Error(err),
+		}
+	}
 	status = http.StatusInternalServerError
 	msg = err.Error()
 	return
