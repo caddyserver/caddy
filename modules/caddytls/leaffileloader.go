@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -30,6 +31,14 @@ func init() {
 // LeafFileLoader loads leaf certificates from disk.
 type LeafFileLoader struct {
 	Files []string `json:"files,omitempty"`
+}
+
+// CaddyModule returns the Caddy module information.
+func (LeafFileLoader) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.leaf_cert_loader.file",
+		New: func() caddy.Module { return new(LeafFileLoader) },
+	}
 }
 
 // Provision implements caddy.Provisioner.
@@ -44,12 +53,11 @@ func (fl *LeafFileLoader) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// CaddyModule returns the Caddy module information.
-func (LeafFileLoader) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  "tls.leaf_cert_loader.file",
-		New: func() caddy.Module { return new(LeafFileLoader) },
-	}
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fl *LeafFileLoader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.NextArg()
+	fl.Files = append(fl.Files, d.RemainingArgs()...)
+	return nil
 }
 
 // LoadLeafCertificates returns the certificates to be loaded by fl.
@@ -96,4 +104,5 @@ func convertPEMFilesToDERBytes(filename string) ([]byte, error) {
 var (
 	_ LeafCertificateLoader = (*LeafFileLoader)(nil)
 	_ caddy.Provisioner     = (*LeafFileLoader)(nil)
+	_ caddyfile.Unmarshaler = (*LeafFileLoader)(nil)
 )
