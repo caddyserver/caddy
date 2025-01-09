@@ -20,13 +20,13 @@ func init() {
 
 type moduleEntry struct {
 	Key           string          `json:"name,omitempty"`
-	FileSystemRaw json.RawMessage `json:"file_system,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
+	FileSystemRaw json.RawMessage `json:"filesystem,omitempty" caddy:"namespace=caddy.fs inline_key=backend"`
 	fileSystem    fs.FS
 }
 
 // Filesystems loads caddy.fs modules into the global filesystem map
 type Filesystems struct {
-	Filesystems []*moduleEntry `json:"filesystems"`
+	Filesystems []*moduleEntry `json:"file_systems"`
 
 	defers []func()
 }
@@ -49,7 +49,7 @@ func parseFilesystems(d *caddyfile.Dispenser, existingVal any) (any, error) {
 // CaddyModule returns the Caddy module information.
 func (Filesystems) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "caddy.filesystems",
+		ID:  "file_systems",
 		New: func() caddy.Module { return new(Filesystems) },
 	}
 }
