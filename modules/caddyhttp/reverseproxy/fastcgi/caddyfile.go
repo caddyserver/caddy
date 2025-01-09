@@ -131,15 +131,18 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // is equivalent to a route consisting of:
 //
 //	# Add trailing slash for directory requests
+//	# This redirection is automatically disabled if "{http.request.uri.path}/index.php"
+//	# doesn't appear in the try_files list
 //	@canonicalPath {
 //	    file {path}/index.php
 //	    not path */
 //	}
 //	redir @canonicalPath {path}/ 308
 //
-//	# If the requested file does not exist, try index files
+//	# If the requested file does not exist, try index files and assume index.php always exists
 //	@indexFiles file {
 //	    try_files {path} {path}/index.php index.php
+//	    try_policy first_exist_fallback
 //	    split_path .php
 //	}
 //	rewrite @indexFiles {http.matchers.file.relative}
