@@ -384,112 +384,101 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 
 	repl.Map(httpVars)
 }
+func handleMTLSEnabledWithExport(
+    req *http.Request,
+    connState *tls.ConnectionState,
+    exportCertData bool,
+) map[string]string {
+    certDetails := make(map[string]string)
+
+    // Get the Caddy replacer from the request context
+    repl, _ := req.Context().Value(ReplacerCtxKey).(*caddy.Replacer)
+
+    // Helper function to set placeholders or map values
+    setData := func(key, value string) {
+        if exportCertData && repl != nil {
+            repl.Set(key, value)
+        } else {
+            certDetails[key] = value
+        }
+    }
+
+    // Server certificate details
+    if connState != nil && len(connState.PeerCertificates) > 0 {
+        serverCert := connState.PeerCertificates[0]
+        setData("SSL_SERVER_CERT", string(pem.EncodeToMemory(&pem.Block{
+            Type:  "CERTIFICATE",
+            Bytes: serverCert.Raw,
+        })))
+        setData("SSL_SERVER_SUBJECT", serverCert.Subject.String())
+        setData("SSL_SERVER_ISSUER", serverCert.Issuer.String())
+    } else {
+        setData("SSL_SERVER_CERT", "No Server Certificate Found")
+        setData("SSL_SERVER_SUBJECT", "No Server Certificate Subject")
+        setData("SSL_SERVER_ISSUER", "No Server Certificate Issuer")
+    }
+
+    // Client certificate details
+    if connState != nil && len(connState.VerifiedChains) > 0 {
+        clientCert := connState.VerifiedChains[0][0]
+        setData("SSL_CLIENT_CERT", string(pem.EncodeToMemory(&pem.Block{
+            Type:  "CERTIFICATE",
+            Bytes: clientCert.Raw,
+        })))
+        setData("SSL_CLIENT_SUBJECT", clientCert.Subject.String())
+        setData("SSL_CLIENT_ISSUER", clientCert.Issuer.String())
+    } else {
+        // Fallback: Set SSL_CLIENT_CERT to "null" or empty when no client certificate is provided
+        if exportCertData && repl != nil {
+            repl.Set("SSL_CLIENT_CERT", "") // Empty string represents "null"
+            repl.Set("SSL_CLIENT_SUBJECT", "No Client Certificate Subject")
+            repl.Set("SSL_CLIENT_ISSUER", "No Client Certificate Issuer")
+        } else {
+            certDetails["SSL_CLIENT_CERT"] = "" // Empty string represents "null"
+            certDetails["SSL_CLIENT_SUBJECT"] = "No Client Certificate Subject"
+            certDetails["SSL_CLIENT_ISSUER"] = "No Client Certificate Issuer"
+        }
+    }
+
+    return certDetails
+}
 
 func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
-	if req == nil || req.TLS == nil {
-		return nil, false
-	}
+    if req == nil || req.TLS == nil {
+        return nil, false
+    }
 
-	if len(key) < len(reqTLSReplPrefix) {
-		return nil, false
-	}
+    if len(key) < len(reqTLSReplPrefix) {
+        return nil, false
+    }
 
-	field := strings.ToLower(key[len(reqTLSReplPrefix):])
+    field := strings.ToLower(key[len(reqTLSReplPrefix):])
 
-	if strings.HasPrefix(field, "client.") {
-		cert := getTLSPeerCert(req.TLS)
-		if cert == nil {
-			return nil, false
-		}
+    // Process client and server placeholders
+    if strings.HasPrefix(field, "client.") || strings.HasPrefix(field, "server.") {
+        handleMTLSEnabledWithExport(req, req.TLS, true)
 
-		// subject alternate names (SANs)
-		if strings.HasPrefix(field, "client.san.") {
-			field = field[len("client.san."):]
-			var fieldName string
-			var fieldValue any
-			switch {
-			case strings.HasPrefix(field, "dns_names"):
-				fieldName = "dns_names"
-				fieldValue = cert.DNSNames
-			case strings.HasPrefix(field, "emails"):
-				fieldName = "emails"
-				fieldValue = cert.EmailAddresses
-			case strings.HasPrefix(field, "ips"):
-				fieldName = "ips"
-				fieldValue = cert.IPAddresses
-			case strings.HasPrefix(field, "uris"):
-				fieldName = "uris"
-				fieldValue = cert.URIs
-			default:
-				return nil, false
-			}
-			field = field[len(fieldName):]
+        // Continue processing for specific fields
+        if strings.HasPrefix(field, "client.") {
+            cert := getTLSPeerCert(req.TLS)
+            if cert == nil {
+                return nil, false
+            }
 
-			// if no index was specified, return the whole list
-			if field == "" {
-				return fieldValue, true
-			}
-			if len(field) < 2 || field[0] != '.' {
-				return nil, false
-			}
-			field = field[1:] // trim '.' between field name and index
-
-			// get the numeric index
-			idx, err := strconv.Atoi(field)
-			if err != nil || idx < 0 {
-				return nil, false
-			}
-
-			// access the indexed element and return it
-			switch v := fieldValue.(type) {
-			case []string:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			case []net.IP:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			case []*url.URL:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			}
-		}
-
-		switch field {
-		case "client.fingerprint":
-			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
-		case "client.public_key", "client.public_key_sha256":
-			if cert.PublicKey == nil {
-				return nil, true
-			}
-			pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
-			if err != nil {
-				return nil, true
-			}
-			if strings.HasSuffix(field, "_sha256") {
-				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
-			}
-			return fmt.Sprintf("%x", pubKeyBytes), true
-		case "client.issuer":
-			return cert.Issuer, true
-		case "client.serial":
-			return cert.SerialNumber, true
-		case "client.subject":
-			return cert.Subject, true
-		case "client.certificate_pem":
-			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
-			return pem.EncodeToMemory(&block), true
-		case "client.certificate_der_base64":
-			return base64.StdEncoding.EncodeToString(cert.Raw), true
-		default:
-			return nil, false
-		}
-	}
+            switch field {
+            case "client.fingerprint":
+                return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
+            case "client.subject":
+                return cert.Subject, true
+            case "client.issuer":
+                return cert.Issuer, true
+            case "client.certificate_pem":
+                block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+                return pem.EncodeToMemory(&block), true
+            case "client.certificate_der_base64":
+                return base64.StdEncoding.EncodeToString(cert.Raw), true
+            }
+        }
 
 	switch field {
 	case "version":
