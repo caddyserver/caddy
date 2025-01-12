@@ -60,6 +60,14 @@ type ACMEIssuer struct {
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
 
+	// Optionally select an ACME profile to use for certificate
+	// orders. Must be a profile name offered by the ACME server,
+	// which are listed at its directory endpoint.
+	//
+	// EXPERIMENTAL: Subject to change.
+	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
+	Profile string `json:"profile,omitempty"`
+
 	// If you have an existing account with the ACME server, put
 	// the private key here in PEM format. The ACME client will
 	// look up your account information with this key first before
@@ -184,6 +192,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
+		Profile:           iss.Profile,
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
@@ -338,6 +347,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
+//	    profile <profile_name>
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
@@ -397,6 +407,11 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		case "email":
 			if !d.AllArgs(&iss.Email) {
+				return d.ArgErr()
+			}
+
+		case "profile":
+			if !d.AllArgs(&iss.Profile) {
 				return d.ArgErr()
 			}
 
