@@ -684,7 +684,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		req.Header.Set("Early-Data", "1")
 	}
 
-	reqUpType := upgradeType(req.Header)
+	reqUpgradeType := upgradeType(req.Header)
 	removeConnectionHeaders(req.Header)
 
 	// Remove hop-by-hop headers to the backend. Especially
@@ -705,9 +705,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 
 	// After stripping all the hop-by-hop connection headers above, add back any
 	// necessary for protocol upgrades, such as for websockets.
-	if reqUpType != "" {
+	if reqUpgradeType != "" {
 		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", reqUpType)
+		req.Header.Set("Upgrade", reqUpgradeType)
 		normalizeWebsocketHeaders(req.Header)
 	}
 
@@ -732,6 +732,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if err != nil {
 		return nil, err
 	}
+
+	// Via header(s)
+	req.Header.Add("Via", fmt.Sprintf("%d.%d Caddy", req.ProtoMajor, req.ProtoMinor))
 
 	return req, nil
 }
@@ -884,13 +887,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}),
 	)
 
+	const logMessage = "upstream roundtrip"
+
 	if err != nil {
-		if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+		if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 			c.Write(zap.Error(err))
 		}
 		return err
 	}
-	if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+	if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 		c.Write(
 			zap.Object("headers", caddyhttp.LoggableHTTPHeader{
 				Header:               res.Header,
@@ -1025,6 +1030,14 @@ func (h *Handler) finalizeResponse(
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
 	}
+
+	// delete our Server header and use Via instead (see #6275)
+	rw.Header().Del("Server")
+	var protoPrefix string
+	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
+		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
+	}
+	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
