@@ -90,6 +90,9 @@ type ActiveHealthChecks struct {
 	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
+	// The transport to use for health checks. If not set, the handler's transport is used
+	Transport http.RoundTripper `json:"transport,omitempty"`
+
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
 
@@ -175,9 +178,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		a.uri = parsedURI
 	}
 
+	// Use handler's transport if no active one set
+	if a.Transport == nil {
+		a.Transport = h.Transport
+	}
+
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
-		Transport: h.Transport,
+		Transport: a.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
@@ -393,12 +401,17 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Host = net.JoinHostPort(host, port)
 	}
 
-	// this is kind of a hacky way to know if we should use HTTPS, but whatever
-	if tt, ok := h.Transport.(TLSTransport); ok && tt.TLSEnabled() {
+	// this is kind of a hacky way to know if we should use HTTPS
+	transport := h.HealthChecks.Active.Transport
+	if transport == nil {
+		transport = h.Transport
+	}
+
+	if tt, ok := transport.(TLSTransport); ok && tt.TLSEnabled() {
 		u.Scheme = "https"
 
 		// if the port is in the except list, flip back to HTTP
-		if ht, ok := h.Transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
+		if ht, ok := transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
 			u.Scheme = "http"
 		}
 	}
