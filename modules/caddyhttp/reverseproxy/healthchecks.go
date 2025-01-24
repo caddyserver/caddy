@@ -90,7 +90,10 @@ type ActiveHealthChecks struct {
 	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
-	// The transport to use for health checks. If not set, the handler's transport is used
+
+	// Configures the method of transport for the active health checker. 
+	// The default transport is the handler's transport
+	TransportRaw json.RawMessage `json:"transport,omitempty"`
 	Transport http.RoundTripper `json:"transport,omitempty"`
 
 	// HTTP headers to set on health check requests.
@@ -177,9 +180,15 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		}
 		a.uri = parsedURI
 	}
-
+	
 	// Use handler's transport if no active one set
-	if a.Transport == nil {
+	if a.TransportRaw != nil {
+		mod, err := ctx.LoadModule(a, "TransportRaw")
+		if err != nil {
+			return fmt.Errorf("loading transport: %v", err)
+		}
+		a.Transport = mod.(http.RoundTripper)
+	} else {
 		a.Transport = h.Transport
 	}
 
