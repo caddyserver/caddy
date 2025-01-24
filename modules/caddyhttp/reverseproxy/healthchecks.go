@@ -93,7 +93,7 @@ type ActiveHealthChecks struct {
 
 	// Configures the method of transport for the active health checker. 
 	// The default transport is the handler's transport
-	TransportRaw json.RawMessage `json:"transport,omitempty"`
+	TransportRaw json.RawMessage `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.health_checks.active.transport inline_key=protocol"`
 	Transport http.RoundTripper `json:"transport,omitempty"`
 
 	// HTTP headers to set on health check requests.
