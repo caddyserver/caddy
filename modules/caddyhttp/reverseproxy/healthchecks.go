@@ -133,7 +133,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
-	transport http.RoundTripper `json:"-"``
+	Transport http.RoundTripper `json:"-"``
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -187,14 +187,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("loading transport: %v", err)
 		}
-		a.transport = mod.(http.RoundTripper)
+		a.Transport = mod.(http.RoundTripper)
 	} else {
-		a.transport = h.Transport
+		a.Transport = h.Transport
 	}
 
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
-		Transport: a.transport,
+		Transport: a.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
