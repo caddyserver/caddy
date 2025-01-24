@@ -133,7 +133,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
-	transport http.RoundTripper `json:"transport,omitempty"`
+	transport http.RoundTripper `json:"-"``
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
