@@ -94,7 +94,6 @@ type ActiveHealthChecks struct {
 	// Configures the method of transport for the active health checker. 
 	// The default transport is the handler's transport
 	TransportRaw json.RawMessage `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.health_checks.active.transport inline_key=protocol"`
-	Transport http.RoundTripper `json:"transport,omitempty"`
 
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
@@ -134,6 +133,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
+	transport http.RoundTripper `json:"transport,omitempty"`
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -187,14 +187,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("loading transport: %v", err)
 		}
-		a.Transport = mod.(http.RoundTripper)
+		a.transport = mod.(http.RoundTripper)
 	} else {
-		a.Transport = h.Transport
+		a.transport = h.Transport
 	}
 
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
-		Transport: a.Transport,
+		Transport: a.transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
