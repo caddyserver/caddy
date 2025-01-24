@@ -133,7 +133,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
-	Transport http.RoundTripper `json:"-"``
+	transport http.RoundTripper `json:"-"``
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -187,14 +187,14 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("loading transport: %v", err)
 		}
-		a.Transport = mod.(http.RoundTripper)
+		a.transport = mod.(http.RoundTripper)
 	} else {
-		a.Transport = h.Transport
+		a.transport = h.Transport
 	}
 
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
-		Transport: a.Transport,
+		Transport: a.transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
@@ -411,7 +411,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	}
 
 	// this is kind of a hacky way to know if we should use HTTPS
-	transport := h.HealthChecks.Active.Transport
+	transport := h.HealthChecks.Active.transport
 	if transport == nil {
 		transport = h.Transport
 	}
