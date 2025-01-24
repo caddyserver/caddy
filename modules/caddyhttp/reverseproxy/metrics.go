@@ -2,9 +2,9 @@ package reverseproxy
 
 import (
 	"runtime/debug"
-	"sync"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
@@ -12,16 +12,15 @@ import (
 )
 
 var reverseProxyMetrics = struct {
-	init             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
 	logger           *zap.Logger
 }{}
 
-func initReverseProxyMetrics(handler *Handler) {
+func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
-	reverseProxyMetrics.upstreamsHealthy = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	reverseProxyMetrics.upstreamsHealthy = promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "upstreams_healthy",
@@ -35,17 +34,19 @@ type metricsUpstreamsHealthyUpdater struct {
 	handler *Handler
 }
 
-func newMetricsUpstreamsHealthyUpdater(handler *Handler) *metricsUpstreamsHealthyUpdater {
-	reverseProxyMetrics.init.Do(func() {
-		initReverseProxyMetrics(handler)
-	})
+const upstreamsHealthyMetrics caddy.CtxKey = "reverse_proxy_upstreams_healthy"
 
+func newMetricsUpstreamsHealthyUpdater(handler *Handler, ctx caddy.Context) *metricsUpstreamsHealthyUpdater {
+	if set := ctx.Value(upstreamsHealthyMetrics); set == nil {
+		initReverseProxyMetrics(handler, ctx.GetMetricsRegistry())
+		ctx = ctx.WithValue(upstreamsHealthyMetrics, true)
+	}
 	reverseProxyMetrics.upstreamsHealthy.Reset()
 
 	return &metricsUpstreamsHealthyUpdater{handler}
 }
 
-func (m *metricsUpstreamsHealthyUpdater) Init() {
+func (m *metricsUpstreamsHealthyUpdater) init() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
