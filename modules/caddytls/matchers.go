@@ -15,6 +15,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -224,13 +225,26 @@ func (MatchServerNameRE) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI using a regular expression.
 func (m MatchServerNameRE) Match(hello *tls.ClientHelloInfo) bool {
-	repl := caddy.NewReplacer()
-	// caddytls.TestServerNameMatcher calls this function without any context
-	if ctx := hello.Context(); ctx != nil {
+	// Note: caddytls.TestServerNameMatcher calls this function without any context
+	ctx := hello.Context()
+	if ctx == nil {
+		// layer4.Connection implements GetContext() to pass its context here,
+		// since hello.Context() returns nil
+		if mayHaveContext, ok := hello.Conn.(interface{ GetContext() context.Context }); ok {
+			ctx = mayHaveContext.GetContext()
+		}
+	}
+
+	var repl *caddy.Replacer
+	if ctx != nil {
 		// In some situations the existing context may have no replacer
 		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
 			repl = replAny.(*caddy.Replacer)
 		}
+	}
+
+	if repl == nil {
+		repl = caddy.NewReplacer()
 	}
 
 	return m.MatchRegexp.Match(hello.ServerName, repl)
