@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,10 +34,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -71,6 +74,8 @@ func Main() {
 	if err != nil {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
+
+	_, _ = memlimit.SetGoMemLimitWithOpts(memlimit.WithLogger(slog.New(zapslog.NewHandler(caddy.Log().Core()))))
 
 	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
