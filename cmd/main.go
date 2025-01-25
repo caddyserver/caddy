@@ -75,7 +75,17 @@ func Main() {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
-	_, _ = memlimit.SetGoMemLimitWithOpts(memlimit.WithLogger(slog.New(zapslog.NewHandler(caddy.Log().Core()))))
+	_, _ = memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithLogger(
+			slog.New(zapslog.NewHandler(caddy.Log().Core())),
+		),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+	)
 
 	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
