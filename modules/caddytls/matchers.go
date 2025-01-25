@@ -225,21 +225,21 @@ func (MatchServerNameRE) CaddyModule() caddy.ModuleInfo {
 
 // Match matches hello based on SNI using a regular expression.
 func (m MatchServerNameRE) Match(hello *tls.ClientHelloInfo) bool {
+	// Note: caddytls.TestServerNameMatcher calls this function without any context
+	ctx := hello.Context()
+	if ctx == nil {
+		// layer4.Connection implements GetContext() to pass its context here,
+		// since hello.Context() returns nil
+		if mayHaveContext, ok := hello.Conn.(interface{ GetContext() context.Context }); ok {
+			ctx = mayHaveContext.GetContext()
+		}
+	}
+
 	var repl *caddy.Replacer
-	// caddytls.TestServerNameMatcher calls this function without any context
-	if ctx := hello.Context(); ctx != nil {
+	if ctx != nil {
 		// In some situations the existing context may have no replacer
 		if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
 			repl = replAny.(*caddy.Replacer)
-		}
-	} else if mayHaveContext, ok := hello.Conn.(interface{ GetContext() context.Context }); ok {
-		// layer4.Connection implements GetContext() to pass its context here,
-		// since hello.Context() returns nil
-		if ctx = mayHaveContext.GetContext(); ctx != nil {
-			// In some situations the existing context may have no replacer
-			if replAny := ctx.Value(caddy.ReplacerCtxKey); replAny != nil {
-				repl = replAny.(*caddy.Replacer)
-			}
 		}
 	}
 
