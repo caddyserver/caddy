@@ -69,12 +69,16 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
+	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
+	// See https://pkg.go.dev/runtime#GOMAXPROCS
 	undo, err := maxprocs.Set()
 	defer undo()
 	if err != nil {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
+	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
+	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
 	_, _ = memlimit.SetGoMemLimitWithOpts(
 		memlimit.WithLogger(
 			slog.New(zapslog.NewHandler(caddy.Log().Core())),
