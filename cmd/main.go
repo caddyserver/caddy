@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,10 +34,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -66,11 +69,29 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	undo, err := maxprocs.Set()
+	logger := caddy.Log()
+
+	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
+	// See https://pkg.go.dev/runtime#GOMAXPROCS
+	undo, err := maxprocs.Set(maxprocs.Logger(logger.Sugar().Infof))
 	defer undo()
 	if err != nil {
 		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
+
+	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
+	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
+	_, _ = memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithLogger(
+			slog.New(zapslog.NewHandler(logger.Core())),
+		),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+	)
 
 	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
