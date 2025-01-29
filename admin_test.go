@@ -18,9 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var testCfg = []byte(`{
@@ -202,4 +206,142 @@ func BenchmarkLoad(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Load(testCfg, true)
 	}
+}
+
+func TestAdminHandlerErrorHandling(t *testing.T) {
+	initAdminMetrics()
+
+	handler := adminHandler{
+		mux: http.NewServeMux(),
+	}
+
+	handler.mux.Handle("/error", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		err := fmt.Errorf("test error")
+		handler.handleError(w, r, err)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/error", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code == http.StatusOK {
+		t.Error("expected error response, got success")
+	}
+
+	var apiErr APIError
+	if err := json.NewDecoder(rr.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if apiErr.Message != "test error" {
+		t.Errorf("expected error message 'test error', got '%s'", apiErr.Message)
+	}
+}
+
+func initAdminMetrics() {
+	if adminMetrics.requestErrors != nil {
+		prometheus.Unregister(adminMetrics.requestErrors)
+	}
+	if adminMetrics.requestCount != nil {
+		prometheus.Unregister(adminMetrics.requestCount)
+	}
+
+	adminMetrics.requestErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "caddy",
+		Subsystem: "admin_http",
+		Name:      "request_errors_total",
+		Help:      "Number of errors that occurred handling admin endpoint requests",
+	}, []string{"handler", "path", "method"})
+
+	adminMetrics.requestCount = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "caddy",
+		Subsystem: "admin_http",
+		Name:      "requests_total",
+		Help:      "Count of requests to the admin endpoint",
+	}, []string{"handler", "path", "code", "method"}) // Added code and method labels
+
+	prometheus.MustRegister(adminMetrics.requestErrors)
+	prometheus.MustRegister(adminMetrics.requestCount)
+}
+
+func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
+	initAdminMetrics()
+
+	cfg := &Config{
+		Admin: &AdminConfig{
+			Listen: "localhost:2019",
+		},
+	}
+
+	err := replaceLocalAdminServer(cfg, Context{})
+	if err != nil {
+		t.Fatalf("setting up admin server: %v", err)
+	}
+	defer func() {
+		stopAdminServer(localAdminServer)
+	}()
+
+	tests := []struct {
+		name           string
+		path           string
+		method         string
+		expectedStatus int
+	}{
+		{
+			name:           "stop endpoint wrong method",
+			path:           "/stop",
+			method:         http.MethodGet,
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:           "config endpoint wrong content-type",
+			path:           "/config/",
+			method:         http.MethodPost,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "config ID missing ID",
+			path:           "/id/",
+			method:         http.MethodGet,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(test.method, fmt.Sprintf("http://localhost:2019%s", test.path), nil)
+			rr := httptest.NewRecorder()
+
+			localAdminServer.Handler.ServeHTTP(rr, req)
+
+			if rr.Code != test.expectedStatus {
+				t.Errorf("expected status %d but got %d", test.expectedStatus, rr.Code)
+			}
+
+			metricValue := testGetMetricValue(map[string]string{
+				"path":    test.path,
+				"handler": "admin",
+				"method":  test.method,
+			})
+			if metricValue != 1 {
+				t.Errorf("expected error metric to be incremented once, got %v", metricValue)
+			}
+		})
+	}
+}
+
+func testGetMetricValue(labels map[string]string) float64 {
+	promLabels := prometheus.Labels{}
+	for k, v := range labels {
+		promLabels[k] = v
+	}
+
+	metric, err := adminMetrics.requestErrors.GetMetricWith(promLabels)
+	if err != nil {
+		return 0
+	}
+
+	pb := &dto.Metric{}
+	metric.Write(pb)
+	return pb.GetCounter().GetValue()
 }
