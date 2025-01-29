@@ -1,0 +1,41 @@
+:8884
+reverse_proxy 127.0.0.1:65535 {
+	transport http {
+		network_proxy url http://localhost:8080
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"transport": {
+										"network_proxy": {
+											"from": "url",
+											"url": "http://localhost:8080"
+										},
+										"protocol": "http"
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
