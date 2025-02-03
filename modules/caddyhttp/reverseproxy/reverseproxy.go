@@ -382,8 +382,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h)
-	upstreamHealthyUpdater.Init()
+	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h, ctx)
+	upstreamHealthyUpdater.init()
 
 	return nil
 }
