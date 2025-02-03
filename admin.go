@@ -1139,7 +1139,7 @@ traverseLoop:
 						return fmt.Errorf("[%s] invalid array index '%s': %v",
 							path, idxStr, err)
 					}
-					if idx < 0 || idx >= len(arr) {
+					if idx < 0 || (method != http.MethodPut && idx >= len(arr)) || idx > len(arr) {
 						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
 					}
 				}
