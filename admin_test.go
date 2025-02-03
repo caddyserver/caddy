@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -738,6 +739,200 @@ vq+SH04xKhtFudVBAQ==`
 			// Clean up
 			if remoteAdminServer != nil {
 				_ = stopAdminServer(remoteAdminServer)
+			}
+		})
+	}
+}
+
+type mockIssuer struct {
+	configSet *certmagic.Config
+}
+
+func (m *mockIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*certmagic.IssuedCertificate, error) {
+	return &certmagic.IssuedCertificate{
+		Certificate: []byte(csr.Raw),
+	}, nil
+}
+
+func (m *mockIssuer) SetConfig(cfg *certmagic.Config) {
+	m.configSet = cfg
+}
+
+func (m *mockIssuer) IssuerKey() string {
+	return "mock"
+}
+
+type mockIssuerModule struct {
+	*mockIssuer
+}
+
+func (m *mockIssuerModule) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID: "tls.issuance.acme",
+		New: func() Module {
+			return &mockIssuerModule{mockIssuer: new(mockIssuer)}
+		},
+	}
+}
+
+func TestManageIdentity(t *testing.T) {
+	originalModules := make(map[string]ModuleInfo)
+	for k, v := range modules {
+		originalModules[k] = v
+	}
+	defer func() {
+		modules = originalModules
+	}()
+
+	RegisterModule(&mockIssuerModule{})
+
+	certPEM := []byte(`-----BEGIN CERTIFICATE-----
+MIIDujCCAqKgAwIBAgIIE31FZVaPXTUwDQYJKoZIhvcNAQEFBQAwSTELMAkGA1UE
+BhMCVVMxEzARBgNVBAoTCkdvb2dsZSBJbmMxJTAjBgNVBAMTHEdvb2dsZSBJbnRl
+cm5ldCBBdXRob3JpdHkgRzIwHhcNMTQwMTI5MTMyNzQzWhcNMTQwNTI5MDAwMDAw
+WjBpMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwN
+TW91bnRhaW4gVmlldzETMBEGA1UECgwKR29vZ2xlIEluYzEYMBYGA1UEAwwPbWFp
+bC5nb29nbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3lcub2pUwkjC
+5GJQA2ZZfJJi6d1QHhEmkX9VxKYGp6gagZuRqJWy9TXP6++1ZzQQxqZLD0TkuxZ9
+8i9Nz00000CCBjCCAQQwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMGgG
+CCsGAQUFBwEBBFwwWjArBggrBgEFBQcwAoYfaHR0cDovL3BraS5nb29nbGUuY29t
+L0dJQUcyLmNydDArBggrBgEFBQcwAYYfaHR0cDovL2NsaWVudHMxLmdvb2dsZS5j
+b20vb2NzcDAdBgNVHQ4EFgQUiJxtimAuTfwb+aUtBn5UYKreKvMwDAYDVR0TAQH/
+BAIwADAfBgNVHSMEGDAWgBRK3QYWG7z2aLV29YG2u2IaulqBLzAXBgNVHREEEDAO
+ggxtYWlsLmdvb2dsZTANBgkqhkiG9w0BAQUFAAOCAQEAMP6IWgNGZE8wP9TjFjSZ
+3mmW3A1eIr0CuPwNZ2LJ5ZD1i70ojzcj4I9IdP5yPg9CAEV4hNASbM1LzfC7GmJE
+tPzW5tRmpKVWZGRgTgZI8Hp/xZXMwLh9ZmXV4kESFAGj5G5FNvJyUV7R5Eh+7OZX
+7G4jJ4ZGJh+5jzN9HdJJHQHGYNIYOzC7+HH9UMwCjX9vhQ4RjwFZJThS2Yb+y7pb
+9yxTJZoXC6J0H5JpnZb7kZEJ+Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-----END CERTIFICATE-----`)
+
+	keyPEM := []byte(`-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
+...
+-----END PRIVATE KEY-----`)
+
+	testStorage := certmagic.FileStorage{Path: t.TempDir()}
+	err := testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = testStorage.Store(context.Background(), "localhost/localhost.key", keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		cfg        *Config
+		wantErr    bool
+		checkState func(*testing.T, *Config)
+	}{
+		{
+			name: "nil config",
+			cfg:  nil,
+		},
+		{
+			name: "nil admin config",
+			cfg: &Config{
+				Admin: nil,
+			},
+		},
+		{
+			name: "nil identity config",
+			cfg: &Config{
+				Admin: &AdminConfig{},
+			},
+		},
+		{
+			name: "default issuer when none specified",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{
+						Identifiers: []string{"localhost"},
+					},
+				},
+				storage: &testStorage,
+			},
+			checkState: func(t *testing.T, cfg *Config) {
+				if len(cfg.Admin.Identity.issuers) == 0 {
+					t.Error("Expected at least 1 issuer to be configured")
+					return
+				}
+				if _, ok := cfg.Admin.Identity.issuers[0].(*mockIssuerModule); !ok {
+					t.Error("Expected mock issuer to be configured")
+				}
+			},
+		},
+		{
+			name: "custom issuer",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{
+						Identifiers: []string{"localhost"},
+						IssuersRaw: []json.RawMessage{
+							json.RawMessage(`{"module": "acme"}`),
+						},
+					},
+				},
+				storage: &certmagic.FileStorage{Path: "testdata"},
+			},
+			checkState: func(t *testing.T, cfg *Config) {
+				if len(cfg.Admin.Identity.issuers) != 1 {
+					t.Fatalf("Expected 1 issuer, got %d", len(cfg.Admin.Identity.issuers))
+				}
+				mockIss, ok := cfg.Admin.Identity.issuers[0].(*mockIssuerModule)
+				if !ok {
+					t.Fatal("Expected mock issuer")
+				}
+				if mockIss.configSet == nil {
+					t.Error("Issuer config was not set")
+				}
+			},
+		},
+		{
+			name: "invalid issuer module",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{
+						Identifiers: []string{"localhost"},
+						IssuersRaw: []json.RawMessage{
+							json.RawMessage(`{"module": "doesnt_exist"}`),
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if identityCertCache != nil {
+				// Reset the cert cache before each test
+				identityCertCache.Stop()
+				identityCertCache = nil
+			}
+
+			ctx := Context{
+				Context:         context.Background(),
+				cfg:             test.cfg,
+				moduleInstances: make(map[string][]Module),
+			}
+
+			err := manageIdentity(ctx, test.cfg)
+
+			if test.wantErr {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Expected no error but got: %v", err)
+			}
+
+			if test.checkState != nil {
+				test.checkState(t, test.cfg)
 			}
 		})
 	}
