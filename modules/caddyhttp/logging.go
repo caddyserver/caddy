@@ -195,7 +195,6 @@ func (sa *StringArray) UnmarshalJSON(b []byte) error {
 // have richer information.
 func errLogValues(err error) (status int, msg string, fields func() []zapcore.Field) {
 	var handlerErr HandlerError
-	fields = func() []zapcore.Field { return []zapcore.Field{} } // don't be nil (fix #6829)
 	if errors.As(err, &handlerErr) {
 		status = handlerErr.StatusCode
 		if handlerErr.Err == nil {
