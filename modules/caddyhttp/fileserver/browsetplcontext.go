@@ -66,7 +66,10 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		}
 
 		// keep track of the most recently modified item in the listing
-		modTime := info.ModTime()
+		// this time is used for the Last-Modified header and comparing If-Modified-Since from client
+		// both are expected to be in UTC, so we convert to UTC here
+		// see: https://github.com/caddyserver/caddy/issues/6828
+		modTime := info.ModTime().UTC()
 		if tplCtx.lastModified.IsZero() || modTime.After(tplCtx.lastModified) {
 			tplCtx.lastModified = modTime
 		}
