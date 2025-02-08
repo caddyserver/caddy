@@ -132,8 +132,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
 		// https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.1.1
 		ifModSince, err := http.ParseTime(ifModSinceStr)
-		lastModTrunc := listing.lastModified.Truncate(time.Second)
-		if err == nil && (lastModTrunc.Equal(ifModSince) || lastModTrunc.Before(ifModSince)) {
+		if err == nil && listing.lastModified.Truncate(time.Second).Compare(ifModSince) <= 0 {
 			w.WriteHeader(http.StatusNotModified)
 			return nil
 		}
