@@ -130,7 +130,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 
 	// speed up browser/client experience and caching by supporting If-Modified-Since
 	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
-		// https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.1.1
+		// basically a copy of stdlib file server's handling of If-Modified-Since
 		ifModSince, err := http.ParseTime(ifModSinceStr)
 		if err == nil && listing.lastModified.Truncate(time.Second).Compare(ifModSince) <= 0 {
 			w.WriteHeader(http.StatusNotModified)
