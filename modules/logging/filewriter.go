@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/dustin/go-humanize"
@@ -146,51 +147,68 @@ func (fw FileWriter) WriterKey() string {
 
 // OpenWriter opens a new file writer.
 func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
-	if fw.Mode == 0 {
-		fw.Mode = 0o600
+	modeIfCreating := os.FileMode(fw.Mode)
+	if modeIfCreating == 0 {
+		modeIfCreating = 0o600
 	}
 
-	// roll log files by default
-	if fw.Roll == nil || *fw.Roll {
-		if fw.RollSizeMB == 0 {
-			fw.RollSizeMB = 100
-		}
-		if fw.RollCompress == nil {
-			compress := true
-			fw.RollCompress = &compress
-		}
-		if fw.RollKeep == 0 {
-			fw.RollKeep = 10
-		}
-		if fw.RollKeepDays == 0 {
-			fw.RollKeepDays = 90
-		}
+	// roll log files as a sensible default to avoid disk space exhaustion
+	roll := fw.Roll == nil || *fw.Roll
 
-		// create the file if it does not exist with the right mode.
-		// lumberjack will reuse the file mode across log rotation.
-		f_tmp, err := os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(fw.Mode))
+	// create the file if it does not exist; create with the configured mode, or default
+	// to restrictive if not set. (lumberjack will reuse the file mode across log rotation)
+	if err := os.MkdirAll(filepath.Dir(fw.Filename), 0o700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, modeIfCreating)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if roll {
+		file.Close() // lumberjack will reopen it on its own
+	}
+
+	// Ensure already existing files have the right mode, since OpenFile will not set the mode in such case.
+	if configuredMode := os.FileMode(fw.Mode); configuredMode != 0 {
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to stat log file to see if we need to set permissions: %v", err)
 		}
-		f_tmp.Close()
-		// ensure already existing files have the right mode,
-		// since OpenFile will not set the mode in such case.
-		if err = os.Chmod(fw.Filename, os.FileMode(fw.Mode)); err != nil {
-			return nil, err
+		// only chmod if the configured mode is different
+		if info.Mode()&os.ModePerm != configuredMode&os.ModePerm {
+			if err = os.Chmod(fw.Filename, configuredMode); err != nil {
+				return nil, err
+			}
 		}
-
-		return &lumberjack.Logger{
-			Filename:   fw.Filename,
-			MaxSize:    fw.RollSizeMB,
-			MaxAge:     fw.RollKeepDays,
-			MaxBackups: fw.RollKeep,
-			LocalTime:  fw.RollLocalTime,
-			Compress:   *fw.RollCompress,
-		}, nil
 	}
 
-	// otherwise just open a regular file
-	return os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(fw.Mode))
+	// if not rolling, then the plain file handle is all we need
+	if !roll {
+		return file, nil
+	}
+
+	// otherwise, return a rolling log
+	if fw.RollSizeMB == 0 {
+		fw.RollSizeMB = 100
+	}
+	if fw.RollCompress == nil {
+		compress := true
+		fw.RollCompress = &compress
+	}
+	if fw.RollKeep == 0 {
+		fw.RollKeep = 10
+	}
+	if fw.RollKeepDays == 0 {
+		fw.RollKeepDays = 90
+	}
+	return &lumberjack.Logger{
+		Filename:   fw.Filename,
+		MaxSize:    fw.RollSizeMB,
+		MaxAge:     fw.RollKeepDays,
+		MaxBackups: fw.RollKeep,
+		LocalTime:  fw.RollLocalTime,
+		Compress:   *fw.RollCompress,
+	}, nil
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
