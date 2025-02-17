@@ -13,13 +13,13 @@ jobs:
         os: 
           - ubuntu-latest
         go: 
-          - '1.23'
+          - '1.24'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.23'
-          GO_SEMVER: '~1.23.0'
+        - go: '1.24'
+          GO_SEMVER: '~1.24.0'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
