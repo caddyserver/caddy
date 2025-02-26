@@ -359,6 +359,11 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.OnDemand = onDemand
 	}
 
+	// set up ECH from Caddyfile options
+	if ech, ok := options["ech"].(*caddytls.ECH); ok {
+		tlsApp.EncryptedClientHello = ech
+	}
+
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
 	if sc, ok := options["storage_check"].(string); ok && sc == "off" {
 		tlsApp.DisableStorageCheck = true
