@@ -359,9 +359,28 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.OnDemand = onDemand
 	}
 
+	// set up "global" (to the TLS app) DNS provider config
+	if globalDNS, ok := options["dns"]; ok && globalDNS != nil {
+		tlsApp.DNSRaw = caddyconfig.JSONModuleObject(globalDNS, "name", globalDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
+	}
+
 	// set up ECH from Caddyfile options
 	if ech, ok := options["ech"].(*caddytls.ECH); ok {
 		tlsApp.EncryptedClientHello = ech
+
+		// outer server names will need certificates, so make sure they're included
+		// in an automation policy for them that applies any global options
+		ap, err := newBaseAutomationPolicy(options, warnings, true)
+		if err != nil {
+			return nil, warnings, err
+		}
+		for _, cfg := range ech.Configs {
+			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.OuterSNI)
+		}
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning

@@ -580,26 +580,6 @@ func parseOptDNS(d *caddyfile.Dispenser, _ any) (any, error) {
 func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
 
-	// outers := d.RemainingArgs()
-
-	// for nesting := d.Nesting(); d.NextBlock(nesting); {
-	// 	switch d.Val() {
-	// 	case "dns":
-	// 		if !d.Next() { // get the DNS module name
-	// 			return nil, d.ArgErr()
-	// 		}
-	// 		modID := "dns.providers." + d.Val()
-	// 		unm, err := caddyfile.UnmarshalModule(d, modID)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 		rs, ok := unm.(libdns.RecordSetter)
-	// 		if !ok {
-	// 			return nil, d.Errf("module %s (%T) is not a libdns.RecordSetter", modID, unm)
-	// 		}
-	// 	}
-	// }
-
 	ech := new(caddytls.ECH)
 
 	publicNames := d.RemainingArgs()
