@@ -27,14 +27,26 @@ func init() {
 	caddy.RegisterModule(ECHDNSPublisherList{})
 }
 
-// ECH configurations Encrypted ClientHello management.
+// ECH enables Encrypted ClientHello (ECH) and configures its management.
+//
+// Note that, as of Caddy 2.10 (~March 2025), ECH keys are not automatically
+// rotated due to a limitation in the Go standard library (see
+// https://github.com/golang/go/issues/71920). This should be resolved when
+// Go 1.25 is released (~Aug. 2025), and Caddy will be updated to automatically
+// rotate ECH keys/configs at that point.
 //
 // EXPERIMENTAL: Subject to change.
 type ECH struct {
 	// The list of ECH configurations for which to automatically generate
-	// and rotate keys.
+	// and rotate keys. At least one is required to enable ECH.
 	Configs []ECHConfiguration `json:"configs,omitempty"`
 
+	// Publication describes ways to publish ECH configs for clients to
+	// discover and use. Without publication, most clients will not use
+	// ECH at all, and those that do will suffer degraded performance.
+	//
+	// Most major browsers support ECH by way of publication to HTTPS
+	// DNS RRs. (This also typically requires that they use DoH or DoT.)
 	Publication []*ECHPublication `json:"publication,omitempty"`
 
 	// map of public_name to list of configs ordered by date (newest first)
@@ -288,6 +300,7 @@ type ECHConfiguration struct {
 	OuterSNI string `json:"outer_sni,omitempty"`
 }
 
+// ECHPublication configures publication of ECH config(s).
 type ECHPublication struct {
 	// TODO: Should these first two fields be called outer_sni and inner_sni ?
 
@@ -295,9 +308,27 @@ type ECHPublication struct {
 	// If not set, all configs will be included for publication by default.
 	Configs []string `json:"configs,omitempty"`
 
-	// The list of domain names which are hidden with the associated
-	// ECH configurations. Not all publishers may require this information,
-	// but some, like the DNS publisher, do.
+	// The list of domain names which are protected with the associated ECH
+	// configurations ("inner names"). Not all publishers may require this
+	// information, but some, like the DNS publisher, do. (The DNS publisher,
+	// for example, needs to know for which domain(s) to create DNS records.)
+	//
+	// If not set, all server names registered with the TLS module will be
+	// added to this list implicitly. (Other Caddy apps that use the TLS
+	// module automatically register their configured server names for this
+	// purpose. For example, the HTTP server registers the hostnames for
+	// which it applies automatic HTTPS.)
+	//
+	// NOTE: In order to publish ECH configs for domains configured for
+	// On-Demand TLS that are not explicitly enumerated elsewhere in the
+	// config, those domain names will have to be listed here. The only
+	// time Caddy knows which domains it is serving with On-Demand TLS is
+	// handshake-time, which is too late for publishing ECH configs; it
+	// means the first connections would not protect the server names,
+	// revealing that information to observers, and thus defeating the
+	// purpose of ECH. Hence the need to list them here so Caddy can
+	// proactively publish ECH configs before clients connect with those
+	// server names in plaintext.
 	DNSNames []string `json:"dns_names,omitempty"`
 
 	// How to publish the ECH configurations so clients can know to use them.
