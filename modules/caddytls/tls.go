@@ -399,12 +399,12 @@ func (t *TLS) Start() error {
 	if t.EncryptedClientHello != nil {
 		publicationList := t.EncryptedClientHello.Publication
 		if publicationList == nil {
-			if recordSetter, ok := t.dns.(libdns.RecordSetter); ok {
+			if dnsProv, ok := t.dns.(ECHDNSProvider); ok {
 				publicationList = []*ECHPublication{
 					{
 						publishers: []ECHPublisher{
 							&ECHDNSPublisher{
-								provider: recordSetter,
+								provider: dnsProv,
 								logger:   t.logger,
 							},
 						},

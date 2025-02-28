@@ -112,9 +112,6 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
 //	    insecure_secrets_log          <log_file>
-//	    ech <public_name> {
-//	        dns <provider> ...
-//	    }
 //	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
@@ -463,34 +460,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 				return nil, h.ArgErr()
 			}
 			cp.InsecureSecretsLog = h.Val()
-
-		// case "ech":
-		// 	if !h.NextArg() {
-		// 		return nil, h.ArgErr()
-		// 	}
-		// 	if cp.EncryptedClientHello == nil {
-		// 		cp.EncryptedClientHello = new(caddytls.ECH)
-		// 	}
-		// 	cp.EncryptedClientHello.PublicName = h.Val()
-
-		// 	for nesting := h.Nesting(); h.NextBlock(nesting); {
-		// 		switch h.Val() {
-		// 		case "dns":
-		// 			if !h.Next() {
-		// 				return nil, h.ArgErr()
-		// 			}
-		// 			providerName := h.Val()
-		// 			modID := "dns.providers." + providerName
-		// 			unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
-		// 			if err != nil {
-		// 				return nil, err
-		// 			}
-		// 			cp.EncryptedClientHello.DNSProviderRaw = caddyconfig.JSONModuleObject(unm, "name", providerName, h.warnings)
-		// 		default:
-		// 			return nil, h.Errf("ech: unrecognized subdirective '%s'", h.Val())
-		// 		}
-		// 	}
-		// 	log.Println("CP:", cp.EncryptedClientHello)
 
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())

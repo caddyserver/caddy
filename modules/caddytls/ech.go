@@ -347,9 +347,15 @@ type ECHPublication struct {
 type ECHDNSPublisher struct {
 	// The DNS provider module which will establish the HTTPS record(s).
 	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
-	provider    libdns.RecordSetter
+	provider    ECHDNSProvider
 
 	logger *zap.Logger
+}
+
+// ECHDNSProvider can service DNS entries for ECH purposes.
+type ECHDNSProvider interface {
+	libdns.RecordGetter
+	libdns.RecordSetter
 }
 
 // ECHDNSPublisherList is a list of DNS publication configs,
@@ -376,11 +382,11 @@ func (dnsPubList ECHDNSPublisherList) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading ECH DNS provider module: %v", err)
 		}
-		recSet, ok := dnsProvMod.(libdns.RecordSetter)
+		prov, ok := dnsProvMod.(ECHDNSProvider)
 		if !ok {
-			return fmt.Errorf("ECH DNS provider module is not a RecordSetter: %v", err)
+			return fmt.Errorf("ECH DNS provider module is not an ECH DNS Provider: %v", err)
 		}
-		dnsPubList[i].provider = recSet
+		dnsPubList[i].provider = prov
 		dnsPubList[i].logger = ctx.Logger()
 	}
 	return nil
@@ -406,13 +412,47 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 				zap.Error(err))
 			continue
 		}
+
+		// get any existing HTTPS record for this domain, and augment
+		// our ech SvcParamKey with any other existing SvcParams
+		recs, err := dnsPub.provider.GetRecords(ctx, zone)
+		if err != nil {
+			dnsPub.logger.Error("unable to get existing DNS records to publish ECH data to HTTPS DNS record",
+				zap.String("domain", domain),
+				zap.Error(err))
+			continue
+		}
+		relName := libdns.RelativeName(domain+".", zone)
+		var httpsRec libdns.Record
+		for _, rec := range recs {
+			if rec.Name == relName && rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
+				httpsRec = rec
+			}
+		}
+		params := make(svcParams)
+		if httpsRec.Value != "" {
+			params, err = parseSvcParams(httpsRec.Value)
+			if err != nil {
+				dnsPub.logger.Error("unable to parse existing DNS record to publish ECH data to HTTPS DNS record",
+					zap.String("domain", domain),
+					zap.String("https_rec_value", httpsRec.Value),
+					zap.Error(err))
+				continue
+			}
+		}
+
+		// overwrite only the ech SvcParamKey
+		params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
+
+		// publish record
 		_, err = dnsPub.provider.SetRecords(ctx, zone, []libdns.Record{
 			{
+				// HTTPS and SVCB RRs: RFC 9460 (https://www.rfc-editor.org/rfc/rfc9460)
 				Type:     "HTTPS",
-				Name:     libdns.RelativeName(domain+".", zone),
-				Priority: 1, // allows a manual override with priority 0
+				Name:     relName,
+				Priority: 2, // allows a manual override with priority 1
 				Target:   ".",
-				Value:    echSvcParam(configListBin),
+				Value:    params.String(),
 				TTL:      1 * time.Minute, // TODO: for testing only
 			},
 		})
@@ -425,11 +465,6 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 	}
 
 	return nil
-}
-
-// SvcParam syntax is defined in RFC 9460: https://www.rfc-editor.org/rfc/rfc9460#presentation
-func echSvcParam(echConfigListBinary []byte) string {
-	return fmt.Sprintf(`ech=%q`, base64.StdEncoding.EncodeToString(echConfigListBinary))
 }
 
 // echConfig represents an ECHConfig from the specification,
@@ -651,6 +686,172 @@ func newECHConfigID(ctx caddy.Context) (uint8, error) {
 	}
 
 	return 0, fmt.Errorf("depleted attempts to find an available config_id")
+}
+
+// svcParams represents SvcParamKey and SvcParamValue pairs as
+// described in https://www.rfc-editor.org/rfc/rfc9460 (section 2.1).
+type svcParams map[string][]string
+
+// parseSvcParams parses service parameters into a structured type
+// for safer manipulation.
+func parseSvcParams(input string) (svcParams, error) {
+	if len(input) > 4096 {
+		return nil, fmt.Errorf("input too long: %d", len(input))
+	}
+
+	params := make(svcParams)
+	input = strings.TrimSpace(input) + " "
+
+	for cursor := 0; cursor < len(input); cursor++ {
+		var key, rawVal string
+
+	keyValPair:
+		for i := cursor; i < len(input); i++ {
+			switch input[i] {
+			case '=':
+				key = strings.ToLower(strings.TrimSpace(input[cursor:i]))
+				i++
+				cursor = i
+
+				var quoted bool
+				if input[cursor] == '"' {
+					quoted = true
+					i++
+					cursor = i
+				}
+
+				var escaped bool
+
+				for j := cursor; j < len(input); j++ {
+					switch input[j] {
+					case '"':
+						if !quoted {
+							return nil, fmt.Errorf("illegal DQUOTE at position %d", j)
+						}
+						if !escaped {
+							// end of quoted value
+							rawVal = input[cursor:j]
+							j++
+							cursor = j
+							break keyValPair
+						}
+					case '\\':
+						escaped = true
+					case ' ', '\t', '\n', '\r':
+						if !quoted {
+							// end of unquoted value
+							rawVal = input[cursor:j]
+							cursor = j
+							break keyValPair
+						}
+					default:
+						escaped = false
+					}
+				}
+
+			case ' ', '\t', '\n', '\r':
+				// key with no value (flag)
+				key = input[cursor:i]
+				params[key] = []string{}
+				cursor = i
+				break keyValPair
+			}
+		}
+
+		if rawVal == "" {
+			continue
+		}
+
+		var sb strings.Builder
+
+		var escape int // start of escape sequence (after \, so 0 is never a valid start)
+		for i := 0; i < len(rawVal); i++ {
+			ch := rawVal[i]
+			if escape > 0 {
+				// validate escape sequence
+				// (RFC 9460 Appendix A)
+				// escaped:   "\" ( non-digit / dec-octet )
+				// non-digit: "%x21-2F / %x3A-7E"
+				// dec-octet: "0-255 as a 3-digit decimal number"
+				if ch >= '0' && ch <= '9' {
+					// advance to end of decimal octet, which must be 3 digits
+					i += 2
+					if i > len(rawVal) {
+						return nil, fmt.Errorf("value ends with incomplete escape sequence: %s", rawVal[escape:])
+					}
+					decOctet, err := strconv.Atoi(rawVal[escape : i+1])
+					if err != nil {
+						return nil, err
+					}
+					if decOctet < 0 || decOctet > 255 {
+						return nil, fmt.Errorf("invalid decimal octet in escape sequence: %s (%d)", rawVal[escape:i], decOctet)
+					}
+					sb.WriteRune(rune(decOctet))
+					escape = 0
+					continue
+				} else if (ch < 0x21 || ch > 0x2F) && (ch < 0x3A && ch > 0x7E) {
+					return nil, fmt.Errorf("illegal escape sequence %s", rawVal[escape:i])
+				}
+			}
+			switch ch {
+			case ';', '(', ')':
+				// RFC 9460 Appendix A:
+				// > contiguous  = 1*( non-special / escaped )
+				// > non-special is VCHAR minus DQUOTE, ";", "(", ")", and "\".
+				return nil, fmt.Errorf("illegal character in value %q at position %d: %s", rawVal, i, string(ch))
+			case '\\':
+				escape = i + 1
+			default:
+				sb.WriteByte(ch)
+				escape = 0
+			}
+		}
+
+		params[key] = strings.Split(sb.String(), ",")
+	}
+
+	return params, nil
+}
+
+// String serializes svcParams into zone presentation format.
+func (params svcParams) String() string {
+	var sb strings.Builder
+	for key, vals := range params {
+		if sb.Len() > 0 {
+			sb.WriteRune(' ')
+		}
+		sb.WriteString(key)
+		var hasVal, needsQuotes bool
+		for _, val := range vals {
+			if len(val) > 0 {
+				hasVal = true
+			}
+			if strings.ContainsAny(val, `" `) {
+				needsQuotes = true
+			}
+			if hasVal && needsQuotes {
+				break
+			}
+		}
+		if hasVal {
+			sb.WriteRune('=')
+		}
+		if needsQuotes {
+			sb.WriteRune('"')
+		}
+		for i, val := range vals {
+			if i > 0 {
+				sb.WriteRune(',')
+			}
+			val = strings.ReplaceAll(val, `"`, `\"`)
+			val = strings.ReplaceAll(val, `,`, `\,`)
+			sb.WriteString(val)
+		}
+		if needsQuotes {
+			sb.WriteRune('"')
+		}
+	}
+	return sb.String()
 }
 
 // ECHPublisher is an interface for publishing ECHConfigList values
