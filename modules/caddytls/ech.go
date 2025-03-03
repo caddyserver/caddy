@@ -17,6 +17,7 @@ import (
 	"github.com/cloudflare/circl/hpke"
 	"github.com/cloudflare/circl/kem"
 	"github.com/libdns/libdns"
+	"github.com/zeebo/blake3"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/cryptobyte"
 
@@ -24,7 +25,7 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(ECHDNSPublisherList{})
+	caddy.RegisterModule(ECHDNSPublisher{})
 }
 
 // ECH enables Encrypted ClientHello (ECH) and configures its management.
@@ -49,7 +50,7 @@ type ECH struct {
 	// DNS RRs. (This also typically requires that they use DoH or DoT.)
 	Publication []*ECHPublication `json:"publication,omitempty"`
 
-	// map of public_name to list of configs ordered by date (newest first)
+	// map of public_name to list of configs
 	configs map[string][]echConfig
 }
 
@@ -340,6 +341,12 @@ type ECHPublication struct {
 	publishers    []ECHPublisher
 }
 
+// ECHDNSProvider can service DNS entries for ECH purposes.
+type ECHDNSProvider interface {
+	libdns.RecordGetter
+	libdns.RecordSetter
+}
+
 // ECHDNSPublisher configures how to publish an ECH configuration to
 // DNS records for the specified domains.
 //
@@ -352,53 +359,32 @@ type ECHDNSPublisher struct {
 	logger *zap.Logger
 }
 
-// ECHDNSProvider can service DNS entries for ECH purposes.
-type ECHDNSProvider interface {
-	libdns.RecordGetter
-	libdns.RecordSetter
-}
-
-// ECHDNSPublisherList is a list of DNS publication configs,
-// so that different groups of domain names may have ECH configs
-// published across different DNS providers, if necessary.
-//
-// EXPERIMENTAL: Subject to change.
-//
-// TODO: Does it make sense to have multiple? Do we really need to (is it even possible to need to) set DNS records for a group of names across more than 1 provider?
-// TODO: Based on a discussion on social media, it sounds like only one would be necessary.
-type ECHDNSPublisherList []*ECHDNSPublisher
-
 // CaddyModule returns the Caddy module information.
-func (ECHDNSPublisherList) CaddyModule() caddy.ModuleInfo {
+func (ECHDNSPublisher) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "tls.ech.publishers.dns",
-		New: func() caddy.Module { return new(ECHDNSPublisherList) },
+		New: func() caddy.Module { return new(ECHDNSPublisher) },
 	}
 }
 
-func (dnsPubList ECHDNSPublisherList) Provision(ctx caddy.Context) error {
-	for i := range dnsPubList {
-		dnsProvMod, err := ctx.LoadModule(dnsPubList[i], "ProviderRaw")
-		if err != nil {
-			return fmt.Errorf("loading ECH DNS provider module: %v", err)
-		}
-		prov, ok := dnsProvMod.(ECHDNSProvider)
-		if !ok {
-			return fmt.Errorf("ECH DNS provider module is not an ECH DNS Provider: %v", err)
-		}
-		dnsPubList[i].provider = prov
-		dnsPubList[i].logger = ctx.Logger()
+func (dnsPub ECHDNSPublisher) Provision(ctx caddy.Context) error {
+	dnsProvMod, err := ctx.LoadModule(dnsPub, "ProviderRaw")
+	if err != nil {
+		return fmt.Errorf("loading ECH DNS provider module: %v", err)
 	}
+	prov, ok := dnsProvMod.(ECHDNSProvider)
+	if !ok {
+		return fmt.Errorf("ECH DNS provider module is not an ECH DNS Provider: %v", err)
+	}
+	dnsPub.provider = prov
+	dnsPub.logger = ctx.Logger()
 	return nil
 }
 
-func (dnsPubList ECHDNSPublisherList) PublishECHConfigList(ctx context.Context, innerNames []string, echConfigList []byte) error {
-	for i, pub := range dnsPubList {
-		if err := pub.PublishECHConfigList(ctx, innerNames, echConfigList); err != nil {
-			return fmt.Errorf("publisher %d: %v", i, err)
-		}
-	}
-	return nil
+func (dnsPub ECHDNSPublisher) PublisherKey() string {
+	h := blake3.New()
+	fmt.Fprintf(h, "%v", dnsPub.provider)
+	return dnsPub.provider.(caddy.Module).CaddyModule().ID.Name() + ":" + string(h.Sum(nil))
 }
 
 func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNames []string, configListBin []byte) error {
@@ -857,12 +843,21 @@ func (params svcParams) String() string {
 // ECHPublisher is an interface for publishing ECHConfigList values
 // so that they can be used by clients.
 type ECHPublisher interface {
+	// Returns a key that is unique to this publisher and its configuration.
+	// A publisher's ID combined with its config is a valid key.
+	// It is used to prevent duplicating publications.
+	PublisherKey() string
+
+	// Publishes the ECH config list for the given innerNames. Some publishers
+	// may not need a list of inner/protected names, and can ignore the argument;
+	// most, however, will want to use it as guidance to ensure the inner names
+	// are associated with the proper ECH configs.
 	PublishECHConfigList(ctx context.Context, innerNames []string, echConfigList []byte) error
 }
 
 type echConfigMeta struct {
-	Created      time.Time `json:"created"`
-	Publications []string  `json:"publications"`
+	Created      time.Time            `json:"created"`
+	Publications map[string]time.Time `json:"publications"` // map of publisher ID to timestamp of publication
 }
 
 // The key prefix when putting ECH configs in storage. After this
@@ -873,4 +868,4 @@ const echConfigsKey = "ech/configs"
 const draftTLSESNI22 = 0xfe0d
 
 // Interface guard
-var _ ECHPublisher = (*ECHDNSPublisherList)(nil)
+var _ ECHPublisher = (*ECHDNSPublisher)(nil)

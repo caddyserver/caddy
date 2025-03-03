@@ -607,10 +607,8 @@ func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
 			ech.Publication = append(ech.Publication, &caddytls.ECHPublication{
 				Configs: publicNames,
 				PublishersRaw: caddy.ModuleMap{
-					"dns": caddyconfig.JSON(caddytls.ECHDNSPublisherList{
-						{
-							ProviderRaw: caddyconfig.JSONModuleObject(unm, "name", providerName, nil),
-						},
+					"dns": caddyconfig.JSON(caddytls.ECHDNSPublisher{
+						ProviderRaw: caddyconfig.JSONModuleObject(unm, "name", providerName, nil),
 					}, nil),
 				},
 			})
