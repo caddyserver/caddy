@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -52,6 +53,13 @@ func (fl *LeafFolderLoader) Provision(ctx caddy.Context) error {
 	for k, path := range fl.Folders {
 		fl.Folders[k] = repl.ReplaceKnown(path, "")
 	}
+	return nil
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fl *LeafFolderLoader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.NextArg()
+	fl.Folders = append(fl.Folders, d.RemainingArgs()...)
 	return nil
 }
 
@@ -94,4 +102,5 @@ func (fl LeafFolderLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 var (
 	_ LeafCertificateLoader = (*LeafFolderLoader)(nil)
 	_ caddy.Provisioner     = (*LeafFolderLoader)(nil)
+	_ caddyfile.Unmarshaler = (*LeafFolderLoader)(nil)
 )
