@@ -149,7 +149,7 @@ type FileServer struct {
 	// the status code will typically be 200, or 206 for partial content.
 	StatusCode caddyhttp.WeakString `json:"status_code,omitempty"`
 
-	// If pass-thru mode is enabled and a requested file is not found,
+	// If passthrough mode is enabled and a requested file is not found,
 	// it will invoke the next handler in the chain instead of returning
 	// a 404 error. By default, this is false (disabled).
 	PassThru bool `json:"pass_thru,omitempty"`
@@ -696,7 +696,7 @@ func fileHidden(filename string, hide []string) bool {
 	return false
 }
 
-// notFound returns a 404 error or, if pass-thru is enabled,
+// notFound returns a 404 error or, if passthrough is enabled,
 // it calls the next handler in the chain.
 func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	if fsrv.PassThru {

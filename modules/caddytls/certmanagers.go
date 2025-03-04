@@ -44,7 +44,7 @@ func (ts *Tailscale) Provision(ctx caddy.Context) error {
 func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	canGetCert, err := ts.canHazCertificate(ctx, hello)
 	if err == nil && !canGetCert {
-		return nil, nil // pass-thru: Tailscale can't offer a cert for this name
+		return nil, nil // passthrough: Tailscale can't offer a cert for this name
 	}
 	if err != nil {
 		if c := ts.logger.Check(zapcore.WarnLevel, "could not get status; will try to get certificate anyway"); c != nil {
