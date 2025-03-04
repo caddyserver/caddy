@@ -90,6 +90,11 @@ type ActiveHealthChecks struct {
 	// this value is ignored.
 	Port int `json:"port,omitempty"`
 
+
+	// Configures the method of transport for the active health checker. 
+	// The default transport is the handler's transport
+	TransportRaw json.RawMessage `json:"transport,omitempty" caddy:"namespace=http.reverse_proxy.transport inline_key=protocol"`
+	
 	// HTTP headers to set on health check requests.
 	Headers http.Header `json:"headers,omitempty"`
 
@@ -128,6 +133,7 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
+	transport http.RoundTripper `json:"-"``
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -174,10 +180,21 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		}
 		a.uri = parsedURI
 	}
+	
+	// Use handler's transport if no active one set
+	if a.TransportRaw != nil {
+		mod, err := ctx.LoadModule(a, "TransportRaw")
+		if err != nil {
+			return fmt.Errorf("loading transport: %v", err)
+		}
+		a.transport = mod.(http.RoundTripper)
+	} else {
+		a.transport = h.Transport
+	}
 
 	a.httpClient = &http.Client{
 		Timeout:   timeout,
-		Transport: h.Transport,
+		Transport: a.transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
@@ -393,12 +410,17 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Host = net.JoinHostPort(host, port)
 	}
 
-	// this is kind of a hacky way to know if we should use HTTPS, but whatever
-	if tt, ok := h.Transport.(TLSTransport); ok && tt.TLSEnabled() {
+	// this is kind of a hacky way to know if we should use HTTPS
+	transport := h.HealthChecks.Active.transport
+	if transport == nil {
+		transport = h.Transport
+	}
+
+	if tt, ok := transport.(TLSTransport); ok && tt.TLSEnabled() {
 		u.Scheme = "https"
 
 		// if the port is in the except list, flip back to HTTP
-		if ht, ok := h.Transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
+		if ht, ok := transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
 			u.Scheme = "http"
 		}
 	}
