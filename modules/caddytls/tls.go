@@ -22,7 +22,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -430,25 +432,61 @@ func (t *TLS) Start() error {
 			if err != nil {
 				return fmt.Errorf("marshaling ECH config list: %v", err)
 			}
-			var serverNames []string
+
+			// by default, publish for all (non-outer) server names, unless
+			// a specific list of names is configured
+			var serverNamesSet map[string]struct{}
+			if publication.DNSNames == nil {
+				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
+				for name := range t.serverNames {
+					serverNamesSet[name] = struct{}{}
+				}
+			} else {
+				serverNamesSet = make(map[string]struct{}, len(publication.DNSNames))
+				for _, name := range publication.DNSNames {
+					serverNamesSet[name] = struct{}{}
+				}
+			}
+
 			for _, publisher := range publication.publishers {
-				dnsNames := publication.DNSNames
-				if dnsNames == nil {
-					// by default, publish for all (non-outer) server names; convert
-					// de-duplicated map of server names to a slice
-					if serverNames == nil {
-						serverNames = make([]string, 0, len(t.serverNames))
-						for sn := range t.serverNames {
-							serverNames = append(serverNames, sn)
+				publisherKey := publisher.PublisherKey()
+				for _, cfg := range echCfgList {
+					serverNamesSet = cfg.meta.Publications.unpublishedNames(publisherKey, serverNamesSet)
+				}
+				if len(serverNamesSet) > 0 {
+					dnsNamesToPublish := make([]string, 0, len(serverNamesSet))
+					for name := range serverNamesSet {
+						dnsNamesToPublish = append(dnsNamesToPublish, name)
+					}
+					pubTime := time.Now()
+					err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
+					if err != nil {
+						t.logger.Error("publishing ECH configuration list",
+							zap.Strings("for_dns_names", publication.DNSNames),
+							zap.Error(err))
+					}
+
+					// update publication history
+					for _, cfg := range echCfgList {
+						if cfg.meta.Publications == nil {
+							cfg.meta.Publications = make(publicationHistory)
+						}
+						if _, ok := cfg.meta.Publications[publisherKey]; !ok {
+							cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
+						}
+						for _, name := range dnsNamesToPublish {
+							cfg.meta.Publications[publisherKey][name] = pubTime
+						}
+						metaBytes, err := json.Marshal(cfg.meta)
+						if err != nil {
+							return fmt.Errorf("marshaling ECH config metadata: %v", err)
+						}
+						parentKey := path.Join(echConfigsKey, strconv.Itoa(int(cfg.ConfigID)))
+						metaKey := path.Join(parentKey, "meta.json")
+						if err := t.ctx.Storage().Store(t.ctx, metaKey, metaBytes); err != nil {
+							return fmt.Errorf("storing ECH config metadata: %v", err)
 						}
 					}
-					dnsNames = serverNames
-				}
-				err := publisher.PublishECHConfigList(t.ctx, dnsNames, echCfgListBin)
-				if err != nil {
-					t.logger.Error("publishing ECH configuration list",
-						zap.Strings("for_dns_names", publication.DNSNames),
-						zap.Error(err))
 				}
 			}
 		}

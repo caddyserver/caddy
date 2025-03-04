@@ -17,7 +17,6 @@ import (
 	"github.com/cloudflare/circl/hpke"
 	"github.com/cloudflare/circl/kem"
 	"github.com/libdns/libdns"
-	"github.com/zeebo/blake3"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/cryptobyte"
 
@@ -382,9 +381,12 @@ func (dnsPub ECHDNSPublisher) Provision(ctx caddy.Context) error {
 }
 
 func (dnsPub ECHDNSPublisher) PublisherKey() string {
-	h := blake3.New()
-	fmt.Fprintf(h, "%v", dnsPub.provider)
-	return dnsPub.provider.(caddy.Module).CaddyModule().ID.Name() + ":" + string(h.Sum(nil))
+	// TODO: Figure out what the key should be
+	// h := blake3.New()
+	// fmt.Fprintf(h, "%v", dnsPub.provider)
+	// return fmt.Sprintf("%s::%s", dnsPub.provider.(caddy.Module).CaddyModule().ID, h.Sum(nil))
+	return string(dnsPub.provider.(caddy.Module).CaddyModule().ID)
+
 }
 
 func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNames []string, configListBin []byte) error {
@@ -850,14 +852,34 @@ type ECHPublisher interface {
 
 	// Publishes the ECH config list for the given innerNames. Some publishers
 	// may not need a list of inner/protected names, and can ignore the argument;
-	// most, however, will want to use it as guidance to ensure the inner names
-	// are associated with the proper ECH configs.
+	// most, however, will want to use it to know which inner names are to be
+	// associated with the given ECH config list.
 	PublishECHConfigList(ctx context.Context, innerNames []string, echConfigList []byte) error
 }
 
 type echConfigMeta struct {
-	Created      time.Time            `json:"created"`
-	Publications map[string]time.Time `json:"publications"` // map of publisher ID to timestamp of publication
+	Created      time.Time          `json:"created"`
+	Publications publicationHistory `json:"publications"`
+}
+
+// publicationHistory is a map of publisher key to
+// map of inner name to timestamp
+type publicationHistory map[string]map[string]time.Time
+
+func (hist publicationHistory) unpublishedNames(publisherKey string, serverNamesSet map[string]struct{}) map[string]struct{} {
+	innerNamesSet, ok := hist[publisherKey]
+	if !ok {
+		// no history of this publisher publishing this config at all, so publish for entire set of names
+		return serverNamesSet
+	}
+	for innerName := range innerNamesSet {
+		// names in this loop have already had this config published by this publisher,
+		// so delete them from the set of names to publish for
+		//
+		// TODO: Potentially utilize the timestamp (map value) to preserve server name for re-publication if enough time has passed
+		delete(serverNamesSet, innerName)
+	}
+	return serverNamesSet
 }
 
 // The key prefix when putting ECH configs in storage. After this
