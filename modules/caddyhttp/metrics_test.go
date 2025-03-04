@@ -33,7 +33,7 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		init:        sync.Once{},
 		httpMetrics: &httpMetrics{},
 	}
-	handlerErr := errors.New("oh noes")
+	handlerErr := errors.New("oh no")
 	response := []byte("hello world!")
 	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 1.0 {
@@ -209,7 +209,7 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 		init:        sync.Once{},
 		httpMetrics: &httpMetrics{},
 	}
-	handlerErr := errors.New("oh noes")
+	handlerErr := errors.New("oh no")
 	response := []byte("hello world!")
 	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 1.0 {

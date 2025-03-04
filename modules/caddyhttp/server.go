@@ -70,7 +70,7 @@ type Server struct {
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
 	// IdleTimeout is the maximum time to wait for the next request
-	// when keep-alives are enabled. If zero, a default timeout of
+	// when keep-alive are enabled. If zero, a default timeout of
 	// 5m is applied to help avoid resource exhaustion.
 	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 
