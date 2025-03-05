@@ -84,7 +84,7 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		}
 	}()
 
-	var outerNames []string
+	var outerNames []string //nolint:prealloc // (FALSE POSITIVE - see https://github.com/alexkohler/prealloc/issues/30)
 
 	// start by loading all the existing configs (even the older ones on the way out,
 	// since some clients may still be using them if they haven't yet picked up on the
