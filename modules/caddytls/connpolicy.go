@@ -166,9 +166,9 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				tlsApp.RegisterServerNames(echNames)
 			}
 
-			///////////////////////////////////////////////////
-			// TODO: This is hopefully just a temporary implementation of static ECH keys
-			// (see https://github.com/golang/go/issues/71920) -- not currently rotated
+			// TODO: Ideally, ECH keys should be rotated. However, as of Go 1.24, the std lib implementation
+			// does not support safely modifying the tls.Config's EncryptedClientHelloKeys field.
+			// So, we implement static ECH keys temporarily. See https://github.com/golang/go/issues/71920.
 			var stdECHKeys []tls.EncryptedClientHelloKey
 			for _, echConfigs := range tlsApp.EncryptedClientHello.configs {
 				for _, c := range echConfigs {
@@ -180,35 +180,6 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				}
 			}
 			tlsCfg.EncryptedClientHelloKeys = stdECHKeys
-			///////////////////////////////////////////////////
-			// TODO: This was my first attempt to make ECH keys dynamic; I think it
-			// technically works (?), but GetConfigForClient isn't called a second time
-			// on the returned config, and the returned config has no certificates,
-			// so an internal alert is raised.
-			// See https://github.com/golang/go/issues/71920.
-			//
-			// tlsCfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-			// 	log.Println("ECH GETCONFIGFORCLIENT:", hello.ServerName, tlsApp.EncryptedClientHello.configs[hello.ServerName])
-			// 	if echConfigs, ok := tlsApp.EncryptedClientHello.configs[hello.ServerName]; ok && len(echConfigs) > 0 {
-			// 		var stdECHKeys []tls.EncryptedClientHelloKey
-			// 		for _, c := range echConfigs {
-			// 			stdECHKeys = append(stdECHKeys, tls.EncryptedClientHelloKey{
-			// 				Config:     c.configBin,
-			// 				PrivateKey: c.privKeyBin,
-			// 				// TODO: SendAsRetry: true if the config is current (explicitly configured and most recent)
-			// 				// SendAsRetry: true,
-			// 			})
-			// 		}
-			// 		log.Println("ECH KEYS:", stdECHKeys)
-			// 		return &tls.Config{
-			// 			MinVersion:               tls.VersionTLS13,
-			// 			GetConfigForClient:       getConfigForClient,
-			// 			EncryptedClientHelloKeys: stdECHKeys,
-			// 		}, nil
-			// 	}
-			// 	return getConfigForClient(hello)
-			// }
-			///////////////////////////////////////////////////
 		}
 	}
 
