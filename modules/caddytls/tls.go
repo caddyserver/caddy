@@ -22,9 +22,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -396,100 +394,14 @@ func (t *TLS) Start() error {
 		return fmt.Errorf("automate: managing %v: %v", t.automateNames, err)
 	}
 
-	// publish ECH configs
-	// TODO: This should be done only once until a change; keep track in storage; and use goroutines to scale
+	// publish ECH configs in the background; does not need to block
+	// server startup, as it could take a while
 	if t.EncryptedClientHello != nil {
-		publicationList := t.EncryptedClientHello.Publication
-		if publicationList == nil {
-			if dnsProv, ok := t.dns.(ECHDNSProvider); ok {
-				publicationList = []*ECHPublication{
-					{
-						publishers: []ECHPublisher{
-							&ECHDNSPublisher{
-								provider: dnsProv,
-								logger:   t.logger,
-							},
-						},
-					},
-				}
+		go func() {
+			if err := t.publishECHConfigs(); err != nil {
+				t.logger.Named("ech").Error("publication(s) failed", zap.Error(err))
 			}
-		}
-		for _, publication := range publicationList {
-			var echCfgList echConfigList
-			if publication.Configs == nil {
-				// by default, publish all configs
-				for _, configs := range t.EncryptedClientHello.configs {
-					echCfgList = append(echCfgList, configs...)
-				}
-			} else {
-				for _, cfgOuterName := range publication.Configs {
-					if cfg, ok := t.EncryptedClientHello.configs[cfgOuterName]; ok {
-						echCfgList = append(echCfgList, cfg...)
-					}
-				}
-			}
-			echCfgListBin, err := echCfgList.MarshalBinary()
-			if err != nil {
-				return fmt.Errorf("marshaling ECH config list: %v", err)
-			}
-
-			// by default, publish for all (non-outer) server names, unless
-			// a specific list of names is configured
-			var serverNamesSet map[string]struct{}
-			if publication.DNSNames == nil {
-				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
-				for name := range t.serverNames {
-					serverNamesSet[name] = struct{}{}
-				}
-			} else {
-				serverNamesSet = make(map[string]struct{}, len(publication.DNSNames))
-				for _, name := range publication.DNSNames {
-					serverNamesSet[name] = struct{}{}
-				}
-			}
-
-			for _, publisher := range publication.publishers {
-				publisherKey := publisher.PublisherKey()
-				for _, cfg := range echCfgList {
-					serverNamesSet = cfg.meta.Publications.unpublishedNames(publisherKey, serverNamesSet)
-				}
-				if len(serverNamesSet) > 0 {
-					dnsNamesToPublish := make([]string, 0, len(serverNamesSet))
-					for name := range serverNamesSet {
-						dnsNamesToPublish = append(dnsNamesToPublish, name)
-					}
-					pubTime := time.Now()
-					err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
-					if err != nil {
-						t.logger.Error("publishing ECH configuration list",
-							zap.Strings("for_dns_names", publication.DNSNames),
-							zap.Error(err))
-					}
-
-					// update publication history
-					for _, cfg := range echCfgList {
-						if cfg.meta.Publications == nil {
-							cfg.meta.Publications = make(publicationHistory)
-						}
-						if _, ok := cfg.meta.Publications[publisherKey]; !ok {
-							cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
-						}
-						for _, name := range dnsNamesToPublish {
-							cfg.meta.Publications[publisherKey][name] = pubTime
-						}
-						metaBytes, err := json.Marshal(cfg.meta)
-						if err != nil {
-							return fmt.Errorf("marshaling ECH config metadata: %v", err)
-						}
-						parentKey := path.Join(echConfigsKey, strconv.Itoa(int(cfg.ConfigID)))
-						metaKey := path.Join(parentKey, "meta.json")
-						if err := t.ctx.Storage().Store(t.ctx, metaKey, metaBytes); err != nil {
-							return fmt.Errorf("storing ECH config metadata: %v", err)
-						}
-					}
-				}
-			}
-		}
+		}()
 	}
 
 	if !t.DisableStorageClean {

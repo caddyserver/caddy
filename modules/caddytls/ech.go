@@ -57,9 +57,32 @@ type ECH struct {
 // management), but does not publish any ECH configs. The DNS module is used as
 // a default for later publishing if needed.
 func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
-	// TODO: Provisioning this should be made atomic using the storage backend; currently, it
-	// is not properly synced if distributed instances are initializing simultaneously...
+	logger := ctx.Logger().Named("ech")
+
+	// set up publication modules before we need to obtain a lock in storage,
+	// since this is strictly internal and doesn't require synchronization
+	for i, pub := range ech.Publication {
+		mods, err := ctx.LoadModule(pub, "PublishersRaw")
+		if err != nil {
+			return nil, fmt.Errorf("loading ECH publication modules: %v", err)
+		}
+		for _, modIface := range mods.(map[string]any) {
+			ech.Publication[i].publishers = append(ech.Publication[i].publishers, modIface.(ECHPublisher))
+		}
+	}
+
+	// the rest of provisioning needs an exclusive lock so that instances aren't
+	// stepping on each other when setting up ECH configs
 	storage := ctx.Storage()
+	const echLockName = "ech_provision"
+	if err := storage.Lock(ctx, echLockName); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := storage.Unlock(ctx, echLockName); err != nil {
+			logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
+		}
+	}()
 
 	var outerNames []string
 
@@ -81,6 +104,9 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		if cfg.configBin == nil || cfg.privKeyBin == nil {
 			continue
 		}
+		logger.Debug("loaded ECH config",
+			zap.String("public_name", cfg.RawPublicName),
+			zap.Uint8("id", cfg.ConfigID))
 		ech.configs[cfg.RawPublicName] = append(ech.configs[cfg.RawPublicName], cfg)
 		outerNames = append(outerNames, cfg.RawPublicName)
 	}
@@ -97,23 +123,171 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
+			logger.Debug("generated new ECH config",
+				zap.String("public_name", echCfg.RawPublicName),
+				zap.Uint8("id", echCfg.ConfigID))
 			ech.configs[publicName] = append(ech.configs[publicName], echCfg)
 			outerNames = append(outerNames, publicName)
 		}
 	}
 
-	// set up publication modules
-	for i, pub := range ech.Publication {
-		mods, err := ctx.LoadModule(pub, "PublishersRaw")
-		if err != nil {
-			return nil, fmt.Errorf("loading ECH publication modules: %v", err)
+	return outerNames, nil
+}
+
+func (t *TLS) publishECHConfigs() error {
+	logger := t.logger.Named("ech")
+
+	// make publication exclusive, since we don't need to repeat this unnecessarily
+	storage := t.ctx.Storage()
+	const echLockName = "ech_publish"
+	if err := storage.Lock(t.ctx, echLockName); err != nil {
+		return err
+	}
+	defer func() {
+		if err := storage.Unlock(t.ctx, echLockName); err != nil {
+			logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
 		}
-		for _, modIface := range mods.(map[string]any) {
-			ech.Publication[i].publishers = append(ech.Publication[i].publishers, modIface.(ECHPublisher))
+	}()
+
+	// get the publication config, or use a default if not specified
+	// (the default publication config should be to publish all ECH
+	// configs to the app-global DNS provider; if no DNS provider is
+	// configured, then this whole function is basically a no-op)
+	publicationList := t.EncryptedClientHello.Publication
+	if publicationList == nil {
+		if dnsProv, ok := t.dns.(ECHDNSProvider); ok {
+			publicationList = []*ECHPublication{
+				{
+					publishers: []ECHPublisher{
+						&ECHDNSPublisher{
+							provider: dnsProv,
+							logger:   t.logger,
+						},
+					},
+				},
+			}
 		}
 	}
 
-	return outerNames, nil
+	// for each publication config, build the list of ECH configs to
+	// publish with it, and figure out which inner names to publish
+	// to/for, then publish
+	for _, publication := range publicationList {
+		// this publication is either configured for specific ECH configs,
+		// or we just use an implied default of all ECH configs
+		var echCfgList echConfigList
+		var configIDs []uint8 // TODO: use IDs or the outer names?
+		if publication.Configs == nil {
+			// by default, publish all configs
+			for _, configs := range t.EncryptedClientHello.configs {
+				echCfgList = append(echCfgList, configs...)
+				for _, c := range configs {
+					configIDs = append(configIDs, c.ConfigID)
+				}
+			}
+		} else {
+			for _, cfgOuterName := range publication.Configs {
+				if cfgList, ok := t.EncryptedClientHello.configs[cfgOuterName]; ok {
+					echCfgList = append(echCfgList, cfgList...)
+					for _, c := range cfgList {
+						configIDs = append(configIDs, c.ConfigID)
+					}
+				}
+			}
+		}
+
+		// marshal the ECH config list as binary for publication
+		echCfgListBin, err := echCfgList.MarshalBinary()
+		if err != nil {
+			return fmt.Errorf("marshaling ECH config list: %v", err)
+		}
+
+		// now we have our list of ECH configs to publish and the inner names
+		// to publish for (i.e. the names being protected); iterate each publisher
+		// and do the publish for any config+name that needs a publish
+		for _, publisher := range publication.publishers {
+			publisherKey := publisher.PublisherKey()
+
+			// by default, publish for all (non-outer) server names, unless
+			// a specific list of names is configured
+			var serverNamesSet map[string]struct{}
+			if publication.DNSNames == nil {
+				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
+				for name := range t.serverNames {
+					serverNamesSet[name] = struct{}{}
+				}
+			} else {
+				serverNamesSet = make(map[string]struct{}, len(publication.DNSNames))
+				for _, name := range publication.DNSNames {
+					serverNamesSet[name] = struct{}{}
+				}
+			}
+
+			// remove any domains from the set which have already had all configs in the
+			// list published by this publisher, to avoid always re-publishing unnecessarily
+			for configuredInnerName := range serverNamesSet {
+				allConfigsPublished := true
+				for _, cfg := range echCfgList {
+					// TODO: Potentially utilize the timestamp (map value) for recent-enough publication, instead of just checking for existence
+					if _, ok := cfg.meta.Publications[publisherKey][configuredInnerName]; !ok {
+						allConfigsPublished = false
+						break
+					}
+				}
+				if allConfigsPublished {
+					delete(serverNamesSet, configuredInnerName)
+				}
+			}
+
+			// if all the (inner) domains have had this ECH config list published
+			// by this publisher, then try the next publication config
+			if len(serverNamesSet) == 0 {
+				continue
+			}
+
+			// convert the set of names to a slice
+			dnsNamesToPublish := make([]string, 0, len(serverNamesSet))
+			for name := range serverNamesSet {
+				dnsNamesToPublish = append(dnsNamesToPublish, name)
+			}
+
+			logger.Debug("publishing ECH config list",
+				zap.Strings("inner_names", dnsNamesToPublish),
+				zap.Uint8s("config_ids", configIDs))
+
+			// publish this ECH config list with this publisher
+			pubTime := time.Now()
+			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
+			if err != nil {
+				t.logger.Error("publishing ECH configuration list",
+					zap.Strings("for_dns_names", publication.DNSNames),
+					zap.Error(err))
+			}
+
+			// update publication history, so that we don't unnecessarily republish every time
+			for _, cfg := range echCfgList {
+				if cfg.meta.Publications == nil {
+					cfg.meta.Publications = make(publicationHistory)
+				}
+				if _, ok := cfg.meta.Publications[publisherKey]; !ok {
+					cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
+				}
+				for _, name := range dnsNamesToPublish {
+					cfg.meta.Publications[publisherKey][name] = pubTime
+				}
+				metaBytes, err := json.Marshal(cfg.meta)
+				if err != nil {
+					return fmt.Errorf("marshaling ECH config metadata: %v", err)
+				}
+				metaKey := path.Join(echConfigsKey, strconv.Itoa(int(cfg.ConfigID)), "meta.json")
+				if err := t.ctx.Storage().Store(t.ctx, metaKey, metaBytes); err != nil {
+					return fmt.Errorf("storing updated ECH config metadata: %v", err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // loadECHConfig loads the config from storage with the given configID.
@@ -319,6 +493,10 @@ type ECHPublication struct {
 	// purpose. For example, the HTTP server registers the hostnames for
 	// which it applies automatic HTTPS.)
 	//
+	// Names in this list should not appear in any other publication config
+	// object with the same publishers, since the publications will likely
+	// overwrite each other.
+	//
 	// NOTE: In order to publish ECH configs for domains configured for
 	// On-Demand TLS that are not explicitly enumerated elsewhere in the
 	// config, those domain names will have to be listed here. The only
@@ -380,15 +558,16 @@ func (dnsPub ECHDNSPublisher) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// PublisherKey returns the name of the DNS provider module.
+// We intentionally omit specific provider configuration (or a hash thereof,
+// since the config is likely sensitive, potentially containing an API key)
+// because it is unlikely that specific configuration, such as an API key,
+// is relevant to unique key use as an ECH config publisher.
 func (dnsPub ECHDNSPublisher) PublisherKey() string {
-	// TODO: Figure out what the key should be
-	// h := blake3.New()
-	// fmt.Fprintf(h, "%v", dnsPub.provider)
-	// return fmt.Sprintf("%s::%s", dnsPub.provider.(caddy.Module).CaddyModule().ID, h.Sum(nil))
 	return string(dnsPub.provider.(caddy.Module).CaddyModule().ID)
-
 }
 
+// PublishECHConfigList publishes the given ECH config list to the given DNS names.
 func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNames []string, configListBin []byte) error {
 	nameservers := certmagic.RecursiveNameservers(nil) // TODO: we could make resolvers configurable
 
