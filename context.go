@@ -385,6 +385,17 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		return nil, fmt.Errorf("module value cannot be null")
 	}
 
+	// if this is an app module, keep a reference to it,
+	// since submodules may need to reference it during
+	// provisioning (even though the parent app module
+	// may not be fully provisioned yet; this is the case
+	// with the tls app's automation policies, which may
+	// refer to the tls app to check if a global DNS
+	// module has been configured for DNS challenges)
+	if appModule, ok := val.(App); ok {
+		ctx.cfg.apps[id] = appModule
+	}
+
 	ctx.ancestry = append(ctx.ancestry, val)
 
 	if prov, ok := val.(Provisioner); ok {
@@ -471,7 +482,6 @@ func (ctx Context) App(name string) (any, error) {
 	if appRaw != nil {
 		ctx.cfg.AppsRaw[name] = nil // allow GC to deallocate
 	}
-	ctx.cfg.apps[name] = modVal.(App)
 	return modVal, nil
 }
 

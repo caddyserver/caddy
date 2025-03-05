@@ -163,6 +163,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// set up default DNS module, if any, and make sure it implements all the
 	// common libdns interfaces, since it could be used for a variety of things
+	// (do this before provisioning other modules, since they may rely on this)
 	if len(t.DNSRaw) > 0 {
 		dnsMod, err := ctx.LoadModule(t, "DNSRaw")
 		if err != nil {

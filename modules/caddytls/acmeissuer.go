@@ -146,15 +146,30 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS providers
-	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
-		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
-		if err != nil {
-			return fmt.Errorf("loading DNS provider module: %v", err)
+	// DNS challenge provider
+	if iss.Challenges != nil && iss.Challenges.DNS != nil {
+		var prov certmagic.DNSProvider
+		if iss.Challenges.DNS.ProviderRaw != nil {
+			// a challenge provider has been locally configured - use it
+			val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
+			if err != nil {
+				return fmt.Errorf("loading DNS provider module: %v", err)
+			}
+			prov = val.(certmagic.DNSProvider)
+		} else if tlsAppIface, err := ctx.AppIfConfigured("tls"); err == nil {
+			// no locally configured DNS challenge provider, but if there is
+			// a global DNS module configured with the TLS app, use that
+			tlsApp := tlsAppIface.(*TLS)
+			if tlsApp.dns != nil {
+				prov = tlsApp.dns.(certmagic.DNSProvider)
+			}
+		}
+		if prov == nil {
+			return fmt.Errorf("DNS challenge enabled, but no DNS provider configured")
 		}
 		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 			DNSManager: certmagic.DNSManager{
-				DNSProvider:        val.(certmagic.DNSProvider),
+				DNSProvider:        prov,
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),

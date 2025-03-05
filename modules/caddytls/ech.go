@@ -242,6 +242,9 @@ func (t *TLS) publishECHConfigs() error {
 			// if all the (inner) domains have had this ECH config list published
 			// by this publisher, then try the next publication config
 			if len(serverNamesSet) == 0 {
+				logger.Debug("ECH config list already published by publisher for associated domains",
+					zap.Uint8s("config_ids", configIDs),
+					zap.String("publisher", publisherKey))
 				continue
 			}
 
@@ -252,7 +255,7 @@ func (t *TLS) publishECHConfigs() error {
 			}
 
 			logger.Debug("publishing ECH config list",
-				zap.Strings("inner_names", dnsNamesToPublish),
+				zap.Strings("domains", dnsNamesToPublish),
 				zap.Uint8s("config_ids", configIDs))
 
 			// publish this ECH config list with this publisher
@@ -1044,22 +1047,6 @@ type echConfigMeta struct {
 // publicationHistory is a map of publisher key to
 // map of inner name to timestamp
 type publicationHistory map[string]map[string]time.Time
-
-func (hist publicationHistory) unpublishedNames(publisherKey string, serverNamesSet map[string]struct{}) map[string]struct{} {
-	innerNamesSet, ok := hist[publisherKey]
-	if !ok {
-		// no history of this publisher publishing this config at all, so publish for entire set of names
-		return serverNamesSet
-	}
-	for innerName := range innerNamesSet {
-		// names in this loop have already had this config published by this publisher,
-		// so delete them from the set of names to publish for
-		//
-		// TODO: Potentially utilize the timestamp (map value) to preserve server name for re-publication if enough time has passed
-		delete(serverNamesSet, innerName)
-	}
-	return serverNamesSet
-}
 
 // The key prefix when putting ECH configs in storage. After this
 // comes the config ID.

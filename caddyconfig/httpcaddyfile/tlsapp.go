@@ -577,7 +577,8 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
 		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
 	}
-	if globalHTTPPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.HTTP == nil || acmeIssuer.Challenges.HTTP.AlternatePort == 0) {
+	// only configure alt HTTP and TLS-ALPN ports if the DNS challenge is not enabled (wouldn't hurt, but isn't necessary since the DNS challenge is exclusive of others)
+	if globalHTTPPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.HTTP == nil || acmeIssuer.Challenges.HTTP.AlternatePort == 0) {
 		if acmeIssuer.Challenges == nil {
 			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 		}
@@ -586,7 +587,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		}
 		acmeIssuer.Challenges.HTTP.AlternatePort = globalHTTPPort.(int)
 	}
-	if globalHTTPSPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.TLSALPN == nil || acmeIssuer.Challenges.TLSALPN.AlternatePort == 0) {
+	if globalHTTPSPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.TLSALPN == nil || acmeIssuer.Challenges.TLSALPN.AlternatePort == 0) {
 		if acmeIssuer.Challenges == nil {
 			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 		}
