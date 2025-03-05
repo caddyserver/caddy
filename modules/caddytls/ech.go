@@ -112,13 +112,26 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 	}
 
 	// all existing configs are now loaded; see if we need to make any new ones
-	// based on the input configuration
+	// based on the input configuration, and also mark the most recent one(s) as
+	// current/active, so they can be used for ECH retries
 
 	for _, cfg := range ech.Configs {
 		publicName := strings.ToLower(strings.TrimSpace(cfg.OuterSNI))
 
-		// if no config is loaded for this public name, we need to create one
-		if list, ok := ech.configs[publicName]; !ok || len(list) == 0 {
+		if list, ok := ech.configs[publicName]; ok && len(list) > 0 {
+			// at least one config with this public name was loaded, so find the
+			// most recent one and mark it as active to be used with retries
+			var mostRecentDate time.Time
+			var mostRecentIdx int
+			for i, c := range list {
+				if mostRecentDate.IsZero() || c.meta.Created.After(mostRecentDate) {
+					mostRecentDate = c.meta.Created
+					mostRecentIdx = i
+				}
+			}
+			list[mostRecentIdx].sendAsRetry = true
+		} else {
+			// no config with this public name was loaded, so create one
 			echCfg, err := generateAndStoreECHConfig(ctx, publicName)
 			if err != nil {
 				return nil, err
@@ -211,14 +224,14 @@ func (t *TLS) publishECHConfigs() error {
 			// by default, publish for all (non-outer) server names, unless
 			// a specific list of names is configured
 			var serverNamesSet map[string]struct{}
-			if publication.DNSNames == nil {
+			if publication.Domains == nil {
 				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
 				for name := range t.serverNames {
 					serverNamesSet[name] = struct{}{}
 				}
 			} else {
-				serverNamesSet = make(map[string]struct{}, len(publication.DNSNames))
-				for _, name := range publication.DNSNames {
+				serverNamesSet = make(map[string]struct{}, len(publication.Domains))
+				for _, name := range publication.Domains {
 					serverNamesSet[name] = struct{}{}
 				}
 			}
@@ -263,7 +276,7 @@ func (t *TLS) publishECHConfigs() error {
 			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
 			if err != nil {
 				t.logger.Error("publishing ECH configuration list",
-					zap.Strings("for_dns_names", publication.DNSNames),
+					zap.Strings("for_domains", publication.Domains),
 					zap.Error(err))
 			}
 
@@ -424,6 +437,7 @@ func generateAndStoreECHConfig(ctx caddy.Context, publicName string) (echConfig,
 				AEADID: hpke.AEAD_ChaCha20Poly1305,
 			},
 		},
+		sendAsRetry: true,
 	}
 	meta := echConfigMeta{
 		Created: time.Now(),
@@ -510,7 +524,7 @@ type ECHPublication struct {
 	// purpose of ECH. Hence the need to list them here so Caddy can
 	// proactively publish ECH configs before clients connect with those
 	// server names in plaintext.
-	DNSNames []string `json:"dns_names,omitempty"`
+	Domains []string `json:"domains,omitempty"`
 
 	// How to publish the ECH configurations so clients can know to use them.
 	// Note that ECH configs are only published when they are newly created,
@@ -663,9 +677,10 @@ type echConfig struct {
 
 	// these fields are not part of the spec, but are here for
 	// our use when setting up TLS servers or maintenance
-	configBin  []byte
-	privKeyBin []byte
-	meta       echConfigMeta
+	configBin   []byte
+	privKeyBin  []byte
+	meta        echConfigMeta
+	sendAsRetry bool
 }
 
 func (echCfg echConfig) MarshalBinary() ([]byte, error) {
