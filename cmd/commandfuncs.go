@@ -171,6 +171,9 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
+	logger := caddy.Log()
+	setResourceLimits(logger)
+
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 	resumeFlag := fl.Bool("resume")
@@ -196,18 +199,18 @@ func cmdRun(fl Flags) (int, error) {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if errors.Is(err, fs.ErrNotExist) {
 			// not a bad error; just can't resume if autosave file doesn't exist
-			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
+			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
-				caddy.Log().Info("resuming from last configuration",
+				logger.Info("resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			} else {
 				// if they also specified a config file, user should be aware that we're not
 				// using it (doing so could lead to data/config loss by overwriting!)
-				caddy.Log().Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
+				logger.Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			}
 		}
@@ -225,7 +228,7 @@ func cmdRun(fl Flags) (int, error) {
 	if pidfileFlag != "" {
 		err := caddy.PIDFile(pidfileFlag)
 		if err != nil {
-			caddy.Log().Error("unable to write PID file",
+			logger.Error("unable to write PID file",
 				zap.String("pidfile", pidfileFlag),
 				zap.Error(err))
 		}
@@ -236,7 +239,7 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
-	caddy.Log().Info("serving initial configuration")
+	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
@@ -272,15 +275,15 @@ func cmdRun(fl Flags) (int, error) {
 	switch runtime.GOOS {
 	case "windows":
 		if os.Getenv("HOME") == "" && os.Getenv("USERPROFILE") == "" && !hasXDG {
-			caddy.Log().Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
+			logger.Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
 		}
 	case "plan9":
 		if os.Getenv("home") == "" && !hasXDG {
-			caddy.Log().Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	default:
 		if os.Getenv("HOME") == "" && !hasXDG {
-			caddy.Log().Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
 
