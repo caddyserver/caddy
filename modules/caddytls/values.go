@@ -85,7 +85,7 @@ func getOptimalDefaultCipherSuites() []uint16 {
 // or key exchange mechanisms ("curves" traditionally).
 // https://golang.org/pkg/crypto/tls/#CurveID
 var SupportedCurves = map[string]tls.CurveID{
-	"X25519mlkem768": tls.X25519MLKEM768,
+	"x25519mlkem768": tls.X25519MLKEM768,
 	"x25519":         tls.X25519,
 	"secp256r1":      tls.CurveP256,
 	"secp384r1":      tls.CurveP384,

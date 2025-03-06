@@ -93,7 +93,7 @@ func (cp ConnectionPolicies) Provision(ctx caddy.Context) error {
 
 // TLSConfig returns a standard-lib-compatible TLS configuration which
 // selects the first matching policy based on the ClientHello.
-func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
+func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies
@@ -104,6 +104,7 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 			for _, m := range p.matchers {
 				if sni, ok := m.(MatchServerName); ok {
 					for _, sniName := range sni {
+						// index for fast lookups during handshakes
 						indexedBySNI[sniName] = append(indexedBySNI[sniName], p)
 					}
 				}
@@ -111,32 +112,79 @@ func (cp ConnectionPolicies) TLSConfig(_ caddy.Context) *tls.Config {
 		}
 	}
 
-	return &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-			// filter policies by SNI first, if possible, to speed things up
-			// when there may be lots of policies
-			possiblePolicies := cp
-			if indexedPolicies, ok := indexedBySNI[hello.ServerName]; ok {
-				possiblePolicies = indexedPolicies
-			}
+	getConfigForClient := func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		// filter policies by SNI first, if possible, to speed things up
+		// when there may be lots of policies
+		possiblePolicies := cp
+		if indexedPolicies, ok := indexedBySNI[hello.ServerName]; ok {
+			possiblePolicies = indexedPolicies
+		}
 
-		policyLoop:
-			for _, pol := range possiblePolicies {
-				for _, matcher := range pol.matchers {
-					if !matcher.Match(hello) {
-						continue policyLoop
+	policyLoop:
+		for _, pol := range possiblePolicies {
+			for _, matcher := range pol.matchers {
+				if !matcher.Match(hello) {
+					continue policyLoop
+				}
+			}
+			if pol.Drop {
+				return nil, fmt.Errorf("dropping connection")
+			}
+			return pol.TLSConfig, nil
+		}
+
+		return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
+	}
+
+	tlsCfg := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		GetConfigForClient: getConfigForClient,
+	}
+
+	// enable ECH, if configured
+	if tlsAppIface, err := ctx.AppIfConfigured("tls"); err == nil {
+		tlsApp := tlsAppIface.(*TLS)
+
+		if tlsApp.EncryptedClientHello != nil && len(tlsApp.EncryptedClientHello.configs) > 0 {
+			// if no publication was configured, we apply ECH to all server names by default,
+			// but the TLS app needs to know what they are in this case, since they don't appear
+			// in its config (remember, TLS connection policies are used by *other* apps to
+			// run TLS servers) -- we skip names with placeholders
+			if tlsApp.EncryptedClientHello.Publication == nil {
+				var echNames []string
+				repl := caddy.NewReplacer()
+				for _, p := range cp {
+					for _, m := range p.matchers {
+						if sni, ok := m.(MatchServerName); ok {
+							for _, name := range sni {
+								finalName := strings.ToLower(repl.ReplaceAll(name, ""))
+								echNames = append(echNames, finalName)
+							}
+						}
 					}
 				}
-				if pol.Drop {
-					return nil, fmt.Errorf("dropping connection")
-				}
-				return pol.TLSConfig, nil
+				tlsApp.RegisterServerNames(echNames)
 			}
 
-			return nil, fmt.Errorf("no server TLS configuration available for ClientHello: %+v", hello)
-		},
+			// TODO: Ideally, ECH keys should be rotated. However, as of Go 1.24, the std lib implementation
+			// does not support safely modifying the tls.Config's EncryptedClientHelloKeys field.
+			// So, we implement static ECH keys temporarily. See https://github.com/golang/go/issues/71920.
+			// Revisit this after Go 1.25 is released and implement key rotation.
+			var stdECHKeys []tls.EncryptedClientHelloKey
+			for _, echConfigs := range tlsApp.EncryptedClientHello.configs {
+				for _, c := range echConfigs {
+					stdECHKeys = append(stdECHKeys, tls.EncryptedClientHelloKey{
+						Config:      c.configBin,
+						PrivateKey:  c.privKeyBin,
+						SendAsRetry: c.sendAsRetry,
+					})
+				}
+			}
+			tlsCfg.EncryptedClientHelloKeys = stdECHKeys
+		}
 	}
+
+	return tlsCfg
 }
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
@@ -409,6 +457,7 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.ProtocolMax == "" &&
 		p.ClientAuthentication == nil &&
 		p.DefaultSNI == "" &&
+		p.FallbackSNI == "" &&
 		p.InsecureSecretsLog == ""
 }
 
