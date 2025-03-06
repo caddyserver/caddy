@@ -67,6 +67,7 @@
 	- Fully-managed local CA for internal names & IPs
 	- Can coordinate with other Caddy instances in a cluster
 	- Multi-issuer fallback
+	- Encrypted ClientHello (ECH) support
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **Production-ready** after serving trillions of requests and managing millions of TLS certificates
 - **Scales to hundreds of thousands of sites** as proven in production
@@ -87,7 +88,7 @@ See [our online documentation](https://caddyserver.com/docs/install) for other i
 
 Requirements:
 
-- [Go 1.22.3 or newer](https://golang.org/dl/)
+- [Go 1.24.0 or newer](https://golang.org/dl/)
 
 ### For development
 
