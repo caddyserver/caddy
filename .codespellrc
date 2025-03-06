@@ -3,4 +3,5 @@
 skip = .git*,go.sum,.codespellrc,.golangci.yml
 check-hidden = true
 # ignore-regex = 
-ignore-words-list = ot,te,ond,fo,tread
+# "idiosyncracies" or reflections of some config values like pass_thru
+ignore-words-list = ot,te,ond,fo,tread,noes,pass-thru,pass-thrus,keep-alives
