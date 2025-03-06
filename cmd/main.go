@@ -464,13 +464,12 @@ func printEnvironment() {
 	}
 }
 
-func setResourceLimits(logger *zap.Logger) {
+func setResourceLimits(logger *zap.Logger) func() {
 	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
 	// See https://pkg.go.dev/runtime#GOMAXPROCS
 	undo, err := maxprocs.Set(maxprocs.Logger(logger.Sugar().Infof))
-	defer undo()
 	if err != nil {
-		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
+		logger.Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
 	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
@@ -486,6 +485,8 @@ func setResourceLimits(logger *zap.Logger) {
 			),
 		),
 	)
+
+	return undo
 }
 
 // StringSlice is a flag.Value that enables repeated use of a string flag.
