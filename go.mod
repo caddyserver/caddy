@@ -10,7 +10,7 @@ require (
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
 	github.com/caddyserver/certmagic v0.21.8-0.20250220203412-a7894dd6992d
 	github.com/caddyserver/zerossl v0.1.3
-	github.com/cloudflare/circl v1.3.3
+	github.com/cloudflare/circl v1.3.7
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/google/cel-go v0.21.0
