@@ -136,7 +136,7 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 	// current/active, so they can be used for ECH retries
 
 	for _, cfg := range ech.Configs {
-		publicName := strings.ToLower(strings.TrimSpace(cfg.OuterSNI))
+		publicName := strings.ToLower(strings.TrimSpace(cfg.PublicName))
 
 		if list, ok := ech.configs[publicName]; ok && len(list) > 0 {
 			// at least one config with this public name was loaded, so find the
