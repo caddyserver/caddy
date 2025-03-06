@@ -99,7 +99,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    ca                            <acme_ca_endpoint>
 //	    ca_root                       <pem_file>
 //	    key_type                      [ed25519|p256|p384|rsa2048|rsa4096]
-//	    dns                           <provider_name> [...]
+//	    dns                           [<provider_name> [...]]    (required, though, if DNS is not configured as global option)
 //	    propagation_delay             <duration>
 //	    propagation_timeout           <duration>
 //	    resolvers                     <dns_servers...>
@@ -312,10 +312,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			certManagers = append(certManagers, certManager)
 
 		case "dns":
-			if !h.NextArg() {
-				return nil, h.ArgErr()
-			}
-			provName := h.Val()
 			if acmeIssuer == nil {
 				acmeIssuer = new(caddytls.ACMEIssuer)
 			}
@@ -325,12 +321,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
-			modID := "dns.providers." + provName
-			unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
-			if err != nil {
-				return nil, err
+			// DNS provider configuration optional, since it may be configured globally via the TLS app with global options
+			if h.NextArg() {
+				provName := h.Val()
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
+			} else if h.Option("dns") == nil {
+				// if DNS is omitted locally, it needs to be configured globally
+				return nil, h.ArgErr()
 			}
-			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 		case "resolvers":
 			args := h.RemainingArgs()

@@ -63,5 +63,5 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-input: '~1.24.0'
+          go-version-input: '~1.24.1'
           check-latest: true

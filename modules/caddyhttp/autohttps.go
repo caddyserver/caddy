@@ -205,6 +205,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		// for all the hostnames we found, filter them so we have
 		// a deduplicated list of names for which to obtain certs
 		// (only if cert management not disabled for this server)
+		var echDomains []string
 		if srv.AutoHTTPS.DisableCerts {
 			logger.Warn("skipping automated certificate management for server because it is disabled", zap.String("server_name", srvName))
 		} else {
@@ -231,9 +232,13 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 					}
 
 					uniqueDomainsForCerts[d] = struct{}{}
+					echDomains = append(echDomains, d)
 				}
 			}
 		}
+
+		// let the TLS server know we have some hostnames that could be protected behind ECH
+		app.tlsApp.RegisterServerNames(echDomains)
 
 		// tell the server to use TLS if it is not already doing so
 		if srv.TLSConnPolicies == nil {

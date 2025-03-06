@@ -20,12 +20,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/libdns/libdns"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -79,6 +82,7 @@ type TLS struct {
 	// Disabling OCSP stapling puts clients at greater risk, reduces their
 	// privacy, and usually lowers client performance. It is NOT recommended
 	// to disable this unless you are able to justify the costs.
+	//
 	// EXPERIMENTAL. Subject to change.
 	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
 
@@ -89,6 +93,7 @@ type TLS struct {
 	//
 	// Disabling these checks should only be done when the storage
 	// can be trusted to have enough capacity and no other problems.
+	//
 	// EXPERIMENTAL. Subject to change.
 	DisableStorageCheck bool `json:"disable_storage_check,omitempty"`
 
@@ -100,8 +105,22 @@ type TLS struct {
 	// The instance.uuid file is used to identify the instance of Caddy
 	// in a cluster. The last_clean.json file is used to store the last
 	// time the storage was cleaned.
+	//
 	// EXPERIMENTAL. Subject to change.
 	DisableStorageClean bool `json:"disable_storage_clean,omitempty"`
+
+	// Enable Encrypted ClientHello (ECH). ECH protects the server name
+	// (SNI) and other sensitive parameters of a normally-plaintext TLS
+	// ClientHello during a handshake.
+	//
+	// EXPERIMENTAL: Subject to change.
+	EncryptedClientHello *ECH `json:"encrypted_client_hello,omitempty"`
+
+	// The default DNS provider module to use when a DNS module is needed.
+	//
+	// EXPERIMENTAL: Subject to change.
+	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=dns.providers inline_key=name"`
+	dns    any             // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 
 	certificateLoaders []CertificateLoader
 	automateNames      []string
@@ -110,6 +129,9 @@ type TLS struct {
 	storageCleanStop   chan struct{}
 	logger             *zap.Logger
 	events             *caddyevents.App
+
+	serverNames   map[string]struct{}
+	serverNamesMu *sync.Mutex
 
 	// set of subjects with managed certificates,
 	// and hashes of manually-loaded certificates
@@ -136,6 +158,40 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
+	t.serverNames = make(map[string]struct{})
+	t.serverNamesMu = new(sync.Mutex)
+
+	// set up default DNS module, if any, and make sure it implements all the
+	// common libdns interfaces, since it could be used for a variety of things
+	// (do this before provisioning other modules, since they may rely on this)
+	if len(t.DNSRaw) > 0 {
+		dnsMod, err := ctx.LoadModule(t, "DNSRaw")
+		if err != nil {
+			return fmt.Errorf("loading overall DNS provider module: %v", err)
+		}
+		switch dnsMod.(type) {
+		case interface {
+			libdns.RecordAppender
+			libdns.RecordDeleter
+			libdns.RecordGetter
+			libdns.RecordSetter
+		}:
+		default:
+			return fmt.Errorf("DNS module does not implement the most common libdns interfaces: %T", dnsMod)
+		}
+		t.dns = dnsMod
+	}
+
+	// ECH (Encrypted ClientHello) initialization
+	if t.EncryptedClientHello != nil {
+		t.EncryptedClientHello.configs = make(map[string][]echConfig)
+		outerNames, err := t.EncryptedClientHello.Provision(ctx)
+		if err != nil {
+			return fmt.Errorf("provisioning Encrypted ClientHello components: %v", err)
+		}
+		// outer names should have certificates to reduce client brittleness
+		t.automateNames = append(t.automateNames, outerNames...)
+	}
 
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
@@ -178,7 +234,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 				for i, sub := range *automateNames {
 					subjects[i] = repl.ReplaceAll(sub, "")
 				}
-				t.automateNames = subjects
+				t.automateNames = append(t.automateNames, subjects...)
 			} else {
 				return fmt.Errorf("loading certificates with 'automate' requires array of strings, got: %T", modIface)
 			}
@@ -339,6 +395,16 @@ func (t *TLS) Start() error {
 		return fmt.Errorf("automate: managing %v: %v", t.automateNames, err)
 	}
 
+	// publish ECH configs in the background; does not need to block
+	// server startup, as it could take a while
+	if t.EncryptedClientHello != nil {
+		go func() {
+			if err := t.publishECHConfigs(); err != nil {
+				t.logger.Named("ech").Error("publication(s) failed", zap.Error(err))
+			}
+		}()
+	}
+
 	if !t.DisableStorageClean {
 		// start the storage cleaner goroutine and ticker,
 		// which cleans out expired certificates and more
@@ -422,11 +488,16 @@ func (t *TLS) Cleanup() error {
 			}
 		}
 	} else {
-		// no more TLS app running, so delete in-memory cert cache
-		certCache.Stop()
-		certCacheMu.Lock()
-		certCache = nil
-		certCacheMu.Unlock()
+		// no more TLS app running, so delete in-memory cert cache, if it was created yet
+		certCacheMu.RLock()
+		hasCache := certCache != nil
+		certCacheMu.RUnlock()
+		if hasCache {
+			certCache.Stop()
+			certCacheMu.Lock()
+			certCache = nil
+			certCacheMu.Unlock()
+		}
 	}
 
 	return nil
@@ -476,6 +547,29 @@ func (t *TLS) Manage(names []string) error {
 	}
 
 	return nil
+}
+
+// RegisterServerNames registers the provided DNS names with the TLS app.
+// This is currently used to auto-publish Encrypted ClientHello (ECH)
+// configurations, if enabled. Use of this function by apps using the TLS
+// app removes the need for the user to redundantly specify domain names
+// in their configuration. This function separates hostname and port
+// (keeping only the hotsname) and filters IP addresses, which can't be
+// used with ECH.
+//
+// EXPERIMENTAL: This function and its behavior are subject to change.
+func (t *TLS) RegisterServerNames(dnsNames []string) {
+	t.serverNamesMu.Lock()
+	for _, name := range dnsNames {
+		host, _, err := net.SplitHostPort(name)
+		if err != nil {
+			host = name
+		}
+		if strings.TrimSpace(host) != "" && !certmagic.SubjectIsIP(host) {
+			t.serverNames[strings.ToLower(host)] = struct{}{}
+		}
+	}
+	t.serverNamesMu.Unlock()
 }
 
 // HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
