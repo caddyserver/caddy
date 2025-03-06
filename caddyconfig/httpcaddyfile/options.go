@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/libdns/libdns"
 	"github.com/mholt/acmez/v3/acme"
 
 	"github.com/caddyserver/caddy/v2"
@@ -45,7 +46,7 @@ func init() {
 	RegisterGlobalOption("ocsp_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
-	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
+	RegisterGlobalOption("acme_dns", parseOptDNS)
 	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
 	RegisterGlobalOption("cert_issuer", parseOptCertIssuer)
 	RegisterGlobalOption("skip_install_trust", parseOptTrue)
@@ -62,6 +63,8 @@ func init() {
 	RegisterGlobalOption("log", parseLogOptions)
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
+	RegisterGlobalOption("dns", parseOptDNS)
+	RegisterGlobalOption("ech", parseOptECH)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -236,25 +239,6 @@ func parseOptDuration(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, err
 	}
 	return caddy.Duration(dur), nil
-}
-
-func parseOptACMEDNS(d *caddyfile.Dispenser, _ any) (any, error) {
-	if !d.Next() { // consume option name
-		return nil, d.ArgErr()
-	}
-	if !d.Next() { // get DNS module name
-		return nil, d.ArgErr()
-	}
-	modID := "dns.providers." + d.Val()
-	unm, err := caddyfile.UnmarshalModule(d, modID)
-	if err != nil {
-		return nil, err
-	}
-	prov, ok := unm.(certmagic.DNSProvider)
-	if !ok {
-		return nil, d.Errf("module %s (%T) is not a certmagic.DNSProvider", modID, unm)
-	}
-	return prov, nil
 }
 
 func parseOptACMEEAB(d *caddyfile.Dispenser, _ any) (any, error) {
@@ -569,4 +553,69 @@ func parseLogOptions(d *caddyfile.Dispenser, existingVal any) (any, error) {
 func parseOptPreferredChains(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next()
 	return caddytls.ParseCaddyfilePreferredChainsOptions(d)
+}
+
+func parseOptDNS(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
+	if !d.Next() { // get DNS module name
+		return nil, d.ArgErr()
+	}
+	modID := "dns.providers." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return nil, err
+	}
+	switch unm.(type) {
+	case libdns.RecordGetter,
+		libdns.RecordSetter,
+		libdns.RecordAppender,
+		libdns.RecordDeleter:
+	default:
+		return nil, d.Errf("module %s (%T) is not a libdns provider", modID, unm)
+	}
+	return unm, nil
+}
+
+func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
+	ech := new(caddytls.ECH)
+
+	publicNames := d.RemainingArgs()
+	for _, publicName := range publicNames {
+		ech.Configs = append(ech.Configs, caddytls.ECHConfiguration{
+			OuterSNI: publicName,
+		})
+	}
+	if len(ech.Configs) == 0 {
+		return nil, d.ArgErr()
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "dns":
+			if !d.Next() {
+				return nil, d.ArgErr()
+			}
+			providerName := d.Val()
+			modID := "dns.providers." + providerName
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return nil, err
+			}
+			ech.Publication = append(ech.Publication, &caddytls.ECHPublication{
+				Configs: publicNames,
+				PublishersRaw: caddy.ModuleMap{
+					"dns": caddyconfig.JSON(caddytls.ECHDNSPublisher{
+						ProviderRaw: caddyconfig.JSONModuleObject(unm, "name", providerName, nil),
+					}, nil),
+				},
+			})
+		default:
+			return nil, d.Errf("ech: unrecognized subdirective '%s'", d.Val())
+		}
+	}
+
+	return ech, nil
 }
