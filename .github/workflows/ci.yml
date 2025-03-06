@@ -18,22 +18,18 @@ jobs:
       # Default is true, cancels jobs for other platforms in the matrix if one fails
       fail-fast: false
       matrix:
-        os: 
+        os:
           - linux
           - mac
           - windows
-        go: 
-          - '1.23'
+        go:
           - '1.24'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.23'
-          GO_SEMVER: '~1.23.6'
-
         - go: '1.24'
-          GO_SEMVER: '~1.24.0'
+          GO_SEMVER: '~1.24.1'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
