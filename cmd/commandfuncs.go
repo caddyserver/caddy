@@ -172,7 +172,8 @@ func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
 	logger := caddy.Log()
-	setResourceLimits(logger)
+	undoMaxProcs := setResourceLimits(logger)
+	defer undoMaxProcs()
 
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
