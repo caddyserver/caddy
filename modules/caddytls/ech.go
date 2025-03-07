@@ -29,7 +29,22 @@ func init() {
 
 // ECH enables Encrypted ClientHello (ECH) and configures its management.
 //
-// Note that, as of Caddy 2.10 (~March 2025), ECH keys are not automatically
+// ECH helps protect site names (also called "server names" or "domain names"
+// or "SNI"), which are normally sent over plaintext when establishing a TLS
+// connection. With ECH, the true ClientHello is encrypted and wrapped by an
+// "outer" ClientHello that uses a more generic, shared server name that is
+// publicly known.
+//
+// Clients need to know which public name (and other parameters) to use when
+// connecting to a site with ECH, and the methods for this vary; however,
+// major browsers support reading ECH configurations from DNS records (which
+// is typically only secure when DNS-over-HTTPS or DNS-over-TLS is enabled in
+// the client). Caddy has the ability to automatically publish ECH configs to
+// DNS records if a DNS provider is configured either in the TLS app or with
+// each individual publication config object. (Requires a custom build with a
+// DNS provider module.)
+//
+// Note that, as of Caddy 2.10.0 (~March 2025), ECH keys are not automatically
 // rotated due to a limitation in the Go standard library (see
 // https://github.com/golang/go/issues/71920). This should be resolved when
 // Go 1.25 is released (~Aug. 2025), and Caddy will be updated to automatically
@@ -39,6 +54,11 @@ func init() {
 type ECH struct {
 	// The list of ECH configurations for which to automatically generate
 	// and rotate keys. At least one is required to enable ECH.
+	//
+	// It is strongly recommended to use as few ECH configs as possible
+	// to maximize the size of your anonymity set (see the ECH specification
+	// for a definition). Typically, each server should have only one public
+	// name, i.e. one config in this list.
 	Configs []ECHConfiguration `json:"configs,omitempty"`
 
 	// Publication describes ways to publish ECH configs for clients to
@@ -116,7 +136,7 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 	// current/active, so they can be used for ECH retries
 
 	for _, cfg := range ech.Configs {
-		publicName := strings.ToLower(strings.TrimSpace(cfg.OuterSNI))
+		publicName := strings.ToLower(strings.TrimSpace(cfg.PublicName))
 
 		if list, ok := ech.configs[publicName]; ok && len(list) > 0 {
 			// at least one config with this public name was loaded, so find the
@@ -482,33 +502,49 @@ func generateAndStoreECHConfig(ctx caddy.Context, publicName string) (echConfig,
 //
 // EXPERIMENTAL: Subject to change.
 type ECHConfiguration struct {
-	// The public server name that will be used in the outer ClientHello. This
-	// should be a domain name for which this server is authoritative, because
-	// Caddy will try to provision a certificate for this name. As an outer
-	// SNI, it is never used for application data (HTTPS, etc.), but it is
-	// necessary for securely reconciling inconsistent client state without
-	// breakage and brittleness.
-	OuterSNI string `json:"outer_sni,omitempty"`
+	// The public server name (SNI) that will be used in the outer ClientHello.
+	// This should be a domain name for which this server is authoritative,
+	// because Caddy will try to provision a certificate for this name. As an
+	// outer SNI, it is never used for application data (HTTPS, etc.), but it
+	// is necessary for enabling clients to connect securely in some cases.
+	// If this field is empty or missing, or if Caddy cannot get a certificate
+	// for this domain (e.g. the domain's DNS records do not point to this server),
+	// client reliability becomes brittle, and you risk coercing clients to expose
+	// true server names in plaintext, which compromises both the privacy of the
+	// server and makes clients more vulnerable.
+	PublicName string `json:"public_name"`
 }
 
-// ECHPublication configures publication of ECH config(s).
+// ECHPublication configures publication of ECH config(s). It pairs a list
+// of ECH configs with the list of domains they are assigned to protect, and
+// describes how to publish those configs for those domains.
+//
+// Most servers will have only a single publication config, unless their
+// domains are spread across multiple DNS providers or require different
+// methods of publication.
+//
+// EXPERIMENTAL: Subject to change.
 type ECHPublication struct {
-	// TODO: Should these first two fields be called outer_sni and inner_sni ?
-
 	// The list of ECH configurations to publish, identified by public name.
 	// If not set, all configs will be included for publication by default.
+	//
+	// It is generally advised to maximize the size of your anonymity set,
+	// which implies using as few public names as possible for your sites.
+	// Usually, only a single public name is used to protect all the sites
+	// for a server
+	//
+	// EXPERIMENTAL: This field may be renamed or have its structure changed.
 	Configs []string `json:"configs,omitempty"`
 
-	// The list of domain names which are protected with the associated ECH
-	// configurations ("inner names"). Not all publishers may require this
-	// information, but some, like the DNS publisher, do. (The DNS publisher,
-	// for example, needs to know for which domain(s) to create DNS records.)
+	// The list of ("inner") domain names which are protected with the associated
+	// ECH configurations.
 	//
 	// If not set, all server names registered with the TLS module will be
-	// added to this list implicitly. (Other Caddy apps that use the TLS
-	// module automatically register their configured server names for this
-	// purpose. For example, the HTTP server registers the hostnames for
-	// which it applies automatic HTTPS.)
+	// added to this list implicitly. (This registration is done automatically
+	// by other Caddy apps that use the TLS module. They should register their
+	// configured server names for this purpose. For example, the HTTP server
+	// registers the hostnames for which it applies automatic HTTPS. This is
+	// not something you, the user, have to do.) Most servers
 	//
 	// Names in this list should not appear in any other publication config
 	// object with the same publishers, since the publications will likely
@@ -526,11 +562,8 @@ type ECHPublication struct {
 	// server names in plaintext.
 	Domains []string `json:"domains,omitempty"`
 
-	// How to publish the ECH configurations so clients can know to use them.
-	// Note that ECH configs are only published when they are newly created,
-	// so adding or changing publishers after the fact will have no effect
-	// with existing ECH configs. The next time a config is generated (including
-	// when a key is rotated), the current publication modules will be utilized.
+	// How to publish the ECH configurations so clients can know to use
+	// ECH to connect more securely to the server.
 	PublishersRaw caddy.ModuleMap `json:"publishers,omitempty" caddy:"namespace=tls.ech.publishers"`
 	publishers    []ECHPublisher
 }
