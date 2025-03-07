@@ -1074,7 +1074,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 
 		case "forward_proxy_url":
-			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use 'network_proxy url <url>' instead.")
+			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use 'network_proxy <url>' instead.")
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
