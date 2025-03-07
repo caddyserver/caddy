@@ -1121,6 +1121,12 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting default SNI: %s vs. %s",
 						cps[i].DefaultSNI, cps[j].DefaultSNI)
 				}
+				if cps[i].FallbackSNI != "" &&
+					cps[j].FallbackSNI != "" &&
+					cps[i].FallbackSNI != cps[j].FallbackSNI {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting fallback SNI: %s vs. %s",
+						cps[i].FallbackSNI, cps[j].FallbackSNI)
+				}
 				if cps[i].ProtocolMin != "" &&
 					cps[j].ProtocolMin != "" &&
 					cps[i].ProtocolMin != cps[j].ProtocolMin {
@@ -1160,6 +1166,9 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 				}
 				if cps[i].DefaultSNI == "" && cps[j].DefaultSNI != "" {
 					cps[i].DefaultSNI = cps[j].DefaultSNI
+				}
+				if cps[i].FallbackSNI == "" && cps[j].FallbackSNI != "" {
+					cps[i].FallbackSNI = cps[j].FallbackSNI
 				}
 				if cps[i].ProtocolMin == "" && cps[j].ProtocolMin != "" {
 					cps[i].ProtocolMin = cps[j].ProtocolMin
