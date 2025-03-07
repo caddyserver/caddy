@@ -182,17 +182,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.dns = dnsMod
 	}
 
-	// ECH (Encrypted ClientHello) initialization
-	if t.EncryptedClientHello != nil {
-		t.EncryptedClientHello.configs = make(map[string][]echConfig)
-		outerNames, err := t.EncryptedClientHello.Provision(ctx)
-		if err != nil {
-			return fmt.Errorf("provisioning Encrypted ClientHello components: %v", err)
-		}
-		// outer names should have certificates to reduce client brittleness
-		t.automateNames = append(t.automateNames, outerNames...)
-	}
-
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
@@ -243,31 +232,34 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.certificateLoaders = append(t.certificateLoaders, modIface.(CertificateLoader))
 	}
 
-	// on-demand permission module
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
-		if t.Automation.OnDemand.Ask != "" {
-			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
-		}
-		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
+	// using the certificate loaders we just initialized, load
+	// manual/static (unmanaged) certificates - we do this in
+	// provision so that other apps (such as http) can know which
+	// certificates have been manually loaded, and also so that
+	// commands like validate can be a better test
+	certCacheMu.RLock()
+	magic := certmagic.New(certCache, certmagic.Config{
+		Storage: ctx.Storage(),
+		Logger:  t.logger,
+		OnEvent: t.onEvent,
+		OCSP: certmagic.OCSPConfig{
+			DisableStapling: t.DisableOCSPStapling,
+		},
+		DisableStorageCheck: t.DisableStorageCheck,
+	})
+	certCacheMu.RUnlock()
+	for _, loader := range t.certificateLoaders {
+		certs, err := loader.LoadCertificates()
 		if err != nil {
-			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
+			return fmt.Errorf("loading certificates: %v", err)
 		}
-		t.Automation.OnDemand.permission = val.(OnDemandPermission)
-	}
-
-	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
-		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
-		if err != nil {
-			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		for _, cert := range certs {
+			hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
+			if err != nil {
+				return fmt.Errorf("caching unmanaged certificate: %v", err)
+			}
+			t.loaded[hash] = ""
 		}
-		perm := PermissionByHTTP{
-			Endpoint: t.Automation.OnDemand.Ask,
-		}
-		if err := perm.Provision(ctx); err != nil {
-			return fmt.Errorf("provisioning 'ask' module: %v", err)
-		}
-		t.Automation.OnDemand.permission = perm
 	}
 
 	// automation/management policies
@@ -302,6 +294,33 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// on-demand permission module
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
+		if t.Automation.OnDemand.Ask != "" {
+			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
+		}
+		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
+		if err != nil {
+			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
+		}
+		t.Automation.OnDemand.permission = val.(OnDemandPermission)
+	}
+
+	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.Ask != "" {
+		t.Automation.OnDemand.Ask, err = repl.ReplaceOrErr(t.Automation.OnDemand.Ask, true, true)
+		if err != nil {
+			return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		}
+		perm := PermissionByHTTP{
+			Endpoint: t.Automation.OnDemand.Ask,
+		}
+		if err := perm.Provision(ctx); err != nil {
+			return fmt.Errorf("provisioning 'ask' module: %v", err)
+		}
+		t.Automation.OnDemand.permission = perm
+	}
+
 	// session ticket ephemeral keys (STEK) service and provider
 	if t.SessionTickets != nil {
 		err := t.SessionTickets.provision(ctx)
@@ -310,32 +329,19 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	// load manual/static (unmanaged) certificates - we do this in
-	// provision so that other apps (such as http) can know which
-	// certificates have been manually loaded, and also so that
-	// commands like validate can be a better test
-	certCacheMu.RLock()
-	magic := certmagic.New(certCache, certmagic.Config{
-		Storage: ctx.Storage(),
-		Logger:  t.logger,
-		OnEvent: t.onEvent,
-		OCSP: certmagic.OCSPConfig{
-			DisableStapling: t.DisableOCSPStapling,
-		},
-		DisableStorageCheck: t.DisableStorageCheck,
-	})
-	certCacheMu.RUnlock()
-	for _, loader := range t.certificateLoaders {
-		certs, err := loader.LoadCertificates()
+	// ECH (Encrypted ClientHello) initialization
+	if t.EncryptedClientHello != nil {
+		t.EncryptedClientHello.configs = make(map[string][]echConfig)
+		outerNames, err := t.EncryptedClientHello.Provision(ctx)
 		if err != nil {
-			return fmt.Errorf("loading certificates: %v", err)
+			return fmt.Errorf("provisioning Encrypted ClientHello components: %v", err)
 		}
-		for _, cert := range certs {
-			hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
-			if err != nil {
-				return fmt.Errorf("caching unmanaged certificate: %v", err)
+
+		// outer names should have certificates to reduce client brittleness
+		for _, outerName := range outerNames {
+			if !t.HasCertificateForSubject(outerName) {
+				t.automateNames = append(t.automateNames, outerNames...)
 			}
-			t.loaded[hash] = ""
 		}
 	}
 
