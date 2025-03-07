@@ -83,6 +83,8 @@ builds:
   - -s -w
   tags:
   - nobadger
+  - nomysql
+  - nopgx
 
 signs:
   - cmd: cosign
@@ -109,7 +111,7 @@ archives:
   - id: default
     format_overrides:
       - goos: windows
-        format: zip
+        formats: zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -189,6 +191,9 @@ nfpms:
       postinstall: ./caddy-dist/scripts/postinstall.sh
       preremove: ./caddy-dist/scripts/preremove.sh
       postremove: ./caddy-dist/scripts/postremove.sh
+
+    provides:
+      - httpd
 
 release:
   github:

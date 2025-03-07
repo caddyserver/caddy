@@ -26,11 +26,11 @@
 								}
 							]
 						}
-					],
-					"metrics": {
-						"per_host": true
-					}
+					]
 				}
+			},
+			"metrics": {
+				"per_host": true
 			}
 		}
 	}

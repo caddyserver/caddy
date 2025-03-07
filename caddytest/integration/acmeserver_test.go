@@ -5,13 +5,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
-	"github.com/mholt/acmez/v2"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
@@ -76,7 +78,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -165,7 +167,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},

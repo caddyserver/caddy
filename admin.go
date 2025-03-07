@@ -214,7 +214,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Context) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -1139,7 +1139,7 @@ traverseLoop:
 						return fmt.Errorf("[%s] invalid array index '%s': %v",
 							path, idxStr, err)
 					}
-					if idx < 0 || idx >= len(arr) {
+					if idx < 0 || (method != http.MethodPut && idx >= len(arr)) || idx > len(arr) {
 						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
 					}
 				}

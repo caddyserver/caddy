@@ -142,7 +142,7 @@ type HTTPTransport struct {
 	Transport *http.Transport `json:"-"`
 
 	h2cTransport *http2.Transport
-	h3Transport  *http3.RoundTripper // TODO: EXPERIMENTAL (May 2024)
+	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -393,7 +393,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// do (that'd add latency and complexity, besides, we expect that
 	// site owners  control the backends), so it must be exclusive
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
-		h.h3Transport = new(http3.RoundTripper)
+		h.h3Transport = new(http3.Transport)
 		if h.TLS != nil {
 			var err error
 			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
@@ -545,11 +545,11 @@ type TLSConfig struct {
 	// Certificate authority module which provides the certificate pool of trusted certificates
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.inline` module instead.
 	// Optional list of base64-encoded DER-encoded CA certificates to trust.
 	RootCAPool []string `json:"root_ca_pool,omitempty"`
 
-	// DEPRECATED: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
+	// Deprecated: Use the `ca` field with the `tls.ca_pool.source.file` module instead.
 	// List of PEM-encoded CA certificate files to add to the same trust
 	// store as RootCAPool (or root_ca_pool in the JSON).
 	RootCAPEMFiles []string `json:"root_ca_pem_files,omitempty"`

@@ -66,7 +66,14 @@ type Browse struct {
 	//   - `sort size` will sort by size in ascending order
 	// The first option must be `sort_by` and the second option must be `order` (if exists).
 	SortOptions []string `json:"sort,omitempty"`
+
+	// FileLimit limits the number of up to n DirEntry values in directory order.
+	FileLimit int `json:"file_limit,omitempty"`
 }
+
+const (
+	defaultDirEntryLimit = 10000
+)
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "browse enabled; listing directory contents"); c != nil {
@@ -123,9 +130,9 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 
 	// speed up browser/client experience and caching by supporting If-Modified-Since
 	if ifModSinceStr := r.Header.Get("If-Modified-Since"); ifModSinceStr != "" {
-		ifModSince, err := time.ParseInLocation(http.TimeFormat, ifModSinceStr, time.Local)
-		lastModTrunc := listing.lastModified.Truncate(time.Second)
-		if err == nil && (lastModTrunc.Equal(ifModSince) || lastModTrunc.Before(ifModSince)) {
+		// basically a copy of stdlib file server's handling of If-Modified-Since
+		ifModSince, err := http.ParseTime(ifModSinceStr)
+		if err == nil && listing.lastModified.Truncate(time.Second).Compare(ifModSince) <= 0 {
 			w.WriteHeader(http.StatusNotModified)
 			return nil
 		}
@@ -206,7 +213,16 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 }
 
 func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
-	files, err := dir.ReadDir(10000) // TODO: this limit should probably be configurable
+	// modTime for the directory itself
+	stat, err := dir.Stat()
+	if err != nil {
+		return nil, err
+	}
+	dirLimit := defaultDirEntryLimit
+	if fsrv.Browse.FileLimit != 0 {
+		dirLimit = fsrv.Browse.FileLimit
+	}
+	files, err := dir.ReadDir(dirLimit)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
@@ -214,7 +230,7 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	return fsrv.directoryListing(ctx, fileSystem, files, canGoUp, root, urlPath, repl), nil
+	return fsrv.directoryListing(ctx, fileSystem, stat.ModTime(), files, canGoUp, root, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.

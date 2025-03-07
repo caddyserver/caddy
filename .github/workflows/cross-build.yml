@@ -10,12 +10,16 @@ on:
       - master
       - 2.*
 
+env:
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        goos: 
+        goos:
           - 'aix'
           - 'linux'
           - 'solaris'
@@ -26,18 +30,14 @@ jobs:
           - 'windows'
           - 'darwin'
           - 'netbsd'
-        go: 
-          - '1.22'
-          - '1.23'
+        go:
+          - '1.24'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.22'
-          GO_SEMVER: '~1.22.3'
-
-        - go: '1.23'
-          GO_SEMVER: '~1.23.0'
+        - go: '1.24'
+          GO_SEMVER: '~1.24.1'
 
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -70,4 +70,4 @@ jobs:
         continue-on-error: true
         working-directory: ./cmd/caddy
         run: |
-          GOOS=$GOOS GOARCH=$GOARCH go build -tags nobadger -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
+          GOOS=$GOOS GOARCH=$GOARCH go build -tags=nobadger,nomysql,nopgx -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
