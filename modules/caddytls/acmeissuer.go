@@ -146,8 +146,8 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS challenge provider
-	if iss.Challenges != nil && iss.Challenges.DNS != nil {
+	// DNS challenge provider, if not already established
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
 		var prov certmagic.DNSProvider
 		if iss.Challenges.DNS.ProviderRaw != nil {
 			// a challenge provider has been locally configured - use it
