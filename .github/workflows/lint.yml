@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
 jobs:
   # From https://github.com/golangci/golangci-lint-action
   golangci:
