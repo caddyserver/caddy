@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*.*.*'
 
+env:
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
 jobs:
   release:
     name: Release
