@@ -207,7 +207,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		if srv.Metrics != nil {
 			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
-			app.Metrics = cmp.Or[*Metrics](app.Metrics, &Metrics{
+			app.Metrics = cmp.Or(app.Metrics, &Metrics{
 				init:        sync.Once{},
 				httpMetrics: &httpMetrics{},
 			})
