@@ -594,7 +594,7 @@ func (ECHDNSPublisher) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (dnsPub ECHDNSPublisher) Provision(ctx caddy.Context) error {
+func (dnsPub *ECHDNSPublisher) Provision(ctx caddy.Context) error {
 	dnsProvMod, err := ctx.LoadModule(dnsPub, "ProviderRaw")
 	if err != nil {
 		return fmt.Errorf("loading ECH DNS provider module: %v", err)
