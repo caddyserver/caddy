@@ -313,6 +313,9 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("negative roll_keep_for duration: %v", keepFor)
 			}
 			fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
+
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil
