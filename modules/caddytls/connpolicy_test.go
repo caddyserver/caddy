@@ -282,10 +282,9 @@ func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 
 func TestClientAuthenticationProvision(t *testing.T) {
 	tests := []struct {
-		name     string
-		ca       ClientAuthentication
-		expected ClientAuthentication
-		wantErr  bool
+		name    string
+		ca      ClientAuthentication
+		wantErr bool
 	}{
 		{
 			name: "specifying both 'CARaw' and 'TrustedCACerts' produces an error",
