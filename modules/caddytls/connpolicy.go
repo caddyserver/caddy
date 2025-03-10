@@ -798,10 +798,14 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 
 	// if we have TrustedCACerts explicitly set, create an 'inline' CA and return
 	if len(clientauth.TrustedCACerts) > 0 {
-		clientauth.ca = InlineCAPool{
+		caPool := InlineCAPool{
 			TrustedCACerts: clientauth.TrustedCACerts,
 		}
-		return nil
+		err := caPool.Provision(ctx)
+		if err != nil {
+			return nil
+		}
+		clientauth.ca = caPool
 	}
 
 	// if we don't have any CARaw set, there's not much work to do
