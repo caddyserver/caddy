@@ -60,6 +60,14 @@ type ACMEIssuer struct {
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
 
+	// Optionally select an ACME profile to use for certificate
+	// orders. Must be a profile name offered by the ACME server,
+	// which are listed at its directory endpoint.
+	//
+	// EXPERIMENTAL: Subject to change.
+	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
+	Profile string `json:"profile,omitempty"`
+
 	// If you have an existing account with the ACME server, put
 	// the private key here in PEM format. The ACME client will
 	// look up your account information with this key first before
@@ -138,15 +146,30 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS providers
-	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
-		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
-		if err != nil {
-			return fmt.Errorf("loading DNS provider module: %v", err)
+	// DNS challenge provider, if not already established
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
+		var prov certmagic.DNSProvider
+		if iss.Challenges.DNS.ProviderRaw != nil {
+			// a challenge provider has been locally configured - use it
+			val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
+			if err != nil {
+				return fmt.Errorf("loading DNS provider module: %v", err)
+			}
+			prov = val.(certmagic.DNSProvider)
+		} else if tlsAppIface, err := ctx.AppIfConfigured("tls"); err == nil {
+			// no locally configured DNS challenge provider, but if there is
+			// a global DNS module configured with the TLS app, use that
+			tlsApp := tlsAppIface.(*TLS)
+			if tlsApp.dns != nil {
+				prov = tlsApp.dns.(certmagic.DNSProvider)
+			}
+		}
+		if prov == nil {
+			return fmt.Errorf("DNS challenge enabled, but no DNS provider configured")
 		}
 		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 			DNSManager: certmagic.DNSManager{
-				DNSProvider:        val.(certmagic.DNSProvider),
+				DNSProvider:        prov,
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
@@ -184,6 +207,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
+		Profile:           iss.Profile,
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
@@ -338,6 +362,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
+//	    profile <profile_name>
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
@@ -397,6 +422,11 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		case "email":
 			if !d.AllArgs(&iss.Email) {
+				return d.ArgErr()
+			}
+
+		case "profile":
+			if !d.AllArgs(&iss.Profile) {
 				return d.ArgErr()
 			}
 

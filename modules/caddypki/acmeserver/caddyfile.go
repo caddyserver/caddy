@@ -15,8 +15,6 @@
 package acmeserver
 
 import (
-	"time"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
@@ -74,13 +72,9 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
-
 			dur, err := caddy.ParseDuration(h.Val())
 			if err != nil {
 				return nil, err
-			}
-			if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
-				return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
 			}
 			acmeServer.Lifetime = caddy.Duration(dur)
 		case "resolvers":

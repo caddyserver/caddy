@@ -408,7 +408,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if fields == nil {
 						fields = errFields()
 					}
-
 					c.Write(fields...)
 				}
 			}
