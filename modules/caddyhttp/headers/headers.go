@@ -78,7 +78,7 @@ func (h Handler) Validate() error {
 			return err
 		}
 	}
-	if h.Response != nil {
+	if h.Response != nil && h.Response.HeaderOps != nil {
 		err := h.Response.validate()
 		if err != nil {
 			return err
@@ -133,6 +133,9 @@ type HeaderOps struct {
 
 // Provision sets up the header operations.
 func (ops *HeaderOps) Provision(_ caddy.Context) error {
+	if ops == nil {
+		return nil // it's possible no ops are configured; fix #6893
+	}
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
 			if r.SearchRegexp == "" {
