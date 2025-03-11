@@ -44,6 +44,10 @@ func init() {
 // each individual publication config object. (Requires a custom build with a
 // DNS provider module.)
 //
+// ECH requires at least TLS 1.3, so any TLS connection policies with ECH
+// applied will automatically upgrade the minimum TLS version to 1.3, even if
+// configured to a lower version.
+//
 // Note that, as of Caddy 2.10.0 (~March 2025), ECH keys are not automatically
 // rotated due to a limitation in the Go standard library (see
 // https://github.com/golang/go/issues/71920). This should be resolved when
@@ -294,31 +298,36 @@ func (t *TLS) publishECHConfigs() error {
 			// publish this ECH config list with this publisher
 			pubTime := time.Now()
 			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
-			if err != nil {
-				t.logger.Error("publishing ECH configuration list",
-					zap.Strings("for_domains", publication.Domains),
+			if err == nil {
+				t.logger.Info("published ECH configuration list",
+					zap.Strings("domains", publication.Domains),
+					zap.Uint8s("config_ids", configIDs),
 					zap.Error(err))
-			}
-
-			// update publication history, so that we don't unnecessarily republish every time
-			for _, cfg := range echCfgList {
-				if cfg.meta.Publications == nil {
-					cfg.meta.Publications = make(publicationHistory)
+				// update publication history, so that we don't unnecessarily republish every time
+				for _, cfg := range echCfgList {
+					if cfg.meta.Publications == nil {
+						cfg.meta.Publications = make(publicationHistory)
+					}
+					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
+						cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
+					}
+					for _, name := range dnsNamesToPublish {
+						cfg.meta.Publications[publisherKey][name] = pubTime
+					}
+					metaBytes, err := json.Marshal(cfg.meta)
+					if err != nil {
+						return fmt.Errorf("marshaling ECH config metadata: %v", err)
+					}
+					metaKey := path.Join(echConfigsKey, strconv.Itoa(int(cfg.ConfigID)), "meta.json")
+					if err := t.ctx.Storage().Store(t.ctx, metaKey, metaBytes); err != nil {
+						return fmt.Errorf("storing updated ECH config metadata: %v", err)
+					}
 				}
-				if _, ok := cfg.meta.Publications[publisherKey]; !ok {
-					cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
-				}
-				for _, name := range dnsNamesToPublish {
-					cfg.meta.Publications[publisherKey][name] = pubTime
-				}
-				metaBytes, err := json.Marshal(cfg.meta)
-				if err != nil {
-					return fmt.Errorf("marshaling ECH config metadata: %v", err)
-				}
-				metaKey := path.Join(echConfigsKey, strconv.Itoa(int(cfg.ConfigID)), "meta.json")
-				if err := t.ctx.Storage().Store(t.ctx, metaKey, metaBytes); err != nil {
-					return fmt.Errorf("storing updated ECH config metadata: %v", err)
-				}
+			} else {
+				t.logger.Error("publishing ECH configuration list",
+					zap.Strings("domains", publication.Domains),
+					zap.Uint8s("config_ids", configIDs),
+					zap.Error(err))
 			}
 		}
 	}
@@ -640,6 +649,10 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 			continue
 		}
 		relName := libdns.RelativeName(domain+".", zone)
+		// TODO: libdns.RelativeName should probably return "@" instead of "".
+		if relName == "" {
+			relName = "@"
+		}
 		var httpsRec libdns.Record
 		for _, rec := range recs {
 			if rec.Name == relName && rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
@@ -674,8 +687,11 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 			},
 		})
 		if err != nil {
+			// TODO: Maybe this should just stop and return the error...
 			dnsPub.logger.Error("unable to publish ECH data to HTTPS DNS record",
 				zap.String("domain", domain),
+				zap.String("zone", zone),
+				zap.String("dns_record_name", relName),
 				zap.Error(err))
 			continue
 		}
