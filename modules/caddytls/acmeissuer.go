@@ -507,21 +507,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
 		case "dns":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			provName := d.Val()
 			if iss.Challenges == nil {
 				iss.Challenges = new(ChallengesConfig)
 			}
 			if iss.Challenges.DNS == nil {
 				iss.Challenges.DNS = new(DNSChallengeConfig)
 			}
-			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-			if err != nil {
-				return err
+			if d.NextArg() {
+				provName := d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+				if err != nil {
+					return err
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 			}
-			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 
 		case "propagation_delay":
 			if !d.NextArg() {

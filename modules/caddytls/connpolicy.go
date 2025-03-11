@@ -940,17 +940,10 @@ func setDefaultTLSParams(cfg *tls.Config) {
 		cfg.CurvePreferences = defaultCurves
 	}
 
-	if cfg.MinVersion == 0 {
-		// crypto/tls docs:
-		// "If EncryptedClientHelloKeys is set, MinVersion, if set, must be VersionTLS13."
-		if cfg.EncryptedClientHelloKeys == nil {
-			cfg.MinVersion = tls.VersionTLS12
-		} else {
-			cfg.MinVersion = tls.VersionTLS13
-		}
-	}
-	if cfg.MaxVersion == 0 {
-		cfg.MaxVersion = tls.VersionTLS13
+	// crypto/tls docs:
+	// "If EncryptedClientHelloKeys is set, MinVersion, if set, must be VersionTLS13."
+	if cfg.EncryptedClientHelloKeys != nil && cfg.MinVersion != 0 && cfg.MinVersion < tls.VersionTLS13 {
+		cfg.MinVersion = tls.VersionTLS13
 	}
 }
 
