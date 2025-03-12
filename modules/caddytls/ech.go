@@ -639,8 +639,16 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 			continue
 		}
 
-		// get any existing HTTPS record for this domain, and augment
-		// our ech SvcParamKey with any other existing SvcParams
+		relName := libdns.RelativeName(domain+".", zone)
+		// TODO: libdns.RelativeName should probably return "@" instead of "". (The latest commits of libdns do this, so remove this logic once upgraded.)
+		if relName == "" {
+			relName = "@"
+		}
+
+		// get existing records for this domain; we need to make sure another
+		// record exists for it so we don't accidentally trample a wildcard; we
+		// also want to get any HTTPS record that may already exist for it so
+		// we can augment the ech SvcParamKey with any other existing SvcParams
 		recs, err := dnsPub.provider.GetRecords(ctx, zone)
 		if err != nil {
 			dnsPub.logger.Error("unable to get existing DNS records to publish ECH data to HTTPS DNS record",
@@ -648,16 +656,28 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 				zap.Error(err))
 			continue
 		}
-		relName := libdns.RelativeName(domain+".", zone)
-		// TODO: libdns.RelativeName should probably return "@" instead of "".
-		if relName == "" {
-			relName = "@"
-		}
 		var httpsRec libdns.Record
+		var nameHasExistingRecord bool
 		for _, rec := range recs {
-			if rec.Name == relName && rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
-				httpsRec = rec
+			if rec.Name == relName {
+				nameHasExistingRecord = true
+				if rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
+					httpsRec = rec
+					break
+				}
 			}
+		}
+		if !nameHasExistingRecord {
+			// Turns out if you publish a DNS record for a name that doesn't have any DNS record yet,
+			// any wildcard records won't apply for the name anymore, meaning if a wildcard A/AAAA record
+			// is used to resolve the domain to a server, publishing an HTTPS record could break resolution!
+			// In theory, this should be a non-issue, at least for A/AAAA records, if the HTTPS record
+			// includes ipv[4|6]hint SvcParamKeys,
+			dnsPub.logger.Warn("domain does not have any existing records, so skipping publication of HTTPS record",
+				zap.String("domain", domain),
+				zap.String("relative_name", relName),
+				zap.String("zone", zone))
+			continue
 		}
 		params := make(svcParams)
 		if httpsRec.Value != "" {
