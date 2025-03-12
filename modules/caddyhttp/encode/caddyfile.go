@@ -57,21 +57,7 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume directive name
 
 	prefer := []string{}
-	for _, arg := range d.RemainingArgs() {
-		mod, err := caddy.GetModule("http.encoders." + arg)
-		if err != nil {
-			return d.Errf("finding encoder module '%s': %v", mod, err)
-		}
-		encoding, ok := mod.New().(Encoding)
-		if !ok {
-			return d.Errf("module %s is not an HTTP encoding", mod)
-		}
-		if enc.EncodingsRaw == nil {
-			enc.EncodingsRaw = make(caddy.ModuleMap)
-		}
-		enc.EncodingsRaw[arg] = caddyconfig.JSON(encoding, nil)
-		prefer = append(prefer, arg)
-	}
+	remainingArgs := d.RemainingArgs()
 
 	responseMatchers := make(map[string]caddyhttp.ResponseMatcher)
 	for d.NextBlock(0) {
@@ -109,6 +95,26 @@ func (enc *Encode) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			enc.EncodingsRaw[name] = caddyconfig.JSON(encoding, nil)
 			prefer = append(prefer, name)
 		}
+	}
+
+	if len(prefer) == 0 && len(remainingArgs) == 0 {
+		remainingArgs = []string{"zstd", "gzip"}
+	}
+
+	for _, arg := range remainingArgs {
+		mod, err := caddy.GetModule("http.encoders." + arg)
+		if err != nil {
+			return d.Errf("finding encoder module '%s': %v", mod, err)
+		}
+		encoding, ok := mod.New().(Encoding)
+		if !ok {
+			return d.Errf("module %s is not an HTTP encoding", mod)
+		}
+		if enc.EncodingsRaw == nil {
+			enc.EncodingsRaw = make(caddy.ModuleMap)
+		}
+		enc.EncodingsRaw[arg] = caddyconfig.JSON(encoding, nil)
+		prefer = append(prefer, arg)
 	}
 
 	// use the order in which the encoders were defined.

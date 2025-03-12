@@ -146,9 +146,13 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 
 		case "precompressed":
-			var order []string
-			for d.NextArg() {
-				modID := "http.precompressed." + d.Val()
+			fsrv.PrecompressedOrder = d.RemainingArgs()
+			if len(fsrv.PrecompressedOrder) == 0 {
+				fsrv.PrecompressedOrder = []string{"br", "zstd", "gzip"}
+			}
+
+			for _, format := range fsrv.PrecompressedOrder {
+				modID := "http.precompressed." + format
 				mod, err := caddy.GetModule(modID)
 				if err != nil {
 					return d.Errf("getting module named '%s': %v", modID, err)
@@ -161,10 +165,8 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if fsrv.PrecompressedRaw == nil {
 					fsrv.PrecompressedRaw = make(caddy.ModuleMap)
 				}
-				fsrv.PrecompressedRaw[d.Val()] = caddyconfig.JSON(precompress, nil)
-				order = append(order, d.Val())
+				fsrv.PrecompressedRaw[format] = caddyconfig.JSON(precompress, nil)
 			}
-			fsrv.PrecompressedOrder = order
 
 		case "status":
 			if !d.NextArg() {

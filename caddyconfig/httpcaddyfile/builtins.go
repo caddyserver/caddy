@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -84,7 +84,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 
 // parseTLS parses the tls directive. Syntax:
 //
-//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	tls [<email>|internal|force_automate]|[<cert_file> <key_file>] {
 //	    protocols <min> [<max>]
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
@@ -99,7 +99,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    ca                            <acme_ca_endpoint>
 //	    ca_root                       <pem_file>
 //	    key_type                      [ed25519|p256|p384|rsa2048|rsa4096]
-//	    dns                           <provider_name> [...]
+//	    dns                           [<provider_name> [...]]    (required, though, if DNS is not configured as global option)
 //	    propagation_delay             <duration>
 //	    propagation_timeout           <duration>
 //	    resolvers                     <dns_servers...>
@@ -107,6 +107,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
 //	    reuse_private_keys
+//	    force_automate
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -126,6 +127,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certManagers []certmagic.Manager
 	var onDemand bool
 	var reusePrivateKeys bool
+	var forceAutomate bool
 
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
@@ -133,8 +135,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	case 1:
 		if firstLine[0] == "internal" {
 			internalIssuer = new(caddytls.InternalIssuer)
+		} else if firstLine[0] == "force_automate" {
+			forceAutomate = true
 		} else if !strings.Contains(firstLine[0], "@") {
-			return nil, h.Err("single argument must either be 'internal' or an email address")
+			return nil, h.Err("single argument must either be 'internal', 'force_automate', or an email address")
 		} else {
 			acmeIssuer = &caddytls.ACMEIssuer{
 				Email: firstLine[0],
@@ -308,10 +312,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			certManagers = append(certManagers, certManager)
 
 		case "dns":
-			if !h.NextArg() {
-				return nil, h.ArgErr()
-			}
-			provName := h.Val()
 			if acmeIssuer == nil {
 				acmeIssuer = new(caddytls.ACMEIssuer)
 			}
@@ -321,12 +321,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
-			modID := "dns.providers." + provName
-			unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
-			if err != nil {
-				return nil, err
+			// DNS provider configuration optional, since it may be configured globally via the TLS app with global options
+			if h.NextArg() {
+				provName := h.Val()
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
+			} else if h.Option("dns") == nil {
+				// if DNS is omitted locally, it needs to be configured globally
+				return nil, h.ArgErr()
 			}
-			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 		case "resolvers":
 			args := h.RemainingArgs()
@@ -565,6 +572,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	if reusePrivateKeys {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
+	// if enabled, the names in the site addresses will be
+	// added to the automation policies
+	if forceAutomate {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.force_automate",
 			Value: true,
 		})
 	}

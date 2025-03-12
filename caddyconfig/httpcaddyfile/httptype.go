@@ -191,7 +191,7 @@ func (st ServerType) Setup(
 	metrics, _ := options["metrics"].(*caddyhttp.Metrics)
 	for _, s := range servers {
 		if s.Metrics != nil {
-			metrics = cmp.Or[*caddyhttp.Metrics](metrics, &caddyhttp.Metrics{})
+			metrics = cmp.Or(metrics, &caddyhttp.Metrics{})
 			metrics = &caddyhttp.Metrics{
 				PerHost: metrics.PerHost || s.Metrics.PerHost,
 			}
@@ -350,7 +350,7 @@ func (st ServerType) Setup(
 
 				// avoid duplicates by sorting + compacting
 				sort.Strings(defaultLog.Exclude)
-				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact(defaultLog.Exclude)
 			}
 		}
 		// we may have not actually added anything, so remove if empty
@@ -763,6 +763,14 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
+			// collect hosts that are forced to be automated
+			forceAutomatedNames := make(map[string]struct{})
+			if _, ok := sblock.pile["tls.force_automate"]; ok {
+				for _, host := range hosts {
+					forceAutomatedNames[host] = struct{}{}
+				}
+			}
+
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
@@ -794,7 +802,7 @@ func (st *ServerType) serversFromPairings(
 					}
 
 					// only append this policy if it actually changes something
-					if !cp.SettingsEmpty() {
+					if !cp.SettingsEmpty() || mapContains(forceAutomatedNames, hosts) {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 						hasCatchAllTLSConnPolicy = len(hosts) == 0
 					}
@@ -1113,6 +1121,12 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting default SNI: %s vs. %s",
 						cps[i].DefaultSNI, cps[j].DefaultSNI)
 				}
+				if cps[i].FallbackSNI != "" &&
+					cps[j].FallbackSNI != "" &&
+					cps[i].FallbackSNI != cps[j].FallbackSNI {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting fallback SNI: %s vs. %s",
+						cps[i].FallbackSNI, cps[j].FallbackSNI)
+				}
 				if cps[i].ProtocolMin != "" &&
 					cps[j].ProtocolMin != "" &&
 					cps[i].ProtocolMin != cps[j].ProtocolMin {
@@ -1152,6 +1166,9 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 				}
 				if cps[i].DefaultSNI == "" && cps[j].DefaultSNI != "" {
 					cps[i].DefaultSNI = cps[j].DefaultSNI
+				}
+				if cps[i].FallbackSNI == "" && cps[j].FallbackSNI != "" {
+					cps[i].FallbackSNI = cps[j].FallbackSNI
 				}
 				if cps[i].ProtocolMin == "" && cps[j].ProtocolMin != "" {
 					cps[i].ProtocolMin = cps[j].ProtocolMin
@@ -1655,6 +1672,18 @@ func listenersUseAnyPortOtherThan(addresses []string, otherPort string) bool {
 			continue
 		}
 		if uint(otherPortInt) > laddrs.EndPort || uint(otherPortInt) < laddrs.StartPort {
+			return true
+		}
+	}
+	return false
+}
+
+func mapContains[K comparable, V any](m map[K]V, keys []K) bool {
+	if len(m) == 0 || len(keys) == 0 {
+		return false
+	}
+	for _, key := range keys {
+		if _, ok := m[key]; ok {
 			return true
 		}
 	}
