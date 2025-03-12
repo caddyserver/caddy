@@ -75,7 +75,7 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 		replacedBody := repl.ReplaceAll(rb.Set, "")
 		r.Body = io.NopCloser(strings.NewReader(replacedBody))
-		r.ContentLength = int64(len(rb.Set))
+		r.ContentLength = int64(len(replacedBody))
 	}
 	if r.Body == nil {
 		return next.ServeHTTP(w, r)
