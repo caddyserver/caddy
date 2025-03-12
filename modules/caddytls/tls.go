@@ -563,7 +563,7 @@ func (t *TLS) Manage(names []string) error {
 // (keeping only the hotsname) and filters IP addresses, which can't be
 // used with ECH.
 //
-// EXPERIMENTAL: This function and its behavior are subject to change.
+// EXPERIMENTAL: This function and its semantics/behavior are subject to change.
 func (t *TLS) RegisterServerNames(dnsNames []string) {
 	t.serverNamesMu.Lock()
 	for _, name := range dnsNames {
