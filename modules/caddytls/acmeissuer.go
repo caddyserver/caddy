@@ -149,8 +149,8 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS challenge provider
-	if iss.Challenges != nil && iss.Challenges.DNS != nil {
+	// DNS challenge provider, if not already established
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
 		var prov certmagic.DNSProvider
 		if iss.Challenges.DNS.ProviderRaw != nil {
 			// a challenge provider has been locally configured - use it
@@ -522,21 +522,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
 		case "dns":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			provName := d.Val()
 			if iss.Challenges == nil {
 				iss.Challenges = new(ChallengesConfig)
 			}
 			if iss.Challenges.DNS == nil {
 				iss.Challenges.DNS = new(DNSChallengeConfig)
 			}
-			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-			if err != nil {
-				return err
+			if d.NextArg() {
+				provName := d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+				if err != nil {
+					return err
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 			}
-			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 
 		case "propagation_delay":
 			if !d.NextArg() {

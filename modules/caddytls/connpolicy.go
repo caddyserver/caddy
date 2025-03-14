@@ -798,10 +798,14 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 
 	// if we have TrustedCACerts explicitly set, create an 'inline' CA and return
 	if len(clientauth.TrustedCACerts) > 0 {
-		clientauth.ca = InlineCAPool{
+		caPool := InlineCAPool{
 			TrustedCACerts: clientauth.TrustedCACerts,
 		}
-		return nil
+		err := caPool.Provision(ctx)
+		if err != nil {
+			return nil
+		}
+		clientauth.ca = caPool
 	}
 
 	// if we don't have any CARaw set, there's not much work to do
@@ -936,17 +940,10 @@ func setDefaultTLSParams(cfg *tls.Config) {
 		cfg.CurvePreferences = defaultCurves
 	}
 
-	if cfg.MinVersion == 0 {
-		// crypto/tls docs:
-		// "If EncryptedClientHelloKeys is set, MinVersion, if set, must be VersionTLS13."
-		if cfg.EncryptedClientHelloKeys == nil {
-			cfg.MinVersion = tls.VersionTLS12
-		} else {
-			cfg.MinVersion = tls.VersionTLS13
-		}
-	}
-	if cfg.MaxVersion == 0 {
-		cfg.MaxVersion = tls.VersionTLS13
+	// crypto/tls docs:
+	// "If EncryptedClientHelloKeys is set, MinVersion, if set, must be VersionTLS13."
+	if cfg.EncryptedClientHelloKeys != nil && cfg.MinVersion != 0 && cfg.MinVersion < tls.VersionTLS13 {
+		cfg.MinVersion = tls.VersionTLS13
 	}
 }
 
