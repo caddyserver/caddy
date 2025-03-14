@@ -133,10 +133,10 @@ func (p ProxyFromNone) ProxyFunc() func(*http.Request) (*url.URL, error) {
 
 var (
 	_ caddy.Module            = ProxyFromURL{}
-	_ caddy.Provisioner       = &ProxyFromURL{}
+	_ caddy.Provisioner       = (*ProxyFromURL)(nil)
 	_ caddy.Validator         = ProxyFromURL{}
 	_ caddy.ProxyFuncProducer = ProxyFromURL{}
-	_ caddyfile.Unmarshaler   = &ProxyFromURL{}
+	_ caddyfile.Unmarshaler   = (*ProxyFromURL)(nil)
 
 	_ caddy.Module            = ProxyFromNone{}
 	_ caddy.ProxyFuncProducer = ProxyFromNone{}
