@@ -434,6 +434,16 @@ block2 {
 }
 `,
 		},
+		{
+			description: "Preserve braces wrapped by backquotes",
+			input:       "block {respond `All braces should remain: {{now | date \"2006\"}}`}",
+			expect:      "block {respond `All braces should remain: {{now | date \"2006\"}}`}",
+		},
+		{
+			description: "Preserve braces wrapped by quotes",
+			input:       "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
+			expect:      "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that

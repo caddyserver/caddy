@@ -61,7 +61,8 @@ func Format(input []byte) []byte {
 		heredocMarker        []rune
 		heredocClosingMarker []rune
 
-		nesting int // indentation level
+		nesting         int // indentation level
+		withinBackquote bool
 	)
 
 	write := func(ch rune) {
@@ -87,6 +88,9 @@ func Format(input []byte) []byte {
 				break
 			}
 			panic(err)
+		}
+		if ch == '`' {
+			withinBackquote = !withinBackquote
 		}
 
 		// detect whether we have the start of a heredoc
@@ -236,14 +240,23 @@ func Format(input []byte) []byte {
 		switch {
 		case ch == '{':
 			openBrace = true
-			openBraceWritten = false
 			openBraceSpace = spacePrior && !beginningOfLine
 			if openBraceSpace {
 				write(' ')
 			}
+			openBraceWritten = false
+			if withinBackquote {
+				write('{')
+				openBraceWritten = true
+				continue
+			}
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
+			if withinBackquote {
+				write('}')
+				continue
+			}
 			if last != '\n' {
 				nextLine()
 			}
