@@ -262,6 +262,18 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	// on-demand permission module
+	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
+		if t.Automation.OnDemand.Ask != "" {
+			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
+		}
+		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
+		if err != nil {
+			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
+		}
+		t.Automation.OnDemand.permission = val.(OnDemandPermission)
+	}
+
 	// automation/management policies
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
@@ -292,18 +304,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("provisioning automation policy %d: %v", i, err)
 		}
-	}
-
-	// on-demand permission module
-	if t.Automation != nil && t.Automation.OnDemand != nil && t.Automation.OnDemand.PermissionRaw != nil {
-		if t.Automation.OnDemand.Ask != "" {
-			return fmt.Errorf("on-demand TLS config conflict: both 'ask' endpoint and a 'permission' module are specified; 'ask' is deprecated, so use only the permission module")
-		}
-		val, err := ctx.LoadModule(t.Automation.OnDemand, "PermissionRaw")
-		if err != nil {
-			return fmt.Errorf("loading on-demand TLS permission module: %v", err)
-		}
-		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
 	// run replacer on ask URL (for environment variables) -- return errors to prevent surprises (#5036)
