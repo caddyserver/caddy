@@ -340,7 +340,7 @@ func (st ServerType) buildTLSApp(
 					combined = reflect.New(reflect.TypeOf(cl)).Elem()
 				}
 				clVal := reflect.ValueOf(cl)
-				for i := 0; i < clVal.Len(); i++ {
+				for i := range clVal.Len() {
 					combined = reflect.Append(combined, clVal.Index(i))
 				}
 				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
@@ -469,7 +469,7 @@ func (st ServerType) buildTLSApp(
 		globalPreferredChains := options["preferred_chains"]
 		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil || globalPreferredChains != nil
 		if hasGlobalACMEDefaults {
-			for i := 0; i < len(tlsApp.Automation.Policies); i++ {
+			for i := range tlsApp.Automation.Policies {
 				ap := tlsApp.Automation.Policies[i]
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
 					// for public names, create default issuers which will later be filled in with configured global defaults
