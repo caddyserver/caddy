@@ -107,7 +107,7 @@ type ACMEIssuer struct {
 	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
 
 	// Forward proxy module
-	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	rootPool *x509.CertPool
 	logger   *zap.Logger

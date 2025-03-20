@@ -28,7 +28,7 @@ type ProxyFromURL struct {
 // CaddyModule implements Module.
 func (p ProxyFromURL) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID: "caddy.network_proxy.source.url",
+		ID: "caddy.network_proxy.url",
 		New: func() caddy.Module {
 			return &ProxyFromURL{}
 		},
@@ -114,7 +114,7 @@ type ProxyFromNone struct{}
 
 func (p ProxyFromNone) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID: "caddy.network_proxy.source.none",
+		ID: "caddy.network_proxy.none",
 		New: func() caddy.Module {
 			return &ProxyFromNone{}
 		},

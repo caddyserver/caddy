@@ -364,7 +364,7 @@ func isModuleMapType(typ reflect.Type) bool {
 
 // ProxyFuncProducer is implemented by modules which produce a
 // function that returns a URL to use as network proxy. Modules
-// in the namespace `caddy.network_proxy.source` must implement this
+// in the namespace `caddy.network_proxy` must implement this
 // interface.
 type ProxyFuncProducer interface {
 	ProxyFunc() func(*http.Request) (*url.URL, error)

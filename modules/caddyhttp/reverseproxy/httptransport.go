@@ -157,7 +157,7 @@ type HTTPTransport struct {
 	//
 	// If nil, defaults to reading the `HTTP_PROXY`,
 	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
-	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy.source inline_key=from"`
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	h2cTransport *http2.Transport
 	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)

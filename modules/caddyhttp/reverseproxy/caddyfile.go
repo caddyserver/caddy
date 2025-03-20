@@ -1086,7 +1086,7 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			modStem := d.Val()
-			modID := "caddy.network_proxy.source." + modStem
+			modID := "caddy.network_proxy." + modStem
 			unm, err := caddyfile.UnmarshalModule(d, modID)
 			if err != nil {
 				return err
