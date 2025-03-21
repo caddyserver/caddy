@@ -24,7 +24,6 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -38,8 +37,10 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -90,6 +91,7 @@ type HTTPTransport struct {
 	//  forward_proxy_url -> upstream
 	//
 	// Default: http.ProxyFromEnvironment
+	// DEPRECATED: Use NetworkProxyRaw|`network_proxy` instead. Subject to removal.
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
@@ -140,6 +142,22 @@ type HTTPTransport struct {
 
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
+
+	// The module that provides the network (forward) proxy
+	// URL that the HTTP transport will use to proxy
+	// requests to the upstream. See [http.Transport.Proxy](https://pkg.go.dev/net/http#Transport.Proxy)
+	// for information regarding supported protocols.
+	//
+	// Providing a value to this parameter results in requests
+	// flowing through the reverse_proxy in the following way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  [proxy provided by the module] -> upstream
+	//
+	// If nil, defaults to reading the `HTTP_PROXY`,
+	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	h2cTransport *http2.Transport
 	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
@@ -328,16 +346,22 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	// negotiate any HTTP/SOCKS proxy for the HTTP transport
-	var proxy func(*http.Request) (*url.URL, error)
+	proxy := http.ProxyFromEnvironment
 	if h.ForwardProxyURL != "" {
-		pUrl, err := url.Parse(h.ForwardProxyURL)
+		caddyCtx.Logger().Warn("forward_proxy_url is deprecated; use network_proxy instead")
+		u := network.ProxyFromURL{URL: h.ForwardProxyURL}
+		h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
+	}
+	if len(h.NetworkProxyRaw) != 0 {
+		proxyMod, err := caddyCtx.LoadModule(h, "ForwardProxyRaw")
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
+			return nil, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
-		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
-		proxy = http.ProxyURL(pUrl)
-	} else {
-		proxy = http.ProxyFromEnvironment
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			proxy = m.ProxyFunc()
+		} else {
+			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	rt := &http.Transport{
