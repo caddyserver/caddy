@@ -630,6 +630,7 @@ func (dnsPub ECHDNSPublisher) PublisherKey() string {
 func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNames []string, configListBin []byte) error {
 	nameservers := certmagic.RecursiveNameservers(nil) // TODO: we could make resolvers configurable
 
+nextName:
 	for _, domain := range innerNames {
 		zone, err := certmagic.FindZoneByFQDN(ctx, dnsPub.logger, domain, nameservers)
 		if err != nil {
@@ -660,6 +661,14 @@ func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNa
 		var nameHasExistingRecord bool
 		for _, rec := range recs {
 			if rec.Name == relName {
+				// CNAME records are exclusive of all other records, so we cannot publish an HTTPS
+				// record for a domain that is CNAME'd. See #6922.
+				if rec.Type == "CNAME" {
+					dnsPub.logger.Warn("domain has CNAME record, so unable to publish ECH data to HTTPS record",
+						zap.String("domain", domain),
+						zap.String("cname_value", rec.Value))
+					continue nextName
+				}
 				nameHasExistingRecord = true
 				if rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
 					httpsRec = rec
