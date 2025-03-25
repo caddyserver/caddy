@@ -76,7 +76,6 @@ func TestSvcParamsString(t *testing.T) {
 	// because we can't just compare string outputs
 	// since map iteration is unordered
 	for i, test := range []svcParams{
-
 		{
 			"alpn":            {"h2", "h3"},
 			"no-default-alpn": {},

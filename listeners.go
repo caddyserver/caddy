@@ -574,7 +574,7 @@ type sharedQuicListener struct {
 // Destruct closes the underlying QUIC listener and its associated net.PacketConn.
 func (sql *sharedQuicListener) Destruct() error {
 	// close EarlyListener first to stop any operations being done to the net.PacketConn
-	_ = sql.EarlyListener.Close()
+	_ = sql.Close()
 	// then close the net.PacketConn
 	return sql.packetConn.Close()
 }
@@ -626,7 +626,7 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnecti
 func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
 		fcql.contextCancel()
-		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
+		_, _ = listenerPool.Delete(fcql.key)
 	}
 	return nil
 }
