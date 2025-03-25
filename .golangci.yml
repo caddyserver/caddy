@@ -59,18 +59,19 @@ linters:
     rules:
       - linters:
           - gosec
-        text: G115
+        text: G115 # TODO: Either we should fix the issues or nuke the linter if it's bad
       - linters:
           - gosec
-        text: G107
+        text: G107 # we aren't calling unknown URL
       - linters:
           - gosec
-        text: G203
+        text: G203 # as a web server that's expected to handle any template, this is totally in the hands of the user.
       - linters:
           - gosec
-        text: G204
+        text: G204 # we're shelling out to known commands, not relying on user-defined input.
       - linters:
           - gosec
+        # the choice of weakrand is deliberate, hence the named import "weakrand"
         path: modules/caddyhttp/reverseproxy/selectionpolicies.go
         text: G404
       - linters:
@@ -102,10 +103,10 @@ formatters:
   settings:
     gci:
       sections:
-        - standard
-        - default
-        - prefix(github.com/caddyserver/caddy/v2/cmd)
-        - prefix(github.com/caddyserver/caddy)
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - prefix(github.com/caddyserver/caddy/v2/cmd) # ensure that this is always at the top and always has a line break.
+        - prefix(github.com/caddyserver/caddy) # Custom section: groups all imports with the specified Prefix.
       custom-order: true
   exclusions:
     generated: lax
