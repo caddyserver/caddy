@@ -998,7 +998,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
 		case "sampling":
-			d := h.Dispenser.NewFromNextSegment()
+			d := h.NewFromNextSegment()
 			for d.NextArg() {
 				// consume any tokens on the same line, if any.
 			}

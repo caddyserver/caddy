@@ -158,7 +158,7 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.shouldBuffer == nil {
 		rr.stream = true
 	} else {
-		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.Header())
 	}
 
 	// 1xx responses aren't final; just informational

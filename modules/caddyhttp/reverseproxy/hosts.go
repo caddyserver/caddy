@@ -84,7 +84,7 @@ func (u *Upstream) Available() bool {
 func (u *Upstream) Healthy() bool {
 	healthy := u.healthy()
 	if healthy && u.healthCheckPolicy != nil {
-		healthy = u.Host.Fails() < u.healthCheckPolicy.MaxFails
+		healthy = u.Fails() < u.healthCheckPolicy.MaxFails
 	}
 	if healthy && u.cb != nil {
 		healthy = u.cb.OK()
@@ -95,7 +95,7 @@ func (u *Upstream) Healthy() bool {
 // Full returns true if the remote host
 // cannot receive more requests at this time.
 func (u *Upstream) Full() bool {
-	return u.MaxRequests > 0 && u.Host.NumRequests() >= u.MaxRequests
+	return u.MaxRequests > 0 && u.NumRequests() >= u.MaxRequests
 }
 
 // fillDialInfo returns a filled DialInfo for upstream u, using the request

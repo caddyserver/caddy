@@ -548,10 +548,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// increment iPath every time we consume a char from the path;
 	// iPattern and iPath are our cursors/iterator positions for each string
 	var iPattern, iPath int
-	for {
-		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
-			break
-		}
+	for iPattern < len(matchPath) && iPath < len(escapedPath) {
 
 		// get the next character from the request path
 
