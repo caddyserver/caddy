@@ -549,7 +549,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// iPattern and iPath are our cursors/iterator positions for each string
 	var iPattern, iPath int
 	for iPattern < len(matchPath) && iPath < len(escapedPath) {
-
 		// get the next character from the request path
 
 		pathCh := string(escapedPath[iPath])

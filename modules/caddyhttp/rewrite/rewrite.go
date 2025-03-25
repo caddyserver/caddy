@@ -378,7 +378,6 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 func trimPathPrefix(escapedPath, prefix string) string {
 	var iPath, iPrefix int
 	for iPath < len(escapedPath) && iPrefix < len(prefix) {
-
 		prefixCh := prefix[iPrefix]
 		ch := string(escapedPath[iPath])
 
