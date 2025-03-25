@@ -136,7 +136,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	}
 
 	// call underlying accept
-	conn, err := fcl.Accept()
+	conn, err := fcl.sharedListener.Accept()
 	if err == nil {
 		// if 0, do nothing, Go's default is already set
 		// and if the connection allows setting KeepAlive, set it
