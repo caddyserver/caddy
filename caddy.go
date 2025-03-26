@@ -43,6 +43,14 @@ import (
 	"github.com/caddyserver/caddy/v2/notify"
 )
 
+// Listener is a type that gets notified of certain events in the Caddy lifecycle.
+// Listeners are invoked synchronously and can block/delay the startup or shutdown, but they
+// cannot fail.
+type Listener interface {
+	AfterAppsStarted()
+	BeforeAppsStopping()
+}
+
 // Config is the top (or beginning) of the Caddy configuration structure.
 // Caddy config is expressed natively as a JSON document. If you prefer
 // not to work with JSON directly, there are [many config adapters](/docs/config-adapters)
@@ -81,8 +89,11 @@ type Config struct {
 	// associated value.
 	AppsRaw ModuleMap `json:"apps,omitempty" caddy:"namespace="`
 
-	apps    map[string]App
-	storage certmagic.Storage
+	ListenersRaw []json.RawMessage `json:"listeners,omitempty" caddy:"namespace=caddy.listeners inline_key=module"`
+
+	apps      map[string]App
+	storage   certmagic.Storage
+	listeners []Listener
 
 	cancelFunc context.CancelFunc
 
@@ -440,6 +451,12 @@ func run(newCfg *Config, start bool) (Context, error) {
 		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
+
+	// Notify all listeners
+	for _, listener := range ctx.cfg.listeners {
+		listener.AfterAppsStarted()
+	}
+
 	globalMetrics.configSuccess.Set(1)
 	globalMetrics.configSuccessTime.SetToCurrentTime()
 	// now that the user's config is running, finish setting up anything else,
@@ -545,6 +562,25 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			if _, err := ctx.App(appName); err != nil {
 				return err
 			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return ctx, err
+	}
+
+	// Load and Provision each listener
+	err = func() error {
+		val, err := ctx.LoadModule(newCfg, "ListenersRaw")
+		if err != nil {
+			return fmt.Errorf("loading listener module: %v", err)
+		}
+		for _, listenerRaw := range val.([]any) {
+			listener, ok := listenerRaw.(Listener)
+			if !ok {
+				return fmt.Errorf("module is not a listener: %T", val)
+			}
+			newCfg.listeners = append(newCfg.listeners, listener)
 		}
 		return nil
 	}()
@@ -694,6 +730,11 @@ func Stop() error {
 func unsyncedStop(ctx Context) {
 	if ctx.cfg == nil {
 		return
+	}
+
+	// Notify all listeners
+	for _, listener := range ctx.cfg.listeners {
+		listener.BeforeAppsStopping()
 	}
 
 	// stop each app
