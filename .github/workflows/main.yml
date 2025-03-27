@@ -1,0 +1,24 @@
+name: Go Build and Scan Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  qwiet-nextgen-scan:
+    runs-on: ubuntu-latest
+    container: shiftleft/core:latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Qwiet.AI NextGen Scan
+        run: |
+          sl analyze --app "${GITHUB_REPOSITORY_OWNER}_${GITHUB_REPOSITORY#*/}" --verbose --cpg --go .
+
+        env:
+          SHIFTLEFT_ACCESS_TOKEN: ${{ secrets.SHIFTLEFT_ACCESS_TOKEN }}
