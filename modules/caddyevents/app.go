@@ -212,9 +212,18 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		logger.Error("failed to create event", zap.Error(err))
 	}
 
+	var originModule caddy.ModuleInfo
+	var originModuleID caddy.ModuleID
+	var originModuleName string
+	if origin := e.Origin(); origin != nil {
+		originModule = origin.CaddyModule()
+		originModuleID = originModule.ID
+		originModuleName = originModule.String()
+	}
+
 	logger = logger.With(
 		zap.String("id", e.ID().String()),
-		zap.String("origin", e.Origin().CaddyModule().String()))
+		zap.String("origin", originModuleName))
 
 	// add event info to replacer, make sure it's in the context
 	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -235,7 +244,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		case "event.time_unix":
 			return e.Timestamp().UnixMilli(), true
 		case "event.module":
-			return e.Origin().CaddyModule().ID, true
+			return originModuleID, true
 		case "event.data":
 			return e.Data, true
 		}
@@ -257,7 +266,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
 	for {
-		moduleID := e.Origin().CaddyModule().ID
+		moduleID := originModuleID
 
 		// implement propagation up the module tree (i.e. start with "a.b.c" then "a.b" then "a" then "")
 		for {

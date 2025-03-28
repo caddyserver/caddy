@@ -274,14 +274,6 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 	// we're done with the raw bytes; allow GC to deallocate
 	val.Set(reflect.Zero(typ))
 
-	// if the loaded module happens to be an app that can emit events, store it so the
-	// core can have access to emit events without an import cycle
-	if ee, ok := result.(eventEmitter); ok {
-		if _, ok := ee.(App); ok {
-			ctx.cfg.eventEmitter = ee
-		}
-	}
-
 	return result, nil
 }
 
@@ -444,6 +436,15 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	}
 
 	ctx.moduleInstances[id] = append(ctx.moduleInstances[id], val)
+
+	// if the loaded module happens to be an app that can emit events, store it so the
+	// core can have access to emit events without an import cycle
+	if ee, ok := val.(eventEmitter); ok {
+		if _, ok := ee.(App); ok {
+			log.Println("GOT EE:", ee)
+			ctx.cfg.eventEmitter = ee
+		}
+	}
 
 	return val, nil
 }
