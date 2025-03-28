@@ -441,7 +441,6 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	// core can have access to emit events without an import cycle
 	if ee, ok := val.(eventEmitter); ok {
 		if _, ok := ee.(App); ok {
-			log.Println("GOT EE:", ee)
 			ctx.cfg.eventEmitter = ee
 		}
 	}
