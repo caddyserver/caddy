@@ -17,7 +17,6 @@ package caddyauth
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -37,6 +36,10 @@ func init() {
 // `{http.auth.user.id}` will be set to the username, and also
 // `{http.auth.user.*}` placeholders may be set for any authentication
 // modules that provide user metadata.
+//
+// In case of an error, the placeholder `{http.auth.<provider>.error}`
+// will be set to the error message returned by the authentication
+// provider.
 //
 // Its API is still experimental and may be subject to change.
 type Authentication struct {
@@ -84,8 +87,7 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			}
 			// Set the error from the authentication provider in a placeholder,
 			// so it can be used in the handle_errors directive.
-			sanitizedProvName := strings.ReplaceAll(provName, " ", "_")
-			repl.Set(fmt.Sprintf("http.auth.%s.error", sanitizedProvName), err.Error())
+			repl.Set("http.auth."+provName+".error", err.Error())
 			continue
 		}
 		if authed {
