@@ -20,9 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -206,27 +204,26 @@ func (app *App) On(eventName string, handler Handler) error {
 //
 // Note that the data map is not copied, for efficiency. After Emit() is called, the
 // data passed in should not be changed in other goroutines.
-func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) Event {
+func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) caddy.Event {
 	logger := app.logger.With(zap.String("name", eventName))
 
-	id, err := uuid.NewRandom()
+	e, err := caddy.NewEvent(ctx, eventName, data)
 	if err != nil {
-		logger.Error("failed generating new event ID", zap.Error(err))
+		logger.Error("failed to create event", zap.Error(err))
 	}
 
-	eventName = strings.ToLower(eventName)
-
-	e := Event{
-		Data:   data,
-		id:     id,
-		ts:     time.Now(),
-		name:   eventName,
-		origin: ctx.Module(),
+	var originModule caddy.ModuleInfo
+	var originModuleID caddy.ModuleID
+	var originModuleName string
+	if origin := e.Origin(); origin != nil {
+		originModule = origin.CaddyModule()
+		originModuleID = originModule.ID
+		originModuleName = originModule.String()
 	}
 
 	logger = logger.With(
-		zap.String("id", e.id.String()),
-		zap.String("origin", e.origin.CaddyModule().String()))
+		zap.String("id", e.ID().String()),
+		zap.String("origin", originModuleName))
 
 	// add event info to replacer, make sure it's in the context
 	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
@@ -239,15 +236,15 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 		case "event":
 			return e, true
 		case "event.id":
-			return e.id, true
+			return e.ID(), true
 		case "event.name":
-			return e.name, true
+			return e.Name(), true
 		case "event.time":
-			return e.ts, true
+			return e.Timestamp(), true
 		case "event.time_unix":
-			return e.ts.UnixMilli(), true
+			return e.Timestamp().UnixMilli(), true
 		case "event.module":
-			return e.origin.CaddyModule().ID, true
+			return originModuleID, true
 		case "event.data":
 			return e.Data, true
 		}
@@ -269,7 +266,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 	// invoke handlers bound to the event by name and also all events; this for loop
 	// iterates twice at most: once for the event name, once for "" (all events)
 	for {
-		moduleID := e.origin.CaddyModule().ID
+		moduleID := originModuleID
 
 		// implement propagation up the module tree (i.e. start with "a.b.c" then "a.b" then "a" then "")
 		for {
@@ -292,7 +289,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 					zap.Any("handler", handler))
 
 				if err := handler.Handle(ctx, e); err != nil {
-					aborted := errors.Is(err, ErrAborted)
+					aborted := errors.Is(err, caddy.ErrEventAborted)
 
 					logger.Error("handler error",
 						zap.Error(err),
@@ -326,76 +323,9 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) E
 	return e
 }
 
-// Event represents something that has happened or is happening.
-// An Event value is not synchronized, so it should be copied if
-// being used in goroutines.
-//
-// EXPERIMENTAL: As with the rest of this package, events are
-// subject to change.
-type Event struct {
-	// If non-nil, the event has been aborted, meaning
-	// propagation has stopped to other handlers and
-	// the code should stop what it was doing. Emitters
-	// may choose to use this as a signal to adjust their
-	// code path appropriately.
-	Aborted error
-
-	// The data associated with the event. Usually the
-	// original emitter will be the only one to set or
-	// change these values, but the field is exported
-	// so handlers can have full access if needed.
-	// However, this map is not synchronized, so
-	// handlers must not use this map directly in new
-	// goroutines; instead, copy the map to use it in a
-	// goroutine.
-	Data map[string]any
-
-	id     uuid.UUID
-	ts     time.Time
-	name   string
-	origin caddy.Module
-}
-
-func (e Event) ID() uuid.UUID        { return e.id }
-func (e Event) Timestamp() time.Time { return e.ts }
-func (e Event) Name() string         { return e.name }
-func (e Event) Origin() caddy.Module { return e.origin }
-
-// CloudEvent exports event e as a structure that, when
-// serialized as JSON, is compatible with the
-// CloudEvents spec.
-func (e Event) CloudEvent() CloudEvent {
-	dataJSON, _ := json.Marshal(e.Data)
-	return CloudEvent{
-		ID:              e.id.String(),
-		Source:          e.origin.CaddyModule().String(),
-		SpecVersion:     "1.0",
-		Type:            e.name,
-		Time:            e.ts,
-		DataContentType: "application/json",
-		Data:            dataJSON,
-	}
-}
-
-// CloudEvent is a JSON-serializable structure that
-// is compatible with the CloudEvents specification.
-// See https://cloudevents.io.
-type CloudEvent struct {
-	ID              string          `json:"id"`
-	Source          string          `json:"source"`
-	SpecVersion     string          `json:"specversion"`
-	Type            string          `json:"type"`
-	Time            time.Time       `json:"time"`
-	DataContentType string          `json:"datacontenttype,omitempty"`
-	Data            json.RawMessage `json:"data,omitempty"`
-}
-
-// ErrAborted cancels an event.
-var ErrAborted = errors.New("event aborted")
-
 // Handler is a type that can handle events.
 type Handler interface {
-	Handle(context.Context, Event) error
+	Handle(context.Context, caddy.Event) error
 }
 
 // Interface guards
