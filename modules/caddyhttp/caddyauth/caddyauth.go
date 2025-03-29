@@ -17,6 +17,7 @@ package caddyauth
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -71,6 +72,7 @@ func (a *Authentication) Provision(ctx caddy.Context) error {
 }
 
 func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var user User
 	var authed bool
 	var err error
@@ -80,6 +82,10 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
 				c.Write(zap.String("provider", provName), zap.Error(err))
 			}
+			// Set the error from the authentication provider in a placeholder,
+			// so it can be used in the handle_errors directive.
+			sanitizedProvName := strings.ReplaceAll(provName, " ", "_")
+			repl.Set(fmt.Sprintf("http.auth.%s.error", sanitizedProvName), err.Error())
 			continue
 		}
 		if authed {
@@ -90,7 +96,6 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.auth.user.id", user.ID)
 	for k, v := range user.Metadata {
 		repl.Set("http.auth.user."+k, v)
