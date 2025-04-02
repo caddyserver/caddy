@@ -147,7 +147,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 				err = tconn.SetKeepAlive(false)
 			}
 			if err != nil {
-				Log().With(zap.String("server", fcl.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
+				Log().With(zap.String("server", fcl.sharedListener.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
 			}
 		}
 		return conn, nil
@@ -165,7 +165,7 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		// users of this listener, not just our own reference to it; we also don't
 		// do anything with the error because all we could do is log it, but we
 		// explicitly assign it to nothing so we don't forget it's there if needed
-		_ = fcl.clearDeadline()
+		_ = fcl.sharedListener.clearDeadline()
 
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return nil, fakeClosedErr(fcl)
@@ -188,8 +188,8 @@ func (fcl *fakeCloseListener) Close() error {
 		// file). But we can set the deadline in the past,
 		// and this is kind of cheating, but it works, and
 		// it apparently even works on Windows.
-		_ = fcl.setDeadline()
-		_, _ = listenerPool.Delete(fcl.key)
+		_ = fcl.sharedListener.setDeadline()
+		_, _ = listenerPool.Delete(fcl.sharedListener.key)
 	}
 	return nil
 }
@@ -236,7 +236,7 @@ func (sl *sharedListener) setDeadline() error {
 // Destruct is called by the UsagePool when the listener is
 // finally not being used anymore. It closes the socket.
 func (sl *sharedListener) Destruct() error {
-	return sl.Close()
+	return sl.Listener.Close()
 }
 
 // fakeClosePacketConn is like fakeCloseListener, but for PacketConns,
@@ -279,13 +279,13 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 func (fcpc *fakeClosePacketConn) Close() error {
 	if atomic.CompareAndSwapInt32(&fcpc.closed, 0, 1) {
 		_ = fcpc.SetReadDeadline(time.Now()) // unblock ReadFrom() calls to kick old servers out of their loops
-		_, _ = listenerPool.Delete(fcpc.key)
+		_, _ = listenerPool.Delete(fcpc.sharedPacketConn.key)
 	}
 	return nil
 }
 
 func (fcpc *fakeClosePacketConn) Unwrap() net.PacketConn {
-	return fcpc.PacketConn
+	return fcpc.sharedPacketConn.PacketConn
 }
 
 // sharedPacketConn is like sharedListener, but for net.PacketConns.
@@ -296,7 +296,7 @@ type sharedPacketConn struct {
 
 // Destruct closes the underlying socket.
 func (spc *sharedPacketConn) Destruct() error {
-	return spc.Close()
+	return spc.PacketConn.Close()
 }
 
 // Unwrap returns the underlying socket
