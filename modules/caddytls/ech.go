@@ -660,7 +660,8 @@ nextName:
 		var httpsRec libdns.Record
 		var nameHasExistingRecord bool
 		for _, rec := range recs {
-			if rec.Name == relName {
+			// TODO: providers SHOULD normalize root-level records to be named "@"; remove the extra conditions when the transition to the new semantics is done
+			if rec.Name == relName || (rec.Name == "" && relName == "@") {
 				// CNAME records are exclusive of all other records, so we cannot publish an HTTPS
 				// record for a domain that is CNAME'd. See #6922.
 				if rec.Type == "CNAME" {

@@ -274,7 +274,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 func (m *MatchFile) Provision(ctx caddy.Context) error {
 	m.logger = ctx.Logger()
 
-	m.fsmap = ctx.Filesystems()
+	m.fsmap = ctx.FileSystems()
 
 	if m.Root == "" {
 		m.Root = "{http.vars.root}"

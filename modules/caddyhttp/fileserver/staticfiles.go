@@ -186,7 +186,7 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	fsrv.logger = ctx.Logger()
 
-	fsrv.fsmap = ctx.Filesystems()
+	fsrv.fsmap = ctx.FileSystems()
 
 	if fsrv.FileSystem == "" {
 		fsrv.FileSystem = "{http.vars.fs}"
