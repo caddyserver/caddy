@@ -226,7 +226,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		zap.String("origin", originModuleName))
 
 	// add event info to replacer, make sure it's in the context
-	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
 		ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, repl)
@@ -269,11 +269,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		moduleID := originModuleID
 
 		// implement propagation up the module tree (i.e. start with "a.b.c" then "a.b" then "a" then "")
-		for {
-			if app.subscriptions[eventName] == nil {
-				break // shortcut if event not bound at all
-			}
-
+		for app.subscriptions[eventName] != nil {
 			for _, handler := range app.subscriptions[eventName][moduleID] {
 				select {
 				case <-ctx.Done():

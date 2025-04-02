@@ -665,9 +665,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-			if subdir == "request_buffers" {
+			switch subdir {
+			case "request_buffers":
 				h.RequestBuffers = size
-			} else if subdir == "response_buffers" {
+			case "response_buffers":
 				h.ResponseBuffers = size
 			}
 

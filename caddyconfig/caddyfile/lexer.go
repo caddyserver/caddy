@@ -137,7 +137,7 @@ func (l *lexer) next() (bool, error) {
 		}
 
 		// detect whether we have the start of a heredoc
-		if !(quoted || btQuoted) && !(inHeredoc || heredocEscaped) &&
+		if (!quoted && !btQuoted) && (!inHeredoc && !heredocEscaped) &&
 			len(val) > 1 && string(val[:2]) == "<<" {
 			// a space means it's just a regular token and not a heredoc
 			if ch == ' ' {

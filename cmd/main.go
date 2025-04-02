@@ -302,7 +302,7 @@ type Flags struct {
 // flag given by name. It panics if the flag is not
 // in the flag set.
 func (f Flags) String(name string) string {
-	return f.FlagSet.Lookup(name).Value.String()
+	return f.Lookup(name).Value.String()
 }
 
 // Bool returns the boolean representation of the
@@ -418,7 +418,7 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		// quoted value: support newlines
 		if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "'") {
 			quote := string(val[0])
-			for !(strings.HasSuffix(line, quote) && !strings.HasSuffix(line, `\`+quote)) {
+			for !strings.HasSuffix(line, quote) || strings.HasSuffix(line, `\`+quote) {
 				val = strings.ReplaceAll(val, `\`+quote, quote)
 				if !scanner.Scan() {
 					break

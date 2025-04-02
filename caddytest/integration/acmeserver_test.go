@@ -9,11 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caddyserver/caddy/v2/caddytest"
 	"github.com/mholt/acmez/v3"
 	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
+
+	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
