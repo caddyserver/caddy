@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"regexp"
 	"runtime/debug"
@@ -27,6 +28,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
@@ -177,8 +181,13 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	a.httpClient = &http.Client{
-		Timeout:   timeout,
-		Transport: h.Transport,
+		Timeout: timeout,
+		Transport: otelhttp.NewTransport(
+			h.Transport,
+			otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+				return otelhttptrace.NewClientTrace(ctx)
+			}),
+		),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
