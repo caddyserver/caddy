@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -59,7 +59,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	traceExporter, err := otlptracegrpc.New(ctx)
+	traceExporter, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
