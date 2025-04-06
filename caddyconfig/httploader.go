@@ -15,15 +15,19 @@
 package caddyconfig
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func init() {
@@ -170,6 +174,12 @@ func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http
 func (hl HTTPLoader) makeClient(ctx caddy.Context) (*http.Client, error) {
 	client := &http.Client{
 		Timeout: time.Duration(hl.Timeout),
+		Transport: otelhttp.NewTransport(
+			http.DefaultTransport,
+			otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+				return otelhttptrace.NewClientTrace(ctx)
+			}),
+		),
 	}
 
 	if hl.TLS != nil {
