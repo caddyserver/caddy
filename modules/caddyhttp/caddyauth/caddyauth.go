@@ -37,6 +37,10 @@ func init() {
 // `{http.auth.user.*}` placeholders may be set for any authentication
 // modules that provide user metadata.
 //
+// In case of an error, the placeholder `{http.auth.<provider>.error}`
+// will be set to the error message returned by the authentication
+// provider.
+//
 // Its API is still experimental and may be subject to change.
 type Authentication struct {
 	// A set of authentication providers. If none are specified,
@@ -71,6 +75,7 @@ func (a *Authentication) Provision(ctx caddy.Context) error {
 }
 
 func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var user User
 	var authed bool
 	var err error
@@ -80,6 +85,9 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
 				c.Write(zap.String("provider", provName), zap.Error(err))
 			}
+			// Set the error from the authentication provider in a placeholder,
+			// so it can be used in the handle_errors directive.
+			repl.Set("http.auth."+provName+".error", err.Error())
 			continue
 		}
 		if authed {
@@ -90,7 +98,6 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.auth.user.id", user.ID)
 	for k, v := range user.Metadata {
 		repl.Set("http.auth.user."+k, v)
