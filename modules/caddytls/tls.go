@@ -131,14 +131,14 @@ type TLS struct {
 	// EXPERIMENTAL: Subject to change.
 	Resolvers []string `json:"resolvers,omitempty"`
 
-	dns                any // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
-	certificateLoaders []CertificateLoader
-	automateNames      map[string]struct{}
-	ctx                caddy.Context
-	storageCleanTicker *time.Ticker
-	storageCleanStop   chan struct{}
-	logger             *zap.Logger
-	events             *caddyevents.App
+	dns                  any // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
+	certificateLoaders   []CertificateLoader
+	automateNames        map[string]struct{}
+	ctx                  caddy.Context
+	storageCleanTicker   *time.Ticker
+	storageCleanStop     chan struct{}
+	logger               *zap.Logger
+	events               *caddyevents.App
 	magic                *certmagic.Config
 	unmanagedCertsTicker *time.Ticker
 
@@ -251,7 +251,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// certificates have been manually loaded, and also so that
 	// commands like validate can be a better test
 	certCacheMu.RLock()
-	t.magic = certmagic.New(certCache, certmagic.Config{
+	magic := certmagic.New(certCache, certmagic.Config{
 		Storage: ctx.Storage(),
 		Logger:  t.logger,
 		OnEvent: t.onEvent,
@@ -262,13 +262,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	})
 	certCacheMu.RUnlock()
 
-	unmanaged, err := t.loadUnmanagedCertificates(ctx)
-	if err != nil {
-		return err
-	}
-
-	if unmanaged > 0 {
-		t.regularlyReloadUnmanagedCertificates()
+	for _, loader := range t.certificateLoaders {
+		err := loader.Initialize(func(add []Certificate, remove []string) error {
+			return t.updateCertificates(ctx, magic, add, remove)
+		})
+		if err != nil {
+			return fmt.Errorf("loading certificates: %v", err)
+		}
 	}
 
 	// on-demand permission module
@@ -811,58 +811,17 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 	return false
 }
 
-func (t *TLS) loadUnmanagedCertificates(ctx caddy.Context) (int, error) {
-	cached := 0
-	for _, loader := range t.certificateLoaders {
-		certs, err := loader.LoadCertificates()
+func (t *TLS) updateCertificates(ctx caddy.Context, magic *certmagic.Config, add []Certificate, remove []string) error {
+	for _, cert := range add {
+		hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
 		if err != nil {
-			return 0, fmt.Errorf("loading certificates: %v", err)
+			return fmt.Errorf("caching unmanaged certificate: %v", err)
 		}
-		for _, cert := range certs {
-			hash, err := t.magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
-			if err != nil {
-				return 0, fmt.Errorf("caching unmanaged certificate: %v", err)
-			}
-			t.loaded[hash] = ""
-		}
+		t.loaded[hash] = ""
 	}
-	return cached, nil
-}
-
-func (t *TLS) regularlyReloadUnmanagedCertificates() {
-	t.unmanagedCertsTicker = time.NewTicker(2 * time.Hour)
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Printf("[PANIC] unmanaged certificates reloader: %v\n%s", err, debug.Stack())
-			}
-		}()
-		t.reloadUnmanagedCertificates()
-		for {
-			select {
-			case <-t.storageCleanStop:
-				return
-			case <-t.storageCleanTicker.C:
-				t.cleanStorageUnits()
-			}
-		}
-	}()
-}
-
-func (t *TLS) reloadUnmanagedCertificates() error {
-	for _, loader := range t.certificateLoaders {
-		certs, err := loader.LoadCertificates()
-		if err != nil {
-			return fmt.Errorf("loading certificates: %v", err)
-		}
-		for _, cert := range certs {
-			hash, err := t.magic.CacheUnmanagedTLSCertificate(t.ctx, cert.Certificate, cert.Tags)
-			if err != nil {
-				return fmt.Errorf("caching unmanaged certificate: %v", err)
-			}
-			t.loaded[hash] = ""
-		}
-	}
+	certCacheMu.Lock()
+	certCache.Remove(remove)
+	certCacheMu.Unlock()
 	return nil
 }
 
@@ -971,7 +930,7 @@ func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any
 // CertificateLoader is a type that can load certificates.
 // Certificates can optionally be associated with tags.
 type CertificateLoader interface {
-	LoadCertificates() ([]Certificate, error)
+	Initialize(updateCertificates func(add []Certificate, remove []string) error) error
 }
 
 // Certificate is a TLS certificate, optionally
