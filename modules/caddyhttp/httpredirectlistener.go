@@ -162,7 +162,7 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 // looks like it might've been a misdirected plaintext HTTP request.
 func firstBytesLookLikeHTTP(hdr []byte) bool {
 	switch string(hdr[:5]) {
-	case "GET /", "HEAD ", "POST ", "PUT /", "OPTIO":
+	case "GET /", "HEAD ", "POST ", "PUT /", "OPTIO":  // codespell:ignore
 		return true
 	}
 	return false

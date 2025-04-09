@@ -146,7 +146,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
 	backConnCloseCh := make(chan struct{})
 	go func() {
-		// Ensure that the cancelation of a request closes the backend.
+		// Ensure that the cancellation of a request closes the backend.
 		// See issue https://golang.org/issue/35559.
 		select {
 		case <-req.Context().Done():
