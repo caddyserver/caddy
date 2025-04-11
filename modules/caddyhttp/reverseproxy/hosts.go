@@ -17,7 +17,6 @@ package reverseproxy
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/netip"
 	"strconv"
 	"sync/atomic"
@@ -100,8 +99,7 @@ func (u *Upstream) Full() bool {
 
 // fillDialInfo returns a filled DialInfo for upstream u, using the request
 // context. Note that the returned value is not a pointer.
-func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+func (u *Upstream) fillDialInfo(repl *caddy.Replacer) (DialInfo, error) {
 	var addr caddy.NetworkAddress
 
 	// use provided dial address

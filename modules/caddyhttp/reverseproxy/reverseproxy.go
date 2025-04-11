@@ -532,7 +532,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// the dial address may vary per-request if placeholders are
 	// used, so perform those replacements here; the resulting
 	// DialInfo struct should have valid network address syntax
-	dialInfo, err := upstream.fillDialInfo(r)
+	dialInfo, err := upstream.fillDialInfo(repl)
 	if err != nil {
 		return true, fmt.Errorf("making dial info: %v", err)
 	}
