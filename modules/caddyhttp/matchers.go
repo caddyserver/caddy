@@ -1342,6 +1342,8 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "early_data":
 				var false bool
 				m.HandshakeComplete = &false
+			default:
+				return d.Errf("unrecognized option '%s'", d.Val())
 			}
 		}
 		if d.NextArg() {

@@ -163,6 +163,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			}
 		}
 
+		// trim the list of domains covered by wildcards, if configured
 		if srv.AutoHTTPS.PreferWildcard {
 			wildcards := make(map[string]struct{})
 			for d := range serverDomainSet {
@@ -183,6 +184,17 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				}
 			}
 		}
+
+		// build the list of domains that could be used with ECH (if enabled)
+		// so the TLS app can know to publish ECH configs for them; we do this
+		// after trimming domains covered by wildcards because, presumably,
+		// if the user wants to use wildcard certs, they also want to use the
+		// wildcard for ECH, rather than individual subdomains
+		echDomains := make([]string, 0, len(serverDomainSet))
+		for d := range serverDomainSet {
+			echDomains = append(echDomains, d)
+		}
+		app.tlsApp.RegisterServerNames(echDomains)
 
 		// nothing more to do here if there are no domains that qualify for
 		// automatic HTTPS and there are no explicit TLS connection policies:
