@@ -210,7 +210,7 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
-// IsUnixNetwork returns true if na.Network is
+// IsFdNetwork returns true if na.Network is
 // fd or fdgram.
 func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
