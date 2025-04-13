@@ -641,7 +641,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
 		network == "udp" || network == "udp4" || network == "udp6" ||
 		network == "unix" || network == "unixpacket" || network == "unixgram" ||
-		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) ||
+		strings.HasPrefix(network, "ip:") || strings.HasPrefix(network, "ip4:") || strings.HasPrefix(network, "ip6:") ||
 		network == "fd" || network == "fdgram" {
 		panic("network type " + network + " is reserved")
 	}
