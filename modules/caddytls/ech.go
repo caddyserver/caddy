@@ -641,10 +641,6 @@ nextName:
 		}
 
 		relName := libdns.RelativeName(domain+".", zone)
-		// TODO: libdns.RelativeName should probably return "@" instead of "". (The latest commits of libdns do this, so remove this logic once upgraded.)
-		if relName == "" {
-			relName = "@"
-		}
 
 		// get existing records for this domain; we need to make sure another
 		// record exists for it so we don't accidentally trample a wildcard; we
@@ -657,23 +653,25 @@ nextName:
 				zap.Error(err))
 			continue
 		}
-		var httpsRec libdns.Record
+		var httpsRec libdns.ServiceBinding
 		var nameHasExistingRecord bool
 		for _, rec := range recs {
-			// TODO: providers SHOULD normalize root-level records to be named "@"; remove the extra conditions when the transition to the new semantics is done
-			if rec.Name == relName || (rec.Name == "" && relName == "@") {
+			rr := rec.RR()
+			if rr.Name == relName {
 				// CNAME records are exclusive of all other records, so we cannot publish an HTTPS
 				// record for a domain that is CNAME'd. See #6922.
-				if rec.Type == "CNAME" {
+				if rr.Type == "CNAME" {
 					dnsPub.logger.Warn("domain has CNAME record, so unable to publish ECH data to HTTPS record",
 						zap.String("domain", domain),
-						zap.String("cname_value", rec.Value))
+						zap.String("cname_value", rr.Data))
 					continue nextName
 				}
 				nameHasExistingRecord = true
-				if rec.Type == "HTTPS" && (rec.Target == "" || rec.Target == ".") {
-					httpsRec = rec
-					break
+				if svcb, ok := rec.(libdns.ServiceBinding); ok && svcb.Scheme == "https" {
+					if svcb.Target == "" || svcb.Target == "." {
+						httpsRec = svcb
+						break
+					}
 				}
 			}
 		}
@@ -689,31 +687,24 @@ nextName:
 				zap.String("zone", zone))
 			continue
 		}
-		params := make(svcParams)
-		if httpsRec.Value != "" {
-			params, err = parseSvcParams(httpsRec.Value)
-			if err != nil {
-				dnsPub.logger.Error("unable to parse existing DNS record to publish ECH data to HTTPS DNS record",
-					zap.String("domain", domain),
-					zap.String("https_rec_value", httpsRec.Value),
-					zap.Error(err))
-				continue
-			}
+		params := httpsRec.Params
+		if params == nil {
+			params = make(libdns.SvcParams)
 		}
 
-		// overwrite only the ech SvcParamKey
+		// overwrite only the "ech" SvcParamKey
 		params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
 
 		// publish record
 		_, err = dnsPub.provider.SetRecords(ctx, zone, []libdns.Record{
-			{
+			libdns.ServiceBinding{
 				// HTTPS and SVCB RRs: RFC 9460 (https://www.rfc-editor.org/rfc/rfc9460)
-				Type:     "HTTPS",
+				Scheme:   "https",
 				Name:     relName,
-				Priority: 2, // allows a manual override with priority 1
-				Target:   ".",
-				Value:    params.String(),
 				TTL:      1 * time.Minute, // TODO: for testing only
+				Priority: 2,               // allows a manual override with priority 1
+				Target:   ".",
+				Params:   params,
 			},
 		})
 		if err != nil {
@@ -950,172 +941,6 @@ func newECHConfigID(ctx caddy.Context) (uint8, error) {
 	}
 
 	return 0, fmt.Errorf("depleted attempts to find an available config_id")
-}
-
-// svcParams represents SvcParamKey and SvcParamValue pairs as
-// described in https://www.rfc-editor.org/rfc/rfc9460 (section 2.1).
-type svcParams map[string][]string
-
-// parseSvcParams parses service parameters into a structured type
-// for safer manipulation.
-func parseSvcParams(input string) (svcParams, error) {
-	if len(input) > 4096 {
-		return nil, fmt.Errorf("input too long: %d", len(input))
-	}
-
-	params := make(svcParams)
-	input = strings.TrimSpace(input) + " "
-
-	for cursor := 0; cursor < len(input); cursor++ {
-		var key, rawVal string
-
-	keyValPair:
-		for i := cursor; i < len(input); i++ {
-			switch input[i] {
-			case '=':
-				key = strings.ToLower(strings.TrimSpace(input[cursor:i]))
-				i++
-				cursor = i
-
-				var quoted bool
-				if input[cursor] == '"' {
-					quoted = true
-					i++
-					cursor = i
-				}
-
-				var escaped bool
-
-				for j := cursor; j < len(input); j++ {
-					switch input[j] {
-					case '"':
-						if !quoted {
-							return nil, fmt.Errorf("illegal DQUOTE at position %d", j)
-						}
-						if !escaped {
-							// end of quoted value
-							rawVal = input[cursor:j]
-							j++
-							cursor = j
-							break keyValPair
-						}
-					case '\\':
-						escaped = true
-					case ' ', '\t', '\n', '\r':
-						if !quoted {
-							// end of unquoted value
-							rawVal = input[cursor:j]
-							cursor = j
-							break keyValPair
-						}
-					default:
-						escaped = false
-					}
-				}
-
-			case ' ', '\t', '\n', '\r':
-				// key with no value (flag)
-				key = input[cursor:i]
-				params[key] = []string{}
-				cursor = i
-				break keyValPair
-			}
-		}
-
-		if rawVal == "" {
-			continue
-		}
-
-		var sb strings.Builder
-
-		var escape int // start of escape sequence (after \, so 0 is never a valid start)
-		for i := 0; i < len(rawVal); i++ {
-			ch := rawVal[i]
-			if escape > 0 {
-				// validate escape sequence
-				// (RFC 9460 Appendix A)
-				// escaped:   "\" ( non-digit / dec-octet )
-				// non-digit: "%x21-2F / %x3A-7E"
-				// dec-octet: "0-255 as a 3-digit decimal number"
-				if ch >= '0' && ch <= '9' {
-					// advance to end of decimal octet, which must be 3 digits
-					i += 2
-					if i > len(rawVal) {
-						return nil, fmt.Errorf("value ends with incomplete escape sequence: %s", rawVal[escape:])
-					}
-					decOctet, err := strconv.Atoi(rawVal[escape : i+1])
-					if err != nil {
-						return nil, err
-					}
-					if decOctet < 0 || decOctet > 255 {
-						return nil, fmt.Errorf("invalid decimal octet in escape sequence: %s (%d)", rawVal[escape:i], decOctet)
-					}
-					sb.WriteRune(rune(decOctet))
-					escape = 0
-					continue
-				} else if (ch < 0x21 || ch > 0x2F) && (ch < 0x3A && ch > 0x7E) {
-					return nil, fmt.Errorf("illegal escape sequence %s", rawVal[escape:i])
-				}
-			}
-			switch ch {
-			case ';', '(', ')':
-				// RFC 9460 Appendix A:
-				// > contiguous  = 1*( non-special / escaped )
-				// > non-special is VCHAR minus DQUOTE, ";", "(", ")", and "\".
-				return nil, fmt.Errorf("illegal character in value %q at position %d: %s", rawVal, i, string(ch))
-			case '\\':
-				escape = i + 1
-			default:
-				sb.WriteByte(ch)
-				escape = 0
-			}
-		}
-
-		params[key] = strings.Split(sb.String(), ",")
-	}
-
-	return params, nil
-}
-
-// String serializes svcParams into zone presentation format.
-func (params svcParams) String() string {
-	var sb strings.Builder
-	for key, vals := range params {
-		if sb.Len() > 0 {
-			sb.WriteRune(' ')
-		}
-		sb.WriteString(key)
-		var hasVal, needsQuotes bool
-		for _, val := range vals {
-			if len(val) > 0 {
-				hasVal = true
-			}
-			if strings.ContainsAny(val, `" `) {
-				needsQuotes = true
-			}
-			if hasVal && needsQuotes {
-				break
-			}
-		}
-		if hasVal {
-			sb.WriteRune('=')
-		}
-		if needsQuotes {
-			sb.WriteRune('"')
-		}
-		for i, val := range vals {
-			if i > 0 {
-				sb.WriteRune(',')
-			}
-			val = strings.ReplaceAll(val, `"`, `\"`)
-			val = strings.ReplaceAll(val, `,`, `\,`)
-			sb.WriteString(val)
-		}
-		if needsQuotes {
-			sb.WriteRune('"')
-		}
-	}
-	return sb.String()
 }
 
 // ECHPublisher is an interface for publishing ECHConfigList values

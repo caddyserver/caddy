@@ -73,7 +73,7 @@ func init() {
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
 // `{http.request.local.port}` | The port part of the local address the connection arrived on
 // `{http.request.local}` | The local address the connection arrived on
-// `{http.request.remote.host}` | The host (IP) part of the remote client's address
+// `{http.request.remote.host}` | The host (IP) part of the remote client's address, if available (not known with HTTP/3 early data)
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme, typically `http` or `https`
