@@ -221,7 +221,8 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 	if remote {
 		muxWrap.remoteControl = admin.Remote
 	} else {
-		muxWrap.enforceHost = !addr.isWildcardInterface()
+		// see comment in allowedOrigins() as to why we disable the host check for unix/fd networks
+		muxWrap.enforceHost = !addr.isWildcardInterface() && !addr.IsUnixNetwork() && !addr.IsFdNetwork()
 		muxWrap.allowedOrigins = admin.allowedOrigins(addr)
 		muxWrap.enforceOrigin = admin.EnforceOrigin
 	}
@@ -310,47 +311,43 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	for _, o := range admin.Origins {
 		uniqueOrigins[o] = struct{}{}
 	}
-	if admin.Origins == nil {
+	// RFC 2616, Section 14.26:
+	// "A client MUST include a Host header field in all HTTP/1.1 request
+	// messages. If the requested URI does not include an Internet host
+	// name for the service being requested, then the Host header field MUST
+	// be given with an empty value."
+	//
+	// UPDATE July 2023: Go broke this by patching a minor security bug in 1.20.6.
+	// Understandable, but frustrating. See:
+	// https://github.com/golang/go/issues/60374
+	// See also the discussion here:
+	// https://github.com/golang/go/issues/61431
+	//
+	// We can no longer conform to RFC 2616 Section 14.26 from either Go or curl
+	// in purity. (Curl allowed no host between 7.40 and 7.50, but now requires a
+	// bogus host; see https://superuser.com/a/925610.) If we disable Host/Origin
+	// security checks, the infosec community assures me that it is secure to do
+	// so, because:
+	//
+	// 1) Browsers do not allow access to unix sockets
+	// 2) DNS is irrelevant to unix sockets
+	//
+	// If either of those two statements ever fail to hold true, it is not the
+	// fault of Caddy.
+	//
+	// Thus, we do not fill out allowed origins and do not enforce Host
+	// requirements for unix sockets. Enforcing it leads to confusion and
+	// frustration, when UDS have their own permissions from the OS.
+	// Enforcing host requirements here is effectively security theater,
+	// and a false sense of security.
+	//
+	// See also the discussion in #6832.
+	if admin.Origins == nil && !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
 		if addr.isLoopback() {
-			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
-				// RFC 2616, Section 14.26:
-				// "A client MUST include a Host header field in all HTTP/1.1 request
-				// messages. If the requested URI does not include an Internet host
-				// name for the service being requested, then the Host header field MUST
-				// be given with an empty value."
-				//
-				// UPDATE July 2023: Go broke this by patching a minor security bug in 1.20.6.
-				// Understandable, but frustrating. See:
-				// https://github.com/golang/go/issues/60374
-				// See also the discussion here:
-				// https://github.com/golang/go/issues/61431
-				//
-				// We can no longer conform to RFC 2616 Section 14.26 from either Go or curl
-				// in purity. (Curl allowed no host between 7.40 and 7.50, but now requires a
-				// bogus host; see https://superuser.com/a/925610.) If we disable Host/Origin
-				// security checks, the infosec community assures me that it is secure to do
-				// so, because:
-				// 1) Browsers do not allow access to unix sockets
-				// 2) DNS is irrelevant to unix sockets
-				//
-				// I am not quite ready to trust either of those external factors, so instead
-				// of disabling Host/Origin checks, we now allow specific Host values when
-				// accessing the admin endpoint over unix sockets. I definitely don't trust
-				// DNS (e.g. I don't trust 'localhost' to always resolve to the local host),
-				// and IP shouldn't even be used, but if it is for some reason, I think we can
-				// at least be reasonably assured that 127.0.0.1 and ::1 route to the local
-				// machine, meaning that a hypothetical browser origin would have to be on the
-				// local machine as well.
-				uniqueOrigins[""] = struct{}{}
-				uniqueOrigins["127.0.0.1"] = struct{}{}
-				uniqueOrigins["::1"] = struct{}{}
-			} else {
-				uniqueOrigins[net.JoinHostPort("localhost", addr.port())] = struct{}{}
-				uniqueOrigins[net.JoinHostPort("::1", addr.port())] = struct{}{}
-				uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
-			}
-		}
-		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
+			uniqueOrigins[net.JoinHostPort("localhost", addr.port())] = struct{}{}
+			uniqueOrigins[net.JoinHostPort("::1", addr.port())] = struct{}{}
+			uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
+		} else {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
