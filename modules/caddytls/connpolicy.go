@@ -988,12 +988,29 @@ func (l *LeafCertClientAuth) Provision(ctx caddy.Context) error {
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (l *LeafCertClientAuth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.NextArg()
+
+	// accommodate the use of one-liners
+	if d.CountRemainingArgs() > 1 {
+		d.NextArg()
+		modName := d.Val()
+		mod, err := caddyfile.UnmarshalModule(d, "tls.leaf_cert_loader."+modName)
+		if err != nil {
+			return d.WrapErr(err)
+		}
+		vMod, ok := mod.(LeafCertificateLoader)
+		if !ok {
+			return fmt.Errorf("leaf module '%s' is not a leaf certificate loader", vMod)
+		}
+		l.LeafCertificateLoadersRaw = append(
+			l.LeafCertificateLoadersRaw,
+			caddyconfig.JSONModuleObject(vMod, "loader", modName, nil),
+		)
+		return nil
+	}
+
+	// accommodate the use of nested blocks
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		modName := d.Val()
-		if !strings.HasPrefix(modName, "load_") {
-			return d.Err("expected a leaf certificate loader module name prefixed with `load_`")
-		}
-		modName = strings.TrimPrefix(modName, "load_")
 		mod, err := caddyfile.UnmarshalModule(d, "tls.leaf_cert_loader."+modName)
 		if err != nil {
 			return d.WrapErr(err)
