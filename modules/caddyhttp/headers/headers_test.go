@@ -143,6 +143,28 @@ func TestHandler(t *testing.T) {
 				"Cache-Control": []string{"no-cache"},
 			},
 		},
+		{ // same as above, but checks that response headers are left alone when "Require" conditions are unmet
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						Headers: http.Header{
+							"Cache-Control": nil,
+						},
+					},
+					HeaderOps: &HeaderOps{
+						Add: http.Header{
+							"Cache-Control": []string{"no-cache"},
+						},
+					},
+				},
+			},
+			respHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+			expectedRespHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+		},
 		{
 			handler: Handler{
 				Response: &RespHeaderOps{

@@ -91,14 +91,14 @@ func (ctx *Context) OnCancel(f func()) {
 	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
 }
 
-// Filesystems returns a ref to the FilesystemMap.
+// FileSystems returns a ref to the FilesystemMap.
 // EXPERIMENTAL: This API is subject to change.
-func (ctx *Context) Filesystems() FileSystems {
+func (ctx *Context) FileSystems() FileSystems {
 	// if no config is loaded, we use a default filesystemmap, which includes the osfs
 	if ctx.cfg == nil {
-		return &filesystems.FilesystemMap{}
+		return &filesystems.FileSystemMap{}
 	}
-	return ctx.cfg.filesystems
+	return ctx.cfg.fileSystems
 }
 
 // Returns the active metrics registry for the context
@@ -277,6 +277,14 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 	return result, nil
 }
 
+// emitEvent is a small convenience method so the caddy core can emit events, if the event app is configured.
+func (ctx Context) emitEvent(name string, data map[string]any) Event {
+	if ctx.cfg == nil || ctx.cfg.eventEmitter == nil {
+		return Event{}
+	}
+	return ctx.cfg.eventEmitter.Emit(ctx, name, data)
+}
+
 // loadModulesFromSomeMap loads modules from val, which must be a type of map[string]any.
 // Depending on inlineModuleKey, it will be interpreted as either a ModuleMap (key is the module
 // name) or as a regular map (key is not the module name, and module name is defined inline).
@@ -385,6 +393,17 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		return nil, fmt.Errorf("module value cannot be null")
 	}
 
+	// if this is an app module, keep a reference to it,
+	// since submodules may need to reference it during
+	// provisioning (even though the parent app module
+	// may not be fully provisioned yet; this is the case
+	// with the tls app's automation policies, which may
+	// refer to the tls app to check if a global DNS
+	// module has been configured for DNS challenges)
+	if appModule, ok := val.(App); ok {
+		ctx.cfg.apps[id] = appModule
+	}
+
 	ctx.ancestry = append(ctx.ancestry, val)
 
 	if prov, ok := val.(Provisioner); ok {
@@ -417,6 +436,14 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	}
 
 	ctx.moduleInstances[id] = append(ctx.moduleInstances[id], val)
+
+	// if the loaded module happens to be an app that can emit events, store it so the
+	// core can have access to emit events without an import cycle
+	if ee, ok := val.(eventEmitter); ok {
+		if _, ok := ee.(App); ok {
+			ctx.cfg.eventEmitter = ee
+		}
+	}
 
 	return val, nil
 }
@@ -471,7 +498,6 @@ func (ctx Context) App(name string) (any, error) {
 	if appRaw != nil {
 		ctx.cfg.AppsRaw[name] = nil // allow GC to deallocate
 	}
-	ctx.cfg.apps[name] = modVal.(App)
 	return modVal, nil
 }
 
@@ -589,4 +615,12 @@ func (ctx *Context) WithValue(key, value any) Context {
 		cleanupFuncs:    ctx.cleanupFuncs,
 		exitFuncs:       ctx.exitFuncs,
 	}
+}
+
+// eventEmitter is a small interface that inverts dependencies for
+// the caddyevents package, so the core can emit events without an
+// import cycle (i.e. the caddy package doesn't have to import
+// the caddyevents package, which imports the caddy package).
+type eventEmitter interface {
+	Emit(ctx Context, eventName string, data map[string]any) Event
 }

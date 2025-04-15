@@ -191,7 +191,7 @@ func (st ServerType) Setup(
 	metrics, _ := options["metrics"].(*caddyhttp.Metrics)
 	for _, s := range servers {
 		if s.Metrics != nil {
-			metrics = cmp.Or[*caddyhttp.Metrics](metrics, &caddyhttp.Metrics{})
+			metrics = cmp.Or(metrics, &caddyhttp.Metrics{})
 			metrics = &caddyhttp.Metrics{
 				PerHost: metrics.PerHost || s.Metrics.PerHost,
 			}
@@ -350,7 +350,7 @@ func (st ServerType) Setup(
 
 				// avoid duplicates by sorting + compacting
 				sort.Strings(defaultLog.Exclude)
-				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact(defaultLog.Exclude)
 			}
 		}
 		// we may have not actually added anything, so remove if empty
@@ -1121,6 +1121,12 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting default SNI: %s vs. %s",
 						cps[i].DefaultSNI, cps[j].DefaultSNI)
 				}
+				if cps[i].FallbackSNI != "" &&
+					cps[j].FallbackSNI != "" &&
+					cps[i].FallbackSNI != cps[j].FallbackSNI {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting fallback SNI: %s vs. %s",
+						cps[i].FallbackSNI, cps[j].FallbackSNI)
+				}
 				if cps[i].ProtocolMin != "" &&
 					cps[j].ProtocolMin != "" &&
 					cps[i].ProtocolMin != cps[j].ProtocolMin {
@@ -1160,6 +1166,9 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 				}
 				if cps[i].DefaultSNI == "" && cps[j].DefaultSNI != "" {
 					cps[i].DefaultSNI = cps[j].DefaultSNI
+				}
+				if cps[i].FallbackSNI == "" && cps[j].FallbackSNI != "" {
+					cps[i].FallbackSNI = cps[j].FallbackSNI
 				}
 				if cps[i].ProtocolMin == "" && cps[j].ProtocolMin != "" {
 					cps[i].ProtocolMin = cps[j].ProtocolMin

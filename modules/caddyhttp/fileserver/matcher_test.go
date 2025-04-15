@@ -117,7 +117,7 @@ func TestFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fsmap:    &filesystems.FilesystemMap{},
+			fsmap:    &filesystems.FileSystemMap{},
 			Root:     "./testdata",
 			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
 		}
@@ -229,7 +229,7 @@ func TestPHPFileMatcher(t *testing.T) {
 		},
 	} {
 		m := &MatchFile{
-			fsmap:     &filesystems.FilesystemMap{},
+			fsmap:     &filesystems.FileSystemMap{},
 			Root:      "./testdata",
 			TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php"},
 			SplitPath: []string{".php"},
@@ -273,7 +273,7 @@ func TestPHPFileMatcher(t *testing.T) {
 func TestFirstSplit(t *testing.T) {
 	m := MatchFile{
 		SplitPath: []string{".php"},
-		fsmap:     &filesystems.FilesystemMap{},
+		fsmap:     &filesystems.FileSystemMap{},
 	}
 	actual, remainder := m.firstSplit("index.PHP/somewhere")
 	expected := "index.PHP"
