@@ -309,7 +309,9 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				}
 			}()
 
-			networkAddr, err := caddy.NewReplacer().ReplaceOrErr(upstream.Dial, true, true)
+			repl := caddy.NewReplacer()
+
+			networkAddr, err := repl.ReplaceOrErr(upstream.Dial, true, true)
 			if err != nil {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "invalid use of placeholders in dial address for active health checks"); c != nil {
 					c.Write(
@@ -344,14 +346,24 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				return
 			}
 			hostAddr := addr.JoinHostPort(0)
-			dialAddr := hostAddr
 			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
 				// this will be used as the Host portion of a http.Request URL, and
 				// paths to socket files would produce an error when creating URL,
 				// so use a fake Host value instead; unix sockets are usually local
 				hostAddr = "localhost"
 			}
-			err = h.doActiveHealthCheck(DialInfo{Network: addr.Network, Address: dialAddr}, hostAddr, networkAddr, upstream)
+
+			// Fill in the dial info for the upstream
+			// If the upstream is set, use that instead
+			dialInfoUpstream := upstream
+			if h.HealthChecks.Active.Upstream != "" {
+				dialInfoUpstream = &Upstream{
+					Dial: h.HealthChecks.Active.Upstream,
+				}
+			}
+			dialInfo, _ := dialInfoUpstream.fillDialInfo(repl)
+
+			err = h.doActiveHealthCheck(dialInfo, hostAddr, networkAddr, upstream)
 			if err != nil {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "active health check failed"); c != nil {
 					c.Write(
