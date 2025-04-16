@@ -633,12 +633,6 @@ func (st *ServerType) serversFromPairings(
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 				}
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
-
-			case "prefer_wildcard":
-				if srv.AutoHTTPS == nil {
-					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-				}
-				srv.AutoHTTPS.PreferWildcard = true
 			}
 		}
 
@@ -705,16 +699,6 @@ func (st *ServerType) serversFromPairings(
 			}
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
-
-		// collect all hosts that have a wildcard in them
-		wildcardHosts := []string{}
-		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-		}
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
 		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
@@ -839,18 +823,6 @@ func (st *ServerType) serversFromPairings(
 				if addr.Scheme == "https" ||
 					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
-				}
-
-				// If prefer wildcard is enabled, then we add hosts that are
-				// already covered by the wildcard to the skip list
-				if addressQualifiesForTLS && srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard {
-					baseDomain := addr.Host
-					if idx := strings.Index(baseDomain, "."); idx != -1 {
-						baseDomain = baseDomain[idx+1:]
-					}
-					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
-						srv.AutoHTTPS.SkipCerts = append(srv.AutoHTTPS.SkipCerts, addr.Host)
-					}
 				}
 
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we

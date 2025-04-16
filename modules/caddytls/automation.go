@@ -114,6 +114,14 @@ type AutomationPolicy struct {
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ManagersRaw []json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
 
+	// If true, subjects covered by this automation policy will be
+	// granted their own certificates even if a wildcard certificate
+	// that covers them is being managed. (By default, managed wildcard
+	// certificates will be used for applicable subdomains instead.)
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	IndividualCertificates bool `json:"individual_certificates,omitempty"`
+
 	// If true, certificates will be requested with MustStaple. Not all
 	// CAs support this, and there are potentially serious consequences
 	// of enabling this feature without proper threat modeling.
