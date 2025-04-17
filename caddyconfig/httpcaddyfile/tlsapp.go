@@ -92,11 +92,8 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	// collect all hosts that have a wildcard in them, and arent HTTP
-	wildcardHosts := []string{}
-	// hosts that have been explicitly marked to be automated,
-	// even if covered by another wildcard
-	forcedAutomatedNames := make(map[string]struct{})
+	// collect all hosts that have a wildcard in them, and aren't HTTP
+	var wildcardHosts []string
 	for _, p := range pairings {
 		var addresses []string
 		for _, addressWithProtocols := range p.addressesWithProtocols {
@@ -154,10 +151,8 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// collect hosts that are forced to be automated
-			if _, ok := sblock.pile["tls.force_automate"]; ok {
-				for _, host := range sblockHosts {
-					forcedAutomatedNames[host] = struct{}{}
-				}
+			if _, ok := sblock.pile["tls.no_wildcard"]; ok {
+				ap.IndividualCertificates = true
 			}
 
 			// reuse private keys tls
@@ -441,12 +436,6 @@ func (st ServerType) buildTLSApp(
 			}
 		}
 	}
-	for name := range forcedAutomatedNames {
-		if slices.Contains(al, name) {
-			continue
-		}
-		al = append(al, name)
-	}
 	slices.Sort(al) // to stabilize the adapt output
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
@@ -710,6 +699,7 @@ outer:
 			if reflect.DeepEqual(aps[i].IssuersRaw, aps[j].IssuersRaw) &&
 				reflect.DeepEqual(aps[i].ManagersRaw, aps[j].ManagersRaw) &&
 				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
+				aps[i].IndividualCertificates == aps[j].IndividualCertificates &&
 				aps[i].MustStaple == aps[j].MustStaple &&
 				aps[i].KeyType == aps[j].KeyType &&
 				aps[i].OnDemand == aps[j].OnDemand &&

@@ -749,7 +749,7 @@ func (st *ServerType) serversFromPairings(
 
 			// collect hosts that are forced to be automated
 			forceAutomatedNames := make(map[string]struct{})
-			if _, ok := sblock.pile["tls.force_automate"]; ok {
+			if _, ok := sblock.pile["tls.no_wildcard"]; ok {
 				for _, host := range hosts {
 					forceAutomatedNames[host] = struct{}{}
 				}
