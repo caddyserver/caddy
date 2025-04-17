@@ -28,7 +28,6 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
@@ -231,15 +230,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		for _, srvProtocol := range srv.Protocols {
 			srvProtocolsUnique[srvProtocol] = struct{}{}
 		}
-		_, h1ok := srvProtocolsUnique["h1"]
-		_, h2ok := srvProtocolsUnique["h2"]
-		_, h2cok := srvProtocolsUnique["h2c"]
-
-		// the Go standard library does not let us serve only HTTP/2 using
-		// http.Server; we would probably need to write our own server
-		if !h1ok && (h2ok || h2cok) {
-			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
-		}
 
 		if srv.ListenProtocols != nil {
 			if len(srv.ListenProtocols) != len(srv.Listen) {
@@ -271,19 +261,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 								lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
 							}
 						}
-					}
-
-					lnProtocolsIncludeUnique := map[string]struct{}{}
-					for _, lnProtocol := range lnProtocolsInclude {
-						lnProtocolsIncludeUnique[lnProtocol] = struct{}{}
-					}
-					_, h1ok := lnProtocolsIncludeUnique["h1"]
-					_, h2ok := lnProtocolsIncludeUnique["h2"]
-					_, h2cok := lnProtocolsIncludeUnique["h2c"]
-
-					// check if any listener protocols contain h2 or h2c without h1
-					if !h1ok && (h2ok || h2cok) {
-						return fmt.Errorf("server %s, listener %d: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
 					}
 
 					srv.ListenProtocols[i] = lnProtocolsInclude
@@ -461,11 +438,8 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
-			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, ConnCtxKey, c)
-			},
+			Protocols:         new(http.Protocols),
 		}
-		h2server := new(http2.Server)
 
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
@@ -486,7 +460,24 @@ func (app *App) Start() error {
 					}
 				}
 			}
-		} else {
+		}
+
+		// configure the http versions the server will serve
+		if srv.protocol("h1") {
+			srv.server.Protocols.SetHTTP1(true)
+		}
+
+		if srv.protocol("h2") || srv.protocol("h2c") {
+			// skip setting h2 because if NextProtos is present, it's list of alpn versions will take precedence.
+			// it will always be present because http2.ConfigureServer will populate that field
+			// enabling h2c because some listener wrapper will wrap the connection that is no longer *tls.Conn
+			// However, we need to handle the case that if the connection is h2c but h2c is not enabled. We identify
+			// this type of connection by checking if it's behind a TLS listener wrapper or if it implements tls.ConnectionState.
+			srv.server.Protocols.SetUnencryptedHTTP2(true)
+			// when h2c is enabled but h2 disabled, we already removed h2 from NextProtos
+			// the handshake will never succeed with h2
+			// http2.ConfigureServer will enable the server to handle both h2 and h2c
+			h2server := new(http2.Server)
 			//nolint:errcheck
 			http2.ConfigureServer(srv.server, h2server)
 		}
@@ -495,11 +486,6 @@ func (app *App) Start() error {
 		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 		srv.configureServer(srv.server)
-
-		// enable H2C if configured
-		if srv.protocol("h2c") {
-			srv.server.Handler = h2c.NewHandler(srv, h2server)
-		}
 
 		for lnIndex, lnAddr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(lnAddr)
@@ -560,15 +546,11 @@ func (app *App) Start() error {
 						ln = srv.listenerWrappers[i].WrapListener(ln)
 					}
 
-					// handle http2 if use tls listener wrapper
-					if h2ok {
-						http2lnWrapper := &http2Listener{
-							Listener: ln,
-							server:   srv.server,
-							h2server: h2server,
-						}
-						srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
-						ln = http2lnWrapper
+					// check if the connection is h2c
+					ln = &http2Listener{
+						useTLS:   useTLS,
+						Listener: ln,
+						logger:   app.logger,
 					}
 
 					// if binding to port 0, the OS chooses a port for us;
@@ -586,11 +568,8 @@ func (app *App) Start() error {
 
 					srv.listeners = append(srv.listeners, ln)
 
-					// enable HTTP/1 if configured
-					if h1ok {
-						//nolint:errcheck
-						go srv.server.Serve(ln)
-					}
+					//nolint:errcheck
+					go srv.server.Serve(ln)
 				}
 
 				if h2ok && !useTLS {
@@ -723,25 +702,12 @@ func (app *App) Stop() error {
 				zap.Strings("addresses", server.Listen))
 		}
 	}
-	stopH2Listener := func(server *Server) {
-		defer finishedShutdown.Done()
-		startedShutdown.Done()
-
-		for i, s := range server.h2listeners {
-			if err := s.Shutdown(ctx); err != nil {
-				app.logger.Error("http2 listener shutdown",
-					zap.Error(err),
-					zap.Int("index", i))
-			}
-		}
-	}
 
 	for _, server := range app.Servers {
-		startedShutdown.Add(3)
-		finishedShutdown.Add(3)
+		startedShutdown.Add(2)
+		finishedShutdown.Add(2)
 		go stopServer(server)
 		go stopH3Server(server)
-		go stopH2Listener(server)
 	}
 
 	// block until all the goroutines have been run by the scheduler;

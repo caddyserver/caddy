@@ -1,102 +1,87 @@
 package caddyhttp
 
 import (
-	"context"
 	"crypto/tls"
-	weakrand "math/rand"
+	"go.uber.org/zap"
+	"io"
 	"net"
-	"net/http"
-	"sync/atomic"
-	"time"
 
 	"golang.org/x/net/http2"
 )
 
-// http2Listener wraps the listener to solve the following problems:
-// 1. server h2 natively without using h2c hack when listener handles tls connection but
-// don't return *tls.Conn
-// 2. graceful shutdown. the shutdown logic is copied from stdlib http.Server, it's an extra maintenance burden but
-// whatever, the shutdown logic maybe extracted to be used with h2c graceful shutdown. http2.Server supports graceful shutdown
-// sending GO_AWAY frame to connected clients, but doesn't track connection status. It requires explicit call of http2.ConfigureServer
-type http2Listener struct {
-	cnt uint64
-	net.Listener
-	server   *http.Server
-	h2server *http2.Server
-}
-
-type connectionStateConn interface {
-	net.Conn
+type connectionStater interface {
 	ConnectionState() tls.ConnectionState
 }
 
+// http2Listener wraps the listener to solve the following problems:
+// 1. prevent genuine h2c connections from succeeding if h2c is not enabled
+// and the connection doesn't implment connectionStater or the resulting NegotiatedProtocol
+// isn't http2.
+// This does allow a connection to pass as tls enabled even if it's not, listener wrappers
+// can do this.
+// 2. After wrapping the connection doesn't implement connectionStater, emit a warning so that listener
+// wrapper authors will hopefully implement it.
+type http2Listener struct {
+	useTLS bool
+	net.Listener
+	logger *zap.Logger
+}
+
 func (h *http2Listener) Accept() (net.Conn, error) {
-	for {
-		conn, err := h.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-
-		if csc, ok := conn.(connectionStateConn); ok {
-			// *tls.Conn will return empty string because it's only populated after handshake is complete
-			if csc.ConnectionState().NegotiatedProtocol == http2.NextProtoTLS {
-				go h.serveHttp2(csc)
-				continue
-			}
-		}
-
-		return conn, nil
+	conn, err := h.Listener.Accept()
+	if err != nil {
+		return nil, err
 	}
+
+	if h.useTLS {
+		// emit a warning
+		if _, ok := conn.(connectionStater); !ok {
+			h.logger.Warn("tls is enabled, but listener wrapper returns a connection that doesn't implement connectionStater")
+		}
+		return &http2Conn{
+			idx:  len(http2.ClientPreface),
+			Conn: conn,
+		}, nil
+	}
+
+	if _, ok := conn.(connectionStater); ok {
+		h.logger.Warn("tls is disabled, but listener wrapper returns a connection that implements connectionStater")
+		return &http2Conn{
+			idx:  len(http2.ClientPreface),
+			Conn: conn,
+		}, nil
+	}
+
+	return &http2Conn{
+		Conn: conn,
+	}, nil
 }
 
-func (h *http2Listener) serveHttp2(csc connectionStateConn) {
-	atomic.AddUint64(&h.cnt, 1)
-	h.runHook(csc, http.StateNew)
-	defer func() {
-		csc.Close()
-		atomic.AddUint64(&h.cnt, ^uint64(0))
-		h.runHook(csc, http.StateClosed)
-	}()
-	h.h2server.ServeConn(csc, &http2.ServeConnOpts{
-		Context:    h.server.ConnContext(context.Background(), csc),
-		BaseConfig: h.server,
-		Handler:    h.server.Handler,
-	})
+type http2Conn struct {
+	// check h2 preface if it's smaller that the preface
+	idx int
+	// log if one such connection is detected
+	logger *zap.Logger
+	net.Conn
 }
 
-const shutdownPollIntervalMax = 500 * time.Millisecond
-
-func (h *http2Listener) Shutdown(ctx context.Context) error {
-	pollIntervalBase := time.Millisecond
-	nextPollInterval := func() time.Duration {
-		// Add 10% jitter.
-		//nolint:gosec
-		interval := pollIntervalBase + time.Duration(weakrand.Intn(int(pollIntervalBase/10)))
-		// Double and clamp for next time.
-		pollIntervalBase *= 2
-		if pollIntervalBase > shutdownPollIntervalMax {
-			pollIntervalBase = shutdownPollIntervalMax
-		}
-		return interval
+func (c *http2Conn) Read(p []byte) (int, error) {
+	if c.idx >= len(http2.ClientPreface) {
+		return c.Conn.Read(p)
 	}
-
-	timer := time.NewTimer(nextPollInterval())
-	defer timer.Stop()
-	for {
-		if atomic.LoadUint64(&h.cnt) == 0 {
-			return nil
+	n, err := c.Conn.Read(p)
+	for i := range n {
+		// mismatch
+		if p[i] != http2.ClientPreface[c.idx] {
+			c.idx = len(http2.ClientPreface)
+			return n, err
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
-			timer.Reset(nextPollInterval())
+		c.idx++
+		if c.idx == len(http2.ClientPreface) {
+			c.logger.Warn("h2c connection detected, but h2c is not enabled")
+			_ = c.Conn.Close()
+			return 0, io.EOF
 		}
 	}
-}
-
-func (h *http2Listener) runHook(conn net.Conn, state http.ConnState) {
-	if h.server.ConnState != nil {
-		h.server.ConnState(conn, state)
-	}
+	return n, err
 }

@@ -245,10 +245,9 @@ type Server struct {
 	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -264,18 +263,6 @@ type Server struct {
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
-	if r.TLS == nil {
-		// not all requests have a conn (like virtual requests) - see #5698
-		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStateConn); ok {
-				r.TLS = new(tls.ConnectionState)
-				*r.TLS = csc.ConnectionState()
-			}
-		}
-	}
-
 	w.Header().Set("Server", "Caddy")
 
 	// advertise HTTP/3, if enabled
@@ -1080,6 +1067,8 @@ const (
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
 	// For referencing underlying net.Conn
+	// DEPRECATED: Not used anymore. To refer to the underlying connection, implement a middleware plugin
+	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
 
 	// For tracking whether the client is a trusted proxy
