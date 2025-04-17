@@ -370,7 +370,9 @@ func (st ServerType) buildTLSApp(
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName != "" {
+				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			}
 		}
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)

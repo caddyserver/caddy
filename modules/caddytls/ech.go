@@ -138,7 +138,6 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 	// all existing configs are now loaded; see if we need to make any new ones
 	// based on the input configuration, and also mark the most recent one(s) as
 	// current/active, so they can be used for ECH retries
-
 	for _, cfg := range ech.Configs {
 		publicName := strings.ToLower(strings.TrimSpace(cfg.PublicName))
 

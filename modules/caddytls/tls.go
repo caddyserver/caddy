@@ -341,7 +341,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 		// outer names should have certificates to reduce client brittleness
 		for _, outerName := range outerNames {
+			if outerName == "" {
+				continue
+			}
 			if !t.HasCertificateForSubject(outerName) {
+				if t.automateNames == nil {
+					t.automateNames = make(map[string]struct{})
+				}
 				t.automateNames[outerName] = struct{}{}
 			}
 		}
