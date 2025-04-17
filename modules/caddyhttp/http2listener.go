@@ -2,10 +2,10 @@ package caddyhttp
 
 import (
 	"crypto/tls"
-	"go.uber.org/zap"
 	"io"
 	"net"
 
+	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
 
