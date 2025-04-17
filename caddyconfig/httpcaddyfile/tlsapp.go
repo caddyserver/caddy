@@ -92,7 +92,7 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	// collect all hosts that have a wildcard in them, and arent HTTP
+	// collect all hosts that have a wildcard in them, and aren't HTTP
 	wildcardHosts := []string{}
 	// hosts that have been explicitly marked to be automated,
 	// even if covered by another wildcard

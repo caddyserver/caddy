@@ -1,0 +1,7 @@
+[codespell]
+# Ref: https://github.com/codespell-project/codespell#using-a-config-file
+skip = .git*,go.sum,.codespellrc,.golangci.yml
+check-hidden = true
+# ignore-regex = 
+# "idiosyncracies" or reflections of some config values like pass_thru
+ignore-words-list = ot,te,ond,fo,tread,noes,pass-thru,pass-thrus,keep-alives
