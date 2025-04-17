@@ -439,6 +439,9 @@ func (app *App) Start() error {
 			Handler:           srv,
 			ErrorLog:          serverLogger,
 			Protocols:         new(http.Protocols),
+			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+				return context.WithValue(ctx, ConnCtxKey, c)
+			},
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
