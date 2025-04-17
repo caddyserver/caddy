@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -143,6 +144,10 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 	qs.Set("server_name", hello.ServerName)
 	qs.Set("signature_schemes", strings.Join(sigs, ","))
 	qs.Set("cipher_suites", strings.Join(suites, ","))
+	remoteIP, _, err := net.SplitHostPort(hello.Conn.RemoteAddr().String())
+	if err == nil && remoteIP != "" {
+		qs.Set("remote_ip", remoteIP)
+	}
 	parsed.RawQuery = qs.Encode()
 
 	req, err := http.NewRequestWithContext(hcg.ctx, http.MethodGet, parsed.String(), nil)
