@@ -92,11 +92,9 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	// collect all hosts that have a wildcard in them, and arent HTTP
-	wildcardHosts := []string{}
-	// hosts that have been explicitly marked to be automated,
-	// even if covered by another wildcard
-	forcedAutomatedNames := make(map[string]struct{})
+	var wildcardHosts []string                        // collect all hosts that have a wildcard in them, and aren't HTTP
+	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
+
 	for _, p := range pairings {
 		var addresses []string
 		for _, addressWithProtocols := range p.addressesWithProtocols {
@@ -153,7 +151,7 @@ func (st ServerType) buildTLSApp(
 				ap.OnDemand = true
 			}
 
-			// collect hosts that are forced to be automated
+			// collect hosts that are forced to have certs automated for their specific name
 			if _, ok := sblock.pile["tls.force_automate"]; ok {
 				for _, host := range sblockHosts {
 					forcedAutomatedNames[host] = struct{}{}
@@ -375,7 +373,9 @@ func (st ServerType) buildTLSApp(
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName != "" {
+				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			}
 		}
 		if tlsApp.Automation == nil {
 			tlsApp.Automation = new(caddytls.AutomationConfig)

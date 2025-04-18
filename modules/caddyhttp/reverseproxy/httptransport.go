@@ -652,7 +652,7 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 			return nil, fmt.Errorf("getting tls app: %v", err)
 		}
 		tlsApp := tlsAppIface.(*caddytls.TLS)
-		err = tlsApp.Manage([]string{t.ClientCertificateAutomate})
+		err = tlsApp.Manage(map[string]struct{}{t.ClientCertificateAutomate: {}})
 		if err != nil {
 			return nil, fmt.Errorf("managing client certificate: %v", err)
 		}

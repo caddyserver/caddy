@@ -131,13 +131,7 @@ shadowed.example.com {
 						{
 							"match": {
 								"sni": [
-									"automated1.example.com"
-								]
-							}
-						},
-						{
-							"match": {
-								"sni": [
+									"automated1.example.com",
 									"automated2.example.com"
 								]
 							}
