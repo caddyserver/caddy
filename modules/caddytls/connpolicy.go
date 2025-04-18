@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/mholt/acmez/v3"
@@ -459,6 +460,14 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.DefaultSNI == "" &&
 		p.FallbackSNI == "" &&
 		p.InsecureSecretsLog == ""
+}
+
+// SettingsEmpty returns true if p's settings (fields
+// except the matchers) are the same as q.
+func (p ConnectionPolicy) SettingsEqual(q ConnectionPolicy) bool {
+	p.MatchersRaw = nil
+	q.MatchersRaw = nil
+	return reflect.DeepEqual(p, q)
 }
 
 // UnmarshalCaddyfile sets up the ConnectionPolicy from Caddyfile tokens. Syntax:

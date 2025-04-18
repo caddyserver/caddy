@@ -1,10 +1,10 @@
 automated1.example.com {
-	tls no_wildcard
+	tls force_automate
 	respond "Automated!"
 }
 
 automated2.example.com {
-	tls no_wildcard
+	tls force_automate
 	respond "Automated!"
 }
 
@@ -131,13 +131,7 @@ shadowed.example.com {
 						{
 							"match": {
 								"sni": [
-									"automated1.example.com"
-								]
-							}
-						},
-						{
-							"match": {
-								"sni": [
+									"automated1.example.com",
 									"automated2.example.com"
 								]
 							}
@@ -161,29 +155,16 @@ shadowed.example.com {
 		},
 		"tls": {
 			"certificates": {
+				"automate": [
+					"automated1.example.com",
+					"automated2.example.com"
+				],
 				"load_files": [
 					{
 						"certificate": "cert.pem",
 						"key": "key.pem",
 						"tags": [
 							"cert0"
-						]
-					}
-				]
-			},
-			"automation": {
-				"policies": [
-					{
-						"subjects": [
-							"automated1.example.com",
-							"automated2.example.com"
-						],
-						"individual_certificates": true
-					},
-					{
-						"subjects": [
-							"shadowed.example.com",
-							"*.example.com"
 						]
 					}
 				]

@@ -114,16 +114,6 @@ type AutomationPolicy struct {
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ManagersRaw []json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
 
-	// By default, if Caddy is managing a wildcard certificate, that
-	// certificate will be used for applicable subdomains instead of
-	// managing individual certificates for them. However, if this
-	// option is set to true, subjects included in this automation
-	// policy will be granted their own certificates even if there is
-	// a matching wildcard certificate being managed.
-	//
-	// EXPERIMENTAL: Subject to change or removal.
-	IndividualCertificates bool `json:"individual_certificates,omitempty"`
-
 	// If true, certificates will be requested with MustStaple. Not all
 	// CAs support this, and there are potentially serious consequences
 	// of enabling this feature without proper threat modeling.

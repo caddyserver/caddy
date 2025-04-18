@@ -56,8 +56,10 @@ type TLS struct {
 	//
 	// The "automate" certificate loader module can be used to
 	// specify a list of subjects that need certificates to be
-	// managed automatically. The first matching automation
-	// policy will be applied to manage the certificate(s).
+	// managed automatically, including subdomains that may
+	// already be covered by a managed wildcard certificate.
+	// The first matching automation policy will be used
+	// to manage automated certificate(s).
 	//
 	// All loaded certificates get pooled
 	// into the same cache and may be used to complete TLS
@@ -534,11 +536,13 @@ func (t *TLS) Manage(subjects map[string]struct{}) error {
 		ap := t.getAutomationPolicyForName(subj)
 		// by default, if a wildcard that covers the subj is also being
 		// managed, either by a previous call to Manage or by this one,
-		// prefer using that for its subordinates; but users can disable
-		// this by setting OwnCertificates to require that each domain
-		// has its own certificates regardless of wildcard coverage
-		if !ap.IndividualCertificates && t.managingWildcardFor(subj, subjects) {
-			continue
+		// prefer using that over individual certs for its subdomains;
+		// but users can disable this and force getting a certificate for
+		// subdomains by adding the name to the 'automate' cert loader
+		if t.managingWildcardFor(subj, subjects) {
+			if _, ok := t.automateNames[subj]; !ok {
+				continue
+			}
 		}
 		policyToNames[ap] = append(policyToNames[ap], subj)
 	}
