@@ -18,10 +18,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -51,6 +53,25 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 9fNwfEi+OoXR6s+upSKobCmLGLGi9Na5s5g=
 -----END CERTIFICATE-----`)
 
+	clientCert2 := []byte(`-----BEGIN CERTIFICATE-----
+MIIChTCCAe4CCQCyNNPmOyATOjANBgkqhkiG9w0BAQsFADCBhjELMAkGA1UEBhMC
+WFgxEjAQBgNVBAgMCVN0YXRlTmFtZTERMA8GA1UEBwwIQ2l0eU5hbWUxFDASBgNV
+BAoMC0NvbXBhbnlOYW1lMRswGQYDVQQLDBJDb21wYW55U2VjdGlvbk5hbWUxHTAb
+BgNVBAMMFENvbW1vbk5hbWVPckhvc3RuYW1lMB4XDTI1MDMyMTAxMDEzM1oXDTM1
+MDMxOTAxMDEzM1owgYYxCzAJBgNVBAYTAlhYMRIwEAYDVQQIDAlTdGF0ZU5hbWUx
+ETAPBgNVBAcMCENpdHlOYW1lMRQwEgYDVQQKDAtDb21wYW55TmFtZTEbMBkGA1UE
+CwwSQ29tcGFueVNlY3Rpb25OYW1lMR0wGwYDVQQDDBRDb21tb25OYW1lT3JIb3N0
+bmFtZTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAxPqTvtkDvNoqtWnRYbq5
+Itpa7/XK5oRfjva4beCYh1DRiprCOsdUgso9mug6Uq9Dt+kDxIA88B5my2gMfiLc
+BLIC0SaG/wVayGN9uCL+kr751BfQEioBjmtn/d+VoSTjygm54CV948Lu6MeJ0cLc
+r1PTvwpPt7zqYkD5nZ+hzzcCAwEAATANBgkqhkiG9w0BAQsFAAOBgQAmuFJhJgiI
+PPNJ3ryb15Hnlz1TtLYcgoxnGI8u7lNX/P5HMjiVhv53ccYIvI9OUDLkQchuGCpy
+MxV7+5zO8oWJzerFqu2pXjXeJf+28NpfVVd7l8R8Y2LzQYnDcqm1wNsj4CloEW01
+OoL+ttSPjADNgrxLWOAvjD4UZQ6zKgkpQw==
+-----END CERTIFICATE-----`)
+
+	pemToBase64DerReplacer := strings.NewReplacer("-----BEGIN CERTIFICATE-----", "", "-----END CERTIFICATE-----", "", "\n", "")
+
 	block, _ := pem.Decode(clientCert)
 	if block == nil {
 		t.Fatalf("failed to decode PEM certificate")
@@ -61,12 +82,22 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		t.Fatalf("failed to decode PEM certificate: %v", err)
 	}
 
+	block, _ = pem.Decode(clientCert2)
+	if block == nil {
+		t.Fatalf("failed to decode PEM certificate")
+	}
+
+	cert2, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("failed to decode PEM certificate: %v", err)
+	}
+
 	req.TLS = &tls.ConnectionState{
 		Version:                    tls.VersionTLS13,
 		HandshakeComplete:          true,
 		ServerName:                 "example.com",
 		CipherSuite:                tls.TLS_AES_256_GCM_SHA384,
-		PeerCertificates:           []*x509.Certificate{cert},
+		PeerCertificates:           []*x509.Certificate{cert, cert2},
 		NegotiatedProtocol:         "h2",
 		NegotiatedProtocolIsMutual: true,
 	}
@@ -217,7 +248,15 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		},
 		{
 			get:    "http.request.tls.client.certificate_pem",
-			expect: string(clientCert) + "\n", // returned value comes with a newline appended to it
+			expect: string(clientCert) + "\n",
+		},
+		{
+			get:    "http.request.tls.client.certificate_der_base64",
+			expect: pemToBase64DerReplacer.Replace(string(clientCert)),
+		},
+		{
+			get:    "http.request.tls.client.certificate_chain_der_base64",
+			expect: base64.StdEncoding.EncodeToString([]byte(pemToBase64DerReplacer.Replace(string(clientCert)) + "\n" + pemToBase64DerReplacer.Replace(string(clientCert2)))),
 		},
 	} {
 		actual, got := repl.GetString(tc.get)
