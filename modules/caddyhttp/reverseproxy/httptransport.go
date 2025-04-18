@@ -276,6 +276,18 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, DialError{err}
 		}
 
+		// set read/write buffer, enable nagle's algorithm
+		if srb, ok := conn.(interface{ SetReadBuffer(int) error }); ok {
+			_ = srb.SetReadBuffer(4096)
+
+		}
+		if swb, ok := conn.(interface{ SetWriteBuffer(int) error }); ok {
+			_ = swb.SetWriteBuffer(4096)
+		}
+		if snd, ok := conn.(interface{ SetNoDelay(bool) error }); ok {
+			_ = snd.SetNoDelay(false)
+		}
+
 		if h.ProxyProtocol != "" {
 			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
 			if !ok {
