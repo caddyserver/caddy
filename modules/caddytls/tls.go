@@ -33,6 +33,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 )
 
@@ -55,8 +56,10 @@ type TLS struct {
 	//
 	// The "automate" certificate loader module can be used to
 	// specify a list of subjects that need certificates to be
-	// managed automatically. The first matching automation
-	// policy will be applied to manage the certificate(s).
+	// managed automatically, including subdomains that may
+	// already be covered by a managed wildcard certificate.
+	// The first matching automation policy will be used
+	// to manage automated certificate(s).
 	//
 	// All loaded certificates get pooled
 	// into the same cache and may be used to complete TLS
@@ -123,7 +126,7 @@ type TLS struct {
 	dns    any             // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 
 	certificateLoaders []CertificateLoader
-	automateNames      []string
+	automateNames      map[string]struct{}
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
@@ -218,12 +221,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 			// special case; these will be loaded in later using our automation facilities,
 			// which we want to avoid doing during provisioning
 			if automateNames, ok := modIface.(*AutomateLoader); ok && automateNames != nil {
-				repl := caddy.NewReplacer()
-				subjects := make([]string, len(*automateNames))
-				for i, sub := range *automateNames {
-					subjects[i] = repl.ReplaceAll(sub, "")
+				if t.automateNames == nil {
+					t.automateNames = make(map[string]struct{})
 				}
-				t.automateNames = append(t.automateNames, subjects...)
+				repl := caddy.NewReplacer()
+				for _, sub := range *automateNames {
+					t.automateNames[repl.ReplaceAll(sub, "")] = struct{}{}
+				}
 			} else {
 				return fmt.Errorf("loading certificates with 'automate' requires array of strings, got: %T", modIface)
 			}
@@ -283,7 +287,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("provisioning default public automation policy: %v", err)
 	}
-	for _, n := range t.automateNames {
+	for n := range t.automateNames {
 		// if any names specified by the "automate" loader do not qualify for a public
 		// certificate, we should initialize a default internal automation policy
 		// (but we don't want to do this unnecessarily, since it may prompt for password!)
@@ -339,8 +343,14 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 		// outer names should have certificates to reduce client brittleness
 		for _, outerName := range outerNames {
+			if outerName == "" {
+				continue
+			}
 			if !t.HasCertificateForSubject(outerName) {
-				t.automateNames = append(t.automateNames, outerNames...)
+				if t.automateNames == nil {
+					t.automateNames = make(map[string]struct{})
+				}
+				t.automateNames[outerName] = struct{}{}
 			}
 		}
 	}
@@ -449,7 +459,8 @@ func (t *TLS) Cleanup() error {
 		// app instance (which is being stopped) that are not managed or loaded by the
 		// new app instance (which just started), and remove them from the cache
 		var noLongerManaged []certmagic.SubjectIssuer
-		var reManage, noLongerLoaded []string
+		var noLongerLoaded []string
+		reManage := make(map[string]struct{})
 		for subj, currentIssuerKey := range t.managing {
 			// It's a bit nuanced: managed certs can sometimes be different enough that we have to
 			// swap them out for a different one, even if they are for the same subject/domain.
@@ -467,7 +478,7 @@ func (t *TLS) Cleanup() error {
 
 				// then, if the next app is managing a cert for this name, but with a different issuer, re-manage it
 				if ok && nextIssuerKey != currentIssuerKey {
-					reManage = append(reManage, subj)
+					reManage[subj] = struct{}{}
 				}
 			}
 		}
@@ -488,7 +499,7 @@ func (t *TLS) Cleanup() error {
 		if err := nextTLSApp.Manage(reManage); err != nil {
 			if c := t.logger.Check(zapcore.ErrorLevel, "re-managing unloaded certificates with new config"); c != nil {
 				c.Write(
-					zap.Strings("subjects", reManage),
+					zap.Strings("subjects", internal.MaxSizeSubjectsListForLog(reManage, 1000)),
 					zap.Error(err),
 				)
 			}
@@ -509,17 +520,31 @@ func (t *TLS) Cleanup() error {
 	return nil
 }
 
-// Manage immediately begins managing names according to the
-// matching automation policy.
-func (t *TLS) Manage(names []string) error {
+// Manage immediately begins managing subjects according to the
+// matching automation policy. The subjects are given in a map
+// to prevent duplication and also because quick lookups are
+// needed to assess wildcard coverage, if any, depending on
+// certain config parameters (with lots of subjects, computing
+// wildcard coverage over a slice can be highly inefficient).
+func (t *TLS) Manage(subjects map[string]struct{}) error {
 	// for a large number of names, we can be more memory-efficient
 	// by making only one certmagic.Config for all the names that
 	// use that config, rather than calling ManageAsync once for
 	// every name; so first, bin names by AutomationPolicy
 	policyToNames := make(map[*AutomationPolicy][]string)
-	for _, name := range names {
-		ap := t.getAutomationPolicyForName(name)
-		policyToNames[ap] = append(policyToNames[ap], name)
+	for subj := range subjects {
+		ap := t.getAutomationPolicyForName(subj)
+		// by default, if a wildcard that covers the subj is also being
+		// managed, either by a previous call to Manage or by this one,
+		// prefer using that over individual certs for its subdomains;
+		// but users can disable this and force getting a certificate for
+		// subdomains by adding the name to the 'automate' cert loader
+		if t.managingWildcardFor(subj, subjects) {
+			if _, ok := t.automateNames[subj]; !ok {
+				continue
+			}
+		}
+		policyToNames[ap] = append(policyToNames[ap], subj)
 	}
 
 	// now that names are grouped by policy, we can simply make one
@@ -530,7 +555,7 @@ func (t *TLS) Manage(names []string) error {
 		if err != nil {
 			const maxNamesToDisplay = 100
 			if len(names) > maxNamesToDisplay {
-				names = append(names[:maxNamesToDisplay], fmt.Sprintf("(%d more...)", len(names)-maxNamesToDisplay))
+				names = append(names[:maxNamesToDisplay], fmt.Sprintf("(and %d more...)", len(names)-maxNamesToDisplay))
 			}
 			return fmt.Errorf("automate: manage %v: %v", names, err)
 		}
@@ -553,6 +578,43 @@ func (t *TLS) Manage(names []string) error {
 	}
 
 	return nil
+}
+
+// managingWildcardFor returns true if the app is managing a certificate that covers that
+// subject name (including consideration of wildcards), either from its internal list of
+// names that it IS managing certs for, or from the otherSubjsToManage which includes names
+// that WILL be managed.
+func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]struct{}) bool {
+	// TODO: we could also consider manually-loaded certs using t.HasCertificateForSubject(),
+	// but that does not account for how manually-loaded certs may be restricted as to which
+	// hostnames or ClientHellos they can be used with by tags, etc; I don't *think* anyone
+	// necessarily wants this anyway, but I thought I'd note this here for now (if we did
+	// consider manually-loaded certs, we'd probably want to rename the method since it
+	// wouldn't be just about managed certs anymore)
+
+	// IP addresses must match exactly
+	if ip := net.ParseIP(subj); ip != nil {
+		_, managing := t.managing[subj]
+		return managing
+	}
+
+	// replace labels of the domain with wildcards until we get a match
+	labels := strings.Split(subj, ".")
+	for i := range labels {
+		if labels[i] == "*" {
+			continue
+		}
+		labels[i] = "*"
+		candidate := strings.Join(labels, ".")
+		if _, ok := t.managing[candidate]; ok {
+			return true
+		}
+		if _, ok := otherSubjsToManage[candidate]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // RegisterServerNames registers the provided DNS names with the TLS app.
