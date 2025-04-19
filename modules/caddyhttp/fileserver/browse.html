@@ -397,7 +397,8 @@ td:last-child {
 	font-size: 14px;
 }
 
-.grid .size {
+.grid .size,
+.grid .timestamp {
 	font-size: 12px;
 	margin-top: .5em;
 	color: #496a84;
@@ -606,6 +607,21 @@ td .go-up {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(16em, 1fr));
 	gap: 2px;
+}
+
+.listing.grid #summary {
+    grid-column: 1 / -1;
+    gap: 1rem;
+    margin-bottom: 10px;
+    background-color: inherit;
+    width: 100%;
+    white-space: nowrap;
+    z-index: 2;
+    text-transform: uppercase;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 1em 5%;
 }
 
 .grid .entry {
@@ -831,12 +847,100 @@ footer {
 				</div>
 				<div class='listing{{if eq .Layout "grid"}} grid{{end}}'>
 				{{- if eq .Layout "grid"}}
+                    <div id="summary" aria-describedby="summary">
+                        {{- if and (eq .Sort "namedirfirst") (ne .Order "desc")}}
+                        <a href="?sort=namedirfirst&order=desc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M18 14l-6 -6l-6 6h12"/>
+                            </svg>
+                        </a>
+                        {{- else if and (eq .Sort "namedirfirst") (ne .Order "asc")}}
+                        <a href="?sort=namedirfirst&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M6 10l6 6l6 -6h-12"/>
+                            </svg>
+                        </a>
+                        {{- else}}
+                        <a href="?sort=namedirfirst&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}" class="icon sort">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M18 14l-6 -6l-6 6h12"/>
+                            </svg>
+                        </a>
+                        {{- end}}
+                        {{- if and (eq .Sort "name") (ne .Order "desc")}}
+                        <a href="?sort=name&order=desc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Name
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M18 14l-6 -6l-6 6h12"/>
+                            </svg>
+                        </a>
+                        {{- else if and (eq .Sort "name") (ne .Order "asc")}}
+                        <a href="?sort=name&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Name
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M6 10l6 6l6 -6h-12"/>
+                            </svg>
+                        </a>
+                        {{- else}}
+                        <a href="?sort=name&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Name
+                        </a>
+                        {{- end}}
+                        {{- if and (eq .Sort "size") (ne .Order "desc")}}
+                        <a href="?sort=size&order=desc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Size
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M18 14l-6 -6l-6 6h12"/>
+                            </svg>
+                        </a>
+                        {{- else if and (eq .Sort "size") (ne .Order "asc")}}
+                        <a href="?sort=size&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Size
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M6 10l6 6l6 -6h-12"/>
+                            </svg>
+                        </a>
+                        {{- else}}
+                        <a href="?sort=size&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Size
+                        </a>
+                        {{- end}}
+                        {{- if and (eq .Sort "time") (ne .Order "desc")}}
+                        <a href="?sort=time&order=desc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Modified
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-up" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M18 14l-6 -6l-6 6h12"/>
+                            </svg>
+                        </a>
+                        {{- else if and (eq .Sort "time") (ne .Order "asc")}}
+                        <a href="?sort=time&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Modified
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-caret-down" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M6 10l6 6l6 -6h-12"/>
+                            </svg>
+                        </a>
+                        {{- else}}
+                        <a href="?sort=time&order=asc&layout=grid{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}">
+                            Modified
+                        </a>
+                        {{- end}}
+                    </div>
 				{{- range .Items}}
 				<div class="entry">
 					<a href="{{html .URL}}" title='{{html (.HumanModTime "January 2, 2006 at 15:04:05")}}'>
 						{{template "icon" .}}
 						<div class="name">{{html .Name}}</div>
 						<div class="size">{{.HumanSize}}</div>
+                        <div class="timestamp">{{.HumanModTime "January 2, 2006 at 15:04:05"}}</div>
 					</a>
 				</div>
 				{{- end}}
