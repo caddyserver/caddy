@@ -220,7 +220,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 	}
 
 	if len(iss.NetworkProxyRaw) != 0 {
-		proxyMod, err := ctx.LoadModule(iss, "ForwardProxyRaw")
+		proxyMod, err := ctx.LoadModule(iss, "NetworkProxyRaw")
 		if err != nil {
 			return template, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
