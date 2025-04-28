@@ -420,6 +420,25 @@ func (app *App) Validate() error {
 	return nil
 }
 
+func removeTLSALPN(srv *Server, target string) {
+	for _, cp := range srv.TLSConnPolicies {
+		// the TLSConfig was already provisioned, so... manually remove it
+		for i, np := range cp.TLSConfig.NextProtos {
+			if np == target {
+				cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+				break
+			}
+		}
+		// remove it from the parent connection policy too, just to keep things tidy
+		for i, alpn := range cp.ALPN {
+			if alpn == target {
+				cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
@@ -447,22 +466,10 @@ func (app *App) Start() error {
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
 			srv.server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
-			for _, cp := range srv.TLSConnPolicies {
-				// the TLSConfig was already provisioned, so... manually remove it
-				for i, np := range cp.TLSConfig.NextProtos {
-					if np == "h2" {
-						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
-						break
-					}
-				}
-				// remove it from the parent connection policy too, just to keep things tidy
-				for i, alpn := range cp.ALPN {
-					if alpn == "h2" {
-						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
-						break
-					}
-				}
-			}
+			removeTLSALPN(srv, "h2")
+		}
+		if !srv.protocol("h1") {
+			removeTLSALPN(srv, "http/1.1")
 		}
 
 		// configure the http versions the server will serve
