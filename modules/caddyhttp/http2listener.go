@@ -40,7 +40,7 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 	// emit a warning
 	if h.useTLS && !isConnectionStater {
 		h.logger.Warn("tls is enabled, but listener wrapper returns a connection that doesn't implement connectionStater")
-	} else if isConnectionStater {
+	} else if !h.useTLS && isConnectionStater {
 		h.logger.Warn("tls is disabled, but listener wrapper returns a connection that implements connectionStater")
 	}
 
