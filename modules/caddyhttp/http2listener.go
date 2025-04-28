@@ -46,18 +46,27 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 
 	// if both h1 and h2 are enabled, we don't need to check the preface
 	if h.useH1 && h.useH2 {
-		return &http2Conn{
-			idx:  len(http2.ClientPreface),
-			Conn: conn,
-		}, nil
+		return conn, nil
 	}
 
 	// impossible both are false, either useH1 or useH2 must be true,
 	// or else the listener wouldn't be created
-	return &http2Conn{
+	h2Conn := &http2Conn{
 		h2Expected: h.useH2,
 		Conn:       conn,
-	}, nil
+	}
+	if isConnectionStater {
+		return http2StateConn{h2Conn}, nil
+	}
+	return h2Conn, nil
+}
+
+type http2StateConn struct {
+	*http2Conn
+}
+
+func (conn http2StateConn) ConnectionState() tls.ConnectionState {
+	return conn.Conn.(connectionStater).ConnectionState()
 }
 
 type http2Conn struct {
