@@ -633,12 +633,6 @@ func (st *ServerType) serversFromPairings(
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 				}
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
-
-			case "prefer_wildcard":
-				if srv.AutoHTTPS == nil {
-					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-				}
-				srv.AutoHTTPS.PreferWildcard = true
 			}
 		}
 
@@ -705,16 +699,6 @@ func (st *ServerType) serversFromPairings(
 			}
 			return specificity(iLongestHost) > specificity(jLongestHost)
 		})
-
-		// collect all hosts that have a wildcard in them
-		wildcardHosts := []string{}
-		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-		}
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
 		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
@@ -801,7 +785,13 @@ func (st *ServerType) serversFromPairings(
 						cp.FallbackSNI = fallbackSNI
 					}
 
-					// only append this policy if it actually changes something
+					// only append this policy if it actually changes something,
+					// or if the configuration explicitly automates certs for
+					// these names (this is necessary to hoist a connection policy
+					// above one that may manually load a wildcard cert that would
+					// otherwise clobber the automated one; the code that appends
+					// policies that manually load certs comes later, so they're
+					// lower in the list)
 					if !cp.SettingsEmpty() || mapContains(forceAutomatedNames, hosts) {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 						hasCatchAllTLSConnPolicy = len(hosts) == 0
@@ -839,18 +829,6 @@ func (st *ServerType) serversFromPairings(
 				if addr.Scheme == "https" ||
 					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
-				}
-
-				// If prefer wildcard is enabled, then we add hosts that are
-				// already covered by the wildcard to the skip list
-				if addressQualifiesForTLS && srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard {
-					baseDomain := addr.Host
-					if idx := strings.Index(baseDomain, "."); idx != -1 {
-						baseDomain = baseDomain[idx+1:]
-					}
-					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
-						srv.AutoHTTPS.SkipCerts = append(srv.AutoHTTPS.SkipCerts, addr.Host)
-					}
 				}
 
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
@@ -1083,9 +1061,38 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(cps[i], cps[j]) {
-				cps = append(cps[:j], cps[j+1:]...)
+				cps = slices.Delete(cps, j, j+1)
 				i--
 				break
+			}
+
+			// as a special case, if there are adjacent TLS conn policies that are identical except
+			// by their matchers, and the matchers are specifically just ServerName ("sni") matchers
+			// (by far the most common), we can combine them into a single policy
+			if i == j-1 && len(cps[i].MatchersRaw) == 1 && len(cps[j].MatchersRaw) == 1 {
+				if iSNIMatcherJSON, ok := cps[i].MatchersRaw["sni"]; ok {
+					if jSNIMatcherJSON, ok := cps[j].MatchersRaw["sni"]; ok {
+						// position of policies and the matcher criteria check out; if settings are
+						// the same, then we can combine the policies; we have to unmarshal and
+						// remarshal the matchers though
+						if cps[i].SettingsEqual(*cps[j]) {
+							var iSNIMatcher caddytls.MatchServerName
+							if err := json.Unmarshal(iSNIMatcherJSON, &iSNIMatcher); err == nil {
+								var jSNIMatcher caddytls.MatchServerName
+								if err := json.Unmarshal(jSNIMatcherJSON, &jSNIMatcher); err == nil {
+									iSNIMatcher = append(iSNIMatcher, jSNIMatcher...)
+									cps[i].MatchersRaw["sni"], err = json.Marshal(iSNIMatcher)
+									if err != nil {
+										return nil, fmt.Errorf("recombining SNI matchers: %v", err)
+									}
+									cps = slices.Delete(cps, j, j+1)
+									i--
+									break
+								}
+							}
+						}
+					}
+				}
 			}
 
 			// if they have the same matcher, try to reconcile each field: either they must
@@ -1189,12 +1196,13 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					}
 				}
 
-				cps = append(cps[:j], cps[j+1:]...)
+				cps = slices.Delete(cps, j, j+1)
 				i--
 				break
 			}
 		}
 	}
+
 	return cps, nil
 }
 

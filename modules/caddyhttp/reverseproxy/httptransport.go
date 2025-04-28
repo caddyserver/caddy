@@ -353,7 +353,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
 	}
 	if len(h.NetworkProxyRaw) != 0 {
-		proxyMod, err := caddyCtx.LoadModule(h, "ForwardProxyRaw")
+		proxyMod, err := caddyCtx.LoadModule(h, "NetworkProxyRaw")
 		if err != nil {
 			return nil, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
@@ -646,7 +646,7 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 			return nil, fmt.Errorf("getting tls app: %v", err)
 		}
 		tlsApp := tlsAppIface.(*caddytls.TLS)
-		err = tlsApp.Manage([]string{t.ClientCertificateAutomate})
+		err = tlsApp.Manage(map[string]struct{}{t.ClientCertificateAutomate: {}})
 		if err != nil {
 			return nil, fmt.Errorf("managing client certificate: %v", err)
 		}

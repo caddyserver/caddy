@@ -152,7 +152,7 @@ type App struct {
 	tlsApp *caddytls.TLS
 
 	// used temporarily between phases 1 and 2 of auto HTTPS
-	allCertDomains []string
+	allCertDomains map[string]struct{}
 }
 
 // CaddyModule returns the Caddy module information.
