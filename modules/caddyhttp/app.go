@@ -552,7 +552,8 @@ func (app *App) Start() error {
 					// check if the connection is h2c
 					ln = &http2Listener{
 						useTLS:   useTLS,
-						useH2C:   h2cok,
+						useH1:    h1ok,
+						useH2:    h2ok || h2cok,
 						Listener: ln,
 						logger:   app.logger,
 					}

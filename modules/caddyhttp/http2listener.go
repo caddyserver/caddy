@@ -21,9 +21,11 @@ type connectionStater interface {
 // can do this.
 // 2. After wrapping the connection doesn't implement connectionStater, emit a warning so that listener
 // wrapper authors will hopefully implement it.
+// 3. check if the connection matches a specific http version. h2/h2c has a distinct preface.
 type http2Listener struct {
 	useTLS bool
-	useH2C bool
+	useH1  bool
+	useH2  bool
 	net.Listener
 	logger *zap.Logger
 }
@@ -39,21 +41,14 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 		if _, ok := conn.(connectionStater); !ok {
 			h.logger.Warn("tls is enabled, but listener wrapper returns a connection that doesn't implement connectionStater")
 		}
-		return &http2Conn{
-			idx:  len(http2.ClientPreface),
-			Conn: conn,
-		}, nil
 	}
 
 	if _, ok := conn.(connectionStater); ok {
 		h.logger.Warn("tls is disabled, but listener wrapper returns a connection that implements connectionStater")
-		return &http2Conn{
-			idx:  len(http2.ClientPreface),
-			Conn: conn,
-		}, nil
 	}
 
-	if h.useH2C {
+	// if both h1 and h2 are enabled, we don't need to check the preface
+	if h.useH1 && h.useH2 {
 		return &http2Conn{
 			idx:  len(http2.ClientPreface),
 			Conn: conn,
@@ -61,13 +56,17 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 	}
 
 	return &http2Conn{
-		Conn: conn,
+		h2Expected: h.useH2,
+		Conn:       conn,
 	}, nil
 }
 
 type http2Conn struct {
-	// check h2 preface if it's smaller that the preface
+	// current index where the preface should match,
+	// no matching is done if idx is >= len(http2.ClientPreface)
 	idx int
+	// whether the connection is expected to be h2/h2c
+	h2Expected bool
 	// log if one such connection is detected
 	logger *zap.Logger
 	net.Conn
@@ -79,14 +78,16 @@ func (c *http2Conn) Read(p []byte) (int, error) {
 	}
 	n, err := c.Conn.Read(p)
 	for i := range n {
-		// mismatch
-		if p[i] != http2.ClientPreface[c.idx] {
-			c.idx = len(http2.ClientPreface)
-			return n, err
+		// first mismatch, close the connection if h2 is expected
+		if p[i] != http2.ClientPreface[c.idx] && c.h2Expected {
+			c.logger.Debug("h1 connection detected, but h1 is not enabled")
+			_ = c.Conn.Close()
+			return 0, io.EOF
 		}
 		c.idx++
-		if c.idx == len(http2.ClientPreface) {
-			c.logger.Warn("h2c connection detected, but h2c is not enabled")
+		// matching complete
+		if c.idx == len(http2.ClientPreface) && !c.h2Expected {
+			c.logger.Debug("h2/h2c connection detected, but h2/h2c is not enabled")
 			_ = c.Conn.Close()
 			return 0, io.EOF
 		}
