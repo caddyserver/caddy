@@ -23,6 +23,7 @@ type connectionStater interface {
 // wrapper authors will hopefully implement it.
 type http2Listener struct {
 	useTLS bool
+	useH2C bool
 	net.Listener
 	logger *zap.Logger
 }
@@ -46,6 +47,13 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 
 	if _, ok := conn.(connectionStater); ok {
 		h.logger.Warn("tls is disabled, but listener wrapper returns a connection that implements connectionStater")
+		return &http2Conn{
+			idx:  len(http2.ClientPreface),
+			Conn: conn,
+		}, nil
+	}
+
+	if h.useH2C {
 		return &http2Conn{
 			idx:  len(http2.ClientPreface),
 			Conn: conn,
