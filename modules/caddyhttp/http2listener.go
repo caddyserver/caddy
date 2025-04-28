@@ -52,6 +52,8 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 		}, nil
 	}
 
+	// impossible both are false, either useH1 or useH2 must be true,
+	// or else the listener wouldn't be created
 	return &http2Conn{
 		h2Expected: h.useH2,
 		Conn:       conn,
