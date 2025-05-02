@@ -531,6 +531,7 @@ func TestAdminRouterProvisioning(t *testing.T) {
 }
 
 func TestAllowedOriginsUnixSocket(t *testing.T) {
+	// see comment in allowedOrigins() as to why we do not fill out allowed origins for UDS
 	tests := []struct {
 		name          string
 		addr          NetworkAddress
@@ -543,12 +544,8 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 				Network: "unix",
 				Host:    "/tmp/caddy.sock",
 			},
-			origins: nil, // default origins
-			expectOrigins: []string{
-				"", // empty host as per RFC 2616
-				"127.0.0.1",
-				"::1",
-			},
+			origins:       nil, // default origins
+			expectOrigins: []string{},
 		},
 		{
 			name: "unix socket with custom origins",
@@ -578,7 +575,7 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
+	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			admin := AdminConfig{
 				Origins: test.origins,
@@ -592,7 +589,7 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 			}
 
 			if len(gotOrigins) != len(test.expectOrigins) {
-				t.Errorf("Expected %d origins but got %d", len(test.expectOrigins), len(gotOrigins))
+				t.Errorf("%d: Expected %d origins but got %d", i, len(test.expectOrigins), len(gotOrigins))
 				return
 			}
 
@@ -607,7 +604,7 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(expectMap, gotMap) {
-				t.Errorf("Origins mismatch.\nExpected: %v\nGot: %v", test.expectOrigins, gotOrigins)
+				t.Errorf("%d: Origins mismatch.\nExpected: %v\nGot: %v", i, test.expectOrigins, gotOrigins)
 			}
 		})
 	}

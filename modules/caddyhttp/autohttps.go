@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -65,12 +66,6 @@ type AutoHTTPSConfig struct {
 	// enabled. To force automated certificate management
 	// regardless of loaded certificates, set this to true.
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
-
-	// If true, automatic HTTPS will prefer wildcard names
-	// and ignore non-wildcard names if both are available.
-	// This allows for writing a config with top-level host
-	// matchers without having those names produce certificates.
-	PreferWildcard bool `json:"prefer_wildcard,omitempty"`
 }
 
 // automaticHTTPSPhase1 provisions all route matchers, determines
@@ -163,33 +158,8 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			}
 		}
 
-		// trim the list of domains covered by wildcards, if configured
-		if srv.AutoHTTPS.PreferWildcard {
-			wildcards := make(map[string]struct{})
-			for d := range serverDomainSet {
-				if strings.HasPrefix(d, "*.") {
-					wildcards[d[2:]] = struct{}{}
-				}
-			}
-			for d := range serverDomainSet {
-				if strings.HasPrefix(d, "*.") {
-					continue
-				}
-				base := d
-				if idx := strings.Index(d, "."); idx != -1 {
-					base = d[idx+1:]
-				}
-				if _, ok := wildcards[base]; ok {
-					delete(serverDomainSet, d)
-				}
-			}
-		}
-
 		// build the list of domains that could be used with ECH (if enabled)
-		// so the TLS app can know to publish ECH configs for them; we do this
-		// after trimming domains covered by wildcards because, presumably,
-		// if the user wants to use wildcard certs, they also want to use the
-		// wildcard for ECH, rather than individual subdomains
+		// so the TLS app can know to publish ECH configs for them
 		echDomains := make([]string, 0, len(serverDomainSet))
 		for d := range serverDomainSet {
 			echDomains = append(echDomains, d)
@@ -295,19 +265,10 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 	}
 
-	// we now have a list of all the unique names for which we need certs;
-	// turn the set into a slice so that phase 2 can use it
-	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
+	// we now have a list of all the unique names for which we need certs
 	var internal, tailscale []string
 uniqueDomainsLoop:
 	for d := range uniqueDomainsForCerts {
-		if !isTailscaleDomain(d) {
-			// whether or not there is already an automation policy for this
-			// name, we should add it to the list to manage a cert for it,
-			// unless it's a Tailscale domain, because we don't manage those
-			app.allCertDomains = append(app.allCertDomains, d)
-		}
-
 		// some names we've found might already have automation policies
 		// explicitly specified for them; we should exclude those from
 		// our hidden/implicit policy, since applying a name to more than
@@ -346,6 +307,7 @@ uniqueDomainsLoop:
 		}
 		if isTailscaleDomain(d) {
 			tailscale = append(tailscale, d)
+			delete(uniqueDomainsForCerts, d) // not managed by us; handled separately
 		} else if shouldUseInternal(d) {
 			internal = append(internal, d)
 		}
@@ -474,6 +436,9 @@ redirServersLoop:
 			Logs:   logCfg,
 		}
 	}
+
+	// persist the domains/IPs we're managing certs for through provisioning/startup
+	app.allCertDomains = uniqueDomainsForCerts
 
 	logger.Debug("adjusted config",
 		zap.Reflect("tls", app.tlsApp),
@@ -777,7 +742,7 @@ func (app *App) automaticHTTPSPhase2() error {
 		return nil
 	}
 	app.logger.Info("enabling automatic TLS certificate management",
-		zap.Strings("domains", app.allCertDomains),
+		zap.Strings("domains", internal.MaxSizeSubjectsListForLog(app.allCertDomains, 1000)),
 	)
 	err := app.tlsApp.Manage(app.allCertDomains)
 	if err != nil {

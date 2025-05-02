@@ -8,7 +8,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
-	github.com/caddyserver/certmagic v0.22.2
+	github.com/caddyserver/certmagic v0.23.0
 	github.com/caddyserver/zerossl v0.1.3
 	github.com/cloudflare/circl v1.6.0
 	github.com/dustin/go-humanize v1.0.1
@@ -17,9 +17,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.2.10
-	github.com/mholt/acmez/v3 v3.1.1
+	github.com/mholt/acmez/v3 v3.1.2
 	github.com/prometheus/client_golang v1.19.1
-	github.com/quic-go/quic-go v0.50.1
+	github.com/quic-go/quic-go v0.51.0
 	github.com/smallstep/certificates v0.26.1
 	github.com/smallstep/nosql v0.6.1
 	github.com/smallstep/truststore v0.13.0
@@ -39,7 +39,7 @@ require (
 	go.uber.org/zap/exp v0.3.0
 	golang.org/x/crypto v0.36.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20250305170421-49bf5b80c810
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/sync v0.12.0
 	golang.org/x/term v0.30.0
 	golang.org/x/time v0.11.0
@@ -116,7 +116,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/pgtype v1.14.0 // indirect
 	github.com/jackc/pgx/v4 v4.18.3 // indirect
-	github.com/libdns/libdns v0.2.3
+	github.com/libdns/libdns v1.0.0-beta.1
 	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
