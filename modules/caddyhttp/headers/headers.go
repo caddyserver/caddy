@@ -354,9 +354,9 @@ func (rww *responseWriterWrapper) WriteHeader(status int) {
 	if status < 100 || status > 199 {
 		rww.wroteHeader = true
 	}
-	if rww.require == nil || rww.require.Match(status, rww.Header()) {
+	if rww.require == nil || rww.require.Match(status, rww.ResponseWriterWrapper.Header()) {
 		if rww.headerOps != nil {
-			rww.headerOps.ApplyTo(rww.Header(), rww.replacer)
+			rww.headerOps.ApplyTo(rww.ResponseWriterWrapper.Header(), rww.replacer)
 		}
 	}
 	rww.ResponseWriterWrapper.WriteHeader(status)

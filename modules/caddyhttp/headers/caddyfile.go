@@ -87,7 +87,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 		if err != nil {
 			return nil, h.Err(err.Error())
 		}
-		if len(handler.Response.Delete) > 0 {
+		if len(handler.Response.HeaderOps.Delete) > 0 {
 			handler.Response.Deferred = true
 		}
 	}

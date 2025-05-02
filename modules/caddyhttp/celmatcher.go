@@ -329,14 +329,14 @@ func (pn celPkixName) ConvertToNative(typeDesc reflect.Type) (any, error) {
 
 func (pn celPkixName) ConvertToType(typeVal ref.Type) ref.Val {
 	if typeVal.TypeName() == "string" {
-		return types.String(pn.String())
+		return types.String(pn.Name.String())
 	}
 	panic("not implemented")
 }
 
 func (pn celPkixName) Equal(other ref.Val) ref.Val {
 	if o, ok := other.Value().(string); ok {
-		return types.Bool(pn.String() == o)
+		return types.Bool(pn.Name.String() == o)
 	}
 	return types.ValOrErr(other, "%v is not comparable type", other)
 }

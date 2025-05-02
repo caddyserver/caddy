@@ -226,7 +226,7 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		zap.String("origin", originModuleName))
 
 	// add event info to replacer, make sure it's in the context
-	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl, ok := ctx.Context.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok {
 		repl = caddy.NewReplacer()
 		ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, repl)

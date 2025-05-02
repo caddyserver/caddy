@@ -247,7 +247,7 @@ func (h Helper) MatcherToken() (caddy.ModuleMap, bool, error) {
 	if !h.NextArg() {
 		return nil, false, nil
 	}
-	return matcherSetFromMatcherToken(h.Token(), h.matcherDefs, h.warnings)
+	return matcherSetFromMatcherToken(h.Dispenser.Token(), h.matcherDefs, h.warnings)
 }
 
 // ExtractMatcherSet is like MatcherToken, except this is a higher-level
@@ -266,9 +266,9 @@ func (h Helper) ExtractMatcherSet() (caddy.ModuleMap, error) {
 		// new dispenser should have been made
 		// solely for this directive's tokens,
 		// with no other uses of same slice
-		h.Delete()
+		h.Dispenser.Delete()
 	}
-	h.Reset() // pretend this lookahead never happened
+	h.Dispenser.Reset() // pretend this lookahead never happened
 	return matcherSet, nil
 }
 

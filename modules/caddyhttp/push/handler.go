@@ -210,7 +210,7 @@ type linkPusher struct {
 }
 
 func (lp linkPusher) WriteHeader(statusCode int) {
-	if links, ok := lp.Header()["Link"]; ok {
+	if links, ok := lp.ResponseWriter.Header()["Link"]; ok {
 		// only initiate these pushes if it hasn't been done yet
 		if val := caddyhttp.GetVar(lp.request.Context(), pushedLink); val == nil {
 			if c := lp.handler.logger.Check(zapcore.DebugLevel, "pushing Link resources"); c != nil {

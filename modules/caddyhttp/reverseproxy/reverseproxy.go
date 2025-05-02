@@ -554,9 +554,9 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
 	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
 	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-	repl.Set("http.reverse_proxy.upstream.requests", upstream.NumRequests())
+	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
 	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
-	repl.Set("http.reverse_proxy.upstream.fails", upstream.Fails())
+	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 	// mutate request headers according to this upstream;
 	// because we're in a retry loop, we have to copy
@@ -827,9 +827,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 // (This method is mostly the beginning of what was borrowed from the net/http/httputil package in the
 // Go standard library which was used as the foundation.)
 func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origReq *http.Request, repl *caddy.Replacer, di DialInfo, next caddyhttp.Handler) error {
-	_ = di.Upstream.countRequest(1)
+	_ = di.Upstream.Host.countRequest(1)
 	//nolint:errcheck
-	defer di.Upstream.countRequest(-1)
+	defer di.Upstream.Host.countRequest(-1)
 
 	// point the request to this upstream
 	h.directRequest(req, di)

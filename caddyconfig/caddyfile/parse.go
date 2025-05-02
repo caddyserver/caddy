@@ -423,9 +423,9 @@ func (p *parser) doImport(nesting int) error {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
 		// list of matching filenames
-		absFile, err := caddy.FastAbs(p.File())
+		absFile, err := caddy.FastAbs(p.Dispenser.File())
 		if err != nil {
-			return p.Errf("Failed to get absolute path of file: %s: %v", p.File(), err)
+			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
 		}
 
 		var matches []string

@@ -202,7 +202,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 		}
 		if n, err = conn2.Write(b); err == nil {
 			if reconn.Conn != nil {
-				reconn.Close()
+				reconn.Conn.Close()
 			}
 			reconn.Conn = conn2
 		}

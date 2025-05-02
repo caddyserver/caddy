@@ -152,17 +152,17 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 	}
 
 	// options for the default logger
-	options, err := newDefault.buildOptions()
+	options, err := newDefault.CustomLog.buildOptions()
 	if err != nil {
 		return fmt.Errorf("setting up default log: %v", err)
 	}
 
 	// set up this new log
-	err = newDefault.provision(ctx, logging)
+	err = newDefault.CustomLog.provision(ctx, logging)
 	if err != nil {
 		return fmt.Errorf("setting up default log: %v", err)
 	}
-	newDefault.logger = zap.New(newDefault.core, options...)
+	newDefault.logger = zap.New(newDefault.CustomLog.core, options...)
 
 	// redirect the default caddy logs
 	defaultLoggerMu.Lock()
