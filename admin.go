@@ -426,7 +426,10 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 
 	// run the provisioners for loaded modules to make sure local
 	// state is properly re-initialized in the new admin server
-	cfg.Admin.provisionAdminRouters(ctx)
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
 
 	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
@@ -551,7 +554,10 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// run the provisioners for loaded modules to make sure local
 	// state is properly re-initialized in the new admin server
-	cfg.Admin.provisionAdminRouters(ctx)
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
 
 	// create client certificate pool for TLS mutual auth, and extract public keys
 	// so that we can enforce access controls at the application layer
