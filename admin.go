@@ -424,6 +424,13 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 
 	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
 
+	// run the provisioners for loaded modules to make sure local
+	// state is properly re-initialized in the new admin server
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
+
 	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
 		return err
@@ -544,6 +551,13 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
 	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
+
+	// run the provisioners for loaded modules to make sure local
+	// state is properly re-initialized in the new admin server
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
 
 	// create client certificate pool for TLS mutual auth, and extract public keys
 	// so that we can enforce access controls at the application layer
