@@ -159,8 +159,7 @@ type HTTPTransport struct {
 	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
-	h2cTransport *http2.Transport
-	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	h3Transport *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -436,12 +435,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.DisableCompression = !*h.Compression
 	}
 
-	if slices.Contains(h.Versions, "2") {
-		if err := http2.ConfigureTransport(rt); err != nil {
-			return nil, err
-		}
-	}
-
 	// configure HTTP/3 transport if enabled; however, this does not
 	// automatically fall back to lower versions like most web browsers
 	// do (that'd add latency and complexity, besides, we expect that
@@ -459,25 +452,22 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}
 
-	// if h2c is enabled, configure its transport (std lib http.Transport
-	// does not "HTTP/2 over cleartext TCP")
-	if slices.Contains(h.Versions, "h2c") {
-		// crafting our own http2.Transport doesn't allow us to utilize
-		// most of the customizations/preferences on the http.Transport,
-		// because, for some reason, only http2.ConfigureTransport()
-		// is allowed to set the unexported field that refers to a base
-		// http.Transport config; oh well
-		h2t := &http2.Transport{
-			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
-			DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-				return dialContext(ctx, network, address)
-			},
-			AllowHTTP: true,
+	// if h2/c is enabled, configure it explicitly
+	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		if err := http2.ConfigureTransport(rt); err != nil {
+			return nil, err
 		}
-		if h.Compression != nil {
-			h2t.DisableCompression = !*h.Compression
+
+		// DisableCompression from h2 is configured by http2.ConfigureTransport
+		// Likewise, DisableKeepAlives from h1 is used too.
+
+		// Protocols field is only used when the request is not using TLS,
+		// http1/2 over tls is still allowed
+		if slices.Contains(h.Versions, "h2c") {
+			rt.Protocols = new(http.Protocols)
+			rt.Protocols.SetUnencryptedHTTP2(true)
+			rt.Protocols.SetHTTP1(false)
 		}
-		h.h2cTransport = h2t
 	}
 
 	return rt, nil
@@ -490,15 +480,6 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// use HTTP/3 if enabled (TODO: This is EXPERIMENTAL)
 	if h.h3Transport != nil {
 		return h.h3Transport.RoundTrip(req)
-	}
-
-	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
-	// HTTP without TLS, use the alternate H2C-capable transport instead
-	if req.URL.Scheme == "http" && h.h2cTransport != nil {
-		// There is no dedicated DisableKeepAlives field in *http2.Transport.
-		// This is an alternative way to disable keep-alive.
-		req.Close = h.Transport.DisableKeepAlives
-		return h.h2cTransport.RoundTrip(req)
 	}
 
 	return h.Transport.RoundTrip(req)
