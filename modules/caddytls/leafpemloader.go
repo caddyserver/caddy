@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -50,6 +51,13 @@ func (LeafPEMLoader) CaddyModule() caddy.ModuleInfo {
 		ID:  "tls.leaf_cert_loader.pem",
 		New: func() caddy.Module { return new(LeafPEMLoader) },
 	}
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fl *LeafPEMLoader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.NextArg()
+	fl.Certificates = append(fl.Certificates, d.RemainingArgs()...)
+	return nil
 }
 
 // LoadLeafCertificates returns the certificates contained in pl.
