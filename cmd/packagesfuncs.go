@@ -84,7 +84,7 @@ func cmdAddPackage(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid module name: %v", err)
 		}
 		// only allow a version to be specified if it's different from the existing version
-		if _, ok := pluginPkgs[module]; ok && !(version != "" && pluginPkgs[module].Version != version) {
+		if _, ok := pluginPkgs[module]; ok && (version == "" || pluginPkgs[module].Version == version) {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("package is already added")
 		}
 		pluginPkgs[module] = pluginPackage{Version: version, Path: module}
