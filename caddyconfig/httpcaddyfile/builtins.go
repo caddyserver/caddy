@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
@@ -843,13 +844,18 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 		return nil, h.Errf("segment was not parsed as a subroute")
 	}
 
+	// wrap the subroutes
+	wrappingRoute := caddyhttp.Route{
+		HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(subroute, "handler", "subroute", nil)},
+	}
+	subroute = &caddyhttp.Subroute{
+		Routes: []caddyhttp.Route{wrappingRoute},
+	}
 	if expression != "" {
 		statusMatcher := caddy.ModuleMap{
 			"expression": h.JSON(caddyhttp.MatchExpression{Expr: expression}),
 		}
-		for i := range subroute.Routes {
-			subroute.Routes[i].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
-		}
+		subroute.Routes[0].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
 	}
 	return []ConfigValue{
 		{
