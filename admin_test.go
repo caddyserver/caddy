@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -335,9 +336,7 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 
 func testGetMetricValue(labels map[string]string) float64 {
 	promLabels := prometheus.Labels{}
-	for k, v := range labels {
-		promLabels[k] = v
-	}
+	maps.Copy(promLabels, labels)
 
 	metric, err := adminMetrics.requestErrors.GetMetricWith(promLabels)
 	if err != nil {
@@ -377,9 +376,7 @@ func (m *mockModule) CaddyModule() ModuleInfo {
 
 func TestNewAdminHandlerRouterRegistration(t *testing.T) {
 	originalModules := make(map[string]ModuleInfo)
-	for k, v := range modules {
-		originalModules[k] = v
-	}
+	maps.Copy(originalModules, modules)
 	defer func() {
 		modules = originalModules
 	}()
@@ -479,9 +476,7 @@ func TestAdminRouterProvisioning(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			originalModules := make(map[string]ModuleInfo)
-			for k, v := range modules {
-				originalModules[k] = v
-			}
+			maps.Copy(originalModules, modules)
 			defer func() {
 				modules = originalModules
 			}()
@@ -774,9 +769,7 @@ func (m *mockIssuerModule) CaddyModule() ModuleInfo {
 
 func TestManageIdentity(t *testing.T) {
 	originalModules := make(map[string]ModuleInfo)
-	for k, v := range modules {
-		originalModules[k] = v
-	}
+	maps.Copy(originalModules, modules)
 	defer func() {
 		modules = originalModules
 	}()
