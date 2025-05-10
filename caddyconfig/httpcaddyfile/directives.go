@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"maps"
 	"net"
 	"slices"
 	"sort"
@@ -365,9 +366,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 		// copy existing matcher definitions so we can augment
 		// new ones that are defined only in this scope
 		matcherDefs := make(map[string]caddy.ModuleMap, len(h.matcherDefs))
-		for key, val := range h.matcherDefs {
-			matcherDefs[key] = val
-		}
+		maps.Copy(matcherDefs, h.matcherDefs)
 
 		// find and extract any embedded matcher definitions in this scope
 		for i := 0; i < len(segments); i++ {
