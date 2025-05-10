@@ -809,9 +809,3 @@ func configFileWithRespectToDefault(logger *zap.Logger, configFile string) (stri
 	// default config file does not exist or is irrelevant
 	return configFile, nil
 }
-
-type moduleInfo struct {
-	caddyModuleID string
-	goModule      *debug.Module
-	err           error
-}
