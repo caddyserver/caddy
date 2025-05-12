@@ -483,11 +483,22 @@ func sortRoutes(routes []ConfigValue) {
 			// we can only confidently compare path lengths if both
 			// directives have a single path to match (issue #5037)
 			if iPathLen > 0 && jPathLen > 0 {
+				// trim the trailing wildcard if there is one
+				iPathTrimmed := strings.TrimSuffix(iPM[0], "*")
+				jPathTrimmed := strings.TrimSuffix(jPM[0], "*")
+
 				// if both paths are the same except for a trailing wildcard,
 				// sort by the shorter path first (which is more specific)
-				if strings.TrimSuffix(iPM[0], "*") == strings.TrimSuffix(jPM[0], "*") {
+				if iPathTrimmed == jPathTrimmed {
 					return iPathLen < jPathLen
 				}
+
+				// we use the trimmed length to compare the paths
+				// https://github.com/caddyserver/caddy/issues/7012#issuecomment-2870142195
+				// credit to https://github.com/Hellio404
+				// for sorts with many items, mixing matchers w/ and w/o wildcards will confuse the sort and result in incorrect orders
+				iPathLen = len(iPathTrimmed)
+				jPathLen = len(jPathTrimmed)
 
 				// sort most-specific (longest) path first
 				return iPathLen > jPathLen
