@@ -500,6 +500,12 @@ func sortRoutes(routes []ConfigValue) {
 				iPathLen = len(iPathTrimmed)
 				jPathLen = len(jPathTrimmed)
 
+				// if both paths have the same length, sort lexically
+				// https://github.com/caddyserver/caddy/pull/7015#issuecomment-2871993588
+				if iPathLen == jPathLen {
+					return iPathTrimmed < jPathTrimmed
+				}
+
 				// sort most-specific (longest) path first
 				return iPathLen > jPathLen
 			}
