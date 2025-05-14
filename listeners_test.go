@@ -30,7 +30,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 		expectErr     bool
 	}{
 		{
-			input:     "",
+			input:      "",
 			expectHost: "",
 		},
 		{
@@ -41,7 +41,7 @@ func TestSplitNetworkAddress(t *testing.T) {
 			input: ":", // empty host & empty port
 		},
 		{
-			input:     "::",
+			input:      "::",
 			expectHost: "::",
 		},
 		{
@@ -184,9 +184,8 @@ func TestParseNetworkAddress(t *testing.T) {
 		expectErr      bool
 	}{
 		{
-			input:     "",
-			expectAddr: NetworkAddress{
-			},
+			input:      "",
+			expectAddr: NetworkAddress{},
 		},
 		{
 			input:          ":",
@@ -311,9 +310,8 @@ func TestParseNetworkAddressWithDefaults(t *testing.T) {
 		expectErr      bool
 	}{
 		{
-			input:     "",
-			expectAddr: NetworkAddress{
-			},
+			input:      "",
+			expectAddr: NetworkAddress{},
 		},
 		{
 			input:          ":",

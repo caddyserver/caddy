@@ -174,10 +174,12 @@ func RegisterDirectiveOrder(dir string, position Positional, standardDir string)
 		if d != standardDir {
 			continue
 		}
-		if position == Before {
+		switch position {
+		case Before:
 			newOrder = append(newOrder[:i], append([]string{dir}, newOrder[i:]...)...)
-		} else if position == After {
+		case After:
 			newOrder = append(newOrder[:i+1], append([]string{dir}, newOrder[i+1:]...)...)
+		case First, Last:
 		}
 		break
 	}

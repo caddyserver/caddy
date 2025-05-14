@@ -252,7 +252,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		}
 
 		for _, arg := range args {
-			if !(isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg)) {
+			if !isCELStringLiteral(arg) && !isCELCaddyPlaceholderCall(arg) {
 				return nil, &common.Error{
 					Location: eh.OffsetLocation(arg.ID()),
 					Message:  "matcher only supports repeated string literal arguments",
@@ -616,15 +616,16 @@ func isCELTryFilesLiteral(e ast.Expr) bool {
 				return false
 			}
 			mapKeyStr := mapKey.AsLiteral().ConvertToType(types.StringType).Value()
-			if mapKeyStr == "try_files" || mapKeyStr == "split_path" {
+			switch mapKeyStr {
+			case "try_files", "split_path":
 				if !isCELStringListLiteral(mapVal) {
 					return false
 				}
-			} else if mapKeyStr == "try_policy" || mapKeyStr == "root" {
+			case "try_policy", "root":
 				if !(isCELStringExpr(mapVal)) {
 					return false
 				}
-			} else {
+			default:
 				return false
 			}
 		}
