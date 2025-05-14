@@ -395,51 +395,6 @@ is always printed to stdout.
 		},
 	})
 
-	RegisterCommand(Command{
-		Name:  "upgrade",
-		Short: "Upgrade Caddy (EXPERIMENTAL)",
-		Long: `
-Downloads an updated Caddy binary with the same modules/plugins at the
-latest versions. EXPERIMENTAL: May be changed or removed.
-`,
-		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
-			cmd.RunE = WrapCommandFuncForCobra(cmdUpgrade)
-		},
-	})
-
-	RegisterCommand(Command{
-		Name:  "add-package",
-		Usage: "<package[@version]...>",
-		Short: "Adds Caddy packages (EXPERIMENTAL)",
-		Long: `
-Downloads an updated Caddy binary with the specified packages (module/plugin)
-added, with an optional version specified (e.g., "package@version"). Retains
-existing packages. Returns an error if any of the specified packages are already
-included. EXPERIMENTAL: May be changed or removed.
-`,
-		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
-			cmd.RunE = WrapCommandFuncForCobra(cmdAddPackage)
-		},
-	})
-
-	RegisterCommand(Command{
-		Name:  "remove-package",
-		Func:  cmdRemovePackage,
-		Usage: "<packages...>",
-		Short: "Removes Caddy packages (EXPERIMENTAL)",
-		Long: `
-Downloads an updated Caddy binaries without the specified packages (module/plugin).
-Returns an error if any of the packages are not included.
-EXPERIMENTAL: May be changed or removed.
-`,
-		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
-			cmd.RunE = WrapCommandFuncForCobra(cmdRemovePackage)
-		},
-	})
-
 	defaultFactory.Use(func(rootCmd *cobra.Command) {
 		rootCmd.AddCommand(caddyCmdToCobra(Command{
 			Name:  "manpage",
