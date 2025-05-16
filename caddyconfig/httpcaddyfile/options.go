@@ -359,6 +359,9 @@ func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
 		case "origins":
 			adminCfg.Origins = d.RemainingArgs()
 
+		case "disabled":
+			adminCfg.Disabled = true
+
 		default:
 			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
 		}
