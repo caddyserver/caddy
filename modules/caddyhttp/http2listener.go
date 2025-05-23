@@ -86,11 +86,17 @@ func (c *http2Conn) Read(p []byte) (int, error) {
 	}
 	n, err := c.Conn.Read(p)
 	for i := range n {
-		// first mismatch, close the connection if h2 is expected
-		if p[i] != http2.ClientPreface[c.idx] && c.h2Expected {
-			c.logger.Debug("h1 connection detected, but h1 is not enabled")
-			_ = c.Conn.Close()
-			return 0, io.EOF
+		// first mismatch
+		if p[i] != http2.ClientPreface[c.idx] {
+			// close the connection if h2 is expected
+			if c.h2Expected {
+				c.logger.Debug("h1 connection detected, but h1 is not enabled")
+				_ = c.Conn.Close()
+				return 0, io.EOF
+			}
+			// no need to continue matching anymore
+			c.idx = len(http2.ClientPreface)
+			return n, err
 		}
 		c.idx++
 		// matching complete
