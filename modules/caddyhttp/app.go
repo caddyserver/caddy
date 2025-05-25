@@ -605,7 +605,7 @@ func (app *App) Start() error {
 							return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\n\r\nCannot find Host header\n")
 						}
 
-						return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\n\r\nLocation: https://%s\n", host)
+						return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\nLocation: https://%s\r\n\r\n", host)
 					}
 
 					// enable HTTP/1 if configured
