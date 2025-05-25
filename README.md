@@ -58,6 +58,7 @@
 
 ## [Features](https://caddyserver.com/features)
 
+- **non-std port auto HTTP to HTTPS redirect** with [Lovemilk-Forked-Golang](https://github.com/lovemilk2333/go)
 - **Easy configuration** with the [Caddyfile](https://caddyserver.com/docs/caddyfile)
 - **Powerful configuration** with its [native JSON config](https://caddyserver.com/docs/json/)
 - **Dynamic configuration** with the [JSON API](https://caddyserver.com/docs/api)
@@ -85,10 +86,15 @@ The simplest, cross-platform way to get started is to download Caddy from [GitHu
 See [our online documentation](https://caddyserver.com/docs/install) for other install instructions.
 
 ## Build from source
+> [!IMPORTANT]
+> You have to use the [Lovemilk-Forked-Golang](https://github.com/lovemilk2333/go) to build this binary.  
+> Or replace the standard `net` and `crypto` packages with Lovemilk-Forked-Golang's `net` and `crypto` packages.
+
 
 Requirements:
 
-- [Go 1.24.0 or newer](https://golang.org/dl/)
+<!-- - [Go 1.24.0 or newer](https://golang.org/dl/) -->
+[Lovemilk-Forked-Golang 1.24.0 or newer](https://github.com/lovemilk2333/go)
 
 ### For development
 
@@ -99,6 +105,8 @@ $ git clone "https://github.com/caddyserver/caddy.git"
 $ cd caddy/cmd/caddy/
 $ go build
 ```
+> Make sure the `go` binary is Lovemilk-Forked-Golang binary.  
+> Or replace the standard `net` and `crypto` packages with Lovemilk-Forked-Golang's `net` and `crypto` packages.
 
 When you run Caddy, it may try to bind to low ports unless otherwise specified in your config. If your OS requires elevated privileges for this, you will need to give your new binary permission to do so. On Linux, this can be done easily with: `sudo setcap cap_net_bind_service=+ep ./caddy`
 
