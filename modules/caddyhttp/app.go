@@ -22,7 +22,9 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -443,6 +445,16 @@ func (app *App) Validate() error {
 	return nil
 }
 
+var hostPattern = regexp.MustCompile(`(?mi)^Host:\s*(.+)$`)
+
+func extractHost(raw string) string {
+	matches := hostPattern.FindStringSubmatch(raw)
+	if len(matches) == 2 {
+		return strings.TrimSpace(matches[1])
+	}
+	return ""
+}
+
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
@@ -586,10 +598,20 @@ func (app *App) Start() error {
 
 					srv.listeners = append(srv.listeners, ln)
 
+					handler := func(rawData []byte, _ *tls.Conn, err error) string {
+						host := extractHost(string(rawData))
+
+						if host == "" {
+							return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\n\r\nCannot find Host header\n")
+						}
+
+						return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\n\r\nLocation: https://%s\n", host)
+					}
+
 					// enable HTTP/1 if configured
 					if h1ok {
 						//nolint:errcheck
-						go srv.server.Serve(ln)
+						go srv.server.Serve(ln, handler)
 					}
 				}
 
