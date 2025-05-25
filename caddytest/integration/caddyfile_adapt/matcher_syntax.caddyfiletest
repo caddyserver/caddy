@@ -46,6 +46,18 @@
 
 	@matcher12 client_ip private_ranges
 	respond @matcher12 "client_ip matcher with private ranges"
+
+	@matcher13 {
+		remote_ip 1.1.1.1
+		remote_ip 2.2.2.2
+	}
+	respond @matcher13 "remote_ip merged"
+
+	@matcher14 {
+		client_ip 1.1.1.1
+		client_ip 2.2.2.2
+	}
+	respond @matcher14 "client_ip merged"
 }
 ----------
 {
@@ -146,6 +158,7 @@
 								{
 									"vars_regexp": {
 										"{http.request.uri}": {
+											"name": "matcher6",
 											"pattern": "\\.([a-f0-9]{6})\\.(css|js)$"
 										}
 									}
@@ -161,7 +174,10 @@
 						{
 							"match": [
 								{
-									"expression": "path('/foo*') \u0026\u0026 method('GET')"
+									"expression": {
+										"expr": "path('/foo*') \u0026\u0026 method('GET')",
+										"name": "matcher7"
+									}
 								}
 							],
 							"handle": [
@@ -272,6 +288,42 @@
 							"handle": [
 								{
 									"body": "client_ip matcher with private ranges",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"remote_ip": {
+										"ranges": [
+											"1.1.1.1",
+											"2.2.2.2"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "remote_ip merged",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"client_ip": {
+										"ranges": [
+											"1.1.1.1",
+											"2.2.2.2"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "client_ip merged",
 									"handler": "static_response"
 								}
 							]

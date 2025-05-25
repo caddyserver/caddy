@@ -17,15 +17,20 @@ package caddytls
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez"
-	"github.com/mholt/acmez/acme"
+	"github.com/caddyserver/zerossl"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -55,6 +60,14 @@ type ACMEIssuer struct {
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
 
+	// Optionally select an ACME profile to use for certificate
+	// orders. Must be a profile name offered by the ACME server,
+	// which are listed at its directory endpoint.
+	//
+	// EXPERIMENTAL: Subject to change.
+	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
+	Profile string `json:"profile,omitempty"`
+
 	// If you have an existing account with the ACME server, put
 	// the private key here in PEM format. The ACME client will
 	// look up your account information with this key first before
@@ -83,6 +96,18 @@ type ACMEIssuer struct {
 	// If configured, the chains may be sorted and the first matching chain
 	// will be selected.
 	PreferredChains *ChainPreference `json:"preferred_chains,omitempty"`
+
+	// The validity period to ask the CA to issue a certificate for.
+	// Default: 0 (CA chooses lifetime).
+	// This value is used to compute the "notAfter" field of the ACME order;
+	// therefore the system must have a reasonably synchronized clock.
+	// NOTE: Not all CAs support this. Check with your CA's ACME
+	// documentation to see if this is allowed and what values may
+	// be used. EXPERIMENTAL: Subject to change.
+	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
+
+	// Forward proxy module
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	rootPool *x509.CertPool
 	logger   *zap.Logger
@@ -124,31 +149,36 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS providers
-	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
-		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
-		if err != nil {
-			return fmt.Errorf("loading DNS provider module: %v", err)
+	// DNS challenge provider, if not already established
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
+		var prov certmagic.DNSProvider
+		if iss.Challenges.DNS.ProviderRaw != nil {
+			// a challenge provider has been locally configured - use it
+			val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
+			if err != nil {
+				return fmt.Errorf("loading DNS provider module: %v", err)
+			}
+			prov = val.(certmagic.DNSProvider)
+		} else if tlsAppIface, err := ctx.AppIfConfigured("tls"); err == nil {
+			// no locally configured DNS challenge provider, but if there is
+			// a global DNS module configured with the TLS app, use that
+			tlsApp := tlsAppIface.(*TLS)
+			if tlsApp.dns != nil {
+				prov = tlsApp.dns.(certmagic.DNSProvider)
+			}
 		}
-
-		if deprecatedProvider, ok := val.(acmez.Solver); ok {
-			// TODO: For a temporary amount of time, we are allowing the use of DNS
-			// providers from go-acme/lego since there are so many providers implemented
-			// using that API -- they are adapted as an all-in-one Caddy module in this
-			// repository: https://github.com/caddy-dns/lego-deprecated - the module is a
-			// acmez.Solver type, so we use it directly. The user must set environment
-			// variables to configure it. Remove this shim once a sufficient number of
-			// DNS providers are implemented for the libdns APIs instead.
-			iss.Challenges.DNS.solver = deprecatedProvider
-		} else {
-			iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
-				DNSProvider:        val.(certmagic.ACMEDNSProvider),
+		if prov == nil {
+			return fmt.Errorf("DNS challenge enabled, but no DNS provider configured")
+		}
+		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
+			DNSManager: certmagic.DNSManager{
+				DNSProvider:        prov,
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
-			}
+			},
 		}
 	}
 
@@ -167,7 +197,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	}
 
 	var err error
-	iss.template, err = iss.makeIssuerTemplate()
+	iss.template, err = iss.makeIssuerTemplate(ctx)
 	if err != nil {
 		return err
 	}
@@ -175,16 +205,30 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssuer, error) {
 	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
+		Profile:           iss.Profile,
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
+		NotAfter:          time.Duration(iss.CertificateLifetime),
 		Logger:            iss.logger,
+	}
+
+	if len(iss.NetworkProxyRaw) != 0 {
+		proxyMod, err := ctx.LoadModule(iss, "NetworkProxyRaw")
+		if err != nil {
+			return template, fmt.Errorf("failed to load network_proxy module: %v", err)
+		}
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			template.HTTPProxy = m.ProxyFunc()
+		} else {
+			return template, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	if iss.Challenges != nil {
@@ -207,6 +251,18 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 			Smallest:       iss.PreferredChains.Smallest,
 			AnyCommonName:  iss.PreferredChains.AnyCommonName,
 			RootCommonName: iss.PreferredChains.RootCommonName,
+		}
+	}
+
+	// ZeroSSL requires EAB, but we can generate that automatically (requires an email address be configured)
+	if strings.HasPrefix(iss.CA, "https://acme.zerossl.com/") {
+		template.NewAccountFunc = func(ctx context.Context, acmeIss *certmagic.ACMEIssuer, acct acme.Account) (acme.Account, error) {
+			if acmeIss.ExternalAccount != nil {
+				return acct, nil
+			}
+			var err error
+			acmeIss.ExternalAccount, acct, err = iss.generateZeroSSLEABCredentials(ctx, acct)
+			return acct, err
 		}
 	}
 
@@ -248,12 +304,80 @@ func (iss *ACMEIssuer) Revoke(ctx context.Context, cert certmagic.CertificateRes
 // to be accessed and manipulated.
 func (iss *ACMEIssuer) GetACMEIssuer() *ACMEIssuer { return iss }
 
+// GetRenewalInfo wraps the underlying GetRenewalInfo method and satisfies
+// the CertMagic interface for ARI support.
+func (iss *ACMEIssuer) GetRenewalInfo(ctx context.Context, cert certmagic.Certificate) (acme.RenewalInfo, error) {
+	return iss.issuer.GetRenewalInfo(ctx, cert)
+}
+
+// generateZeroSSLEABCredentials generates ZeroSSL EAB credentials for the primary contact email
+// on the issuer. It should only be usedif the CA endpoint is ZeroSSL. An email address is required.
+func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct acme.Account) (*acme.EAB, acme.Account, error) {
+	if strings.TrimSpace(iss.Email) == "" {
+		return nil, acme.Account{}, fmt.Errorf("your email address is required to use ZeroSSL's ACME endpoint")
+	}
+
+	if len(acct.Contact) == 0 {
+		// we borrow the email from config or the default email, so ensure it's saved with the account
+		acct.Contact = []string{"mailto:" + iss.Email}
+	}
+
+	endpoint := zerossl.BaseURL + "/acme/eab-credentials-email"
+	form := url.Values{"email": []string{iss.Email}}
+	body := strings.NewReader(form.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, acct, fmt.Errorf("forming request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", certmagic.UserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code int    `json:"code"`
+			Type string `json:"type"`
+		} `json:"error"`
+		EABKID     string `json:"eab_kid"`
+		EABHMACKey string `json:"eab_hmac_key"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, acct, fmt.Errorf("decoding API response: %v", err)
+	}
+	if result.Error.Code != 0 {
+		// do this check first because ZeroSSL's API returns 200 on errors
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d: %s (code %d)",
+			resp.StatusCode, result.Error.Type, result.Error.Code)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
+	}
+
+	if c := iss.logger.Check(zapcore.InfoLevel, "generated EAB credentials"); c != nil {
+		c.Write(zap.String("key_id", result.EABKID))
+	}
+
+	return &acme.EAB{
+		KeyID:  result.EABKID,
+		MACKey: result.EABHMACKey,
+	}, acct, nil
+}
+
 // UnmarshalCaddyfile deserializes Caddyfile tokens into iss.
 //
 //	... acme [<directory_url>] {
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
+//	    profile <profile_name>
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
@@ -284,6 +408,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "lifetime":
+			var lifetimeStr string
+			if !d.AllArgs(&lifetimeStr) {
+				return d.ArgErr()
+			}
+			lifetime, err := caddy.ParseDuration(lifetimeStr)
+			if err != nil {
+				return d.Errf("invalid lifetime %s: %v", lifetimeStr, err)
+			}
+			if lifetime < 0 {
+				return d.Errf("lifetime must be >= 0: %s", lifetime)
+			}
+			iss.CertificateLifetime = caddy.Duration(lifetime)
+
 		case "dir":
 			if iss.CA != "" {
 				return d.Errf("directory is already specified: %s", iss.CA)
@@ -299,6 +437,11 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		case "email":
 			if !d.AllArgs(&iss.Email) {
+				return d.ArgErr()
+			}
+
+		case "profile":
+			if !d.AllArgs(&iss.Profile) {
 				return d.ArgErr()
 			}
 
@@ -379,21 +522,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
 		case "dns":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			provName := d.Val()
 			if iss.Challenges == nil {
 				iss.Challenges = new(ChallengesConfig)
 			}
 			if iss.Challenges.DNS == nil {
 				iss.Challenges.DNS = new(DNSChallengeConfig)
 			}
-			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-			if err != nil {
-				return err
+			if d.NextArg() {
+				provName := d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+				if err != nil {
+					return err
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 			}
-			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 
 		case "propagation_delay":
 			if !d.NextArg() {
@@ -560,10 +702,11 @@ type ChainPreference struct {
 
 // Interface guards
 var (
-	_ certmagic.PreChecker  = (*ACMEIssuer)(nil)
-	_ certmagic.Issuer      = (*ACMEIssuer)(nil)
-	_ certmagic.Revoker     = (*ACMEIssuer)(nil)
-	_ caddy.Provisioner     = (*ACMEIssuer)(nil)
-	_ ConfigSetter          = (*ACMEIssuer)(nil)
-	_ caddyfile.Unmarshaler = (*ACMEIssuer)(nil)
+	_ certmagic.PreChecker        = (*ACMEIssuer)(nil)
+	_ certmagic.Issuer            = (*ACMEIssuer)(nil)
+	_ certmagic.Revoker           = (*ACMEIssuer)(nil)
+	_ certmagic.RenewalInfoGetter = (*ACMEIssuer)(nil)
+	_ caddy.Provisioner           = (*ACMEIssuer)(nil)
+	_ ConfigSetter                = (*ACMEIssuer)(nil)
+	_ caddyfile.Unmarshaler       = (*ACMEIssuer)(nil)
 )

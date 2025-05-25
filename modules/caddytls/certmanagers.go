@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/tailscale/tscert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -46,9 +48,11 @@ func (ts Tailscale) GetCertificate(ctx context.Context, hello *tls.ClientHelloIn
 		return nil, nil // pass-thru: Tailscale can't offer a cert for this name
 	}
 	if err != nil {
-		ts.logger.Warn("could not get status; will try to get certificate anyway", zap.Error(err))
+		if c := ts.logger.Check(zapcore.WarnLevel, "could not get status; will try to get certificate anyway"); c != nil {
+			c.Write(zap.Error(err))
+		}
 	}
-	return tscert.GetCertificate(hello)
+	return tscert.GetCertificateWithContext(ctx, hello)
 }
 
 // canHazCertificate returns true if Tailscale reports it can get a certificate for the given ClientHello.
@@ -96,6 +100,11 @@ type HTTPCertGetter struct {
 	// To be valid, the response must be HTTP 200 with a PEM body
 	// consisting of blocks for the certificate chain and the private
 	// key.
+	//
+	// To indicate that this manager is not managing a certificate for
+	// the described handshake, the endpoint should return HTTP 204
+	// (No Content). Error statuses will indicate that the manager is
+	// capable of providing a certificate but was unable to.
 	URL string `json:"url,omitempty"`
 
 	ctx context.Context
@@ -135,6 +144,10 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 	qs.Set("server_name", hello.ServerName)
 	qs.Set("signature_schemes", strings.Join(sigs, ","))
 	qs.Set("cipher_suites", strings.Join(suites, ","))
+	localIP, _, err := net.SplitHostPort(hello.Conn.LocalAddr().String())
+	if err == nil && localIP != "" {
+		qs.Set("local_ip", localIP)
+	}
 	parsed.RawQuery = qs.Encode()
 
 	req, err := http.NewRequestWithContext(hcg.ctx, http.MethodGet, parsed.String(), nil)
@@ -147,6 +160,10 @@ func (hcg HTTPCertGetter) GetCertificate(ctx context.Context, hello *tls.ClientH
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		// endpoint is not managing certs for this handshake
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("got HTTP %d", resp.StatusCode)
 	}

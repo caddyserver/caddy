@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -78,7 +79,7 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return d.ArgErr()
 	}
 
-	for d.NextBlock(0) {
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "fs":
 			if !d.NextArg() {
@@ -113,19 +114,45 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fsrv.Browse = new(Browse)
 			d.Args(&fsrv.Browse.TemplateFile)
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				if d.Val() != "reveal_symlinks" {
+				switch d.Val() {
+				case "reveal_symlinks":
+					if fsrv.Browse.RevealSymlinks {
+						return d.Err("Symlinks path reveal is already enabled")
+					}
+					fsrv.Browse.RevealSymlinks = true
+				case "sort":
+					for d.NextArg() {
+						dVal := d.Val()
+						switch dVal {
+						case sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc:
+							fsrv.Browse.SortOptions = append(fsrv.Browse.SortOptions, dVal)
+						default:
+							return d.Errf("unknown sort option '%s'", dVal)
+						}
+					}
+				case "file_limit":
+					fileLimit := d.RemainingArgs()
+					if len(fileLimit) != 1 {
+						return d.Err("file_limit should have an integer value")
+					}
+					val, _ := strconv.Atoi(fileLimit[0])
+					if fsrv.Browse.FileLimit != 0 {
+						return d.Err("file_limit is already enabled")
+					}
+					fsrv.Browse.FileLimit = val
+				default:
 					return d.Errf("unknown subdirective '%s'", d.Val())
 				}
-				if fsrv.Browse.RevealSymlinks {
-					return d.Err("Symlinks path reveal is already enabled")
-				}
-				fsrv.Browse.RevealSymlinks = true
 			}
 
 		case "precompressed":
-			var order []string
-			for d.NextArg() {
-				modID := "http.precompressed." + d.Val()
+			fsrv.PrecompressedOrder = d.RemainingArgs()
+			if len(fsrv.PrecompressedOrder) == 0 {
+				fsrv.PrecompressedOrder = []string{"br", "zstd", "gzip"}
+			}
+
+			for _, format := range fsrv.PrecompressedOrder {
+				modID := "http.precompressed." + format
 				mod, err := caddy.GetModule(modID)
 				if err != nil {
 					return d.Errf("getting module named '%s': %v", modID, err)
@@ -138,10 +165,8 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if fsrv.PrecompressedRaw == nil {
 					fsrv.PrecompressedRaw = make(caddy.ModuleMap)
 				}
-				fsrv.PrecompressedRaw[d.Val()] = caddyconfig.JSON(precompress, nil)
-				order = append(order, d.Val())
+				fsrv.PrecompressedRaw[format] = caddyconfig.JSON(precompress, nil)
 			}
-			fsrv.PrecompressedOrder = order
 
 		case "status":
 			if !d.NextArg() {
@@ -161,6 +186,13 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			fsrv.PassThru = true
+
+		case "etag_file_extensions":
+			etagFileExtensions := d.RemainingArgs()
+			if len(etagFileExtensions) == 0 {
+				return d.ArgErr()
+			}
+			fsrv.EtagFileExtensions = etagFileExtensions
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
@@ -244,7 +276,7 @@ func parseTryFiles(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) 
 			tryPolicy = h.Val()
 
 			switch tryPolicy {
-			case tryPolicyFirstExist, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod:
+			case tryPolicyFirstExist, tryPolicyFirstExistFallback, tryPolicyLargestSize, tryPolicySmallestSize, tryPolicyMostRecentlyMod:
 			default:
 				return nil, h.Errf("unrecognized try policy: %s", tryPolicy)
 			}

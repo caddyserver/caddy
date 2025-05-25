@@ -27,7 +27,6 @@ func init() {
 	caddy.RegisterModule(PKIIntermediateCAPool{})
 	caddy.RegisterModule(StoragePool{})
 	caddy.RegisterModule(HTTPCertPool{})
-	caddy.RegisterModule(LazyCertPool{})
 }
 
 // The interface to be implemented by all guest modules part of
@@ -188,9 +187,9 @@ func (PKIRootCAPool) CaddyModule() caddy.ModuleInfo {
 
 // Loads the PKI app and load the root certificates into the certificate pool
 func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
-	pkiApp := ctx.AppIfConfigured("pki")
-	if pkiApp == nil {
-		return fmt.Errorf("PKI app not configured")
+	pkiApp, err := ctx.AppIfConfigured("pki")
+	if err != nil {
+		return fmt.Errorf("pki_root CA pool requires that a PKI app is configured: %v", err)
 	}
 	pki := pkiApp.(*caddypki.PKI)
 	for _, caID := range p.Authority {
@@ -260,9 +259,9 @@ func (PKIIntermediateCAPool) CaddyModule() caddy.ModuleInfo {
 
 // Loads the PKI app and load the intermediate certificates into the certificate pool
 func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
-	pkiApp := ctx.AppIfConfigured("pki")
-	if pkiApp == nil {
-		return fmt.Errorf("PKI app not configured")
+	pkiApp, err := ctx.AppIfConfigured("pki")
+	if err != nil {
+		return fmt.Errorf("pki_intermediate CA pool requires that a PKI app is configured: %v", err)
 	}
 	pki := pkiApp.(*caddypki.PKI)
 	for _, caID := range p.Authority {
@@ -500,7 +499,7 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
 // copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
-func (t TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
+func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if repl == nil {
 		repl = caddy.NewReplacer()
@@ -579,8 +578,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		customTransport.TLSClientConfig = tlsConfig
 	}
 
-	var httpClient *http.Client
-	*httpClient = *http.DefaultClient
+	httpClient := *http.DefaultClient
 	httpClient.Transport = customTransport
 
 	for _, uri := range hcp.Endpoints {
@@ -665,121 +663,6 @@ func (hcp HTTPCertPool) CertPool() *x509.CertPool {
 	return hcp.pool
 }
 
-// LazyCertPool defers the generation of the certificate pool from the
-// guest module to demand-time rather than at provisionig time. The gain of the
-// lazy load adds a risk of failure to load the certificates at demand time
-// because the validation that's typically done at provisioning is deferred.
-// The validation can be enforced to run before runtime by setting
-// `EagerValidation`/`eager_validation` to `true`. It is the operator's responsibility
-// to ensure the resources are available if `EagerValidation`/`eager_validation`
-// is set to `true`. The module also incurs performance cost at every demand.
-type LazyCertPool struct {
-	// Provides the guest module that provides the trusted certificate authority (CA) certificates
-	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
-
-	// Whether the validation step should try to load and provision the guest module to validate
-	// the correctness of the configuration. Depeneding on the type of the guest module,
-	// the resources may not be available at validation time. It is the
-	// operator's responsibility to ensure the resources are available if `EagerValidation`/`eager_validation`
-	// is set to `true`.
-	EagerValidation bool `json:"eager_validation,omitempty"`
-
-	ctx caddy.Context
-}
-
-// CaddyModule implements caddy.Module.
-func (LazyCertPool) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID: "tls.ca_pool.source.lazy",
-		New: func() caddy.Module {
-			return new(LazyCertPool)
-		},
-	}
-}
-
-// Provision implements caddy.Provisioner.
-func (lcp *LazyCertPool) Provision(ctx caddy.Context) error {
-	if len(lcp.CARaw) == 0 {
-		return fmt.Errorf("missing backing CA source")
-	}
-	lcp.ctx = ctx
-	return nil
-}
-
-// Syntax:
-//
-//	trust_pool lazy {
-//		backend <ca_module>
-//		eager_validation
-//	}
-//
-// The `backend` directive specifies the CA module to use to provision the
-// certificate pool. The `eager_validation` directive specifies that the
-// validation step should try to load and provision the guest module to validate
-// the correctness of the configuration. Depeneding on the type of the guest module,
-// the resources may not be available at validation time. It is the
-// operator's responsibility to ensure the resources are available if `EagerValidation`/`eager_validation`
-// is set to `true`.
-//
-// The `backend` directive is required.
-func (lcp *LazyCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next() // consume module name
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
-		switch d.Val() {
-		case "backend":
-			if lcp.CARaw != nil {
-				return d.Err("backend block already defined")
-			}
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			modStem := d.Val()
-			modID := "tls.ca_pool.source." + modStem
-			unm, err := caddyfile.UnmarshalModule(d, modID)
-			if err != nil {
-				return err
-			}
-			backend, ok := unm.(CA)
-			if !ok {
-				return d.Errf("module %s is not a caddytls.CA", modID)
-			}
-			lcp.CARaw = caddyconfig.JSONModuleObject(backend, "provider", modStem, nil)
-		case "eager_validation":
-			lcp.EagerValidation = true
-		default:
-			return d.Errf("unrecognized directive: %s", d.Val())
-		}
-	}
-	if lcp.CARaw == nil {
-		return d.Err("backend block is required")
-	}
-	return nil
-}
-
-// If EagerValidation is `true`, it attempts to load and provision the guest module
-// to ensure the guesst module's configuration is correct. Depeneding on the type of the
-// guest module, the resources may not be available at validation time. It is the
-// operator's responsibility to ensure the resources are available if `EagerValidation` is
-// set to `true`.
-func (lcp LazyCertPool) Validate() error {
-	if lcp.EagerValidation {
-		_, err := lcp.ctx.LoadModule(lcp, "CARaw")
-		return err
-	}
-	return nil
-}
-
-// CertPool loads the guest module and returns the CertPool from there
-// TODO: Cache?
-func (lcp LazyCertPool) CertPool() *x509.CertPool {
-	caRaw, err := lcp.ctx.LoadModule(lcp, "CARaw")
-	if err != nil {
-		return nil
-	}
-	ca := caRaw.(CA)
-	return ca.CertPool()
-}
-
 var (
 	_ caddy.Module          = (*InlineCAPool)(nil)
 	_ caddy.Provisioner     = (*InlineCAPool)(nil)
@@ -811,10 +694,4 @@ var (
 	_ caddy.Validator       = (*HTTPCertPool)(nil)
 	_ CA                    = (*HTTPCertPool)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPCertPool)(nil)
-
-	_ caddy.Module          = (*LazyCertPool)(nil)
-	_ caddy.Provisioner     = (*LazyCertPool)(nil)
-	_ caddy.Validator       = (*LazyCertPool)(nil)
-	_ CA                    = (*LazyCertPool)(nil)
-	_ caddyfile.Unmarshaler = (*LazyCertPool)(nil)
 )

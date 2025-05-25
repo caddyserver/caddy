@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -66,17 +68,6 @@ type AutoHTTPSConfig struct {
 	IgnoreLoadedCerts bool `json:"ignore_loaded_certificates,omitempty"`
 }
 
-// Skipped returns true if name is in skipSlice, which
-// should be either the Skip or SkipCerts field on ahc.
-func (ahc AutoHTTPSConfig) Skipped(name string, skipSlice []string) bool {
-	for _, n := range skipSlice {
-		if name == n {
-			return true
-		}
-	}
-	return false
-}
-
 // automaticHTTPSPhase1 provisions all route matchers, determines
 // which domain names found in the routes qualify for automatic
 // HTTPS, and sets up HTTP->HTTPS redirects. This phase must occur
@@ -117,7 +108,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			srv.AutoHTTPS = new(AutoHTTPSConfig)
 		}
 		if srv.AutoHTTPS.Disabled {
-			logger.Warn("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
+			logger.Info("automatic HTTPS is completely disabled for server", zap.String("server_name", srvName))
 			continue
 		}
 
@@ -158,7 +149,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 								return fmt.Errorf("%s: route %d, matcher set %d, matcher %d, host matcher %d: %v",
 									srvName, routeIdx, matcherSetIdx, matcherIdx, hostMatcherIdx, err)
 							}
-							if !srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.Skip) {
+							if !slices.Contains(srv.AutoHTTPS.Skip, d) {
 								serverDomainSet[d] = struct{}{}
 							}
 						}
@@ -166,6 +157,14 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				}
 			}
 		}
+
+		// build the list of domains that could be used with ECH (if enabled)
+		// so the TLS app can know to publish ECH configs for them
+		echDomains := make([]string, 0, len(serverDomainSet))
+		for d := range serverDomainSet {
+			echDomains = append(echDomains, d)
+		}
+		app.tlsApp.RegisterServerNames(echDomains)
 
 		// nothing more to do here if there are no domains that qualify for
 		// automatic HTTPS and there are no explicit TLS connection policies:
@@ -193,7 +192,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		} else {
 			for d := range serverDomainSet {
 				if certmagic.SubjectQualifiesForCert(d) &&
-					!srv.AutoHTTPS.Skipped(d, srv.AutoHTTPS.SkipCerts) {
+					!slices.Contains(srv.AutoHTTPS.SkipCerts, d) {
 					// if a certificate for this name is already loaded,
 					// don't obtain another one for it, unless we are
 					// supposed to ignore loaded certificates
@@ -225,7 +224,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 
 		// nothing left to do if auto redirects are disabled
 		if srv.AutoHTTPS.DisableRedir {
-			logger.Warn("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
+			logger.Info("automatic HTTP->HTTPS redirects are disabled", zap.String("server_name", srvName))
 			continue
 		}
 
@@ -260,25 +259,16 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 				// port, we'll have to choose one, so prefer the HTTPS port
 				if _, ok := redirDomains[d]; !ok ||
 					addr.StartPort == uint(app.httpsPort()) {
-					redirDomains[d] = []caddy.NetworkAddress{addr}
+					redirDomains[d] = append(redirDomains[d], addr)
 				}
 			}
 		}
 	}
 
-	// we now have a list of all the unique names for which we need certs;
-	// turn the set into a slice so that phase 2 can use it
-	app.allCertDomains = make([]string, 0, len(uniqueDomainsForCerts))
+	// we now have a list of all the unique names for which we need certs
 	var internal, tailscale []string
 uniqueDomainsLoop:
 	for d := range uniqueDomainsForCerts {
-		if !isTailscaleDomain(d) {
-			// whether or not there is already an automation policy for this
-			// name, we should add it to the list to manage a cert for it,
-			// unless it's a Tailscale domain, because we don't manage those
-			app.allCertDomains = append(app.allCertDomains, d)
-		}
-
 		// some names we've found might already have automation policies
 		// explicitly specified for them; we should exclude those from
 		// our hidden/implicit policy, since applying a name to more than
@@ -287,17 +277,38 @@ uniqueDomainsLoop:
 			for _, ap := range app.tlsApp.Automation.Policies {
 				for _, apHost := range ap.Subjects() {
 					if apHost == d {
+						// if the automation policy has all internal subjects but no issuers,
+						// it will default to CertMagic's issuers which are public CAs; use
+						// our internal issuer instead
+						if len(ap.Issuers) == 0 && ap.AllInternalSubjects() {
+							iss := new(caddytls.InternalIssuer)
+							if err := iss.Provision(ctx); err != nil {
+								return err
+							}
+							ap.Issuers = append(ap.Issuers, iss)
+						}
 						continue uniqueDomainsLoop
 					}
 				}
 			}
 		}
 
-		// if no automation policy exists for the name yet, we
-		// will associate it with an implicit one
+		// if no automation policy exists for the name yet, we will associate it with an implicit one;
+		// we handle tailscale domains specially, and we also separate out identifiers that need the
+		// internal issuer (self-signed certs); certmagic does not consider public IP addresses to be
+		// disqualified for public certs, because there are public CAs that will issue certs for IPs.
+		// However, with auto-HTTPS, many times there is no issuer explicitly defined, and the default
+		// issuers do not (currently, as of 2024) issue IP certificates; so assign all IP subjects to
+		// the internal issuer when there are no explicit automation policies
+		shouldUseInternal := func(ident string) bool {
+			usingDefaultIssuersAndIsIP := certmagic.SubjectIsIP(ident) &&
+				(app.tlsApp == nil || app.tlsApp.Automation == nil || len(app.tlsApp.Automation.Policies) == 0)
+			return !certmagic.SubjectQualifiesForPublicCert(d) || usingDefaultIssuersAndIsIP
+		}
 		if isTailscaleDomain(d) {
 			tailscale = append(tailscale, d)
-		} else if !certmagic.SubjectQualifiesForPublicCert(d) {
+			delete(uniqueDomainsForCerts, d) // not managed by us; handled separately
+		} else if shouldUseInternal(d) {
 			internal = append(internal, d)
 		}
 	}
@@ -425,6 +436,9 @@ redirServersLoop:
 			Logs:   logCfg,
 		}
 	}
+
+	// persist the domains/IPs we're managing certs for through provisioning/startup
+	app.allCertDomains = uniqueDomainsForCerts
 
 	logger.Debug("adjusted config",
 		zap.Reflect("tls", app.tlsApp),
@@ -728,11 +742,11 @@ func (app *App) automaticHTTPSPhase2() error {
 		return nil
 	}
 	app.logger.Info("enabling automatic TLS certificate management",
-		zap.Strings("domains", app.allCertDomains),
+		zap.Strings("domains", internal.MaxSizeSubjectsListForLog(app.allCertDomains, 1000)),
 	)
 	err := app.tlsApp.Manage(app.allCertDomains)
 	if err != nil {
-		return fmt.Errorf("managing certificates for %v: %s", app.allCertDomains, err)
+		return fmt.Errorf("managing certificates for %d domains: %s", len(app.allCertDomains), err)
 	}
 	app.allCertDomains = nil // no longer needed; allow GC to deallocate
 	return nil

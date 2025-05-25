@@ -74,6 +74,10 @@ func cmdStart(fl Flags) (int, error) {
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
 	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	// we should be able to run caddy in relative paths
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
 	if configFlag != "" {
 		cmd.Args = append(cmd.Args, "--config", configFlag)
 	}
@@ -167,6 +171,10 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
+	logger := caddy.Log()
+	undoMaxProcs := setResourceLimits(logger)
+	defer undoMaxProcs()
+
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 	resumeFlag := fl.Bool("resume")
@@ -192,18 +200,18 @@ func cmdRun(fl Flags) (int, error) {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if errors.Is(err, fs.ErrNotExist) {
 			// not a bad error; just can't resume if autosave file doesn't exist
-			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
+			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
-				caddy.Log().Info("resuming from last configuration",
+				logger.Info("resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			} else {
 				// if they also specified a config file, user should be aware that we're not
 				// using it (doing so could lead to data/config loss by overwriting!)
-				caddy.Log().Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
+				logger.Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			}
 		}
@@ -221,7 +229,7 @@ func cmdRun(fl Flags) (int, error) {
 	if pidfileFlag != "" {
 		err := caddy.PIDFile(pidfileFlag)
 		if err != nil {
-			caddy.Log().Error("unable to write PID file",
+			logger.Error("unable to write PID file",
 				zap.String("pidfile", pidfileFlag),
 				zap.Error(err))
 		}
@@ -232,7 +240,7 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
-	caddy.Log().Info("serving initial configuration")
+	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
@@ -268,15 +276,15 @@ func cmdRun(fl Flags) (int, error) {
 	switch runtime.GOOS {
 	case "windows":
 		if os.Getenv("HOME") == "" && os.Getenv("USERPROFILE") == "" && !hasXDG {
-			caddy.Log().Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
+			logger.Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
 		}
 	case "plan9":
 		if os.Getenv("home") == "" && !hasXDG {
-			caddy.Log().Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	default:
 		if os.Getenv("HOME") == "" && !hasXDG {
-			caddy.Log().Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
 
@@ -556,10 +564,15 @@ func cmdValidateConfig(fl Flags) (int, error) {
 
 func cmdFmt(fl Flags) (int, error) {
 	configFile := fl.Arg(0)
-	if configFile == "" {
-		configFile = "Caddyfile"
+	configFlag := fl.String("config")
+	if (len(fl.Args()) > 1) || (configFlag != "" && configFile != "") {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("fmt does not support multiple files %s %s", configFlag, strings.Join(fl.Args(), " "))
 	}
-
+	if configFile == "" && configFlag == "" {
+		configFile = "Caddyfile"
+	} else if configFile == "" {
+		configFile = configFlag
+	}
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
@@ -656,6 +669,8 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 			return nil, err
 		}
 		parsedAddr.Host = addr
+	} else if parsedAddr.IsFdNetwork() {
+		origin = "http://127.0.0.1"
 	}
 
 	// form the request
@@ -663,13 +678,13 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}
-	if parsedAddr.IsUnixNetwork() {
+	if parsedAddr.IsUnixNetwork() || parsedAddr.IsFdNetwork() {
 		// We used to conform to RFC 2616 Section 14.26 which requires
 		// an empty host header when there is no host, as is the case
-		// with unix sockets. However, Go required a Host value so we
-		// used a hack of a space character as the host (it would see
-		// the Host was non-empty, then trim the space later). As of
-		// Go 1.20.6 (July 2023), this hack no longer works. See:
+		// with unix sockets and socket fds. However, Go required a
+		// Host value so we used a hack of a space character as the host
+		// (it would see the Host was non-empty, then trim the space later).
+		// As of Go 1.20.6 (July 2023), this hack no longer works. See:
 		// https://github.com/golang/go/issues/60374
 		// See also the discussion here:
 		// https://github.com/golang/go/issues/61431
@@ -710,7 +725,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 
 	// if it didn't work, let the user know
 	if resp.StatusCode >= 400 {
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*10))
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024*2))
 		if err != nil {
 			return nil, fmt.Errorf("HTTP %d: reading error message: %v", resp.StatusCode, err)
 		}

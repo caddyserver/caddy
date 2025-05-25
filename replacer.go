@@ -15,7 +15,9 @@
 package caddy
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // NewReplacer returns a new Replacer.
@@ -32,9 +36,10 @@ func NewReplacer() *Replacer {
 		static:   make(map[string]any),
 		mapMutex: &sync.RWMutex{},
 	}
-	rep.providers = []ReplacerFunc{
-		globalDefaultReplacements,
-		rep.fromStatic,
+	rep.providers = []replacementProvider{
+		globalDefaultReplacementProvider{},
+		fileReplacementProvider{},
+		ReplacerFunc(rep.fromStatic),
 	}
 	return rep
 }
@@ -46,8 +51,8 @@ func NewEmptyReplacer() *Replacer {
 		static:   make(map[string]any),
 		mapMutex: &sync.RWMutex{},
 	}
-	rep.providers = []ReplacerFunc{
-		rep.fromStatic,
+	rep.providers = []replacementProvider{
+		ReplacerFunc(rep.fromStatic),
 	}
 	return rep
 }
@@ -56,10 +61,25 @@ func NewEmptyReplacer() *Replacer {
 // A default/empty Replacer is not valid;
 // use NewReplacer to make one.
 type Replacer struct {
-	providers []ReplacerFunc
+	providers []replacementProvider
+	static    map[string]any
+	mapMutex  *sync.RWMutex
+}
 
-	static   map[string]any
-	mapMutex *sync.RWMutex
+// WithoutFile returns a copy of the current Replacer
+// without support for the {file.*} placeholder, which
+// may be unsafe in some contexts.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (r *Replacer) WithoutFile() *Replacer {
+	rep := &Replacer{static: r.static}
+	for _, v := range r.providers {
+		if _, ok := v.(fileReplacementProvider); ok {
+			continue
+		}
+		rep.providers = append(rep.providers, v)
+	}
+	return rep
 }
 
 // Map adds mapFunc to the list of value providers.
@@ -79,7 +99,7 @@ func (r *Replacer) Set(variable string, value any) {
 // the value and whether the variable was known.
 func (r *Replacer) Get(variable string) (any, bool) {
 	for _, mapFunc := range r.providers {
-		if val, ok := mapFunc(variable); ok {
+		if val, ok := mapFunc.replace(variable); ok {
 			return val, true
 		}
 	}
@@ -279,11 +299,11 @@ func ToString(val any) string {
 	case int64:
 		return strconv.Itoa(int(v))
 	case uint:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint32:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint64:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(v, 10)
 	case float32:
 		return strconv.FormatFloat(float64(v), 'f', -1, 32)
 	case float64:
@@ -298,14 +318,54 @@ func ToString(val any) string {
 	}
 }
 
-// ReplacerFunc is a function that returns a replacement
-// for the given key along with true if the function is able
-// to service that key (even if the value is blank). If the
-// function does not recognize the key, false should be
-// returned.
+// ReplacerFunc is a function that returns a replacement for the
+// given key along with true if the function is able to service
+// that key (even if the value is blank). If the function does
+// not recognize the key, false should be returned.
 type ReplacerFunc func(key string) (any, bool)
 
-func globalDefaultReplacements(key string) (any, bool) {
+func (f ReplacerFunc) replace(key string) (any, bool) {
+	return f(key)
+}
+
+// replacementProvider is a type that can provide replacements
+// for placeholders. Allows for type assertion to determine
+// which type of provider it is.
+type replacementProvider interface {
+	replace(key string) (any, bool)
+}
+
+// fileReplacementsProvider handles {file.*} replacements,
+// reading a file from disk and replacing with its contents.
+type fileReplacementProvider struct{}
+
+func (f fileReplacementProvider) replace(key string) (any, bool) {
+	if !strings.HasPrefix(key, filePrefix) {
+		return nil, false
+	}
+
+	filename := key[len(filePrefix):]
+	maxSize := 1024 * 1024
+	body, err := readFileIntoBuffer(filename, maxSize)
+	if err != nil {
+		wd, _ := os.Getwd()
+		Log().Error("placeholder: failed to read file",
+			zap.String("file", filename),
+			zap.String("working_dir", wd),
+			zap.Error(err))
+		return nil, true
+	}
+	body = bytes.TrimSuffix(body, []byte("\n"))
+	body = bytes.TrimSuffix(body, []byte("\r"))
+	return string(body), true
+}
+
+// globalDefaultReplacementsProvider handles replacements
+// that can be used in any context, such as system variables,
+// time, or environment variables.
+type globalDefaultReplacementProvider struct{}
+
+func (f globalDefaultReplacementProvider) replace(key string) (any, bool) {
 	// check environment variable
 	const envPrefix = "env."
 	if strings.HasPrefix(key, envPrefix) {
@@ -347,6 +407,24 @@ func globalDefaultReplacements(key string) (any, bool) {
 	return nil, false
 }
 
+// readFileIntoBuffer reads the file at filePath into a size limited buffer.
+func readFileIntoBuffer(filename string, size int) ([]byte, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	buffer := make([]byte, size)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	// slice the buffer to the actual size
+	return buffer[:n], nil
+}
+
 // ReplacementFunc is a function that is called when a
 // replacement is being performed. It receives the
 // variable (i.e. placeholder name) and the value that
@@ -363,3 +441,5 @@ var nowFunc = time.Now
 const ReplacerCtxKey CtxKey = "replacer"
 
 const phOpen, phClose, phEscape = '{', '}', '\\'
+
+const filePrefix = "file."

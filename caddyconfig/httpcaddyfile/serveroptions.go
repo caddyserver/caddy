@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/dustin/go-humanize"
 
@@ -50,6 +51,7 @@ type serverOptions struct {
 	ClientIPHeaders      []string
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
+	Trace                bool // TODO: EXPERIMENTAL
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -179,7 +181,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				if proto != "h1" && proto != "h2" && proto != "h2c" && proto != "h3" {
 					return nil, d.Errf("unknown protocol '%s': expected h1, h2, h2c, or h3", proto)
 				}
-				if sliceContains(serverOpts.Protocols, proto) {
+				if slices.Contains(serverOpts.Protocols, proto) {
 					return nil, d.Errf("protocol %s specified more than once", proto)
 				}
 				serverOpts.Protocols = append(serverOpts.Protocols, proto)
@@ -228,7 +230,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 		case "client_ip_headers":
 			headers := d.RemainingArgs()
 			for _, header := range headers {
-				if sliceContains(serverOpts.ClientIPHeaders, header) {
+				if slices.Contains(serverOpts.ClientIPHeaders, header) {
 					return nil, d.Errf("client IP header %s specified more than once", header)
 				}
 				serverOpts.ClientIPHeaders = append(serverOpts.ClientIPHeaders, header)
@@ -238,47 +240,22 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
+			caddy.Log().Warn("The nested 'metrics' option inside `servers` is deprecated and will be removed in the next major version. Use the global 'metrics' option instead.")
+			serverOpts.Metrics = new(caddyhttp.Metrics)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "per_host":
+					serverOpts.Metrics.PerHost = true
+				default:
+					return nil, d.Errf("unrecognized metrics option '%s'", d.Val())
+				}
+			}
+
+		case "trace":
 			if d.NextArg() {
 				return nil, d.ArgErr()
 			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
-			serverOpts.Metrics = new(caddyhttp.Metrics)
-
-		// TODO: DEPRECATED. (August 2022)
-		case "protocol":
-			caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol sub-option will be removed soon")
-
-			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				switch d.Val() {
-				case "allow_h2c":
-					caddy.Log().Named("caddyfile").Warn("DEPRECATED: allow_h2c will be removed soon; use protocols option instead")
-
-					if d.NextArg() {
-						return nil, d.ArgErr()
-					}
-					if sliceContains(serverOpts.Protocols, "h2c") {
-						return nil, d.Errf("protocol h2c already specified")
-					}
-					serverOpts.Protocols = append(serverOpts.Protocols, "h2c")
-
-				case "strict_sni_host":
-					caddy.Log().Named("caddyfile").Warn("DEPRECATED: protocol > strict_sni_host in this position will be removed soon; move up to the servers block instead")
-
-					if d.NextArg() && d.Val() != "insecure_off" && d.Val() != "on" {
-						return nil, d.Errf("strict_sni_host only supports 'on' or 'insecure_off', got '%s'", d.Val())
-					}
-					boolVal := true
-					if d.Val() == "insecure_off" {
-						boolVal = false
-					}
-					serverOpts.StrictSNIHost = &boolVal
-
-				default:
-					return nil, d.Errf("unrecognized protocol option '%s'", d.Val())
-				}
-			}
+			serverOpts.Trace = true
 
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
@@ -291,7 +268,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 func applyServerOptions(
 	servers map[string]*caddyhttp.Server,
 	options map[string]any,
-	warnings *[]caddyconfig.Warning,
+	_ *[]caddyconfig.Warning,
 ) error {
 	serverOpts, ok := options["servers"].([]serverOptions)
 	if !ok {
@@ -315,24 +292,15 @@ func applyServerOptions(
 
 	for key, server := range servers {
 		// find the options that apply to this server
-		opts := func() *serverOptions {
-			for _, entry := range serverOpts {
-				if entry.ListenerAddress == "" {
-					return &entry
-				}
-				for _, listener := range server.Listen {
-					if entry.ListenerAddress == listener {
-						return &entry
-					}
-				}
-			}
-			return nil
-		}()
+		optsIndex := slices.IndexFunc(serverOpts, func(s serverOptions) bool {
+			return s.ListenerAddress == "" || slices.Contains(server.Listen, s.ListenerAddress)
+		})
 
 		// if none apply, then move to the next server
-		if opts == nil {
+		if optsIndex == -1 {
 			continue
 		}
+		opts := serverOpts[optsIndex]
 
 		// set all the options
 		server.ListenerWrappersRaw = opts.ListenerWrappersRaw
@@ -351,9 +319,16 @@ func applyServerOptions(
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
-				server.Logs = &caddyhttp.ServerLogConfig{}
+				server.Logs = new(caddyhttp.ServerLogConfig)
 			}
 			server.Logs.ShouldLogCredentials = opts.ShouldLogCredentials
+		}
+		if opts.Trace {
+			// TODO: THIS IS EXPERIMENTAL (MAY 2024)
+			if server.Logs == nil {
+				server.Logs = new(caddyhttp.ServerLogConfig)
+			}
+			server.Logs.Trace = opts.Trace
 		}
 
 		if opts.Name != "" {

@@ -15,8 +15,6 @@
 package acmeserver
 
 import (
-	"time"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
@@ -42,6 +40,7 @@ func init() {
 //			domains <domains...>
 //			ip_ranges <addresses...>
 //		}
+//		sign_with_root
 //	}
 func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error) {
 	h.Next() // consume directive name
@@ -73,13 +72,9 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
-
 			dur, err := caddy.ParseDuration(h.Val())
 			if err != nil {
 				return nil, err
-			}
-			if d := time.Duration(ca.IntermediateLifetime); d > 0 && dur > d {
-				return nil, h.Errf("certificate lifetime (%s) exceeds intermediate certificate lifetime (%s)", dur, d)
 			}
 			acmeServer.Lifetime = caddy.Duration(dur)
 		case "resolvers":
@@ -96,19 +91,17 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			acmeServer.Policy.AllowWildcardNames = true
 		case "allow":
 			r := &RuleSet{}
-			for h.Next() {
-				for h.NextBlock(h.Nesting() - 1) {
-					if h.CountRemainingArgs() == 0 {
-						return nil, h.ArgErr() // TODO:
-					}
-					switch h.Val() {
-					case "domains":
-						r.Domains = append(r.Domains, h.RemainingArgs()...)
-					case "ip_ranges":
-						r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
-					default:
-						return nil, h.Errf("unrecognized 'allow' subdirective: %s", h.Val())
-					}
+			for nesting := h.Nesting(); h.NextBlock(nesting); {
+				if h.CountRemainingArgs() == 0 {
+					return nil, h.ArgErr() // TODO:
+				}
+				switch h.Val() {
+				case "domains":
+					r.Domains = append(r.Domains, h.RemainingArgs()...)
+				case "ip_ranges":
+					r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+				default:
+					return nil, h.Errf("unrecognized 'allow' subdirective: %s", h.Val())
 				}
 			}
 			if acmeServer.Policy == nil {
@@ -117,25 +110,28 @@ func parseACMEServer(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			acmeServer.Policy.Allow = r
 		case "deny":
 			r := &RuleSet{}
-			for h.Next() {
-				for h.NextBlock(h.Nesting() - 1) {
-					if h.CountRemainingArgs() == 0 {
-						return nil, h.ArgErr() // TODO:
-					}
-					switch h.Val() {
-					case "domains":
-						r.Domains = append(r.Domains, h.RemainingArgs()...)
-					case "ip_ranges":
-						r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
-					default:
-						return nil, h.Errf("unrecognized 'deny' subdirective: %s", h.Val())
-					}
+			for nesting := h.Nesting(); h.NextBlock(nesting); {
+				if h.CountRemainingArgs() == 0 {
+					return nil, h.ArgErr() // TODO:
+				}
+				switch h.Val() {
+				case "domains":
+					r.Domains = append(r.Domains, h.RemainingArgs()...)
+				case "ip_ranges":
+					r.IPRanges = append(r.IPRanges, h.RemainingArgs()...)
+				default:
+					return nil, h.Errf("unrecognized 'deny' subdirective: %s", h.Val())
 				}
 			}
 			if acmeServer.Policy == nil {
 				acmeServer.Policy = &Policy{}
 			}
 			acmeServer.Policy.Deny = r
+		case "sign_with_root":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			acmeServer.SignWithRoot = true
 		default:
 			return nil, h.Errf("unrecognized ACME server directive: %s", h.Val())
 		}

@@ -1,3 +1,5 @@
+version: 2
+
 before:
   hooks:
     # The build is done in this particular way to build Caddy in a designated directory named in .gitignore.
@@ -10,6 +12,9 @@ before:
     - mkdir -p caddy-build
     - cp cmd/caddy/main.go caddy-build/main.go
     - /bin/sh -c 'cd ./caddy-build && go mod init caddy'
+    # prepare syso files for windows embedding
+    - /bin/sh -c 'for a in amd64 arm arm64; do XCADDY_SKIP_BUILD=1 GOOS=windows GOARCH=$a xcaddy build {{.Env.TAG}}; done'
+    - /bin/sh -c 'mv /tmp/buildenv_*/*.syso caddy-build'
     # GoReleaser doesn't seem to offer {{.Tag}} at this stage, so we have to embed it into the env
     # so we run: TAG=$(git describe --abbrev=0) goreleaser release --rm-dist --skip-publish --skip-validate
     - go mod edit -require=github.com/caddyserver/caddy/v2@{{.Env.TAG}} ./caddy-build/go.mod
@@ -29,7 +34,6 @@ builds:
 - env:
   - CGO_ENABLED=0
   - GO111MODULE=on
-  main: main.go
   dir: ./caddy-build
   binary: caddy
   goos:
@@ -79,6 +83,8 @@ builds:
   - -s -w
   tags:
   - nobadger
+  - nomysql
+  - nopgx
 
 signs:
   - cmd: cosign
@@ -105,7 +111,7 @@ archives:
   - id: default
     format_overrides:
       - goos: windows
-        format: zip
+        formats: zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -185,6 +191,9 @@ nfpms:
       postinstall: ./caddy-dist/scripts/postinstall.sh
       preremove: ./caddy-dist/scripts/preremove.sh
       postremove: ./caddy-dist/scripts/postremove.sh
+
+    provides:
+      - httpd
 
 release:
   github:

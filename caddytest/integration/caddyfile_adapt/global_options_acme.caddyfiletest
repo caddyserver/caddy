@@ -17,8 +17,6 @@
 	admin off
 	on_demand_tls {
 		ask https://example.com
-		interval 30s
-		burst 20
 	}
 	storage_clean_interval 7d
 	renew_interval 1d
@@ -63,6 +61,14 @@
 						"issuers": [
 							{
 								"ca": "https://example.com",
+								"challenges": {
+									"http": {
+										"alternate_port": 8080
+									},
+									"tls-alpn": {
+										"alternate_port": 8443
+									}
+								},
 								"email": "test@example.com",
 								"external_account": {
 									"key_id": "4K2scIVbBpNd-78scadB2g",
@@ -81,10 +87,6 @@
 					"permission": {
 						"endpoint": "https://example.com",
 						"module": "http"
-					},
-					"rate_limit": {
-						"interval": 30000000000,
-						"burst": 20
 					}
 				},
 				"ocsp_interval": 172800000000000,

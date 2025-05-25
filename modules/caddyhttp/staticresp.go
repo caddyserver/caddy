@@ -206,7 +206,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	// or for clients to render JSON properly which is very common)
 	body := repl.ReplaceKnown(s.Body, "")
 	if body != "" && w.Header().Get("Content-Type") == "" {
-		content := strings.TrimSpace(s.Body)
+		content := strings.TrimSpace(body)
 		if len(content) > 2 &&
 			(content[0] == '{' && content[len(content)-1] == '}' ||
 				(content[0] == '[' && content[len(content)-1] == ']')) &&
@@ -387,7 +387,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if !listenAddr.IsUnixNetwork() {
+	if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() {
 		listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
 		for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
 			listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))

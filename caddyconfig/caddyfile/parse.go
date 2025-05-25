@@ -50,7 +50,7 @@ func Parse(filename string, input []byte) ([]ServerBlock, error) {
 	p := parser{
 		Dispenser: NewDispenser(tokens),
 		importGraph: importGraph{
-			nodes: make(map[string]bool),
+			nodes: make(map[string]struct{}),
 			edges: make(adjacency),
 		},
 	}
@@ -214,7 +214,12 @@ func (p *parser) addresses() error {
 		value := p.Val()
 		token := p.Token()
 
-		// special case: import directive replaces tokens during parse-time
+		// Reject request matchers if trying to define them globally
+		if strings.HasPrefix(value, "@") {
+			return p.Errf("request matchers may not be defined globally, they must be in a site block; found %s", value)
+		}
+
+		// Special case: import directive replaces tokens during parse-time
 		if value == "import" && p.isNewLine() {
 			err := p.doImport(0)
 			if err != nil {
@@ -259,8 +264,13 @@ func (p *parser) addresses() error {
 				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", value)
 			}
 
-			token.Text = value
-			p.block.Keys = append(p.block.Keys, token)
+			// After the above, a comma surrounded by spaces would result
+			// in an empty token which we should ignore
+			if value != "" {
+				// Add the token as a site address
+				token.Text = value
+				p.block.Keys = append(p.block.Keys, token)
+			}
 		}
 
 		// Advance token and possibly break out of loop or return error
@@ -359,9 +369,45 @@ func (p *parser) doImport(nesting int) error {
 	// set up a replacer for non-variadic args replacement
 	repl := makeArgsReplacer(args)
 
+	// grab all the tokens (if it exists) from within a block that follows the import
+	var blockTokens []Token
+	for currentNesting := p.Nesting(); p.NextBlock(currentNesting); {
+		blockTokens = append(blockTokens, p.Token())
+	}
+	// initialize with size 1
+	blockMapping := make(map[string][]Token, 1)
+	if len(blockTokens) > 0 {
+		// use such tokens to create a new dispenser, and then use it to parse each block
+		bd := NewDispenser(blockTokens)
+		for bd.Next() {
+			// see if we can grab a key
+			var currentMappingKey string
+			if bd.Val() == "{" {
+				return p.Err("anonymous blocks are not supported")
+			}
+			currentMappingKey = bd.Val()
+			currentMappingTokens := []Token{}
+			// read all args until end of line / {
+			if bd.NextArg() {
+				currentMappingTokens = append(currentMappingTokens, bd.Token())
+				for bd.NextArg() {
+					currentMappingTokens = append(currentMappingTokens, bd.Token())
+				}
+				// TODO(elee1766): we don't enter another mapping here because it's annoying to extract the { and } properly.
+				// maybe someone can do that in the future
+			} else {
+				// attempt to enter a block and add tokens to the currentMappingTokens
+				for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
+					currentMappingTokens = append(currentMappingTokens, bd.Token())
+				}
+			}
+			blockMapping[currentMappingKey] = currentMappingTokens
+		}
+	}
+
 	// splice out the import directive and its arguments
 	// (2 tokens, plus the length of args)
-	tokensBefore := p.tokens[:p.cursor-1-len(args)]
+	tokensBefore := p.tokens[:p.cursor-1-len(args)-len(blockTokens)]
 	tokensAfter := p.tokens[p.cursor+1:]
 	var importedTokens []Token
 	var nodes []string
@@ -377,7 +423,7 @@ func (p *parser) doImport(nesting int) error {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
 		// list of matching filenames
-		absFile, err := filepath.Abs(p.Dispenser.File())
+		absFile, err := caddy.FastAbs(p.Dispenser.File())
 		if err != nil {
 			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
 		}
@@ -395,7 +441,6 @@ func (p *parser) doImport(nesting int) error {
 			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
 		}
 		matches, err = filepath.Glob(globPattern)
-
 		if err != nil {
 			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
 		}
@@ -491,6 +536,33 @@ func (p *parser) doImport(nesting int) error {
 				maybeSnippet = false
 			}
 		}
+		// if it is {block}, we substitute with all tokens in the block
+		// if it is {blocks.*}, we substitute with the tokens in the mapping for the *
+		var skip bool
+		var tokensToAdd []Token
+		switch {
+		case token.Text == "{block}":
+			tokensToAdd = blockTokens
+		case strings.HasPrefix(token.Text, "{blocks.") && strings.HasSuffix(token.Text, "}"):
+			// {blocks.foo.bar} will be extracted to key `foo.bar`
+			blockKey := strings.TrimPrefix(strings.TrimSuffix(token.Text, "}"), "{blocks.")
+			val, ok := blockMapping[blockKey]
+			if ok {
+				tokensToAdd = val
+			}
+		default:
+			skip = true
+		}
+		if !skip {
+			if len(tokensToAdd) == 0 {
+				// if there is no content in the snippet block, don't do any replacement
+				// this allows snippets which contained {block}/{block.*} before this change to continue functioning as normal
+				tokensCopy = append(tokensCopy, token)
+			} else {
+				tokensCopy = append(tokensCopy, tokensToAdd...)
+			}
+			continue
+		}
 
 		if maybeSnippet {
 			tokensCopy = append(tokensCopy, token)
@@ -512,7 +584,7 @@ func (p *parser) doImport(nesting int) error {
 	// splice the imported tokens in the place of the import statement
 	// and rewind cursor so Next() will land on first imported token
 	p.tokens = append(tokensBefore, append(tokensCopy, tokensAfter...)...)
-	p.cursor -= len(args) + 1
+	p.cursor -= len(args) + len(blockTokens) + 1
 
 	return nil
 }
@@ -550,7 +622,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 
 	// Tack the file path onto these tokens so errors show the imported file's name
 	// (we use full, absolute path to avoid bugs: issue #1892)
-	filename, err := filepath.Abs(importFile)
+	filename, err := caddy.FastAbs(importFile)
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}

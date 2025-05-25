@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -51,26 +51,46 @@ func init() {
 	RegisterDirective("log", parseLog)
 	RegisterHandlerDirective("skip_log", parseLogSkip)
 	RegisterHandlerDirective("log_skip", parseLogSkip)
+	RegisterHandlerDirective("log_name", parseLogName)
 }
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...>
+//		bind <addresses...> [{
+//	   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
-	return []ConfigValue{{Class: "bind", Value: h.RemainingArgs()}}, nil
+	var addresses, protocols []string
+	addresses = h.RemainingArgs()
+
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "protocols":
+			protocols = h.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, h.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 // parseTLS parses the tls directive. Syntax:
 //
-//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	tls [<email>|internal|force_automate]|[<cert_file> <key_file>] {
 //	    protocols <min> [<max>]
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
 //	    client_auth {
 //	        mode                   [request|require|verify_if_given|require_and_verify]
-//	        trusted_ca_cert        <base64_der>
-//	        trusted_ca_cert_file   <filename>
+//	        trust_pool			   <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
@@ -79,7 +99,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    ca                            <acme_ca_endpoint>
 //	    ca_root                       <pem_file>
 //	    key_type                      [ed25519|p256|p384|rsa2048|rsa4096]
-//	    dns                           <provider_name> [...]
+//	    dns                           [<provider_name> [...]]    (required, though, if DNS is not configured as global option)
 //	    propagation_delay             <duration>
 //	    propagation_timeout           <duration>
 //	    resolvers                     <dns_servers...>
@@ -87,6 +107,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
 //	    reuse_private_keys
+//	    force_automate
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -106,24 +127,26 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certManagers []certmagic.Manager
 	var onDemand bool
 	var reusePrivateKeys bool
+	var forceAutomate bool
 
-	// file certificate loader
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
 	case 0:
 	case 1:
 		if firstLine[0] == "internal" {
 			internalIssuer = new(caddytls.InternalIssuer)
+		} else if firstLine[0] == "force_automate" {
+			forceAutomate = true
 		} else if !strings.Contains(firstLine[0], "@") {
-			return nil, h.Err("single argument must either be 'internal' or an email address")
+			return nil, h.Err("single argument must either be 'internal', 'force_automate', or an email address")
 		} else {
-			if acmeIssuer == nil {
-				acmeIssuer = new(caddytls.ACMEIssuer)
+			acmeIssuer = &caddytls.ACMEIssuer{
+				Email: firstLine[0],
 			}
-			acmeIssuer.Email = firstLine[0]
 		}
 
 	case 2:
+		// file certificate loader
 		certFilename := firstLine[0]
 		keyFilename := firstLine[1]
 
@@ -289,10 +312,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			certManagers = append(certManagers, certManager)
 
 		case "dns":
-			if !h.NextArg() {
-				return nil, h.ArgErr()
-			}
-			provName := h.Val()
 			if acmeIssuer == nil {
 				acmeIssuer = new(caddytls.ACMEIssuer)
 			}
@@ -302,12 +321,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
-			modID := "dns.providers." + provName
-			unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
-			if err != nil {
-				return nil, err
+			// DNS provider configuration optional, since it may be configured globally via the TLS app with global options
+			if h.NextArg() {
+				provName := h.Val()
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
+			} else if h.Option("dns") == nil {
+				// if DNS is omitted locally, it needs to be configured globally
+				return nil, h.ArgErr()
 			}
-			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 		case "resolvers":
 			args := h.RemainingArgs()
@@ -488,19 +514,24 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 	case acmeIssuer != nil:
 		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
-		defaultIssuers := caddytls.DefaultIssuers()
+		defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
 
-		// if a CA endpoint was set, override multiple implicit issuers since it's a specific one
+		// if an ACME CA endpoint was set, the user expects to use that specific one,
+		// not any others that may be defaults, so replace all defaults with that ACME CA
 		if acmeIssuer.CA != "" {
 			defaultIssuers = []certmagic.Issuer{acmeIssuer}
 		}
 
 		for _, issuer := range defaultIssuers {
-			switch iss := issuer.(type) {
-			case *caddytls.ACMEIssuer:
-				issuer = acmeIssuer
-			case *caddytls.ZeroSSLIssuer:
-				iss.ACMEIssuer = acmeIssuer
+			// apply settings from the implicitly-configured ACMEIssuer to any
+			// default ACMEIssuers, but preserve each default issuer's CA endpoint,
+			// because, for example, if you configure the DNS challenge, it should
+			// apply to any of the default ACMEIssuers, but you don't want to trample
+			// out their unique CA endpoints
+			if iss, ok := issuer.(*caddytls.ACMEIssuer); ok && iss != nil {
+				acmeCopy := *acmeIssuer
+				acmeCopy.CA = iss.CA
+				issuer = &acmeCopy
 			}
 			configVals = append(configVals, ConfigValue{
 				Class: "tls.cert_issuer",
@@ -541,6 +572,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	if reusePrivateKeys {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
+	// if enabled, the names in the site addresses will be
+	// added to the automation policies
+	if forceAutomate {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.force_automate",
 			Value: true,
 		})
 	}
@@ -845,6 +885,7 @@ func parseInvoke(h Helper) (caddyhttp.MiddlewareHandler, error) {
 //	log <logger_name> {
 //	    hostnames <hostnames...>
 //	    output <writer_module> ...
+//	    core   <core_module> ...
 //	    format <encoder_module> ...
 //	    level  <level>
 //	}
@@ -911,7 +952,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// this is useful for setting up loggers per subdomain in a site block
 	// with a wildcard domain
 	customHostnames := []string{}
-
+	noHostname := false
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -956,6 +997,66 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
+		case "sampling":
+			d := h.Dispenser.NewFromNextSegment()
+			for d.NextArg() {
+				// consume any tokens on the same line, if any.
+			}
+
+			sampling := &caddy.LogSampling{}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				subdir := d.Val()
+				switch subdir {
+				case "interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					interval, err := time.ParseDuration(d.Val() + "ns")
+					if err != nil {
+						return nil, d.Errf("failed to parse interval: %v", err)
+					}
+					sampling.Interval = interval
+				case "first":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					first, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse first: %v", err)
+					}
+					sampling.First = first
+				case "thereafter":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					thereafter, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse thereafter: %v", err)
+					}
+					sampling.Thereafter = thereafter
+				default:
+					return nil, d.Errf("unrecognized subdirective: %s", subdir)
+				}
+			}
+
+			cl.Sampling = sampling
+
+		case "core":
+			if !h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			moduleName := h.Val()
+			moduleID := "caddy.logging.cores." + moduleName
+			unm, err := caddyfile.UnmarshalModule(h.Dispenser, moduleID)
+			if err != nil {
+				return nil, err
+			}
+			core, ok := unm.(zapcore.Core)
+			if !ok {
+				return nil, h.Errf("module %s (%T) is not a zapcore.Core", moduleID, unm)
+			}
+			cl.CoreRaw = caddyconfig.JSONModuleObject(core, "module", moduleName, h.warnings)
+
 		case "format":
 			if !h.NextArg() {
 				return nil, h.ArgErr()
@@ -997,6 +1098,12 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 				cl.Exclude = append(cl.Exclude, h.Val())
 			}
 
+		case "no_hostname":
+			if h.NextArg() {
+				return nil, h.ArgErr()
+			}
+			noHostname = true
+
 		default:
 			return nil, h.Errf("unrecognized subdirective: %s", h.Val())
 		}
@@ -1004,7 +1111,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 	var val namedCustomLog
 	val.hostnames = customHostnames
-
+	val.noHostname = noHostname
 	isEmptyConfig := reflect.DeepEqual(cl, new(caddy.CustomLog))
 
 	// Skip handling of empty logging configs
@@ -1054,4 +1161,14 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		return nil, h.ArgErr()
 	}
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
+}
+
+// parseLogName parses the log_name directive. Syntax:
+//
+//	log_name <names...>
+func parseLogName(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+	return caddyhttp.VarsMiddleware{
+		caddyhttp.AccessLoggerNameVarKey: h.RemainingArgs(),
+	}, nil
 }

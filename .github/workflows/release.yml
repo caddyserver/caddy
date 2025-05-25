@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*.*.*'
 
+env:
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
 jobs:
   release:
     name: Release
@@ -13,13 +17,13 @@ jobs:
         os: 
           - ubuntu-latest
         go: 
-          - '1.21'
+          - '1.24'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.21'
-          GO_SEMVER: '~1.21.0'
+        - go: '1.24'
+          GO_SEMVER: '~1.24.1'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
@@ -104,9 +108,13 @@ jobs:
       uses: anchore/sbom-action/download-syft@main
     - name: Syft version
       run: syft version
+    - name: Install xcaddy
+      run: |
+        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+        xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
+      uses: goreleaser/goreleaser-action@v6
       with:
         version: latest
         args: release --clean --timeout 60m

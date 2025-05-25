@@ -194,6 +194,9 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			nw.SoftStart = true
+
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil

@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,10 +34,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -66,13 +69,7 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	undo, err := maxprocs.Set()
-	defer undo()
-	if err != nil {
-		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
-	}
-
-	if err := rootCmd.Execute(); err != nil {
+	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode)
@@ -105,6 +102,40 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // the name of the loaded config file (if any).
 func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
 	return loadConfigWithLogger(caddy.Log(), configFile, adapterName)
+}
+
+func isCaddyfile(configFile, adapterName string) (bool, error) {
+	if adapterName == "caddyfile" {
+		return true, nil
+	}
+
+	// as a special case, if a config file starts with "caddyfile" or
+	// has a ".caddyfile" extension, and no adapter is specified, and
+	// no adapter module name matches the extension, assume
+	// caddyfile adapter for convenience
+	baseConfig := strings.ToLower(filepath.Base(configFile))
+	baseConfigExt := filepath.Ext(baseConfig)
+	startsOrEndsInCaddyfile := strings.HasPrefix(baseConfig, "caddyfile") || strings.HasSuffix(baseConfig, ".caddyfile")
+
+	if baseConfigExt == ".json" {
+		return false, nil
+	}
+
+	// If the adapter is not specified,
+	// the config file starts with "caddyfile",
+	// the config file has an extension,
+	// and isn't a JSON file (e.g. Caddyfile.yaml),
+	// then we don't know what the config format is.
+	if adapterName == "" && startsOrEndsInCaddyfile {
+		return true, nil
+	}
+
+	// adapter is not empty,
+	// adapter is not "caddyfile",
+	// extension is not ".json",
+	// extension is not ".caddyfile"
+	// file does not start with "Caddyfile"
+	return false, nil
 }
 
 func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, error) {
@@ -157,13 +188,10 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		}
 	}
 
-	// as a special case, if a config file called "Caddyfile" was
-	// specified, and no adapter is specified, assume caddyfile adapter
-	// for convenience
-	if strings.HasPrefix(filepath.Base(configFile), "Caddyfile") &&
-		filepath.Ext(configFile) != ".json" &&
-		adapterName == "" {
+	if yes, err := isCaddyfile(configFile, adapterName); yes {
 		adapterName = "caddyfile"
+	} else if err != nil {
+		return nil, "", err
 	}
 
 	// load config adapter
@@ -194,7 +222,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				zap.Int("line", warn.Line))
 		}
 		config = adaptedConfig
-	} else {
+	} else if len(config) != 0 {
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {
@@ -434,6 +462,31 @@ func printEnvironment() {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+}
+
+func setResourceLimits(logger *zap.Logger) func() {
+	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
+	// See https://pkg.go.dev/runtime#GOMAXPROCS
+	undo, err := maxprocs.Set(maxprocs.Logger(logger.Sugar().Infof))
+	if err != nil {
+		logger.Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
+	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
+	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
+	_, _ = memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithLogger(
+			slog.New(zapslog.NewHandler(logger.Core())),
+		),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+	)
+
+	return undo
 }
 
 // StringSlice is a flag.Value that enables repeated use of a string flag.

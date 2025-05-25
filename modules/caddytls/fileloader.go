@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -92,8 +93,16 @@ func (fl FileLoader) LoadCertificates() ([]Certificate, error) {
 		switch pair.Format {
 		case "":
 			fallthrough
+
 		case "pem":
+			// if the start of the key file looks like an encrypted private key,
+			// reject it with a helpful error message
+			if strings.Contains(string(keyData[:40]), "ENCRYPTED") {
+				return nil, fmt.Errorf("encrypted private keys are not supported; please decrypt the key first")
+			}
+
 			cert, err = tls.X509KeyPair(certData, keyData)
+
 		default:
 			return nil, fmt.Errorf("unrecognized certificate/key encoding format: %s", pair.Format)
 		}

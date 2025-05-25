@@ -555,6 +555,10 @@ func TestParseAll(t *testing.T) {
 			{"localhost:1234", "http://host2"},
 		}},
 
+		{`foo.example.com   ,   example.com`, false, [][]string{
+			{"foo.example.com", "example.com"},
+		}},
+
 		{`localhost:1234, http://host2,`, true, [][]string{}},
 
 		{`http://host1.com, http://host2.com {
@@ -614,8 +618,8 @@ func TestParseAll(t *testing.T) {
 		}
 		for j, block := range blocks {
 			if len(block.Keys) != len(test.keys[j]) {
-				t.Errorf("Test %d: Expected %d keys in block %d, got %d",
-					i, len(test.keys[j]), j, len(block.Keys))
+				t.Errorf("Test %d: Expected %d keys in block %d, got %d: %v",
+					i, len(test.keys[j]), j, len(block.Keys), block.Keys)
 				continue
 			}
 			for k, addr := range block.GetKeysText() {
@@ -854,6 +858,29 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	}
 	if actual, expected := blocks[0].Segments[0][0].Text, "gzip"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
+func TestRejectsGlobalMatcher(t *testing.T) {
+	p := testParser(`
+		@rejected path /foo
+
+		(common) {
+			gzip foo
+			errors stderr
+		}
+
+		http://example.com {
+			import common
+		}
+	`)
+	_, err := p.parseAll()
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+	expected := "request matchers may not be defined globally, they must be in a site block; found @rejected, at Testfile:2"
+	if err.Error() != expected {
+		t.Errorf("Expected error to be '%s' but got '%v'", expected, err)
 	}
 }
 

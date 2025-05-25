@@ -388,6 +388,7 @@ When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
 			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
 			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
@@ -409,12 +410,13 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 
 	RegisterCommand(Command{
 		Name:  "add-package",
-		Usage: "<packages...>",
+		Usage: "<package[@version]...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are
-already included. EXPERIMENTAL: May be changed or removed.
+added, with an optional version specified (e.g., "package@version"). Retains
+existing packages. Returns an error if any of the specified packages are already
+included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
@@ -438,43 +440,44 @@ EXPERIMENTAL: May be changed or removed.
 		},
 	})
 
-	RegisterCommand(Command{
-		Name:  "manpage",
-		Usage: "--directory <path>",
-		Short: "Generates the manual pages for Caddy commands",
-		Long: `
+	defaultFactory.Use(func(rootCmd *cobra.Command) {
+		rootCmd.AddCommand(caddyCmdToCobra(Command{
+			Name:  "manpage",
+			Usage: "--directory <path>",
+			Short: "Generates the manual pages for Caddy commands",
+			Long: `
 Generates the manual pages for Caddy commands into the designated directory
 tagged into section 8 (System Administration).
 
 The manual page files are generated into the directory specified by the
 argument of --directory. If the directory does not exist, it will be created.
 `,
-		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().StringP("directory", "o", "", "The output directory where the manpages are generated")
-			cmd.RunE = WrapCommandFuncForCobra(func(fl Flags) (int, error) {
-				dir := strings.TrimSpace(fl.String("directory"))
-				if dir == "" {
-					return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
-				}
-				if err := os.MkdirAll(dir, 0o755); err != nil {
-					return caddy.ExitCodeFailedQuit, err
-				}
-				if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
-					Title:   "Caddy",
-					Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
-				}, dir); err != nil {
-					return caddy.ExitCodeFailedQuit, err
-				}
-				return caddy.ExitCodeSuccess, nil
-			})
-		},
-	})
+			CobraFunc: func(cmd *cobra.Command) {
+				cmd.Flags().StringP("directory", "o", "", "The output directory where the manpages are generated")
+				cmd.RunE = WrapCommandFuncForCobra(func(fl Flags) (int, error) {
+					dir := strings.TrimSpace(fl.String("directory"))
+					if dir == "" {
+						return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+					}
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						return caddy.ExitCodeFailedQuit, err
+					}
+					if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+						Title:   "Caddy",
+						Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
+					}, dir); err != nil {
+						return caddy.ExitCodeFailedQuit, err
+					}
+					return caddy.ExitCodeSuccess, nil
+				})
+			},
+		}))
 
-	// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "completion [bash|zsh|fish|powershell]",
-		Short: "Generate completion script",
-		Long: fmt.Sprintf(`To load completions:
+		// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
+		rootCmd.AddCommand(&cobra.Command{
+			Use:   "completion [bash|zsh|fish|powershell]",
+			Short: "Generate completion script",
+			Long: fmt.Sprintf(`To load completions:
 
 	Bash:
 
@@ -513,23 +516,24 @@ argument of --directory. If the directory does not exist, it will be created.
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
 	`, rootCmd.Root().Name()),
-		DisableFlagsInUseLine: true,
-		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			switch args[0] {
-			case "bash":
-				return cmd.Root().GenBashCompletion(os.Stdout)
-			case "zsh":
-				return cmd.Root().GenZshCompletion(os.Stdout)
-			case "fish":
-				return cmd.Root().GenFishCompletion(os.Stdout, true)
-			case "powershell":
-				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-			default:
-				return fmt.Errorf("unrecognized shell: %s", args[0])
-			}
-		},
+			DisableFlagsInUseLine: true,
+			ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+			Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				switch args[0] {
+				case "bash":
+					return cmd.Root().GenBashCompletion(os.Stdout)
+				case "zsh":
+					return cmd.Root().GenZshCompletion(os.Stdout)
+				case "fish":
+					return cmd.Root().GenFishCompletion(os.Stdout, true)
+				case "powershell":
+					return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+				default:
+					return fmt.Errorf("unrecognized shell: %s", args[0])
+				}
+			},
+		})
 	})
 }
 
@@ -563,7 +567,9 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	rootCmd.AddCommand(caddyCmdToCobra(cmd))
+	defaultFactory.Use(func(rootCmd *cobra.Command) {
+		rootCmd.AddCommand(caddyCmdToCobra(cmd))
+	})
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)

@@ -5,13 +5,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
-	"github.com/mholt/acmez"
-	"github.com/mholt/acmez/acme"
+	"github.com/mholt/acmez/v3"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
@@ -76,7 +78,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -105,12 +107,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 		return
 	}
 	{
-		certs, err := client.ObtainCertificate(
-			ctx,
-			account,
-			certPrivateKey,
-			[]string{"localhost"},
-		)
+		certs, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"localhost"})
 		if err != nil {
 			t.Errorf("obtaining certificate for allowed domain: %v", err)
 			return
@@ -126,7 +123,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 		}
 	}
 	{
-		_, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"not-matching.localhost"})
+		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"not-matching.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'not-matching.localhost' domain")
 		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
@@ -170,7 +167,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -199,7 +196,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		return
 	}
 	{
-		_, err := client.ObtainCertificate(ctx, account, certPrivateKey, []string{"deny.localhost"})
+		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"deny.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'deny.localhost' domain")
 		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {

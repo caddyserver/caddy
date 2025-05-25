@@ -87,8 +87,16 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 	ot.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
+		traceID := spanCtx.TraceID().String()
+		spanID := spanCtx.SpanID().String()
+		// Add a trace_id placeholder, accessible via `{http.vars.trace_id}`.
+		caddyhttp.SetVar(ctx, "trace_id", traceID)
+		// Add a span_id placeholder, accessible via `{http.vars.span_id}`.
+		caddyhttp.SetVar(ctx, "span_id", spanID)
+		// Add the traceID and spanID to the log fields for the request.
 		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
-			extra.Add(zap.String("traceID", spanCtx.TraceID().String()))
+			extra.Add(zap.String("traceID", traceID))
+			extra.Add(zap.String("spanID", spanID))
 		}
 	}
 	next := ctx.Value(nextCallCtxKey).(*nextCall)

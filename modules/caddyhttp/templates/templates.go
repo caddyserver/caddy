@@ -81,6 +81,12 @@ func init() {
 // {{placeholder "http.error.status_code"}}
 // ```
 //
+// As a shortcut, `ph` is an alias for `placeholder`.
+//
+// ```
+// {{ph "http.request.method"}}
+// ```
+//
 // ##### `.Host`
 //
 // Returns the hostname portion (no port) of the Host header of the HTTP request.
@@ -161,7 +167,7 @@ func init() {
 // Renders the given Markdown text as HTML and returns it. This uses the
 // [Goldmark](https://github.com/yuin/goldmark) library,
 // which is CommonMark compliant. It also has these extensions
-// enabled: Github Flavored Markdown, Footnote, and syntax
+// enabled: GitHub Flavored Markdown, Footnote, and syntax
 // highlighting provided by [Chroma](https://github.com/alecthomas/chroma).
 //
 // ```
@@ -299,6 +305,18 @@ func init() {
 // by appending a colon `:` followed by the desired time layout. You can
 // find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
 // The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
+//
+// ##### `pathEscape`
+//
+// Passes a string through `url.PathEscape`, replacing characters that have
+// special meaning in URL path parameters (`?`, `&`, `%`).
+//
+// Useful e.g. to include filenames containing these characters in URL path
+// parameters, or use them as an `img` element's `src` attribute.
+//
+// ```
+// {{pathEscape "50%_valid_filename?.jpg"}}
+// ```
 //
 // ```
 // {{humanize "size" "2048000"}}

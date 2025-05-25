@@ -63,7 +63,9 @@ example.com {
 					],
 					"logs": {
 						"logger_names": {
-							"one.example.com": ""
+							"one.example.com": [
+								""
+							]
 						},
 						"skip_hosts": [
 							"example.com",

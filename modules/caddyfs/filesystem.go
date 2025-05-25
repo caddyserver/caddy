@@ -69,11 +69,11 @@ func (xs *Filesystems) Provision(ctx caddy.Context) error {
 		}
 		// register that module
 		ctx.Logger().Debug("registering fs", zap.String("fs", f.Key))
-		ctx.Filesystems().Register(f.Key, f.fileSystem)
+		ctx.FileSystems().Register(f.Key, f.fileSystem)
 		// remember to unregister the module when we are done
 		xs.defers = append(xs.defers, func() {
-			ctx.Logger().Debug("registering fs", zap.String("fs", f.Key))
-			ctx.Filesystems().Unregister(f.Key)
+			ctx.Logger().Debug("unregistering fs", zap.String("fs", f.Key))
+			ctx.FileSystems().Unregister(f.Key)
 		})
 	}
 	return nil

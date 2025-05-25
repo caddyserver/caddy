@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
@@ -145,7 +146,7 @@ func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "using 'trusted_ca_cert' adapts sucessfully",
+			name: "using 'trusted_ca_cert' adapts successfully",
 			args: args{
 				d: caddyfile.NewTestDispenser(fmt.Sprintf(`
 				client_auth {
@@ -274,6 +275,52 @@ func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 			}
 			if !tt.wantErr && !reflect.DeepEqual(&tt.expected, ca) {
 				t.Errorf("ClientAuthentication.UnmarshalCaddyfile() = %v, want %v", ca, tt.expected)
+			}
+		})
+	}
+}
+
+func TestClientAuthenticationProvision(t *testing.T) {
+	tests := []struct {
+		name    string
+		ca      ClientAuthentication
+		wantErr bool
+	}{
+		{
+			name: "specifying both 'CARaw' and 'TrustedCACerts' produces an error",
+			ca: ClientAuthentication{
+				CARaw:          json.RawMessage(`{"provider":"inline","trusted_ca_certs":["foo"]}`),
+				TrustedCACerts: []string{"foo"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "specifying both 'CARaw' and 'TrustedCACertPEMFiles' produces an error",
+			ca: ClientAuthentication{
+				CARaw:                 json.RawMessage(`{"provider":"inline","trusted_ca_certs":["foo"]}`),
+				TrustedCACertPEMFiles: []string{"foo"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "setting 'TrustedCACerts' provisions the cert pool",
+			ca: ClientAuthentication{
+				TrustedCACerts: []string{test_der_1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.ca.provision(caddy.Context{})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ClientAuthentication.provision() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if tt.ca.ca.CertPool() == nil {
+					t.Error("CertPool is nil, expected non-nil value")
+				}
 			}
 		})
 	}

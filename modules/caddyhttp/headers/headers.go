@@ -78,7 +78,7 @@ func (h Handler) Validate() error {
 			return err
 		}
 	}
-	if h.Response != nil {
+	if h.Response != nil && h.Response.HeaderOps != nil {
 		err := h.Response.validate()
 		if err != nil {
 			return err
@@ -133,15 +133,19 @@ type HeaderOps struct {
 
 // Provision sets up the header operations.
 func (ops *HeaderOps) Provision(_ caddy.Context) error {
+	if ops == nil {
+		return nil // it's possible no ops are configured; fix #6893
+	}
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
-			if r.SearchRegexp != "" {
-				re, err := regexp.Compile(r.SearchRegexp)
-				if err != nil {
-					return fmt.Errorf("replacement %d for header field '%s': %v", i, fieldName, err)
-				}
-				replacements[i].re = re
+			if r.SearchRegexp == "" {
+				continue
 			}
+			re, err := regexp.Compile(r.SearchRegexp)
+			if err != nil {
+				return fmt.Errorf("replacement %d for header field '%s': %v", i, fieldName, err)
+			}
+			replacements[i].re = re
 		}
 	}
 	return nil
@@ -184,7 +188,7 @@ type RespHeaderOps struct {
 	Require *caddyhttp.ResponseMatcher `json:"require,omitempty"`
 
 	// If true, header operations will be deferred until
-	// they are written out. Superceded if Require is set.
+	// they are written out. Superseded if Require is set.
 	// Usually you will need to set this to true if any
 	// fields are being deleted.
 	Deferred bool `json:"deferred,omitempty"`
@@ -199,9 +203,7 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	for _, fieldName := range ops.Delete {
 		fieldName = repl.ReplaceKnown(fieldName, "")
 		if fieldName == "*" {
-			for existingField := range hdr {
-				delete(hdr, existingField)
-			}
+			clear(hdr)
 		}
 	}
 

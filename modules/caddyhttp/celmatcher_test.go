@@ -70,13 +70,36 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
-			name: "header error (MatchHeader)",
+			name: "header matches an escaped placeholder value (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\\\{foobar}'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"{foobar}"}},
+			wantResult: true,
+		},
+		{
+			name: "header matches an placeholder replaced during the header matcher (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\{http.request.uri.path}'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			httpHeader: &http.Header{"Field": []string{"/foo"}},
+			wantResult: true,
+		},
+		{
+			name: "header error, invalid escape sequence (MatchHeader)",
+			expression: &MatchExpression{
+				Expr: `header({'Field': '\\{foobar}'})`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "header error, needs to be JSON syntax with field as key (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header('foo')`,
 			},
-			urlTarget:  "https://example.com/foo",
-			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "header_regexp matches (MatchHeaderRE)",
@@ -110,9 +133,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `header_regexp('foo')`,
 			},
-			urlTarget:  "https://example.com/foo",
-			httpHeader: &http.Header{"Field": []string{"foo", "bar"}},
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "host matches localhost (MatchHost)",
@@ -143,8 +164,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `host(80)`,
 			},
-			urlTarget: "http://localhost:80",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "method does not match (MatchMethod)",
@@ -169,9 +189,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `method()`,
 			},
-			urlTarget:  "https://foo.example.com",
-			httpMethod: "PUT",
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "path matches substring (MatchPath)",
@@ -266,24 +284,21 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `protocol()`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "protocol invocation error too many args (MatchProtocol)",
 			expression: &MatchExpression{
 				Expr: `protocol('grpc', 'https')`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "protocol invocation error wrong arg type (MatchProtocol)",
 			expression: &MatchExpression{
 				Expr: `protocol(true)`,
 			},
-			urlTarget: "https://example.com",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query does not match against a specific value (MatchQuery)",
@@ -330,40 +345,35 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			expression: &MatchExpression{
 				Expr: `query({1: "1"})`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error typed struct instead of map (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query(Message{field: "1"})`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error bad map value type (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": 1})`,
 			},
-			urlTarget: "https://example.com/foo/?debug=1",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "query error no args (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query()`,
 			},
-			urlTarget: "https://example.com/foo/?debug=1",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "remote_ip error no args (MatchRemoteIP)",
 			expression: &MatchExpression{
 				Expr: `remote_ip()`,
 			},
-			urlTarget: "https://example.com/foo",
-			wantErr:   true,
+			wantErr: true,
 		},
 		{
 			name: "remote_ip single IP match (MatchRemoteIP)",
@@ -373,6 +383,67 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			urlTarget:  "https://example.com/foo",
 			wantResult: true,
 		},
+		{
+			name: "vars value (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars({'foo': 'bar'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars matches placeholder, needs escape (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars({'\{http.request.uri.path}': '/foo'})`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars error wrong syntax (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars('foo', 'bar')`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "vars error no args (VarsMatcher)",
+			expression: &MatchExpression{
+				Expr: `vars()`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "vars_regexp value (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('foo', 'ba?r')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp value with name (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('name', 'foo', 'ba?r')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp matches placeholder, needs escape (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp('\{http.request.uri.path}', '/fo?o')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "vars_regexp error no args (MatchVarsRE)",
+			expression: &MatchExpression{
+				Expr: `vars_regexp()`,
+			},
+			wantErr: true,
+		},
 	}
 )
 
@@ -380,7 +451,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 	for _, tst := range matcherTests {
 		tc := tst
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.expression.Provision(caddy.Context{})
+			caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			err := tc.expression.Provision(caddyCtx)
 			if err != nil {
 				if !tc.wantErr {
 					t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tc.wantErr)
@@ -394,6 +467,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 			}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+				"foo": "bar",
+			})
 			req = req.WithContext(ctx)
 			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
@@ -413,7 +489,11 @@ func TestMatchExpressionMatch(t *testing.T) {
 				}
 			}
 
-			if tc.expression.Match(req) != tc.wantResult {
+			matches, err := tc.expression.MatchWithError(req)
+			if err != nil {
+				t.Errorf("MatchExpression.Match() error = %v", err)
+			}
+			if matches != tc.wantResult {
 				t.Errorf("MatchExpression.Match() expected to return '%t', for expression : '%s'", tc.wantResult, tc.expression.Expr)
 			}
 		})
@@ -434,6 +514,9 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 			}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
+				"foo": "bar",
+			})
 			req = req.WithContext(ctx)
 			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 			if tc.clientCertificate != nil {
@@ -453,7 +536,7 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				tc.expression.Match(req)
+				tc.expression.MatchWithError(req)
 			}
 		})
 	}
@@ -482,7 +565,9 @@ func TestMatchExpressionProvision(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.expression.Provision(caddy.Context{}); (err != nil) != tt.wantErr {
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			if err := tt.expression.Provision(ctx); (err != nil) != tt.wantErr {
 				t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

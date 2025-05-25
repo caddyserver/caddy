@@ -1,0 +1,151 @@
+localhost {
+	log {
+		output file ./caddy.access.log
+	}
+	log health_check_log {
+		output file ./caddy.access.health.log
+		no_hostname
+	}
+	log general_log {
+		output file ./caddy.access.general.log
+		no_hostname
+	}
+	@healthCheck `header_regexp('User-Agent', '^some-regexp$') || path('/healthz*')`
+	handle @healthCheck {
+		log_name health_check_log general_log
+		respond "Healthy"
+	}
+
+	handle {
+		respond "Hello World"
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.general_log",
+					"http.log.access.health_check_log",
+					"http.log.access.log0"
+				]
+			},
+			"general_log": {
+				"writer": {
+					"filename": "./caddy.access.general.log",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.general_log"
+				]
+			},
+			"health_check_log": {
+				"writer": {
+					"filename": "./caddy.access.health.log",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.health_check_log"
+				]
+			},
+			"log0": {
+				"writer": {
+					"filename": "./caddy.access.log",
+					"output": "file"
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"access_logger_names": [
+																		"health_check_log",
+																		"general_log"
+																	],
+																	"handler": "vars"
+																},
+																{
+																	"body": "Healthy",
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"expression": {
+														"expr": "header_regexp('User-Agent', '^some-regexp$') || path('/healthz*')",
+														"name": "healthCheck"
+													}
+												}
+											]
+										},
+										{
+											"group": "group2",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"body": "Hello World",
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"logs": {
+						"logger_names": {
+							"localhost": [
+								"log0"
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

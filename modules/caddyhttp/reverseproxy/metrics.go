@@ -1,31 +1,47 @@
 package reverseproxy
 
 import (
+	"errors"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 var reverseProxyMetrics = struct {
-	init             sync.Once
+	once             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
 	logger           *zap.Logger
 }{}
 
-func initReverseProxyMetrics(handler *Handler) {
+func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
-	reverseProxyMetrics.upstreamsHealthy = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: ns,
-		Subsystem: sub,
-		Name:      "upstreams_healthy",
-		Help:      "Health status of reverse proxy upstreams.",
-	}, upstreamsLabels)
+	reverseProxyMetrics.once.Do(func() {
+		reverseProxyMetrics.upstreamsHealthy = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "upstreams_healthy",
+			Help:      "Health status of reverse proxy upstreams.",
+		}, upstreamsLabels)
+	})
+
+	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
+	// there's no good way to capture having multiple sites with reverse proxy. If this happens, the metrics will be
+	// registered twice, but the second registration will be ignored.
+	if err := registry.Register(reverseProxyMetrics.upstreamsHealthy); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.upstreamsHealthy,
+			NewCollector:      reverseProxyMetrics.upstreamsHealthy,
+		}) {
+		panic(err)
+	}
 
 	reverseProxyMetrics.logger = handler.logger.Named("reverse_proxy.metrics")
 }
@@ -34,23 +50,23 @@ type metricsUpstreamsHealthyUpdater struct {
 	handler *Handler
 }
 
-func newMetricsUpstreamsHealthyUpdater(handler *Handler) *metricsUpstreamsHealthyUpdater {
-	reverseProxyMetrics.init.Do(func() {
-		initReverseProxyMetrics(handler)
-	})
-
+func newMetricsUpstreamsHealthyUpdater(handler *Handler, ctx caddy.Context) *metricsUpstreamsHealthyUpdater {
+	initReverseProxyMetrics(handler, ctx.GetMetricsRegistry())
 	reverseProxyMetrics.upstreamsHealthy.Reset()
 
 	return &metricsUpstreamsHealthyUpdater{handler}
 }
 
-func (m *metricsUpstreamsHealthyUpdater) Init() {
+func (m *metricsUpstreamsHealthyUpdater) init() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				reverseProxyMetrics.logger.Error("upstreams healthy metrics updater panicked",
-					zap.Any("error", err),
-					zap.ByteString("stack", debug.Stack()))
+				if c := reverseProxyMetrics.logger.Check(zapcore.ErrorLevel, "upstreams healthy metrics updater panicked"); c != nil {
+					c.Write(
+						zap.Any("error", err),
+						zap.ByteString("stack", debug.Stack()),
+					)
+				}
 			}
 		}()
 
