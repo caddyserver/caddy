@@ -528,13 +528,7 @@ func (h *HTTPTransport) shouldUseTLS(req *http.Request) bool {
 	}
 
 	port := req.URL.Port()
-	for i := range h.TLS.ExceptPorts {
-		if h.TLS.ExceptPorts[i] == port {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(h.TLS.ExceptPorts, port)
 }
 
 // TLSEnabled returns true if TLS is enabled.

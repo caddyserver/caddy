@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -323,13 +324,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 
 	// figure out if status code was explicitly specified; this lets
 	// us set a non-zero value as the default but is a little hacky
-	var statusCodeFlagSpecified bool
-	for _, fl := range os.Args {
-		if fl == "--status" {
-			statusCodeFlagSpecified = true
-			break
-		}
-	}
+	statusCodeFlagSpecified := slices.Contains(os.Args, "--status")
 
 	// try to determine what kind of parameter the unnamed argument is
 	if arg != "" {
