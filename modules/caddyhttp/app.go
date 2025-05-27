@@ -455,6 +455,16 @@ func extractHost(raw string) string {
 	return ""
 }
 
+func tlsErrorHandler(rawData []byte, _ *tls.Conn, err error) string {
+	host := extractHost(string(rawData))
+
+	if host == "" {
+		return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nCannot find Host header\n")
+	}
+
+	return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\nConnection: close\r\nLocation: https://%s\r\n\r\n", host)
+}
+
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
@@ -598,20 +608,10 @@ func (app *App) Start() error {
 
 					srv.listeners = append(srv.listeners, ln)
 
-					handler := func(rawData []byte, _ *tls.Conn, err error) string {
-						host := extractHost(string(rawData))
-
-						if host == "" {
-							return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\n\r\nCannot find Host header\n")
-						}
-
-						return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\nLocation: https://%s\r\n\r\n", host)
-					}
-
 					// enable HTTP/1 if configured
 					if h1ok {
 						//nolint:errcheck
-						go srv.server.Serve(ln, handler)
+						go srv.server.Serve(ln, tlsErrorHandler)
 					}
 				}
 
