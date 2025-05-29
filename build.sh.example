@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd ./cmd/caddy || exit 127
+# change this path to your Lovemilk-Forked-Golang `go` binary
+path-to-go build && echo "build success"
+cd ../../

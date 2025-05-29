@@ -29,3 +29,5 @@ caddy-dist
 # IDE files
 .idea/
 .vscode/
+
+/build.sh

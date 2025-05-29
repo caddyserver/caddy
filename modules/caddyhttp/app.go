@@ -455,8 +455,8 @@ func extractHost(raw string) string {
 	return ""
 }
 
-func tlsErrorHandler(rawData []byte, _ *tls.Conn, err error) string {
-	host := extractHost(string(rawData))
+func tlsErrorHandler(tlsErr tls.RecordHeaderError, err error) string {
+	host := extractHost(string(tlsErr.RawData))
 
 	if host == "" {
 		return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nCannot find Host header\n")
