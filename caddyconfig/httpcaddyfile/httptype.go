@@ -469,7 +469,7 @@ func (ServerType) extractNamedRoutes(
 
 	// copy the server blocks so we can
 	// splice out the named route ones
-	filtered := append([]serverBlock{}, serverBlocks...)
+	filtered := slices.Clone(serverBlocks)
 	index := -1
 
 	for _, sb := range serverBlocks {
@@ -479,7 +479,7 @@ func (ServerType) extractNamedRoutes(
 		}
 
 		// splice out this block, because we know it's not a real server
-		filtered = append(filtered[:index], filtered[index+1:]...)
+		filtered = slices.Delete(filtered, index, index+1)
 		index--
 
 		if len(sb.block.Segments) == 0 {
@@ -1404,7 +1404,7 @@ func consolidateRoutes(routes caddyhttp.RouteList) caddyhttp.RouteList {
 			routes[i].Group == routes[i+1].Group {
 			// keep the handlers in the same order, then splice out repetitive route
 			routes[i].HandlersRaw = append(routes[i].HandlersRaw, routes[i+1].HandlersRaw...)
-			routes = append(routes[:i+1], routes[i+2:]...)
+			routes = slices.Delete(routes, i+1, i+2)
 			i--
 		}
 	}

@@ -1181,7 +1181,7 @@ traverseLoop:
 				case http.MethodPatch:
 					arr[idx] = val
 				case http.MethodDelete:
-					v[part] = append(arr[:idx], arr[idx+1:]...)
+					v[part] = slices.Delete(arr, idx, idx+1)
 				default:
 					return fmt.Errorf("unrecognized method %s", method)
 				}

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -442,7 +443,7 @@ func (d *Dispenser) WrapErr(err error) error {
 // did me for 3 and a half freaking hours late one night).
 func (d *Dispenser) Delete() []Token {
 	if d.cursor >= 0 && d.cursor <= len(d.tokens)-1 {
-		d.tokens = append(d.tokens[:d.cursor], d.tokens[d.cursor+1:]...)
+		d.tokens = slices.Delete(d.tokens, d.cursor, d.cursor+1)
 		d.cursor--
 	}
 	return d.tokens

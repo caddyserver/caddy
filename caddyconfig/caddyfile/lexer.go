@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -362,7 +363,7 @@ func (t Token) NumLineBreaks() int {
 func (t Token) Clone() Token {
 	return Token{
 		File:          t.File,
-		imports:       append([]string{}, t.imports...),
+		imports:       slices.Clone(t.imports),
 		Line:          t.Line,
 		Text:          t.Text,
 		wasQuoted:     t.wasQuoted,

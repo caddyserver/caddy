@@ -17,6 +17,7 @@ package fastcgi
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -328,13 +329,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				tryPolicy = ""
 			}
 
-			for _, tf := range tryFiles {
-				if tf == dirIndex {
-					dirRedir = true
-
-					break
-				}
-			}
+			dirRedir = slices.Contains(tryFiles, dirIndex)
 		}
 
 		if dirRedir {

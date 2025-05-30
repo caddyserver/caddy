@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 
 	"go.uber.org/zap"
@@ -148,12 +149,12 @@ func (slc *ServerLogConfig) clone() *ServerLogConfig {
 	clone := &ServerLogConfig{
 		DefaultLoggerName:    slc.DefaultLoggerName,
 		LoggerNames:          make(map[string]StringArray),
-		SkipHosts:            append([]string{}, slc.SkipHosts...),
+		SkipHosts:            slices.Clone(slc.SkipHosts),
 		SkipUnmappedHosts:    slc.SkipUnmappedHosts,
 		ShouldLogCredentials: slc.ShouldLogCredentials,
 	}
 	for k, v := range slc.LoggerNames {
-		clone.LoggerNames[k] = append([]string{}, v...)
+		clone.LoggerNames[k] = slices.Clone(v)
 	}
 	return clone
 }

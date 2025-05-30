@@ -378,7 +378,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 					return nil, err
 				}
 				// remove the matcher segment (consumed), then step back the loop
-				segments = append(segments[:i], segments[i+1:]...)
+				segments = slices.Delete(segments, i, i+1)
 				i--
 			}
 		}

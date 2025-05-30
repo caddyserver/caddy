@@ -22,6 +22,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -474,14 +475,14 @@ func (app *App) Start() error {
 				// the TLSConfig was already provisioned, so... manually remove it
 				for i, np := range cp.TLSConfig.NextProtos {
 					if np == "h2" {
-						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+						cp.TLSConfig.NextProtos = slices.Delete(cp.TLSConfig.NextProtos, i, i+1)
 						break
 					}
 				}
 				// remove it from the parent connection policy too, just to keep things tidy
 				for i, alpn := range cp.ALPN {
 					if alpn == "h2" {
-						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+						cp.ALPN = slices.Delete(cp.ALPN, i, i+1)
 						break
 					}
 				}
