@@ -116,8 +116,17 @@ localhost:2099 {
 											{
 												"handle": [
 													{
-														"body": "Error in the [400 .. 499] range",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "Error in the [400 .. 499] range",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [
@@ -129,8 +138,17 @@ localhost:2099 {
 											{
 												"handle": [
 													{
-														"body": "Error code is equal to 500 or in the [300..399] range",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "Error code is equal to 500 or in the [300..399] range",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [
