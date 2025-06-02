@@ -505,14 +505,6 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return ctx, err
 	}
 
-	// start the admin endpoint (and stop any prior one)
-	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg, ctx)
-		if err != nil {
-			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	// create the new filesystem map
 	newCfg.fileSystems = &filesystems.FileSystemMap{}
 
@@ -542,6 +534,14 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	}()
 	if err != nil {
 		return ctx, err
+	}
+
+	// start the admin endpoint (and stop any prior one)
+	if replaceAdminServer {
+		err = replaceLocalAdminServer(newCfg, ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
 	}
 
 	// Load and Provision each app and their submodules
