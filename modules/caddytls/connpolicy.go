@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/mholt/acmez/v3"
@@ -369,13 +370,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	// ensure ALPN includes the ACME TLS-ALPN protocol
-	var alpnFound bool
-	for _, a := range p.ALPN {
-		if a == acmez.ACMETLS1Protocol {
-			alpnFound = true
-			break
-		}
-	}
+	alpnFound := slices.Contains(p.ALPN, acmez.ACMETLS1Protocol)
 	if !alpnFound && (cfg.NextProtos == nil || len(cfg.NextProtos) > 0) {
 		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
@@ -1004,10 +999,8 @@ func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x5
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}
 
-	for _, trustedLeafCert := range l.trustedLeafCerts {
-		if remoteLeafCert.Equal(trustedLeafCert) {
-			return nil
-		}
+	if slices.ContainsFunc(l.trustedLeafCerts, remoteLeafCert.Equal) {
+		return nil
 	}
 
 	return fmt.Errorf("client leaf certificate failed validation")
