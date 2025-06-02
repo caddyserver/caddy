@@ -26,10 +26,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rosedblabs/wal"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-
-	"github.com/rosedblabs/wal"
 )
 
 func init() {
@@ -184,7 +184,7 @@ func (nw *NetWriter) saveLastProcessedChunk(chunk uint32) {
 
 	metaFile := filepath.Join(nw.walDir, "last_processed")
 	data := fmt.Sprintf("%d", chunk)
-	if err := os.WriteFile(metaFile, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(metaFile, []byte(data), 0o600); err != nil {
 		nw.logger.Error("failed to save last processed chunk", "error", err)
 	}
 }
