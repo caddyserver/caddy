@@ -269,7 +269,11 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 		moduleID := originModuleID
 
 		// implement propagation up the module tree (i.e. start with "a.b.c" then "a.b" then "a" then "")
-		for app.subscriptions[eventName] != nil {
+		for {
+			if app.subscriptions[eventName] == nil {
+				break // shortcut if event not bound at all
+			}
+
 			for _, handler := range app.subscriptions[eventName][moduleID] {
 				select {
 				case <-ctx.Done():
