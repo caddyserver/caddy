@@ -1105,7 +1105,7 @@ func (e Event) Origin() Module       { return e.origin } // Returns the module t
 func (e Event) CloudEvent() CloudEvent {
 	dataJSON, _ := json.Marshal(e.Data)
 	var source string
-	if e.origin == nil {
+	if e.Origin() == nil {
 		source = "caddy"
 	} else {
 		source = string(e.Origin().CaddyModule().ID)
