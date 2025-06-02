@@ -615,7 +615,6 @@ func TestReplaceWithReplacementPlaceholder(t *testing.T) {
 	respond "{query}"`, "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
-
 }
 
 func TestReplaceWithKeyPlaceholder(t *testing.T) {
