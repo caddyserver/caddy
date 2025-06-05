@@ -18,7 +18,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
@@ -112,7 +111,7 @@ var (
 	_ caddyfile.Unmarshaler       = (*Metrics)(nil)
 )
 
-func createMetricsHandler(logger promhttp.Logger, enableOpenMetrics bool, registry *prometheus.Registry) http.Handler {
+func createMetricsHandler(logger promhttp.Logger, enableOpenMetrics bool, registry caddy.RegistererGatherer) http.Handler {
 	return promhttp.InstrumentMetricHandler(registry,
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 			// will only log errors if logger is non-nil
