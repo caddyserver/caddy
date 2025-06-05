@@ -15,7 +15,6 @@
 package metrics
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -63,9 +62,6 @@ func (l *zapLogger) Println(v ...any) {
 func (m *Metrics) Provision(ctx caddy.Context) error {
 	log := ctx.Logger()
 	registry := ctx.GetMetricsRegistry()
-	if registry == nil {
-		return errors.New("no metrics registry found")
-	}
 	m.metricsHandler = createMetricsHandler(&zapLogger{log}, !m.DisableOpenMetrics, registry)
 	return nil
 }
