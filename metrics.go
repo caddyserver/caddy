@@ -2,8 +2,10 @@ package caddy
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 
 	"github.com/caddyserver/caddy/v2/internal/metrics"
 )
@@ -82,3 +84,53 @@ func (d *delegator) WriteHeader(code int) {
 func (d *delegator) Unwrap() http.ResponseWriter {
 	return d.ResponseWriter
 }
+
+type RegistererGatherer interface {
+	prometheus.Registerer
+	prometheus.Gatherer
+}
+type registryGatherer struct {
+	registry prometheus.Registerer
+	gatherer prometheus.Gatherer
+	tracker  map[string]*sync.Once
+
+	callerModule string
+}
+
+// Gather implements prometheus.Gatherer.
+func (r *registryGatherer) Gather() ([]*io_prometheus_client.MetricFamily, error) {
+	return r.gatherer.Gather()
+}
+
+// MustRegister implements prometheus.Registerer.
+func (r *registryGatherer) MustRegister(cs ...prometheus.Collector) {
+	if _, ok := r.tracker[r.callerModule]; !ok {
+		r.tracker[r.callerModule] = &sync.Once{}
+	}
+	r.tracker[r.callerModule].Do(func() {
+		r.registry.MustRegister(cs...)
+	})
+}
+
+// Register implements prometheus.Registerer.
+func (r *registryGatherer) Register(c prometheus.Collector) error {
+	var err error
+	if _, ok := r.tracker[r.callerModule]; !ok {
+		r.tracker[r.callerModule] = &sync.Once{}
+	}
+	r.tracker[r.callerModule].Do(func() {
+		err = r.registry.Register(c)
+	})
+	return err
+}
+
+// Unregister implements prometheus.Registerer.
+func (r *registryGatherer) Unregister(c prometheus.Collector) bool {
+	delete(r.tracker, r.callerModule)
+	return r.registry.Unregister(c)
+}
+
+var (
+	_ prometheus.Registerer = (*registryGatherer)(nil)
+	_ prometheus.Gatherer   = (*registryGatherer)(nil)
+)
