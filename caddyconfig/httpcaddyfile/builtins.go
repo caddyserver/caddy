@@ -1166,6 +1166,11 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if h.NextArg() {
 		return nil, h.ArgErr()
 	}
+
+	if h.NextBlock(0) {
+		return nil, h.Err("log_skip directive does not accept blocks")
+	}
+
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
 }
 
