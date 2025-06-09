@@ -66,16 +66,16 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 		if needsRenewal(ca.root) {
 			// TODO: implement root renewal (use same key)
 			log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
-				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
+				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
 			)
 		}
 	}
 
 	// only maintain the intermediate if it's not manually provided in the config
 	if ca.Intermediate == nil {
-		if needsRenewal(ca.inter) {
+		if needsRenewal(ca.interChain[0]) {
 			log.Info("intermediate expires soon; renewing",
-				zap.Duration("time_remaining", time.Until(ca.inter.NotAfter)),
+				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
 			)
 
 			rootCert, rootKey, err := ca.loadOrGenRoot()
@@ -86,10 +86,10 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 			if err != nil {
 				return fmt.Errorf("generating new certificate: %v", err)
 			}
-			ca.inter, ca.interKey = interCert, interKey
+			ca.interChain, ca.interKey = []*x509.Certificate{interCert}, interKey
 
 			log.Info("renewed intermediate",
-				zap.Time("new_expiration", ca.inter.NotAfter),
+				zap.Time("new_expiration", ca.interChain[0].NotAfter),
 			)
 		}
 	}
