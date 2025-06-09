@@ -21,7 +21,6 @@ import (
 	"log"
 	"log/slog"
 	"reflect"
-	"sync"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,7 +62,7 @@ type Context struct {
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
 	r := prometheus.NewPedanticRegistry()
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: &registryGatherer{registry: r, gatherer: r, tracker: make(map[string]*sync.Once)}}
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: &registryGatherer{registry: r, gatherer: r}}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -105,10 +104,7 @@ func (ctx *Context) FileSystems() FileSystems {
 
 // Returns the active metrics registry for the context
 // EXPERIMENTAL: This API is subject to change.
-func (ctx *Context) GetMetricsRegistry() RegistererGatherer {
-	if ctx.Module() != nil {
-		ctx.metricsRegistry.callerModule = ctx.Module().CaddyModule().String()
-	}
+func (ctx *Context) GetMetricsRegistry() MetricsRegistererGatherer {
 	return ctx.metricsRegistry
 }
 

@@ -31,7 +31,7 @@ func init() {
 // See the Metrics module for a configurable endpoint that is usable if the
 // Admin API is disabled.
 type AdminMetrics struct {
-	registry caddy.RegistererGatherer
+	registry caddy.MetricsRegistererGatherer
 
 	metricsHandler http.Handler
 }

@@ -1,8 +1,8 @@
 package caddy
 
 import (
+	"errors"
 	"net/http"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -85,16 +85,13 @@ func (d *delegator) Unwrap() http.ResponseWriter {
 	return d.ResponseWriter
 }
 
-type RegistererGatherer interface {
+type MetricsRegistererGatherer interface {
 	prometheus.Registerer
 	prometheus.Gatherer
 }
 type registryGatherer struct {
 	registry prometheus.Registerer
 	gatherer prometheus.Gatherer
-	tracker  map[string]*sync.Once
-
-	callerModule string
 }
 
 // Gather implements prometheus.Gatherer.
@@ -102,31 +99,45 @@ func (r *registryGatherer) Gather() ([]*io_prometheus_client.MetricFamily, error
 	return r.gatherer.Gather()
 }
 
-// MustRegister implements prometheus.Registerer.
+// MustRegister calls `MustRegister` on the backing registry one collector
+// at a time to capture the module at which the call may have panicked. Panics
+// of duplicate registration are ignored.
 func (r *registryGatherer) MustRegister(cs ...prometheus.Collector) {
-	if _, ok := r.tracker[r.callerModule]; !ok {
-		r.tracker[r.callerModule] = &sync.Once{}
+	var current prometheus.Collector
+	defer func() {
+		if r := recover(); r != nil {
+			err, ok := r.(error)
+			if !ok {
+				panic(r)
+			}
+			if !errors.Is(err, prometheus.AlreadyRegisteredError{
+				ExistingCollector: current,
+				NewCollector:      current,
+			}) {
+				panic(err)
+			}
+		}
+	}()
+	for _, current = range cs {
+		r.registry.MustRegister(current)
 	}
-	r.tracker[r.callerModule].Do(func() {
-		r.registry.MustRegister(cs...)
-	})
 }
 
-// Register implements prometheus.Registerer.
+// Register implements prometheus.Registerer. Errors of duplicate registration
+// are ignored.
 func (r *registryGatherer) Register(c prometheus.Collector) error {
-	var err error
-	if _, ok := r.tracker[r.callerModule]; !ok {
-		r.tracker[r.callerModule] = &sync.Once{}
+	if err := r.registry.Register(c); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: c,
+			NewCollector:      c,
+		}) {
+		return err
 	}
-	r.tracker[r.callerModule].Do(func() {
-		err = r.registry.Register(c)
-	})
-	return err
+	return nil
 }
 
 // Unregister implements prometheus.Registerer.
 func (r *registryGatherer) Unregister(c prometheus.Collector) bool {
-	delete(r.tracker, r.callerModule)
 	return r.registry.Unregister(c)
 }
 
