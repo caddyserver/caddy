@@ -3,10 +3,11 @@ package integration
 import (
 	"context"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/libdns"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
@@ -55,7 +56,9 @@ func (MockDNSProvider) SetRecords(ctx context.Context, zone string, recs []libdn
 }
 
 // Interface guard
-var _ caddyfile.Unmarshaler = (*MockDNSProvider)(nil)
-var _ certmagic.DNSProvider = (*MockDNSProvider)(nil)
-var _ caddy.Provisioner = (*MockDNSProvider)(nil)
-var _ caddy.Module = (*MockDNSProvider)(nil)
+var (
+	_ caddyfile.Unmarshaler = (*MockDNSProvider)(nil)
+	_ certmagic.DNSProvider = (*MockDNSProvider)(nil)
+	_ caddy.Provisioner     = (*MockDNSProvider)(nil)
+	_ caddy.Module          = (*MockDNSProvider)(nil)
+)

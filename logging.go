@@ -20,6 +20,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -161,7 +162,9 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 	if err != nil {
 		return fmt.Errorf("setting up default log: %v", err)
 	}
-	newDefault.logger = zap.New(newDefault.CustomLog.core, options...)
+
+	filteringCore := &filteringCore{newDefault.CustomLog.core, newDefault.CustomLog}
+	newDefault.logger = zap.New(filteringCore, options...)
 
 	// redirect the default caddy logs
 	defaultLoggerMu.Lock()
@@ -490,10 +493,8 @@ func (cl *CustomLog) provision(ctx Context, logging *Logging) error {
 	if len(cl.Include) > 0 && len(cl.Exclude) > 0 {
 		// prevent intersections
 		for _, allow := range cl.Include {
-			for _, deny := range cl.Exclude {
-				if allow == deny {
-					return fmt.Errorf("include and exclude must not intersect, but found %s in both lists", allow)
-				}
+			if slices.Contains(cl.Exclude, allow) {
+				return fmt.Errorf("include and exclude must not intersect, but found %s in both lists", allow)
 			}
 		}
 

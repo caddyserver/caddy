@@ -138,7 +138,6 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 	// all existing configs are now loaded; see if we need to make any new ones
 	// based on the input configuration, and also mark the most recent one(s) as
 	// current/active, so they can be used for ECH retries
-
 	for _, cfg := range ech.Configs {
 		publicName := strings.ToLower(strings.TrimSpace(cfg.PublicName))
 
@@ -279,7 +278,7 @@ func (t *TLS) publishECHConfigs() error {
 			// if all the (inner) domains have had this ECH config list published
 			// by this publisher, then try the next publication config
 			if len(serverNamesSet) == 0 {
-				logger.Debug("ECH config list already published by publisher for associated domains",
+				logger.Debug("ECH config list already published by publisher for associated domains (or no domains to publish for)",
 					zap.Uint8s("config_ids", configIDs),
 					zap.String("publisher", publisherKey))
 				continue
@@ -300,7 +299,7 @@ func (t *TLS) publishECHConfigs() error {
 			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
 			if err == nil {
 				t.logger.Info("published ECH configuration list",
-					zap.Strings("domains", publication.Domains),
+					zap.Strings("domains", dnsNamesToPublish),
 					zap.Uint8s("config_ids", configIDs),
 					zap.Error(err))
 				// update publication history, so that we don't unnecessarily republish every time
@@ -390,27 +389,33 @@ func loadECHConfig(ctx caddy.Context, configID string) (echConfig, error) {
 		return echConfig{}, nil
 	}
 	metaBytes, err := storage.Load(ctx, metaKey)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
+		logger.Warn("ECH config metadata file missing; will recreate at next publication",
+			zap.String("config_id", configID),
+			zap.Error(err))
+	} else if err != nil {
 		delErr := storage.Delete(ctx, cfgIDKey)
 		if delErr != nil {
-			return echConfig{}, fmt.Errorf("error loading ECH metadata (%v) and cleaning up parent storage key %s: %v", err, cfgIDKey, delErr)
+			return echConfig{}, fmt.Errorf("error loading ECH config metadata (%v) and cleaning up parent storage key %s: %v", err, cfgIDKey, delErr)
 		}
-		logger.Warn("could not load ECH metadata; deleted its config folder",
+		logger.Warn("could not load ECH config metadata; deleted its folder",
 			zap.String("config_id", configID),
 			zap.Error(err))
 		return echConfig{}, nil
 	}
 	var meta echConfigMeta
-	if err := json.Unmarshal(metaBytes, &meta); err != nil {
-		// even though it's just metadata, reset the whole config since we can't reliably maintain it
-		delErr := storage.Delete(ctx, cfgIDKey)
-		if delErr != nil {
-			return echConfig{}, fmt.Errorf("error decoding ECH metadata (%v) and cleaning up parent storage key %s: %v", err, cfgIDKey, delErr)
+	if len(metaBytes) > 0 {
+		if err := json.Unmarshal(metaBytes, &meta); err != nil {
+			// even though it's just metadata, reset the whole config since we can't reliably maintain it
+			delErr := storage.Delete(ctx, cfgIDKey)
+			if delErr != nil {
+				return echConfig{}, fmt.Errorf("error decoding ECH metadata (%v) and cleaning up parent storage key %s: %v", err, cfgIDKey, delErr)
+			}
+			logger.Warn("could not JSON-decode ECH metadata; deleted its config folder",
+				zap.String("config_id", configID),
+				zap.Error(err))
+			return echConfig{}, nil
 		}
-		logger.Warn("could not JSON-decode ECH metadata; deleted its config folder",
-			zap.String("config_id", configID),
-			zap.Error(err))
-		return echConfig{}, nil
 	}
 
 	cfg.privKeyBin = privKeyBytes
@@ -701,7 +706,7 @@ nextName:
 				// HTTPS and SVCB RRs: RFC 9460 (https://www.rfc-editor.org/rfc/rfc9460)
 				Scheme:   "https",
 				Name:     relName,
-				TTL:      1 * time.Minute, // TODO: for testing only
+				TTL:      5 * time.Minute, // TODO: low hard-coded value only temporary; change to a higher value once more field-tested and key rotation is implemented
 				Priority: 2,               // allows a manual override with priority 1
 				Target:   ".",
 				Params:   params,

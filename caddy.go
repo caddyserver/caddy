@@ -505,14 +505,6 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return ctx, err
 	}
 
-	// start the admin endpoint (and stop any prior one)
-	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg, ctx)
-		if err != nil {
-			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	// create the new filesystem map
 	newCfg.fileSystems = &filesystems.FileSystemMap{}
 
@@ -542,6 +534,14 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	}()
 	if err != nil {
 		return ctx, err
+	}
+
+	// start the admin endpoint (and stop any prior one)
+	if replaceAdminServer {
+		err = replaceLocalAdminServer(newCfg, ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
 	}
 
 	// Load and Provision each app and their submodules
@@ -1104,9 +1104,15 @@ func (e Event) Origin() Module       { return e.origin } // Returns the module t
 // CloudEvents spec.
 func (e Event) CloudEvent() CloudEvent {
 	dataJSON, _ := json.Marshal(e.Data)
+	var source string
+	if e.Origin() == nil {
+		source = "caddy"
+	} else {
+		source = string(e.Origin().CaddyModule().ID)
+	}
 	return CloudEvent{
 		ID:              e.id.String(),
-		Source:          e.origin.CaddyModule().String(),
+		Source:          source,
 		SpecVersion:     "1.0",
 		Type:            e.name,
 		Time:            e.ts,

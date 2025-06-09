@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/mholt/acmez/v3"
@@ -368,13 +370,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	// ensure ALPN includes the ACME TLS-ALPN protocol
-	var alpnFound bool
-	for _, a := range p.ALPN {
-		if a == acmez.ACMETLS1Protocol {
-			alpnFound = true
-			break
-		}
-	}
+	alpnFound := slices.Contains(p.ALPN, acmez.ACMETLS1Protocol)
 	if !alpnFound && (cfg.NextProtos == nil || len(cfg.NextProtos) > 0) {
 		cfg.NextProtos = append(cfg.NextProtos, acmez.ACMETLS1Protocol)
 	}
@@ -459,6 +455,14 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.DefaultSNI == "" &&
 		p.FallbackSNI == "" &&
 		p.InsecureSecretsLog == ""
+}
+
+// SettingsEmpty returns true if p's settings (fields
+// except the matchers) are the same as q.
+func (p ConnectionPolicy) SettingsEqual(q ConnectionPolicy) bool {
+	p.MatchersRaw = nil
+	q.MatchersRaw = nil
+	return reflect.DeepEqual(p, q)
 }
 
 // UnmarshalCaddyfile sets up the ConnectionPolicy from Caddyfile tokens. Syntax:
@@ -1037,10 +1041,8 @@ func (l LeafCertClientAuth) VerifyClientCertificate(rawCerts [][]byte, _ [][]*x5
 		return fmt.Errorf("can't parse the given certificate: %s", err.Error())
 	}
 
-	for _, trustedLeafCert := range l.trustedLeafCerts {
-		if remoteLeafCert.Equal(trustedLeafCert) {
-			return nil
-		}
+	if slices.ContainsFunc(l.trustedLeafCerts, remoteLeafCert.Equal) {
+		return nil
 	}
 
 	return fmt.Errorf("client leaf certificate failed validation")

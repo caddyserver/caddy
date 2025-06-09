@@ -363,13 +363,13 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			}
 		}
 
-		switch {
-		case key == "http.shutting_down":
+		switch key {
+		case "http.shutting_down":
 			server := req.Context().Value(ServerCtxKey).(*Server)
 			server.shutdownAtMu.RLock()
 			defer server.shutdownAtMu.RUnlock()
 			return !server.shutdownAt.IsZero(), true
-		case key == "http.time_until_shutdown":
+		case "http.time_until_shutdown":
 			server := req.Context().Value(ServerCtxKey).(*Server)
 			server.shutdownAtMu.RLock()
 			defer server.shutdownAtMu.RUnlock()

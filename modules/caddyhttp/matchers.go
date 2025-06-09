@@ -552,7 +552,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
 			break
 		}
-
 		// get the next character from the request path
 
 		pathCh := string(escapedPath[iPath])
