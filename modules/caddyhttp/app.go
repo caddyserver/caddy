@@ -417,6 +417,10 @@ func (app *App) Validate() error {
 		// each server must use distinct listener addresses
 		for _, addr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(addr)
+			// check for conflict with admin API
+			if caddy.ConflictWithAdminAddr(listenAddr) {
+				return fmt.Errorf("listener address '%s' already claimed by admin API", addr)
+			}
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}

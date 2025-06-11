@@ -697,3 +697,15 @@ type ListenerWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
+
+func ConflictWithAdminAddr(addr NetworkAddress) bool {
+	adminAddr := NetworkAddress{
+		StartPort: uint(2019),
+		EndPort:   uint(2019),
+	}
+	if addr.StartPort <= adminAddr.EndPort && addr.EndPort >= adminAddr.StartPort {
+		Log().Error("conflict with admin api", zap.Uint("addr", addr.StartPort), zap.Uint("admin", adminAddr.StartPort))
+		return true
+	}
+	return false
+}
