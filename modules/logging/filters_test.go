@@ -248,7 +248,10 @@ func TestMultiRegexpFilterSingleOperation(t *testing.T) {
 			{RawRegexp: `secret`, Value: "REDACTED"},
 		},
 	}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{String: "foo-secret-bar"})
 	if out.String != "foo-REDACTED-bar" {
@@ -264,7 +267,10 @@ func TestMultiRegexpFilterMultipleOperations(t *testing.T) {
 			{RawRegexp: `token`, Value: "XXX"},
 		},
 	}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	// Test sequential application
 	out := f.Filter(zapcore.Field{String: "my-secret-password-token-data"})
@@ -281,7 +287,10 @@ func TestMultiRegexpFilterMultiValue(t *testing.T) {
 			{RawRegexp: `\d+`, Value: "NUM"},
 		},
 	}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
 		"foo-secret-123",
@@ -309,7 +318,10 @@ func TestMultiRegexpFilterAddOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error adding operation: %v", err)
 	}
-	f.Provision(caddy.Context{})
+	err = f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	if len(f.Operations) != 2 {
 		t.Fatalf("expected 2 operations, got %d", len(f.Operations))
@@ -364,8 +376,14 @@ func TestMultiRegexpFilterValidation(t *testing.T) {
 	}
 
 	// Test validation with valid operations
-	f.AddOperation("valid", "replacement")
-	f.Provision(caddy.Context{})
+	err = f.AddOperation("valid", "replacement")
+	if err != nil {
+		t.Fatalf("unexpected error adding operation: %v", err)
+	}
+	err = f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 	err = f.Validate()
 	if err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
@@ -378,7 +396,10 @@ func TestMultiRegexpFilterInputSizeLimit(t *testing.T) {
 			{RawRegexp: `test`, Value: "REPLACED"},
 		},
 	}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	// Test with very large input (should be truncated)
 	largeInput := strings.Repeat("test", 300000) // Creates ~1.2MB string
@@ -402,7 +423,10 @@ func TestMultiRegexpFilterOverlappingPatterns(t *testing.T) {
 			{RawRegexp: `password`, Value: "HIDDEN"},
 		},
 	}
-	f.Provision(caddy.Context{})
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
 
 	// The first pattern should match and replace the entire "secret...password" portion
 	// Then the second pattern should not find "password" anymore since it was already replaced
