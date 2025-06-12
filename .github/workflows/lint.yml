@@ -69,3 +69,11 @@ jobs:
         with:
           go-version-input: '~1.24.1'
           check-latest: true
+  
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v4
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v4
