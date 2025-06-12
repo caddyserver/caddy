@@ -62,6 +62,9 @@ jobs:
           # only-new-issues: true
 
   govulncheck:
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - name: govulncheck
@@ -72,8 +75,13 @@ jobs:
   
   dependency-review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: 'Checkout Repository'
         uses: actions/checkout@v4
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@v4
+        with:
+          comment-summary-in-pr: on-failure
