@@ -20,6 +20,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -80,10 +81,16 @@ type CommandFunc func(Flags) (int, error)
 // Commands returns a list of commands initialised by
 // RegisterCommand
 func Commands() map[string]Command {
+	commandsMu.RLock()
+	defer commandsMu.RUnlock()
+
 	return commands
 }
 
-var commands = make(map[string]Command)
+var (
+	commandsMu sync.RWMutex
+	commands   = make(map[string]Command)
+)
 
 func init() {
 	RegisterCommand(Command{
@@ -441,7 +448,7 @@ EXPERIMENTAL: May be changed or removed.
 	})
 
 	defaultFactory.Use(func(rootCmd *cobra.Command) {
-		rootCmd.AddCommand(caddyCmdToCobra(Command{
+		manpageCommand := Command{
 			Name:  "manpage",
 			Usage: "--directory <path>",
 			Short: "Generates the manual pages for Caddy commands",
@@ -471,11 +478,12 @@ argument of --directory. If the directory does not exist, it will be created.
 					return caddy.ExitCodeSuccess, nil
 				})
 			},
-		}))
+		}
 
 		// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
-		rootCmd.AddCommand(&cobra.Command{
-			Use:   "completion [bash|zsh|fish|powershell]",
+		completionCommand := Command{
+			Name:  "completion",
+			Usage: "[bash|zsh|fish|powershell]",
 			Short: "Generate completion script",
 			Long: fmt.Sprintf(`To load completions:
 
@@ -516,24 +524,37 @@ argument of --directory. If the directory does not exist, it will be created.
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
 	`, rootCmd.Root().Name()),
-			DisableFlagsInUseLine: true,
-			ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-			Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				switch args[0] {
-				case "bash":
-					return cmd.Root().GenBashCompletion(os.Stdout)
-				case "zsh":
-					return cmd.Root().GenZshCompletion(os.Stdout)
-				case "fish":
-					return cmd.Root().GenFishCompletion(os.Stdout, true)
-				case "powershell":
-					return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-				default:
-					return fmt.Errorf("unrecognized shell: %s", args[0])
+			CobraFunc: func(cmd *cobra.Command) {
+				cmd.DisableFlagsInUseLine = true
+				cmd.ValidArgs = []string{"bash", "zsh", "fish", "powershell"}
+				cmd.Args = cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)
+				cmd.RunE = func(cmd *cobra.Command, args []string) error {
+					switch args[0] {
+					case "bash":
+						return cmd.Root().GenBashCompletion(os.Stdout)
+					case "zsh":
+						return cmd.Root().GenZshCompletion(os.Stdout)
+					case "fish":
+						return cmd.Root().GenFishCompletion(os.Stdout, true)
+					case "powershell":
+						return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+					default:
+						return fmt.Errorf("unrecognized shell: %s", args[0])
+					}
 				}
 			},
-		})
+		}
+
+		rootCmd.AddCommand(caddyCmdToCobra(manpageCommand))
+		rootCmd.AddCommand(caddyCmdToCobra(completionCommand))
+
+		// add manpage and completion commands to the map of
+		// available commands, because they're not registered
+		// through RegisterCommand.
+		commandsMu.Lock()
+		commands[manpageCommand.Name] = manpageCommand
+		commands[completionCommand.Name] = completionCommand
+		commandsMu.Unlock()
 	})
 }
 
@@ -552,6 +573,9 @@ argument of --directory. If the directory does not exist, it will be created.
 //
 // This function should be used in init().
 func RegisterCommand(cmd Command) {
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+
 	if cmd.Name == "" {
 		panic("command name is required")
 	}
@@ -570,6 +594,7 @@ func RegisterCommand(cmd Command) {
 	defaultFactory.Use(func(rootCmd *cobra.Command) {
 		rootCmd.AddCommand(caddyCmdToCobra(cmd))
 	})
+	commands[cmd.Name] = cmd
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)
