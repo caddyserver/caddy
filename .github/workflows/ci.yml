@@ -55,7 +55,10 @@ jobs:
           SUCCESS: 'True'
 
     runs-on: ${{ matrix.OS_LABEL }}
-
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write # to allow uploading artifacts and cache
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -142,6 +145,9 @@ jobs:
 
   s390x-test:
     name: test (s390x on IBM Z)
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
@@ -194,6 +200,9 @@ jobs:
 
   goreleaser-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout code

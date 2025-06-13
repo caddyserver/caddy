@@ -40,6 +40,9 @@ jobs:
           GO_SEMVER: '~1.24.1'
 
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     continue-on-error: true
     steps:
       - name: Checkout code
