@@ -5,3 +5,8 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
