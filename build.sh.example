@@ -1,6 +1,9 @@
 #!/bin/bash
 
+# NOTE: if your want to add some custom plugins, please add them in the main.go
+# and install them with `path-to-go get`
+
 cd ./cmd/caddy || exit 127
 # change this path to your Lovemilk-Forked-Golang `go` binary
-path-to-go build && echo "build success"
+path-to-go build && echo "build success \`./cmd/caddy/caddy\`"
 cd ../../

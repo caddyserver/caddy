@@ -31,3 +31,6 @@ caddy-dist
 .vscode/
 
 /build.sh
+
+# ignore custom plugins
+/cmd/caddy/main.go

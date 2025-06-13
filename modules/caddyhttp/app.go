@@ -15,6 +15,8 @@
 package caddyhttp
 
 import (
+	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/tls"
@@ -22,7 +24,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -445,24 +446,57 @@ func (app *App) Validate() error {
 	return nil
 }
 
-var hostPattern = regexp.MustCompile(`(?mi)^Host:\s*(.+)$`)
+func getHTTPBasicData(rawData []byte) (method, path, host string, err error) {
+	reader := bufio.NewReader(bytes.NewReader(rawData))
 
-func extractHost(raw string) string {
-	matches := hostPattern.FindStringSubmatch(raw)
-	if len(matches) == 2 {
-		return strings.TrimSpace(matches[1])
+	// parse the request line：GET /some/path HTTP/1.1
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", "", "", fmt.Errorf("cannot read request line: %w", err)
 	}
-	return ""
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return "", "", "", fmt.Errorf("invalid request line: %s", line)
+	}
+	method = parts[0]
+	path = parts[1]
+
+	host = ""
+
+	// parse the host
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if host == "" {
+				return "", "", "", fmt.Errorf("cannot find Host header: %w", err)
+			}
+			break
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if host == "" {
+				return "", "", "", fmt.Errorf("cannot find Host header: %w", err)
+			}
+			break
+		}
+
+		// case is not sensitive
+		if strings.HasPrefix(strings.ToLower(line), "host:") {
+			host = strings.TrimSpace(line[5:])
+			break
+		}
+	}
+
+	return method, path, host, nil
 }
 
 func tlsErrorHandler(tlsErr tls.RecordHeaderError, err error) string {
-	host := extractHost(string(tlsErr.RawData))
-
-	if host == "" {
-		return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nCannot find Host header\n")
+	_, path, host, err := getHTTPBasicData(tlsErr.RawData)
+	if err != nil {
+		return fmt.Sprintf("HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nInvalid request content\n")
 	}
 
-	return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\nConnection: close\r\nLocation: https://%s\r\n\r\n", host)
+	return fmt.Sprintf("HTTP/1.0 308 Permanent Redirect\r\nConnection: close\r\nLocation: https://%s\r\n\r\n", strings.TrimRight(host, "/")+path)
 }
 
 // Start runs the app. It finishes automatic HTTPS if enabled,

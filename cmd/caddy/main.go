@@ -29,12 +29,16 @@
 package main
 
 import (
+	"fmt"
+
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	// plug in Caddy modules here
+	_ "github.com/caddy-dns/cloudflare"
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
 func main() {
+	fmt.Println("NOTE: you are running an unofficial version of Caddy (see https://github.com/lovemilk2333/caddy)")
 	caddycmd.Main()
 }
