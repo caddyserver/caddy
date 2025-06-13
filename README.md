@@ -103,8 +103,17 @@ _**Note:** These steps [will not embed proper version information](https://githu
 ```bash
 $ git clone "https://github.com/caddyserver/caddy.git"
 $ cd caddy/cmd/caddy/
-$ go build
+$ cp ./build.sh.example ./build.sh
 ```
+
+replace `path-to-go` to your Lovemilk-Forked-Golang `go` binary in the `build.sh` file.
+
+```bash
+bash ./build.sh
+```
+
+Then, binary you built will be in `./cmd/caddy/caddy`, you can simply run or deploy it.
+
 > Make sure the `go` binary is Lovemilk-Forked-Golang binary.  
 > Or replace the standard `net` and `crypto` packages with Lovemilk-Forked-Golang's `net` and `crypto` packages.
 
@@ -124,25 +133,29 @@ username ALL=(ALL:ALL) NOPASSWD: /usr/sbin/setcap
 
 replacing `username` with your actual username. Please be careful and only do this if you know what you are doing! We are only qualified to document how to use Caddy, not Go tooling or your computer, and we are providing these instructions for convenience only; please learn how to use your own computer at your own risk and make any needful adjustments.
 
-### With version information and/or plugins
+### With version information and/or plugins (DO NOT USE)
+`xcaddy` will use the official version of caddy source code, **DO NOT** use it.
 
-Using [our builder tool, `xcaddy`](https://github.com/caddyserver/xcaddy)...
-
+If you want to add some custom plugins, you can follow this steps:
+```bash
+path-to-go get plugin-name
 ```
-$ xcaddy build
+like
+```bash
+path-to-go get github.com/caddy-dns/cloudflare
 ```
 
-...the following steps are automated:
+Import packages in `cmd/caddy/main.go`
+```go
+import (
+	...
 
-1. Create a new folder: `mkdir caddy`
-2. Change into it: `cd caddy`
-3. Copy [Caddy's main.go](https://github.com/caddyserver/caddy/blob/master/cmd/caddy/main.go) into the empty folder. Add imports for any custom plugins you want to add.
-4. Initialize a Go module: `go mod init caddy`
-5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag, commit, or branch name.
-6. (Optional) Add plugins by adding their import: `_ "import/path/here"`
-7. Compile: `go build -tags=nobadger,nomysql,nopgx`
+	// plug in Caddy modules here
+	_ "github.com/caddy-dns/cloudflare"
+)
+```
 
-
+[Run build](#for-development) with Lovemilk-Forked-Golang binary
 
 
 ## Quick start
