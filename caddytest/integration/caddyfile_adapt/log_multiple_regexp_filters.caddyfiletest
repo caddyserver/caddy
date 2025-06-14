@@ -48,7 +48,7 @@ log {
 									"value": "Basic [REDACTED]"
 								},
 								{
-									"regexp": "token=([^&\\s]+)",
+									"regexp": "token=([^\u0026\\s]+)",
 									"value": "token=[REDACTED]"
 								}
 							]
