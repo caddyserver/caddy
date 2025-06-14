@@ -408,11 +408,23 @@ func run(newCfg *Config, start bool) (Context, error) {
 		return ctx, nil
 	}
 
+	defer func() {
+		// if newCfg fails to start completely, clean up the already provisioned modules
+		// partially copied from provisionContext
+		if err != nil {
+			globalMetrics.configSuccess.Set(0)
+			ctx.cfg.cancelFunc()
+
+			if currentCtx.cfg != nil {
+				certmagic.Default.Storage = currentCtx.cfg.storage
+			}
+		}
+	}()
+
 	// Provision any admin routers which may need to access
 	// some of the other apps at runtime
 	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
 	if err != nil {
-		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 
@@ -438,7 +450,6 @@ func run(newCfg *Config, start bool) (Context, error) {
 		return nil
 	}()
 	if err != nil {
-		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 	globalMetrics.configSuccess.Set(1)
@@ -449,7 +460,8 @@ func run(newCfg *Config, start bool) (Context, error) {
 
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
-	return ctx, finishSettingUp(ctx, ctx.cfg)
+	err = finishSettingUp(ctx, ctx.cfg)
+	return ctx, err
 }
 
 // provisionContext creates a new context from the given configuration and provisions
