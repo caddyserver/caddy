@@ -660,7 +660,7 @@ type MultiRegexpFilter struct {
 
 // Security constants
 const (
-	maxRegexpOperations = 50 // Maximum operations to prevent resource exhaustion
+	maxRegexpOperations = 50   // Maximum operations to prevent resource exhaustion
 	maxPatternLength    = 1000 // Maximum pattern length to prevent abuse
 )
 
@@ -810,6 +810,11 @@ func (f *MultiRegexpFilter) processString(s string) string {
 		// Each regexp operation is applied sequentially
 		// Using RE2 engine which is safe from ReDoS attacks
 		result = op.regexp.ReplaceAllString(result, op.Value)
+
+		// Ensure result doesn't exceed max length after each operation
+		if len(result) > maxInputLength {
+			result = result[:maxInputLength]
+		}
 	}
 	return result
 }
