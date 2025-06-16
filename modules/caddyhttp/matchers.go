@@ -552,7 +552,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
 			break
 		}
-
 		// get the next character from the request path
 
 		pathCh := string(escapedPath[iPath])
@@ -1342,6 +1341,8 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "early_data":
 				var false bool
 				m.HandshakeComplete = &false
+			default:
+				return d.Errf("unrecognized option '%s'", d.Val())
 			}
 		}
 		if d.NextArg() {

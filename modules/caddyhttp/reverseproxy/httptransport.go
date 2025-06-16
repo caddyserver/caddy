@@ -24,7 +24,6 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -38,8 +37,10 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -90,6 +91,7 @@ type HTTPTransport struct {
 	//  forward_proxy_url -> upstream
 	//
 	// Default: http.ProxyFromEnvironment
+	// DEPRECATED: Use NetworkProxyRaw|`network_proxy` instead. Subject to removal.
 	ForwardProxyURL string `json:"forward_proxy_url,omitempty"`
 
 	// How long to wait before timing out trying to connect to
@@ -140,6 +142,22 @@ type HTTPTransport struct {
 
 	// The pre-configured underlying HTTP transport.
 	Transport *http.Transport `json:"-"`
+
+	// The module that provides the network (forward) proxy
+	// URL that the HTTP transport will use to proxy
+	// requests to the upstream. See [http.Transport.Proxy](https://pkg.go.dev/net/http#Transport.Proxy)
+	// for information regarding supported protocols.
+	//
+	// Providing a value to this parameter results in requests
+	// flowing through the reverse_proxy in the following way:
+	//
+	// User Agent ->
+	//  reverse_proxy ->
+	//  [proxy provided by the module] -> upstream
+	//
+	// If nil, defaults to reading the `HTTP_PROXY`,
+	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	h2cTransport *http2.Transport
 	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
@@ -328,16 +346,22 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	// negotiate any HTTP/SOCKS proxy for the HTTP transport
-	var proxy func(*http.Request) (*url.URL, error)
+	proxy := http.ProxyFromEnvironment
 	if h.ForwardProxyURL != "" {
-		pUrl, err := url.Parse(h.ForwardProxyURL)
+		caddyCtx.Logger().Warn("forward_proxy_url is deprecated; use network_proxy instead")
+		u := network.ProxyFromURL{URL: h.ForwardProxyURL}
+		h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
+	}
+	if len(h.NetworkProxyRaw) != 0 {
+		proxyMod, err := caddyCtx.LoadModule(h, "NetworkProxyRaw")
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse transport proxy url: %v", err)
+			return nil, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
-		caddyCtx.Logger().Info("setting transport proxy url", zap.String("url", h.ForwardProxyURL))
-		proxy = http.ProxyURL(pUrl)
-	} else {
-		proxy = http.ProxyFromEnvironment
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			proxy = m.ProxyFunc()
+		} else {
+			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	rt := &http.Transport{
@@ -357,6 +381,36 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
 		if err != nil {
 			return nil, fmt.Errorf("making TLS client config: %v", err)
+		}
+
+		// servername has a placeholder, so we need to replace it
+		if strings.Contains(h.TLS.ServerName, "{") {
+			rt.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// reuses the dialer from above to establish a plaintext connection
+				conn, err := dialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+
+				// but add our own handshake logic
+				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+				tlsConfig := rt.TLSClientConfig.Clone()
+				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+				tlsConn := tls.Client(conn, tlsConfig)
+
+				// complete the handshake before returning the connection
+				if rt.TLSHandshakeTimeout != 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, rt.TLSHandshakeTimeout)
+					defer cancel()
+				}
+				err = tlsConn.HandshakeContext(ctx)
+				if err != nil {
+					_ = tlsConn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
+			}
 		}
 	}
 
@@ -429,45 +483,9 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	return rt, nil
 }
 
-// replaceTLSServername checks TLS servername to see if it needs replacing
-// if it does need replacing, it creates a new cloned HTTPTransport object to avoid any races
-// and does the replacing of the TLS servername on that and returns the new object
-// if no replacement is necessary it returns the original
-func (h *HTTPTransport) replaceTLSServername(repl *caddy.Replacer) *HTTPTransport {
-	// check whether we have TLS and need to replace the servername in the TLSClientConfig
-	if h.TLSEnabled() && strings.Contains(h.TLS.ServerName, "{") {
-		// make a new h, "copy" the parts we don't need to touch, add a new *tls.Config and replace servername
-		newtransport := &HTTPTransport{
-			Resolver:              h.Resolver,
-			TLS:                   h.TLS,
-			KeepAlive:             h.KeepAlive,
-			Compression:           h.Compression,
-			MaxConnsPerHost:       h.MaxConnsPerHost,
-			DialTimeout:           h.DialTimeout,
-			FallbackDelay:         h.FallbackDelay,
-			ResponseHeaderTimeout: h.ResponseHeaderTimeout,
-			ExpectContinueTimeout: h.ExpectContinueTimeout,
-			MaxResponseHeaderSize: h.MaxResponseHeaderSize,
-			WriteBufferSize:       h.WriteBufferSize,
-			ReadBufferSize:        h.ReadBufferSize,
-			Versions:              h.Versions,
-			Transport:             h.Transport.Clone(),
-			h2cTransport:          h.h2cTransport,
-		}
-		newtransport.Transport.TLSClientConfig.ServerName = repl.ReplaceAll(newtransport.Transport.TLSClientConfig.ServerName, "")
-		return newtransport
-	}
-
-	return h
-}
-
 // RoundTrip implements http.RoundTripper.
 func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Try to replace TLS servername if needed
-	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	transport := h.replaceTLSServername(repl)
-
-	transport.SetScheme(req)
+	h.SetScheme(req)
 
 	// use HTTP/3 if enabled (TODO: This is EXPERIMENTAL)
 	if h.h3Transport != nil {
@@ -483,7 +501,7 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return h.h2cTransport.RoundTrip(req)
 	}
 
-	return transport.Transport.RoundTrip(req)
+	return h.Transport.RoundTrip(req)
 }
 
 // SetScheme ensures that the outbound request req
@@ -510,13 +528,7 @@ func (h *HTTPTransport) shouldUseTLS(req *http.Request) bool {
 	}
 
 	port := req.URL.Port()
-	for i := range h.TLS.ExceptPorts {
-		if h.TLS.ExceptPorts[i] == port {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(h.TLS.ExceptPorts, port)
 }
 
 // TLSEnabled returns true if TLS is enabled.
@@ -628,7 +640,7 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 			return nil, fmt.Errorf("getting tls app: %v", err)
 		}
 		tlsApp := tlsAppIface.(*caddytls.TLS)
-		err = tlsApp.Manage([]string{t.ClientCertificateAutomate})
+		err = tlsApp.Manage(map[string]struct{}{t.ClientCertificateAutomate: {}})
 		if err != nil {
 			return nil, fmt.Errorf("managing client certificate: %v", err)
 		}

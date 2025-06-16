@@ -243,6 +243,19 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading transport: %v", err)
 		}
 		h.Transport = mod.(http.RoundTripper)
+		// enable request buffering for fastcgi if not configured
+		// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
+		// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
+		// not used.
+		// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
+		// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
+		// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
+		// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
+
+		// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
+		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
+			h.RequestBuffers = 4096
+		}
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
 		mod, err := ctx.LoadModule(h.LoadBalancing, "SelectionPolicyRaw")
@@ -369,8 +382,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h)
-	upstreamHealthyUpdater.Init()
+	upstreamHealthyUpdater := newMetricsUpstreamsHealthyUpdater(h, ctx)
+	upstreamHealthyUpdater.init()
 
 	return nil
 }
@@ -519,7 +532,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// the dial address may vary per-request if placeholders are
 	// used, so perform those replacements here; the resulting
 	// DialInfo struct should have valid network address syntax
-	dialInfo, err := upstream.fillDialInfo(r)
+	dialInfo, err := upstream.fillDialInfo(repl)
 	if err != nil {
 		return true, fmt.Errorf("making dial info: %v", err)
 	}
@@ -670,7 +683,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		req.Header.Set("Early-Data", "1")
 	}
 
-	reqUpType := upgradeType(req.Header)
+	reqUpgradeType := upgradeType(req.Header)
 	removeConnectionHeaders(req.Header)
 
 	// Remove hop-by-hop headers to the backend. Especially
@@ -691,9 +704,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 
 	// After stripping all the hop-by-hop connection headers above, add back any
 	// necessary for protocol upgrades, such as for websockets.
-	if reqUpType != "" {
+	if reqUpgradeType != "" {
 		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", reqUpType)
+		req.Header.Set("Upgrade", reqUpgradeType)
 		normalizeWebsocketHeaders(req.Header)
 	}
 
@@ -718,6 +731,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if err != nil {
 		return nil, err
 	}
+
+	// Via header(s)
+	req.Header.Add("Via", fmt.Sprintf("%d.%d Caddy", req.ProtoMajor, req.ProtoMinor))
 
 	return req, nil
 }
@@ -869,13 +885,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}),
 	)
 
+	const logMessage = "upstream roundtrip"
+
 	if err != nil {
-		if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+		if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 			c.Write(zap.Error(err))
 		}
 		return err
 	}
-	if c := logger.Check(zapcore.DebugLevel, "upstream roundtrip"); c != nil {
+	if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 		c.Write(
 			zap.Object("headers", caddyhttp.LoggableHTTPHeader{
 				Header:               res.Header,
@@ -1011,6 +1029,14 @@ func (h *Handler) finalizeResponse(
 		res.Header.Del(h)
 	}
 
+	// delete our Server header and use Via instead (see #6275)
+	rw.Header().Del("Server")
+	var protoPrefix string
+	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
+		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
+	}
+	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
+
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
 		if h.Headers.Response.Require == nil ||
@@ -1124,7 +1150,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if !isDialError && !(isHandlerError && errors.Is(herr, errNoUpstream)) {
+		if !isDialError && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
@@ -1208,6 +1234,10 @@ func (h Handler) provisionUpstream(upstream *Upstream) {
 // then returns a reader for the buffer along with how many bytes were buffered. Always close
 // the return value when done with it, just like if it was the original body! If limit is 0
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
+// Otherwise, it returns bodyReadCloser, the original body will be closed and body will be nil
+// if it's explicitly configured to buffer all or EOF is reached when reading.
+// TODO: the error during reading is discarded if the limit is negative, should the error be propagated
+// to upstream/downstream?
 func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
 	if limit == 0 {
 		return originalBody, 0
@@ -1216,13 +1246,14 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if limit > 0 {
-		n, err := io.CopyN(buf, originalBody, limit)
-		if (err != nil && err != io.EOF) || n == limit {
+		var err error
+		written, err = io.CopyN(buf, originalBody, limit)
+		if (err != nil && err != io.EOF) || written == limit {
 			return bodyReadCloser{
 				Reader: io.MultiReader(buf, originalBody),
 				buf:    buf,
 				body:   originalBody,
-			}, n
+			}, written
 		}
 	} else {
 		written, _ = io.Copy(buf, originalBody)

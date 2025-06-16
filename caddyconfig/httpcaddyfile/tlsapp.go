@@ -92,11 +92,9 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	// collect all hosts that have a wildcard in them, and arent HTTP
-	wildcardHosts := []string{}
-	// hosts that have been explicitly marked to be automated,
-	// even if covered by another wildcard
-	forcedAutomatedNames := make(map[string]struct{})
+	var wildcardHosts []string                        // collect all hosts that have a wildcard in them, and aren't HTTP
+	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
+
 	for _, p := range pairings {
 		var addresses []string
 		for _, addressWithProtocols := range p.addressesWithProtocols {
@@ -153,7 +151,7 @@ func (st ServerType) buildTLSApp(
 				ap.OnDemand = true
 			}
 
-			// collect hosts that are forced to be automated
+			// collect hosts that are forced to have certs automated for their specific name
 			if _, ok := sblock.pile["tls.force_automate"]; ok {
 				for _, host := range sblockHosts {
 					forcedAutomatedNames[host] = struct{}{}
@@ -340,7 +338,7 @@ func (st ServerType) buildTLSApp(
 					combined = reflect.New(reflect.TypeOf(cl)).Elem()
 				}
 				clVal := reflect.ValueOf(cl)
-				for i := 0; i < clVal.Len(); i++ {
+				for i := range clVal.Len() {
 					combined = reflect.Append(combined, clVal.Index(i))
 				}
 				loadersByName[name] = combined.Interface().(caddytls.CertificateLoader)
@@ -357,6 +355,32 @@ func (st ServerType) buildTLSApp(
 			tlsApp.Automation = new(caddytls.AutomationConfig)
 		}
 		tlsApp.Automation.OnDemand = onDemand
+	}
+
+	// set up "global" (to the TLS app) DNS provider config
+	if globalDNS, ok := options["dns"]; ok && globalDNS != nil {
+		tlsApp.DNSRaw = caddyconfig.JSONModuleObject(globalDNS, "name", globalDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
+	}
+
+	// set up ECH from Caddyfile options
+	if ech, ok := options["ech"].(*caddytls.ECH); ok {
+		tlsApp.EncryptedClientHello = ech
+
+		// outer server names will need certificates, so make sure they're included
+		// in an automation policy for them that applies any global options
+		ap, err := newBaseAutomationPolicy(options, warnings, true)
+		if err != nil {
+			return nil, warnings, err
+		}
+		for _, cfg := range ech.Configs {
+			if cfg.PublicName != "" {
+				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			}
+		}
+		if tlsApp.Automation == nil {
+			tlsApp.Automation = new(caddytls.AutomationConfig)
+		}
+		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
@@ -445,7 +469,7 @@ func (st ServerType) buildTLSApp(
 		globalPreferredChains := options["preferred_chains"]
 		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil || globalPreferredChains != nil
 		if hasGlobalACMEDefaults {
-			for i := 0; i < len(tlsApp.Automation.Policies); i++ {
+			for i := range tlsApp.Automation.Policies {
 				ap := tlsApp.Automation.Policies[i]
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
 					// for public names, create default issuers which will later be filled in with configured global defaults
@@ -553,7 +577,8 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalPreferredChains != nil && acmeIssuer.PreferredChains == nil {
 		acmeIssuer.PreferredChains = globalPreferredChains.(*caddytls.ChainPreference)
 	}
-	if globalHTTPPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.HTTP == nil || acmeIssuer.Challenges.HTTP.AlternatePort == 0) {
+	// only configure alt HTTP and TLS-ALPN ports if the DNS challenge is not enabled (wouldn't hurt, but isn't necessary since the DNS challenge is exclusive of others)
+	if globalHTTPPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.HTTP == nil || acmeIssuer.Challenges.HTTP.AlternatePort == 0) {
 		if acmeIssuer.Challenges == nil {
 			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 		}
@@ -562,7 +587,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		}
 		acmeIssuer.Challenges.HTTP.AlternatePort = globalHTTPPort.(int)
 	}
-	if globalHTTPSPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.TLSALPN == nil || acmeIssuer.Challenges.TLSALPN.AlternatePort == 0) {
+	if globalHTTPSPort != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.TLSALPN == nil || acmeIssuer.Challenges.TLSALPN.AlternatePort == 0) {
 		if acmeIssuer.Challenges == nil {
 			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 		}

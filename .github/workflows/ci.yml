@@ -12,6 +12,13 @@ on:
       - master
       - 2.*
 
+env:
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
+permissions:
+  contents: read
+
 jobs:
   test:
     permissions:
@@ -21,22 +28,18 @@ jobs:
       # Default is true, cancels jobs for other platforms in the matrix if one fails
       fail-fast: false
       matrix:
-        os: 
+        os:
           - linux
           - mac
           - windows
-        go: 
-          - '1.22'
-          - '1.23'
+        go:
+          - '1.24'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.22'
-          GO_SEMVER: '~1.22.3'
-
-        - go: '1.23'
-          GO_SEMVER: '~1.23.0'
+        - go: '1.24'
+          GO_SEMVER: '~1.24.1'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
@@ -58,13 +61,21 @@ jobs:
           SUCCESS: 'True'
 
     runs-on: ${{ matrix.OS_LABEL }}
-
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write # to allow uploading artifacts and cache
     steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      with:
+        egress-policy: audit
+
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -102,7 +113,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -tags nobadger -trimpath -ldflags="-w -s" -v
+        go build -tags nobadger,nomysql,nopgx -trimpath -ldflags="-w -s" -v
 
     - name: Smoke test Caddy
       working-directory: ./cmd/caddy
@@ -111,7 +122,7 @@ jobs:
         ./caddy stop
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
@@ -125,7 +136,7 @@ jobs:
       # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -tags nobadger -v -coverprofile="cover-profile.out" -short -race ./...
+        go test -tags nobadger,nomysql,nopgx -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -249,12 +260,21 @@ jobs:
 
   s390x-test:
     name: test (s390x on IBM Z)
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: ci-s390x.caddyserver.com:22
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Run Tests
         run: |
           set +e
@@ -277,7 +297,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 -tags nobadger -v ./...
+            CGO_ENABLED=0 go test -p 1 -tags nobadger,nomysql,nopgx -v ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
@@ -301,25 +321,33 @@ jobs:
 
   goreleaser-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
           version: latest
           args: check
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: "~1.23"
+          go-version: "~1.24"
           check-latest: true
       - name: Install xcaddy
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
           xcaddy version
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
           version: latest
           args: build --single-target --snapshot

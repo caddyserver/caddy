@@ -28,6 +28,7 @@ import (
 	"github.com/mholt/acmez/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -172,9 +173,6 @@ type AutomationPolicy struct {
 	subjects []string
 	magic    *certmagic.Config
 	storage  certmagic.Storage
-
-	// Whether this policy had explicit managers configured directly on it.
-	hadExplicitManagers bool
 }
 
 // Provision sets up ap and builds its underlying CertMagic config.
@@ -183,7 +181,12 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	repl := caddy.NewReplacer()
 	subjects := make([]string, len(ap.SubjectsRaw))
 	for i, sub := range ap.SubjectsRaw {
-		subjects[i] = repl.ReplaceAll(sub, "")
+		sub = repl.ReplaceAll(sub, "")
+		subASCII, err := idna.ToASCII(sub)
+		if err != nil {
+			return fmt.Errorf("could not convert automation policy subject '%s' to punycode: %v", sub, err)
+		}
+		subjects[i] = subASCII
 	}
 	ap.subjects = subjects
 
@@ -206,8 +209,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// store them on the policy before putting it on the config
 
 	// load and provision any cert manager modules
+	var hadExplicitManagers bool
 	if ap.ManagersRaw != nil {
-		ap.hadExplicitManagers = true
+		hadExplicitManagers = true
 		vals, err := tlsApp.ctx.LoadModule(ap, "ManagersRaw")
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
@@ -267,9 +271,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
 		// permission module configured
 		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
-		failClosed := noProtections && !ap.hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
+		failClosed := noProtections && !hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
 		if noProtections {
-			if !ap.hadExplicitManagers {
+			if !hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
 				return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
 			}
@@ -384,10 +388,8 @@ func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 // isWildcardOrDefault determines if the subjects include any wildcard domains,
 // or is the "default" policy (i.e. no subjects) which is unbounded.
 func (ap *AutomationPolicy) isWildcardOrDefault() bool {
-	isWildcardOrDefault := false
-	if len(ap.subjects) == 0 {
-		isWildcardOrDefault = true
-	}
+	isWildcardOrDefault := len(ap.subjects) == 0
+
 	for _, sub := range ap.subjects {
 		if strings.HasPrefix(sub, "*") {
 			isWildcardOrDefault = true

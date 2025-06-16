@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"syscall"
 	"testing"
 
@@ -77,7 +78,7 @@ func TestFileCreationMode(t *testing.T) {
 				t.Fatalf("failed to create tempdir: %v", err)
 			}
 			defer os.RemoveAll(dir)
-			fpath := path.Join(dir, "test.log")
+			fpath := filepath.Join(dir, "test.log")
 			tt.fw.Filename = fpath
 
 			logger, err := tt.fw.OpenWriter()
@@ -92,7 +93,7 @@ func TestFileCreationMode(t *testing.T) {
 			}
 
 			if st.Mode() != tt.wantMode {
-				t.Errorf("file mode is %v, want %v", st.Mode(), tt.wantMode)
+				t.Errorf("%s: file mode is %v, want %v", tt.name, st.Mode(), tt.wantMode)
 			}
 		})
 	}
@@ -316,7 +317,7 @@ func TestFileModeToJSON(t *testing.T) {
 	}{
 		{
 			name:    "none zero",
-			mode:    0644,
+			mode:    0o644,
 			want:    `"0644"`,
 			wantErr: false,
 		},
@@ -357,7 +358,7 @@ func TestFileModeModification(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fpath := path.Join(dir, "test.log")
-	f_tmp, err := os.OpenFile(fpath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0600))
+	f_tmp, err := os.OpenFile(fpath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0o600))
 	if err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}

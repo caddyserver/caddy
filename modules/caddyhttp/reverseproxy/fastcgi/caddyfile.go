@@ -17,6 +17,7 @@ package fastcgi
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -131,15 +132,18 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // is equivalent to a route consisting of:
 //
 //	# Add trailing slash for directory requests
+//	# This redirection is automatically disabled if "{http.request.uri.path}/index.php"
+//	# doesn't appear in the try_files list
 //	@canonicalPath {
 //	    file {path}/index.php
 //	    not path */
 //	}
 //	redir @canonicalPath {path}/ 308
 //
-//	# If the requested file does not exist, try index files
+//	# If the requested file does not exist, try index files and assume index.php always exists
 //	@indexFiles file {
 //	    try_files {path} {path}/index.php index.php
+//	    try_policy first_exist_fallback
 //	    split_path .php
 //	}
 //	rewrite @indexFiles {http.matchers.file.relative}
@@ -311,7 +315,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// if the index is turned off, we skip the redirect and try_files
 	if indexFile != "off" {
-		dirRedir := false
+		var dirRedir bool
 		dirIndex := "{http.request.uri.path}/" + indexFile
 		tryPolicy := "first_exist_fallback"
 
@@ -325,13 +329,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 				tryPolicy = ""
 			}
 
-			for _, tf := range tryFiles {
-				if tf == dirIndex {
-					dirRedir = true
-
-					break
-				}
-			}
+			dirRedir = slices.Contains(tryFiles, dirIndex)
 		}
 
 		if dirRedir {

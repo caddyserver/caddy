@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,10 +34,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -64,12 +67,6 @@ func Main() {
 	if len(os.Args) == 0 {
 		fmt.Printf("[FATAL] no arguments provided by OS; args[0] must be command\n")
 		os.Exit(caddy.ExitCodeFailedStartup)
-	}
-
-	undo, err := maxprocs.Set()
-	defer undo()
-	if err != nil {
-		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
 	}
 
 	if err := defaultFactory.Build().Execute(); err != nil {
@@ -421,7 +418,7 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		// quoted value: support newlines
 		if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "'") {
 			quote := string(val[0])
-			for !(strings.HasSuffix(line, quote) && !strings.HasSuffix(line, `\`+quote)) {
+			for !strings.HasSuffix(line, quote) || strings.HasSuffix(line, `\`+quote) {
 				val = strings.ReplaceAll(val, `\`+quote, quote)
 				if !scanner.Scan() {
 					break
@@ -465,6 +462,31 @@ func printEnvironment() {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+}
+
+func setResourceLimits(logger *zap.Logger) func() {
+	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
+	// See https://pkg.go.dev/runtime#GOMAXPROCS
+	undo, err := maxprocs.Set(maxprocs.Logger(logger.Sugar().Infof))
+	if err != nil {
+		logger.Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
+	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
+	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
+	_, _ = memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithLogger(
+			slog.New(zapslog.NewHandler(logger.Core())),
+		),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+	)
+
+	return undo
 }
 
 // StringSlice is a flag.Value that enables repeated use of a string flag.

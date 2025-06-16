@@ -171,6 +171,7 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
+
 func TestServer_TrustedRealClientIP_NoTrustedHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.0.2.1:12345"
