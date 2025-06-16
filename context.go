@@ -417,6 +417,12 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
+
+			// if this was an app module that failed to provision,
+			// remove it from the apps map to prevent it from being started at all
+			if _, ok := val.(App); ok {
+				delete(ctx.cfg.apps, id)
+			}
 			return nil, fmt.Errorf("provision %s: %v", modInfo, err)
 		}
 	}
