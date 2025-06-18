@@ -1,6 +1,7 @@
 package caddytest
 
 import (
+	"bytes"
 	"net/http"
 	"strings"
 	"testing"
@@ -125,4 +126,78 @@ func TestLoadUnorderedJSON(t *testing.T) {
 		return
 	}
 	tester.AssertResponseCode(req, 200)
+}
+
+func TestCheckID(t *testing.T) {
+	tester := NewTester(t)
+	tester.InitServer(`{
+		"admin": {
+			"listen": "localhost:2999"
+		},
+		"apps": {
+			"http": {
+				"http_port": 9080,
+				"servers": {
+					"s_server": {
+						"@id": "s_server",
+						"listen": [
+							":9080"
+						],
+						"routes": [
+							{
+								"handle": [
+									{
+										"handler": "static_response",
+										"body": "Hello"
+									}
+								]
+							}
+						]
+					}
+				}
+			}
+		}
+	}
+  `, "json")
+	headers := []string{"Content-Type:application/json"}
+	sServer1 := []byte(
+		`{"@id":"s_server","listen":[":9080"],"routes":[{"@id":"route1","handle":[{"handler":"static_response","body":"Hello 2"}]}]}`)
+	tester.AssertPutResponseBody(
+		"http://localhost:2999/id/s_server",
+		headers, bytes.NewBuffer(sServer1), 409, `{"error":"[/config/apps/http/servers/s_server] key already exists: s_server"}
+`)
+	tester.AssertPostResponseBody("http://localhost:2999/id/s_server", headers, bytes.NewBuffer(sServer1), 200, "")
+
+	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello 2")
+	tester.AssertPostResponseBody(
+		"http://localhost:2999/id/s_server",
+		headers, bytes.NewBuffer([]byte(
+			`{"@id":"s_server","listen":[":9080"],"routes":[{"@id":"route1","handle":[
+  {"handler":"static_response","body":"Hello2"}],"match":[{"path":["/route_1/*"]}]}]}`)), 200, "")
+
+	sServer2 := []byte(`
+{"@id":"s_server","listen":[":9080"],"routes":[{"@id":"route1","handle":[
+  {"handler":"static_response","body":"Hello2"}],"match":[{"path":["/route_1/*"]}]}]}`)
+	tester.AssertPatchResponseBody(
+		"http://localhost:2999/id/s_server",
+		headers, bytes.NewBuffer(sServer2), 200, "")
+	route2 := []byte(
+		`{"@id":"route2","handle": [{"handler": "static_response","body": "route2"}],"match":[{"path":["/route_2/*"]}]}`)
+	tester.AssertPutResponseBody(
+		"http://localhost:2999/id/route1",
+		headers, bytes.NewBuffer(route2), 200, "")
+	tester.AssertGetResponse("http://localhost:2999/config", 200,
+		`{"admin":{"listen":"localhost:2999"},"apps":{"http":{"http_port":9080,"servers":{"s_server":{"@id":"s_server","listen":[":9080"],"routes":[{"@id":"route2","handle":[{"body":"route2","handler":"static_response"}],"match":[{"path":["/route_2/*"]}]},{"@id":"route1","handle":[{"body":"Hello2","handler":"static_response"}],"match":[{"path":["/route_1/*"]}]}]}}}}}
+`)
+	// use post or put to add one
+	tester.AssertPostResponseBody(
+		"http://localhost:2999/id/route2",
+		headers, bytes.NewBuffer(route2), 500, `{"error":"indexing config: multiple keys found: route2"}
+`)
+	// use patch to update
+	tester.AssertPatchResponseBody(
+		"http://localhost:2999/id/route1",
+		headers, bytes.NewBuffer([]byte(`{"@id":"route1","handle":[{"handler":"static_response","body":"route1"}],"match":[{"path":["/route_1/*"]}]}`)),
+		200, "")
+	tester.AssertGetResponse("http://localhost:9080/route_1/", 200, "route1")
 }
