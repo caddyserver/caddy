@@ -393,6 +393,8 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		return nil, fmt.Errorf("module value cannot be null")
 	}
 
+	var err error
+
 	// if this is an app module, keep a reference to it,
 	// since submodules may need to reference it during
 	// provisioning (even though the parent app module
@@ -402,12 +404,17 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	// module has been configured for DNS challenges)
 	if appModule, ok := val.(App); ok {
 		ctx.cfg.apps[id] = appModule
+		defer func() {
+			if err != nil {
+				delete(ctx.cfg.apps, id)
+			}
+		}()
 	}
 
 	ctx.ancestry = append(ctx.ancestry, val)
 
 	if prov, ok := val.(Provisioner); ok {
-		err := prov.Provision(ctx)
+		err = prov.Provision(ctx)
 		if err != nil {
 			// incomplete provisioning could have left state
 			// dangling, so make sure it gets cleaned up
@@ -417,18 +424,12 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
 				}
 			}
-
-			// if this was an app module that failed to provision,
-			// remove it from the apps map to prevent it from being started at all
-			if _, ok := val.(App); ok {
-				delete(ctx.cfg.apps, id)
-			}
 			return nil, fmt.Errorf("provision %s: %v", modInfo, err)
 		}
 	}
 
 	if validator, ok := val.(Validator); ok {
-		err := validator.Validate()
+		err = validator.Validate()
 		if err != nil {
 			// since the module was already provisioned, make sure we clean up
 			if cleanerUpper, ok := val.(CleanerUpper); ok {
