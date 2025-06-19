@@ -36,7 +36,6 @@
 - [Install](#install)
 - [Build from source](#build-from-source)
 	- [For development](#for-development)
-	- [With version information and/or plugins](#with-version-information-andor-plugins)
 - [Quick start](#quick-start)
 - [Overview](#overview)
 - [Full documentation](#full-documentation)
@@ -109,7 +108,7 @@ $ cp ./build.sh.example ./build.sh
 replace `path-to-go` to your Lovemilk-Forked-Golang `go` binary in the `build.sh` file.
 
 ```bash
-bash ./build.sh
+$ bash ./build.sh
 ```
 
 Then, binary you built will be in `./cmd/caddy/caddy`, you can simply run or deploy it.
@@ -138,11 +137,11 @@ replacing `username` with your actual username. Please be careful and only do th
 
 If you want to add some custom plugins, you can follow this steps:
 ```bash
-path-to-go get plugin-name
+$ path-to-go get plugin-name
 ```
 like
 ```bash
-path-to-go get github.com/caddy-dns/cloudflare
+$ path-to-go get github.com/caddy-dns/cloudflare
 ```
 
 Import packages in `cmd/caddy/main.go`

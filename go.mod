@@ -1,4 +1,4 @@
-module github.com/caddyserver/caddy/v2
+module github.com/lovemilk2333/caddy/v2
 
 go 1.24
 
@@ -8,6 +8,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
+	github.com/caddy-dns/cloudflare v0.2.1
 	github.com/caddyserver/certmagic v0.23.0
 	github.com/caddyserver/zerossl v0.1.3
 	github.com/cloudflare/circl v1.6.0
@@ -52,7 +53,6 @@ require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/caddy-dns/cloudflare v0.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fxamacker/cbor/v2 v2.6.0 // indirect
