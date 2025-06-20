@@ -89,8 +89,8 @@ jobs:
 
     # Cloudsmith CLI tooling for pushing releases
     # See https://help.cloudsmith.io/docs/cli
-    - name: Install Cloudsmith CLI
-      run: pip install --upgrade cloudsmith-cli
+    # - name: Install Cloudsmith CLI
+    #   run: pip install --upgrade cloudsmith-cli
 
     # - name: Validate commits and tag signatures
     #   run: |
@@ -126,7 +126,7 @@ jobs:
     #     COSIGN_EXPERIMENTAL: 1
 
     - name: Build Caddy
-      run:
+      run: |
         go mod tidy
         cd cmd/caddy && \
           GOOS=linux GOARCH=amd64 go build -o caddy-linux-amd64 && \
