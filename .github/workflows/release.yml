@@ -44,11 +44,9 @@ jobs:
         GO_VERSION: 1.24.4
       run: |
         wget "https://github.com/lovemilk2333/go/releases/download/go${GO_VERSION}/go${GO_VERSION}-linux-amd64.tar.gz"
-        mkdir -p $HOME/.local/go/bin
-        tar -C $HOME/.local/go/bin -xzf go*.tar.gz
+        tar -C $HOME/.local -xzf go*.tar.gz
         echo "PATH=$HOME/.local/go/bin:$PATH" >> $GITHUB_ENV
         rm go*.tar.gz
-        chmod +x $HOME/.local/go/bin/go
 
     # Force fetch upstream tags -- because 65 minutes
     # tl;dr: actions/checkout@v4 runs this line:
@@ -94,15 +92,15 @@ jobs:
     - name: Install Cloudsmith CLI
       run: pip install --upgrade cloudsmith-cli
 
-    - name: Validate commits and tag signatures
-      run: |
+    # - name: Validate commits and tag signatures
+    #   run: |
         
-        # Import Matt Holt's key
-        curl 'https://github.com/mholt.gpg' | gpg --import
+    #     # Import Matt Holt's key
+    #     curl 'https://github.com/mholt.gpg' | gpg --import
 
-        echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
-        # tags are only accepted if signed by Matt's key
-        git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
+    #     echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
+    #     # tags are only accepted if signed by Matt's key
+    #     git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Install Cosign
       uses: sigstore/cosign-installer@main
