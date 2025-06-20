@@ -35,9 +35,9 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp/templates"
 )
 
 // BrowseTemplate is the default template document to use for

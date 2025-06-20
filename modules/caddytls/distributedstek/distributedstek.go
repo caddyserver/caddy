@@ -35,8 +35,8 @@ import (
 
 	"github.com/caddyserver/certmagic"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/modules/caddytls"
 )
 
 func init() {

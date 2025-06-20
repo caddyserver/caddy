@@ -21,7 +21,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 // parseVariadic determines if the token is a variadic placeholder,

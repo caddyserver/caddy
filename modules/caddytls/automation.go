@@ -30,7 +30,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/idna"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.

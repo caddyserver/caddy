@@ -8,7 +8,7 @@ linters-settings:
     sections:
       - standard # Standard section: captures all standard packages.
       - default # Default section: contains all imports that could not be matched to another section type.
-      - prefix(github.com/caddyserver/caddy/v2/cmd) # ensure that this is always at the top and always has a line break.
+      - prefix(github.com/lovemilk2333/caddy/v2/cmd) # ensure that this is always at the top and always has a line break.
       - prefix(github.com/caddyserver/caddy) # Custom section: groups all imports with the specified Prefix.
     # Skip generated files.
     # Default: true

@@ -24,7 +24,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 // Parse parses the input just enough to group tokens, in

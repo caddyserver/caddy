@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 type parsedAddr struct {

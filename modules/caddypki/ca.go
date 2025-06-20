@@ -31,7 +31,7 @@ import (
 	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 // CA describes a certificate authority, which consists of

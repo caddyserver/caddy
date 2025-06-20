@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caddyserver/caddy/v2/caddytest"
+	"github.com/lovemilk2333/caddy/v2/caddytest"
 	"github.com/mholt/acmez/v3"
 	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"

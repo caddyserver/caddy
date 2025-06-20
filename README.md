@@ -14,7 +14,7 @@
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
 	<a href="https://github.com/caddyserver/caddy/actions/workflows/ci.yml"><img src="https://github.com/caddyserver/caddy/actions/workflows/ci.yml/badge.svg"></a>
-	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
+	<a href="https://pkg.go.dev/github.com/lovemilk2333/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
 	<br>
 	<a href="https://x.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/twitter/follow/caddyserver" alt="@caddyserver on Twitter"></a>
 	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
@@ -131,6 +131,16 @@ username ALL=(ALL:ALL) NOPASSWD: /usr/sbin/setcap
 ```
 
 replacing `username` with your actual username. Please be careful and only do this if you know what you are doing! We are only qualified to document how to use Caddy, not Go tooling or your computer, and we are providing these instructions for convenience only; please learn how to use your own computer at your own risk and make any needful adjustments.
+
+If you want to use this version's Caddy in an exist Go project which requires `github.com/lovemilk2333/caddy/v2`, you MUST TO add the following line in your `go.mod` file:
+```go
+replace github.com/lovemilk2333/caddy/v2 => github.com/lovemilk2333/caddy/v2 v<version>
+```
+like
+```go
+replace github.com/lovemilk2333/caddy/v2 => github.com/lovemilk2333/caddy/v2 v2.10.0
+```
+where `<version>` is the version of Caddy you want to use.
 
 ### With version information and/or plugins (DO NOT USE)
 `xcaddy` will use the official version of caddy source code, **DO NOT** use it.

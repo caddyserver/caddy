@@ -24,9 +24,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+	caddycmd "github.com/lovemilk2333/caddy/v2/cmd"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 func init() {

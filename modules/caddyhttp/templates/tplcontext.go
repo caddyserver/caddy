@@ -41,8 +41,8 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp"
 )
 
 // TemplateContext is the TemplateContext with which HTTP templates are executed.

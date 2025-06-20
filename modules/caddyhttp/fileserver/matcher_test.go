@@ -23,9 +23,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/internal/filesystems"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp"
 )
 
 func TestFileMatcher(t *testing.T) {

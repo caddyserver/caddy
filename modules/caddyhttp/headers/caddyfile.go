@@ -20,8 +20,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/lovemilk2333/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp"
 )
 
 func init() {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/caddyserver/caddy/v2/internal/metrics"
+	"github.com/lovemilk2333/caddy/v2/internal/metrics"
 )
 
 // define and register the metrics used in this package.

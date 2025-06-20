@@ -3,8 +3,8 @@ package logging
 import (
 	"testing"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap/zapcore"
 )
 

@@ -26,9 +26,9 @@ import (
 	"github.com/smallstep/truststore"
 	"github.com/spf13/cobra"
 
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
+	caddycmd "github.com/lovemilk2333/caddy/v2/cmd"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2"
 )
 
 func init() {

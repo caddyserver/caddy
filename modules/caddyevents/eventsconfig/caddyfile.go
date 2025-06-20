@@ -21,10 +21,10 @@ package eventsconfig
 import (
 	"encoding/json"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyevents"
+	"github.com/lovemilk2333/caddy/v2/caddyconfig"
+	"github.com/lovemilk2333/caddy/v2/caddyconfig/caddyfile"
+	"github.com/lovemilk2333/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/lovemilk2333/caddy/v2/modules/caddyevents"
 )
 
 func init() {

@@ -26,8 +26,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/lovemilk2333/caddy/v2"
+	"github.com/lovemilk2333/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
