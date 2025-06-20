@@ -135,6 +135,6 @@ jobs:
     - name: Upload Release
       uses: softprops/action-gh-release@v1
       with:
-        files: cmd/caddy/caddy-linux-amd64
+        files: caddy-linux-amd64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
