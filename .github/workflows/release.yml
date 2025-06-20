@@ -102,83 +102,39 @@ jobs:
     #     # tags are only accepted if signed by Matt's key
     #     git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
-    - name: Install Cosign
-      uses: sigstore/cosign-installer@main
-    - name: Cosign version
-      run: cosign version
-    - name: Install Syft
-      uses: anchore/sbom-action/download-syft@main
-    - name: Syft version
-      run: syft version
-    - name: Install xcaddy
-      run: |
-        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-        xcaddy version
-    # GoReleaser will take care of publishing those artifacts into the release
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v6
+    # - name: Install Cosign
+    #   uses: sigstore/cosign-installer@main
+    # - name: Cosign version
+    #   run: cosign version
+    # - name: Install Syft
+    #   uses: anchore/sbom-action/download-syft@main
+    # - name: Syft version
+    #   run: syft version
+    # - name: Install xcaddy
+    #   run: |
+    #     go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+    #     xcaddy version
+    # # GoReleaser will take care of publishing those artifacts into the release
+    # - name: Run GoReleaser
+    #   uses: goreleaser/goreleaser-action@v6
+    #   with:
+    #     version: latest
+    #     args: release --clean --timeout 60m
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #     TAG: ${{ steps.vars.outputs.version_tag }}
+    #     COSIGN_EXPERIMENTAL: 1
+
+    - name: Build Caddy
+      run:
+        go mod tidy
+        cd cmd/caddy && \
+          GOOS=linux GOARCH=amd64 go build -o caddy-linux-amd64 && \
+          mv caddy-linux-amd64 ../../
+
+    - name: Upload Release
+      uses: softprops/action-gh-release@v1
       with:
-        version: latest
-        args: release --clean --timeout 60m
+        files: cmd/caddy/caddy-linux-amd64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TAG: ${{ steps.vars.outputs.version_tag }}
-        COSIGN_EXPERIMENTAL: 1
-
-    # Only publish on non-special tags (e.g. non-beta)
-    # We will continue to push to Gemfury for the foreseeable future, although
-    # Cloudsmith is probably better, to not break things for existing users of Gemfury.
-    # See https://gemfury.com/caddy/deb:caddy
-    - name: Publish .deb to Gemfury
-      if: ${{ steps.vars.outputs.tag_special == '' }}
-      env:
-        GEMFURY_PUSH_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
-      run: |
-        for filename in dist/*.deb; do
-          # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv6"* ]]; then
-            echo "Skipping $filename"
-            continue
-          fi
-
-          curl -F package=@"$filename" https://${GEMFURY_PUSH_TOKEN}:@push.fury.io/caddy/
-        done
-
-    # Publish only special tags (unstable/beta/rc) to the "testing" repo
-    # See https://cloudsmith.io/~caddy/repos/testing/
-    - name: Publish .deb to Cloudsmith (special tags)
-      if: ${{ steps.vars.outputs.tag_special != '' }}
-      env:
-        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-      run: |
-        for filename in dist/*.deb; do
-          # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv6"* ]]; then
-            echo "Skipping $filename"
-            continue
-          fi
-
-          echo "Pushing $filename to 'testing'"
-          cloudsmith push deb caddy/testing/any-distro/any-version $filename
-        done
-
-    # Publish stable tags to Cloudsmith to both repos, "stable" and "testing"
-    # See https://cloudsmith.io/~caddy/repos/stable/
-    - name: Publish .deb to Cloudsmith (stable tags)
-      if: ${{ steps.vars.outputs.tag_special == '' }}
-      env:
-        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-      run: |
-        for filename in dist/*.deb; do
-          # armv6 and armv7 are both "armhf" so we can skip the duplicate
-          if [[ "$filename" == *"armv6"* ]]; then
-            echo "Skipping $filename"
-            continue
-          fi
-
-          echo "Pushing $filename to 'stable'"
-          cloudsmith push deb caddy/stable/any-distro/any-version $filename
-
-          echo "Pushing $filename to 'testing'"
-          cloudsmith push deb caddy/testing/any-distro/any-version $filename
-        done
