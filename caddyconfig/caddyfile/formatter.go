@@ -61,8 +61,10 @@ func Format(input []byte) []byte {
 		heredocMarker        []rune
 		heredocClosingMarker []rune
 
-		nesting         int // indentation level
-		withinBackquote bool
+		nesting              int // indentation level
+		withinBacktick       bool
+		afterQuotedBacktick  bool // after "`
+		afterBacktickedQuote bool // after `"
 	)
 
 	write := func(ch rune) {
@@ -89,10 +91,6 @@ func Format(input []byte) []byte {
 			}
 			panic(err)
 		}
-		if ch == '`' {
-			withinBackquote = !withinBackquote
-		}
-
 		// detect whether we have the start of a heredoc
 		if !quoted && (heredoc == heredocClosed && !heredocEscaped) &&
 			space && last == '<' && ch == '<' {
@@ -180,12 +178,39 @@ func Format(input []byte) []byte {
 			continue
 		}
 
+		if ch == '`' {
+			if afterQuotedBacktick {
+				afterBacktickedQuote = false
+				withinBacktick = false
+			} else if withinBacktick {
+				withinBacktick = false
+			} else if quoted {
+				afterQuotedBacktick = true
+				withinBacktick = true
+			} else {
+				withinBacktick = true
+			}
+		}
+
 		if quoted {
 			if ch == '"' {
+				if afterQuotedBacktick {
+					withinBacktick = false
+				}
+				afterQuotedBacktick = false
 				quoted = false
 			}
 			write(ch)
 			continue
+		}
+
+		if ch == '"' && afterQuotedBacktick {
+			withinBacktick = false
+			afterQuotedBacktick = false
+		}
+		if ch == '"' && afterBacktickedQuote {
+			withinBacktick = false
+			afterBacktickedQuote = false
 		}
 
 		if space && ch == '"' {
@@ -245,7 +270,7 @@ func Format(input []byte) []byte {
 				write(' ')
 			}
 			openBraceWritten = false
-			if withinBackquote {
+			if withinBacktick && !afterQuotedBacktick && !afterBacktickedQuote {
 				write('{')
 				openBraceWritten = true
 				continue
@@ -253,7 +278,7 @@ func Format(input []byte) []byte {
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
-			if withinBackquote {
+			if withinBacktick && !afterQuotedBacktick && !afterBacktickedQuote {
 				write('}')
 				continue
 			}
