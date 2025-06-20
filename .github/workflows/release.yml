@@ -16,14 +16,6 @@ jobs:
       matrix:
         os: 
           - ubuntu-latest
-        go: 
-          - '1.24'
-
-        include:
-        # Set the minimum Go patch version for the given Go minor
-        # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.24'
-          GO_SEMVER: '~1.24.1'
 
     runs-on: ${{ matrix.os }}
     # https://github.com/sigstore/cosign/issues/1258#issuecomment-1002251233
@@ -40,11 +32,22 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Install Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.GO_SEMVER }}
-        check-latest: true
+    # - name: Install Go
+    #   uses: actions/setup-go@v5
+    #   with:
+    #     go-version: ${{ matrix.GO_SEMVER }}
+    #     check-latest: true
+
+    - name: Set up Lovemilk-Forked-Golang
+      env: 
+        GO_VERSION: 1.24.4
+      run: |
+        wget "https://github.com/lovemilk2333/go/releases/download/go${GO_VERSION}/go${GO_VERSION}-linux-amd64.tar.gz"
+        mkdir -p $HOME/.local/go/bin
+        tar -C $HOME/.local/go/bin -xzf go*.tar.gz
+        echo "PATH=$HOME/.local/go/bin:$PATH" >> $GITHUB_ENV
+        rm go*.tar.gz
+        chmod +x $HOME/.local/go/bin/go
 
     # Force fetch upstream tags -- because 65 minutes
     # tl;dr: actions/checkout@v4 runs this line:
