@@ -44,9 +44,8 @@ jobs:
         GO_VERSION: 1.24.4
       run: |
         wget "https://github.com/lovemilk2333/go/releases/download/go${GO_VERSION}/go${GO_VERSION}-linux-amd64.tar.gz"
-        mkdir -p $HOME/.local
-        tar -C $HOME/.local -xzf go*.tar.gz
-        echo "PATH=$HOME/.local/go/bin:$PATH" >> $GITHUB_ENV
+        tar -C $HOME -xzf go*.tar.gz
+        echo "PATH=$HOME/go/bin:$PATH" >> $GITHUB_ENV
         rm go*.tar.gz
 
     # Force fetch upstream tags -- because 65 minutes
