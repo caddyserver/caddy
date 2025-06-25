@@ -1,0 +1,260 @@
+{
+	http_port 2099
+}
+localhost:2099 {
+	root * /var/www/
+	file_server
+
+	handle_errors 404 {
+		handle /en/* {
+			respond "not found" 404
+		}
+		handle /es/* {
+			respond "no encontrado"
+		}
+		handle {
+			respond "default not found"
+		}
+	}
+	handle_errors {
+		handle /en/* {
+			respond "English error"
+		}
+		handle /es/* {
+			respond "Spanish error"
+		}
+		handle {
+			respond "Default error"
+		}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"http_port": 2099,
+			"servers": {
+				"srv0": {
+					"listen": [
+						":2099"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "vars",
+													"root": "/var/www/"
+												},
+												{
+													"handler": "file_server",
+													"hide": [
+														"./Caddyfile"
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"errors": {
+						"routes": [
+							{
+								"match": [
+									{
+										"host": [
+											"localhost"
+										]
+									}
+								],
+								"handle": [
+									{
+										"handler": "subroute",
+										"routes": [
+											{
+												"handle": [
+													{
+														"handler": "subroute",
+														"routes": [
+															{
+																"group": "group3",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "not found",
+																						"handler": "static_response",
+																						"status_code": 404
+																					}
+																				]
+																			}
+																		]
+																	}
+																],
+																"match": [
+																	{
+																		"path": [
+																			"/en/*"
+																		]
+																	}
+																]
+															},
+															{
+																"group": "group3",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "no encontrado",
+																						"handler": "static_response"
+																					}
+																				]
+																			}
+																		]
+																	}
+																],
+																"match": [
+																	{
+																		"path": [
+																			"/es/*"
+																		]
+																	}
+																]
+															},
+															{
+																"group": "group3",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "default not found",
+																						"handler": "static_response"
+																					}
+																				]
+																			}
+																		]
+																	}
+																]
+															}
+														]
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [404]"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"handler": "subroute",
+														"routes": [
+															{
+																"group": "group8",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "English error",
+																						"handler": "static_response"
+																					}
+																				]
+																			}
+																		]
+																	}
+																],
+																"match": [
+																	{
+																		"path": [
+																			"/en/*"
+																		]
+																	}
+																]
+															},
+															{
+																"group": "group8",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "Spanish error",
+																						"handler": "static_response"
+																					}
+																				]
+																			}
+																		]
+																	}
+																],
+																"match": [
+																	{
+																		"path": [
+																			"/es/*"
+																		]
+																	}
+																]
+															},
+															{
+																"group": "group8",
+																"handle": [
+																	{
+																		"handler": "subroute",
+																		"routes": [
+																			{
+																				"handle": [
+																					{
+																						"body": "Default error",
+																						"handler": "static_response"
+																					}
+																				]
+																			}
+																		]
+																	}
+																]
+															}
+														]
+													}
+												]
+											}
+										]
+									}
+								],
+								"terminal": true
+							}
+						]
+					}
+				}
+			}
+		}
+	}
+}
+

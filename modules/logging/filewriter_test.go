@@ -317,7 +317,7 @@ func TestFileModeToJSON(t *testing.T) {
 	}{
 		{
 			name:    "none zero",
-			mode:    0644,
+			mode:    0o644,
 			want:    `"0644"`,
 			wantErr: false,
 		},
@@ -358,7 +358,7 @@ func TestFileModeModification(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fpath := path.Join(dir, "test.log")
-	f_tmp, err := os.OpenFile(fpath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0600))
+	f_tmp, err := os.OpenFile(fpath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0o600))
 	if err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
