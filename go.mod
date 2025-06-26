@@ -10,7 +10,7 @@ require (
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
 	github.com/caddyserver/certmagic v0.23.0
 	github.com/caddyserver/zerossl v0.1.3
-	github.com/cloudflare/circl v1.6.0
+	github.com/cloudflare/circl v1.6.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/google/cel-go v0.24.1
@@ -19,7 +19,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10
 	github.com/mholt/acmez/v3 v3.1.2
 	github.com/prometheus/client_golang v1.19.1
-	github.com/quic-go/quic-go v0.50.1
+	github.com/quic-go/quic-go v0.51.0
 	github.com/smallstep/certificates v0.26.1
 	github.com/smallstep/nosql v0.6.1
 	github.com/smallstep/truststore v0.13.0

@@ -577,11 +577,11 @@ func (ctx Context) Slogger() *slog.Logger {
 		if err != nil {
 			panic("config missing, unable to create dev logger: " + err.Error())
 		}
-		return slog.New(zapslog.NewHandler(l.Core(), nil))
+		return slog.New(zapslog.NewHandler(l.Core()))
 	}
 	mod := ctx.Module()
 	if mod == nil {
-		return slog.New(zapslog.NewHandler(Log().Core(), nil))
+		return slog.New(zapslog.NewHandler(Log().Core()))
 	}
 	return slog.New(zapslog.NewHandler(ctx.cfg.Logging.Logger(mod).Core(),
 		zapslog.WithName(string(mod.CaddyModule().ID)),

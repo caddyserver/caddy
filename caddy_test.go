@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -70,5 +71,23 @@ func TestParseDuration(t *testing.T) {
 		if actual != tc.expect {
 			t.Errorf("Test %d ('%s'): Expected=%s Actual=%s", i, tc.input, tc.expect, actual)
 		}
+	}
+}
+
+func TestEvent_CloudEvent_NilOrigin(t *testing.T) {
+	ctx, _ := NewContext(Context{Context: context.Background()}) // module will be nil by default
+	event, err := NewEvent(ctx, "started", nil)
+	if err != nil {
+		t.Fatalf("NewEvent() error = %v", err)
+	}
+
+	// This should not panic
+	ce := event.CloudEvent()
+
+	if ce.Source != "caddy" {
+		t.Errorf("Expected CloudEvent Source to be 'caddy', got '%s'", ce.Source)
+	}
+	if ce.Type != "started" {
+		t.Errorf("Expected CloudEvent Type to be 'started', got '%s'", ce.Type)
 	}
 }

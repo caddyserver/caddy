@@ -418,7 +418,7 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		// quoted value: support newlines
 		if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "'") {
 			quote := string(val[0])
-			for !(strings.HasSuffix(line, quote) && !strings.HasSuffix(line, `\`+quote)) {
+			for !strings.HasSuffix(line, quote) || strings.HasSuffix(line, `\`+quote) {
 				val = strings.ReplaceAll(val, `\`+quote, quote)
 				if !scanner.Scan() {
 					break

@@ -162,7 +162,9 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 	if err != nil {
 		return fmt.Errorf("setting up default log: %v", err)
 	}
-	newDefault.logger = zap.New(newDefault.CustomLog.core, options...)
+
+	filteringCore := &filteringCore{newDefault.CustomLog.core, newDefault.CustomLog}
+	newDefault.logger = zap.New(filteringCore, options...)
 
 	// redirect the default caddy logs
 	defaultLoggerMu.Lock()
