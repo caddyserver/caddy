@@ -12,7 +12,7 @@ require (
 	github.com/caddyserver/zerossl v0.1.3
 	github.com/cloudflare/circl v1.6.1
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/google/cel-go v0.24.1
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
