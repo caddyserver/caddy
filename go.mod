@@ -19,7 +19,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10
 	github.com/mholt/acmez/v3 v3.1.2
 	github.com/prometheus/client_golang v1.19.1
-	github.com/quic-go/quic-go v0.51.0
+	github.com/quic-go/quic-go v0.53.0
 	github.com/smallstep/certificates v0.26.1
 	github.com/smallstep/nosql v0.6.1
 	github.com/smallstep/truststore v0.13.0
@@ -60,9 +60,7 @@ require (
 	github.com/google/certificate-transparency-go v1.1.8-0.20240110162603-74a5dd331745 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
-	github.com/google/pprof v0.0.0-20231212022811-ec68065c825e // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
-	github.com/onsi/ginkgo/v2 v2.13.2 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
@@ -103,7 +101,6 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
-	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
