@@ -15,7 +15,6 @@
 package caddyhttp
 
 import (
-	"bufio"
 	"bytes"
 	"cmp"
 	"context"
@@ -447,43 +446,33 @@ func (app *App) Validate() error {
 }
 
 func getHTTPBasicData(rawData []byte) (method, path, host string, err error) {
-	reader := bufio.NewReader(bytes.NewReader(rawData))
-
-	// parse the request line：GET /some/path HTTP/1.1
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", "", fmt.Errorf("cannot read request line: %w", err)
+	lineEnd := bytes.Index(rawData, []byte("\r\n"))
+	if lineEnd == -1 {
+		return "", "", "", fmt.Errorf("malformed request: no CRLF in initial data")
 	}
-	parts := strings.Fields(line)
+	requestLine := rawData[:lineEnd]
+
+	// Parse the request line, e.g., "GET /path HTTP/1.1"
+	parts := bytes.SplitN(requestLine, []byte(" "), 3)
 	if len(parts) < 2 {
-		return "", "", "", fmt.Errorf("invalid request line: %s", line)
+		return "", "", "", fmt.Errorf("malformed request line")
 	}
-	method = parts[0]
-	path = parts[1]
+	method = string(parts[0])
+	path = string(parts[1])
 
-	host = ""
-
-	// parse the host
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if host == "" {
-				return "", "", "", fmt.Errorf("cannot find Host header: %w", err)
-			}
-			break
+	// Find the Host header to build a proper redirect
+	headersBlock := rawData[lineEnd+2:]
+	headerLines := bytes.Split(headersBlock, []byte("\r\n"))
+	for _, line := range headerLines {
+		if len(line) == 0 {
+			// Empty line indicates end of headers
+			return "", "", "", fmt.Errorf("malformed request: no Host header")
 		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			if host == "" {
-				return "", "", "", fmt.Errorf("cannot find Host header: %w", err)
+		if key, val, ok := bytes.Cut(line, []byte(": ")); ok {
+			if strings.EqualFold(string(key), "Host") {
+				host = string(val)
+				break
 			}
-			break
-		}
-
-		// case is not sensitive
-		if strings.HasPrefix(strings.ToLower(line), "host:") {
-			host = strings.TrimSpace(line[5:])
-			break
 		}
 	}
 
