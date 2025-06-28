@@ -37,11 +37,11 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
 	go.uber.org/zap/exp v0.3.0
-	golang.org/x/crypto v0.36.0
+	golang.org/x/crypto v0.37.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20250305170421-49bf5b80c810
-	golang.org/x/net v0.38.0
-	golang.org/x/sync v0.12.0
-	golang.org/x/term v0.30.0
+	golang.org/x/net v0.39.0
+	golang.org/x/sync v0.13.0
+	golang.org/x/term v0.31.0
 	golang.org/x/time v0.11.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -122,7 +122,7 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/pires/go-proxyproto v0.7.1-0.20240628150027-b718e7ce4964
+	github.com/pires/go-proxyproto v0.8.1
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/common v0.48.0 // indirect
@@ -146,8 +146,8 @@ require (
 	go.step.sm/linkedca v0.20.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/sys v0.31.0
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/sys v0.32.0
+	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
