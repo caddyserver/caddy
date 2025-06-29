@@ -64,8 +64,11 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 			_, _, err = cfgAdapter.Adapt([]byte(caddyfile), nil)
 			if err == nil {
 				t.Errorf("expected error for %s but got none", filename)
-			} else if !strings.Contains(err.Error(), expected) {
-				t.Errorf("expected error for %s to contain:\n%s\nbut got:\n%s", filename, expected, err.Error())
+			} else {
+				normalizedErr := winNewlines.ReplaceAllString(err.Error(), "\n")
+				if !strings.Contains(normalizedErr, expected) {
+					t.Errorf("expected error for %s to contain:\n%s\nbut got:\n%s", filename, expected, normalizedErr)
+				}
 			}
 		})
 	}
