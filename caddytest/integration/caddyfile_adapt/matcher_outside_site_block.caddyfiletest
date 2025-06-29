@@ -1,0 +1,9 @@
+@foo {
+	path /foo
+}
+
+handle {
+	respond "should not work"
+}
+----------
+request matchers may not be defined globally, they must be in a site block; found @foo, at Caddyfile:1

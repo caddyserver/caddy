@@ -1,0 +1,7 @@
+:-1
+
+handle {
+	respond "should not work"
+}
+----------
+port -1 is out of range

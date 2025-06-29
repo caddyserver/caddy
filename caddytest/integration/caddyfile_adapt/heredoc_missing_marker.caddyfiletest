@@ -1,0 +1,9 @@
+:80
+
+handle {
+    respond << 
+    Hello
+    END
+}
+----------
+parsing caddyfile tokens for 'handle': unrecognized directive: Hello - are you sure your Caddyfile structure (nesting and braces) is correct?, at Caddyfile:7
