@@ -1,0 +1,9 @@
+:8080 {
+	respond "one"
+}
+
+:8080 {
+	respond "two"
+}
+----------
+ambiguous site definition: :8080
