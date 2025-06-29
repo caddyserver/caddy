@@ -30,11 +30,8 @@ func TestCaddyfileAdaptToJSON(t *testing.T) {
 		}
 		filename := f.Name()
 
-		// run each file as a subtest, so that we can see which
-		// one fails and so that we can run them in parallel.
+		// run each file as a subtest, so that we can see which one fails more easily
 		t.Run(filename, func(t *testing.T) {
-			t.Parallel()
-
 			// read the test file
 			data, err := os.ReadFile("./caddyfile_adapt/" + filename)
 			if err != nil {
