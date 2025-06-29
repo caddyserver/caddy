@@ -51,16 +51,15 @@ func TestServer_LogRequest(t *testing.T) {
 	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	wrec := NewResponseRecorder(rec, nil, nil)
+	wrec := NewResponseRecorder(rec, req, nil, nil)
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
 	shouldLogCredentials := false
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, repl, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -79,16 +78,15 @@ func TestServer_LogRequest_WithTrace(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	wrec := NewResponseRecorder(rec, nil, nil)
+	wrec := NewResponseRecorder(rec, req, nil, nil)
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
 	shouldLogCredentials := false
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, repl, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -107,11 +105,10 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	wrec := NewResponseRecorder(rec, nil, nil)
+	wrec := NewResponseRecorder(rec, req, nil, nil)
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
 
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
@@ -119,7 +116,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, repl, false)
 	}
 }
 
@@ -131,18 +128,17 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	wrec := NewResponseRecorder(rec, nil, nil)
+	wrec := NewResponseRecorder(rec, req, nil, nil)
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
 
 	accLog := zap.NewNop()
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, repl, false)
 	}
 }
 
@@ -156,11 +152,10 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	wrec := NewResponseRecorder(rec, nil, nil)
+	wrec := NewResponseRecorder(rec, req, nil, nil)
 
 	duration := 50 * time.Millisecond
 	repl := NewTestReplacer(req)
-	bodyReader := &lengthReader{Source: req.Body}
 
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
@@ -168,7 +163,7 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, repl, false)
 	}
 }
 
