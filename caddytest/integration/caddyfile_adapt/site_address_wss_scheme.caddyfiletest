@@ -1,0 +1,7 @@
+wss://example.com
+
+handle {
+	respond "hello"
+}
+----------
+the scheme wss:// is only supported in browsers; use https:// instead
