@@ -457,7 +457,7 @@ func (p ConnectionPolicy) SettingsEmpty() bool {
 		p.InsecureSecretsLog == ""
 }
 
-// SettingsEmpty returns true if p's settings (fields
+// SettingsEqual returns true if p's settings (fields
 // except the matchers) are the same as q.
 func (p ConnectionPolicy) SettingsEqual(q ConnectionPolicy) bool {
 	p.MatchersRaw = nil
