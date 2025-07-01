@@ -1,0 +1,7 @@
+:443 {
+	tls {
+		propagation_timeout 30s
+	}
+}
+----------
+parsing caddyfile tokens for 'tls': setting DNS challenge options [propagation_timeout] requires a DNS provider (set with the 'dns' subdirective or 'acme_dns' global option), at Caddyfile:4
