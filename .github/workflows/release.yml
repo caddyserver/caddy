@@ -109,7 +109,7 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@e9a05e6d32d7ed22b5656cd874ef31af58d05bfa # main
+      uses: sigstore/cosign-installer@d9374b96fed791ab117111a9a307a92b68bf3145 # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
