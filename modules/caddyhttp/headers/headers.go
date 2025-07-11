@@ -141,6 +141,14 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 			if r.SearchRegexp == "" {
 				continue
 			}
+
+			// Check if it contains placeholders
+			if containsPlaceholders(r.SearchRegexp) {
+				// Contains placeholders, skips precompilation, and recompiles at runtime
+				continue
+			}
+
+			// Does not contain placeholders, safe to precompile
 			re, err := regexp.Compile(r.SearchRegexp)
 			if err != nil {
 				return fmt.Errorf("replacement %d for header field '%s': %v", i, fieldName, err)
@@ -149,6 +157,11 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 		}
 	}
 	return nil
+}
+
+// containsCaddyPlaceholders checks if the string contains Caddy placeholder syntax {key}
+func containsPlaceholders(s string) bool {
+	return strings.Contains(s, "{") && strings.Contains(s, "}")
 }
 
 func (ops HeaderOps) validate() error {
@@ -269,7 +282,15 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 				for fieldName, vals := range hdr {
 					for i := range vals {
 						if r.re != nil {
+							// Use precompiled regular expressions
 							hdr[fieldName][i] = r.re.ReplaceAllString(hdr[fieldName][i], replace)
+						} else if r.SearchRegexp != "" {
+							// Runtime compilation of regular expressions
+							searchRegexp := repl.ReplaceKnown(r.SearchRegexp, "")
+							if re, err := regexp.Compile(searchRegexp); err == nil {
+								hdr[fieldName][i] = re.ReplaceAllString(hdr[fieldName][i], replace)
+							}
+							// If compilation fails, skip this replacement
 						} else {
 							hdr[fieldName][i] = strings.ReplaceAll(hdr[fieldName][i], search, replace)
 						}
@@ -291,6 +312,11 @@ func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 				for i := range vals {
 					if r.re != nil {
 						hdr[hdrFieldName][i] = r.re.ReplaceAllString(hdr[hdrFieldName][i], replace)
+					} else if r.SearchRegexp != "" {
+						searchRegexp := repl.ReplaceKnown(r.SearchRegexp, "")
+						if re, err := regexp.Compile(searchRegexp); err == nil {
+							hdr[hdrFieldName][i] = re.ReplaceAllString(hdr[hdrFieldName][i], replace)
+						}
 					} else {
 						hdr[hdrFieldName][i] = strings.ReplaceAll(hdr[hdrFieldName][i], search, replace)
 					}
