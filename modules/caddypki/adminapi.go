@@ -222,10 +222,15 @@ func rootAndIntermediatePEM(ca *CA) (root, inter []byte, err error) {
 	if err != nil {
 		return
 	}
-	inter, err = pemEncodeCert(ca.IntermediateCertificate().Raw)
-	if err != nil {
-		return
+
+	for _, interCert := range ca.IntermediateCertificateChain() {
+		pemBytes, err := pemEncodeCert(interCert.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		inter = append(inter, pemBytes...)
 	}
+
 	return
 }
 
