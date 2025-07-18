@@ -104,26 +104,31 @@ func TestResponseWriterWrapperUnwrap(t *testing.T) {
 func TestResponseRecorderReadFrom(t *testing.T) {
 	tests := map[string]struct {
 		responseWriter responseWriterSpy
+		req            *http.Request
 		shouldBuffer   bool
 		wantReadFrom   bool
 	}{
 		"buffered plain": {
 			responseWriter: &baseRespWriter{},
+			req:            &http.Request{},
 			shouldBuffer:   true,
 			wantReadFrom:   false,
 		},
 		"streamed plain": {
 			responseWriter: &baseRespWriter{},
+			req:            &http.Request{},
 			shouldBuffer:   false,
 			wantReadFrom:   false,
 		},
 		"buffered ReadFrom": {
 			responseWriter: &readFromRespWriter{},
+			req:            &http.Request{},
 			shouldBuffer:   true,
 			wantReadFrom:   false,
 		},
 		"streamed ReadFrom": {
 			responseWriter: &readFromRespWriter{},
+			req:            &http.Request{},
 			shouldBuffer:   false,
 			wantReadFrom:   true,
 		},
@@ -132,7 +137,7 @@ func TestResponseRecorderReadFrom(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer
 
-			rr := NewResponseRecorder(tt.responseWriter, &buf, func(status int, header http.Header) bool {
+			rr := NewResponseRecorder(tt.responseWriter, tt.req, &buf, func(status int, header http.Header) bool {
 				return tt.shouldBuffer
 			})
 
