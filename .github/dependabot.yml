@@ -3,15 +3,20 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    open-pull-requests-limit: 1
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
     schedule:
       interval: "monthly"
-
-  - package-ecosystem: gomod
-    directory: /
+    
+  - package-ecosystem: "gomod"
+    directory: "/"
+    open-pull-requests-limit: 1
     groups:
       all-updates:
         patterns:
           - "*"
-    open-pull-requests-limit: 1
     schedule:
-      interval: monthly
+      interval: "monthly"
