@@ -2,6 +2,7 @@ localhost
 
 respond "hello from localhost"
 tls {
+	dns mock
 	dns_ttl 5m10s
 }
 ----------
@@ -54,6 +55,9 @@ tls {
 							{
 								"challenges": {
 									"dns": {
+										"provider": {
+											"name": "mock"
+										},
 										"ttl": 310000000000
 									}
 								},
