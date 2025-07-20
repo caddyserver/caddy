@@ -480,7 +480,7 @@ argument of --directory. If the directory does not exist, it will be created.
 			},
 		}
 
-		// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
+		// source: https://github.com/spf13/cobra/blob/6dec1ae26659a130bdb4c985768d1853b0e1bc06/site/content/completions/_index.md
 		completionCommand := Command{
 			Name:  "completion",
 			Usage: "[bash|zsh|fish|powershell]",
