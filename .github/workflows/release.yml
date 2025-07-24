@@ -39,7 +39,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -109,11 +109,11 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@e9a05e6d32d7ed22b5656cd874ef31af58d05bfa # main
+      uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@9246b90769f852b3a8921f330c59e0b3f439d6e9 # main
+      uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
