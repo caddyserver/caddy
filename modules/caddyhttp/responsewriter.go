@@ -71,7 +71,7 @@ type responseRecorder struct {
 	wroteHeader  bool
 	stream       bool
 
-	readSize *int
+	reqBodyLengthReader lengthReader
 }
 
 // NewResponseRecorder returns a new ResponseRecorder that can be
@@ -101,7 +101,7 @@ type responseRecorder struct {
 //
 // Proper usage of a recorder looks like this:
 //
-//	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuffer)
+//	rec := caddyhttp.NewResponseRecorder(w, req, buf, shouldBuffer)
 //	err := next.ServeHTTP(rec, req)
 //	if err != nil {
 //	    return err
@@ -134,12 +134,19 @@ type responseRecorder struct {
 // As a special case, 1xx responses are not buffered nor recorded
 // because they are not the final response; they are passed through
 // directly to the underlying ResponseWriter.
-func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
-	return &responseRecorder{
+func NewResponseRecorder(w http.ResponseWriter, r *http.Request, buf *bytes.Buffer, shouldBuffer ShouldBufferFunc) ResponseRecorder {
+	rr := &responseRecorder{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 		buf:                   buf,
 		shouldBuffer:          shouldBuffer,
+		reqBodyLengthReader:   lengthReader{},
 	}
+	if r.Body != nil {
+		rr.reqBodyLengthReader.source = r.Body
+		r.Body = &rr.reqBodyLengthReader
+	}
+
+	return rr
 }
 
 // WriteHeader writes the headers with statusCode to the wrapped
@@ -211,6 +218,12 @@ func (rr *responseRecorder) Size() int {
 	return rr.size
 }
 
+// RequestSize returns the number of bytes read from the Request,
+// not including the request headers.
+func (rr *responseRecorder) RequestSize() int {
+	return rr.reqBodyLengthReader.length
+}
+
 // Buffer returns the body buffer that rr was created with.
 // You should still have your original pointer, though.
 func (rr *responseRecorder) Buffer() *bytes.Buffer {
@@ -246,12 +259,6 @@ func (rr *responseRecorder) FlushError() error {
 	return nil
 }
 
-// Private interface so it can only be used in this package
-// #TODO: maybe export it later
-func (rr *responseRecorder) setReadSize(size *int) {
-	rr.readSize = size
-}
-
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
@@ -282,9 +289,7 @@ type hijackedConn struct {
 }
 
 func (hc *hijackedConn) updateReadSize(n int) {
-	if hc.rr.readSize != nil {
-		*hc.rr.readSize += n
-	}
+	hc.rr.reqBodyLengthReader.length += n
 }
 
 func (hc *hijackedConn) Read(p []byte) (int, error) {
@@ -320,6 +325,7 @@ type ResponseRecorder interface {
 	Buffer() *bytes.Buffer
 	Buffered() bool
 	Size() int
+	RequestSize() int
 	WriteResponse() error
 }
 
@@ -342,3 +348,23 @@ var (
 
 	_ io.WriterTo = (*hijackedConn)(nil)
 )
+
+// lengthReader is an io.ReadCloser that keeps track of the
+// number of bytes read from the request body.
+// This wrapper is for http request process only. If the underlying
+// conn hijacked by a websocket session. ResponseRecorder will
+// update the Length field.
+type lengthReader struct {
+	source io.ReadCloser
+	length int
+}
+
+func (r *lengthReader) Read(b []byte) (int, error) {
+	n, err := r.source.Read(b)
+	r.length += n
+	return n, err
+}
+
+func (r *lengthReader) Close() error {
+	return r.source.Close()
+}

@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -335,26 +334,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var duration time.Duration
 
 	if s.shouldLogRequest(r) {
-		wrec := NewResponseRecorder(w, nil, nil)
+		wrec := NewResponseRecorder(w, r, nil, nil)
 		w = wrec
-
-		// wrap the request body in a LengthReader
-		// so we can track the number of bytes read from it
-		var bodyReader *lengthReader
-		if r.Body != nil {
-			bodyReader = &lengthReader{Source: r.Body}
-			r.Body = bodyReader
-
-			// should always be true, private interface can only be referenced in the same package
-			if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
-				setReadSizer.setReadSize(&bodyReader.Length)
-			}
-		}
 
 		// capture the original version of the request
 		accLog := s.accessLogger.With(loggableReq)
 
-		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+		defer s.logRequest(accLog, r, wrec, &duration, repl, shouldLogCredentials)
 	}
 
 	start := time.Now()
@@ -771,7 +757,7 @@ func (s *Server) logTrace(mh MiddlewareHandler) {
 // logRequest logs the request to access logs, unless skipped.
 func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
-	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
+	repl *caddy.Replacer, shouldLogCredentials bool,
 ) {
 	// this request may be flagged as omitted from the logs
 	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
@@ -779,10 +765,12 @@ func (s *Server) logRequest(
 	}
 
 	status := wrec.Status()
-	size := wrec.Size()
+	respSize := wrec.Size()
+	reqSize := wrec.RequestSize()
 
 	repl.Set("http.response.status", status) // will be 0 if no response is written by us (Go will write 200 to client)
-	repl.Set("http.response.size", size)
+	repl.Set("http.response.size", respSize)
+	repl.Set("http.request.size", reqSize)
 	repl.Set("http.response.duration", duration)
 	repl.Set("http.response.duration_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
 
@@ -811,17 +799,12 @@ func (s *Server) logRequest(
 		if fields == nil {
 			userID, _ := repl.GetString("http.auth.user.id")
 
-			reqBodyLength := 0
-			if bodyReader != nil {
-				reqBodyLength = bodyReader.Length
-			}
-
 			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
 			fields = append(fields,
-				zap.Int("bytes_read", reqBodyLength),
+				zap.Int("bytes_read", wrec.RequestSize()),
 				zap.String("user_id", userID),
 				zap.Duration("duration", *duration),
 				zap.Int("size", size),
@@ -1048,23 +1031,6 @@ func cloneURL(from, to *url.URL) {
 		*userInfo = *from.User
 		to.User = userInfo
 	}
-}
-
-// lengthReader is an io.ReadCloser that keeps track of the
-// number of bytes read from the request body.
-type lengthReader struct {
-	Source io.ReadCloser
-	Length int
-}
-
-func (r *lengthReader) Read(b []byte) (int, error) {
-	n, err := r.Source.Read(b)
-	r.Length += n
-	return n, err
-}
-
-func (r *lengthReader) Close() error {
-	return r.Source.Close()
 }
 
 // Context keys for HTTP request context values.

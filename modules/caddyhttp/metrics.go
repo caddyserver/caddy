@@ -153,7 +153,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 		h.metrics.httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
 		return false
 	})
-	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
+	wrec := NewResponseRecorder(w, r, nil, writeHeaderRecorder)
 	err := h.mh.ServeHTTP(wrec, r, next)
 	dur := time.Since(start).Seconds()
 	h.metrics.httpMetrics.requestCount.With(labels).Inc()
@@ -168,7 +168,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 		}
 
 		h.metrics.httpMetrics.requestDuration.With(statusLabels).Observe(dur)
-		h.metrics.httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
+		h.metrics.httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(wrec, r)))
 		h.metrics.httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
 	}
 
@@ -189,7 +189,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 }
 
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
-func computeApproximateRequestSize(r *http.Request) int {
+func computeApproximateRequestSize(wrec ResponseRecorder, r *http.Request) int {
 	s := 0
 	if r.URL != nil {
 		s += len(r.URL.String())
@@ -205,10 +205,6 @@ func computeApproximateRequestSize(r *http.Request) int {
 	}
 	s += len(r.Host)
 
-	// N.B. r.Form and r.MultipartForm are assumed to be included in r.URL.
-
-	if r.ContentLength != -1 {
-		s += int(r.ContentLength)
-	}
+	s += wrec.RequestSize()
 	return s
 }
