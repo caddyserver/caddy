@@ -407,6 +407,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		defer func() {
 			if err != nil {
 				delete(ctx.cfg.apps, id)
+				ctx.cfg.failedApps[id] = err
 			}
 		}()
 	}
@@ -497,10 +498,16 @@ func (ctx Context) App(name string) (any, error) {
 	if app, ok := ctx.cfg.apps[name]; ok {
 		return app, nil
 	}
+
+	if failErr, ok := ctx.cfg.failedApps[name]; ok {
+		return nil, failErr
+	}
 	appRaw := ctx.cfg.AppsRaw[name]
 	modVal, err := ctx.LoadModuleByID(name, appRaw)
 	if err != nil {
-		return nil, fmt.Errorf("loading %s app module: %v", name, err)
+		loadErr := fmt.Errorf("loading %s app module: %v", name, err)
+		ctx.cfg.failedApps[name] = loadErr
+		return nil, loadErr
 	}
 	if appRaw != nil {
 		ctx.cfg.AppsRaw[name] = nil // allow GC to deallocate
