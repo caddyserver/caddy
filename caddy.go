@@ -81,7 +81,10 @@ type Config struct {
 	// associated value.
 	AppsRaw ModuleMap `json:"apps,omitempty" caddy:"namespace="`
 
-	apps         map[string]App
+	apps map[string]App
+
+	// failedApps is a map of apps that failed to provision with their underlying error.
+	failedApps   map[string]error
 	storage      certmagic.Storage
 	eventEmitter eventEmitter
 
@@ -522,6 +525,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 
 	// prepare the new config for use
 	newCfg.apps = make(map[string]App)
+	newCfg.failedApps = make(map[string]error)
 
 	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
