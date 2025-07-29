@@ -1,0 +1,9 @@
+:80
+
+handle {
+    respond <<<END
+    Hello
+    END
+}
+----------
+too many '<' for heredoc on line #4; only use two, for example <<END

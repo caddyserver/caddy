@@ -1,0 +1,64 @@
+:80 {
+	header Test-Static ":443" "STATIC-WORKS"
+	header Test-Dynamic ":{http.request.local.port}" "DYNAMIC-WORKS"
+	header Test-Complex "port-{http.request.local.port}-end" "COMPLEX-{http.request.method}"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "headers",
+									"response": {
+										"replace": {
+											"Test-Static": [
+												{
+													"replace": "STATIC-WORKS",
+													"search_regexp": ":443"
+												}
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"replace": {
+											"Test-Dynamic": [
+												{
+													"replace": "DYNAMIC-WORKS",
+													"search_regexp": ":{http.request.local.port}"
+												}
+											]
+										}
+									}
+								},
+								{
+									"handler": "headers",
+									"response": {
+										"replace": {
+											"Test-Complex": [
+												{
+													"replace": "COMPLEX-{http.request.method}",
+													"search_regexp": "port-{http.request.local.port}-end"
+												}
+											]
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
