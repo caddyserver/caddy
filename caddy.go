@@ -569,13 +569,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		}
 		return nil
 	}()
-	if err != nil {
-		return ctx, err
-	}
-
-	newCfg.failedApps = make(map[string]error)
-
-	return ctx, nil
+	return ctx, err
 }
 
 // ProvisionContext creates a new context from the configuration and provisions storage
