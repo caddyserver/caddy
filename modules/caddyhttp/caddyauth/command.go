@@ -44,9 +44,11 @@ not be echoed.
 
 --algorithm currently only supports 'bcrypt', and is the default.
 
---cost defines the bcrypt hashing difficulty.
-A higher cost increases security by making hashing slower and more CPU-intensive.
-Default is 14; higher values may significantly impact performance on slower machines.
+--cost sets the bcrypt hashing difficulty.
+Higher values increase security by making the hash computation slower and more CPU-intensive.
+If the provided cost is not within the valid range [bcrypt.MinCost, bcrypt.MaxCost],
+the default value (defaultBcryptCost) will be used instead.
+Note: Higher cost values can significantly degrade performance on slower systems.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
