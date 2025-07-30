@@ -234,7 +234,7 @@ func (c *Cache) makeRoom() {
 	// we delete more than just 1 entry so that we don't have
 	// to do this on every request; assuming the capacity of
 	// the cache is on a long tail, we can save a lot of CPU
-	// time by doing a whole bunch of deletions now and then
+	// time by doing a whole bunch of deletions now, and then
 	// we won't have to do them again for a while
 	numToDelete := max(len(c.cache)/10, 1)
 	for deleted := 0; deleted <= numToDelete; deleted++ {
@@ -276,7 +276,7 @@ type Comparer interface {
 // features. A hasher also returns a fake hash which
 // can be used for timing side-channel mitigation.
 type Hasher interface {
-	Hash(plaintext []byte) ([]byte, error)
+	Hash(plaintext []byte, cost int) ([]byte, error)
 	FakeHash() []byte
 }
 

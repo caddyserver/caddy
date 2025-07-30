@@ -15,6 +15,7 @@
 package caddyauth
 
 import (
+	"errors"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/caddyserver/caddy/v2"
@@ -38,7 +39,7 @@ func (BcryptHash) CaddyModule() caddy.ModuleInfo {
 // Compare compares passwords.
 func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 	err := bcrypt.CompareHashAndPassword(hashed, plaintext)
-	if err == bcrypt.ErrMismatchedHashAndPassword {
+	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return false, nil
 	}
 	if err != nil {
@@ -48,8 +49,8 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 }
 
 // Hash hashes plaintext using a random salt.
-func (BcryptHash) Hash(plaintext []byte) ([]byte, error) {
-	return bcrypt.GenerateFromPassword(plaintext, 14)
+func (BcryptHash) Hash(plaintext []byte, cost int) ([]byte, error) {
+	return bcrypt.GenerateFromPassword(plaintext, cost)
 }
 
 // FakeHash returns a fake hash.
