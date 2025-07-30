@@ -121,7 +121,7 @@ type User struct {
 	ID string
 
 	// Any other relevant data about this
-	// user. Keys should be adhered to Caddy
+	// user. Keys should be adhere to Caddy
 	// conventions (snake_casing), as all
 	// keys will be made available as
 	// placeholders.
