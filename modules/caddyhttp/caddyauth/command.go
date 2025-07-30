@@ -51,7 +51,7 @@ Default is 14; higher values may significantly impact performance on slower mach
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
 			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
-			cmd.Flags().IntP("cost", "c", 14, "Hashing cost used to create the given hashed password")
+			cmd.Flags().IntP("cost", "c", defaultBcryptCost, "Hashing cost used to create the given hashed password")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
 	})

@@ -25,6 +25,9 @@ func init() {
 	caddy.RegisterModule(BcryptHash{})
 }
 
+// defaultBcryptCost cost 14 strikes a solid balance between security, usability, and hardware performance
+const defaultBcryptCost = 14
+
 // BcryptHash implements the bcrypt hash.
 type BcryptHash struct {
 	// cost is the bcrypt hashing difficulty factor (work factor).
@@ -54,7 +57,12 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 
 // Hash hashes plaintext using a random salt.
 func (b BcryptHash) Hash(plaintext []byte) ([]byte, error) {
-	return bcrypt.GenerateFromPassword(plaintext, b.cost)
+	cost := b.cost
+	if cost == 0 {
+		cost = defaultBcryptCost
+	}
+
+	return bcrypt.GenerateFromPassword(plaintext, cost)
 }
 
 // FakeHash returns a fake hash.
