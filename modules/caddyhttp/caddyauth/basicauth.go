@@ -276,7 +276,7 @@ type Comparer interface {
 // features. A hasher also returns a fake hash which
 // can be used for timing side-channel mitigation.
 type Hasher interface {
-	Hash(plaintext []byte, cost int) ([]byte, error)
+	Hash(plaintext []byte) ([]byte, error)
 	FakeHash() []byte
 }
 

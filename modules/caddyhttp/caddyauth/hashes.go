@@ -26,7 +26,11 @@ func init() {
 }
 
 // BcryptHash implements the bcrypt hash.
-type BcryptHash struct{}
+type BcryptHash struct {
+	// cost is the bcrypt hashing difficulty factor (work factor).
+	// Higher values increase computation time and security.
+	cost int
+}
 
 // CaddyModule returns the Caddy module information.
 func (BcryptHash) CaddyModule() caddy.ModuleInfo {
@@ -49,8 +53,8 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 }
 
 // Hash hashes plaintext using a random salt.
-func (BcryptHash) Hash(plaintext []byte, cost int) ([]byte, error) {
-	return bcrypt.GenerateFromPassword(plaintext, cost)
+func (b BcryptHash) Hash(plaintext []byte) ([]byte, error) {
+	return bcrypt.GenerateFromPassword(plaintext, b.cost)
 }
 
 // FakeHash returns a fake hash.
