@@ -58,7 +58,7 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 // Hash hashes plaintext using a random salt.
 func (b BcryptHash) Hash(plaintext []byte) ([]byte, error) {
 	cost := b.cost
-	if cost == 0 {
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
 		cost = defaultBcryptCost
 	}
 
