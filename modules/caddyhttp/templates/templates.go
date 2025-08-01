@@ -406,7 +406,7 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return false
 	}
 
-	rec := caddyhttp.NewResponseRecorder(w, buf, shouldBuf)
+	rec := caddyhttp.NewResponseRecorder(w, r, buf, shouldBuf)
 
 	err := next.ServeHTTP(rec, r)
 	if err != nil {
