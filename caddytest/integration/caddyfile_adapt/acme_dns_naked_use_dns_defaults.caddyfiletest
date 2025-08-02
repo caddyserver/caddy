@@ -1,9 +1,10 @@
-localhost
-
-respond "hello from localhost"
-tls {
+{
 	dns mock
-	dns_ttl 5m10s
+	acme_dns
+}
+
+example.com {
+
 }
 ----------
 {
@@ -19,22 +20,7 @@ tls {
 							"match": [
 								{
 									"host": [
-										"localhost"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "hello from localhost",
-													"handler": "static_response"
-												}
-											]
-										}
+										"example.com"
 									]
 								}
 							],
@@ -49,7 +35,7 @@ tls {
 				"policies": [
 					{
 						"subjects": [
-							"localhost"
+							"example.com"
 						],
 						"issuers": [
 							{
@@ -57,8 +43,7 @@ tls {
 									"dns": {
 										"provider": {
 											"name": "mock"
-										},
-										"ttl": 310000000000
+										}
 									}
 								},
 								"module": "acme"
@@ -66,6 +51,9 @@ tls {
 						]
 					}
 				]
+			},
+			"dns": {
+				"name": "mock"
 			}
 		}
 	}

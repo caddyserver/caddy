@@ -684,11 +684,11 @@ func fileHidden(filename string, hide []string) bool {
 					return true
 				}
 			}
-		} else if strings.HasPrefix(filename, h) {
+		} else if after, ok := strings.CutPrefix(filename, h); ok {
 			// if there is a separator in h, and filename is exactly
 			// prefixed with h, then we can do a prefix match so that
 			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := strings.TrimPrefix(filename, h)
+			withoutPrefix := after
 			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}

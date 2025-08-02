@@ -1,0 +1,9 @@
+:80
+
+handle {
+    respond <<END!
+    Hello
+    END!
+}
+----------
+heredoc marker on line #4 must contain only alpha-numeric characters, dashes and underscores; got 'END!'

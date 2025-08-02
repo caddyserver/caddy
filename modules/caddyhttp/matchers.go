@@ -1546,7 +1546,7 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// ParseCaddyfileNestedMatcher parses the Caddyfile tokens for a nested
+// ParseCaddyfileNestedMatcherSet parses the Caddyfile tokens for a nested
 // matcher set, and returns its raw module map value.
 func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
 	matcherMap := make(map[string]any)

@@ -2,6 +2,7 @@ package encode
 
 import (
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -112,7 +113,7 @@ func TestPreferOrder(t *testing.T) {
 			}
 			enc.Prefer = test.prefer
 			result := AcceptedEncodings(r, enc.Prefer)
-			if !sliceEqual(result, test.expected) {
+			if !slices.Equal(result, test.expected) {
 				t.Errorf("AcceptedEncodings() actual: %s expected: %s",
 					result,
 					test.expected)
@@ -121,17 +122,6 @@ func TestPreferOrder(t *testing.T) {
 	}
 }
 
-func sliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
 
 func TestValidate(t *testing.T) {
 	type testCase struct {
