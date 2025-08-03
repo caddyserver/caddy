@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,8 +129,7 @@ func (nw *NetWriter) WriterKey() string {
 func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
 	// Set up WAL directory
 	baseDir := caddy.AppDataDir()
-
-	nw.walDir = filepath.Join(baseDir, "wal", "netwriter", nw.addr.String())
+	nw.walDir = filepath.Join(baseDir, "wal", "netwriter", strings.Replace(nw.addr.String(), ":", "-", -1))
 	if err := os.MkdirAll(nw.walDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %v", err)
 	}
