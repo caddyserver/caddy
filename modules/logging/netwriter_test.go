@@ -345,6 +345,12 @@ func TestNetWriter_WALPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open writer: %v", err)
 	}
+	// close on the cleanup to allow the `*testing.T` to remove the temp dir
+	t.Cleanup(func() {
+		if err := writer1.Close(); err != nil {
+			t.Logf("Error closing writer1: %v", err)
+		}
+	})
 
 	firstMessages := []string{
 		"Persistent message 1\n",
