@@ -58,15 +58,15 @@ type NetWriter struct {
 	// Buffer size for the WAL flush channel.
 	BufferSize int `json:"buffer_size,omitempty"`
 
-	logger             *slog.Logger
-	addr               caddy.NetworkAddress
-	wal                *wal.WAL
-	walDir             string
-	flushCtx           context.Context
-	flushCtxCancel     context.CancelFunc
-	flushWg            sync.WaitGroup
-	lastProcessedChunk uint32
-	mu                 sync.RWMutex
+	logger              *slog.Logger
+	addr                caddy.NetworkAddress
+	wal                 *wal.WAL
+	walDir              string
+	flushCtx            context.Context
+	flushCtxCancel      context.CancelFunc
+	flushWg             sync.WaitGroup
+	lastProcessedOffset int64
+	mu                  sync.RWMutex
 }
 
 // CaddyModule returns the Caddy module information.
@@ -126,7 +126,9 @@ func (nw *NetWriter) WriterKey() string {
 // OpenWriter opens a new network connection and sets up the WAL.
 func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
 	// Set up WAL directory
-	nw.walDir = filepath.Join(caddy.AppDataDir(), "wal", "netwriter", nw.addr.String())
+	baseDir := caddy.AppDataDir()
+
+	nw.walDir = filepath.Join(baseDir, "wal", "netwriter", nw.addr.String())
 	if err := os.MkdirAll(nw.walDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %v", err)
 	}
@@ -141,8 +143,17 @@ func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
 	}
 	nw.wal = w
 
-	// Load last processed chunk position from metadata file if it exists
-	nw.loadLastProcessedChunk()
+	// Load last processed offset from metadata file if it exists
+	nw.loadLastProcessedOffset()
+
+	// If SoftStart is disabled, test the connection immediately
+	if !nw.SoftStart {
+		testConn, err := net.DialTimeout(nw.addr.Network, nw.addr.JoinHostPort(0), time.Duration(nw.DialTimeout))
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to log destination (SoftStart disabled): %v", err)
+		}
+		testConn.Close()
+	}
 
 	// Create the writer wrapper
 	writer := &netWriterConn{
@@ -157,41 +168,50 @@ func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
 	return writer, nil
 }
 
-// loadLastProcessedChunk loads the last processed chunk position from a metadata file
-func (nw *NetWriter) loadLastProcessedChunk() {
+// loadLastProcessedOffset loads the last processed offset from a metadata file
+func (nw *NetWriter) loadLastProcessedOffset() {
 	metaFile := filepath.Join(nw.walDir, "last_processed")
 	data, err := os.ReadFile(metaFile)
 	if err != nil {
-		nw.lastProcessedChunk = 0
+		// Use -1 to indicate "no entries processed yet"
+		nw.lastProcessedOffset = -1
+		nw.logger.Debug("no last processed offset file found, starting from beginning", "file", metaFile, "error", err)
 		return
 	}
 
-	var chunk uint32
-	if _, err := fmt.Sscanf(string(data), "%d", &chunk); err != nil {
-		nw.lastProcessedChunk = 0
+	var offset int64
+	if _, err := fmt.Sscanf(string(data), "%d", &offset); err != nil {
+		// Use -1 to indicate "no entries processed yet"
+		nw.lastProcessedOffset = -1
 		return
 	}
 
-	nw.lastProcessedChunk = chunk
-	nw.logger.Info("loaded last processed chunk", "block", chunk)
+	nw.lastProcessedOffset = offset
+	nw.logger.Debug("loaded last processed offset", "offset", offset)
 }
 
-// saveLastProcessedChunk saves the last processed chunk position to a metadata file
-func (nw *NetWriter) saveLastProcessedChunk(chunk uint32) {
+// saveLastProcessedOffset saves the last processed offset to a metadata file
+func (nw *NetWriter) saveLastProcessedOffset(cp *wal.ChunkPosition) {
+	// Create a unique offset by combining segment, block, and chunk offset
+	offset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | int64(cp.ChunkOffset)
+
 	nw.mu.Lock()
-	nw.lastProcessedChunk = chunk
+	nw.lastProcessedOffset = offset
 	nw.mu.Unlock()
 
 	metaFile := filepath.Join(nw.walDir, "last_processed")
-	data := fmt.Sprintf("%d", chunk)
+	data := fmt.Sprintf("%d", offset)
 	if err := os.WriteFile(metaFile, []byte(data), 0o600); err != nil {
-		nw.logger.Error("failed to save last processed chunk", "error", err)
+		nw.logger.Error("failed to save last processed offset", "error", err)
+	} else {
+		nw.logger.Debug("saved last processed offset", "offset", offset)
 	}
 }
 
 // backgroundFlusher runs in the background and flushes WAL entries to the network
 func (nw *NetWriter) backgroundFlusher() {
 	defer nw.flushWg.Done()
+	nw.logger.Debug("background flusher started")
 
 	var conn net.Conn
 	var connMu sync.RWMutex
@@ -225,6 +245,15 @@ func (nw *NetWriter) backgroundFlusher() {
 		}
 
 		_, err := currentConn.Write(data)
+		if err != nil {
+			// Connection failed, clear it so reconnection logic kicks in
+			connMu.Lock()
+			if conn == currentConn {
+				conn.Close()
+				conn = nil
+			}
+			connMu.Unlock()
+		}
 		return err
 	}
 
@@ -237,41 +266,8 @@ func (nw *NetWriter) backgroundFlusher() {
 		}
 	}
 
-	// Set up WAL reader
-	reader := nw.wal.NewReader()
-
-	// Skip already processed entries
-	nw.mu.RLock()
-	lastChunk := nw.lastProcessedChunk
-	nw.mu.RUnlock()
-
-	if lastChunk > 0 {
-		nw.logger.Info("skipping already processed entries", "lastProcessedBlock", lastChunk)
-		// Skip already processed entries
-		skipped := 0
-		for {
-			data, cp, err := reader.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				nw.logger.Error("error reading WAL during skip", "error", err)
-				break
-			}
-
-			// Skip entries that have already been processed
-			if cp.BlockNumber <= lastChunk {
-				skipped++
-				continue
-			}
-
-			// This is a new entry, process it
-			if err := nw.processWALEntry(data, cp, writeToConn); err != nil {
-				nw.logger.Error("error processing WAL entry", "error", err)
-			}
-		}
-		nw.logger.Info("skipped processed entries", "count", skipped)
-	}
+	// Process any existing entries in the WAL immediately
+	nw.processWALEntries(writeToConn)
 
 	ticker := time.NewTicker(100 * time.Millisecond) // Check for new entries every 100ms
 	defer ticker.Stop()
@@ -283,7 +279,7 @@ func (nw *NetWriter) backgroundFlusher() {
 		select {
 		case <-nw.flushCtx.Done():
 			// Flush remaining entries before shutting down
-			nw.flushRemainingEntries(reader, writeToConn)
+			nw.flushRemainingWALEntries(writeToConn)
 
 			connMu.Lock()
 			if conn != nil {
@@ -294,7 +290,7 @@ func (nw *NetWriter) backgroundFlusher() {
 
 		case <-ticker.C:
 			// Process available WAL entries
-			nw.processAvailableEntries(reader, writeToConn)
+			nw.processWALEntries(writeToConn)
 
 		case <-reconnectTicker.C:
 			// Try to reconnect if we don't have a connection
@@ -302,43 +298,66 @@ func (nw *NetWriter) backgroundFlusher() {
 			hasConn := conn != nil
 			connMu.RUnlock()
 
+			nw.logger.Debug("reconnect ticker fired", "hasConn", hasConn)
 			if !hasConn {
 				if err := dial(); err != nil {
 					nw.logger.Debug("reconnection attempt failed", "error", err)
+				} else {
+					// Successfully reconnected, process any buffered WAL entries
+					nw.logger.Info("reconnected, processing buffered WAL entries")
+					nw.processWALEntries(writeToConn)
 				}
 			}
 		}
 	}
 }
 
-// processAvailableEntries processes all available entries in the WAL
-func (nw *NetWriter) processAvailableEntries(reader *wal.Reader, writeToConn func([]byte) error) {
+// processWALEntries processes all available entries in the WAL using a fresh reader
+func (nw *NetWriter) processWALEntries(writeToConn func([]byte) error) {
+	// Create a fresh reader to see all current entries
+	reader := nw.wal.NewReader()
+
+	processed := 0
+	skipped := 0
+	nw.logger.Debug("processing available WAL entries")
 	for {
 		data, cp, err := reader.Next()
 		if err == io.EOF {
+			if processed > 0 {
+				nw.logger.Debug("processed WAL entries", "processed", processed, "skipped", skipped)
+			}
 			break
 		}
 		if err != nil {
 			if err == wal.ErrClosed {
+				nw.logger.Debug("WAL closed during processing")
 				return
 			}
 			nw.logger.Error("error reading from WAL", "error", err)
 			break
 		}
 
-		// Check if we've already processed this block
+		// Check if we've already processed this entry
 		nw.mu.RLock()
-		lastProcessed := nw.lastProcessedChunk
+		lastProcessedOffset := nw.lastProcessedOffset
 		nw.mu.RUnlock()
 
-		if cp.BlockNumber <= lastProcessed {
+		// Create current entry offset for comparison
+		currentOffset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | int64(cp.ChunkOffset)
+		nw.logger.Debug("found WAL entry", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset, "currentOffset", currentOffset, "lastProcessedOffset", lastProcessedOffset, "size", len(data))
+
+		if currentOffset <= lastProcessedOffset {
 			// Already processed, skip
+			nw.logger.Debug("skipping already processed entry", "currentOffset", currentOffset, "lastProcessedOffset", lastProcessedOffset)
+			skipped++
 			continue
 		}
 
 		if err := nw.processWALEntry(data, cp, writeToConn); err != nil {
 			nw.logger.Error("error processing WAL entry", "error", err)
 			// Don't break here - we want to continue processing other entries
+		} else {
+			processed++
 		}
 	}
 }
@@ -351,15 +370,18 @@ func (nw *NetWriter) processWALEntry(data []byte, cp *wal.ChunkPosition, writeTo
 		return err
 	}
 
-	// Mark this block as processed
-	nw.saveLastProcessedChunk(cp.BlockNumber)
-	nw.logger.Debug("processed WAL entry", "blockNumber", cp.BlockNumber)
+	// Mark this entry as processed
+	nw.saveLastProcessedOffset(cp)
+	nw.logger.Debug("processed WAL entry", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset, "data", string(data))
 	return nil
 }
 
-// flushRemainingEntries flushes all remaining entries during shutdown
-func (nw *NetWriter) flushRemainingEntries(reader *wal.Reader, writeToConn func([]byte) error) {
+// flushRemainingWALEntries flushes all remaining entries during shutdown
+func (nw *NetWriter) flushRemainingWALEntries(writeToConn func([]byte) error) {
 	nw.logger.Info("flushing remaining WAL entries during shutdown")
+
+	// Create a fresh reader for shutdown processing
+	reader := nw.wal.NewReader()
 
 	count := 0
 	for {
@@ -372,12 +394,15 @@ func (nw *NetWriter) flushRemainingEntries(reader *wal.Reader, writeToConn func(
 			break
 		}
 
-		// Check if we've already processed this block
+		// Check if we've already processed this entry
 		nw.mu.RLock()
-		lastProcessed := nw.lastProcessedChunk
+		lastProcessedOffset := nw.lastProcessedOffset
 		nw.mu.RUnlock()
 
-		if cp.BlockNumber <= lastProcessed {
+		// Create current entry offset for comparison
+		currentOffset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | int64(cp.ChunkOffset)
+
+		if currentOffset <= lastProcessedOffset {
 			// Already processed, skip
 			continue
 		}
@@ -394,8 +419,8 @@ func (nw *NetWriter) flushRemainingEntries(reader *wal.Reader, writeToConn func(
 					time.Sleep(time.Second)
 				}
 			} else {
-				nw.saveLastProcessedChunk(cp.BlockNumber)
-				nw.logger.Debug("flushed WAL entry during shutdown", "blockNumber", cp.BlockNumber)
+				nw.saveLastProcessedOffset(cp)
+				nw.logger.Debug("flushed WAL entry during shutdown", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset)
 				break
 			}
 		}
@@ -415,15 +440,25 @@ type netWriterConn struct {
 // Write writes data to the WAL (non-blocking)
 func (w *netWriterConn) Write(p []byte) (n int, err error) {
 	if w.nw.wal == nil {
+		w.nw.logger.Error("WAL not initialized")
 		return 0, errors.New("WAL not initialized")
 	}
+
+	w.nw.logger.Debug("writing to WAL", "size", len(p))
 
 	// Write to WAL - this should be fast and non-blocking
 	_, err = w.nw.wal.Write(p)
 	if err != nil {
+		w.nw.logger.Error("failed to write to WAL", "error", err)
 		return 0, fmt.Errorf("failed to write to WAL: %v", err)
 	}
 
+	// Sync WAL to ensure data is available for reading
+	if err = w.nw.wal.Sync(); err != nil {
+		w.nw.logger.Error("failed to sync WAL", "error", err)
+	}
+
+	w.nw.logger.Debug("wrote data to WAL", "size", len(p))
 	return len(p), nil
 }
 
