@@ -95,10 +95,15 @@ func (ms *mockServer) handleConnection(conn net.Conn) {
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		line := scanner.Text()
-		ms.mu.Lock()
-		ms.messages = append(ms.messages, line)
-		ms.mu.Unlock()
+		select {
+		case <-ms.ctx.Done():
+			return
+		default:
+			line := scanner.Text()
+			ms.mu.Lock()
+			ms.messages = append(ms.messages, line)
+			ms.mu.Unlock()
+		}
 	}
 }
 
