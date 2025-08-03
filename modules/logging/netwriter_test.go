@@ -139,10 +139,10 @@ func (ms *mockServer) restart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to restart mock server: %v", err)
 	}
+	ms.mu.Lock()
 	ms.listener = listener
 
 	// Clear existing messages to track only new ones
-	ms.mu.Lock()
 	ms.messages = nil
 	ms.mu.Unlock()
 
