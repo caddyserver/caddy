@@ -73,7 +73,7 @@ func (ms *mockServer) run() {
 			ms.connMu.Lock()
 			ms.connections = append(ms.connections, conn)
 			ms.connMu.Unlock()
-			
+
 			go ms.handleConnection(conn)
 		}
 	}
@@ -124,7 +124,7 @@ func (ms *mockServer) stop() {
 	}
 	ms.connections = nil
 	ms.connMu.Unlock()
-	
+
 	// Then close the listener
 	ms.listener.Close()
 }
@@ -135,12 +135,12 @@ func (ms *mockServer) restart(t *testing.T) {
 		t.Fatalf("Failed to restart mock server: %v", err)
 	}
 	ms.listener = listener
-	
+
 	// Clear existing messages to track only new ones
 	ms.mu.Lock()
 	ms.messages = nil
 	ms.mu.Unlock()
-	
+
 	ms.wg.Add(1)
 	go ms.run()
 }
@@ -549,7 +549,7 @@ func TestNetWriter_NetworkFailureRecovery(t *testing.T) {
 
 	// Check that recovery messages were delivered (critical for network recovery test)
 	receivedMessages := server.getMessages()
-	
+
 	// Verify that recovery messages are present
 	for _, expectedMsg := range recoveryMessages {
 		found := false
@@ -586,13 +586,13 @@ func TestNetWriter_NetworkFailureRecovery(t *testing.T) {
 	for _, msg := range receivedMessages {
 		messageCount[msg]++
 	}
-	
+
 	for msg, count := range messageCount {
 		if count > 1 {
 			t.Errorf("Message %q was received %d times (duplicate delivery)", msg, count)
 		}
 	}
-	
+
 	t.Logf("Successfully received %d failure messages out of %d written", failureMessagesReceived, len(failureMessages))
 	t.Logf("Network failure recovery test completed successfully")
 }
@@ -1046,10 +1046,10 @@ func TestNetWriter_WALBufferingDuringOutage(t *testing.T) {
 
 	// Create and provision NetWriter
 	nw := &NetWriter{
-		Address:          server.addr,
-		DialTimeout:      caddy.Duration(2 * time.Second),
+		Address:           server.addr,
+		DialTimeout:       caddy.Duration(2 * time.Second),
 		ReconnectInterval: caddy.Duration(1 * time.Second), // Short reconnect interval for testing
-		SoftStart:        true,
+		SoftStart:         true,
 	}
 
 	ctx := caddy.Context{
@@ -1117,13 +1117,11 @@ func TestNetWriter_WALBufferingDuringOutage(t *testing.T) {
 		t.Fatalf("WAL directory was not created: %s", walDir)
 	}
 
-
-
 	// Store outage messages that might have been received before failure
 	server.mu.RLock()
 	preRestartMessages := append([]string(nil), server.messages...)
 	server.mu.RUnlock()
-	
+
 	// Restart server
 	server.restart(t)
 
@@ -1146,12 +1144,12 @@ func TestNetWriter_WALBufferingDuringOutage(t *testing.T) {
 	// Check that all messages were eventually sent (combining pre-restart and post-restart)
 	postRestartMessages := server.getMessages()
 	allMessages := append(preRestartMessages, postRestartMessages...)
-	
+
 	t.Logf("Messages received before restart: %d", len(preRestartMessages))
 	for i, msg := range preRestartMessages {
 		t.Logf("  [%d]: %q", i, msg)
 	}
-	
+
 	t.Logf("Messages received after restart: %d", len(postRestartMessages))
 	for i, msg := range postRestartMessages {
 		t.Logf("  [%d]: %q", i, msg)
@@ -1208,13 +1206,13 @@ func TestNetWriter_WALBufferingDuringOutage(t *testing.T) {
 	for _, msg := range allMessages {
 		messageCount[msg]++
 	}
-	
+
 	for msg, count := range messageCount {
 		if count > 1 {
 			t.Errorf("Message %q was received %d times (duplicate delivery)", msg, count)
 		}
 	}
-	
+
 	t.Logf("Successfully received %d outage messages out of %d written", outageMessagesReceived, len(outageMessages))
 }
 

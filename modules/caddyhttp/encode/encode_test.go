@@ -122,7 +122,6 @@ func TestPreferOrder(t *testing.T) {
 	}
 }
 
-
 func TestValidate(t *testing.T) {
 	type testCase struct {
 		name    string
