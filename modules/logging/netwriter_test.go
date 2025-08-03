@@ -885,7 +885,8 @@ func TestNetWriter_UnmarshalCaddyfile(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for i := range tests {
+		tt := tests[i] //nolint:copylocks
 		t.Run(tt.name, func(t *testing.T) {
 			d := caddyfile.NewTestDispenser(tt.input)
 			nw := &NetWriter{}
