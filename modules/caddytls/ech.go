@@ -1004,6 +1004,7 @@ type ECHPublisher interface {
 // PublishECHConfigListErrors is returned by ECHPublishers to describe one or more
 // errors publishing an ECH config list from PublishECHConfigList. A non-nil, empty
 // value of this type should never be returned.
+// nolint:errname // The linter wants "Error" convention, but this is a multi-error type.
 type PublishECHConfigListErrors map[string]error
 
 func (p PublishECHConfigListErrors) Error() string {
