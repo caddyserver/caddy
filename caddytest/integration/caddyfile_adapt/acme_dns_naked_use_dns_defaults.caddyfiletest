@@ -34,17 +34,10 @@ example.com {
 			"automation": {
 				"policies": [
 					{
-						"subjects": [
-							"example.com"
-						],
 						"issuers": [
 							{
 								"challenges": {
-									"dns": {
-										"provider": {
-											"name": "mock"
-										}
-									}
+									"dns": {}
 								},
 								"module": "acme"
 							}
