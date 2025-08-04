@@ -31,9 +31,6 @@ example.com
 			"automation": {
 				"policies": [
 					{
-						"subjects": [
-							"example.com"
-						],
 						"issuers": [
 							{
 								"module": "acme",
