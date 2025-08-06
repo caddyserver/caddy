@@ -30,9 +30,9 @@ const defaultBcryptCost = 14
 
 // BcryptHash implements the bcrypt hash.
 type BcryptHash struct {
-	// Cost is the bcrypt hashing difficulty factor (work factor).
+	// cost is the bcrypt hashing difficulty factor (work factor).
 	// Higher values increase computation time and security.
-	Cost int
+	cost int
 }
 
 // CaddyModule returns the Caddy module information.
@@ -41,15 +41,6 @@ func (BcryptHash) CaddyModule() caddy.ModuleInfo {
 		ID:  "http.authentication.hashes.bcrypt",
 		New: func() caddy.Module { return new(BcryptHash) },
 	}
-}
-
-// Provision sets up default values.
-func (b *BcryptHash) Provision(ctx caddy.Context) error {
-	if b.Cost < bcrypt.MinCost || b.Cost > bcrypt.MaxCost {
-		b.Cost = defaultBcryptCost
-	}
-
-	return nil
 }
 
 // Compare compares passwords.
@@ -66,7 +57,12 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 
 // Hash hashes plaintext using a random salt.
 func (b BcryptHash) Hash(plaintext []byte) ([]byte, error) {
-	return bcrypt.GenerateFromPassword(plaintext, b.Cost)
+	cost := b.cost
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		cost = defaultBcryptCost
+	}
+
+	return bcrypt.GenerateFromPassword(plaintext, cost)
 }
 
 // FakeHash returns a fake hash.
@@ -78,7 +74,6 @@ func (BcryptHash) FakeHash() []byte {
 
 // Interface guards
 var (
-	_ Comparer          = (*BcryptHash)(nil)
-	_ Hasher            = (*BcryptHash)(nil)
-	_ caddy.Provisioner = (*BcryptHash)(nil)
+	_ Comparer = (*BcryptHash)(nil)
+	_ Hasher   = (*BcryptHash)(nil)
 )

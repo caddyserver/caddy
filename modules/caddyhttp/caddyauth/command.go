@@ -116,7 +116,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hashString string
 	switch algorithm {
 	case "bcrypt":
-		hash, err = BcryptHash{Cost: bcryptCost}.Hash(plaintext)
+		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
 		hashString = string(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
