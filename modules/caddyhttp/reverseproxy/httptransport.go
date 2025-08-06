@@ -428,7 +428,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	if h.KeepAlive != nil {
+		// according to https://pkg.go.dev/net#Dialer.KeepAliveConfig,
+		// KeepAlive is ignored if KeepAliveConfig.Enable is true.
+		// If configured to 0, a system-dependent default is used.
+		// To disable tcp keepalive, choose a negative value,
+		// so KeepAliveConfig.Enable is false and KeepAlive is negative.
+
+		// This is different from http keepalive where a tcp connection
+		// can transfer multiple http requests/responses.
 		dialer.KeepAlive = time.Duration(h.KeepAlive.ProbeInterval)
+		dialer.KeepAliveConfig = net.KeepAliveConfig{
+			Enable:   h.KeepAlive.ProbeInterval > 0,
+			Interval: time.Duration(h.KeepAlive.ProbeInterval),
+		}
 		if h.KeepAlive.Enabled != nil {
 			rt.DisableKeepAlives = !*h.KeepAlive.Enabled
 		}
