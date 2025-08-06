@@ -53,7 +53,7 @@ Note: Higher cost values can significantly degrade performance on slower systems
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
 			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
-			cmd.Flags().IntP("cost", "c", defaultBcryptCost, "Hashing cost used to create the given hashed password")
+			cmd.Flags().Int("bcrypt-cost", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
 	})
@@ -64,7 +64,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 	algorithm := fs.String("algorithm")
 	plaintext := []byte(fs.String("plaintext"))
-	cost := fs.Int("cost")
+	bcryptCost := fs.Int("bcrypt-cost")
 
 	if len(plaintext) == 0 {
 		fd := int(os.Stdin.Fd())
@@ -116,7 +116,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hashString string
 	switch algorithm {
 	case "bcrypt":
-		hash, err = BcryptHash{cost: cost}.Hash(plaintext)
+		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
 		hashString = string(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
