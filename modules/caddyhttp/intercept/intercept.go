@@ -131,7 +131,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rec := interceptedResponseHandler{replacer: repl}
-	rec.ResponseRecorder = caddyhttp.NewResponseRecorder(w, buf, func(status int, header http.Header) bool {
+	rec.ResponseRecorder = caddyhttp.NewResponseRecorder(w, r, buf, func(status int, header http.Header) bool {
 		// see if any response handler is configured for this original response
 		for i, rh := range ir.HandleResponse {
 			if rh.Match != nil && !rh.Match.Match(status, header) {
