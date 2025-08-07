@@ -60,7 +60,8 @@ func (Authentication) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision sets up a.
+// Provision sets up an Authentication module by initializing its logger,
+// loading and registering all configured authentication providers.
 func (a *Authentication) Provision(ctx caddy.Context) error {
 	a.logger = ctx.Logger()
 	a.Providers = make(map[string]Authenticator)
