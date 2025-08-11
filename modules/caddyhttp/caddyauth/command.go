@@ -32,7 +32,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Usage: "[--plaintext <password>] [--algorithm <name>] [--cost <difficulty>]",
+		Usage: "[--plaintext <password>] [--algorithm <name>] [--bcrypt-cost <difficulty>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
@@ -44,7 +44,7 @@ not be echoed.
 
 --algorithm currently only supports 'bcrypt', and is the default.
 
---cost sets the bcrypt hashing difficulty.
+--bcrypt-cost sets the bcrypt hashing difficulty.
 Higher values increase security by making the hash computation slower and more CPU-intensive.
 If the provided cost is not within the valid range [bcrypt.MinCost, bcrypt.MaxCost],
 the default value (defaultBcryptCost) will be used instead.
