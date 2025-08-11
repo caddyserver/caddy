@@ -293,6 +293,8 @@ zero exit status will be returned.
 
 If --envfile is specified, an environment file with environment variables
 in the KEY=VALUE format will be loaded into the Caddy process.
+
+If you wish to use stdin instead of a regular file, use - as the path.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
@@ -390,7 +392,7 @@ lines will be prefixed with '-' and '+' where they differ. Note that
 unchanged lines are prefixed with two spaces for alignment, and that this
 is not a valid patch format.
 
-If you wish you use stdin instead of a regular file, use - as the path.
+If you wish to use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,

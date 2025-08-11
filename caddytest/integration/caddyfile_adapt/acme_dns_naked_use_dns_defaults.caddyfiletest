@@ -1,8 +1,11 @@
 {
-	preferred_chains smallest
+	dns mock
+	acme_dns
 }
 
-example.com
+example.com {
+
+}
 ----------
 {
 	"apps": {
@@ -33,14 +36,17 @@ example.com
 					{
 						"issuers": [
 							{
-								"module": "acme",
-								"preferred_chains": {
-									"smallest": true
-								}
+								"challenges": {
+									"dns": {}
+								},
+								"module": "acme"
 							}
 						]
 					}
 				]
+			},
+			"dns": {
+				"name": "mock"
 			}
 		}
 	}

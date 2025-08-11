@@ -458,8 +458,6 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 		case "disable_certs":
 		case "ignore_loaded_certs":
 		case "prefer_wildcard":
-			break
-
 		default:
 			return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', 'ignore_loaded_certs', or 'prefer_wildcard'")
 		}
