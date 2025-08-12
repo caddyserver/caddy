@@ -125,13 +125,14 @@ type TLS struct {
 	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 	dns    any             // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 
-	certificateLoaders []CertificateLoader
-	automateNames      map[string]struct{}
-	ctx                caddy.Context
-	storageCleanTicker *time.Ticker
-	storageCleanStop   chan struct{}
-	logger             *zap.Logger
-	events             *caddyevents.App
+	certificateLoaders   []CertificateLoader
+	automateNames        map[string]struct{}
+	ctx                  caddy.Context
+	storageCleanTicker   *time.Ticker
+	storageCleanStop     chan struct{}
+	storageCleanStopDone chan struct{}
+	logger               *zap.Logger
+	events               *caddyevents.App
 
 	serverNames   map[string]struct{}
 	serverNamesMu *sync.Mutex
@@ -438,6 +439,9 @@ func (t *TLS) Stop() error {
 	}
 	if t.storageCleanTicker != nil {
 		t.storageCleanTicker.Stop()
+	}
+	if t.storageCleanStopDone != nil {
+		<-t.storageCleanStopDone
 	}
 	return nil
 }
@@ -788,16 +792,20 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 func (t *TLS) keepStorageClean() {
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
 	t.storageCleanStop = make(chan struct{})
+	t.storageCleanStopDone = make(chan struct{})
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
+				// close the channel manually if panicked
+				close(t.storageCleanStopDone)
 			}
 		}()
 		t.cleanStorageUnits()
 		for {
 			select {
 			case <-t.storageCleanStop:
+				close(t.storageCleanStopDone)
 				return
 			case <-t.storageCleanTicker.C:
 				t.cleanStorageUnits()
