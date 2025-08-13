@@ -443,18 +443,20 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		ln := lnAny.(net.PacketConn)
 
 		h3ln := ln
-		for {
-			// retrieve the underlying socket, so quic-go can optimize.
-			if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
-				h3ln = unwrapper.Unwrap()
-			} else {
-				break
+		if len(pcWrappers) == 0 {
+			for {
+				// retrieve the underlying socket, so quic-go can optimize.
+				if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
+					h3ln = unwrapper.Unwrap()
+				} else {
+					break
+				}
 			}
-		}
-
-		// wrap packet conn before QUIC
-		for _, pcWrapper := range pcWrappers {
-			h3ln = pcWrapper.WrapPacketConn(h3ln)
+		} else {
+			// wrap packet conn before QUIC
+			for _, pcWrapper := range pcWrappers {
+				h3ln = pcWrapper.WrapPacketConn(h3ln)
+			}
 		}
 
 		sqs := newSharedQUICState(tlsConf)
