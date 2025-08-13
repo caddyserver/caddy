@@ -235,7 +235,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener
+	listeners           []net.Listener       // stdlib http.Server will close these
+	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
 	events       *caddyevents.App
@@ -625,6 +626,8 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
 	}
+
+	s.quicListeners = append(s.quicListeners, h3ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
