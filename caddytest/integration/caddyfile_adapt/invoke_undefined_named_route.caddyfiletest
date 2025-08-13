@@ -1,0 +1,5 @@
+example.com {
+	invoke foo
+}
+----------
+cannot invoke named route 'foo', which was not defined

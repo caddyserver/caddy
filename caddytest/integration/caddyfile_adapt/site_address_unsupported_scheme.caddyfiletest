@@ -1,0 +1,7 @@
+foo://example.com
+
+handle {
+	respond "hello"
+}
+----------
+unsupported URL scheme foo://

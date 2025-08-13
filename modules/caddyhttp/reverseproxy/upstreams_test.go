@@ -52,5 +52,4 @@ func TestResolveIpVersion(t *testing.T) {
 			t.Errorf("resolveIpVersion(): Expected %s got %s", test.expectedIpVersion, ipVersion)
 		}
 	}
-
 }

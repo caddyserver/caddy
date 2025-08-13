@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
@@ -128,6 +129,9 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var onDemand bool
 	var reusePrivateKeys bool
 	var forceAutomate bool
+
+	// Track which DNS challenge options are set
+	var dnsOptionsSet []string
 
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
@@ -349,6 +353,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "resolvers")
 			acmeIssuer.Challenges.DNS.Resolvers = args
 
 		case "propagation_delay":
@@ -370,6 +375,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "propagation_delay")
 			acmeIssuer.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
 
 		case "propagation_timeout":
@@ -397,6 +403,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "propagation_timeout")
 			acmeIssuer.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
 
 		case "dns_ttl":
@@ -418,6 +425,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "dns_ttl")
 			acmeIssuer.Challenges.DNS.TTL = caddy.Duration(ttl)
 
 		case "dns_challenge_override_domain":
@@ -434,6 +442,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "dns_challenge_override_domain")
 			acmeIssuer.Challenges.DNS.OverrideDomain = arg[0]
 
 		case "ca_root":
@@ -466,6 +475,18 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	// Validate DNS challenge config: any DNS challenge option except "dns" requires a DNS provider
+	if acmeIssuer != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
+		dnsCfg := acmeIssuer.Challenges.DNS
+		providerSet := dnsCfg.ProviderRaw != nil || h.Option("dns") != nil
+		if len(dnsOptionsSet) > 0 && !providerSet {
+			return nil, h.Errf(
+				"setting DNS challenge options [%s] requires a DNS provider (set with the 'dns' subdirective or 'acme_dns' global option)",
+				strings.Join(dnsOptionsSet, ", "),
+			)
 		}
 	}
 
@@ -843,13 +864,18 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 		return nil, h.Errf("segment was not parsed as a subroute")
 	}
 
+	// wrap the subroutes
+	wrappingRoute := caddyhttp.Route{
+		HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(subroute, "handler", "subroute", nil)},
+	}
+	subroute = &caddyhttp.Subroute{
+		Routes: []caddyhttp.Route{wrappingRoute},
+	}
 	if expression != "" {
 		statusMatcher := caddy.ModuleMap{
 			"expression": h.JSON(caddyhttp.MatchExpression{Expr: expression}),
 		}
-		for i := range subroute.Routes {
-			subroute.Routes[i].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
-		}
+		subroute.Routes[0].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
 	}
 	return []ConfigValue{
 		{
@@ -1160,6 +1186,11 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if h.NextArg() {
 		return nil, h.ArgErr()
 	}
+
+	if h.NextBlock(0) {
+		return nil, h.Err("log_skip directive does not accept blocks")
+	}
+
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
 }
 

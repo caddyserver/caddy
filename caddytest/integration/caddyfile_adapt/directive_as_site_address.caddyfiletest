@@ -1,0 +1,5 @@
+handle
+
+respond "should not work"
+----------
+Caddyfile:1: parsed 'handle' as a site address, but it is a known directive; directives must appear in a site block

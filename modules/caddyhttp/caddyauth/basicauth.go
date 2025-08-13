@@ -236,10 +236,7 @@ func (c *Cache) makeRoom() {
 	// the cache is on a long tail, we can save a lot of CPU
 	// time by doing a whole bunch of deletions now and then
 	// we won't have to do them again for a while
-	numToDelete := len(c.cache) / 10
-	if numToDelete < 1 {
-		numToDelete = 1
-	}
+	numToDelete := max(len(c.cache)/10, 1)
 	for deleted := 0; deleted <= numToDelete; deleted++ {
 		// Go maps are "nondeterministic" not actually random,
 		// so although we could just chop off the "front" of the

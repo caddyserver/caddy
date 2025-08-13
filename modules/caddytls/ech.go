@@ -291,18 +291,54 @@ func (t *TLS) publishECHConfigs() error {
 			}
 
 			logger.Debug("publishing ECH config list",
+				zap.String("publisher", publisherKey),
 				zap.Strings("domains", dnsNamesToPublish),
 				zap.Uint8s("config_ids", configIDs))
 
 			// publish this ECH config list with this publisher
 			pubTime := time.Now()
 			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
-			if err == nil {
-				t.logger.Info("published ECH configuration list",
+
+			var publishErrs PublishECHConfigListErrors
+			if errors.As(err, &publishErrs) {
+				// at least a partial failure, maybe a complete failure, but we can
+				// log each error by domain
+				for innerName, domainErr := range publishErrs {
+					t.logger.Error("failed to publish ECH configuration list",
+						zap.String("publisher", publisherKey),
+						zap.String("domain", innerName),
+						zap.Uint8s("config_ids", configIDs),
+						zap.Error(domainErr))
+				}
+			} else if err != nil {
+				// generic error; assume the entire thing failed, I guess
+				t.logger.Error("failed publishing ECH configuration list",
+					zap.String("publisher", publisherKey),
 					zap.Strings("domains", dnsNamesToPublish),
 					zap.Uint8s("config_ids", configIDs),
 					zap.Error(err))
-				// update publication history, so that we don't unnecessarily republish every time
+			}
+
+			if err == nil || (len(publishErrs) > 0 && len(publishErrs) < len(dnsNamesToPublish)) {
+				// if publication for at least some domains succeeded, we should update our publication
+				// state for those domains to avoid unnecessarily republishing every time
+				someAll := "all"
+				if len(publishErrs) > 0 {
+					someAll = "some"
+				}
+				// make a list of names that published successfully with this publisher
+				// so that we update only their state in storage, not the failed ones
+				var successNames []string
+				for _, name := range dnsNamesToPublish {
+					if _, ok := publishErrs[name]; !ok {
+						successNames = append(successNames, name)
+					}
+				}
+				t.logger.Info("successfully published ECH configuration list for "+someAll+" domains",
+					zap.String("publisher", publisherKey),
+					zap.Strings("domains", successNames),
+					zap.Uint8s("config_ids", configIDs))
+
 				for _, cfg := range echCfgList {
 					if cfg.meta.Publications == nil {
 						cfg.meta.Publications = make(publicationHistory)
@@ -310,7 +346,7 @@ func (t *TLS) publishECHConfigs() error {
 					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
 						cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
 					}
-					for _, name := range dnsNamesToPublish {
+					for _, name := range successNames {
 						cfg.meta.Publications[publisherKey][name] = pubTime
 					}
 					metaBytes, err := json.Marshal(cfg.meta)
@@ -323,10 +359,10 @@ func (t *TLS) publishECHConfigs() error {
 					}
 				}
 			} else {
-				t.logger.Error("publishing ECH configuration list",
-					zap.Strings("domains", publication.Domains),
-					zap.Uint8s("config_ids", configIDs),
-					zap.Error(err))
+				t.logger.Error("all domains failed to publish ECH configuration list (see earlier errors)",
+					zap.String("publisher", publisherKey),
+					zap.Strings("domains", dnsNamesToPublish),
+					zap.Uint8s("config_ids", configIDs))
 			}
 		}
 	}
@@ -631,17 +667,19 @@ func (dnsPub ECHDNSPublisher) PublisherKey() string {
 	return string(dnsPub.provider.(caddy.Module).CaddyModule().ID)
 }
 
-// PublishECHConfigList publishes the given ECH config list to the given DNS names.
+// PublishECHConfigList publishes the given ECH config list (as binary) to the given DNS names.
+// If there is an error, it may be of type PublishECHConfigListErrors, detailing
+// potentially multiple errors keyed by associated innerName.
 func (dnsPub *ECHDNSPublisher) PublishECHConfigList(ctx context.Context, innerNames []string, configListBin []byte) error {
 	nameservers := certmagic.RecursiveNameservers(nil) // TODO: we could make resolvers configurable
+
+	errs := make(PublishECHConfigListErrors)
 
 nextName:
 	for _, domain := range innerNames {
 		zone, err := certmagic.FindZoneByFQDN(ctx, dnsPub.logger, domain, nameservers)
 		if err != nil {
-			dnsPub.logger.Error("could not determine zone for domain",
-				zap.String("domain", domain),
-				zap.Error(err))
+			errs[domain] = fmt.Errorf("could not determine zone for domain: %w (domain=%s nameservers=%v)", err, domain, nameservers)
 			continue
 		}
 
@@ -653,9 +691,7 @@ nextName:
 		// we can augment the ech SvcParamKey with any other existing SvcParams
 		recs, err := dnsPub.provider.GetRecords(ctx, zone)
 		if err != nil {
-			dnsPub.logger.Error("unable to get existing DNS records to publish ECH data to HTTPS DNS record",
-				zap.String("domain", domain),
-				zap.Error(err))
+			errs[domain] = fmt.Errorf("unable to get existing DNS records to publish ECH data to HTTPS DNS record: %w", err)
 			continue
 		}
 		var httpsRec libdns.ServiceBinding
@@ -713,16 +749,14 @@ nextName:
 			},
 		})
 		if err != nil {
-			// TODO: Maybe this should just stop and return the error...
-			dnsPub.logger.Error("unable to publish ECH data to HTTPS DNS record",
-				zap.String("domain", domain),
-				zap.String("zone", zone),
-				zap.String("dns_record_name", relName),
-				zap.Error(err))
+			errs[domain] = fmt.Errorf("unable to publish ECH data to HTTPS DNS record: %w (zone=%s dns_record_name=%s)", err, zone, relName)
 			continue
 		}
 	}
 
+	if len(errs) > 0 {
+		return errs
+	}
 	return nil
 }
 
@@ -956,11 +990,34 @@ type ECHPublisher interface {
 	// It is used to prevent duplicating publications.
 	PublisherKey() string
 
-	// Publishes the ECH config list for the given innerNames. Some publishers
-	// may not need a list of inner/protected names, and can ignore the argument;
-	// most, however, will want to use it to know which inner names are to be
-	// associated with the given ECH config list.
+	// Publishes the ECH config list (as binary) for the given innerNames. Some
+	// publishers may not need a list of inner/protected names, and can ignore the
+	// argument; most, however, will want to use it to know which inner names are
+	// to be associated with the given ECH config list.
+	//
+	// Implementations should return an error of type PublishECHConfigListErrors
+	// when relevant to key errors to their associated innerName, but should never
+	// return a non-nil PublishECHConfigListErrors when its length is 0.
 	PublishECHConfigList(ctx context.Context, innerNames []string, echConfigList []byte) error
+}
+
+// PublishECHConfigListErrors is returned by ECHPublishers to describe one or more
+// errors publishing an ECH config list from PublishECHConfigList. A non-nil, empty
+// value of this type should never be returned.
+// nolint:errname // The linter wants "Error" convention, but this is a multi-error type.
+type PublishECHConfigListErrors map[string]error
+
+func (p PublishECHConfigListErrors) Error() string {
+	var sb strings.Builder
+	for innerName, err := range p {
+		if sb.Len() > 0 {
+			sb.WriteString("; ")
+		}
+		sb.WriteString(innerName)
+		sb.WriteString(": ")
+		sb.WriteString(err.Error())
+	}
+	return sb.String()
 }
 
 type echConfigMeta struct {

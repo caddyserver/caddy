@@ -5,6 +5,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   release:
     name: Release Published
@@ -13,12 +16,20 @@ jobs:
         os: 
           - ubuntu-latest
     runs-on: ${{ matrix.os }}
-
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
 
     # See https://github.com/peter-evans/repository-dispatch
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+      with:
+        egress-policy: audit
+
     - name: Trigger event on caddyserver/dist
-      uses: peter-evans/repository-dispatch@v3
+      uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/dist
@@ -26,7 +37,7 @@ jobs:
         client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
 
     - name: Trigger event on caddyserver/caddy-docker
-      uses: peter-evans/repository-dispatch@v3
+      uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/caddy-docker

@@ -87,13 +87,7 @@ nextChoice:
 		}
 
 		if len(p.AnyTag) > 0 {
-			var found bool
-			for _, tag := range p.AnyTag {
-				if cert.HasTag(tag) {
-					found = true
-					break
-				}
-			}
+			found := slices.ContainsFunc(p.AnyTag, cert.HasTag)
 			if !found {
 				continue
 			}

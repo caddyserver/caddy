@@ -68,7 +68,7 @@ func (a Adapter) Adapt(body []byte, options map[string]any) ([]byte, []caddyconf
 // TODO: also perform this check on imported files
 func FormattingDifference(filename string, body []byte) (caddyconfig.Warning, bool) {
 	// replace windows-style newlines to normalize comparison
-	normalizedBody := bytes.Replace(body, []byte("\r\n"), []byte("\n"), -1)
+	normalizedBody := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
 
 	formatted := Format(normalizedBody)
 	if bytes.Equal(formatted, normalizedBody) {

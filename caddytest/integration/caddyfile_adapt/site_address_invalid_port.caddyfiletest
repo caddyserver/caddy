@@ -1,0 +1,7 @@
+:70000
+
+handle {
+	respond "should not work"
+}
+----------
+port 70000 is out of range

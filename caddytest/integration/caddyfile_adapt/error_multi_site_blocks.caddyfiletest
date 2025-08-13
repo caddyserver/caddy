@@ -165,8 +165,17 @@ bar.localhost {
 											{
 												"handle": [
 													{
-														"body": "404 or 410 error",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "404 or 410 error",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [
@@ -178,8 +187,17 @@ bar.localhost {
 											{
 												"handle": [
 													{
-														"body": "Error In range [500 .. 599]",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "Error In range [500 .. 599]",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [
@@ -208,8 +226,17 @@ bar.localhost {
 											{
 												"handle": [
 													{
-														"body": "404 or 410 error from second site",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "404 or 410 error from second site",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [
@@ -221,8 +248,17 @@ bar.localhost {
 											{
 												"handle": [
 													{
-														"body": "Error In range [500 .. 599] from second site",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "Error In range [500 .. 599] from second site",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [

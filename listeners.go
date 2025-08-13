@@ -430,7 +430,7 @@ func JoinNetworkAddress(network, host, port string) string {
 // address instead.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -610,7 +610,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil

@@ -484,7 +484,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markHealthy := func() {
 		// increment passes and then check if it has reached the threshold to be healthy
-		err := upstream.Host.countHealthPass(1)
+		err := upstream.countHealthPass(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health pass"); c != nil {
 				c.Write(

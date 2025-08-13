@@ -32,7 +32,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Usage: "[--plaintext <password>] [--algorithm <name>]",
+		Usage: "[--plaintext <password>] [--algorithm <name>] [--bcrypt-cost <difficulty>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
@@ -43,10 +43,17 @@ Caddy is attached to a controlling tty, the plaintext will
 not be echoed.
 
 --algorithm currently only supports 'bcrypt', and is the default.
+
+--bcrypt-cost sets the bcrypt hashing difficulty.
+Higher values increase security by making the hash computation slower and more CPU-intensive.
+If the provided cost is not within the valid range [bcrypt.MinCost, bcrypt.MaxCost],
+the default value (defaultBcryptCost) will be used instead.
+Note: Higher cost values can significantly degrade performance on slower systems.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
 			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
+			cmd.Flags().Int("bcrypt-cost", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
 	})
@@ -57,6 +64,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 	algorithm := fs.String("algorithm")
 	plaintext := []byte(fs.String("plaintext"))
+	bcryptCost := fs.Int("bcrypt-cost")
 
 	if len(plaintext) == 0 {
 		fd := int(os.Stdin.Fd())
@@ -108,7 +116,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hashString string
 	switch algorithm {
 	case "bcrypt":
-		hash, err = BcryptHash{}.Hash(plaintext)
+		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
 		hashString = string(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)

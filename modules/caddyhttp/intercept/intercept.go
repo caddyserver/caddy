@@ -119,6 +119,11 @@ func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 }
 
 // EXPERIMENTAL: Subject to change or removal.
+func (irh interceptedResponseHandler) Unwrap() http.ResponseWriter {
+	return irh.ResponseRecorder
+}
+
+// EXPERIMENTAL: Subject to change or removal.
 func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()

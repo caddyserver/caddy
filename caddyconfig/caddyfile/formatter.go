@@ -94,7 +94,7 @@ func Format(input []byte) []byte {
 		}
 
 		// detect whether we have the start of a heredoc
-		if !quoted && !(heredoc != heredocClosed || heredocEscaped) &&
+		if !quoted && (heredoc == heredocClosed && !heredocEscaped) &&
 			space && last == '<' && ch == '<' {
 			write(ch)
 			heredoc = heredocOpening

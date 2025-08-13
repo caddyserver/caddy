@@ -81,7 +81,10 @@ type Config struct {
 	// associated value.
 	AppsRaw ModuleMap `json:"apps,omitempty" caddy:"namespace="`
 
-	apps         map[string]App
+	apps map[string]App
+
+	// failedApps is a map of apps that failed to provision with their underlying error.
+	failedApps   map[string]error
 	storage      certmagic.Storage
 	eventEmitter eventEmitter
 
@@ -408,11 +411,23 @@ func run(newCfg *Config, start bool) (Context, error) {
 		return ctx, nil
 	}
 
+	defer func() {
+		// if newCfg fails to start completely, clean up the already provisioned modules
+		// partially copied from provisionContext
+		if err != nil {
+			globalMetrics.configSuccess.Set(0)
+			ctx.cfg.cancelFunc()
+
+			if currentCtx.cfg != nil {
+				certmagic.Default.Storage = currentCtx.cfg.storage
+			}
+		}
+	}()
+
 	// Provision any admin routers which may need to access
 	// some of the other apps at runtime
 	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
 	if err != nil {
-		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 
@@ -438,7 +453,6 @@ func run(newCfg *Config, start bool) (Context, error) {
 		return nil
 	}()
 	if err != nil {
-		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 	globalMetrics.configSuccess.Set(1)
@@ -449,7 +463,8 @@ func run(newCfg *Config, start bool) (Context, error) {
 
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
-	return ctx, finishSettingUp(ctx, ctx.cfg)
+	err = finishSettingUp(ctx, ctx.cfg)
+	return ctx, err
 }
 
 // provisionContext creates a new context from the given configuration and provisions
@@ -505,19 +520,12 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return ctx, err
 	}
 
-	// start the admin endpoint (and stop any prior one)
-	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg, ctx)
-		if err != nil {
-			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	// create the new filesystem map
 	newCfg.fileSystems = &filesystems.FileSystemMap{}
 
 	// prepare the new config for use
 	newCfg.apps = make(map[string]App)
+	newCfg.failedApps = make(map[string]error)
 
 	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
@@ -542,6 +550,14 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	}()
 	if err != nil {
 		return ctx, err
+	}
+
+	// start the admin endpoint (and stop any prior one)
+	if replaceAdminServer {
+		err = replaceLocalAdminServer(newCfg, ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
 	}
 
 	// Load and Provision each app and their submodules
@@ -1104,9 +1120,15 @@ func (e Event) Origin() Module       { return e.origin } // Returns the module t
 // CloudEvents spec.
 func (e Event) CloudEvent() CloudEvent {
 	dataJSON, _ := json.Marshal(e.Data)
+	var source string
+	if e.Origin() == nil {
+		source = "caddy"
+	} else {
+		source = string(e.Origin().CaddyModule().ID)
+	}
 	return CloudEvent{
 		ID:              e.id.String(),
-		Source:          e.origin.CaddyModule().String(),
+		Source:          source,
 		SpecVersion:     "1.0",
 		Type:            e.name,
 		Time:            e.ts,

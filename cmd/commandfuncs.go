@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -440,15 +441,19 @@ func cmdEnviron(fl Flags) (int, error) {
 }
 
 func cmdAdaptConfig(fl Flags) (int, error) {
-	inputFlag := fl.String("config")
+	configFlag := fl.String("config")
 	adapterFlag := fl.String("adapter")
 	prettyFlag := fl.Bool("pretty")
 	validateFlag := fl.Bool("validate")
 
 	var err error
-	inputFlag, err = configFileWithRespectToDefault(caddy.Log(), inputFlag)
+	configFlag, err = configFileWithRespectToDefault(caddy.Log(), configFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
+	}
+	if configFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
 	}
 
 	// load all additional envs as soon as possible
@@ -468,13 +473,19 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("unrecognized config adapter: %s", adapterFlag)
 	}
 
-	input, err := os.ReadFile(inputFlag)
+	var input []byte
+	// read from stdin if the file name is "-"
+	if configFlag == "-" {
+		input, err = io.ReadAll(os.Stdin)
+	} else {
+		input, err = os.ReadFile(configFlag)
+	}
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]any{"filename": inputFlag}
+	opts := map[string]any{"filename": configFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
@@ -703,9 +714,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	for k, v := range headers {
-		req.Header[k] = v
-	}
+	maps.Copy(req.Header, headers)
 
 	// make an HTTP client that dials our network type, since admin
 	// endpoints aren't always TCP, which is what the default transport

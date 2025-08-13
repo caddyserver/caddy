@@ -300,8 +300,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	info, err := fs.Stat(fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fsrv.notFound(w, r, next)
+		} else if errors.Is(err, fs.ErrInvalid) {
+			return caddyhttp.Error(http.StatusBadRequest, err)
 		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
@@ -611,6 +613,11 @@ func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, nam
 		return originalErr
 	}
 
+	var pathErr *fs.PathError
+	if errors.As(originalErr, &pathErr) {
+		return fs.ErrInvalid
+	}
+
 	parts := strings.Split(name, separator)
 	for i := range parts {
 		if parts[i] == "" {
@@ -677,11 +684,11 @@ func fileHidden(filename string, hide []string) bool {
 					return true
 				}
 			}
-		} else if strings.HasPrefix(filename, h) {
+		} else if after, ok := strings.CutPrefix(filename, h); ok {
 			// if there is a separator in h, and filename is exactly
 			// prefixed with h, then we can do a prefix match so that
 			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := strings.TrimPrefix(filename, h)
+			withoutPrefix := after
 			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}
