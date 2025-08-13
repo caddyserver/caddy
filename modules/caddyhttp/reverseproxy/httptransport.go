@@ -171,11 +171,24 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+var (
+	allowedVersions       = []string{"1.1", "2", "h2c", "3"}
+	allowedVersionsString = strings.Join(allowedVersions, ", ")
+)
+
 // Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
 func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	if len(h.Versions) == 0 {
 		h.Versions = []string{"1.1", "2"}
+	}
+	// some users may provide http versions not recognized by caddy, instead of trying to
+	// guess the version, we just error out and let the user fix their config
+	// see: https://github.com/caddyserver/caddy/issues/7111
+	for _, v := range h.Versions {
+		if !slices.Contains(allowedVersions, v) {
+			return fmt.Errorf("unsupported HTTP version: %s, supported version: %s", v, allowedVersionsString)
+		}
 	}
 
 	rt, err := h.NewTransport(ctx)
@@ -528,13 +541,7 @@ func (h *HTTPTransport) shouldUseTLS(req *http.Request) bool {
 	}
 
 	port := req.URL.Port()
-	for i := range h.TLS.ExceptPorts {
-		if h.TLS.ExceptPorts[i] == port {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(h.TLS.ExceptPorts, port)
 }
 
 // TLSEnabled returns true if TLS is enabled.

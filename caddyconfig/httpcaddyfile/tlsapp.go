@@ -464,10 +464,10 @@ func (st ServerType) buildTLSApp(
 		globalEmail := options["email"]
 		globalACMECA := options["acme_ca"]
 		globalACMECARoot := options["acme_ca_root"]
-		globalACMEDNS := options["acme_dns"]
+		_, globalACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
 		globalACMEEAB := options["acme_eab"]
 		globalPreferredChains := options["preferred_chains"]
-		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS != nil || globalACMEEAB != nil || globalPreferredChains != nil
+		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
 		if hasGlobalACMEDefaults {
 			for i := range tlsApp.Automation.Policies {
 				ap := tlsApp.Automation.Policies[i]
@@ -549,7 +549,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	globalEmail := options["email"]
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
-	globalACMEDNS := options["acme_dns"]
+	globalACMEDNS, globalACMEDNSok := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
 	globalACMEEAB := options["acme_eab"]
 	globalPreferredChains := options["preferred_chains"]
 	globalCertLifetime := options["cert_lifetime"]
@@ -564,7 +564,17 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalACMECARoot != nil && !slices.Contains(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string)) {
 		acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string))
 	}
-	if globalACMEDNS != nil && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) {
+	if globalACMEDNSok && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil) {
+		if globalACMEDNS == nil {
+			globalACMEDNS = options["dns"]
+			if globalACMEDNS == nil {
+				return fmt.Errorf("acme_dns specified without DNS provider config, but no provider specified with 'dns' global option")
+			}
+		}
+		acmeIssuer.Challenges = &caddytls.ChallengesConfig{
+			DNS: new(caddytls.DNSChallengeConfig),
+		}
+	} else if globalACMEDNS != nil {
 		acmeIssuer.Challenges = &caddytls.ChallengesConfig{
 			DNS: &caddytls.DNSChallengeConfig{
 				ProviderRaw: caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil),
@@ -616,12 +626,18 @@ func newBaseAutomationPolicy(
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
-
 	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
+
+	globalACMECA := options["acme_ca"]
+	globalACMECARoot := options["acme_ca_root"]
+	_, globalACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
+	globalACMEEAB := options["acme_eab"]
+	globalPreferredChains := options["preferred_chains"]
+	hasGlobalACMEDefaults := globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
 
 	// if there are no global options related to automation policies
 	// set, then we can just return right away
-	if !hasGlobalAutomationOpts {
+	if !hasGlobalAutomationOpts && !hasGlobalACMEDefaults {
 		if always {
 			return new(caddytls.AutomationPolicy), nil
 		}
@@ -641,6 +657,14 @@ func newBaseAutomationPolicy(
 		ap.Issuers = issuers.([]certmagic.Issuer)
 	} else if hasLocalCerts {
 		ap.Issuers = []certmagic.Issuer{new(caddytls.InternalIssuer)}
+	}
+
+	if hasGlobalACMEDefaults {
+		for i := range ap.Issuers {
+			if err := fillInGlobalACMEDefaults(ap.Issuers[i], options); err != nil {
+				return nil, fmt.Errorf("filling in global issuer defaults for issuer %d: %v", i, err)
+			}
+		}
 	}
 
 	if hasOCSPStapling {

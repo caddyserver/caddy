@@ -9,6 +9,9 @@ env:
   # https://github.com/actions/setup-go/issues/491
   GOTOOLCHAIN: local
 
+permissions:
+  contents: read
+
 jobs:
   release:
     name: Release
@@ -35,19 +38,24 @@ jobs:
       contents: write
 
     steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+      with:
+        egress-policy: audit
+
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         fetch-depth: 0
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
 
     # Force fetch upstream tags -- because 65 minutes
-    # tl;dr: actions/checkout@v4 runs this line:
+    # tl;dr: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 runs this line:
     #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
     # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
     #   git fetch --prune --unshallow
@@ -101,11 +109,11 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@main
+      uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@main
+      uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
@@ -114,7 +122,7 @@ jobs:
         xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v6
+      uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
       with:
         version: latest
         args: release --clean --timeout 60m

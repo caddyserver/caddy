@@ -343,7 +343,7 @@ uniqueDomainsLoop:
 		// match on known domain names, unless it's our special case of a
 		// catch-all which is an empty string (common among catch-all sites
 		// that enable on-demand TLS for yet-unknown domain names)
-		if !(len(domains) == 1 && domains[0] == "") {
+		if len(domains) != 1 || domains[0] != "" {
 			matcherSet = append(matcherSet, MatchHost(domains))
 		}
 
