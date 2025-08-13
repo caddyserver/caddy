@@ -713,6 +713,11 @@ func (app *App) Stop() error {
 		defer finishedShutdown.Done()
 		startedShutdown.Done()
 
+		// possible if server failed to Start
+		if server.server == nil {
+			return
+		}
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
