@@ -34,13 +34,13 @@ jobs:
           - 'darwin'
           - 'netbsd'
         go:
-          - '1.24'
+          - '1.25'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.24'
-          GO_SEMVER: '~1.24.1'
+        - go: '1.25'
+          GO_SEMVER: '~1.25.0'
 
     runs-on: ubuntu-latest
     permissions:

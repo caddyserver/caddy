@@ -30,13 +30,13 @@ jobs:
           - mac
           - windows
         go:
-          - '1.24'
+          - '1.25'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.24'
-          GO_SEMVER: '~1.24.1'
+        - go: '1.25'
+          GO_SEMVER: '~1.25.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
@@ -234,7 +234,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: "~1.24"
+          go-version: "~1.25"
           check-latest: true
       - name: Install xcaddy
         run: |
