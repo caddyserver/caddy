@@ -14,10 +14,8 @@ on:
 
 env:
   GOFLAGS: '-tags=nobadger,nomysql,nopgx'
-  CGO_ENABLED: '0'
   # https://github.com/actions/setup-go/issues/491
   GOTOOLCHAIN: local
-
 
 permissions:
   contents: read
@@ -191,7 +189,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            go test -p 1 -v ./...
+            CGO_ENABLED=0 go test -p 1 -v ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
