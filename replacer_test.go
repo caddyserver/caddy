@@ -516,7 +516,7 @@ func BenchmarkReplacer(b *testing.B) {
 		},
 	} {
 		b.Run(bm.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				rep.ReplaceAll(bm.input, bm.empty)
 			}
 		})
