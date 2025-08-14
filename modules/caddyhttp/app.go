@@ -360,6 +360,20 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
+
+		// set up each packet conn modifier
+		if srv.PacketConnWrappersRaw != nil {
+			vals, err := ctx.LoadModule(srv, "PacketConnWrappersRaw")
+			if err != nil {
+				return fmt.Errorf("loading packet conn wrapper modules: %v", err)
+			}
+			// if any wrappers were configured, they come before the QUIC handshake;
+			// unlike TLS above, there is no QUIC placeholder
+			for _, val := range vals.([]any) {
+				srv.packetConnWrappers = append(srv.packetConnWrappers, val.(caddy.PacketConnWrapper))
+			}
+		}
+
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler

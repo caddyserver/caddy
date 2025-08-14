@@ -55,6 +55,10 @@ type Server struct {
 	// of the base listener. They are applied in the given order.
 	ListenerWrappersRaw []json.RawMessage `json:"listener_wrappers,omitempty" caddy:"namespace=caddy.listeners inline_key=wrapper"`
 
+	// A list of packet conn wrapper modules, which can modify the behavior
+	// of the base packet conn. They are applied in the given order.
+	PacketConnWrappersRaw []json.RawMessage `json:"packet_conn_wrappers,omitempty" caddy:"namespace=caddy.packetconns inline_key=wrapper"`
+
 	// How long to allow a read from a client's upload. Setting this
 	// to a short, non-zero value can mitigate slowloris attacks, but
 	// may also affect legitimately slow clients.
@@ -235,7 +239,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener       // stdlib http.Server will close these
+	packetConnWrappers  []caddy.PacketConnWrapper
+	listeners           []net.Listener
 	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
@@ -608,7 +613,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
