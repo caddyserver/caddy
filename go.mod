@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/BurntSushi/toml v1.5.0
+	github.com/DeRuina/timberjack v1.3.5
 	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.20.0
@@ -43,7 +44,6 @@ require (
 	golang.org/x/sync v0.16.0
 	golang.org/x/term v0.34.0
 	golang.org/x/time v0.12.0
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
