@@ -151,6 +151,11 @@ type App struct {
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	// stopped indicates whether the app has stopped
+	// It can only happen if it has started successfully in the first place.
+	// Otherwise, Cleanup will call Stop to clean up resources.
+	stopped bool
+
 	// used temporarily between phases 1 and 2 of auto HTTPS
 	allCertDomains map[string]struct{}
 }
@@ -708,6 +713,11 @@ func (app *App) Stop() error {
 		defer finishedShutdown.Done()
 		startedShutdown.Done()
 
+		// possible if server failed to Start
+		if server.server == nil {
+			return
+		}
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
@@ -791,7 +801,18 @@ func (app *App) Stop() error {
 		}
 	}
 
+	app.stopped = true
 	return nil
+}
+
+// Cleanup will close remaining listeners if they still remain
+// because some of the servers fail to start.
+// It simply calls Stop because Stop won't be called when Start fails.
+func (app *App) Cleanup() error {
+	if app.stopped {
+		return nil
+	}
+	return app.Stop()
 }
 
 func (app *App) httpPort() int {
