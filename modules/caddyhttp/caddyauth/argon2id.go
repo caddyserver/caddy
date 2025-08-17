@@ -22,8 +22,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/crypto/argon2"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
