@@ -31,6 +31,8 @@ func init() {
 	caddy.RegisterModule(Argon2idHash{})
 }
 
+const argon2idName = "argon2id"
+
 // Argon2idHash implements the argon2id hash.
 type Argon2idHash struct {
 	salt    []byte
@@ -107,7 +109,7 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 		return nil, nil, fmt.Errorf("invalid hash format")
 	}
 
-	if parts[1] != "argon2id" {
+	if parts[1] != argon2idName {
 		return nil, nil, fmt.Errorf("unsupported variant: %s", parts[1])
 	}
 

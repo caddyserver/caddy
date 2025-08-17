@@ -29,6 +29,13 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+const (
+	defaultArgon2idTime    = 1
+	defaultArgon2idMemory  = 46 * 1024
+	defaultArgon2idThreads = 1
+	defaultArgon2idKeylen  = 32
+)
+
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
@@ -38,34 +45,51 @@ func init() {
 Convenient way to hash a plaintext password. The resulting
 hash is written to stdout as a base64 string.
 
---plaintext, when omitted, will be read from stdin. If
-Caddy is attached to a controlling tty, the plaintext will
-not be echoed.
+--plaintext
+    The password to hash. If omitted, it will be read from stdin.
+    If Caddy is attached to a controlling TTY, the input will not be echoed.
 
---algorithm 'argon2id' (recommended) or 'bcrypt', the default.
+--algorithm
+    Selects the hashing algorithm. Valid options are:
+      * 'argon2id' (recommended for modern security)
+      * 'bcrypt'  (widely supported, slower, configurable cost)
+    Defaults to 'argon2id' for maximum security. Argon2id is resistant to
+    GPU attacks and memory-hard, making it ideal for password storage.
 
---bcrypt-cost sets the bcrypt hashing difficulty.
-Higher values increase security by making the hash computation slower and more CPU-intensive.
-If the provided cost is not within the valid range [bcrypt.MinCost, bcrypt.MaxCost],
-the default value (defaultBcryptCost) will be used instead.
-Note: Higher cost values can significantly degrade performance on slower systems.
+bcrypt-specific parameters:
+
+--bcrypt-cost
+    Sets the bcrypt hashing difficulty. Higher values increase security by
+    making the hash computation slower and more CPU-intensive.
+    Must be within the valid range [bcrypt.MinCost, bcrypt.MaxCost]. 
+    If omitted or invalid, the default cost is used.
+
+Argon2id-specific parameters:
 
 --argon2id-time
+    Number of iterations to perform. Increasing this makes
+    hashing slower and more resistant to brute-force attacks.
 
 --argon2id-memory
+    Amount of memory (in KiB) to use during hashing.
+    Larger values increase resistance to GPU/ASIC attacks.
 
 --argon2id-threads
+    Number of CPU threads to use. Increase for faster hashing
+    on multi-core systems.
 
---argon2id-keyLen
+--argon2id-keylen
+    Length of the resulting hash in bytes. Longer keys increase
+    security but slightly increase storage size.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
-			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
+			cmd.Flags().StringP("algorithm", "a", bcryptName, "Name of the hash algorithm")
 			cmd.Flags().Int("bcrypt-cost", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
-			cmd.Flags().Uint32("argon2id-time", 1, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
-			cmd.Flags().Uint32("argon2id-memory", 46*1024, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
-			cmd.Flags().Uint8("argon2id-threads", 1, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
-			cmd.Flags().Uint32("argon2id-keyLen", 32, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
+			cmd.Flags().Uint32("argon2id-time", defaultArgon2idTime, "Number of iterations for Argon2id hashing. Increasing this makes the hash slower and more resistant to brute-force attacks.")
+			cmd.Flags().Uint32("argon2id-memory", defaultArgon2idMemory, "Memory to use in KiB for Argon2id hashing. Larger values increase resistance to GPU/ASIC attacks.")
+			cmd.Flags().Uint8("argon2id-threads", defaultArgon2idThreads, "Number of CPU threads to use for Argon2id hashing. Increase for faster hashing on multi-core systems.")
+			cmd.Flags().Uint32("argon2id-keylen", defaultArgon2idKeylen, "Length of the resulting Argon2id hash in bytes. Longer hashes increase security but slightly increase storage size.")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
 	})
@@ -127,10 +151,10 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	var hash []byte
 	var hashString string
 	switch algorithm {
-	case "bcrypt":
+	case bcryptName:
 		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
 		hashString = string(hash)
-	case "argon2id":
+	case argon2idName:
 		salt, err := generateSalt(16)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to generate random salt")
@@ -148,7 +172,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id threads parameter")
 		}
-		keyLen, err := fs.GetUint32("argon2id-keyLen")
+		keyLen, err := fs.GetUint32("argon2id-keylen")
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id keyLen parameter")
 		}

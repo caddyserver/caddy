@@ -51,7 +51,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	var hashName string
 	switch len(args) {
 	case 0:
-		hashName = "bcrypt"
+		hashName = bcryptName
 	case 1:
 		hashName = args[0]
 	case 2:
@@ -62,7 +62,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 
 	switch hashName {
-	case "bcrypt":
+	case bcryptName:
 		cmp = BcryptHash{}
 	case "argon2id":
 		cmp = Argon2idHash{}
