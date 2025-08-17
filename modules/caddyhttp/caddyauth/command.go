@@ -29,17 +29,10 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-const (
-	defaultArgon2idTime    = 1
-	defaultArgon2idMemory  = 46 * 1024
-	defaultArgon2idThreads = 1
-	defaultArgon2idKeylen  = 32
-)
-
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Usage: "[--plaintext <password>] [--algorithm <name>] [--bcrypt-cost <difficulty>]",
+		Usage: "[--plaintext <password>] [--algorithm <argon2id|bcrypt>] [--bcrypt-cost <difficulty>] [--argon2id-time <iterations>] [--argon2id-memory <KiB>] [--argon2id-threads <n>] [--argon2id-keylen <bytes>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
@@ -52,9 +45,7 @@ hash is written to stdout as a base64 string.
 --algorithm
     Selects the hashing algorithm. Valid options are:
       * 'argon2id' (recommended for modern security)
-      * 'bcrypt'  (widely supported, slower, configurable cost)
-    Defaults to 'argon2id' for maximum security. Argon2id is resistant to
-    GPU attacks and memory-hard, making it ideal for password storage.
+      * 'bcrypt'  (legacy, slower, configurable cost)
 
 bcrypt-specific parameters:
 
@@ -71,7 +62,7 @@ Argon2id-specific parameters:
     hashing slower and more resistant to brute-force attacks.
 
 --argon2id-memory
-    Amount of memory (in KiB) to use during hashing.
+    Amount of memory to use during hashing.
     Larger values increase resistance to GPU/ASIC attacks.
 
 --argon2id-threads
@@ -155,30 +146,24 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
 		hashString = string(hash)
 	case argon2idName:
-		salt, err := generateSalt(16)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to generate random salt")
-		}
-
 		time, err := fs.GetUint32("argon2id-time")
 		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id time parameter")
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id time parameter: %w", err)
 		}
 		memory, err := fs.GetUint32("argon2id-memory")
 		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id memory parameter")
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id memory parameter: %w", err)
 		}
 		threads, err := fs.GetUint8("argon2id-threads")
 		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id threads parameter")
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id threads parameter: %w", err)
 		}
 		keyLen, err := fs.GetUint32("argon2id-keylen")
 		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id keyLen parameter")
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id keylen parameter: %w", err)
 		}
 
-		hash, err = Argon2idHash{
-			salt:    salt,
+		hash, _ = Argon2idHash{
 			time:    time,
 			memory:  memory,
 			threads: threads,

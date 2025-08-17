@@ -64,7 +64,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	switch hashName {
 	case bcryptName:
 		cmp = BcryptHash{}
-	case "argon2id":
+	case argon2idName:
 		cmp = Argon2idHash{}
 	default:
 		return nil, h.Errf("unrecognized hash algorithm: %s", hashName)

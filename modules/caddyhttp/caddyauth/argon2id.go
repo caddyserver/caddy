@@ -31,9 +31,16 @@ func init() {
 	caddy.RegisterModule(Argon2idHash{})
 }
 
-const argon2idName = "argon2id"
+const (
+	argon2idName           = "argon2id"
+	defaultArgon2idTime    = 1
+	defaultArgon2idMemory  = 46 * 1024
+	defaultArgon2idThreads = 1
+	defaultArgon2idKeylen  = 32
+	defaultSaltLength      = 16
+)
 
-// Argon2idHash implements the argon2id hash.
+// Argon2idHash implements the Argon2id password hashing.
 type Argon2idHash struct {
 	salt    []byte
 	time    uint32
@@ -52,24 +59,21 @@ func (Argon2idHash) CaddyModule() caddy.ModuleInfo {
 
 // Compare checks if the plaintext password matches the given Argon2id hash.
 func (Argon2idHash) Compare(hashed, plaintext []byte) (bool, error) {
-	// Decode the stored hash
 	argHash, storedKey, err := DecodeHash(hashed)
 	if err != nil {
 		return false, err
 	}
 
-	// Re-hash the plaintext with the same parameters and salt
-	computedHash, err := argHash.Hash(plaintext)
-	if err != nil {
-		return false, err
-	}
+	computedKey := argon2.IDKey(
+		plaintext,
+		argHash.salt,
+		argHash.time,
+		argHash.memory,
+		argHash.threads,
+		argHash.keyLen,
+	)
 
-	_, computedKey, err := DecodeHash(computedHash)
-	if err != nil {
-		return false, err
-	}
-
-	// Use constant-time comparison for security
+	// Constant-time comparison for security
 	if subtle.ConstantTimeCompare(storedKey, computedKey) == 1 {
 		return true, nil
 	}
@@ -78,6 +82,14 @@ func (Argon2idHash) Compare(hashed, plaintext []byte) (bool, error) {
 
 // Hash generates an Argon2id hash of the given plaintext using the configured parameters and salt.
 func (b Argon2idHash) Hash(plaintext []byte) ([]byte, error) {
+	if b.salt == nil {
+		s, err := generateSalt(defaultSaltLength)
+		if err != nil {
+			return nil, err
+		}
+		b.salt = s
+	}
+
 	key := argon2.IDKey(
 		plaintext,
 		b.salt,
@@ -100,9 +112,7 @@ func (b Argon2idHash) Hash(plaintext []byte) ([]byte, error) {
 	return []byte(hash), nil
 }
 
-// DecodeHash parses an Argon2id PHC string into an Argon2idHash struct
-// and returns the struct along with the derived key.
-// Format: $argon2id$v=19$m=<memory>,t=<iterations>,p=<parallelism>$<salt>$<hash>
+// DecodeHash parses an Argon2id PHC string into an Argon2idHash struct and returns the struct along with the derived key.
 func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 	parts := strings.Split(string(hash), "$")
 	if len(parts) != 6 {
@@ -113,7 +123,6 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 		return nil, nil, fmt.Errorf("unsupported variant: %s", parts[1])
 	}
 
-	// Version
 	version, err := strconv.Atoi(strings.TrimPrefix(parts[2], "v="))
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid version: %w", err)
@@ -122,7 +131,6 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 		return nil, nil, fmt.Errorf("incompatible version: %d", version)
 	}
 
-	// Parameters
 	params := strings.Split(parts[3], ",")
 	if len(params) != 3 {
 		return nil, nil, fmt.Errorf("invalid parameters")
@@ -143,13 +151,11 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 		return nil, nil, fmt.Errorf("invalid parallelism parameter: %w", err)
 	}
 
-	// Salt
 	salt, err := base64.RawStdEncoding.Strict().DecodeString(parts[4])
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode salt: %w", err)
 	}
 
-	// Key
 	key, err := base64.RawStdEncoding.Strict().DecodeString(parts[5])
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode key: %w", err)
@@ -164,10 +170,8 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 	}, key, nil
 }
 
-// FakeHash returns a fake hash.
+// FakeHash returns a constant fake hash for timing attacks mitigation.
 func (Argon2idHash) FakeHash() []byte {
-	// hashed with the following command:
-	// caddy hash-password --plaintext "antitiming" --algorithm "argon2id"
 	return []byte("$argon2id$v=19$m=47104,t=1,p=1$OAdQWX6By8ZZqB0vuW8pmQ$go5ZgOWvTOS5zhJmOrXEhV4LAnxBXUFwc/KVJfy2X4k")
 }
 
@@ -179,9 +183,8 @@ var (
 
 func generateSalt(length int) ([]byte, error) {
 	salt := make([]byte, length)
-	_, err := rand.Read(salt)
-	if err != nil {
-		return nil, err
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("failed to generate salt: %w", err)
 	}
 	return salt, nil
 }
