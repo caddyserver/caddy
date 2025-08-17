@@ -83,12 +83,11 @@ func (b Argon2idHash) Hash(plaintext []byte) ([]byte, error) {
 	return []byte(hash), nil
 }
 
-
 // FakeHash returns a fake hash.
 func (Argon2idHash) FakeHash() []byte {
 	// hashed with the following command:
-	// caddy hash-password --plaintext "antitiming" --algorithm "bcrypt"
-	return []byte("$2a$14$X3ulqf/iGxnf1k6oMZ.RZeJUoqI9PX2PM4rS5lkIKJXduLGXGPrt6")
+	// caddy hash-password --plaintext "antitiming" --algorithm "argon2id"
+	return []byte("$argon2id$v=19$m=47104,t=1,p=1$1Xs/ODt/ze9BiSqBaSqt4A$yxbSRQXFIBb4GAUQ5aQX3jJLylmfbwAZ2kENe5i4z3Y")
 }
 
 // Interface guards
