@@ -172,7 +172,9 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 
 // FakeHash returns a constant fake hash for timing attacks mitigation.
 func (Argon2idHash) FakeHash() []byte {
-	return []byte("$argon2id$v=19$m=47104,t=1,p=1$OAdQWX6By8ZZqB0vuW8pmQ$go5ZgOWvTOS5zhJmOrXEhV4LAnxBXUFwc/KVJfy2X4k")
+	// hashed with the following command:
+	// caddy hash-password --plaintext "antitiming" --algorithm "argon2id"
+	return []byte("$argon2id$v=19$m=47104,t=1,p=1$P2nzckEdTZ3bxCiBCkRTyA$xQL3Z32eo5jKl7u5tcIsnEKObYiyNZQQf5/4sAau6Pg")
 }
 
 // Interface guards
