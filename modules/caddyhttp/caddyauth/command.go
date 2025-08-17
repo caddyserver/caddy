@@ -42,18 +42,30 @@ hash is written to stdout as a base64 string.
 Caddy is attached to a controlling tty, the plaintext will
 not be echoed.
 
---algorithm currently only supports 'bcrypt', and is the default.
+--algorithm 'argon2id' (recommended) or 'bcrypt', the default.
 
 --bcrypt-cost sets the bcrypt hashing difficulty.
 Higher values increase security by making the hash computation slower and more CPU-intensive.
 If the provided cost is not within the valid range [bcrypt.MinCost, bcrypt.MaxCost],
 the default value (defaultBcryptCost) will be used instead.
 Note: Higher cost values can significantly degrade performance on slower systems.
+
+--argon2id-time
+
+--argon2id-memory
+
+--argon2id-threads
+
+--argon2id-keyLen
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("plaintext", "p", "", "The plaintext password")
 			cmd.Flags().StringP("algorithm", "a", "bcrypt", "Name of the hash algorithm")
 			cmd.Flags().Int("bcrypt-cost", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
+			cmd.Flags().Uint32("argon2id-time", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
+			cmd.Flags().Uint32("argon2id-memory", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
+			cmd.Flags().Uint8("argon2id-threads", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
+			cmd.Flags().Uint32("argon2id-keyLen", defaultBcryptCost, "Bcrypt hashing cost (only used with 'bcrypt' algorithm)")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdHashPassword)
 		},
 	})
@@ -117,6 +129,38 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	switch algorithm {
 	case "bcrypt":
 		hash, err = BcryptHash{cost: bcryptCost}.Hash(plaintext)
+		hashString = string(hash)
+	case "argon2id":
+		salt, err := generateSalt(16)
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to generate random salt")
+		}
+
+		time, err := fs.GetUint32("argon2id-time")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id time parameter")
+		}
+		memory, err := fs.GetUint32("argon2id-memory")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id memory parameter")
+		}
+		threads, err := fs.GetUint8("argon2id-threads")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id threads parameter")
+		}
+		keyLen, err := fs.GetUint32("argon2id-keyLen")
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("failed to get argon2id keyLen parameter")
+		}
+
+		hash, err = Argon2idHash{
+			salt:    salt,
+			time:    time,
+			memory:  memory,
+			threads: threads,
+			keyLen:  keyLen,
+		}.Hash(plaintext)
+
 		hashString = string(hash)
 	default:
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
