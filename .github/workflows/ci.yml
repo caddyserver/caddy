@@ -108,6 +108,8 @@ jobs:
 
     - name: Build Caddy
       working-directory: ./cmd/caddy
+      env:
+        CGO_ENABLED: 0
       run: |
         go build -trimpath -ldflags="-w -s" -v
 
