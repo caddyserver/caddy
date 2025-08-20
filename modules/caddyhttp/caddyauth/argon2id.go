@@ -73,11 +73,7 @@ func (Argon2idHash) Compare(hashed, plaintext []byte) (bool, error) {
 		argHash.keyLen,
 	)
 
-	// Constant-time comparison for security
-	if subtle.ConstantTimeCompare(storedKey, computedKey) == 1 {
-		return true, nil
-	}
-	return false, nil
+	return subtle.ConstantTimeCompare(storedKey, computedKey) == 1, nil
 }
 
 // Hash generates an Argon2id hash of the given plaintext using the configured parameters and salt.
