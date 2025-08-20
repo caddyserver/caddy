@@ -379,28 +379,23 @@ func (p *parser) doImport(nesting int) error {
 	if len(blockTokens) > 0 {
 		// use such tokens to create a new dispenser, and then use it to parse each block
 		bd := NewDispenser(blockTokens)
+
+		// one iteration processes one sub-block inside the import
 		for bd.Next() {
-			// see if we can grab a key
-			var currentMappingKey string
-			if bd.Val() == "{" {
+			currentMappingKey := bd.Val()
+
+			if currentMappingKey == "{" {
 				return p.Err("anonymous blocks are not supported")
 			}
-			currentMappingKey = bd.Val()
-			currentMappingTokens := []Token{}
-			// read all args until end of line / {
-			if bd.NextArg() {
+
+			// load up all arguments (if there even are any)
+			currentMappingTokens := bd.RemainingArgsAsTokens()
+
+			// load up the entire block
+			for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
 				currentMappingTokens = append(currentMappingTokens, bd.Token())
-				for bd.NextArg() {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
-				// TODO(elee1766): we don't enter another mapping here because it's annoying to extract the { and } properly.
-				// maybe someone can do that in the future
-			} else {
-				// attempt to enter a block and add tokens to the currentMappingTokens
-				for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
 			}
+
 			blockMapping[currentMappingKey] = currentMappingTokens
 		}
 	}
