@@ -207,7 +207,7 @@ func TestETags(t *testing.T) {
 }
 
 func BenchmarkLoad(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Load(testCfg, true)
 	}
 }

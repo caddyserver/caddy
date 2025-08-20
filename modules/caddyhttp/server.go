@@ -235,7 +235,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener
+	listeners           []net.Listener       // stdlib http.Server will close these
+	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
 	events       *caddyevents.App
@@ -626,6 +627,8 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		}
 	}
 
+	s.quicListeners = append(s.quicListeners, h3ln)
+
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
 
@@ -982,10 +985,10 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
-	allValues := strings.Split(strings.Join(values, ","), ",")
+	allValues := strings.SplitSeq(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, part := range allValues {
+	for part := range allValues {
 		// Some proxies may retain the port number, so split if possible
 		host, _, err := net.SplitHostPort(part)
 		if err != nil {
