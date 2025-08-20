@@ -1,0 +1,65 @@
+(site) {
+	https://{args[0]} {
+		{block}
+	}
+}
+
+import site test.domain {
+	reverse_proxy http://192.168.1.1:8080 {
+		header_up Host {host}
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"test.domain"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "reverse_proxy",
+													"headers": {
+														"request": {
+															"set": {
+																"Host": [
+																	"{http.request.host}"
+																]
+															}
+														}
+													},
+													"upstreams": [
+														{
+															"dial": "192.168.1.1:8080"
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
