@@ -533,7 +533,7 @@ func (app *App) Start() error {
 					// create the listener for this socket
 					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{
 						KeepAliveConfig: net.KeepAliveConfig{
-							Enable:   srv.KeepAliveInterval != 0,
+							Enable:   srv.KeepAliveInterval >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
 						},
 					})
@@ -722,10 +722,28 @@ func (app *App) Stop() error {
 			return
 		}
 
+		// closing quic listeners won't affect accepted connections now
+		// so like stdlib, close listeners first, but keep the net.PacketConns open
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close",
+					zap.Error(err))
+			}
+		}
+
 		if err := server.h3server.Shutdown(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
+		}
+
+		// close the underlying net.PacketConns now
+		// see the comment for ListenQUIC
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close socket",
+					zap.Error(err))
+			}
 		}
 	}
 	stopH2Listener := func(server *Server) {
