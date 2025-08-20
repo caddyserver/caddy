@@ -9,7 +9,7 @@ import (
 
 func BenchmarkOpenResponseWriter(b *testing.B) {
 	enc := new(Encode)
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		enc.openResponseWriter("test", nil, false)
 	}
 }
