@@ -452,8 +452,7 @@ func (rw *responseWriter) init() {
 
 func hasVaryValue(hdr http.Header, target string) bool {
 	for _, vary := range hdr.Values("Vary") {
-		vals := strings.Split(vary, ",")
-		for _, val := range vals {
+		for val := range strings.SplitSeq(vary, ",") {
 			if strings.EqualFold(strings.TrimSpace(val), target) {
 				return true
 			}
@@ -478,7 +477,7 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 
 	prefs := []encodingPreference{}
 
-	for _, accepted := range strings.Split(acceptEncHeader, ",") {
+	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
 		parts := strings.Split(accepted, ";")
 		encName := strings.ToLower(strings.TrimSpace(parts[0]))
 

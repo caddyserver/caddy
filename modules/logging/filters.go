@@ -255,7 +255,7 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 
 func (m IPMaskFilter) mask(s string) string {
 	output := ""
-	for _, value := range strings.Split(s, ",") {
+	for value := range strings.SplitSeq(s, ",") {
 		value = strings.TrimSpace(value)
 		host, port, err := net.SplitHostPort(value)
 		if err != nil {
