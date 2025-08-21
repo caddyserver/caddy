@@ -13,6 +13,7 @@ on:
       - 2.*
 
 env:
+  GOFLAGS: '-tags=nobadger,nomysql,nopgx'
   # https://github.com/actions/setup-go/issues/491
   GOTOOLCHAIN: local
 
@@ -110,7 +111,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        go build -tags nobadger,nomysql,nopgx -trimpath -ldflags="-w -s" -v
+        go build -trimpath -ldflags="-w -s" -v
 
     - name: Smoke test Caddy
       working-directory: ./cmd/caddy
@@ -133,7 +134,7 @@ jobs:
       # continue-on-error: true
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -tags nobadger,nomysql,nopgx -v -coverprofile="cover-profile.out" -short -race ./...
+        go test -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -190,7 +191,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 -tags nobadger,nomysql,nopgx -v ./...
+            CGO_ENABLED=0 go test -p 1 -v ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
