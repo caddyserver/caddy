@@ -151,6 +151,11 @@ type App struct {
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	// stopped indicates whether the app has stopped
+	// It can only happen if it has started successfully in the first place.
+	// Otherwise, Cleanup will call Stop to clean up resources.
+	stopped bool
+
 	// used temporarily between phases 1 and 2 of auto HTTPS
 	allCertDomains map[string]struct{}
 }
@@ -533,7 +538,7 @@ func (app *App) Start() error {
 					// create the listener for this socket
 					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{
 						KeepAliveConfig: net.KeepAliveConfig{
-							Enable:   srv.KeepAliveInterval != 0,
+							Enable:   srv.KeepAliveInterval >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
 						},
 					})
@@ -708,6 +713,11 @@ func (app *App) Stop() error {
 		defer finishedShutdown.Done()
 		startedShutdown.Done()
 
+		// possible if server failed to Start
+		if server.server == nil {
+			return
+		}
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
@@ -722,10 +732,28 @@ func (app *App) Stop() error {
 			return
 		}
 
+		// closing quic listeners won't affect accepted connections now
+		// so like stdlib, close listeners first, but keep the net.PacketConns open
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close",
+					zap.Error(err))
+			}
+		}
+
 		if err := server.h3server.Shutdown(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
+		}
+
+		// close the underlying net.PacketConns now
+		// see the comment for ListenQUIC
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close socket",
+					zap.Error(err))
+			}
 		}
 	}
 	stopH2Listener := func(server *Server) {
@@ -773,7 +801,18 @@ func (app *App) Stop() error {
 		}
 	}
 
+	app.stopped = true
 	return nil
+}
+
+// Cleanup will close remaining listeners if they still remain
+// because some of the servers fail to start.
+// It simply calls Stop because Stop won't be called when Start fails.
+func (app *App) Cleanup() error {
+	if app.stopped {
+		return nil
+	}
+	return app.Stop()
 }
 
 func (app *App) httpPort() int {
