@@ -2,6 +2,10 @@ version: "2"
 run:
   issues-exit-code: 1
   tests: false
+  build-tags:
+    - nobadger
+    - nomysql
+    - nopgx
 output:
   formats:
     text:

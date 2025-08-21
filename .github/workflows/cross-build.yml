@@ -11,6 +11,8 @@ on:
       - 2.*
 
 env:
+  GOFLAGS: '-tags=nobadger,nomysql,nopgx'
+  CGO_ENABLED: '0'
   # https://github.com/actions/setup-go/issues/491
   GOTOOLCHAIN: local
 
@@ -74,11 +76,9 @@ jobs:
 
       - name: Run Build
         env:
-          CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goos == 'aix' && 'ppc64' || 'amd64' }}
         shell: bash
         continue-on-error: true
         working-directory: ./cmd/caddy
-        run: |
-          GOOS=$GOOS GOARCH=$GOARCH go build -tags=nobadger,nomysql,nopgx -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
+        run: go build -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null
