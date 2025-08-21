@@ -15,6 +15,8 @@
 package caddyauth
 
 import (
+	"errors"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/caddyserver/caddy/v2"
@@ -24,8 +26,15 @@ func init() {
 	caddy.RegisterModule(BcryptHash{})
 }
 
+// defaultBcryptCost cost 14 strikes a solid balance between security, usability, and hardware performance
+const defaultBcryptCost = 14
+
 // BcryptHash implements the bcrypt hash.
-type BcryptHash struct{}
+type BcryptHash struct {
+	// cost is the bcrypt hashing difficulty factor (work factor).
+	// Higher values increase computation time and security.
+	cost int
+}
 
 // CaddyModule returns the Caddy module information.
 func (BcryptHash) CaddyModule() caddy.ModuleInfo {
@@ -38,7 +47,7 @@ func (BcryptHash) CaddyModule() caddy.ModuleInfo {
 // Compare compares passwords.
 func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 	err := bcrypt.CompareHashAndPassword(hashed, plaintext)
-	if err == bcrypt.ErrMismatchedHashAndPassword {
+	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return false, nil
 	}
 	if err != nil {
@@ -48,8 +57,13 @@ func (BcryptHash) Compare(hashed, plaintext []byte) (bool, error) {
 }
 
 // Hash hashes plaintext using a random salt.
-func (BcryptHash) Hash(plaintext []byte) ([]byte, error) {
-	return bcrypt.GenerateFromPassword(plaintext, 14)
+func (b BcryptHash) Hash(plaintext []byte) ([]byte, error) {
+	cost := b.cost
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		cost = defaultBcryptCost
+	}
+
+	return bcrypt.GenerateFromPassword(plaintext, cost)
 }
 
 // FakeHash returns a fake hash.

@@ -1,0 +1,9 @@
+:80
+
+handle {
+    respond <<EOF
+    Hello
+# missing EOF marker
+}
+----------
+mismatched leading whitespace in heredoc <<EOF on line #5 [    Hello], expected whitespace [# missing ] to match the closing marker

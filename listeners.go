@@ -430,7 +430,8 @@ func JoinNetworkAddress(network, host, port string) string {
 // address instead.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
+// NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -610,7 +611,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil
@@ -626,6 +627,7 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnecti
 func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
 		fcql.contextCancel()
+	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
 	return nil

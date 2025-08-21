@@ -1,0 +1,12 @@
+(import1) {
+	import import2
+}
+
+(import2) {
+	import import1
+}
+
+import import1
+
+----------
+a cycle of imports exists between Caddyfile:import2 and Caddyfile:import1

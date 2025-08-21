@@ -828,6 +828,96 @@ footer {
 						</svg>
 						Grid
 					</a>
+					{{- if and (eq .Layout "grid") (eq .Sort "name") (ne .Order "asc")}}
+					<a href="?sort=name&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<text x="2" y="10" font-size="9" fill="currentColor">Z</text>
+							<text x="2" y="20" font-size="9" fill="currentColor">A</text>
+							<path d="M13 4v12"></path>
+							<path d="M12 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid") (eq .Sort "name") (ne .Order "desc")}}
+					<a href="?sort=name&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<text x="2" y="10" font-size="9" fill="currentColor">A</text>
+							<text x="2" y="20" font-size="9" fill="currentColor">Z</text>
+							<path d="M13 4v12"></path>
+							<path d="M12 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid")}}
+					<a href="?sort=name&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<text x="2" y="20" font-size="9" fill="currentColor">A</text>
+							<text x="2" y="10" font-size="9" fill="currentColor">Z</text>
+							<path d="M13 4v12"></path>
+							<path d="M12 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- end}}
+					{{- if and (eq .Layout "grid") (eq .Sort "size") (ne .Order "asc")}}
+					<a href="?sort=size&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="2" y="4" width="4" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="10" width="8" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="16" width="12" height="3" rx="0.4" ry="0.4"></rect>
+							<path d="M18 4v12"></path>
+							<path d="M17 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid") (eq .Sort "size") (ne .Order "desc")}}
+					<a href="?sort=size&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="2" y="4" width="12" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="10" width="8" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="16" width="4" height="3" rx="0.4" ry="0.4"></rect>
+							<path d="M18 4v12"></path>
+							<path d="M17 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid")}}
+					<a href="?sort=size&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="2" y="4" width="4" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="10" width="8" height="3" rx="0.4" ry="0.4"></rect>
+							<rect x="2" y="16" width="12" height="3" rx="0.4" ry="0.4"></rect>
+							<path d="M18 4v12"></path>
+							<path d="M17 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- end}}
+					{{- if and (eq .Layout "grid") (eq .Sort "time") (ne .Order "asc")}}
+					<a href="?sort=time&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="9" cy="11" r="8"></circle>
+							<line x1="9" y1="12" x2="9" y2="7" stroke-linecap="round"></line>
+							<line x1="9" y1="12" x2="12" y2="12" stroke-linecap="round"></line>
+							<path d="M20 4v12"></path>
+							<path d="M19 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid") (eq .Sort "time") (ne .Order "desc")}}
+					<a href="?sort=time&order=desc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="9" cy="11" r="8"></circle>
+							<line x1="9" y1="12" x2="9" y2="7" stroke-linecap="round"></line>
+							<line x1="9" y1="12" x2="12" y2="12" stroke-linecap="round"></line>
+							<path d="M20 4v12"></path>
+							<path d="M19 5l1 -2l1 2"></path>
+						</svg>
+					</a>
+					{{- else if and (eq .Layout "grid")}}
+					<a href="?sort=time&order=asc{{if ne 0 .Limit}}&limit={{.Limit}}{{end}}{{if ne 0 .Offset}}&offset={{.Offset}}{{end}}&layout=grid">
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-layout-grid" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="9" cy="11" r="8"></circle>
+							<line x1="9" y1="12" x2="9" y2="7" stroke-linecap="round"></line>
+							<line x1="9" y1="12" x2="12" y2="12" stroke-linecap="round"></line>
+							<path d="M20 4v12"></path>
+							<path d="M19 16l1 2l1 -2"></path>
+						</svg>
+					</a>
+					{{- end}}
 				</div>
 				<div class='listing{{if eq .Layout "grid"}} grid{{end}}'>
 				{{- if eq .Layout "grid"}}
@@ -1086,6 +1176,7 @@ footer {
 		</footer>
 
 		<script {{ $nonceAttribute }}>
+			// @license magnet:?xt=urn:btih:8e4f440f4c65981c5bf93c76d35135ba5064d8b7&dn=apache-2.0.txt Apache-2.0
 			const filterEl = document.getElementById('filter');
 			filterEl?.focus({ preventScroll: true });
 
@@ -1175,6 +1266,7 @@ footer {
 			}
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);
+			// @license-end
 		</script>
 	</body>
 </html>

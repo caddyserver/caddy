@@ -1,0 +1,12 @@
+example.com
+handle {
+	respond "one"
+}
+
+example.com
+handle {
+	respond "two"
+}
+----------
+Caddyfile:6: unrecognized directive: example.com
+Did you mean to define a second site? If so, you must use curly braces around each site to separate their configurations.
