@@ -122,9 +122,10 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		}
 	}
 	if fromAddr.Port == "" {
-		if fromAddr.Scheme == "http" {
+		switch fromAddr.Scheme {
+		case "http":
 			fromAddr.Port = httpPort
-		} else if fromAddr.Scheme == "https" {
+		case "https":
 			fromAddr.Port = httpsPort
 		}
 	}

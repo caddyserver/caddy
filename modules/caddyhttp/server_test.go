@@ -116,9 +116,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -139,9 +137,7 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 
 	accLog := zap.NewNop()
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -165,12 +161,11 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
+
 func TestServer_TrustedRealClientIP_NoTrustedHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.0.2.1:12345"

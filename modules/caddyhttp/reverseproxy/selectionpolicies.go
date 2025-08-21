@@ -219,10 +219,7 @@ func (r RandomChoiceSelection) Validate() error {
 
 // Select returns an available host, if any.
 func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
-	k := r.Choose
-	if k > len(pool) {
-		k = len(pool)
-	}
+	k := min(r.Choose, len(pool))
 	choices := make([]*Upstream, k)
 	for i, upstream := range pool {
 		if !upstream.Available() {
@@ -808,7 +805,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		return nil
 	}
 	var best []*Upstream
-	var bestReqs int = -1
+	bestReqs := -1
 	for _, upstream := range upstreams {
 		if upstream == nil {
 			continue

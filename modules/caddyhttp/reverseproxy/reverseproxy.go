@@ -1150,7 +1150,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
 		// are not idempotent
-		if !isDialError && !(isHandlerError && errors.Is(herr, errNoUpstream)) {
+		if !isDialError && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
@@ -1356,7 +1356,7 @@ func upgradeType(h http.Header) string {
 // See RFC 7230, section 6.1
 func removeConnectionHeaders(h http.Header) {
 	for _, f := range h["Connection"] {
-		for _, sf := range strings.Split(f, ",") {
+		for sf := range strings.SplitSeq(f, ",") {
 			if sf = textproto.TrimString(sf); sf != "" {
 				h.Del(sf)
 			}

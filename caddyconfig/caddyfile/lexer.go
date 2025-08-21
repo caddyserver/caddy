@@ -137,7 +137,7 @@ func (l *lexer) next() (bool, error) {
 		}
 
 		// detect whether we have the start of a heredoc
-		if !(quoted || btQuoted) && !(inHeredoc || heredocEscaped) &&
+		if (!quoted && !btQuoted) && (!inHeredoc && !heredocEscaped) &&
 			len(val) > 1 && string(val[:2]) == "<<" {
 			// a space means it's just a regular token and not a heredoc
 			if ch == ' ' {
@@ -323,7 +323,8 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 
 		// if the padding doesn't match exactly at the start then we can't safely strip
 		if index != 0 {
-			return nil, fmt.Errorf("mismatched leading whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s] to match the closing marker", marker, l.line+lineNum+1, lineText, paddingToStrip)
+			cleanLineText := strings.TrimRight(lineText, "\r\n")
+			return nil, fmt.Errorf("mismatched leading whitespace in heredoc <<%s on line #%d [%s], expected whitespace [%s] to match the closing marker", marker, l.line+lineNum+1, cleanLineText, paddingToStrip)
 		}
 
 		// strip, then append the line, with the newline, to the output.

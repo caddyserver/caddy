@@ -106,20 +106,29 @@ example.com {
 										"handler": "subroute",
 										"routes": [
 											{
-												"group": "group0",
 												"handle": [
 													{
-														"handler": "rewrite",
-														"uri": "/{http.error.status_code}.html"
-													}
-												]
-											},
-											{
-												"handle": [
-													{
-														"handler": "file_server",
-														"hide": [
-															"./Caddyfile"
+														"handler": "subroute",
+														"routes": [
+															{
+																"group": "group0",
+																"handle": [
+																	{
+																		"handler": "rewrite",
+																		"uri": "/{http.error.status_code}.html"
+																	}
+																]
+															},
+															{
+																"handle": [
+																	{
+																		"handler": "file_server",
+																		"hide": [
+																			"./Caddyfile"
+																		]
+																	}
+																]
+															}
 														]
 													}
 												]
