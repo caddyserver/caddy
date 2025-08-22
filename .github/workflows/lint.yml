@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '~1.24'
+          go-version: '~1.25'
           check-latest: true
 
       - name: golangci-lint
@@ -80,7 +80,7 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
-          go-version-input: '~1.24.1'
+          go-version-input: '~1.25.0'
           check-latest: true
   
   dependency-review:

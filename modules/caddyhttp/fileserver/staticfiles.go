@@ -167,6 +167,8 @@ type FileServer struct {
 	// If set, file Etags will be read from sidecar files
 	// with any of these suffixes, instead of generating
 	// our own Etag.
+	// Keep in mind that the Etag values in the files have to be quoted as per RFC7232.
+	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -455,7 +457,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+
+		// stdlib won't set Content-Length if Content-Encoding is set.
+		// set Range header if it's not present will force Content-Length to be set
+		if r.Header.Get("Range") == "" {
+			r.Header.Set("Range", "bytes=0-")
+			// remove this header, because it is not part of the request
+			defer r.Header.Del("Range")
+		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
