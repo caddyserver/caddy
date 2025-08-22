@@ -20,7 +20,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"reflect"
 	"strings"
 
 	"github.com/google/cel-go/cel"
@@ -109,7 +108,7 @@ func (MatchRemoteIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -222,7 +221,7 @@ func (MatchClientIP) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err

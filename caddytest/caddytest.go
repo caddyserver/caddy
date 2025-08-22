@@ -281,7 +281,7 @@ func validateTestPrerequisites(tc *Tester) error {
 		tc.t.Cleanup(func() {
 			os.Remove(f.Name())
 		})
-		if _, err := f.WriteString(fmt.Sprintf(initConfig, tc.config.AdminPort)); err != nil {
+		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
 			return err
 		}
 

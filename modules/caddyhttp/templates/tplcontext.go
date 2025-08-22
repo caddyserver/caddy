@@ -380,7 +380,7 @@ func (TemplateContext) funcMarkdown(input any) (string, error) {
 	return buf.String(), nil
 }
 
-// splitFrontMatter parses front matter out from the beginning of input,
+// funcSplitFrontMatter parses front matter out from the beginning of input,
 // and returns the separated key-value pairs and the body/content. input
 // must be a "stringy" value.
 func (TemplateContext) funcSplitFrontMatter(input any) (parsedMarkdownDoc, error) {

@@ -249,8 +249,8 @@ func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) c
 			return e.Data, true
 		}
 
-		if strings.HasPrefix(key, "event.data.") {
-			key = strings.TrimPrefix(key, "event.data.")
+		if after, ok0 := strings.CutPrefix(key, "event.data."); ok0 {
+			key = after
 			if val, ok := e.Data[key]; ok {
 				return val, true
 			}

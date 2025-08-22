@@ -946,7 +946,7 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 	return false
 }
 
-// etagHasher returns a the hasher we used on the config to both
+// etagHasher returns the hasher we used on the config to both
 // produce and verify ETags.
 func etagHasher() hash.Hash { return xxhash.New() }
 

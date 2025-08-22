@@ -28,6 +28,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
+var stringSliceType = reflect.TypeFor[[]string]()
+
 func init() {
 	caddy.RegisterModule(VarsMiddleware{})
 	caddy.RegisterModule(VarsMatcher{})
@@ -353,7 +355,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -376,7 +378,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err

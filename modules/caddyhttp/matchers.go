@@ -23,7 +23,6 @@ import (
 	"net/textproto"
 	"net/url"
 	"path"
-	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -373,7 +372,7 @@ func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"host_match_request_list",
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -552,7 +551,6 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
 			break
 		}
-
 		// get the next character from the request path
 
 		pathCh := string(escapedPath[iPath])
@@ -655,7 +653,7 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -734,7 +732,7 @@ func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"path_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -803,7 +801,7 @@ func (MatchMethod) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"method_request_list",
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			strList, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -1174,7 +1172,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"header_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -1197,7 +1195,7 @@ func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"header_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := reflect.TypeOf([]string{})
+			refStringList := stringSliceType
 			params, err := data.ConvertToNative(refStringList)
 			if err != nil {
 				return nil, err
@@ -1547,7 +1545,7 @@ func (mre *MatchRegexp) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// ParseCaddyfileNestedMatcher parses the Caddyfile tokens for a nested
+// ParseCaddyfileNestedMatcherSet parses the Caddyfile tokens for a nested
 // matcher set, and returns its raw module map value.
 func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
 	matcherMap := make(map[string]any)

@@ -96,8 +96,17 @@ localhost:3010 {
 											{
 												"handle": [
 													{
-														"body": "404 or 410 error",
-														"handler": "static_response"
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "404 or 410 error",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
 													}
 												],
 												"match": [

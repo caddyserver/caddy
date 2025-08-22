@@ -1,0 +1,53 @@
+{
+	dns mock
+	acme_dns
+}
+
+example.com {
+
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			},
+			"dns": {
+				"name": "mock"
+			}
+		}
+	}
+}

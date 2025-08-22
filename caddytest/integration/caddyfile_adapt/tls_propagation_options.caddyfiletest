@@ -2,6 +2,7 @@ localhost
 
 respond "hello from localhost"
 tls {
+	dns mock
 	propagation_delay 5m10s
 	propagation_timeout 10m20s
 }
@@ -56,7 +57,10 @@ tls {
 								"challenges": {
 									"dns": {
 										"propagation_delay": 310000000000,
-										"propagation_timeout": 620000000000
+										"propagation_timeout": 620000000000,
+										"provider": {
+											"name": "mock"
+										}
 									}
 								},
 								"module": "acme"

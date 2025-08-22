@@ -1,0 +1,12 @@
+{
+	servers {
+		srv0 {
+			listen :8080
+		}
+		srv1 {
+			listen :8080
+		}
+	}
+}
+----------
+parsing caddyfile tokens for 'servers': unrecognized servers option 'srv0', at Caddyfile:3
