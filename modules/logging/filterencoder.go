@@ -152,6 +152,9 @@ func (fe *FilterEncoder) ConfigureDefaultFormat(wo caddy.WriterOpener) error {
 func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume encoder name
 
+	// Track regexp filters for automatic merging
+	regexpFilters := make(map[string][]*RegexpFilter)
+
 	// parse a field
 	parseField := func() error {
 		if fe.FieldsRaw == nil {
@@ -171,6 +174,23 @@ func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if !ok {
 			return d.Errf("module %s (%T) is not a logging.LogFieldFilter", moduleID, unm)
 		}
+
+		// Special handling for regexp filters to support multiple instances
+		if regexpFilter, isRegexp := filter.(*RegexpFilter); isRegexp {
+			regexpFilters[field] = append(regexpFilters[field], regexpFilter)
+			return nil // Don't set FieldsRaw yet, we'll merge them later
+		}
+
+		// Check if we're trying to add a non-regexp filter to a field that already has regexp filters
+		if _, hasRegexpFilters := regexpFilters[field]; hasRegexpFilters {
+			return d.Errf("cannot mix regexp filters with other filter types for field %s", field)
+		}
+
+		// Check if field already has a filter and it's not regexp-related
+		if _, exists := fe.FieldsRaw[field]; exists {
+			return d.Errf("field %s already has a filter; multiple non-regexp filters per field are not supported", field)
+		}
+
 		fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filter, "filter", filterName, nil)
 		return nil
 	}
@@ -210,6 +230,25 @@ func (fe *FilterEncoder) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		}
 	}
+
+	// After parsing all fields, merge multiple regexp filters into MultiRegexpFilter
+	for field, filters := range regexpFilters {
+		if len(filters) == 1 {
+			// Single regexp filter, use the original RegexpFilter
+			fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(filters[0], "filter", "regexp", nil)
+		} else {
+			// Multiple regexp filters, merge into MultiRegexpFilter
+			multiFilter := &MultiRegexpFilter{}
+			for _, regexpFilter := range filters {
+				err := multiFilter.AddOperation(regexpFilter.RawRegexp, regexpFilter.Value)
+				if err != nil {
+					return fmt.Errorf("adding regexp operation for field %s: %v", field, err)
+				}
+			}
+			fe.FieldsRaw[field] = caddyconfig.JSONModuleObject(multiFilter, "filter", "multi_regexp", nil)
+		}
+	}
+
 	return nil
 }
 
