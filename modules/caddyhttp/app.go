@@ -170,13 +170,15 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
+	app.logger = ctx.Logger()
+	app.ctx = ctx
+
+	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
 	}
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
-	app.ctx = ctx
-	app.logger = ctx.Logger()
 
 	eventsAppIface, err := ctx.App("events")
 	if err != nil {
