@@ -457,7 +457,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+
+		// stdlib won't set Content-Length if Content-Encoding is set.
+		// set Range header if it's not present will force Content-Length to be set
+		if r.Header.Get("Range") == "" {
+			r.Header.Set("Range", "bytes=0-")
+			// remove this header, because it is not part of the request
+			defer r.Header.Del("Range")
+		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
