@@ -41,7 +41,7 @@ func parseLinkHeader(header string) []linkResource {
 		return resources
 	}
 
-	for _, link := range strings.Split(header, comma) {
+	for link := range strings.SplitSeq(header, comma) {
 		l := linkResource{params: make(map[string]string)}
 
 		li, ri := strings.Index(link, "<"), strings.Index(link, ">")
@@ -51,7 +51,7 @@ func parseLinkHeader(header string) []linkResource {
 
 		l.uri = strings.TrimSpace(link[li+1 : ri])
 
-		for _, param := range strings.Split(strings.TrimSpace(link[ri+1:]), semicolon) {
+		for param := range strings.SplitSeq(strings.TrimSpace(link[ri+1:]), semicolon) {
 			before, after, isCut := strings.Cut(strings.TrimSpace(param), equal)
 			key := strings.TrimSpace(before)
 			if key == "" {
