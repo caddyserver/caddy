@@ -1,0 +1,22 @@
+name: Pull Request
+body:
+  - type: textarea
+    id: content
+    attributes:
+      placeholder: Describe the pull request; motivate why it is necessary/useful, link to relevant issues, etc.
+    validations:
+      required: true
+  - type: dropdown
+    id: ai-disclosure
+    attributes:
+      label: AI Disclosure
+      description: Our project allows contributors to use AI/LLM tooling, but requires that it be disclosed, including for language/translation purposes. Please certify whether you have used any such tooling related to this pull request:
+      options:
+        - AI used
+        - AI not used
+    validations:
+      required: true
+  - type: input
+    id: ai-description
+    attributes:
+      label: If AI was used, to what extent was it used? (e.g. just comments/docs, tests, tab completion, how much of the code did it generate, or did it just advise, etc?)
