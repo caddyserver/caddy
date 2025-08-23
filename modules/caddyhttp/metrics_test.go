@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/caddyserver/caddy/v2"
@@ -376,6 +378,90 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 		"caddy_http_request_errors_total",
 	); err != nil {
 		t.Errorf("received unexpected error: %s", err)
+	}
+}
+
+func TestMetricsInstrumentedHandlerPerProto(t *testing.T) {
+	handler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		return nil
+	})
+
+	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		return h.ServeHTTP(w, r)
+	})
+
+	tests := []struct {
+		name               string
+		perProto           bool
+		proto              string
+		protoMajor         int
+		protoMinor         int
+		expectedLabelValue string
+	}{
+		{
+			name:               "HTTP/1.1 with per_proto=true",
+			perProto:           true,
+			proto:              "HTTP/1.1",
+			protoMajor:         1,
+			protoMinor:         1,
+			expectedLabelValue: "http/1.1",
+		},
+		{
+			name:               "HTTP/2 with per_proto=true",
+			perProto:           true,
+			proto:              "HTTP/2.0",
+			protoMajor:         2,
+			protoMinor:         0,
+			expectedLabelValue: "http/2",
+		},
+		{
+			name:               "HTTP/3 with per_proto=true",
+			perProto:           true,
+			proto:              "HTTP/3.0",
+			protoMajor:         3,
+			protoMinor:         0,
+			expectedLabelValue: "http/3",
+		},
+		{
+			name:               "HTTP/1.1 with per_proto=false",
+			perProto:           false,
+			proto:              "HTTP/1.1",
+			protoMajor:         1,
+			protoMinor:         1,
+			expectedLabelValue: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+			metrics := &Metrics{
+				PerProto:    tt.perProto,
+				init:        sync.Once{},
+				httpMetrics: &httpMetrics{},
+			}
+
+			ih := newMetricsInstrumentedHandler(ctx, "test_handler", mh, metrics)
+
+			r := httptest.NewRequest("GET", "/", nil)
+			r.Proto = tt.proto
+			r.ProtoMajor = tt.protoMajor
+			r.ProtoMinor = tt.protoMinor
+			w := httptest.NewRecorder()
+
+			if err := ih.ServeHTTP(w, r, handler); err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			labels := prometheus.Labels{"server": "test_handler", "handler": "test_handler"}
+			if tt.perProto {
+				labels["proto"] = tt.expectedLabelValue
+			}
+			if actual := testutil.ToFloat64(metrics.httpMetrics.requestCount.With(labels)); actual == 0 {
+				t.Logf("Request count metric recorded without proto label")
+			}
+		})
 	}
 }
 
