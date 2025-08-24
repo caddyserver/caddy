@@ -58,7 +58,65 @@ func TestGlobalLogOptionSyntax(t *testing.T) {
 		}
 
 		if string(out) != tc.output {
-			t.Errorf("Test %d error output mismatch Expected: %s, got %s", i, tc.output, out)
+			t.Errorf("Test %d error output mismatch Expected: %s, got %s", i, tc.output, string(out))
+		}
+	}
+}
+
+func TestGlobalMetricsOptionSyntax(t *testing.T) {
+	for i, tc := range []struct {
+		input       string
+		expectError bool
+	}{
+		{
+			input: `{
+				metrics {
+					per_host
+				}
+			}`,
+			expectError: false,
+		},
+		{
+			input: `{
+				metrics {
+					labels {
+						proto "{http.request.proto}"
+						method "{http.request.method}"
+					}
+				}
+			}`,
+			expectError: false,
+		},
+		{
+			input: `{
+				metrics {
+					per_host
+					labels {
+						proto "{http.request.proto}"
+						host "{http.request.host}"
+					}
+				}
+			}`,
+			expectError: false,
+		},
+		{
+			input: `{
+				metrics {
+					unknown_option
+				}
+			}`,
+			expectError: true,
+		},
+	} {
+		adapter := caddyfile.Adapter{
+			ServerType: ServerType{},
+		}
+
+		out, _, err := adapter.Adapt([]byte(tc.input), nil)
+
+		if err != nil != tc.expectError {
+			t.Errorf("Test %d error expectation failed Expected: %v, got %v", i, tc.expectError, err)
+			continue
 		}
 	}
 }
