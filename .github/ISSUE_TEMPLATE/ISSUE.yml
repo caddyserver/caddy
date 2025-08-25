@@ -16,7 +16,7 @@ body:
     id: assistance-disclosure
     attributes:
       label: Assistance Disclosure
-      description: Our project allows assistance by AI/LLM tools as long as it is disclosed and described so we can better respond. Please certify whether you have used any such tooling related to this issue:
+      description: "Our project allows assistance by AI/LLM tools as long as it is disclosed and described so we can better respond. Please certify whether you have used any such tooling related to this issue:"
       options:
         - AI used
         - AI not used
@@ -26,4 +26,4 @@ body:
     id: assistance-description
     attributes:
       label: If AI was used, describe the extent to which it was used.
-      description: Examples: "ChatGPT translated from my native language" or "Claude proposed this change/feature"
+      description: 'Examples: "ChatGPT translated from my native language" or "Claude proposed this change/feature"'
