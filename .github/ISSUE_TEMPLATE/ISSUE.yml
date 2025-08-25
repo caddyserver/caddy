@@ -19,6 +19,7 @@ body:
       label: Assistance Disclosure
       description: "Our project allows assistance by AI/LLM tools as long as it is disclosed and described so we can better respond. Please certify whether you have used any such tooling related to this issue:"
       options:
+        - 
         - AI used
         - AI not used
     validations:
