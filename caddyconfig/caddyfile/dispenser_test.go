@@ -274,6 +274,66 @@ func TestDispenser_RemainingArgs(t *testing.T) {
 	}
 }
 
+func TestDispenser_RemainingArgsAsTokens(t *testing.T) {
+	input := `dir1 arg1 arg2 arg3
+			  dir2 arg4 arg5
+			  dir3 arg6 { arg7
+			  dir4`
+	d := NewTestDispenser(input)
+
+	d.Next() // dir1
+
+	args := d.RemainingArgsAsTokens()
+
+	tokenTexts := make([]string, 0, len(args))
+	for _, arg := range args {
+		tokenTexts = append(tokenTexts, arg.Text)
+	}
+
+	if expected := []string{"arg1", "arg2", "arg3"}; !reflect.DeepEqual(tokenTexts, expected) {
+		t.Errorf("RemainingArgsAsTokens(): Expected %v, got %v", expected, tokenTexts)
+	}
+
+	d.Next() // dir2
+
+	args = d.RemainingArgsAsTokens()
+
+	tokenTexts = tokenTexts[:0]
+	for _, arg := range args {
+		tokenTexts = append(tokenTexts, arg.Text)
+	}
+
+	if expected := []string{"arg4", "arg5"}; !reflect.DeepEqual(tokenTexts, expected) {
+		t.Errorf("RemainingArgsAsTokens(): Expected %v, got %v", expected, tokenTexts)
+	}
+
+	d.Next() // dir3
+
+	args = d.RemainingArgsAsTokens()
+	tokenTexts = tokenTexts[:0]
+	for _, arg := range args {
+		tokenTexts = append(tokenTexts, arg.Text)
+	}
+
+	if expected := []string{"arg6"}; !reflect.DeepEqual(tokenTexts, expected) {
+		t.Errorf("RemainingArgsAsTokens(): Expected %v, got %v", expected, tokenTexts)
+	}
+
+	d.Next() // {
+	d.Next() // arg7
+	d.Next() // dir4
+
+	args = d.RemainingArgsAsTokens()
+	tokenTexts = tokenTexts[:0]
+	for _, arg := range args {
+		tokenTexts = append(tokenTexts, arg.Text)
+	}
+
+	if len(args) != 0 {
+		t.Errorf("RemainingArgsAsTokens(): Expected %v, got %v", []string{}, tokenTexts)
+	}
+}
+
 func TestDispenser_ArgErr_Err(t *testing.T) {
 	input := `dir1 {
 			  }

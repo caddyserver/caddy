@@ -1,0 +1,68 @@
+{
+	acme_dns mock foo
+}
+
+example.com {
+	respond "Hello World"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "Hello World",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"name": "mock"
+										}
+									}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
