@@ -289,7 +289,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return prefix.String(), true
 			}
 
-			// hostname labels
+			// hostname labels (case insensitive, so normalize to lowercase)
 			if strings.HasPrefix(key, reqHostLabelsReplPrefix) {
 				idxStr := key[len(reqHostLabelsReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
@@ -304,7 +304,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				if idx >= len(hostLabels) {
 					return "", true
 				}
-				return hostLabels[len(hostLabels)-idx-1], true
+				return strings.ToLower(hostLabels[len(hostLabels)-idx-1]), true
 			}
 
 			// path parts
