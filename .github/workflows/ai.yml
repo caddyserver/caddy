@@ -1,4 +1,5 @@
 name: AI Moderator
+permissions: read-all
 on:
   issues:
     types: [opened]
