@@ -125,7 +125,7 @@ func TestTracing_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
 
 	responseTraceParent := w.Header().Get("Traceparent")
 	if responseTraceParent == "" {
-		t.Errorf("Missing traceparent in response headers: %v", responseTraceParent)
+		t.Errorf("Missing traceparent in response headers")
 	}
 }
 
@@ -162,9 +162,13 @@ func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 
 	responseTraceParent := w.Header().Get("Traceparent")
 	if responseTraceParent == "" {
-		t.Errorf("Missing traceparent in response headers: %v", responseTraceParent)
+		t.Error("Missing traceparent in response headers")
 	} else if !strings.HasPrefix(responseTraceParent, dummyTraceParentPrefix) {
-		t.Errorf("Traceparent prefix in response headers not same as initial: %v", responseTraceParent)
+		t.Errorf(
+			"Traceparent prefix in response headers (%s) not same as initial (%s)",
+			responseTraceParent,
+			dummyTraceParentPrefix,
+		)
 	}
 }
 
