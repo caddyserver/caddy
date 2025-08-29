@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -186,12 +187,25 @@ func (st ServerType) Setup(
 		return nil, warnings, err
 	}
 
+	// hoist the metrics config from per-server to global
+	metrics, _ := options["metrics"].(*caddyhttp.Metrics)
+	for _, s := range servers {
+		if s.Metrics != nil {
+			metrics = cmp.Or(metrics, &caddyhttp.Metrics{})
+			metrics = &caddyhttp.Metrics{
+				PerHost: metrics.PerHost || s.Metrics.PerHost,
+			}
+			s.Metrics = nil // we don't need it anymore
+		}
+	}
+
 	// now that each server is configured, make the HTTP app
 	httpApp := caddyhttp.App{
 		HTTPPort:      tryInt(options["http_port"], &warnings),
 		HTTPSPort:     tryInt(options["https_port"], &warnings),
 		GracePeriod:   tryDuration(options["grace_period"], &warnings),
 		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
+		Metrics:       metrics,
 		Servers:       servers,
 	}
 
@@ -336,7 +350,7 @@ func (st ServerType) Setup(
 
 				// avoid duplicates by sorting + compacting
 				sort.Strings(defaultLog.Exclude)
-				defaultLog.Exclude = slices.Compact[[]string, string](defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact(defaultLog.Exclude)
 			}
 		}
 		// we may have not actually added anything, so remove if empty
@@ -619,12 +633,6 @@ func (st *ServerType) serversFromPairings(
 					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
 				}
 				srv.AutoHTTPS.IgnoreLoadedCerts = true
-
-			case "prefer_wildcard":
-				if srv.AutoHTTPS == nil {
-					srv.AutoHTTPS = new(caddyhttp.AutoHTTPSConfig)
-				}
-				srv.AutoHTTPS.PreferWildcard = true
 			}
 		}
 
@@ -739,6 +747,14 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
+			// collect hosts that are forced to be automated
+			forceAutomatedNames := make(map[string]struct{})
+			if _, ok := sblock.pile["tls.force_automate"]; ok {
+				for _, host := range hosts {
+					forceAutomatedNames[host] = struct{}{}
+				}
+			}
+
 			// tls: connection policies
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
@@ -769,18 +785,17 @@ func (st *ServerType) serversFromPairings(
 						cp.FallbackSNI = fallbackSNI
 					}
 
-					// only append this policy if it actually changes something
-					if !cp.SettingsEmpty() {
+					// only append this policy if it actually changes something,
+					// or if the configuration explicitly automates certs for
+					// these names (this is necessary to hoist a connection policy
+					// above one that may manually load a wildcard cert that would
+					// otherwise clobber the automated one; the code that appends
+					// policies that manually load certs comes later, so they're
+					// lower in the list)
+					if !cp.SettingsEmpty() || mapContains(forceAutomatedNames, hosts) {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 						hasCatchAllTLSConnPolicy = len(hosts) == 0
 					}
-				}
-			}
-
-			wildcardHosts := []string{}
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
 				}
 			}
 
@@ -796,18 +811,6 @@ func (st *ServerType) serversFromPairings(
 						if !slices.Contains(srv.AutoHTTPS.Skip, addr.Host) {
 							srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 						}
-					}
-				}
-
-				// If prefer wildcard is enabled, then we add hosts that are
-				// already covered by the wildcard to the skip list
-				if srv.AutoHTTPS != nil && srv.AutoHTTPS.PreferWildcard && addr.Scheme == "https" {
-					baseDomain := addr.Host
-					if idx := strings.Index(baseDomain, "."); idx != -1 {
-						baseDomain = baseDomain[idx+1:]
-					}
-					if !strings.HasPrefix(addr.Host, "*.") && slices.Contains(wildcardHosts, baseDomain) {
-						srv.AutoHTTPS.Skip = append(srv.AutoHTTPS.Skip, addr.Host)
 					}
 				}
 
@@ -827,6 +830,7 @@ func (st *ServerType) serversFromPairings(
 					(addr.Scheme != "http" && addr.Port != httpPort && hasTLSEnabled) {
 					addressQualifiesForTLS = true
 				}
+
 				// predict whether auto-HTTPS will add the conn policy for us; if so, we
 				// may not need to add one for this server
 				autoHTTPSWillAddConnPolicy = autoHTTPSWillAddConnPolicy &&
@@ -1057,9 +1061,38 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 
 			// if they're exactly equal in every way, just keep one of them
 			if reflect.DeepEqual(cps[i], cps[j]) {
-				cps = append(cps[:j], cps[j+1:]...)
+				cps = slices.Delete(cps, j, j+1)
 				i--
 				break
+			}
+
+			// as a special case, if there are adjacent TLS conn policies that are identical except
+			// by their matchers, and the matchers are specifically just ServerName ("sni") matchers
+			// (by far the most common), we can combine them into a single policy
+			if i == j-1 && len(cps[i].MatchersRaw) == 1 && len(cps[j].MatchersRaw) == 1 {
+				if iSNIMatcherJSON, ok := cps[i].MatchersRaw["sni"]; ok {
+					if jSNIMatcherJSON, ok := cps[j].MatchersRaw["sni"]; ok {
+						// position of policies and the matcher criteria check out; if settings are
+						// the same, then we can combine the policies; we have to unmarshal and
+						// remarshal the matchers though
+						if cps[i].SettingsEqual(*cps[j]) {
+							var iSNIMatcher caddytls.MatchServerName
+							if err := json.Unmarshal(iSNIMatcherJSON, &iSNIMatcher); err == nil {
+								var jSNIMatcher caddytls.MatchServerName
+								if err := json.Unmarshal(jSNIMatcherJSON, &jSNIMatcher); err == nil {
+									iSNIMatcher = append(iSNIMatcher, jSNIMatcher...)
+									cps[i].MatchersRaw["sni"], err = json.Marshal(iSNIMatcher)
+									if err != nil {
+										return nil, fmt.Errorf("recombining SNI matchers: %v", err)
+									}
+									cps = slices.Delete(cps, j, j+1)
+									i--
+									break
+								}
+							}
+						}
+					}
+				}
 			}
 
 			// if they have the same matcher, try to reconcile each field: either they must
@@ -1094,6 +1127,12 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					cps[i].DefaultSNI != cps[j].DefaultSNI {
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting default SNI: %s vs. %s",
 						cps[i].DefaultSNI, cps[j].DefaultSNI)
+				}
+				if cps[i].FallbackSNI != "" &&
+					cps[j].FallbackSNI != "" &&
+					cps[i].FallbackSNI != cps[j].FallbackSNI {
+					return nil, fmt.Errorf("two policies with same match criteria have conflicting fallback SNI: %s vs. %s",
+						cps[i].FallbackSNI, cps[j].FallbackSNI)
 				}
 				if cps[i].ProtocolMin != "" &&
 					cps[j].ProtocolMin != "" &&
@@ -1135,6 +1174,9 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 				if cps[i].DefaultSNI == "" && cps[j].DefaultSNI != "" {
 					cps[i].DefaultSNI = cps[j].DefaultSNI
 				}
+				if cps[i].FallbackSNI == "" && cps[j].FallbackSNI != "" {
+					cps[i].FallbackSNI = cps[j].FallbackSNI
+				}
 				if cps[i].ProtocolMin == "" && cps[j].ProtocolMin != "" {
 					cps[i].ProtocolMin = cps[j].ProtocolMin
 				}
@@ -1154,12 +1196,13 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					}
 				}
 
-				cps = append(cps[:j], cps[j+1:]...)
+				cps = slices.Delete(cps, j, j+1)
 				i--
 				break
 			}
 		}
 	}
+
 	return cps, nil
 }
 
@@ -1448,9 +1491,9 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 
 	// iterate each pairing of host and path matchers and
 	// put them into a map for JSON encoding
-	var matcherSets []map[string]caddyhttp.RequestMatcher
+	var matcherSets []map[string]caddyhttp.RequestMatcherWithError
 	for _, mp := range matcherPairs {
-		matcherSet := make(map[string]caddyhttp.RequestMatcher)
+		matcherSet := make(map[string]caddyhttp.RequestMatcherWithError)
 		if len(mp.hostm) > 0 {
 			matcherSet["host"] = mp.hostm
 		}
@@ -1509,12 +1552,17 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 		if err != nil {
 			return err
 		}
-		rm, ok := unm.(caddyhttp.RequestMatcher)
-		if !ok {
-			return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
+
+		if rm, ok := unm.(caddyhttp.RequestMatcherWithError); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
 		}
-		matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
-		return nil
+		// nolint:staticcheck
+		if rm, ok := unm.(caddyhttp.RequestMatcher); ok {
+			matchers[definitionName][matcherName] = caddyconfig.JSON(rm, nil)
+			return nil
+		}
+		return fmt.Errorf("matcher module '%s' is not a request matcher", matcherName)
 	}
 
 	// if the next token is quoted, we can assume it's not a matcher name
@@ -1558,7 +1606,7 @@ func parseMatcherDefinitions(d *caddyfile.Dispenser, matchers map[string]caddy.M
 	return nil
 }
 
-func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcher) (caddy.ModuleMap, error) {
+func encodeMatcherSet(matchers map[string]caddyhttp.RequestMatcherWithError) (caddy.ModuleMap, error) {
 	msEncoded := make(caddy.ModuleMap)
 	for matcherName, val := range matchers {
 		jsonBytes, err := json.Marshal(val)
@@ -1632,6 +1680,18 @@ func listenersUseAnyPortOtherThan(addresses []string, otherPort string) bool {
 			continue
 		}
 		if uint(otherPortInt) > laddrs.EndPort || uint(otherPortInt) < laddrs.StartPort {
+			return true
+		}
+	}
+	return false
+}
+
+func mapContains[K comparable, V any](m map[K]V, keys []K) bool {
+	if len(m) == 0 || len(keys) == 0 {
+		return false
+	}
+	for _, key := range keys {
+		if _, ok := m[key]; ok {
 			return true
 		}
 	}

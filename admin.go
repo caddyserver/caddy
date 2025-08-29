@@ -214,14 +214,15 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Context) adminHandler {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
 	if remote {
 		muxWrap.remoteControl = admin.Remote
 	} else {
-		muxWrap.enforceHost = !addr.isWildcardInterface()
+		// see comment in allowedOrigins() as to why we disable the host check for unix/fd networks
+		muxWrap.enforceHost = !addr.isWildcardInterface() && !addr.IsUnixNetwork() && !addr.IsFdNetwork()
 		muxWrap.allowedOrigins = admin.allowedOrigins(addr)
 		muxWrap.enforceOrigin = admin.EnforceOrigin
 	}
@@ -270,7 +271,6 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool) admi
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
-		handlerLabel := m.ID.Name()
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
@@ -311,47 +311,43 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	for _, o := range admin.Origins {
 		uniqueOrigins[o] = struct{}{}
 	}
-	if admin.Origins == nil {
+	// RFC 2616, Section 14.26:
+	// "A client MUST include a Host header field in all HTTP/1.1 request
+	// messages. If the requested URI does not include an Internet host
+	// name for the service being requested, then the Host header field MUST
+	// be given with an empty value."
+	//
+	// UPDATE July 2023: Go broke this by patching a minor security bug in 1.20.6.
+	// Understandable, but frustrating. See:
+	// https://github.com/golang/go/issues/60374
+	// See also the discussion here:
+	// https://github.com/golang/go/issues/61431
+	//
+	// We can no longer conform to RFC 2616 Section 14.26 from either Go or curl
+	// in purity. (Curl allowed no host between 7.40 and 7.50, but now requires a
+	// bogus host; see https://superuser.com/a/925610.) If we disable Host/Origin
+	// security checks, the infosec community assures me that it is secure to do
+	// so, because:
+	//
+	// 1) Browsers do not allow access to unix sockets
+	// 2) DNS is irrelevant to unix sockets
+	//
+	// If either of those two statements ever fail to hold true, it is not the
+	// fault of Caddy.
+	//
+	// Thus, we do not fill out allowed origins and do not enforce Host
+	// requirements for unix sockets. Enforcing it leads to confusion and
+	// frustration, when UDS have their own permissions from the OS.
+	// Enforcing host requirements here is effectively security theater,
+	// and a false sense of security.
+	//
+	// See also the discussion in #6832.
+	if admin.Origins == nil && !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
 		if addr.isLoopback() {
-			if addr.IsUnixNetwork() || addr.IsFdNetwork() {
-				// RFC 2616, Section 14.26:
-				// "A client MUST include a Host header field in all HTTP/1.1 request
-				// messages. If the requested URI does not include an Internet host
-				// name for the service being requested, then the Host header field MUST
-				// be given with an empty value."
-				//
-				// UPDATE July 2023: Go broke this by patching a minor security bug in 1.20.6.
-				// Understandable, but frustrating. See:
-				// https://github.com/golang/go/issues/60374
-				// See also the discussion here:
-				// https://github.com/golang/go/issues/61431
-				//
-				// We can no longer conform to RFC 2616 Section 14.26 from either Go or curl
-				// in purity. (Curl allowed no host between 7.40 and 7.50, but now requires a
-				// bogus host; see https://superuser.com/a/925610.) If we disable Host/Origin
-				// security checks, the infosec community assures me that it is secure to do
-				// so, because:
-				// 1) Browsers do not allow access to unix sockets
-				// 2) DNS is irrelevant to unix sockets
-				//
-				// I am not quite ready to trust either of those external factors, so instead
-				// of disabling Host/Origin checks, we now allow specific Host values when
-				// accessing the admin endpoint over unix sockets. I definitely don't trust
-				// DNS (e.g. I don't trust 'localhost' to always resolve to the local host),
-				// and IP shouldn't even be used, but if it is for some reason, I think we can
-				// at least be reasonably assured that 127.0.0.1 and ::1 route to the local
-				// machine, meaning that a hypothetical browser origin would have to be on the
-				// local machine as well.
-				uniqueOrigins[""] = struct{}{}
-				uniqueOrigins["127.0.0.1"] = struct{}{}
-				uniqueOrigins["::1"] = struct{}{}
-			} else {
-				uniqueOrigins[net.JoinHostPort("localhost", addr.port())] = struct{}{}
-				uniqueOrigins[net.JoinHostPort("::1", addr.port())] = struct{}{}
-				uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
-			}
-		}
-		if !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
+			uniqueOrigins[net.JoinHostPort("localhost", addr.port())] = struct{}{}
+			uniqueOrigins[net.JoinHostPort("::1", addr.port())] = struct{}{}
+			uniqueOrigins[net.JoinHostPort("127.0.0.1", addr.port())] = struct{}{}
+		} else {
 			uniqueOrigins[addr.JoinHostPort(0)] = struct{}{}
 		}
 	}
@@ -382,7 +378,9 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // for the admin endpoint exists in cfg, a default one is used, so
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
-func replaceLocalAdminServer(cfg *Config) error {
+// Critically note that some elements and functionality of the context
+// may not be ready, e.g. storage. Tread carefully.
+func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
 	// disabled -- careful to use reference to the current
@@ -424,7 +422,14 @@ func replaceLocalAdminServer(cfg *Config) error {
 		return err
 	}
 
-	handler := cfg.Admin.newAdminHandler(addr, false)
+	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
+
+	// run the provisioners for loaded modules to make sure local
+	// state is properly re-initialized in the new admin server
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
 
 	ln, err := addr.Listen(context.TODO(), 0, net.ListenConfig{})
 	if err != nil {
@@ -545,7 +550,14 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
-	handler := cfg.Admin.newAdminHandler(addr, true)
+	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
+
+	// run the provisioners for loaded modules to make sure local
+	// state is properly re-initialized in the new admin server
+	err = cfg.Admin.provisionAdminRouters(ctx)
+	if err != nil {
+		return err
+	}
 
 	// create client certificate pool for TLS mutual auth, and extract public keys
 	// so that we can enforce access controls at the application layer
@@ -934,7 +946,7 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 	return false
 }
 
-// etagHasher returns a the hasher we used on the config to both
+// etagHasher returns the hasher we used on the config to both
 // produce and verify ETags.
 func etagHasher() hash.Hash { return xxhash.New() }
 
@@ -1138,7 +1150,7 @@ traverseLoop:
 						return fmt.Errorf("[%s] invalid array index '%s': %v",
 							path, idxStr, err)
 					}
-					if idx < 0 || idx >= len(arr) {
+					if idx < 0 || (method != http.MethodPut && idx >= len(arr)) || idx > len(arr) {
 						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
 					}
 				}

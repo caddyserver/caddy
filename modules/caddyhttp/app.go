@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -27,7 +28,6 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
@@ -72,7 +72,7 @@ func init() {
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
 // `{http.request.local.port}` | The port part of the local address the connection arrived on
 // `{http.request.local}` | The local address the connection arrived on
-// `{http.request.remote.host}` | The host (IP) part of the remote client's address
+// `{http.request.remote.host}` | The host (IP) part of the remote client's address, if available (not known with HTTP/3 early data)
 // `{http.request.remote.port}` | The port part of the remote client's address
 // `{http.request.remote}` | The address of the remote client
 // `{http.request.scheme}` | The request scheme, typically `http` or `https`
@@ -142,12 +142,21 @@ type App struct {
 	// affect functionality.
 	Servers map[string]*Server `json:"servers,omitempty"`
 
+	// If set, metrics observations will be enabled.
+	// This setting is EXPERIMENTAL and subject to change.
+	Metrics *Metrics `json:"metrics,omitempty"`
+
 	ctx    caddy.Context
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	// stopped indicates whether the app has stopped
+	// It can only happen if it has started successfully in the first place.
+	// Otherwise, Cleanup will call Stop to clean up resources.
+	stopped bool
+
 	// used temporarily between phases 1 and 2 of auto HTTPS
-	allCertDomains []string
+	allCertDomains map[string]struct{}
 }
 
 // CaddyModule returns the Caddy module information.
@@ -161,13 +170,15 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
+	app.logger = ctx.Logger()
+	app.ctx = ctx
+
+	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
 	}
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
-	app.ctx = ctx
-	app.logger = ctx.Logger()
 
 	eventsAppIface, err := ctx.App("events")
 	if err != nil {
@@ -184,6 +195,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 		return err
 	}
 
+	if app.Metrics != nil {
+		app.Metrics.init = sync.Once{}
+		app.Metrics.httpMetrics = &httpMetrics{}
+	}
 	// prepare each server
 	oldContext := ctx.Context
 	for srvName, srv := range app.Servers {
@@ -195,6 +210,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
 		srv.shutdownAtMu = new(sync.RWMutex)
+
+		if srv.Metrics != nil {
+			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
+			app.Metrics = cmp.Or(app.Metrics, &Metrics{
+				init:        sync.Once{},
+				httpMetrics: &httpMetrics{},
+			})
+			app.Metrics.PerHost = app.Metrics.PerHost || srv.Metrics.PerHost
+		}
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
@@ -212,15 +236,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srvProtocolsUnique := map[string]struct{}{}
 		for _, srvProtocol := range srv.Protocols {
 			srvProtocolsUnique[srvProtocol] = struct{}{}
-		}
-		_, h1ok := srvProtocolsUnique["h1"]
-		_, h2ok := srvProtocolsUnique["h2"]
-		_, h2cok := srvProtocolsUnique["h2c"]
-
-		// the Go standard library does not let us serve only HTTP/2 using
-		// http.Server; we would probably need to write our own server
-		if !h1ok && (h2ok || h2cok) {
-			return fmt.Errorf("server %s: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName)
 		}
 
 		if srv.ListenProtocols != nil {
@@ -253,19 +268,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 								lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
 							}
 						}
-					}
-
-					lnProtocolsIncludeUnique := map[string]struct{}{}
-					for _, lnProtocol := range lnProtocolsInclude {
-						lnProtocolsIncludeUnique[lnProtocol] = struct{}{}
-					}
-					_, h1ok := lnProtocolsIncludeUnique["h1"]
-					_, h2ok := lnProtocolsIncludeUnique["h2"]
-					_, h2cok := lnProtocolsIncludeUnique["h2c"]
-
-					// check if any listener protocols contain h2 or h2c without h1
-					if !h1ok && (h2ok || h2cok) {
-						return fmt.Errorf("server %s, listener %d: cannot enable HTTP/2 or H2C without enabling HTTP/1.1; add h1 to protocols or remove h2/h2c", srvName, i)
 					}
 
 					srv.ListenProtocols[i] = lnProtocolsInclude
@@ -342,12 +344,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
-
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
 		if srv.Routes != nil {
-			err := srv.Routes.ProvisionHandlers(ctx, srv.Metrics)
+			err := srv.Routes.ProvisionHandlers(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up route handlers: %v", srvName, err)
 			}
@@ -366,7 +367,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// provision the named routes (they get compiled at runtime)
 		for name, route := range srv.NamedRoutes {
-			err := route.Provision(ctx, srv.Metrics)
+			err := route.Provision(ctx, app.Metrics)
 			if err != nil {
 				return fmt.Errorf("server %s: setting up named route '%s' handlers: %v", name, srvName, err)
 			}
@@ -383,6 +384,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// closes them, so if we don't close them it leads to resource exhaustion
 		if srv.IdleTimeout == 0 {
 			srv.IdleTimeout = defaultIdleTimeout
+		}
+		if srv.ReadHeaderTimeout == 0 {
+			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
 	}
 	ctx.Context = oldContext
@@ -423,6 +427,25 @@ func (app *App) Validate() error {
 	return nil
 }
 
+func removeTLSALPN(srv *Server, target string) {
+	for _, cp := range srv.TLSConnPolicies {
+		// the TLSConfig was already provisioned, so... manually remove it
+		for i, np := range cp.TLSConfig.NextProtos {
+			if np == target {
+				cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
+				break
+			}
+		}
+		// remove it from the parent connection policy too, just to keep things tidy
+		for i, alpn := range cp.ALPN {
+			if alpn == target {
+				cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
@@ -441,32 +464,37 @@ func (app *App) Start() error {
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
 			ErrorLog:          serverLogger,
+			Protocols:         new(http.Protocols),
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 				return context.WithValue(ctx, ConnCtxKey, c)
 			},
 		}
-		h2server := new(http2.Server)
 
 		// disable HTTP/2, which we enabled by default during provisioning
 		if !srv.protocol("h2") {
 			srv.server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
-			for _, cp := range srv.TLSConnPolicies {
-				// the TLSConfig was already provisioned, so... manually remove it
-				for i, np := range cp.TLSConfig.NextProtos {
-					if np == "h2" {
-						cp.TLSConfig.NextProtos = append(cp.TLSConfig.NextProtos[:i], cp.TLSConfig.NextProtos[i+1:]...)
-						break
-					}
-				}
-				// remove it from the parent connection policy too, just to keep things tidy
-				for i, alpn := range cp.ALPN {
-					if alpn == "h2" {
-						cp.ALPN = append(cp.ALPN[:i], cp.ALPN[i+1:]...)
-						break
-					}
-				}
-			}
-		} else {
+			removeTLSALPN(srv, "h2")
+		}
+		if !srv.protocol("h1") {
+			removeTLSALPN(srv, "http/1.1")
+		}
+
+		// configure the http versions the server will serve
+		if srv.protocol("h1") {
+			srv.server.Protocols.SetHTTP1(true)
+		}
+
+		if srv.protocol("h2") || srv.protocol("h2c") {
+			// skip setting h2 because if NextProtos is present, it's list of alpn versions will take precedence.
+			// it will always be present because http2.ConfigureServer will populate that field
+			// enabling h2c because some listener wrapper will wrap the connection that is no longer *tls.Conn
+			// However, we need to handle the case that if the connection is h2c but h2c is not enabled. We identify
+			// this type of connection by checking if it's behind a TLS listener wrapper or if it implements tls.ConnectionState.
+			srv.server.Protocols.SetUnencryptedHTTP2(true)
+			// when h2c is enabled but h2 disabled, we already removed h2 from NextProtos
+			// the handshake will never succeed with h2
+			// http2.ConfigureServer will enable the server to handle both h2 and h2c
+			h2server := new(http2.Server)
 			//nolint:errcheck
 			http2.ConfigureServer(srv.server, h2server)
 		}
@@ -475,11 +503,6 @@ func (app *App) Start() error {
 		// by looking through the connection policies to find the first one that matches
 		tlsCfg := srv.TLSConnPolicies.TLSConfig(app.ctx)
 		srv.configureServer(srv.server)
-
-		// enable H2C if configured
-		if srv.protocol("h2c") {
-			srv.server.Handler = h2c.NewHandler(srv, h2server)
-		}
 
 		for lnIndex, lnAddr := range srv.Listen {
 			listenAddr, err := caddy.ParseNetworkAddress(lnAddr)
@@ -509,24 +532,14 @@ func (app *App) Start() error {
 				// enable TLS if there is a policy and if this is not the HTTP port
 				useTLS := len(srv.TLSConnPolicies) > 0 && int(listenAddr.StartPort+portOffset) != app.httpPort()
 
-				// enable HTTP/3 if configured
-				if h3ok && useTLS {
-					app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
-					if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
-						return err
-					}
-				}
-
-				if h3ok && !useTLS {
-					// Can only serve h3 with TLS enabled
-					app.logger.Warn("HTTP/3 skipped because it requires TLS",
-						zap.String("network", listenAddr.Network),
-						zap.String("addr", hostport))
-				}
-
 				if h1ok || h2ok && useTLS || h2cok {
 					// create the listener for this socket
-					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{KeepAlive: time.Duration(srv.KeepAliveInterval)})
+					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{
+						KeepAliveConfig: net.KeepAliveConfig{
+							Enable:   srv.KeepAliveInterval >= 0,
+							Interval: time.Duration(srv.KeepAliveInterval),
+						},
+					})
 					if err != nil {
 						return fmt.Errorf("listening on %s: %v", listenAddr.At(portOffset), err)
 					}
@@ -555,15 +568,13 @@ func (app *App) Start() error {
 						ln = srv.listenerWrappers[i].WrapListener(ln)
 					}
 
-					// handle http2 if use tls listener wrapper
-					if h2ok {
-						http2lnWrapper := &http2Listener{
-							Listener: ln,
-							server:   srv.server,
-							h2server: h2server,
-						}
-						srv.h2listeners = append(srv.h2listeners, http2lnWrapper)
-						ln = http2lnWrapper
+					// check if the connection is h2c
+					ln = &http2Listener{
+						useTLS:   useTLS,
+						useH1:    h1ok,
+						useH2:    h2ok || h2cok,
+						Listener: ln,
+						logger:   app.logger,
 					}
 
 					// if binding to port 0, the OS chooses a port for us;
@@ -581,11 +592,8 @@ func (app *App) Start() error {
 
 					srv.listeners = append(srv.listeners, ln)
 
-					// enable HTTP/1 if configured
-					if h1ok {
-						//nolint:errcheck
-						go srv.server.Serve(ln)
-					}
+					//nolint:errcheck
+					go srv.server.Serve(ln)
 				}
 
 				if h2ok && !useTLS {
@@ -593,6 +601,33 @@ func (app *App) Start() error {
 					app.logger.Warn("HTTP/2 skipped because it requires TLS",
 						zap.String("network", listenAddr.Network),
 						zap.String("addr", hostport))
+				}
+
+				if h3ok {
+					// Can't serve HTTP/3 on the same socket as HTTP/1 and 2 because it uses
+					// a different transport mechanism... which is fine, but the OS doesn't
+					// differentiate between a SOCK_STREAM file and a SOCK_DGRAM file; they
+					// are still one file on the system. So even though "unixpacket" and
+					// "unixgram" are different network types just as "tcp" and "udp" are,
+					// the OS will not let us use the same file as both STREAM and DGRAM.
+					if listenAddr.IsUnixNetwork() {
+						app.logger.Warn("HTTP/3 disabled because Unix can't multiplex STREAM and DGRAM on same socket",
+							zap.String("file", hostport))
+						continue
+					}
+
+					if useTLS {
+						// enable HTTP/3 if configured
+						app.logger.Info("enabling HTTP/3 listener", zap.String("addr", hostport))
+						if err := srv.serveHTTP3(listenAddr.At(portOffset), tlsCfg); err != nil {
+							return err
+						}
+					} else {
+						// Can only serve h3 with TLS enabled
+						app.logger.Warn("HTTP/3 skipped because it requires TLS",
+							zap.String("network", listenAddr.Network),
+							zap.String("addr", hostport))
+					}
 				}
 			}
 		}
@@ -671,6 +706,11 @@ func (app *App) Stop() error {
 		defer finishedShutdown.Done()
 		startedShutdown.Done()
 
+		// possible if server failed to Start
+		if server.server == nil {
+			return
+		}
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			app.logger.Error("server shutdown",
 				zap.Error(err),
@@ -685,40 +725,36 @@ func (app *App) Stop() error {
 			return
 		}
 
-		// First close h3server then close listeners unlike stdlib for several reasons:
-		// 1, udp has only a single socket, once closed, no more data can be read and
-		// written. In contrast, closing tcp listeners won't affect established connections.
-		// This have something to do with graceful shutdown when upstream implements it.
-		// 2, h3server will only close listeners it's registered (quic listeners). Closing
-		// listener first and these listeners maybe unregistered thus won't be closed. caddy
-		// distinguishes quic-listener and underlying datagram sockets.
+		// closing quic listeners won't affect accepted connections now
+		// so like stdlib, close listeners first, but keep the net.PacketConns open
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close",
+					zap.Error(err))
+			}
+		}
 
-		// TODO: CloseGracefully, once implemented upstream (see https://github.com/quic-go/quic-go/issues/2103)
-		if err := server.h3server.Close(); err != nil {
+		if err := server.h3server.Shutdown(ctx); err != nil {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
-	}
-	stopH2Listener := func(server *Server) {
-		defer finishedShutdown.Done()
-		startedShutdown.Done()
 
-		for i, s := range server.h2listeners {
-			if err := s.Shutdown(ctx); err != nil {
-				app.logger.Error("http2 listener shutdown",
-					zap.Error(err),
-					zap.Int("index", i))
+		// close the underlying net.PacketConns now
+		// see the comment for ListenQUIC
+		for _, h3ln := range server.quicListeners {
+			if err := h3ln.Close(); err != nil {
+				app.logger.Error("http3 listener close socket",
+					zap.Error(err))
 			}
 		}
 	}
 
 	for _, server := range app.Servers {
-		startedShutdown.Add(3)
-		finishedShutdown.Add(3)
+		startedShutdown.Add(2)
+		finishedShutdown.Add(2)
 		go stopServer(server)
 		go stopH3Server(server)
-		go stopH2Listener(server)
 	}
 
 	// block until all the goroutines have been run by the scheduler;
@@ -745,7 +781,18 @@ func (app *App) Stop() error {
 		}
 	}
 
+	app.stopped = true
 	return nil
+}
+
+// Cleanup will close remaining listeners if they still remain
+// because some of the servers fail to start.
+// It simply calls Stop because Stop won't be called when Start fails.
+func (app *App) Cleanup() error {
+	if app.stopped {
+		return nil
+	}
+	return app.Stop()
 }
 
 func (app *App) httpPort() int {
@@ -762,11 +809,20 @@ func (app *App) httpsPort() int {
 	return app.HTTPSPort
 }
 
-// defaultIdleTimeout is the default HTTP server timeout
-// for closing idle connections; useful to avoid resource
-// exhaustion behind hungry CDNs, for example (we've had
-// several complaints without this).
-const defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+const (
+	// defaultIdleTimeout is the default HTTP server timeout
+	// for closing idle connections; useful to avoid resource
+	// exhaustion behind hungry CDNs, for example (we've had
+	// several complaints without this).
+	defaultIdleTimeout = caddy.Duration(5 * time.Minute)
+
+	// defaultReadHeaderTimeout is the default timeout for
+	// reading HTTP headers from clients. Headers are generally
+	// small, often less than 1 KB, so it shouldn't take a
+	// long time even on legitimately slow connections or
+	// busy servers to read it.
+	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+)
 
 // Interface guards
 var (

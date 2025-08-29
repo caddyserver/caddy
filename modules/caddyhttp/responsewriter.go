@@ -154,16 +154,16 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	// connections by manually setting headers and writing status 101
 	rr.statusCode = statusCode
 
+	// decide whether we should buffer the response
+	if rr.shouldBuffer == nil {
+		rr.stream = true
+	} else {
+		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+	}
+
 	// 1xx responses aren't final; just informational
 	if statusCode < 100 || statusCode > 199 {
 		rr.wroteHeader = true
-
-		// decide whether we should buffer the response
-		if rr.shouldBuffer == nil {
-			rr.stream = true
-		} else {
-			rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
-		}
 	}
 
 	// if informational or not buffered, immediately write header

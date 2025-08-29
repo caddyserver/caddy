@@ -8,7 +8,7 @@ route {
 		}
 		not path */
 	}
-	redir @canonicalPath {http.request.orig_uri.path}/ 308
+	redir @canonicalPath {orig_path}/{orig_?query} 308
 
 	# If the requested file does not exist, try index files
 	@indexFiles {
@@ -17,7 +17,7 @@ route {
 			split_path .php
 		}
 	}
-	rewrite @indexFiles {http.matchers.file.relative}
+	rewrite @indexFiles {file_match.relative}
 
 	# Proxy PHP files to the FastCGI responder
 	@phpFiles {
@@ -50,7 +50,7 @@ route {
 													"handler": "static_response",
 													"headers": {
 														"Location": [
-															"{http.request.orig_uri.path}/"
+															"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
 														]
 													},
 													"status_code": 308

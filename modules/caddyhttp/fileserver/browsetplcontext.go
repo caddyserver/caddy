@@ -35,15 +35,16 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
 	name, _ := url.PathUnescape(urlPath)
 
 	tplCtx := &browseTemplateContext{
-		Name:    path.Base(name),
-		Path:    urlPath,
-		CanGoUp: canGoUp,
+		Name:         path.Base(name),
+		Path:         urlPath,
+		CanGoUp:      canGoUp,
+		lastModified: parentModTime,
 	}
 
 	for _, entry := range entries {
@@ -131,6 +132,10 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		})
 	}
 
+	// this time is used for the Last-Modified header and comparing If-Modified-Since from client
+	// both are expected to be in UTC, so we convert to UTC here
+	// see: https://github.com/caddyserver/caddy/issues/6828
+	tplCtx.lastModified = tplCtx.lastModified.UTC()
 	return tplCtx
 }
 

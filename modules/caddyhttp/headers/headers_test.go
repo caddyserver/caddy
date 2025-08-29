@@ -143,6 +143,28 @@ func TestHandler(t *testing.T) {
 				"Cache-Control": []string{"no-cache"},
 			},
 		},
+		{ // same as above, but checks that response headers are left alone when "Require" conditions are unmet
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						Headers: http.Header{
+							"Cache-Control": nil,
+						},
+					},
+					HeaderOps: &HeaderOps{
+						Add: http.Header{
+							"Cache-Control": []string{"no-cache"},
+						},
+					},
+				},
+			},
+			respHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+			expectedRespHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+		},
 		{
 			handler: Handler{
 				Response: &RespHeaderOps{
@@ -249,4 +271,108 @@ type nextHandler func(http.ResponseWriter, *http.Request) error
 
 func (f nextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
+}
+
+func TestContainsPlaceholders(t *testing.T) {
+	for i, tc := range []struct {
+		input    string
+		expected bool
+	}{
+		{"static", false},
+		{"{placeholder}", true},
+		{"prefix-{placeholder}-suffix", true},
+		{"{}", false},
+		{"no-braces", false},
+		{"{unclosed", false},
+		{"unopened}", false},
+	} {
+		actual := containsPlaceholders(tc.input)
+		if actual != tc.expected {
+			t.Errorf("Test %d: containsPlaceholders(%q) = %v, expected %v", i, tc.input, actual, tc.expected)
+		}
+	}
+}
+
+func TestHeaderProvisionSkipsPlaceholders(t *testing.T) {
+	ops := &HeaderOps{
+		Replace: map[string][]Replacement{
+			"Static": {
+				Replacement{SearchRegexp: ":443", Replace: "STATIC"},
+			},
+			"Dynamic": {
+				Replacement{SearchRegexp: ":{http.request.local.port}", Replace: "DYNAMIC"},
+			},
+		},
+	}
+
+	err := ops.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+
+	// Static regex should be precompiled
+	if ops.Replace["Static"][0].re == nil {
+		t.Error("Expected static regex to be precompiled")
+	}
+
+	// Dynamic regex with placeholder should not be precompiled
+	if ops.Replace["Dynamic"][0].re != nil {
+		t.Error("Expected dynamic regex with placeholder to not be precompiled")
+	}
+}
+
+func TestPlaceholderInSearchRegexp(t *testing.T) {
+	handler := Handler{
+		Response: &RespHeaderOps{
+			HeaderOps: &HeaderOps{
+				Replace: map[string][]Replacement{
+					"Test-Header": {
+						Replacement{
+							SearchRegexp: ":{http.request.local.port}",
+							Replace:      "PLACEHOLDER-WORKS",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Provision the handler
+	err := handler.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+
+	replacement := handler.Response.HeaderOps.Replace["Test-Header"][0]
+	t.Logf("After provision - SearchRegexp: %q, re: %v", replacement.SearchRegexp, replacement.re)
+
+	rr := httptest.NewRecorder()
+
+	req := httptest.NewRequest("GET", "http://localhost:443/", nil)
+	repl := caddy.NewReplacer()
+	repl.Set("http.request.local.port", "443")
+
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+
+	rr.Header().Set("Test-Header", "prefix:443suffix")
+	t.Logf("Initial header: %v", rr.Header())
+
+	next := nextHandler(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(200)
+		return nil
+	})
+
+	err = handler.ServeHTTP(rr, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP failed: %v", err)
+	}
+
+	t.Logf("Final header: %v", rr.Header())
+
+	result := rr.Header().Get("Test-Header")
+	expected := "prefixPLACEHOLDER-WORKSsuffix"
+	if result != expected {
+		t.Errorf("Expected header value %q, got %q", expected, result)
+	}
 }

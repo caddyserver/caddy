@@ -14,9 +14,10 @@
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
 	<a href="https://github.com/caddyserver/caddy/actions/workflows/ci.yml"><img src="https://github.com/caddyserver/caddy/actions/workflows/ci.yml/badge.svg"></a>
+	<a href="https://www.bestpractices.dev/projects/7141"><img src="https://www.bestpractices.dev/projects/7141/badge"></a>
 	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
 	<br>
-	<a href="https://twitter.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/badge/twitter-@caddyserver-55acee.svg" alt="@caddyserver on Twitter"></a>
+	<a href="https://x.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/twitter/follow/caddyserver" alt="@caddyserver on Twitter"></a>
 	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
 	<br>
 	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
@@ -67,6 +68,7 @@
 	- Fully-managed local CA for internal names & IPs
 	- Can coordinate with other Caddy instances in a cluster
 	- Multi-issuer fallback
+	- Encrypted ClientHello (ECH) support
 - **Stays up when other servers go down** due to TLS/OCSP/certificate-related issues
 - **Production-ready** after serving trillions of requests and managing millions of TLS certificates
 - **Scales to hundreds of thousands of sites** as proven in production
@@ -87,7 +89,7 @@ See [our online documentation](https://caddyserver.com/docs/install) for other i
 
 Requirements:
 
-- [Go 1.22.3 or newer](https://golang.org/dl/)
+- [Go 1.25.0 or newer](https://golang.org/dl/)
 
 ### For development
 
@@ -131,7 +133,7 @@ $ xcaddy build
 4. Initialize a Go module: `go mod init caddy`
 5. (Optional) Pin Caddy version: `go get github.com/caddyserver/caddy/v2@version` replacing `version` with a git tag, commit, or branch name.
 6. (Optional) Add plugins by adding their import: `_ "import/path/here"`
-7. Compile: `go build`
+7. Compile: `go build -tags=nobadger,nomysql,nopgx`
 
 
 
@@ -176,7 +178,7 @@ The docs are also open source. You can contribute to them here: https://github.c
 
 ## Getting help
 
-- We advise companies using Caddy to secure a support contract through [Ardan Labs](https://www.ardanlabs.com/my/contact-us?dd=caddy) before help is needed.
+- We advise companies using Caddy to secure a support contract through [Ardan Labs](https://www.ardanlabs.com) before help is needed.
 
 - A [sponsorship](https://github.com/sponsors/mholt) goes a long way! We can offer private help to sponsors. If Caddy is benefitting your company, please consider a sponsorship. This not only helps fund full-time work to ensure the longevity of the project, it provides your company the resources, support, and discounts you need; along with being a great look for your company to your customers and potential customers!
 
@@ -192,8 +194,8 @@ Matthew Holt began developing Caddy in 2014 while studying computer science at B
 
 **The name "Caddy" is trademarked.** The name of the software is "Caddy", not "Caddy Server" or "CaddyServer". Please call it "Caddy" or, if you wish to clarify, "the Caddy web server". Caddy is a registered trademark of Stack Holdings GmbH.
 
-- _Project on Twitter: [@caddyserver](https://twitter.com/caddyserver)_
-- _Author on Twitter: [@mholt6](https://twitter.com/mholt6)_
+- _Project on X: [@caddyserver](https://x.com/caddyserver)_
+- _Author on X: [@mholt6](https://x.com/mholt6)_
 
 Caddy is a project of [ZeroSSL](https://zerossl.com), a Stack Holdings company.
 

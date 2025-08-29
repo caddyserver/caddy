@@ -5,15 +5,15 @@
 			root_cn "Internal Root Cert"
 			intermediate_cn "Internal Intermediate Cert"
 		}
-    }
+	}
 }
-
 acme.example.com {
 	acme_server {
 		ca internal
 		sign_with_root
 	}
 }
+
 ----------
 {
 	"apps": {

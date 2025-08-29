@@ -25,9 +25,10 @@ import (
 	"strings"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2"
+	"github.com/mholt/acmez/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -183,7 +184,12 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	repl := caddy.NewReplacer()
 	subjects := make([]string, len(ap.SubjectsRaw))
 	for i, sub := range ap.SubjectsRaw {
-		subjects[i] = repl.ReplaceAll(sub, "")
+		sub = repl.ReplaceAll(sub, "")
+		subASCII, err := idna.ToASCII(sub)
+		if err != nil {
+			return fmt.Errorf("could not convert automation policy subject '%s' to punycode: %v", sub, err)
+		}
+		subjects[i] = subASCII
 	}
 	ap.subjects = subjects
 
@@ -322,12 +328,6 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 					return err
 				}
 
-				// check the rate limiter last because
-				// doing so makes a reservation
-				if !onDemandRateLimiter.Allow() {
-					return fmt.Errorf("on-demand rate limit exceeded")
-				}
-
 				return nil
 			},
 			Managers: ap.Managers,
@@ -390,10 +390,8 @@ func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 // isWildcardOrDefault determines if the subjects include any wildcard domains,
 // or is the "default" policy (i.e. no subjects) which is unbounded.
 func (ap *AutomationPolicy) isWildcardOrDefault() bool {
-	isWildcardOrDefault := false
-	if len(ap.subjects) == 0 {
-		isWildcardOrDefault = true
-	}
+	isWildcardOrDefault := len(ap.subjects) == 0
+
 	for _, sub := range ap.subjects {
 		if strings.HasPrefix(sub, "*") {
 			isWildcardOrDefault = true

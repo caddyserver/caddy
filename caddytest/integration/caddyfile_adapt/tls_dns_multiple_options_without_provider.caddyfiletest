@@ -1,0 +1,9 @@
+localhost
+
+tls {
+	propagation_delay 10s
+	dns_ttl 5m
+}
+
+----------
+parsing caddyfile tokens for 'tls': setting DNS challenge options [propagation_delay, dns_ttl] requires a DNS provider (set with the 'dns' subdirective or 'acme_dns' global option), at Caddyfile:6

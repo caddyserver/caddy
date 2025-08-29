@@ -139,7 +139,7 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 	}
 
 	// check to see if plugin provides listener
-	if ln, err := getListenerFromPlugin(ctx, na.Network, na.JoinHostPort(portOffset), config); ln != nil || err != nil {
+	if ln, err := getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
 		return ln, err
 	}
 
@@ -210,7 +210,7 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
-// IsUnixNetwork returns true if na.Network is
+// IsFdNetwork returns true if na.Network is
 // fd or fdgram.
 func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
@@ -305,25 +305,6 @@ func IsFdNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "fd")
 }
 
-// normally we would simply append the port,
-// but if host is IPv6, we need to ensure it
-// is enclosed in [ ]; net.JoinHostPort does
-// this for us, but host might also have a
-// network type in front (e.g. "tcp/") leading
-// to "[tcp/::1]" which causes parsing failures
-// later; what we need is "tcp/[::1]", so we have
-// to split the network and host, then re-combine
-func ParseNetworkAddressFromHostPort(host, port string) (NetworkAddress, error) {
-	network, addr, ok := strings.Cut(host, "/")
-	if !ok {
-		addr = network
-		network = ""
-	}
-	addr = strings.Trim(addr, "[]") // IPv6
-	networkAddr := JoinNetworkAddress(network, addr, port)
-	return ParseNetworkAddress(networkAddr)
-}
-
 // ParseNetworkAddress parses addr into its individual
 // components. The input string is expected to be of
 // the form "network/host:port-range" where any part is
@@ -399,25 +380,28 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if slashFound {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
+		if IsUnixNetwork(network) || IsFdNetwork(network) {
+			host = a
+			return
+		}
 	}
-	if IsUnixNetwork(network) || IsFdNetwork(network) {
-		host = a
-		return
-	}
+
 	host, port, err = net.SplitHostPort(a)
-	if err == nil || a == "" {
-		return
-	}
-	// in general, if there was an error, it was likely "missing port",
-	// so try adding a bogus port to take advantage of standard library's
-	// robust parser, then strip the artificial port before returning
-	// (don't overwrite original error though; might still be relevant)
-	var err2 error
-	host, port, err2 = net.SplitHostPort(a + ":0")
-	if err2 == nil {
-		err = nil
+	firstErr := err
+
+	if err != nil {
+		// in general, if there was an error, it was likely "missing port",
+		// so try removing square brackets around an IPv6 host, adding a bogus
+		// port to take advantage of standard library's robust parser, then
+		// strip the artificial port.
+		host, _, err = net.SplitHostPort(net.JoinHostPort(strings.Trim(a, "[]"), "0"))
 		port = ""
 	}
+
+	if err != nil {
+		err = errors.Join(firstErr, err)
+	}
+
 	return
 }
 
@@ -446,7 +430,8 @@ func JoinNetworkAddress(network, host, port string) string {
 // address instead.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICEarlyListener, error) {
+// NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -626,7 +611,7 @@ type fakeCloseQuicListener struct {
 // server on which Accept would be called with non-empty contexts
 // (mind that the default net listeners' Accept doesn't take a context argument)
 // sounds way too rare for us to sacrifice efficiency here.
-func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnection, error) {
+func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error) {
 	conn, err := fcql.sharedQuicListener.Accept(fcql.context)
 	if err == nil {
 		return conn, nil
@@ -642,6 +627,7 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (quic.EarlyConnecti
 func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
 		fcql.contextCancel()
+	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
 	return nil
@@ -657,7 +643,7 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
 		network == "udp" || network == "udp4" || network == "udp6" ||
 		network == "unix" || network == "unixpacket" || network == "unixgram" ||
-		strings.HasPrefix("ip:", network) || strings.HasPrefix("ip4:", network) || strings.HasPrefix("ip6:", network) ||
+		strings.HasPrefix(network, "ip:") || strings.HasPrefix(network, "ip4:") || strings.HasPrefix(network, "ip6:") ||
 		network == "fd" || network == "fdgram" {
 		panic("network type " + network + " is reserved")
 	}
@@ -674,11 +660,11 @@ var unixSocketsMu sync.Mutex
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
 // no plugin can provide a listener.
-func getListenerFromPlugin(ctx context.Context, network, addr string, config net.ListenConfig) (any, error) {
+func getListenerFromPlugin(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
 	// get listener from plugin if network type is registered
 	if getListener, ok := networkTypes[network]; ok {
 		Log().Debug("getting listener from plugin", zap.String("network", network))
-		return getListener(ctx, network, addr, config)
+		return getListener(ctx, network, host, port, portOffset, config)
 	}
 
 	return nil, nil
@@ -692,7 +678,7 @@ func listenerKey(network, addr string) string {
 // The listeners must be capable of overlapping: with Caddy, new configs are loaded
 // before old ones are unloaded, so listeners may overlap briefly if the configs
 // both need the same listener. EXPERIMENTAL and subject to change.
-type ListenerFunc func(ctx context.Context, network, addr string, cfg net.ListenConfig) (any, error)
+type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
 var networkTypes = map[string]ListenerFunc{}
 

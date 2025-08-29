@@ -240,13 +240,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
+			caddy.Log().Warn("The nested 'metrics' option inside `servers` is deprecated and will be removed in the next major version. Use the global 'metrics' option instead.")
 			serverOpts.Metrics = new(caddyhttp.Metrics)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "per_host":
+					serverOpts.Metrics.PerHost = true
+				default:
+					return nil, d.Errf("unrecognized metrics option '%s'", d.Val())
+				}
+			}
 
 		case "trace":
 			if d.NextArg() {

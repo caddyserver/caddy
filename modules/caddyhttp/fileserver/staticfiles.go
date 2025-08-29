@@ -167,6 +167,8 @@ type FileServer struct {
 	// If set, file Etags will be read from sidecar files
 	// with any of these suffixes, instead of generating
 	// our own Etag.
+	// Keep in mind that the Etag values in the files have to be quoted as per RFC7232.
+	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -186,7 +188,7 @@ func (FileServer) CaddyModule() caddy.ModuleInfo {
 func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	fsrv.logger = ctx.Logger()
 
-	fsrv.fsmap = ctx.Filesystems()
+	fsrv.fsmap = ctx.FileSystems()
 
 	if fsrv.FileSystem == "" {
 		fsrv.FileSystem = "{http.vars.fs}"
@@ -204,7 +206,7 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	// absolute paths before the server starts for very slight performance improvement
 	for i, h := range fsrv.Hide {
 		if !strings.Contains(h, "{") && strings.Contains(h, separator) {
-			if abs, err := filepath.Abs(h); err == nil {
+			if abs, err := caddy.FastAbs(h); err == nil {
 				fsrv.Hide[i] = abs
 			}
 		}
@@ -300,8 +302,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	info, err := fs.Stat(fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fsrv.notFound(w, r, next)
+		} else if errors.Is(err, fs.ErrInvalid) {
+			return caddyhttp.Error(http.StatusBadRequest, err)
 		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
@@ -453,7 +457,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+
+		// stdlib won't set Content-Length if Content-Encoding is set.
+		// set Range header if it's not present will force Content-Length to be set
+		if r.Header.Get("Range") == "" {
+			r.Header.Set("Range", "bytes=0-")
+			// remove this header, because it is not part of the request
+			defer r.Header.Del("Range")
+		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -611,6 +622,11 @@ func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, nam
 		return originalErr
 	}
 
+	var pathErr *fs.PathError
+	if errors.As(originalErr, &pathErr) {
+		return fs.ErrInvalid
+	}
+
 	parts := strings.Split(name, separator)
 	for i := range parts {
 		if parts[i] == "" {
@@ -636,7 +652,7 @@ func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
 		if strings.Contains(hide[i], separator) {
-			abs, err := filepath.Abs(hide[i])
+			abs, err := caddy.FastAbs(hide[i])
 			if err == nil {
 				hide[i] = abs
 			}
@@ -655,7 +671,7 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	// all path comparisons use the complete absolute path if possible
-	filenameAbs, err := filepath.Abs(filename)
+	filenameAbs, err := caddy.FastAbs(filename)
 	if err == nil {
 		filename = filenameAbs
 	}
@@ -677,11 +693,11 @@ func fileHidden(filename string, hide []string) bool {
 					return true
 				}
 			}
-		} else if strings.HasPrefix(filename, h) {
+		} else if after, ok := strings.CutPrefix(filename, h); ok {
 			// if there is a separator in h, and filename is exactly
 			// prefixed with h, then we can do a prefix match so that
 			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := strings.TrimPrefix(filename, h)
+			withoutPrefix := after
 			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}

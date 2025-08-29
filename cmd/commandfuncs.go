@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -171,6 +172,10 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
+	logger := caddy.Log()
+	undoMaxProcs := setResourceLimits(logger)
+	defer undoMaxProcs()
+
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
 	resumeFlag := fl.Bool("resume")
@@ -196,18 +201,18 @@ func cmdRun(fl Flags) (int, error) {
 		config, err = os.ReadFile(caddy.ConfigAutosavePath)
 		if errors.Is(err, fs.ErrNotExist) {
 			// not a bad error; just can't resume if autosave file doesn't exist
-			caddy.Log().Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
+			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
-				caddy.Log().Info("resuming from last configuration",
+				logger.Info("resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			} else {
 				// if they also specified a config file, user should be aware that we're not
 				// using it (doing so could lead to data/config loss by overwriting!)
-				caddy.Log().Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
+				logger.Warn("--config and --resume flags were used together; ignoring --config and resuming from last configuration",
 					zap.String("autosave_file", caddy.ConfigAutosavePath))
 			}
 		}
@@ -225,7 +230,7 @@ func cmdRun(fl Flags) (int, error) {
 	if pidfileFlag != "" {
 		err := caddy.PIDFile(pidfileFlag)
 		if err != nil {
-			caddy.Log().Error("unable to write PID file",
+			logger.Error("unable to write PID file",
 				zap.String("pidfile", pidfileFlag),
 				zap.Error(err))
 		}
@@ -236,7 +241,7 @@ func cmdRun(fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
-	caddy.Log().Info("serving initial configuration")
+	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
 	// of the server, do so now by echoing back contents of stdin
@@ -272,15 +277,15 @@ func cmdRun(fl Flags) (int, error) {
 	switch runtime.GOOS {
 	case "windows":
 		if os.Getenv("HOME") == "" && os.Getenv("USERPROFILE") == "" && !hasXDG {
-			caddy.Log().Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
+			logger.Warn("neither HOME nor USERPROFILE environment variables are set - please fix; some assets might be stored in ./caddy")
 		}
 	case "plan9":
 		if os.Getenv("home") == "" && !hasXDG {
-			caddy.Log().Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$home environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	default:
 		if os.Getenv("HOME") == "" && !hasXDG {
-			caddy.Log().Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
+			logger.Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
 
@@ -436,15 +441,19 @@ func cmdEnviron(fl Flags) (int, error) {
 }
 
 func cmdAdaptConfig(fl Flags) (int, error) {
-	inputFlag := fl.String("config")
+	configFlag := fl.String("config")
 	adapterFlag := fl.String("adapter")
 	prettyFlag := fl.Bool("pretty")
 	validateFlag := fl.Bool("validate")
 
 	var err error
-	inputFlag, err = configFileWithRespectToDefault(caddy.Log(), inputFlag)
+	configFlag, err = configFileWithRespectToDefault(caddy.Log(), configFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
+	}
+	if configFlag == "" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
 	}
 
 	// load all additional envs as soon as possible
@@ -464,13 +473,19 @@ func cmdAdaptConfig(fl Flags) (int, error) {
 			fmt.Errorf("unrecognized config adapter: %s", adapterFlag)
 	}
 
-	input, err := os.ReadFile(inputFlag)
+	var input []byte
+	// read from stdin if the file name is "-"
+	if configFlag == "-" {
+		input, err = io.ReadAll(os.Stdin)
+	} else {
+		input, err = os.ReadFile(configFlag)
+	}
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("reading input file: %v", err)
 	}
 
-	opts := map[string]any{"filename": inputFlag}
+	opts := map[string]any{"filename": configFlag}
 
 	adaptedConfig, warnings, err := cfgAdapter.Adapt(input, opts)
 	if err != nil {
@@ -560,10 +575,15 @@ func cmdValidateConfig(fl Flags) (int, error) {
 
 func cmdFmt(fl Flags) (int, error) {
 	configFile := fl.Arg(0)
-	if configFile == "" {
-		configFile = "Caddyfile"
+	configFlag := fl.String("config")
+	if (len(fl.Args()) > 1) || (configFlag != "" && configFile != "") {
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("fmt does not support multiple files %s %s", configFlag, strings.Join(fl.Args(), " "))
 	}
-
+	if configFile == "" && configFlag == "" {
+		configFile = "Caddyfile"
+	} else if configFile == "" {
+		configFile = configFlag
+	}
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
@@ -694,9 +714,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	for k, v := range headers {
-		req.Header[k] = v
-	}
+	maps.Copy(req.Header, headers)
 
 	// make an HTTP client that dials our network type, since admin
 	// endpoints aren't always TCP, which is what the default transport

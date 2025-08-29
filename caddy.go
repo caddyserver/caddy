@@ -81,13 +81,17 @@ type Config struct {
 	// associated value.
 	AppsRaw ModuleMap `json:"apps,omitempty" caddy:"namespace="`
 
-	apps    map[string]App
-	storage certmagic.Storage
+	apps map[string]App
+
+	// failedApps is a map of apps that failed to provision with their underlying error.
+	failedApps   map[string]error
+	storage      certmagic.Storage
+	eventEmitter eventEmitter
 
 	cancelFunc context.CancelFunc
 
-	// filesystems is a dict of filesystems that will later be loaded from and added to.
-	filesystems FileSystems
+	// fileSystems is a dict of fileSystems that will later be loaded from and added to.
+	fileSystems FileSystems
 }
 
 // App is a thing that Caddy runs.
@@ -399,12 +403,26 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 func run(newCfg *Config, start bool) (Context, error) {
 	ctx, err := provisionContext(newCfg, start)
 	if err != nil {
+		globalMetrics.configSuccess.Set(0)
 		return ctx, err
 	}
 
 	if !start {
 		return ctx, nil
 	}
+
+	defer func() {
+		// if newCfg fails to start completely, clean up the already provisioned modules
+		// partially copied from provisionContext
+		if err != nil {
+			globalMetrics.configSuccess.Set(0)
+			ctx.cfg.cancelFunc()
+
+			if currentCtx.cfg != nil {
+				certmagic.Default.Storage = currentCtx.cfg.storage
+			}
+		}
+	}()
 
 	// Provision any admin routers which may need to access
 	// some of the other apps at runtime
@@ -437,10 +455,16 @@ func run(newCfg *Config, start bool) (Context, error) {
 	if err != nil {
 		return ctx, err
 	}
+	globalMetrics.configSuccess.Set(1)
+	globalMetrics.configSuccessTime.SetToCurrentTime()
+
+	// TODO: This event is experimental and subject to change.
+	ctx.emitEvent("started", nil)
 
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
-	return ctx, finishSettingUp(ctx, ctx.cfg)
+	err = finishSettingUp(ctx, ctx.cfg)
+	return ctx, err
 }
 
 // provisionContext creates a new context from the given configuration and provisions
@@ -471,6 +495,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
 	defer func() {
 		if err != nil {
+			globalMetrics.configSuccess.Set(0)
 			// if there were any errors during startup,
 			// we should cancel the new context we created
 			// since the associated config won't be used;
@@ -495,19 +520,12 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return ctx, err
 	}
 
-	// start the admin endpoint (and stop any prior one)
-	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg)
-		if err != nil {
-			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	// create the new filesystem map
-	newCfg.filesystems = &filesystems.FilesystemMap{}
+	newCfg.fileSystems = &filesystems.FileSystemMap{}
 
 	// prepare the new config for use
 	newCfg.apps = make(map[string]App)
+	newCfg.failedApps = make(map[string]error)
 
 	// set up global storage and make it CertMagic's default storage, too
 	err = func() error {
@@ -532,6 +550,14 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	}()
 	if err != nil {
 		return ctx, err
+	}
+
+	// start the admin endpoint (and stop any prior one)
+	if replaceAdminServer {
+		err = replaceLocalAdminServer(newCfg, ctx)
+		if err != nil {
+			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
+		}
 	}
 
 	// Load and Provision each app and their submodules
@@ -691,6 +717,9 @@ func unsyncedStop(ctx Context) {
 		return
 	}
 
+	// TODO: This event is experimental and subject to change.
+	ctx.emitEvent("stopping", nil)
+
 	// stop each app
 	for name, a := range ctx.cfg.apps {
 		err := a.Stop()
@@ -720,8 +749,10 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
-	// let the rest of the program know we're quitting
-	atomic.StoreInt32(exiting, 1)
+	// let the rest of the program know we're quitting; only do it once
+	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+		return
+	}
 
 	// give the OS or service/process manager our 2 weeks' notice: we quit
 	if err := notify.Stopping(); err != nil {
@@ -1030,6 +1061,98 @@ func Version() (simple, full string) {
 
 	return
 }
+
+// Event represents something that has happened or is happening.
+// An Event value is not synchronized, so it should be copied if
+// being used in goroutines.
+//
+// EXPERIMENTAL: Events are subject to change.
+type Event struct {
+	// If non-nil, the event has been aborted, meaning
+	// propagation has stopped to other handlers and
+	// the code should stop what it was doing. Emitters
+	// may choose to use this as a signal to adjust their
+	// code path appropriately.
+	Aborted error
+
+	// The data associated with the event. Usually the
+	// original emitter will be the only one to set or
+	// change these values, but the field is exported
+	// so handlers can have full access if needed.
+	// However, this map is not synchronized, so
+	// handlers must not use this map directly in new
+	// goroutines; instead, copy the map to use it in a
+	// goroutine. Data may be nil.
+	Data map[string]any
+
+	id     uuid.UUID
+	ts     time.Time
+	name   string
+	origin Module
+}
+
+// NewEvent creates a new event, but does not emit the event. To emit an
+// event, call Emit() on the current instance of the caddyevents app insteaad.
+//
+// EXPERIMENTAL: Subject to change.
+func NewEvent(ctx Context, name string, data map[string]any) (Event, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return Event{}, fmt.Errorf("generating new event ID: %v", err)
+	}
+	name = strings.ToLower(name)
+	return Event{
+		Data:   data,
+		id:     id,
+		ts:     time.Now(),
+		name:   name,
+		origin: ctx.Module(),
+	}, nil
+}
+
+func (e Event) ID() uuid.UUID        { return e.id }
+func (e Event) Timestamp() time.Time { return e.ts }
+func (e Event) Name() string         { return e.name }
+func (e Event) Origin() Module       { return e.origin } // Returns the module that originated the event. May be nil, usually if caddy core emits the event.
+
+// CloudEvent exports event e as a structure that, when
+// serialized as JSON, is compatible with the
+// CloudEvents spec.
+func (e Event) CloudEvent() CloudEvent {
+	dataJSON, _ := json.Marshal(e.Data)
+	var source string
+	if e.Origin() == nil {
+		source = "caddy"
+	} else {
+		source = string(e.Origin().CaddyModule().ID)
+	}
+	return CloudEvent{
+		ID:              e.id.String(),
+		Source:          source,
+		SpecVersion:     "1.0",
+		Type:            e.name,
+		Time:            e.ts,
+		DataContentType: "application/json",
+		Data:            dataJSON,
+	}
+}
+
+// CloudEvent is a JSON-serializable structure that
+// is compatible with the CloudEvents specification.
+// See https://cloudevents.io.
+// EXPERIMENTAL: Subject to change.
+type CloudEvent struct {
+	ID              string          `json:"id"`
+	Source          string          `json:"source"`
+	SpecVersion     string          `json:"specversion"`
+	Type            string          `json:"type"`
+	Time            time.Time       `json:"time"`
+	DataContentType string          `json:"datacontenttype,omitempty"`
+	Data            json.RawMessage `json:"data,omitempty"`
+}
+
+// ErrEventAborted cancels an event.
+var ErrEventAborted = errors.New("event aborted")
 
 // ActiveContext returns the currently-active context.
 // This function is experimental and might be changed

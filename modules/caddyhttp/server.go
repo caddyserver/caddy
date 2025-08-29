@@ -61,6 +61,7 @@ type Server struct {
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// ReadHeaderTimeout is like ReadTimeout but for request headers.
+	// Default is 1 minute.
 	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
 
 	// WriteTimeout is how long to allow a write to a client. Note
@@ -226,6 +227,7 @@ type Server struct {
 
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
+	// DEPRECATED: Use the app-level `metrics` field.
 	Metrics *Metrics `json:"metrics,omitempty"`
 
 	name string
@@ -233,7 +235,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener
+	listeners           []net.Listener       // stdlib http.Server will close these
+	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
 	events       *caddyevents.App
@@ -243,10 +246,9 @@ type Server struct {
 	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -263,11 +265,11 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
+	// TODO: Scheduled to be removed later because https://github.com/golang/go/pull/56110 has been merged.
 	if r.TLS == nil {
 		// not all requests have a conn (like virtual requests) - see #5698
 		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStateConn); ok {
+			if csc, ok := conn.(connectionStater); ok {
 				r.TLS = new(tls.ConnectionState)
 				*r.TLS = csc.ConnectionState()
 			}
@@ -406,7 +408,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if fields == nil {
 						fields = errFields()
 					}
-
 					c.Write(fields...)
 				}
 			}
@@ -614,22 +615,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
 		s.h3server = &http3.Server{
-			// Currently when closing a http3.Server, only listeners are closed. But caddy reuses these listeners
-			// if possible, requests are still read and handled by the old handler. Close these connections manually.
-			// see issue: https://github.com/caddyserver/caddy/issues/6195
-			// Will interrupt ongoing requests.
-			// TODO: remove the handler wrap after http3.Server.CloseGracefully is implemented, see App.Stop
-			Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				select {
-				case <-s.ctx.Done():
-					if quicConn, ok := request.Context().Value(quicConnCtxKey).(quic.Connection); ok {
-						//nolint:errcheck
-						quicConn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeRequestRejected), "")
-					}
-				default:
-					s.ServeHTTP(writer, request)
-				}
-			}),
+			Handler:        s,
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
@@ -637,11 +623,10 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 				Tracer:   qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
-			ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
-				return context.WithValue(ctx, quicConnCtxKey, c)
-			},
 		}
 	}
+
+	s.quicListeners = append(s.quicListeners, h3ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
@@ -999,10 +984,10 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
-	allValues := strings.Split(strings.Join(values, ","), ",")
+	allValues := strings.SplitSeq(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, part := range allValues {
+	for part := range allValues {
 		// Some proxies may retain the port number, so split if possible
 		host, _, err := net.SplitHostPort(part)
 		if err != nil {
@@ -1097,11 +1082,9 @@ const (
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
 	// For referencing underlying net.Conn
+	// This will eventually be deprecated and not used. To refer to the underlying connection, implement a middleware plugin
+	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
-
-	// For referencing underlying quic.Connection
-	// TODO: export if needed later
-	quicConnCtxKey caddy.CtxKey = "quic_conn"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"

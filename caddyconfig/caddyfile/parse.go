@@ -264,8 +264,13 @@ func (p *parser) addresses() error {
 				return p.Errf("Site addresses cannot contain a comma ',': '%s' - put a space after the comma to separate site addresses", value)
 			}
 
-			token.Text = value
-			p.block.Keys = append(p.block.Keys, token)
+			// After the above, a comma surrounded by spaces would result
+			// in an empty token which we should ignore
+			if value != "" {
+				// Add the token as a site address
+				token.Text = value
+				p.block.Keys = append(p.block.Keys, token)
+			}
 		}
 
 		// Advance token and possibly break out of loop or return error
@@ -374,28 +379,23 @@ func (p *parser) doImport(nesting int) error {
 	if len(blockTokens) > 0 {
 		// use such tokens to create a new dispenser, and then use it to parse each block
 		bd := NewDispenser(blockTokens)
+
+		// one iteration processes one sub-block inside the import
 		for bd.Next() {
-			// see if we can grab a key
-			var currentMappingKey string
-			if bd.Val() == "{" {
+			currentMappingKey := bd.Val()
+
+			if currentMappingKey == "{" {
 				return p.Err("anonymous blocks are not supported")
 			}
-			currentMappingKey = bd.Val()
-			currentMappingTokens := []Token{}
-			// read all args until end of line / {
-			if bd.NextArg() {
+
+			// load up all arguments (if there even are any)
+			currentMappingTokens := bd.RemainingArgsAsTokens()
+
+			// load up the entire block
+			for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
 				currentMappingTokens = append(currentMappingTokens, bd.Token())
-				for bd.NextArg() {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
-				// TODO(elee1766): we don't enter another mapping here because it's annoying to extract the { and } properly.
-				// maybe someone can do that in the future
-			} else {
-				// attempt to enter a block and add tokens to the currentMappingTokens
-				for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
 			}
+
 			blockMapping[currentMappingKey] = currentMappingTokens
 		}
 	}
@@ -418,7 +418,7 @@ func (p *parser) doImport(nesting int) error {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
 		// list of matching filenames
-		absFile, err := filepath.Abs(p.Dispenser.File())
+		absFile, err := caddy.FastAbs(p.Dispenser.File())
 		if err != nil {
 			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
 		}
@@ -617,7 +617,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 
 	// Tack the file path onto these tokens so errors show the imported file's name
 	// (we use full, absolute path to avoid bugs: issue #1892)
-	filename, err := filepath.Abs(importFile)
+	filename, err := caddy.FastAbs(importFile)
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}

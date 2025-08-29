@@ -69,12 +69,13 @@ func TestServer_LogRequest(t *testing.T) {
 	}`, buf.String())
 }
 
-func TestServer_LogRequest_WithTraceID(t *testing.T) {
+func TestServer_LogRequest_WithTrace(t *testing.T) {
 	s := &Server{}
 
 	extra := new(ExtraLogFields)
 	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
 	extra.Add(zap.String("traceID", "1234567890abcdef"))
+	extra.Add(zap.String("spanID", "12345678"))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -93,7 +94,8 @@ func TestServer_LogRequest_WithTraceID(t *testing.T) {
 		"msg":"handled request", "level":"info", "bytes_read":0,
 		"duration":"50ms", "resp_headers": {}, "size":0,
 		"status":0, "user_id":"",
-		"traceID":"1234567890abcdef"
+		"traceID":"1234567890abcdef",
+		"spanID":"12345678"
 	}`, buf.String())
 }
 
@@ -114,9 +116,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -137,19 +137,18 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 
 	accLog := zap.NewNop()
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
 
-func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
+func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	s := &Server{}
 
 	extra := new(ExtraLogFields)
 	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, extra)
 	extra.Add(zap.String("traceID", "1234567890abcdef"))
+	extra.Add(zap.String("spanID", "12345678"))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -162,12 +161,11 @@ func BenchmarkServer_LogRequest_WithTraceID(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
+
 func TestServer_TrustedRealClientIP_NoTrustedHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.0.2.1:12345"
