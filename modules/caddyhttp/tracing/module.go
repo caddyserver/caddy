@@ -25,7 +25,8 @@ func init() {
 type Tracing struct {
 	// SpanName is a span name. It should follow the naming guidelines here:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
-	SpanName string `json:"span"`
+	SpanName                 string `json:"span"`
+	InjectServerTimingHeader bool   `json:"server_timing,omitempty"`
 
 	// otel implements opentelemetry related logic.
 	otel openTelemetryWrapper
@@ -46,7 +47,7 @@ func (ot *Tracing) Provision(ctx caddy.Context) error {
 	ot.logger = ctx.Logger()
 
 	var err error
-	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName)
+	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName, ot.InjectServerTimingHeader)
 
 	return err
 }
@@ -68,6 +69,7 @@ func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
 //	tracing {
+//	    [server_timing]
 //	    [span <span_name>]
 //	}
 func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -94,12 +96,19 @@ func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	for d.NextBlock(0) {
-		if dst, ok := paramsMap[d.Val()]; ok {
-			if err := setParameter(d, dst); err != nil {
-				return err
+		switch d.Val() {
+		case "server_timing":
+			if d.NextArg() {
+				ot.InjectServerTimingHeader = true
 			}
-		} else {
-			return d.ArgErr()
+		default:
+			if dst, ok := paramsMap[d.Val()]; ok {
+				if err := setParameter(d, dst); err != nil {
+					return err
+				}
+			} else {
+				return d.ArgErr()
+			}
 		}
 	}
 	return nil

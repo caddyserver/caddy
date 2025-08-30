@@ -34,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -866,7 +867,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// do the round-trip
 	start := time.Now()
-	res, err := h.Transport.RoundTrip(req)
+	otelTransport := otelhttp.NewTransport(h.Transport)
+	res, err := otelTransport.RoundTrip(req)
 	duration := time.Since(start)
 
 	// record that the round trip is done for the 1xx response handler
