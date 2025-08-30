@@ -95,7 +95,7 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 		caddyhttp.SetVar(ctx, "trace_id", traceID)
 		// Add a span_id placeholder, accessible via `{http.vars.span_id}`.
 		caddyhttp.SetVar(ctx, "span_id", spanID)
-		// Add the trace id to the log fields for the request.
+		// Add the traceID and spanID to the log fields for the request.
 		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
 			extra.Add(zap.String("traceID", traceID))
 			extra.Add(zap.String("spanID", spanID))
