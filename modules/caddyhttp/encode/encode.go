@@ -92,6 +92,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/font*",
 					"application/geo+json*",
 					"application/graphql+json*",
+					"application/graphql-response+json*",
 					"application/javascript*",
 					"application/json*",
 					"application/ld+json*",
