@@ -257,6 +257,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
 			h.RequestBuffers = 4096
 		}
+		h.Transport = otelhttp.NewTransport(h.Transport)
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
 		mod, err := ctx.LoadModule(h.LoadBalancing, "SelectionPolicyRaw")
@@ -867,8 +868,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// do the round-trip
 	start := time.Now()
-	otelTransport := otelhttp.NewTransport(h.Transport)
-	res, err := otelTransport.RoundTrip(req)
+	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
 
 	// record that the round trip is done for the 1xx response handler
