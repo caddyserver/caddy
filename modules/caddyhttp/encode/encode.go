@@ -177,7 +177,17 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			break
 		}
 	}
-	return next.ServeHTTP(w, r)
+
+	err := next.ServeHTTP(w, r)
+	// If there was an error, disable encoding completely
+	// This prevents corruption when handle_errors processes the response
+	if err != nil {
+		if ew, ok := w.(*responseWriter); ok {
+			ew.disabled = true
+		}
+	}
+
+	return err
 }
 
 func (enc *Encode) addEncoding(e Encoding) error {
@@ -233,6 +243,7 @@ type responseWriter struct {
 	statusCode   int
 	wroteHeader  bool
 	isConnect    bool
+	disabled     bool // disable encoding (for error responses)
 }
 
 // WriteHeader stores the status to write when the time comes
@@ -426,6 +437,13 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
 	hdr := rw.Header()
+
+	// Don't initialize encoder for error responses
+	// This prevents response corruption when handle_errors is used
+	if rw.disabled {
+		return
+	}
+
 	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
