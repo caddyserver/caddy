@@ -436,13 +436,13 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	hdr := rw.Header()
-
 	// Don't initialize encoder for error responses
 	// This prevents response corruption when handle_errors is used
 	if rw.disabled {
 		return
 	}
+
+	hdr := rw.Header()
 
 	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
