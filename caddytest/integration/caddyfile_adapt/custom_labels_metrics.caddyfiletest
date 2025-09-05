@@ -1,0 +1,47 @@
+{
+	metrics {
+		labels {
+			proto "{http.request.proto}"
+			method "{http.request.method}"
+			client_ip "{http.request.remote}"
+			host "{http.request.host}"
+		}
+	}
+}
+
+:8080 {
+	respond "Hello World" 200
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello World",
+									"handler": "static_response",
+									"status_code": 200
+								}
+							]
+						}
+					]
+				}
+			},
+			"metrics": {
+				"labels": {
+					"client_ip": "{http.request.remote}",
+					"host": "{http.request.host}",
+					"method": "{http.request.method}",
+					"proto": "{http.request.proto}"
+				}
+			}
+		}
+	}
+} 
