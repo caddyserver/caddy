@@ -314,14 +314,8 @@ func getFdByName(name string) (int, error) {
 	}
 
 	fdNamesStr := os.Getenv("LISTEN_FDNAMES")
-	fdCountStr := os.Getenv("LISTEN_FDS")
-
 	if fdNamesStr == "" {
 		return 0, fmt.Errorf("LISTEN_FDNAMES environment variable not set")
-	}
-
-	if fdCountStr == "" {
-		return 0, fmt.Errorf("LISTEN_FDS environment variable not set")
 	}
 
 	// Parse the socket names

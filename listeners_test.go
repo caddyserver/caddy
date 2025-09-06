@@ -658,7 +658,6 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 func TestGetFdByName(t *testing.T) {
 	// Save original environment
 	originalFdNames := os.Getenv("LISTEN_FDNAMES")
-	originalFds := os.Getenv("LISTEN_FDS")
 
 	// Restore environment after test
 	defer func() {
@@ -667,17 +666,11 @@ func TestGetFdByName(t *testing.T) {
 		} else {
 			os.Unsetenv("LISTEN_FDNAMES")
 		}
-		if originalFds != "" {
-			os.Setenv("LISTEN_FDS", originalFds)
-		} else {
-			os.Unsetenv("LISTEN_FDS")
-		}
 	}()
 
 	tests := []struct {
 		name        string
 		fdNames     string
-		fdCount     string
 		socketName  string
 		expectedFd  int
 		expectError bool
@@ -685,56 +678,42 @@ func TestGetFdByName(t *testing.T) {
 		{
 			name:       "simple http socket",
 			fdNames:    "http",
-			fdCount:    "1",
 			socketName: "http",
 			expectedFd: 3,
 		},
 		{
 			name:       "multiple sockets - first",
 			fdNames:    "http:https:dns",
-			fdCount:    "3",
 			socketName: "http",
 			expectedFd: 3,
 		},
 		{
 			name:       "multiple sockets - second",
 			fdNames:    "http:https:dns",
-			fdCount:    "3",
 			socketName: "https",
 			expectedFd: 4,
 		},
 		{
 			name:       "multiple sockets - third",
 			fdNames:    "http:https:dns",
-			fdCount:    "3",
 			socketName: "dns",
 			expectedFd: 5,
 		},
 		{
 			name:        "socket not found",
 			fdNames:     "http:https",
-			fdCount:     "2",
 			socketName:  "missing",
 			expectError: true,
 		},
 		{
 			name:        "empty socket name",
 			fdNames:     "http",
-			fdCount:     "1",
 			socketName:  "",
 			expectError: true,
 		},
 		{
 			name:        "missing LISTEN_FDNAMES",
 			fdNames:     "",
-			fdCount:     "1",
-			socketName:  "http",
-			expectError: true,
-		},
-		{
-			name:        "missing LISTEN_FDS",
-			fdNames:     "http",
-			fdCount:     "",
 			socketName:  "http",
 			expectError: true,
 		},
@@ -747,11 +726,6 @@ func TestGetFdByName(t *testing.T) {
 				os.Setenv("LISTEN_FDNAMES", tc.fdNames)
 			} else {
 				os.Unsetenv("LISTEN_FDNAMES")
-			}
-			if tc.fdCount != "" {
-				os.Setenv("LISTEN_FDS", tc.fdCount)
-			} else {
-				os.Unsetenv("LISTEN_FDS")
 			}
 
 			// Test the function
@@ -777,23 +751,16 @@ func TestGetFdByName(t *testing.T) {
 func TestParseNetworkAddressFdName(t *testing.T) {
 	// Save and restore environment
 	originalFdNames := os.Getenv("LISTEN_FDNAMES")
-	originalFds := os.Getenv("LISTEN_FDS")
 	defer func() {
 		if originalFdNames != "" {
 			os.Setenv("LISTEN_FDNAMES", originalFdNames)
 		} else {
 			os.Unsetenv("LISTEN_FDNAMES")
 		}
-		if originalFds != "" {
-			os.Setenv("LISTEN_FDS", originalFds)
-		} else {
-			os.Unsetenv("LISTEN_FDS")
-		}
 	}()
 
 	// Set up test environment
 	os.Setenv("LISTEN_FDNAMES", "http:https:dns")
-	os.Setenv("LISTEN_FDS", "3")
 
 	tests := []struct {
 		input      string
