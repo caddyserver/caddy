@@ -305,6 +305,39 @@ func IsFdNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "fd")
 }
 
+// getFdByName returns the file descriptor number for the given
+// socket name from systemd's LISTEN_FDNAMES environment variable.
+// Socket names are provided by systemd via socket activation.
+func getFdByName(name string) (int, error) {
+	if name == "" {
+		return 0, fmt.Errorf("socket name cannot be empty")
+	}
+
+	fdNamesStr := os.Getenv("LISTEN_FDNAMES")
+	fdCountStr := os.Getenv("LISTEN_FDS")
+
+	if fdNamesStr == "" {
+		return 0, fmt.Errorf("LISTEN_FDNAMES environment variable not set")
+	}
+
+	if fdCountStr == "" {
+		return 0, fmt.Errorf("LISTEN_FDS environment variable not set")
+	}
+
+	// Parse the socket names
+	names := strings.Split(fdNamesStr, ":")
+
+	// Find the index of the requested name
+	for i, fdName := range names {
+		if fdName == name {
+			// File descriptors start at 3 (after stdin=0, stdout=1, stderr=2)
+			return 3 + i, nil
+		}
+	}
+
+	return 0, fmt.Errorf("socket name '%s' not found in LISTEN_FDNAMES", name)
+}
+
 // ParseNetworkAddress parses addr into its individual
 // components. The input string is expected to be of
 // the form "network/host:port-range" where any part is
@@ -336,9 +369,27 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		}, err
 	}
 	if IsFdNetwork(network) {
+		fdAddr := host
+
+		// Handle named socket activation (fdname/name, fdgramname/name)
+		if strings.HasPrefix(network, "fdname") || strings.HasPrefix(network, "fdgramname") {
+			fdNum, err := getFdByName(host)
+			if err != nil {
+				return NetworkAddress{}, fmt.Errorf("named socket activation: %v", err)
+			}
+			fdAddr = strconv.Itoa(fdNum)
+
+			// Normalize network to standard fd/fdgram
+			if strings.HasPrefix(network, "fdname") {
+				network = "fd"
+			} else {
+				network = "fdgram"
+			}
+		}
+
 		return NetworkAddress{
 			Network: network,
-			Host:    host,
+			Host:    fdAddr,
 		}, nil
 	}
 	var start, end uint64

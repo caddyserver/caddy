@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
@@ -649,6 +650,227 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		// fileMode.Perm().String() parses 0 to "----------"
 		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
+		}
+	}
+}
+
+// TestGetFdByName tests the getFdByName function for systemd socket activation.
+func TestGetFdByName(t *testing.T) {
+	// Save original environment
+	originalFdNames := os.Getenv("LISTEN_FDNAMES")
+	originalFds := os.Getenv("LISTEN_FDS")
+
+	// Restore environment after test
+	defer func() {
+		if originalFdNames != "" {
+			os.Setenv("LISTEN_FDNAMES", originalFdNames)
+		} else {
+			os.Unsetenv("LISTEN_FDNAMES")
+		}
+		if originalFds != "" {
+			os.Setenv("LISTEN_FDS", originalFds)
+		} else {
+			os.Unsetenv("LISTEN_FDS")
+		}
+	}()
+
+	tests := []struct {
+		name        string
+		fdNames     string
+		fdCount     string
+		socketName  string
+		expectedFd  int
+		expectError bool
+	}{
+		{
+			name:       "simple http socket",
+			fdNames:    "http",
+			fdCount:    "1",
+			socketName: "http",
+			expectedFd: 3,
+		},
+		{
+			name:       "multiple sockets - first",
+			fdNames:    "http:https:dns",
+			fdCount:    "3",
+			socketName: "http",
+			expectedFd: 3,
+		},
+		{
+			name:       "multiple sockets - second",
+			fdNames:    "http:https:dns",
+			fdCount:    "3",
+			socketName: "https",
+			expectedFd: 4,
+		},
+		{
+			name:       "multiple sockets - third",
+			fdNames:    "http:https:dns",
+			fdCount:    "3",
+			socketName: "dns",
+			expectedFd: 5,
+		},
+		{
+			name:        "socket not found",
+			fdNames:     "http:https",
+			fdCount:     "2",
+			socketName:  "missing",
+			expectError: true,
+		},
+		{
+			name:        "empty socket name",
+			fdNames:     "http",
+			fdCount:     "1",
+			socketName:  "",
+			expectError: true,
+		},
+		{
+			name:        "missing LISTEN_FDNAMES",
+			fdNames:     "",
+			fdCount:     "1",
+			socketName:  "http",
+			expectError: true,
+		},
+		{
+			name:        "missing LISTEN_FDS",
+			fdNames:     "http",
+			fdCount:     "",
+			socketName:  "http",
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up environment
+			if tc.fdNames != "" {
+				os.Setenv("LISTEN_FDNAMES", tc.fdNames)
+			} else {
+				os.Unsetenv("LISTEN_FDNAMES")
+			}
+			if tc.fdCount != "" {
+				os.Setenv("LISTEN_FDS", tc.fdCount)
+			} else {
+				os.Unsetenv("LISTEN_FDS")
+			}
+
+			// Test the function
+			fd, err := getFdByName(tc.socketName)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+				if fd != tc.expectedFd {
+					t.Errorf("Expected FD %d but got %d", tc.expectedFd, fd)
+				}
+			}
+		})
+	}
+}
+
+// TestParseNetworkAddressFdName tests parsing of fdname and fdgramname addresses.
+func TestParseNetworkAddressFdName(t *testing.T) {
+	// Save and restore environment
+	originalFdNames := os.Getenv("LISTEN_FDNAMES")
+	originalFds := os.Getenv("LISTEN_FDS")
+	defer func() {
+		if originalFdNames != "" {
+			os.Setenv("LISTEN_FDNAMES", originalFdNames)
+		} else {
+			os.Unsetenv("LISTEN_FDNAMES")
+		}
+		if originalFds != "" {
+			os.Setenv("LISTEN_FDS", originalFds)
+		} else {
+			os.Unsetenv("LISTEN_FDS")
+		}
+	}()
+
+	// Set up test environment
+	os.Setenv("LISTEN_FDNAMES", "http:https:dns")
+	os.Setenv("LISTEN_FDS", "3")
+
+	tests := []struct {
+		input      string
+		expectAddr NetworkAddress
+		expectErr  bool
+	}{
+		{
+			input: "fdname/http",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdname/https",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "4",
+			},
+		},
+		{
+			input: "fdname/dns",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "5",
+			},
+		},
+		{
+			input: "fdgramname/http",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdgramname/https",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "4",
+			},
+		},
+		{
+			input:     "fdname/nonexistent",
+			expectErr: true,
+		},
+		{
+			input:     "fdgramname/nonexistent",
+			expectErr: true,
+		},
+		// Test that old fd/N syntax still works
+		{
+			input: "fd/7",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "7",
+			},
+		},
+		{
+			input: "fdgram/8",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "8",
+			},
+		},
+	}
+
+	for i, tc := range tests {
+		actualAddr, err := ParseNetworkAddress(tc.input)
+
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d (%s): Expected error but got none", i, tc.input)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d (%s): Expected no error but got: %v", i, tc.input, err)
+		}
+		if !tc.expectErr && !reflect.DeepEqual(tc.expectAddr, actualAddr) {
+			t.Errorf("Test %d (%s): Expected %+v but got %+v", i, tc.input, tc.expectAddr, actualAddr)
 		}
 	}
 }
