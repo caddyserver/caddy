@@ -23,6 +23,10 @@ type Metrics struct {
 	// managed by Caddy.
 	PerHost bool `json:"per_host,omitempty"`
 
+	// Enable per-protocol metrics. Enabling this option adds
+	// protocol information (http/1.1, http/2, http/3) to metrics labels.
+	PerProto bool `json:"per_proto,omitempty"`
+
 	init        sync.Once
 	httpMetrics *httpMetrics `json:"-"`
 }
@@ -44,6 +48,10 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	if metrics.PerHost {
 		basicLabels = append(basicLabels, "host")
 	}
+	if metrics.PerProto {
+		basicLabels = append(basicLabels, "proto")
+	}
+
 	metrics.httpMetrics.requestInFlight = promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -71,6 +79,10 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	if metrics.PerHost {
 		httpLabels = append(httpLabels, "host")
 	}
+	if metrics.PerProto {
+		httpLabels = append(httpLabels, "proto")
+	}
+
 	metrics.httpMetrics.requestDuration = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -136,6 +148,12 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if h.metrics.PerHost {
 		labels["host"] = strings.ToLower(r.Host)
 		statusLabels["host"] = strings.ToLower(r.Host)
+	}
+
+	if h.metrics.PerProto {
+		proto := getProtocolInfo(r)
+		labels["proto"] = proto
+		statusLabels["proto"] = proto
 	}
 
 	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
@@ -211,4 +229,20 @@ func computeApproximateRequestSize(r *http.Request) int {
 		s += int(r.ContentLength)
 	}
 	return s
+}
+
+func getProtocolInfo(r *http.Request) string {
+	switch r.ProtoMajor {
+	case 3:
+		return "http/3"
+	case 2:
+		return "http/2"
+	case 1:
+		if r.ProtoMinor == 1 {
+			return "http/1.1"
+		}
+		return "http/1.0"
+	default:
+		return "unknown"
+	}
 }
