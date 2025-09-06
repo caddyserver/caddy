@@ -682,21 +682,63 @@ func TestGetFdByName(t *testing.T) {
 			expectedFd: 3,
 		},
 		{
-			name:       "multiple sockets - first",
+			name:       "multiple different sockets - first",
 			fdNames:    "http:https:dns",
 			socketName: "http",
 			expectedFd: 3,
 		},
 		{
-			name:       "multiple sockets - second",
+			name:       "multiple different sockets - second",
 			fdNames:    "http:https:dns",
 			socketName: "https",
 			expectedFd: 4,
 		},
 		{
-			name:       "multiple sockets - third",
+			name:       "multiple different sockets - third",
 			fdNames:    "http:https:dns",
 			socketName: "dns",
+			expectedFd: 5,
+		},
+		{
+			name:       "duplicate names - first occurrence (no index)",
+			fdNames:    "web:web:api",
+			socketName: "web",
+			expectedFd: 3,
+		},
+		{
+			name:       "duplicate names - first occurrence (explicit index 0)",
+			fdNames:    "web:web:api",
+			socketName: "web:0",
+			expectedFd: 3,
+		},
+		{
+			name:       "duplicate names - second occurrence (index 1)",
+			fdNames:    "web:web:api",
+			socketName: "web:1",
+			expectedFd: 4,
+		},
+		{
+			name:       "complex duplicates - first api",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "api:0",
+			expectedFd: 4,
+		},
+		{
+			name:       "complex duplicates - second api",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "api:1",
+			expectedFd: 6,
+		},
+		{
+			name:       "complex duplicates - first web",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "web:0",
+			expectedFd: 3,
+		},
+		{
+			name:       "complex duplicates - second web",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "web:1",
 			expectedFd: 5,
 		},
 		{
@@ -715,6 +757,30 @@ func TestGetFdByName(t *testing.T) {
 			name:        "missing LISTEN_FDNAMES",
 			fdNames:     "",
 			socketName:  "http",
+			expectError: true,
+		},
+		{
+			name:        "index out of range",
+			fdNames:     "web:web",
+			socketName:  "web:2",
+			expectError: true,
+		},
+		{
+			name:        "negative index",
+			fdNames:     "web",
+			socketName:  "web:-1",
+			expectError: true,
+		},
+		{
+			name:        "invalid index format",
+			fdNames:     "web",
+			socketName:  "web:abc",
+			expectError: true,
+		},
+		{
+			name:        "too many colons",
+			fdNames:     "web",
+			socketName:  "web:0:extra",
 			expectError: true,
 		},
 	}
@@ -789,6 +855,20 @@ func TestParseNetworkAddressFdName(t *testing.T) {
 			},
 		},
 		{
+			input: "fdname/http:0",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdname/https:0",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "4",
+			},
+		},
+		{
 			input: "fdgramname/http",
 			expectAddr: NetworkAddress{
 				Network: "fdgram",
@@ -803,11 +883,26 @@ func TestParseNetworkAddressFdName(t *testing.T) {
 			},
 		},
 		{
+			input: "fdgramname/http:0",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "3",
+			},
+		},
+		{
 			input:     "fdname/nonexistent",
 			expectErr: true,
 		},
 		{
 			input:     "fdgramname/nonexistent",
+			expectErr: true,
+		},
+		{
+			input:     "fdname/http:99",
+			expectErr: true,
+		},
+		{
+			input:     "fdname/invalid:abc",
 			expectErr: true,
 		},
 		// Test that old fd/N syntax still works

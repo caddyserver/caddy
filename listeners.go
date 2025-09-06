@@ -38,6 +38,10 @@ import (
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
+// listenFdsStart is the first file descriptor number for systemd socket activation.
+// File descriptors 0, 1, 2 are reserved for stdin, stdout, stderr.
+const listenFdsStart = 3
+
 // NetworkAddress represents one or more network addresses.
 // It contains the individual components for a parsed network
 // address of the form accepted by ParseNetworkAddress().
@@ -308,8 +312,12 @@ func IsFdNetwork(netw string) bool {
 // getFdByName returns the file descriptor number for the given
 // socket name from systemd's LISTEN_FDNAMES environment variable.
 // Socket names are provided by systemd via socket activation.
-func getFdByName(name string) (int, error) {
-	if name == "" {
+//
+// The name can optionally include an index to handle multiple sockets
+// with the same name: "web:0" for first, "web:1" for second, etc.
+// If no index is specified, defaults to index 0 (first occurrence).
+func getFdByName(nameWithIndex string) (int, error) {
+	if nameWithIndex == "" {
 		return 0, fmt.Errorf("socket name cannot be empty")
 	}
 
@@ -318,18 +326,45 @@ func getFdByName(name string) (int, error) {
 		return 0, fmt.Errorf("LISTEN_FDNAMES environment variable not set")
 	}
 
-	// Parse the socket names
-	names := strings.Split(fdNamesStr, ":")
+	// Parse name and optional index
+	parts := strings.Split(nameWithIndex, ":")
+	if len(parts) > 2 {
+		return 0, fmt.Errorf("invalid socket name format '%s': too many colons", nameWithIndex)
+	}
 
-	// Find the index of the requested name
-	for i, fdName := range names {
-		if fdName == name {
-			// File descriptors start at 3 (after stdin=0, stdout=1, stderr=2)
-			return 3 + i, nil
+	name := parts[0]
+	targetIndex := 0
+
+	if len(parts) > 1 {
+		var err error
+		targetIndex, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, fmt.Errorf("invalid socket index '%s': %v", parts[1], err)
+		}
+		if targetIndex < 0 {
+			return 0, fmt.Errorf("socket index cannot be negative: %d", targetIndex)
 		}
 	}
 
-	return 0, fmt.Errorf("socket name '%s' not found in LISTEN_FDNAMES", name)
+	// Parse the socket names
+	names := strings.Split(fdNamesStr, ":")
+
+	// Find the Nth occurrence of the requested name
+	matchCount := 0
+	for i, fdName := range names {
+		if fdName == name {
+			if matchCount == targetIndex {
+				return listenFdsStart + i, nil
+			}
+			matchCount++
+		}
+	}
+
+	if matchCount == 0 {
+		return 0, fmt.Errorf("socket name '%s' not found in LISTEN_FDNAMES", name)
+	}
+
+	return 0, fmt.Errorf("socket name '%s' found %d times, but index %d requested", name, matchCount, targetIndex)
 }
 
 // ParseNetworkAddress parses addr into its individual
