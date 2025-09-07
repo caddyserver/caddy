@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/internal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
@@ -771,6 +772,21 @@ func Log() *zap.Logger {
 	defaultLoggerMu.RLock()
 	defer defaultLoggerMu.RUnlock()
 	return defaultLogger.logger
+}
+
+// BufferedLog sets the default logger to one that buffers
+// logs before a config is loaded.
+// Returns the buffered logger, the original default logger
+// (for flushing on errors), and the buffer core so that the
+// caller can flush the logs after the config is loaded or
+// fails to load.
+func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	origLogger := defaultLogger.logger
+	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
+	defaultLogger.logger = zap.New(bufferCore)
+	return defaultLogger.logger, origLogger, bufferCore
 }
 
 var (
