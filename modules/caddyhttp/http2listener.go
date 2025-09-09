@@ -53,6 +53,7 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 	// or else the listener wouldn't be created
 	h2Conn := &http2Conn{
 		h2Expected: h.useH2,
+		logger:     h.logger,
 		Conn:       conn,
 	}
 	if isConnectionStater {
