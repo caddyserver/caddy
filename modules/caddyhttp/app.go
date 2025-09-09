@@ -466,7 +466,21 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 			Protocols:         new(http.Protocols),
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, ConnCtxKey, c)
+				if nc, ok := c.(interface{ tlsNetConn() net.Conn }); ok {
+					var (
+						tlsConState        *tls.ConnectionState
+						getTlsConStateFunc = func() *tls.ConnectionState {
+							if tlsConState != nil {
+								return tlsConState
+							}
+							tlsConStateVal := nc.tlsNetConn().(connectionStater).ConnectionState()
+							tlsConState = &tlsConStateVal
+							return tlsConState
+						}
+					)
+					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
+				}
+				return ctx
 			},
 		}
 
