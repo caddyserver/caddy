@@ -288,14 +288,9 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Scheduled to be removed later because https://github.com/golang/go/pull/56110 has been merged.
 	if r.TLS == nil {
-		// not all requests have a conn (like virtual requests) - see #5698
-		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStater); ok {
-				r.TLS = new(tls.ConnectionState)
-				*r.TLS = csc.ConnectionState()
-			}
+		if tlsConnStateFunc, ok := r.Context().Value(tlsConnectionStateFuncCtxKey).(func() *tls.ConnectionState); ok {
+			r.TLS = tlsConnStateFunc()
 		}
 	}
 
@@ -1115,10 +1110,13 @@ const (
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
-	// For referencing underlying net.Conn
-	// This will eventually be deprecated and not used. To refer to the underlying connection, implement a middleware plugin
+	// DEPRECATED: not used anymore.
+	// To refer to the underlying connection, implement a middleware plugin
 	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// used to get the tls connection state in the context, if available
+	tlsConnectionStateFuncCtxKey caddy.CtxKey = "tls_connection_state_func"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
