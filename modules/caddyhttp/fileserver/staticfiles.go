@@ -458,12 +458,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
 
-		// stdlib won't set Content-Length if Content-Encoding is set.
-		// set Range header if it's not present will force Content-Length to be set
+		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
+		// see: https://github.com/caddyserver/caddy/issues/7040
+		// Setting the Range header manually will result in 206 Partial Content.
+		// see: https://github.com/caddyserver/caddy/issues/7250
 		if r.Header.Get("Range") == "" {
-			r.Header.Set("Range", "bytes=0-")
-			// remove this header, because it is not part of the request
-			defer r.Header.Del("Range")
+			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
 		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
