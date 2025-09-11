@@ -460,7 +460,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
 		// see: https://github.com/caddyserver/caddy/issues/7040
-		// set Range header manually will result in 206
+		// Setting the Range header manually will result in 206 Partial Content.
 		// see: https://github.com/caddyserver/caddy/issues/7250
 		if r.Header.Get("Range") == "" {
 			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
