@@ -872,6 +872,11 @@ func isInterfaceName(s string) bool {
 		return false
 	}
 
+	// Check if it's a Caddy placeholder (enclosed in curly braces)
+	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
+		return false
+	}
+
 	// Check if it looks like an IP address
 	if net.ParseIP(s) != nil {
 		return false
@@ -962,7 +967,6 @@ func tryParseInterfaceWithModeInHost(host string) (interfaceWithMode, bool) {
 // It supports extended syntax: interface:port:mode where mode can be auto, ipv4, or ipv6.
 // It returns a NetworkAddress with the interface name preserved in the Host field for later resolution.
 func parseInterfaceAddress(network, host, port string) (NetworkAddress, error) {
-
 	// Special case: if host contains multiple colons, it might be interface:port:mode format
 	if strings.Count(host, ":") >= 2 {
 		if interfaceAddr, ok := tryParseInterfaceWithModeInHost(host); ok {

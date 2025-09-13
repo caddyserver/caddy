@@ -1,4 +1,4 @@
-// Copyright 2015 Matthew Holt and The Caddy Authors
+// Copyright 2025 Matthew Holt and The Caddy Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,6 +51,11 @@ func TestIsInterfaceName(t *testing.T) {
 		// Invalid interface names (other)
 		{"", false, "empty string"},
 		{"verylonginterfacenamethatdefinitelyexceedsfiftychars", false, "too long interface name"},
+
+		// Invalid interface names (Caddy placeholders)
+		{"{upstream}", false, "Caddy placeholder"},
+		{"{http.request.host}", false, "Caddy HTTP placeholder"},
+		{"{vars.interface}", false, "Caddy variable placeholder"},
 	}
 
 	for _, test := range tests {
