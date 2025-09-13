@@ -149,11 +149,9 @@ func TestLoadConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			_ = Load(testCfg, true)
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 }
