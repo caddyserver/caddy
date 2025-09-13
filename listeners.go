@@ -160,7 +160,7 @@ func (na NetworkAddress) listenInterface(ctx context.Context, portOffset uint, c
 	// Decode interface name and mode from Host field
 	// Format: "interface_name|~|mode"
 	var ifaceName string
-	var mode InterfaceBindingMode = InterfaceBindingAuto
+	var mode = InterfaceBindingAuto
 
 	if strings.Contains(na.Host, interfaceDelimiter) {
 		parts := strings.SplitN(na.Host, interfaceDelimiter, 2)
@@ -909,7 +909,6 @@ func isInterfaceName(s string) bool {
 				// Recursively check if the interface part is valid (without the port:mode)
 				return isInterfaceName(potentialIface)
 			}
-
 		}
 		// If not interface:port:mode pattern, reject strings with colons
 		return false
@@ -981,7 +980,7 @@ func parseInterfaceAddress(network, host, port string) (NetworkAddress, error) {
 
 	// Parse port and optional mode: "80" or "443:ipv4"
 	var portStr string
-	var mode InterfaceBindingMode = InterfaceBindingAuto // default mode
+	var mode = InterfaceBindingAuto // default mode
 
 	if port == "" {
 		return NetworkAddress{}, fmt.Errorf("interface binding requires a port")
