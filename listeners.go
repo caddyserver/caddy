@@ -38,6 +38,8 @@ import (
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
+const interfaceDelimiter = "|~|"
+
 // NetworkAddress represents one or more network addresses.
 // It contains the individual components for a parsed network
 // address of the form accepted by ParseNetworkAddress().
@@ -138,6 +140,11 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 		defer unixSocketsMu.Unlock()
 	}
 
+	// If this is an interface name, resolve it to an IP address and create a listener
+	if na.IsInterfaceNetwork() {
+		return na.listenInterface(ctx, portOffset, config)
+	}
+
 	// check to see if plugin provides listener
 	if ln, err := getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
 		return ln, err
@@ -145,6 +152,41 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 
 	// create (or reuse) the listener ourselves
 	return na.listen(ctx, portOffset, config)
+}
+
+// listenInterface resolves an interface name to IP addresses and creates a listener
+// based on the specified binding mode (auto, ipv4, ipv6).
+func (na NetworkAddress) listenInterface(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
+	// Decode interface name and mode from Host field
+	// Format: "interface_name|~|mode"
+	var ifaceName string
+	var mode InterfaceBindingMode = InterfaceBindingAuto
+
+	if strings.Contains(na.Host, interfaceDelimiter) {
+		parts := strings.SplitN(na.Host, interfaceDelimiter, 2)
+		if len(parts) == 2 {
+			ifaceName = parts[0]
+			mode = InterfaceBindingMode(parts[1])
+		}
+	} else {
+		ifaceName = na.Host
+	}
+
+	// Resolve interface name to IP addresses with mode
+	ipAddresses, err := resolveInterfaceNameWithMode(ifaceName, mode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve interface %s with mode %s: %v", ifaceName, mode, err)
+	}
+
+	resolvedNA := na
+	resolvedNA.Host = ipAddresses[0]
+
+	Log().Debug("resolved interface to IP",
+		zap.String("interface", ifaceName),
+		zap.String("mode", string(mode)),
+		zap.String("selected_ip", ipAddresses[0]))
+
+	return resolvedNA.listen(ctx, portOffset, config)
 }
 
 func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
@@ -214,6 +256,25 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 // fd or fdgram.
 func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
+}
+
+// IsInterfaceNetwork returns true if na.Host appears to be a network interface name
+// and na.Network supports interface binding (tcp/udp).
+func (na NetworkAddress) IsInterfaceNetwork() bool {
+	if na.Network != "tcp" && na.Network != "udp" {
+		return false
+	}
+
+	// Handle encoded interface name with mode: "interface_name|~|mode"
+	hostToCheck := na.Host
+	if strings.Contains(na.Host, interfaceDelimiter) {
+		parts := strings.SplitN(na.Host, interfaceDelimiter, 2)
+		if len(parts) == 2 {
+			hostToCheck = parts[0] // Extract just the interface name part
+		}
+	}
+
+	return isInterfaceName(hostToCheck)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
@@ -341,6 +402,18 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 			Host:    host,
 		}, nil
 	}
+
+	// Check if this might be an interface name for TCP/UDP networks
+	if (network == "tcp" || network == "udp") && isInterfaceName(host) {
+		if port == "" {
+			if defaultPort == 0 {
+				return NetworkAddress{}, fmt.Errorf("interface binding requires a port")
+			}
+			port = strconv.FormatUint(uint64(defaultPort), 10)
+		}
+		return parseInterfaceAddress(network, host, port)
+	}
+
 	var start, end uint64
 	if port == "" {
 		start = uint64(defaultPort)
@@ -681,6 +754,293 @@ func listenerKey(network, addr string) string {
 type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
 var networkTypes = map[string]ListenerFunc{}
+
+// InterfaceBindingMode defines how to bind to interface IP addresses
+type InterfaceBindingMode string
+
+const (
+	// InterfaceBindingAuto uses the first IPv4 address, fallback to first IPv6
+	InterfaceBindingAuto InterfaceBindingMode = "auto"
+	// InterfaceBindingIPv4 binds only to IPv4 addresses of the interface
+	InterfaceBindingIPv4 InterfaceBindingMode = "ipv4"
+	// InterfaceBindingIPv6 binds only to IPv6 addresses of the interface
+	InterfaceBindingIPv6 InterfaceBindingMode = "ipv6"
+)
+
+// selectIPByMode selects an IP address from the list based on the binding mode
+func selectIPByMode(ipAddresses []string, mode InterfaceBindingMode) (string, error) {
+	var ipv4Addresses []string
+	var ipv6Addresses []string
+
+	// Separate IPv4 and IPv6 addresses
+	for _, ip := range ipAddresses {
+		if parsedIP := net.ParseIP(ip); parsedIP != nil {
+			if parsedIP.To4() != nil {
+				ipv4Addresses = append(ipv4Addresses, ip)
+			} else {
+				ipv6Addresses = append(ipv6Addresses, ip)
+			}
+		}
+	}
+
+	// Select based on mode
+	switch mode {
+	case InterfaceBindingAuto:
+		// Auto mode prefers IPv4, fallback to IPv6
+		if len(ipv4Addresses) > 0 {
+			return ipv4Addresses[0], nil
+		}
+		if len(ipv6Addresses) > 0 {
+			return ipv6Addresses[0], nil
+		}
+	case InterfaceBindingIPv4:
+		if len(ipv4Addresses) > 0 {
+			return ipv4Addresses[0], nil
+		}
+		return "", fmt.Errorf("no IPv4 addresses available for interface binding")
+	case InterfaceBindingIPv6:
+		if len(ipv6Addresses) > 0 {
+			return ipv6Addresses[0], nil
+		}
+		return "", fmt.Errorf("no IPv6 addresses available for interface binding")
+	default:
+		return "", fmt.Errorf("unknown interface binding mode: %s", mode)
+	}
+
+	return "", fmt.Errorf("no addresses available for interface binding")
+}
+
+// resolveInterfaceNameWithMode resolves a network interface name to its IP addresses
+// based on the specified binding mode.
+func resolveInterfaceNameWithMode(ifaceName string, mode InterfaceBindingMode) ([]string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list network interfaces: %v", err)
+	}
+
+	var targetInterface *net.Interface
+	for _, iface := range interfaces {
+		if iface.Name == ifaceName {
+			targetInterface = &iface
+			break
+		}
+	}
+
+	if targetInterface == nil {
+		return nil, fmt.Errorf("interface %s not found", ifaceName)
+	}
+
+	// Check if interface is up
+	if targetInterface.Flags&net.FlagUp == 0 {
+		return nil, fmt.Errorf("interface %s is down", ifaceName)
+	}
+
+	addrs, err := targetInterface.Addrs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get addresses for interface %s: %v", ifaceName, err)
+	}
+
+	// Collect all available IP addresses
+	var allIPAddresses []string
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+			allIPAddresses = append(allIPAddresses, ipNet.IP.String())
+		}
+	}
+
+	// Use selectIPByMode to choose the appropriate IP
+	selectedIP, err := selectIPByMode(allIPAddresses, mode)
+	if err != nil {
+		return nil, fmt.Errorf("interface %s: %v", ifaceName, err)
+	}
+
+	return []string{selectedIP}, nil
+}
+
+// isInterfaceName checks if a given string looks like a network interface name.
+// Interface names typically:
+// - Don't contain dots (unlike hostnames/IPs)
+// - Don't start with numbers (unlike IP addresses)
+// - Are relatively short (unlike file paths)
+func isInterfaceName(s string) bool {
+	if s == "" || len(s) > 50 {
+		return false
+	}
+
+	// Don't accept already encoded interface names (containing delimiter)
+	if strings.Contains(s, interfaceDelimiter) {
+		return false
+	}
+
+	// Check if it looks like an IP address
+	if net.ParseIP(s) != nil {
+		return false
+	}
+
+	// Check if it's a well-known hostname (not an interface)
+	switch s {
+	case "localhost", "local", "host":
+		return false
+	}
+
+	// Check if it contains dots (hostnames)
+	if strings.Contains(s, ".") {
+		return false
+	}
+
+	// Special case: check for interface:port:mode pattern
+	if strings.Contains(s, ":") {
+		colonCount := strings.Count(s, ":")
+		if colonCount == 2 {
+			parts := strings.Split(s, ":")
+
+			// Check if the last part is a valid binding mode
+			lastPart := parts[2]
+			if lastPart == string(InterfaceBindingAuto) ||
+				lastPart == string(InterfaceBindingIPv4) ||
+				lastPart == string(InterfaceBindingIPv6) {
+				// Check if the interface part is valid
+				potentialIface := parts[0]
+				// Recursively check if the interface part is valid (without the port:mode)
+				return isInterfaceName(potentialIface)
+			}
+
+		}
+		// If not interface:port:mode pattern, reject strings with colons
+		return false
+	}
+
+	// Check if it starts with a number (like IP addresses do)
+	if len(s) > 0 && s[0] >= '0' && s[0] <= '9' {
+		return false
+	}
+
+	// Check if it looks like a file descriptor (e.g., "3", "10")
+	if _, err := strconv.Atoi(s); err == nil {
+		return false
+	}
+
+	return true
+}
+
+// interfaceWithMode represents parsed interface name and port with mode
+type interfaceWithMode struct {
+	interfaceName string
+	portWithMode  string
+}
+
+// tryParseInterfaceWithModeInHost tries to parse strings like "eth0:8090:ipv4"
+// that occur when SplitNetworkAddress treats them as IPv6-like addresses
+func tryParseInterfaceWithModeInHost(host string) (interfaceWithMode, bool) {
+	if !strings.Contains(host, ":") {
+		return interfaceWithMode{}, false
+	}
+
+	parts := strings.Split(host, ":")
+	if len(parts) != 3 {
+		return interfaceWithMode{}, false
+	}
+
+	// Check if the last part is a valid binding mode
+	if parts[2] != string(InterfaceBindingAuto) &&
+		parts[2] != string(InterfaceBindingIPv4) &&
+		parts[2] != string(InterfaceBindingIPv6) {
+		return interfaceWithMode{}, false
+	}
+
+	if !isInterfaceName(parts[0]) {
+		return interfaceWithMode{}, false
+	}
+
+	return interfaceWithMode{
+		interfaceName: parts[0],
+		portWithMode:  parts[1] + ":" + parts[2],
+	}, true
+}
+
+// parseInterfaceAddress handles parsing network addresses that might contain interface names.
+// It supports extended syntax: interface:port:mode where mode can be auto, ipv4, or ipv6.
+// It returns a NetworkAddress with the interface name preserved in the Host field for later resolution.
+func parseInterfaceAddress(network, host, port string) (NetworkAddress, error) {
+
+	// Special case: if host contains multiple colons, it might be interface:port:mode format
+	if strings.Count(host, ":") >= 2 {
+		if interfaceAddr, ok := tryParseInterfaceWithModeInHost(host); ok {
+			// Recursively call parseInterfaceAddress with extracted interface and port:mode
+			return parseInterfaceAddress(network, interfaceAddr.interfaceName, interfaceAddr.portWithMode)
+		}
+	}
+
+	if !isInterfaceName(host) {
+		return NetworkAddress{}, fmt.Errorf("host %s is not a valid interface name", host)
+	}
+
+	// Parse port and optional mode: "80" or "443:ipv4"
+	var portStr string
+	var mode InterfaceBindingMode = InterfaceBindingAuto // default mode
+
+	if port == "" {
+		return NetworkAddress{}, fmt.Errorf("interface binding requires a port")
+	}
+
+	// Check for mode suffix
+	if strings.Contains(port, ":") {
+		parts := strings.SplitN(port, ":", 2)
+		if len(parts) == 2 {
+			portStr = parts[0]
+			modeStr := parts[1]
+			switch modeStr {
+			case "auto":
+				mode = InterfaceBindingAuto
+			case "ipv4":
+				mode = InterfaceBindingIPv4
+			case "ipv6":
+				mode = InterfaceBindingIPv6
+			default:
+				return NetworkAddress{}, fmt.Errorf("unknown interface binding mode: %s (supported: auto, ipv4, ipv6)", modeStr)
+			}
+		}
+	} else {
+		portStr = port
+	}
+
+	var start, end uint64
+	var err error
+
+	before, after, found := strings.Cut(portStr, "-")
+	if !found {
+		after = before
+	}
+
+	start, err = strconv.ParseUint(before, 10, 16)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("invalid start port: %v", err)
+	}
+
+	end, err = strconv.ParseUint(after, 10, 16)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("invalid end port: %v", err)
+	}
+
+	if end < start {
+		return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
+	}
+
+	if (end - start) > maxPortSpan {
+		return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
+	}
+
+	// Encode the interface name and mode in the Host field
+	// Format: "interface_name|~|mode" so we can decode it later in listenInterface
+	hostWithMode := fmt.Sprintf("%s%s%s", host, interfaceDelimiter, string(mode))
+
+	return NetworkAddress{
+		Network:   network,
+		Host:      hostWithMode,
+		StartPort: uint(start),
+		EndPort:   uint(end),
+	}, nil
+}
 
 // ListenerWrapper is a type that wraps a listener
 // so it can modify the input listener's methods.
