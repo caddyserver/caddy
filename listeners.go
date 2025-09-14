@@ -934,7 +934,7 @@ func isInterfaceName(s string) bool {
 	}
 
 	s = resolved
-	if s == "" || len(s) > getMaxInterfaceNameLength() {
+	if s == "" {
 		return false
 	}
 
@@ -961,6 +961,11 @@ func isInterfaceName(s string) bool {
 			}
 		}
 		// If not interface:port:mode pattern, reject strings with colons
+		return false
+	}
+
+	// Check length is within platform limits
+	if len(s) > getMaxInterfaceNameLength() {
 		return false
 	}
 

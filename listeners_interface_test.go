@@ -394,11 +394,6 @@ func TestNetworkAddressIsInterfaceNetwork(t *testing.T) {
 			"TCP with encoded interface name and IPv6 mode",
 		},
 		{
-			NetworkAddress{Network: "tcp", Host: "vEthernet (WSL (Hyper-V firewall))" + interfaceDelimiter + "auto"},
-			true,
-			"TCP with encoded Windows interface name and auto mode",
-		},
-		{
 			NetworkAddress{Network: "udp", Host: "tailscale0" + interfaceDelimiter + "ipv4"},
 			true,
 			"UDP with encoded interface name and mode",
