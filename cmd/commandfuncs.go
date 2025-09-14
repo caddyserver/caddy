@@ -184,7 +184,7 @@ func cmdRun(fl Flags) (int, error) {
 	defer undoMaxProcs()
 	// release the local reference to the undo function so it can be GC'd;
 	// the deferred call above has already captured the actual function value.
-	undoMaxProcs = nil
+	undoMaxProcs = nil //nolint:ineffassign,wastedassign
 
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
@@ -256,15 +256,15 @@ func cmdRun(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
 	// release the reference to the config so it can be GC'd
-	config = nil
+	config = nil //nolint:ineffassign,wastedassign
 
 	// at this stage the config will have replaced the
 	// default logger to the configured one, so we can
 	// log normally, now that the config is running.
 	// also clear our ref to the buffer so it can get GC'd
 	logger = caddy.Log()
-	defaultLogger = nil
-	logBuffer = nil
+	defaultLogger = nil //nolint:ineffassign,wastedassign
+	logBuffer = nil     //nolint:wastedassign,ineffassign
 	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
@@ -288,8 +288,8 @@ func cmdRun(fl Flags) (int, error) {
 		// close (non-defer because we `select {}` below)
 		// and release references so they can be GC'd
 		conn.Close()
-		confirmationBytes = nil
-		conn = nil
+		confirmationBytes = nil //nolint:ineffassign,wastedassign
+		conn = nil              //nolint:wastedassign,ineffassign
 	}
 
 	// if enabled, reload config file automatically on changes
@@ -318,7 +318,7 @@ func cmdRun(fl Flags) (int, error) {
 	}
 
 	// release the last local logger reference
-	logger = nil
+	logger = nil //nolint:wastedassign,ineffassign
 
 	select {}
 }
