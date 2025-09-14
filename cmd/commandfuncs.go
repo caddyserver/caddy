@@ -182,6 +182,9 @@ func cmdRun(fl Flags) (int, error) {
 
 	undoMaxProcs := setResourceLimits(logger)
 	defer undoMaxProcs()
+	// release the local reference to the undo function so it can be GC'd;
+	// the deferred call above has already captured the actual function value.
+	undoMaxProcs = nil
 
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
@@ -252,12 +255,16 @@ func cmdRun(fl Flags) (int, error) {
 		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
+	// release the reference to the config so it can be GC'd
+	config = nil
 
-	// at this stage the config will have replaced
-	// the default logger to the configured one, so
-	// we can now flush the buffered logs, then log
-	// that the config is running.
-	logBuffer.FlushTo(caddy.Log())
+	// at this stage the config will have replaced the
+	// default logger to the configured one, so we can
+	// log normally, now that the config is running.
+	// also clear our ref to the buffer so it can get GC'd
+	logger = caddy.Log()
+	defaultLogger = nil
+	logBuffer = nil
 	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
@@ -273,12 +280,16 @@ func cmdRun(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("dialing confirmation address: %v", err)
 		}
-		defer conn.Close()
 		_, err = conn.Write(confirmationBytes)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("writing confirmation bytes to %s: %v", pingbackFlag, err)
 		}
+		// close (non-defer because we `select {}` below)
+		// and release references so they can be GC'd
+		conn.Close()
+		confirmationBytes = nil
+		conn = nil
 	}
 
 	// if enabled, reload config file automatically on changes
@@ -305,6 +316,9 @@ func cmdRun(fl Flags) (int, error) {
 			logger.Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
+
+	// release the last local logger reference
+	logger = nil
 
 	select {}
 }

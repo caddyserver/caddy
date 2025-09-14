@@ -29,6 +29,11 @@ type LogBufferCore struct {
 	level   zapcore.LevelEnabler
 }
 
+type LogBufferCoreInterface interface {
+	zapcore.Core
+	FlushTo(*zap.Logger)
+}
+
 func NewLogBufferCore(level zapcore.LevelEnabler) *LogBufferCore {
 	return &LogBufferCore{
 		level: level,
@@ -70,3 +75,8 @@ func (c *LogBufferCore) FlushTo(logger *zap.Logger) {
 	c.entries = nil
 	c.fields = nil
 }
+
+var (
+	_ zapcore.Core           = (*LogBufferCore)(nil)
+	_ LogBufferCoreInterface = (*LogBufferCore)(nil)
+)
