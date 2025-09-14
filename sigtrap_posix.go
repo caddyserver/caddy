@@ -18,6 +18,7 @@ package caddy
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -48,7 +49,34 @@ func trapSignalsPosix() {
 				exitProcessFromSignal("SIGTERM")
 
 			case syscall.SIGUSR1:
-				Log().Info("not implemented", zap.String("signal", "SIGUSR1"))
+				// If we know the last source config file/adapter (set when starting
+				// via `caddy run --config <file> --adapter <adapter>`), attempt
+				// to reload from that source. Otherwise, ignore the signal.
+				file, adapter := getLastConfig()
+				if file == "" {
+					Log().Info("last config unknown, ignored SIGUSR1",
+						zap.String("signal", "SIGUSR1"))
+					break
+				}
+				Log().Info("reloading config from last-known source",
+					zap.String("signal", "SIGUSR1"),
+					zap.String("file", file),
+					zap.String("adapter", adapter))
+				if err := ReloadFromSource(file, adapter); errors.Is(err, errReloadFromSourceUnavailable) {
+					// No reload helper available (likely not started via caddy run).
+					Log().Warn("reload from source unavailable in this process; ignored SIGUSR1",
+						zap.String("file", file),
+						zap.String("adapter", adapter))
+				} else if err != nil {
+					Log().Error("failed to reload config from file",
+						zap.Error(err),
+						zap.String("file", file),
+						zap.String("adapter", adapter))
+				} else {
+					Log().Info("successfully reloaded config from file",
+						zap.String("file", file),
+						zap.String("adapter", adapter))
+				}
 
 			case syscall.SIGUSR2:
 				Log().Info("not implemented", zap.String("signal", "SIGUSR2"))
