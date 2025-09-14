@@ -15,6 +15,8 @@
 package caddy
 
 import (
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -32,30 +34,34 @@ func TestIsInterfaceName(t *testing.T) {
 		{"enp0s3", true, "predictable network interface name"},
 		{"lo", true, "loopback interface"},
 		{"docker0", true, "docker bridge interface"},
+		{"br-901e40e4488d", true, "docker custom bridge interface"},
+		{"enx9cbf0d00631a", true, "USB ethernet adapter interface"},
+		{"veth1308dcd", true, "docker veth pair interface"},
 
 		// Invalid interface names (IP addresses)
 		{"192.168.1.1", false, "IPv4 address"},
 		{"127.0.0.1", false, "localhost IPv4"},
 		{"::1", false, "IPv6 localhost"},
 		{"2001:db8::1", false, "IPv6 address"},
-
-		// Invalid interface names (hostnames)
+		{"fe80::", false, "IPv6 link-local address starting with letter"},
 		{"example.com", false, "hostname with dots"},
 		{"localhost", false, "hostname"},
 		{"my-host.local", false, "hostname with dashes and dots"},
-
-		// Invalid interface names (file descriptors)
 		{"3", false, "numeric file descriptor"},
 		{"10", false, "another numeric file descriptor"},
-
-		// Invalid interface names (other)
 		{"", false, "empty string"},
-		{"verylonginterfacenamethatdefinitelyexceedsfiftychars", false, "too long interface name"},
+		{"eth/0", false, "interface with forward slash"},
+		{"eth\\0", false, "interface with backslash"},
+		{"eth\n0", false, "interface with newline"},
+		{"eth\t0", false, "interface with tab"},
+		{"eth\x00", false, "interface with null character"},
 
-		// Invalid interface names (Caddy placeholders)
-		{"{upstream}", false, "Caddy placeholder"},
+		// Invalid interface names (unsupported Caddy placeholders)
+		{"{upstream}", false, "Caddy upstream placeholder"},
 		{"{http.request.host}", false, "Caddy HTTP placeholder"},
 		{"{vars.interface}", false, "Caddy variable placeholder"},
+		{"{system.hostname}", false, "Caddy system placeholder"},
+		{"{time.now}", false, "Caddy time placeholder"},
 	}
 
 	for _, test := range tests {
@@ -68,6 +74,10 @@ func TestIsInterfaceName(t *testing.T) {
 }
 
 func TestIsInterfaceNameWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific test, skipping on non-Windows platform")
+	}
+
 	windowsTests := []struct {
 		input    string
 		expected bool
@@ -85,10 +95,39 @@ func TestIsInterfaceNameWindows(t *testing.T) {
 		{"192.168.1.1", false, "IP address should still fail"},
 		{"example.com", false, "hostname should still fail"},
 		{"", false, "empty string should still fail"},
-		{"verylonginterfacenamethatexceedsfiftycharacterslimit", false, "too long interface name"},
 	}
 
 	for _, test := range windowsTests {
+		result := isInterfaceName(test.input)
+		if result != test.expected {
+			t.Errorf("isInterfaceName(%q) = %v, expected %v (%s)",
+				test.input, result, test.expected, test.desc)
+		}
+	}
+}
+
+func TestIsInterfaceNameUnix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix-specific test, skipping on Windows platform")
+	}
+
+	unixTests := []struct {
+		input    string
+		expected bool
+		desc     string
+	}{
+		// Should pass on Unix systems
+		{"eth0", true, "short ethernet interface"},
+		{"wlan0", true, "short wireless interface"},
+		{"br-901e40e4488d", true, "docker bridge (14 chars)"},
+		{"enx9cbf0d00631a", true, "USB ethernet (15 chars)"},
+
+		// Should fail on Unix systems - too long (would pass on Windows)
+		{"verylonginterfacename", false, "too long for Unix (22 chars)"},
+		{"Local Area Connection", false, "Windows-style name too long for Unix"},
+	}
+
+	for _, test := range unixTests {
 		result := isInterfaceName(test.input)
 		if result != test.expected {
 			t.Errorf("isInterfaceName(%q) = %v, expected %v (%s)",
@@ -109,6 +148,8 @@ func TestIsInterfaceNameWithModes(t *testing.T) {
 		{"wlan0:443:ipv6", true, "wireless interface with IPv6 mode"},
 		{"docker0:9000:auto", true, "docker interface with auto mode"},
 		{"enp0s3:8080:ipv4", true, "predictable interface with mode"},
+		{"br-901e40e4488d:3000:ipv6", true, "docker bridge with IPv6 mode"},
+		{"veth1308dcd:8080:auto", true, "veth pair with auto mode"},
 
 		// Invalid - wrong modes
 		{"eth0:8080:invalid", false, "interface with invalid mode"},
@@ -117,6 +158,7 @@ func TestIsInterfaceNameWithModes(t *testing.T) {
 
 		// Invalid - not interface names
 		{"192.168.1.1:80:ipv4", false, "IP address with mode"},
+		{"fe80:::8080:ipv6", false, "IPv6 address with mode"},
 		{"example.com:443:ipv6", false, "hostname with mode"},
 		{"localhost:8080:auto", false, "localhost with mode"},
 
@@ -221,6 +263,90 @@ func TestSelectIPByMode(t *testing.T) {
 		if result != tc.expectedResult {
 			t.Errorf("selectIPByMode(%v, %s) returned %s, expected %s (%s)",
 				tc.ipAddresses, tc.mode, result, tc.expectedResult, tc.desc)
+		}
+	}
+}
+
+func TestIsInterfaceNameWithPlaceholders(t *testing.T) {
+	// Set up environment variables for testing
+	os.Setenv("TEST_VALID_INTERFACE", "eth0")
+	os.Setenv("TEST_INVALID_INTERFACE", "192.168.1.1")
+	os.Setenv("INTERFACE_NUM", "1")
+	os.Setenv("PREFIX", "wlan")
+	defer func() {
+		os.Unsetenv("TEST_VALID_INTERFACE")
+		os.Unsetenv("TEST_INVALID_INTERFACE")
+		os.Unsetenv("INTERFACE_NUM")
+		os.Unsetenv("PREFIX")
+	}()
+
+	// Create temporary files for testing
+	validTempFile, err := os.CreateTemp("", "valid_interface_*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(validTempFile.Name())
+	validTempFile.WriteString("wlan0")
+	validTempFile.Close()
+
+	invalidTempFile, err := os.CreateTemp("", "invalid_interface_*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(invalidTempFile.Name())
+	invalidTempFile.WriteString("example.com") // Invalid interface (hostname)
+	invalidTempFile.Close()
+
+	emptyTempFile, err := os.CreateTemp("", "empty_interface_*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create empty temp file: %v", err)
+	}
+	defer os.Remove(emptyTempFile.Name())
+	emptyTempFile.Close() // Keep it empty
+
+	tests := []struct {
+		input    string
+		expected bool
+		desc     string
+	}{
+		// Valid placeholders resolving to valid interfaces
+		{"{env.TEST_VALID_INTERFACE}", true, "env placeholder resolving to valid interface"},
+		{"{file." + validTempFile.Name() + "}", true, "file placeholder resolving to valid interface"},
+
+		// Valid partial placeholders resolving to valid interfaces
+		{"eth{env.INTERFACE_NUM}", true, "partial env placeholder resolving to eth1"},
+		{"{env.PREFIX}0", true, "env placeholder with suffix resolving to wlan0"},
+		{"docker{env.INTERFACE_NUM}", true, "prefix with env placeholder resolving to docker1"},
+
+		// Valid placeholders resolving to invalid interfaces
+		{"{env.TEST_INVALID_INTERFACE}", false, "env placeholder resolving to IP address"},
+		{"{file." + invalidTempFile.Name() + "}", false, "file placeholder resolving to hostname"},
+
+		// Unsupported placeholders
+		{"{http.request.host}", false, "unsupported HTTP placeholder"},
+		{"{vars.interface}", false, "unsupported variable placeholder"},
+		{"{system.hostname}", false, "unsupported system placeholder"},
+		{"{time.now}", false, "unsupported time placeholder"},
+		{"{upstream}", false, "unsupported upstream placeholder"},
+
+		// Mixed placeholders (supported + unsupported)
+		{"eth{env.INTERFACE_NUM}-{http.request.host}", false, "mixed env and HTTP placeholders"},
+		{"{env.PREFIX}-{vars.suffix}", false, "mixed env and vars placeholders"},
+
+		// Invalid placeholder resolution
+		{"{env.NONEXISTENT}", false, "nonexistent environment variable"},
+		{"{file." + emptyTempFile.Name() + "}", false, "empty file content"},
+
+		// Invalid placeholder syntax
+		{"{invalid}", false, "invalid placeholder without prefix"},
+		{"{env.}", false, "empty env placeholder"},
+	}
+
+	for _, test := range tests {
+		result := isInterfaceName(test.input)
+		if result != test.expected {
+			t.Errorf("isInterfaceName(%q) = %v, expected %v (%s)",
+				test.input, result, test.expected, test.desc)
 		}
 	}
 }

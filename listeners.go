@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,16 @@ import (
 )
 
 const interfaceDelimiter = "|~|"
+
+const (
+	// MaxInterfaceNameUnix represents the maximum interface name length on Unix-like systems
+	// Based on IFNAMSIZ = 16 (15 characters + null terminator)
+	MaxInterfaceNameUnix = 15
+
+	// MaxInterfaceNameWindows represents the maximum interface name length on Windows
+	// These systems use a more complex naming structure with MAX_ADAPTER_NAME_LENGTH allowing 256 characters
+	MaxInterfaceNameWindows = 255
+)
 
 // NetworkAddress represents one or more network addresses.
 // It contains the individual components for a parsed network
@@ -857,39 +868,78 @@ func resolveInterfaceNameWithMode(ifaceName string, mode InterfaceBindingMode) (
 	return []string{selectedIP}, nil
 }
 
+// getMaxInterfaceNameLength returns the maximum allowed interface name length
+// based on the operating system platform
+func getMaxInterfaceNameLength() int {
+	switch runtime.GOOS {
+	case "windows":
+		return MaxInterfaceNameWindows
+	default:
+		// Unix-like systems
+		return MaxInterfaceNameUnix
+	}
+}
+
+// isValidInterfaceChar checks if a character is valid for interface names across all platforms
+func isValidInterfaceChar(r rune) bool {
+	// Allow alphanumeric characters, hyphens, underscores, and spaces (for Windows)
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '-' || r == '_' ||
+		(runtime.GOOS == "windows" && (r == ' ' || r == '(' || r == ')'))
+}
+
+// resolveInterfacePlaceholder resolves Caddy placeholders in interface names.
+// Only env.* and file.* placeholders are supported for interface binding.
+// Returns the resolved interface name and whether it contains only supported placeholders.
+func resolveInterfacePlaceholder(s string) (string, bool) {
+	// If no placeholders, return as-is
+	if !strings.Contains(s, "{") {
+		return s, true
+	}
+
+	// Check if contains only supported placeholders
+	if strings.Contains(s, "{env.") || strings.Contains(s, "{file.") {
+		// Check for unsupported placeholders
+		if strings.Contains(s, "{http.") || strings.Contains(s, "{vars.") ||
+			strings.Contains(s, "{system.") || strings.Contains(s, "{time.") ||
+			strings.Contains(s, "{upstream}") {
+			return "", false
+		}
+
+		repl := NewReplacer()
+		resolved := repl.ReplaceAll(s, "")
+
+		if resolved == s || resolved == "" {
+			return "", false
+		}
+
+		return resolved, true
+	}
+
+	// Contains placeholders but not supported ones
+	return "", false
+}
+
 // isInterfaceName checks if a given string looks like a network interface name.
 // Interface names typically:
 // - Don't contain dots (unlike hostnames/IPs)
 // - Don't start with numbers (unlike IP addresses)
 // - Are relatively short (unlike file paths)
 func isInterfaceName(s string) bool {
-	if s == "" || len(s) > 50 {
+	resolved, ok := resolveInterfacePlaceholder(s)
+	if !ok {
+		return false
+	}
+
+	s = resolved
+	if s == "" || len(s) > getMaxInterfaceNameLength() {
 		return false
 	}
 
 	// Don't accept already encoded interface names (containing delimiter)
 	if strings.Contains(s, interfaceDelimiter) {
-		return false
-	}
-
-	// Check if it's a Caddy placeholder (enclosed in curly braces)
-	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
-		return false
-	}
-
-	// Check if it looks like an IP address
-	if net.ParseIP(s) != nil {
-		return false
-	}
-
-	// Check if it's a well-known hostname (not an interface)
-	switch s {
-	case "localhost", "local", "host":
-		return false
-	}
-
-	// Check if it contains dots (hostnames)
-	if strings.Contains(s, ".") {
 		return false
 	}
 
@@ -911,6 +961,19 @@ func isInterfaceName(s string) bool {
 			}
 		}
 		// If not interface:port:mode pattern, reject strings with colons
+		return false
+	}
+
+	// Check each character is valid
+	for _, r := range s {
+		if !isValidInterfaceChar(r) {
+			return false
+		}
+	}
+
+	// Check if it's a well-known hostname (not an interface)
+	switch s {
+	case "localhost", "local", "host":
 		return false
 	}
 
