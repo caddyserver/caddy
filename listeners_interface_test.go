@@ -384,7 +384,7 @@ func TestNetworkAddressIsInterfaceNetwork(t *testing.T) {
 		},
 		// Test encoded interface names with binding modes
 		{
-			NetworkAddress{Network: "tcp", Host: "Wi-Fi 2" + interfaceDelimiter + "ipv4"},
+			NetworkAddress{Network: "tcp", Host: "wlan0" + interfaceDelimiter + "ipv4"},
 			true,
 			"TCP with encoded interface name and IPv4 mode",
 		},
