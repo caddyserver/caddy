@@ -192,6 +192,13 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 		)
 	}
 
+	// if we had a buffered core, flush its contents ASAP
+	// before we try to log anything else, so the order of
+	// logs is preserved
+	if oldBufferCore, ok := oldDefault.logger.Core().(*internal.LogBufferCore); ok {
+		oldBufferCore.FlushTo(newDefault.logger)
+	}
+
 	return nil
 }
 
