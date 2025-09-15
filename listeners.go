@@ -899,27 +899,24 @@ func resolveInterfacePlaceholder(s string) (string, bool) {
 		return s, true
 	}
 
-	// Check if contains only supported placeholders
-	if strings.Contains(s, "{env.") || strings.Contains(s, "{file.") {
-		// Check for unsupported placeholders
-		if strings.Contains(s, "{http.") || strings.Contains(s, "{vars.") ||
-			strings.Contains(s, "{system.") || strings.Contains(s, "{time.") ||
-			strings.Contains(s, "{upstream}") {
-			return "", false
-		}
-
-		repl := NewReplacer()
-		resolved := repl.ReplaceAll(s, "")
-
-		if resolved == s || resolved == "" {
-			return "", false
-		}
-
-		return resolved, true
+	// Only allow env and file placeholders for interface names
+	if !strings.Contains(s, "{env.") && !strings.Contains(s, "{file.") {
+		return "", false
 	}
 
-	// Contains placeholders but not supported ones
-	return "", false
+	// Check for other placeholders that ReplaceKnown would process but we don't want
+	if strings.Contains(s, "{system.") || strings.Contains(s, "{time.") {
+		return "", false
+	}
+
+	repl := NewReplacer()
+	resolved := repl.ReplaceKnown(s, "")
+
+	if resolved == s || resolved == "" {
+		return "", false
+	}
+
+	return resolved, true
 }
 
 // isInterfaceName checks if a given string looks like a network interface name.

@@ -332,6 +332,8 @@ func TestIsInterfaceNameWithPlaceholders(t *testing.T) {
 		// Mixed placeholders (supported + unsupported)
 		{"eth{env.INTERFACE_NUM}-{http.request.host}", false, "mixed env and HTTP placeholders"},
 		{"{env.PREFIX}-{vars.suffix}", false, "mixed env and vars placeholders"},
+		{"eth{env.INTERFACE_NUM}{system.hostname}", false, "mixed env and system placeholders - system not allowed"},
+		{"{env.PREFIX}-{time.now}", false, "mixed env and time placeholders - time not allowed"},
 
 		// Invalid placeholder resolution
 		{"{env.NONEXISTENT}", false, "nonexistent environment variable"},
