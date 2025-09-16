@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -468,14 +469,14 @@ func (app *App) Start() error {
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 				if nc, ok := c.(interface{ tlsNetConn() net.Conn }); ok {
 					var (
-						tlsConState        *tls.ConnectionState
+						tlsConState        atomic.Pointer[tls.ConnectionState]
 						getTlsConStateFunc = func() *tls.ConnectionState {
-							if tlsConState != nil {
-								return tlsConState
+							if tlsConState.Load() != nil {
+								return tlsConState.Load()
 							}
 							tlsConStateVal := nc.tlsNetConn().(connectionStater).ConnectionState()
-							tlsConState = &tlsConStateVal
-							return tlsConState
+							tlsConState.CompareAndSwap(nil, &tlsConStateVal)
+							return tlsConState.Load()
 						}
 					)
 					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
