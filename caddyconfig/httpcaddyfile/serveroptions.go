@@ -51,6 +51,7 @@ type serverOptions struct {
 	StrictSNIHost        *bool
 	TrustedProxiesRaw    json.RawMessage
 	TrustedProxiesStrict int
+	TrustedProxiesUnix   int
 	ClientIPHeaders      []string
 	ShouldLogCredentials bool
 	Metrics              *caddyhttp.Metrics
@@ -251,6 +252,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.TrustedProxiesStrict = 1
 
+		case "trusted_proxies_unix":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.TrustedProxiesUnix = 1
+
 		case "client_ip_headers":
 			headers := d.RemainingArgs()
 			for _, header := range headers {
@@ -342,6 +349,7 @@ func applyServerOptions(
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.ClientIPHeaders = opts.ClientIPHeaders
 		server.TrustedProxiesStrict = opts.TrustedProxiesStrict
+		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
