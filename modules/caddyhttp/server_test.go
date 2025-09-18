@@ -300,7 +300,7 @@ func TestServer_DetermineTrustedProxy_TrustedLoopback(t *testing.T) {
 func TestServer_DetermineTrustedProxy_UnixSocket(t *testing.T) {
 	server := &Server{
 		ClientIPHeaders:    []string{"X-Forwarded-For"},
-		TrustedProxiesUnix: 1,
+		TrustedProxiesUnix: true,
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -316,7 +316,7 @@ func TestServer_DetermineTrustedProxy_UnixSocket(t *testing.T) {
 func TestServer_DetermineTrustedProxy_UnixSocketStrict(t *testing.T) {
 	server := &Server{
 		ClientIPHeaders:      []string{"X-Forwarded-For"},
-		TrustedProxiesUnix:   1,
+		TrustedProxiesUnix:   true,
 		TrustedProxiesStrict: 1,
 	}
 

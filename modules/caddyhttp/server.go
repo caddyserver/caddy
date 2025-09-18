@@ -208,7 +208,7 @@ type Server struct {
 	//
 	// This option is disabled by default.
 
-	TrustedProxiesUnix int `json:"trusted_proxies_unix,omitempty"`
+	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
 
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
@@ -949,7 +949,7 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 		return false, ""
 	}
 
-	if s.TrustedProxiesUnix > 0 && r.RemoteAddr == "@" {
+	if s.TrustedProxiesUnix && r.RemoteAddr == "@" {
 		if s.TrustedProxiesStrict > 0 {
 			ipRanges := []netip.Prefix{}
 			if s.trustedProxies != nil {
