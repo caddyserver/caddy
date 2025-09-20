@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -240,83 +243,6 @@ func TestTracing_ServeHTTP_Next_Error(t *testing.T) {
 	}
 }
 
-func TestTracing_Span_Attributes_With_Placeholders(t *testing.T) {
-	ot := &Tracing{
-		SpanName: "test-span",
-		SpanAttributes: map[string]string{
-			"http.method":     "{http.request.method}",
-			"service.name":    "test-service",
-			"mixed.attribute": "prefix-{http.request.method}-suffix",
-		},
-	}
-
-	// Create a specific request to test against
-	req, _ := http.NewRequest("POST", "https://api.example.com/v1/users?id=123&action=create", nil)
-	req.Host = "api.example.com"
-
-	// Set up the request context with proper replacer and vars
-	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, make(map[string]any))
-	req = req.WithContext(ctx)
-
-	// Manually populate the HTTP variables that would normally be set by the server
-	// This simulates what addHTTPVarsToReplacer would do
-	repl.Set("http.request.method", req.Method)
-
-	w := httptest.NewRecorder()
-
-	// Handler that can verify the context and span attributes
-	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
-		// Just ensure the request gets processed
-		writer.WriteHeader(200)
-		return nil
-	}
-
-	caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
-
-	if err := ot.Provision(caddyCtx); err != nil {
-		t.Errorf("Provision error: %v", err)
-		t.FailNow()
-	}
-
-	// Execute the request
-	if err := ot.ServeHTTP(w, req, handler); err != nil {
-		t.Errorf("ServeHTTP error: %v", err)
-	}
-
-	// Verify that the span attributes were configured correctly in the otel wrapper
-	expectedRawAttrs := map[string]string{
-		"http.method":     "{http.request.method}",
-		"service.name":    "test-service",
-		"mixed.attribute": "prefix-{http.request.method}-suffix",
-	}
-
-	for key, expectedValue := range expectedRawAttrs {
-		if actualValue, exists := ot.otel.spanAttributes[key]; !exists {
-			t.Errorf("Expected span attribute %s to exist", key)
-		} else if actualValue != expectedValue {
-			t.Errorf("Expected span attribute %s = %s, got %s", key, expectedValue, actualValue)
-		}
-	}
-
-	// Now test that the replacement would work correctly if called directly
-	// This verifies that our placeholder values would be replaced correctly
-	expectedReplacements := map[string]string{
-		"{http.request.method}":               "POST",
-		"service.name":                        "service.name",
-		"prefix-{http.request.method}-suffix": "prefix-POST-suffix",
-	}
-
-	for placeholder, expected := range expectedReplacements {
-		replaced := repl.ReplaceAll(placeholder, "")
-		if replaced != expected {
-			t.Errorf("Expected %s to be replaced with %s, got %s", placeholder, expected, replaced)
-		}
-	}
-}
-
 func TestTracing_JSON_Configuration(t *testing.T) {
 	// Test that our struct correctly marshals to and from JSON
 	original := &Tracing{
@@ -355,6 +281,110 @@ func TestTracing_JSON_Configuration(t *testing.T) {
 	}
 
 	t.Logf("JSON representation: %s", string(jsonData))
+}
+
+func TestTracing_OpenTelemetry_Span_Attributes(t *testing.T) {
+	// Create an in-memory span recorder to capture actual span data
+	spanRecorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(
+		trace.WithSpanProcessor(spanRecorder),
+	)
+
+	// Create our tracing module with span attributes that include placeholders
+	ot := &Tracing{
+		SpanName: "test-span",
+		SpanAttributes: map[string]string{
+			"placeholder": "{http.request.method}",
+			"static":      "test-service",
+			"mixed":       "prefix-{http.request.method}-suffix",
+		},
+	}
+
+	// Create a specific request to test against
+	req, _ := http.NewRequest("POST", "https://api.example.com/v1/users?id=123", nil)
+	req.Host = "api.example.com"
+
+	// Set up the request context with proper replacer and vars
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, make(map[string]any))
+	req = req.WithContext(ctx)
+	repl.Set("http.request.method", req.Method)
+
+	w := httptest.NewRecorder()
+
+	// Handler that ensures the request gets processed
+	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
+		writer.WriteHeader(200)
+		return nil
+	}
+
+	// Set up Caddy context
+	caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// Override the global tracer provider with our test provider
+	// This is a bit hacky but necessary to capture the actual spans
+	originalProvider := globalTracerProvider
+	globalTracerProvider = &tracerProvider{
+		tracerProvider:         provider,
+		tracerProvidersCounter: 1, // Simulate one user
+	}
+	defer func() {
+		globalTracerProvider = originalProvider
+	}()
+
+	// Provision the tracing module
+	if err := ot.Provision(caddyCtx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
+	// Execute the request
+	if err := ot.ServeHTTP(w, req, handler); err != nil {
+		t.Errorf("ServeHTTP error: %v", err)
+	}
+
+	// Get the recorded spans
+	spans := spanRecorder.Ended()
+	if len(spans) == 0 {
+		t.Fatal("Expected at least one span to be recorded")
+	}
+
+	// Find our span (should be the one with our test span name)
+	var testSpan trace.ReadOnlySpan
+	for _, span := range spans {
+		if span.Name() == "test-span" {
+			testSpan = span
+			break
+		}
+	}
+
+	if testSpan == nil {
+		t.Fatal("Could not find test span in recorded spans")
+	}
+
+	// Verify that the span attributes were set correctly with placeholder replacement
+	expectedAttributes := map[string]string{
+		"placeholder": "POST",
+		"static":      "test-service",
+		"mixed":       "prefix-POST-suffix",
+	}
+
+	actualAttributes := make(map[string]string)
+	for _, attr := range testSpan.Attributes() {
+		actualAttributes[string(attr.Key)] = attr.Value.AsString()
+	}
+
+	for key, expectedValue := range expectedAttributes {
+		if actualValue, exists := actualAttributes[key]; !exists {
+			t.Errorf("Expected span attribute %s to be set", key)
+		} else if actualValue != expectedValue {
+			t.Errorf("Expected span attribute %s = %s, got %s", key, expectedValue, actualValue)
+		}
+	}
+
+	t.Logf("Recorded span attributes: %+v", actualAttributes)
 }
 
 func createRequestWithContext(method string, url string) *http.Request {
