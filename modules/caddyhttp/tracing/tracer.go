@@ -104,6 +104,9 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	next := ctx.Value(nextCallCtxKey).(*nextCall)
+	next.err = next.next.ServeHTTP(w, r)
+
 	// Add custom span attributes to the current span
 	span := trace.SpanFromContext(ctx)
 	if span.IsRecording() && len(ot.spanAttributes) > 0 {
@@ -116,9 +119,6 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 		}
 		span.SetAttributes(attributes...)
 	}
-
-	next := ctx.Value(nextCallCtxKey).(*nextCall)
-	next.err = next.next.ServeHTTP(w, r)
 }
 
 // ServeHTTP propagates call to the by wrapped by `otelhttp` next handler.

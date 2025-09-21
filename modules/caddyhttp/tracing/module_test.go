@@ -366,9 +366,10 @@ func TestTracing_OpenTelemetry_Span_Attributes(t *testing.T) {
 
 	// Verify that the span attributes were set correctly with placeholder replacement
 	expectedAttributes := map[string]string{
-		"placeholder": "POST",
-		"static":      "test-service",
-		"mixed":       "prefix-POST-suffix",
+		"placeholder":               "POST",
+		"static":                    "test-service",
+		"mixed":                     "prefix-POST-suffix",
+		"http.response.status_code": "200", // OTEL default
 	}
 
 	actualAttributes := make(map[string]string)
