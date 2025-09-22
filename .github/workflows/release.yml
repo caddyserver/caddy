@@ -44,7 +44,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         fetch-depth: 0
 
@@ -55,7 +55,7 @@ jobs:
         check-latest: true
 
     # Force fetch upstream tags -- because 65 minutes
-    # tl;dr: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 runs this line:
+    # tl;dr: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.2 runs this line:
     #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
     # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
     #   git fetch --prune --unshallow
@@ -113,7 +113,7 @@ jobs:
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # main
+      uses: anchore/sbom-action/download-syft@da167eac915b4e86f08b264dbdbc867b61be6f0c # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
@@ -122,7 +122,7 @@ jobs:
         xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
+      uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
       with:
         version: latest
         args: release --clean --timeout 60m

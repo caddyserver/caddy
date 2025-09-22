@@ -172,9 +172,19 @@ func cmdStart(fl Flags) (int, error) {
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
-	logger := caddy.Log()
+	// set up buffered logging for early startup
+	// so that we can hold onto logs until after
+	// the config is loaded (or fails to load)
+	// so that we can write the logs to the user's
+	// configured output. we must be sure to flush
+	// on any error before the config is loaded.
+	logger, defaultLogger, logBuffer := caddy.BufferedLog()
+
 	undoMaxProcs := setResourceLimits(logger)
 	defer undoMaxProcs()
+	// release the local reference to the undo function so it can be GC'd;
+	// the deferred call above has already captured the actual function value.
+	undoMaxProcs = nil //nolint:ineffassign,wastedassign
 
 	configFlag := fl.String("config")
 	configAdapterFlag := fl.String("adapter")
@@ -187,6 +197,7 @@ func cmdRun(fl Flags) (int, error) {
 	// load all additional envs as soon as possible
 	err := handleEnvFileFlag(fl)
 	if err != nil {
+		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, err
 	}
 
@@ -204,6 +215,7 @@ func cmdRun(fl Flags) (int, error) {
 			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
+			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
@@ -222,6 +234,7 @@ func cmdRun(fl Flags) (int, error) {
 	if !resumeFlag {
 		config, configFile, err = LoadConfig(configFlag, configAdapterFlag)
 		if err != nil {
+			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		}
 	}
@@ -239,8 +252,19 @@ func cmdRun(fl Flags) (int, error) {
 	// run the initial config
 	err = caddy.Load(config, true)
 	if err != nil {
+		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
+	// release the reference to the config so it can be GC'd
+	config = nil //nolint:ineffassign,wastedassign
+
+	// at this stage the config will have replaced the
+	// default logger to the configured one, so we can
+	// log normally, now that the config is running.
+	// also clear our ref to the buffer so it can get GC'd
+	logger = caddy.Log()
+	defaultLogger = nil //nolint:ineffassign,wastedassign
+	logBuffer = nil     //nolint:wastedassign,ineffassign
 	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
@@ -256,12 +280,16 @@ func cmdRun(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("dialing confirmation address: %v", err)
 		}
-		defer conn.Close()
 		_, err = conn.Write(confirmationBytes)
 		if err != nil {
 			return caddy.ExitCodeFailedStartup,
 				fmt.Errorf("writing confirmation bytes to %s: %v", pingbackFlag, err)
 		}
+		// close (non-defer because we `select {}` below)
+		// and release references so they can be GC'd
+		conn.Close()
+		confirmationBytes = nil //nolint:ineffassign,wastedassign
+		conn = nil              //nolint:wastedassign,ineffassign
 	}
 
 	// if enabled, reload config file automatically on changes
@@ -288,6 +316,9 @@ func cmdRun(fl Flags) (int, error) {
 			logger.Warn("$HOME environment variable is empty - please fix; some assets might be stored in ./caddy")
 		}
 	}
+
+	// release the last local logger reference
+	logger = nil //nolint:wastedassign,ineffassign
 
 	select {}
 }

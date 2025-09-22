@@ -244,6 +244,9 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 			template.DNS01Solver = iss.Challenges.DNS.solver
 		}
 		template.ListenHost = iss.Challenges.BindHost
+		if iss.Challenges.Distributed != nil {
+			template.DisableDistributedSolvers = !*iss.Challenges.Distributed
+		}
 	}
 
 	if iss.PreferredChains != nil {
@@ -479,6 +482,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
 			}
 			iss.Challenges.TLSALPN.Disabled = true
+
+		case "distributed":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if d.Val() != "false" {
+				return d.Errf("only accepted value is 'false'")
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.Distributed == nil {
+				iss.Challenges.Distributed = new(bool)
+			}
 
 		case "alt_http_port":
 			if !d.NextArg() {
