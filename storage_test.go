@@ -48,32 +48,32 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name     string
-		setup    func()
-		expected string
+		name      string
+		skipOS    []string
+		envVars   map[string]string // Environment variables to set
+		unsetVars []string          // Environment variables to unset
+		expected  string
 	}{
 		{
 			name: "normal HOME set",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("HOME", "/home/user")
+			envVars: map[string]string{
+				"HOME": "/home/user",
 			},
-			expected: "/home/user",
+			unsetVars: []string{"HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
+			expected:  "/home/user",
 		},
 		{
-			name: "no environment variables",
-			setup: func() {
-				os.Clearenv()
-			},
-			expected: ".", // Fallback to current directory
+			name:      "no environment variables",
+			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
+			expected:  ".", // Fallback to current directory
 		},
 		{
 			name: "windows style with HOMEDRIVE and HOMEPATH",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("HOMEDRIVE", "C:")
-				os.Setenv("HOMEPATH", "\\Users\\user")
+			envVars: map[string]string{
+				"HOMEDRIVE": "C:",
+				"HOMEPATH":  "\\Users\\user",
 			},
+			unsetVars: []string{"HOME", "USERPROFILE", "home"},
 			expected: func() string {
 				if runtime.GOOS == "windows" {
 					return "C:\\Users\\user"
@@ -83,10 +83,10 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 		},
 		{
 			name: "windows style with USERPROFILE",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("USERPROFILE", "C:\\Users\\user")
+			envVars: map[string]string{
+				"USERPROFILE": "C:\\Users\\user",
 			},
+			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "home"},
 			expected: func() string {
 				if runtime.GOOS == "windows" {
 					return "C:\\Users\\user"
@@ -95,11 +95,12 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 			}(),
 		},
 		{
-			name: "plan9 style",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("home", "/usr/user")
+			name:   "plan9 style",
+			skipOS: []string{"windows"}, // Skip on Windows
+			envVars: map[string]string{
+				"home": "/usr/user",
 			},
+			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE"},
 			expected: func() string {
 				if runtime.GOOS == "plan9" {
 					return "/usr/user"
@@ -111,7 +112,21 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			test.setup()
+			// Check if we should skip this test on current OS
+			for _, skipOS := range test.skipOS {
+				if runtime.GOOS == skipOS {
+					t.Skipf("Skipping test on %s", skipOS)
+				}
+			}
+
+			// Set up environment for this test
+			for key, value := range test.envVars {
+				os.Setenv(key, value)
+			}
+			for _, key := range test.unsetVars {
+				os.Unsetenv(key)
+			}
+
 			result := HomeDir()
 
 			if result != test.expected {
@@ -146,24 +161,22 @@ func TestHomeDirUnsafe_EdgeCases(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name     string
-		setup    func()
-		expected string
+		name      string
+		envVars   map[string]string
+		unsetVars []string
+		expected  string
 	}{
 		{
-			name: "no environment variables",
-			setup: func() {
-				os.Clearenv()
-			},
-			expected: "", // homeDirUnsafe can return empty
+			name:      "no environment variables",
+			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
+			expected:  "", // homeDirUnsafe can return empty
 		},
 		{
 			name: "windows with incomplete HOMEDRIVE/HOMEPATH",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("HOMEDRIVE", "C:")
-				// HOMEPATH missing
+			envVars: map[string]string{
+				"HOMEDRIVE": "C:",
 			},
+			unsetVars: []string{"HOME", "HOMEPATH", "USERPROFILE", "home"},
 			expected: func() string {
 				if runtime.GOOS == "windows" {
 					return ""
@@ -173,11 +186,10 @@ func TestHomeDirUnsafe_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "windows with only HOMEPATH",
-			setup: func() {
-				os.Clearenv()
-				os.Setenv("HOMEPATH", "\\Users\\user")
-				// HOMEDRIVE missing
+			envVars: map[string]string{
+				"HOMEPATH": "\\Users\\user",
 			},
+			unsetVars: []string{"HOME", "HOMEDRIVE", "USERPROFILE", "home"},
 			expected: func() string {
 				if runtime.GOOS == "windows" {
 					return ""
@@ -189,7 +201,14 @@ func TestHomeDirUnsafe_EdgeCases(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			test.setup()
+			// Set up environment for this test
+			for key, value := range test.envVars {
+				os.Setenv(key, value)
+			}
+			for _, key := range test.unsetVars {
+				os.Unsetenv(key)
+			}
+
 			result := homeDirUnsafe()
 
 			if result != test.expected {
@@ -282,8 +301,9 @@ func TestAppDataDir_PlatformSpecific(t *testing.T) {
 	switch runtime.GOOS {
 	case "windows":
 		// Test Windows AppData
-		os.Clearenv()
 		os.Setenv("AppData", "C:\\Users\\user\\AppData\\Roaming")
+		os.Unsetenv("HOME")
+		os.Unsetenv("home")
 
 		result := AppDataDir()
 		expected := "C:\\Users\\user\\AppData\\Roaming\\Caddy"
@@ -293,8 +313,9 @@ func TestAppDataDir_PlatformSpecific(t *testing.T) {
 
 	case "darwin":
 		// Test macOS Application Support
-		os.Clearenv()
 		os.Setenv("HOME", "/Users/user")
+		os.Unsetenv("AppData")
+		os.Unsetenv("home")
 
 		result := AppDataDir()
 		expected := "/Users/user/Library/Application Support/Caddy"
@@ -304,8 +325,9 @@ func TestAppDataDir_PlatformSpecific(t *testing.T) {
 
 	case "plan9":
 		// Test Plan9 lib directory
-		os.Clearenv()
 		os.Setenv("home", "/usr/user")
+		os.Unsetenv("AppData")
+		os.Unsetenv("HOME")
 
 		result := AppDataDir()
 		expected := "/usr/user/lib/caddy"
@@ -315,8 +337,9 @@ func TestAppDataDir_PlatformSpecific(t *testing.T) {
 
 	default:
 		// Test Unix-like systems
-		os.Clearenv()
 		os.Setenv("HOME", "/home/user")
+		os.Unsetenv("AppData")
+		os.Unsetenv("home")
 
 		result := AppDataDir()
 		expected := "/home/user/.local/share/caddy"
@@ -344,8 +367,11 @@ func TestAppDataDir_Fallback(t *testing.T) {
 		}
 	}()
 
-	// Clear all relevant environment variables
-	os.Clearenv()
+	// Unset all relevant environment variables instead of clearing everything
+	envVarsToUnset := []string{"XDG_DATA_HOME", "AppData", "HOME", "home"}
+	for _, envVar := range envVarsToUnset {
+		os.Unsetenv(envVar)
+	}
 
 	result := AppDataDir()
 	expected := "./caddy"
