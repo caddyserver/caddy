@@ -29,10 +29,10 @@ func TestAPIError_Error_WithErr(t *testing.T) {
 		Err:        underlyingErr,
 		Message:    "API error message",
 	}
-	
+
 	result := apiErr.Error()
 	expected := "underlying error"
-	
+
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
@@ -44,10 +44,10 @@ func TestAPIError_Error_WithoutErr(t *testing.T) {
 		Err:        nil,
 		Message:    "API error message",
 	}
-	
+
 	result := apiErr.Error()
 	expected := "API error message"
-	
+
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
@@ -59,10 +59,10 @@ func TestAPIError_Error_BothNil(t *testing.T) {
 		Err:        nil,
 		Message:    "",
 	}
-	
+
 	result := apiErr.Error()
 	expected := ""
-	
+
 	if result != expected {
 		t.Errorf("Expected empty string, got '%s'", result)
 	}
@@ -102,7 +102,7 @@ func TestAPIError_JSON_Serialization(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// Marshal to JSON
@@ -110,21 +110,21 @@ func TestAPIError_JSON_Serialization(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to marshal APIError: %v", err)
 			}
-			
+
 			// Unmarshal back
 			var unmarshaled APIError
 			err = json.Unmarshal(jsonData, &unmarshaled)
 			if err != nil {
 				t.Fatalf("Failed to unmarshal APIError: %v", err)
 			}
-			
+
 			// Only Message field should survive JSON round-trip
 			// HTTPStatus and Err are marked with json:"-"
 			if unmarshaled.Message != test.apiErr.Message {
-				t.Errorf("Message mismatch: expected '%s', got '%s'", 
+				t.Errorf("Message mismatch: expected '%s', got '%s'",
 					test.apiErr.Message, unmarshaled.Message)
 			}
-			
+
 			// HTTPStatus and Err should be zero values after unmarshal
 			if unmarshaled.HTTPStatus != 0 {
 				t.Errorf("HTTPStatus should be 0 after unmarshal, got %d", unmarshaled.HTTPStatus)
@@ -150,18 +150,18 @@ func TestAPIError_HTTPStatus_Values(t *testing.T) {
 		http.StatusNotImplemented,
 		http.StatusServiceUnavailable,
 	}
-	
+
 	for _, status := range statusCodes {
 		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
 			apiErr := APIError{
 				HTTPStatus: status,
 				Message:    http.StatusText(status),
 			}
-			
+
 			if apiErr.HTTPStatus != status {
 				t.Errorf("Expected status %d, got %d", status, apiErr.HTTPStatus)
 			}
-			
+
 			// Test that error message is reasonable
 			if apiErr.Message == "" && status >= 400 {
 				t.Errorf("Status %d should have a message", status)
@@ -176,12 +176,12 @@ func TestAPIError_ErrorInterface_Compliance(t *testing.T) {
 		HTTPStatus: http.StatusBadRequest,
 		Message:    "test error",
 	}
-	
+
 	errorMsg := err.Error()
 	if errorMsg != "test error" {
 		t.Errorf("Expected 'test error', got '%s'", errorMsg)
 	}
-	
+
 	// Test with underlying error
 	underlyingErr := errors.New("underlying")
 	err2 := APIError{
@@ -189,7 +189,7 @@ func TestAPIError_ErrorInterface_Compliance(t *testing.T) {
 		Err:        underlyingErr,
 		Message:    "wrapper",
 	}
-	
+
 	if err2.Error() != "underlying" {
 		t.Errorf("Expected 'underlying', got '%s'", err2.Error())
 	}
@@ -221,27 +221,27 @@ func TestAPIError_JSON_EdgeCases(t *testing.T) {
 			message: string(make([]byte, 10000)), // 10KB message
 		},
 	}
-	
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			apiErr := APIError{
 				HTTPStatus: http.StatusBadRequest,
 				Message:    test.message,
 			}
-			
+
 			// Should be JSON serializable
 			jsonData, err := json.Marshal(apiErr)
 			if err != nil {
 				t.Fatalf("Failed to marshal APIError: %v", err)
 			}
-			
+
 			// Should be deserializable
 			var unmarshaled APIError
 			err = json.Unmarshal(jsonData, &unmarshaled)
 			if err != nil {
 				t.Fatalf("Failed to unmarshal APIError: %v", err)
 			}
-			
+
 			if unmarshaled.Message != test.message {
 				t.Errorf("Message corrupted during JSON round-trip")
 			}
@@ -253,18 +253,18 @@ func TestAPIError_Chaining(t *testing.T) {
 	// Test error chaining scenarios
 	rootErr := errors.New("root cause")
 	wrappedErr := fmt.Errorf("wrapped: %w", rootErr)
-	
+
 	apiErr := APIError{
 		HTTPStatus: http.StatusInternalServerError,
 		Err:        wrappedErr,
 		Message:    "API wrapper",
 	}
-	
+
 	// Error() should return the underlying error message
 	if apiErr.Error() != wrappedErr.Error() {
 		t.Errorf("Expected underlying error message, got '%s'", apiErr.Error())
 	}
-	
+
 	// Should be able to unwrap
 	if !errors.Is(apiErr.Err, rootErr) {
 		t.Error("Should be able to unwrap to root cause")
@@ -304,7 +304,7 @@ func TestAPIError_StatusCode_Boundaries(t *testing.T) {
 			valid:  true,
 		},
 		{
-			name:   "valid 5xx", 
+			name:   "valid 5xx",
 			status: http.StatusInternalServerError,
 			valid:  true,
 		},
@@ -314,24 +314,24 @@ func TestAPIError_StatusCode_Boundaries(t *testing.T) {
 			valid:  false,
 		},
 	}
-	
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := APIError{
 				HTTPStatus: test.status,
 				Message:    "test",
 			}
-			
+
 			// The struct allows any int value, but we can test
 			// if it's a valid HTTP status
 			statusText := http.StatusText(test.status)
 			isValidStatus := statusText != ""
-			
+
 			if isValidStatus != test.valid {
-				t.Errorf("Status %d validity: expected %v, got %v", 
+				t.Errorf("Status %d validity: expected %v, got %v",
 					test.status, test.valid, isValidStatus)
 			}
-			
+
 			// Verify the struct holds the status
 			if err.HTTPStatus != test.status {
 				t.Errorf("Status not preserved: expected %d, got %d", test.status, err.HTTPStatus)
@@ -346,7 +346,7 @@ func BenchmarkAPIError_Error(b *testing.B) {
 		Err:        errors.New("benchmark error"),
 		Message:    "benchmark message",
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		apiErr.Error()
@@ -359,7 +359,7 @@ func BenchmarkAPIError_JSON_Marshal(b *testing.B) {
 		Err:        errors.New("benchmark error"),
 		Message:    "benchmark message",
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		json.Marshal(apiErr)
@@ -368,7 +368,7 @@ func BenchmarkAPIError_JSON_Marshal(b *testing.B) {
 
 func BenchmarkAPIError_JSON_Unmarshal(b *testing.B) {
 	jsonData := []byte(`{"error": "benchmark message"}`)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var result APIError
