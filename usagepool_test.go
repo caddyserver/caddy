@@ -187,7 +187,7 @@ func TestUsagePool_Delete_Basic(t *testing.T) {
 
 func TestUsagePool_Delete_NonExistentKey(t *testing.T) {
 	pool := NewUsagePool()
-	
+
 	deleted, err := pool.Delete("non-existent")
 	if err != nil {
 		t.Errorf("Expected no error for non-existent key, got: %v", err)
@@ -198,7 +198,7 @@ func TestUsagePool_Delete_NonExistentKey(t *testing.T) {
 }
 
 func TestUsagePool_Delete_PanicOnNegativeRefs(t *testing.T) {
-	// This test demonstrates the panic condition by manipulating 
+	// This test demonstrates the panic condition by manipulating
 	// the ref count directly to create an invalid state
 	pool := NewUsagePool()
 	key := "test-key"
@@ -206,7 +206,7 @@ func TestUsagePool_Delete_PanicOnNegativeRefs(t *testing.T) {
 
 	// Store the value to get it in the pool
 	pool.LoadOrStore(key, mockVal)
-	
+
 	// Get the pool value to manipulate its refs directly
 	pool.Lock()
 	upv, exists := pool.pool[key]
@@ -214,7 +214,7 @@ func TestUsagePool_Delete_PanicOnNegativeRefs(t *testing.T) {
 		pool.Unlock()
 		t.Fatal("Value should exist in pool")
 	}
-	
+
 	// Manually set refs to 1 to test the panic condition
 	atomic.StoreInt32(&upv.refs, 1)
 	pool.Unlock()
@@ -241,14 +241,14 @@ func TestUsagePool_Delete_PanicOnNegativeRefs(t *testing.T) {
 
 func TestUsagePool_Range(t *testing.T) {
 	pool := NewUsagePool()
-	
+
 	// Add multiple values
 	values := map[string]string{
 		"key1": "value1",
 		"key2": "value2",
 		"key3": "value3",
 	}
-	
+
 	for key, value := range values {
 		pool.LoadOrStore(key, &mockDestructor{value: value})
 	}
@@ -273,7 +273,7 @@ func TestUsagePool_Range(t *testing.T) {
 
 func TestUsagePool_Range_EarlyReturn(t *testing.T) {
 	pool := NewUsagePool()
-	
+
 	// Add multiple values
 	for i := 0; i < 5; i++ {
 		pool.LoadOrStore(i, &mockDestructor{value: "value"})
@@ -295,11 +295,11 @@ func TestUsagePool_Concurrent_LoadOrNew(t *testing.T) {
 	pool := NewUsagePool()
 	key := "concurrent-key"
 	constructorCalls := int32(0)
-	
+
 	const numGoroutines = 100
 	var wg sync.WaitGroup
 	results := make([]any, numGoroutines)
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(index int) {
@@ -317,14 +317,14 @@ func TestUsagePool_Concurrent_LoadOrNew(t *testing.T) {
 			results[index] = val
 		}(i)
 	}
-	
+
 	wg.Wait()
-	
+
 	// Constructor should only be called once
 	if calls := atomic.LoadInt32(&constructorCalls); calls != 1 {
 		t.Errorf("Expected constructor to be called once, was called %d times", calls)
 	}
-	
+
 	// All goroutines should get the same value
 	firstVal := results[0]
 	for i, val := range results {
@@ -332,7 +332,7 @@ func TestUsagePool_Concurrent_LoadOrNew(t *testing.T) {
 			t.Errorf("Goroutine %d got different value than first goroutine", i)
 		}
 	}
-	
+
 	// Reference count should equal number of goroutines
 	refs, exists := pool.References(key)
 	if !exists {
@@ -347,17 +347,17 @@ func TestUsagePool_Concurrent_Delete(t *testing.T) {
 	pool := NewUsagePool()
 	key := "concurrent-delete-key"
 	mockVal := &mockDestructor{value: "test-value"}
-	
+
 	const numRefs = 50
-	
+
 	// Add multiple references
 	for i := 0; i < numRefs; i++ {
 		pool.LoadOrStore(key, mockVal)
 	}
-	
+
 	var wg sync.WaitGroup
 	deleteResults := make([]bool, numRefs)
-	
+
 	// Delete concurrently
 	for i := 0; i < numRefs; i++ {
 		wg.Add(1)
@@ -371,9 +371,9 @@ func TestUsagePool_Concurrent_Delete(t *testing.T) {
 			deleteResults[index] = deleted
 		}(i)
 	}
-	
+
 	wg.Wait()
-	
+
 	// Exactly one delete should have returned true (when refs reached 0)
 	deletedCount := 0
 	for _, deleted := range deleteResults {
@@ -384,12 +384,12 @@ func TestUsagePool_Concurrent_Delete(t *testing.T) {
 	if deletedCount != 1 {
 		t.Errorf("Expected exactly 1 delete to return true, got %d", deletedCount)
 	}
-	
+
 	// Value should be destroyed
 	if !mockVal.IsDestroyed() {
 		t.Error("Value should be destroyed after all references deleted")
 	}
-	
+
 	// Key should not exist
 	refs, exists := pool.References(key)
 	if exists {
@@ -407,7 +407,7 @@ func TestUsagePool_DestructorError(t *testing.T) {
 	mockVal := &mockDestructor{value: "test-value", err: expectedErr}
 
 	pool.LoadOrStore(key, mockVal)
-	
+
 	deleted, err := pool.Delete(key)
 	if err != expectedErr {
 		t.Errorf("Expected destructor error, got: %v", err)
@@ -423,21 +423,21 @@ func TestUsagePool_DestructorError(t *testing.T) {
 func TestUsagePool_Mixed_Concurrent_Operations(t *testing.T) {
 	pool := NewUsagePool()
 	keys := []string{"key1", "key2", "key3"}
-	
+
 	var wg sync.WaitGroup
 	const opsPerKey = 10
-	
+
 	// Test concurrent operations but with more controlled behavior
 	for _, key := range keys {
 		for i := 0; i < opsPerKey; i++ {
 			wg.Add(2) // LoadOrStore and Delete
-			
+
 			// LoadOrStore (safer than LoadOrNew for concurrency)
 			go func(k string) {
 				defer wg.Done()
 				pool.LoadOrStore(k, &mockDestructor{value: k + "-value"})
 			}(key)
-			
+
 			// Delete (may fail if refs are 0, that's fine)
 			go func(k string) {
 				defer wg.Done()
@@ -445,9 +445,9 @@ func TestUsagePool_Mixed_Concurrent_Operations(t *testing.T) {
 			}(key)
 		}
 	}
-	
+
 	wg.Wait()
-	
+
 	// Test that the pool is in a consistent state
 	for _, key := range keys {
 		refs, exists := pool.References(key)
@@ -459,17 +459,17 @@ func TestUsagePool_Mixed_Concurrent_Operations(t *testing.T) {
 
 func TestUsagePool_Range_SkipsErrorValues(t *testing.T) {
 	pool := NewUsagePool()
-	
+
 	// Add value that will succeed
 	goodKey := "good-key"
 	pool.LoadOrStore(goodKey, &mockDestructor{value: "good-value"})
-	
+
 	// Try to add value that will fail construction
 	badKey := "bad-key"
 	pool.LoadOrNew(badKey, func() (Destructor, error) {
 		return nil, errors.New("construction failed")
 	})
-	
+
 	// Range should only iterate good values
 	count := 0
 	pool.Range(func(key, value any) bool {
@@ -479,7 +479,7 @@ func TestUsagePool_Range_SkipsErrorValues(t *testing.T) {
 		}
 		return true
 	})
-	
+
 	if count != 1 {
 		t.Errorf("Expected 1 value in range, got %d", count)
 	}
@@ -488,7 +488,7 @@ func TestUsagePool_Range_SkipsErrorValues(t *testing.T) {
 func TestUsagePool_LoadOrStore_ErrorRecovery(t *testing.T) {
 	pool := NewUsagePool()
 	key := "error-recovery-key"
-	
+
 	// First, create a value that fails construction
 	_, _, err := pool.LoadOrNew(key, func() (Destructor, error) {
 		return nil, errors.New("construction failed")
@@ -496,7 +496,7 @@ func TestUsagePool_LoadOrStore_ErrorRecovery(t *testing.T) {
 	if err == nil {
 		t.Error("Expected constructor error")
 	}
-	
+
 	// Now try LoadOrStore with a good value - should recover
 	goodVal := &mockDestructor{value: "recovery-value"}
 	val, loaded := pool.LoadOrStore(key, goodVal)
@@ -511,15 +511,15 @@ func TestUsagePool_LoadOrStore_ErrorRecovery(t *testing.T) {
 func TestUsagePool_MemoryLeak_Prevention(t *testing.T) {
 	pool := NewUsagePool()
 	key := "memory-leak-test"
-	
+
 	// Create many references
 	const numRefs = 1000
 	mockVal := &mockDestructor{value: "leak-test"}
-	
+
 	for i := 0; i < numRefs; i++ {
 		pool.LoadOrStore(key, mockVal)
 	}
-	
+
 	// Delete all references
 	for i := 0; i < numRefs; i++ {
 		deleted, err := pool.Delete(key)
@@ -532,12 +532,12 @@ func TestUsagePool_MemoryLeak_Prevention(t *testing.T) {
 			t.Errorf("Delete %d should return false", i)
 		}
 	}
-	
+
 	// Verify destructor was called
 	if !mockVal.IsDestroyed() {
 		t.Error("Value should be destroyed after all references deleted")
 	}
-	
+
 	// Verify no memory leak - key should be removed from map
 	refs, exists := pool.References(key)
 	if exists {
@@ -552,29 +552,29 @@ func TestUsagePool_RaceCondition_RefsCounter(t *testing.T) {
 	pool := NewUsagePool()
 	key := "race-test-key"
 	mockVal := &mockDestructor{value: "race-value"}
-	
+
 	const numOperations = 100
 	var wg sync.WaitGroup
-	
+
 	// Mix of increment and decrement operations
 	for i := 0; i < numOperations; i++ {
 		wg.Add(2)
-		
+
 		// Increment (LoadOrStore)
 		go func() {
 			defer wg.Done()
 			pool.LoadOrStore(key, mockVal)
 		}()
-		
+
 		// Decrement (Delete) - may fail if refs are 0, that's ok
 		go func() {
 			defer wg.Done()
 			pool.Delete(key)
 		}()
 	}
-	
+
 	wg.Wait()
-	
+
 	// Final reference count should be consistent
 	refs, exists := pool.References(key)
 	if exists {
@@ -587,7 +587,7 @@ func TestUsagePool_RaceCondition_RefsCounter(t *testing.T) {
 func BenchmarkUsagePool_LoadOrNew(b *testing.B) {
 	pool := NewUsagePool()
 	key := "bench-key"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pool.LoadOrNew(key, func() (Destructor, error) {
@@ -600,7 +600,7 @@ func BenchmarkUsagePool_LoadOrStore(b *testing.B) {
 	pool := NewUsagePool()
 	key := "bench-key"
 	mockVal := &mockDestructor{value: "bench-value"}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pool.LoadOrStore(key, mockVal)
@@ -611,12 +611,12 @@ func BenchmarkUsagePool_Delete(b *testing.B) {
 	pool := NewUsagePool()
 	key := "bench-key"
 	mockVal := &mockDestructor{value: "bench-value"}
-	
+
 	// Pre-populate with many references
 	for i := 0; i < b.N; i++ {
 		pool.LoadOrStore(key, mockVal)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pool.Delete(key)
