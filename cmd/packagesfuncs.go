@@ -62,7 +62,7 @@ func splitModule(arg string) (module, version string, err error) {
 		err = fmt.Errorf("module name is required")
 	}
 
-	return
+	return module, version, err
 }
 
 func cmdAddPackage(fl Flags) (int, error) {
@@ -217,7 +217,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		err = fmt.Errorf("no build info")
-		return
+		return standard, nonstandard, unknown, err
 	}
 
 	for _, modID := range caddy.Modules() {
@@ -260,7 +260,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 			nonstandard = append(nonstandard, caddyModGoMod)
 		}
 	}
-	return
+	return standard, nonstandard, unknown, err
 }
 
 func listModules(path string) error {
