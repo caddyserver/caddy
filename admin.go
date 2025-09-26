@@ -1033,8 +1033,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// config info we have stored, if it is different from
 		// the original source.
 		ClearLastConfigIfDifferent(
-			r.Header.Get("X-Caddy-Config-Source-File"),
-			r.Header.Get("X-Caddy-Config-Source-Adapter"))
+			r.Header.Get("Caddy-Config-Source-File"),
+			r.Header.Get("Caddy-Config-Source-Adapter"))
 
 	default:
 		return APIError{

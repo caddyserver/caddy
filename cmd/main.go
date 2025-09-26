@@ -100,6 +100,11 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // there is no config available. It prints any warnings to stderr,
 // and returns the resulting JSON config bytes along with
 // the name of the loaded config file (if any).
+// The return values are:
+//   - config bytes (nil if no config)
+//   - config file used ("" if none)
+//   - adapter used ("" if none)
+//   - error, if any
 func LoadConfig(configFile, adapterName string) ([]byte, string, string, error) {
 	return loadConfigWithLogger(caddy.Log(), configFile, adapterName)
 }

@@ -1208,46 +1208,44 @@ var (
 	lastConfigAdapter string
 )
 
-// reloadFromSourceCallback is the stored callback which is called
-// when we receive a SIGUSR1 signal.
-var reloadFromSourceCallback func(file, adapter string) error
+// reloadFromSourceFunc is the type of stored callback
+// which is called when we receive a SIGUSR1 signal.
+type reloadFromSourceFunc func(file, adapter string) error
+
+// reloadFromSourceCallback is the stored callback
+// which is called when we receive a SIGUSR1 signal.
+var reloadFromSourceCallback reloadFromSourceFunc
 
 // errReloadFromSourceUnavailable is returned when no reload-from-source callback is set.
 var errReloadFromSourceUnavailable = errors.New("reload from source unavailable in this process")
 
-// ReloadFromSource attempts to reload configuration from the given source.
-// This is called when we receive a SIGUSR1 signal. If no reload callback has
-// been registered, an error is returned.
-func ReloadFromSource(file, adapter string) error {
-	if reloadFromSourceCallback == nil {
-		return errReloadFromSourceUnavailable
-	}
-	return reloadFromSourceCallback(file, adapter)
-}
-
-// SetReloadFromSource registers a callback which is called when
-// we receive a SIGUSR1 signal. This defers config loading to the
-// cmd package which is able to run config adapters (e.g. Caddyfile).
-func SetReloadFromSource(fn func(file, adapter string) error) {
-	reloadFromSourceCallback = fn
-}
-
 // SetLastConfig records the given source file and adapter as the
 // last-known external configuration source. Intended to be called
 // only when starting via "caddy run --config <file> --adapter <adapter>".
-func SetLastConfig(file, adapter string) {
+func SetLastConfig(file, adapter string, fn reloadFromSourceFunc) {
 	lastConfigMu.Lock()
 	lastConfigFile = file
 	lastConfigAdapter = adapter
+	reloadFromSourceCallback = fn
 	lastConfigMu.Unlock()
 }
 
+// ClearLastConfigIfDifferent clears the recorded last-config if the provided
+// source file/adapter do not match the recorded last-config. If both srcFile
+// and srcAdapter are empty, the last-config is cleared.
+func ClearLastConfigIfDifferent(srcFile, srcAdapter string) {
+	if (srcFile != "" || srcAdapter != "") && lastConfigMatches(srcFile, srcAdapter) {
+		return
+	}
+	SetLastConfig("", "", nil)
+}
+
 // getLastConfig returns the last-known config file and adapter.
-func getLastConfig() (file, adapter string) {
+func getLastConfig() (file, adapter string, fn reloadFromSourceFunc) {
 	lastConfigMu.RLock()
-	f, a := lastConfigFile, lastConfigAdapter
+	f, a, cb := lastConfigFile, lastConfigAdapter, reloadFromSourceCallback
 	lastConfigMu.RUnlock()
-	return f, a
+	return f, a, cb
 }
 
 // lastConfigMatches returns true if the provided source file and/or adapter
@@ -1257,7 +1255,7 @@ func getLastConfig() (file, adapter string) {
 //  3. If both sides can be made absolute and equal, match.
 //  4. If basenames are equal, match.
 func lastConfigMatches(srcFile, srcAdapter string) bool {
-	lf, la := getLastConfig()
+	lf, la, _ := getLastConfig()
 
 	// If adapter is provided, it must match.
 	if srcAdapter != "" && srcAdapter != la {
@@ -1282,16 +1280,6 @@ func lastConfigMatches(srcFile, srcAdapter string) bool {
 	}
 
 	return false
-}
-
-// ClearLastConfigIfDifferent clears the recorded last-config if the provided
-// source file/adapter do not match the recorded last-config. If both srcFile
-// and srcAdapter are empty, the last-config is cleared.
-func ClearLastConfigIfDifferent(srcFile, srcAdapter string) {
-	if (srcFile != "" || srcAdapter != "") && lastConfigMatches(srcFile, srcAdapter) {
-		return
-	}
-	SetLastConfig("", "")
 }
 
 // errSameConfig is returned if the new config is the same

@@ -251,17 +251,16 @@ func cmdRun(fl Flags) (int, error) {
 	}
 
 	// If we have a source config file (we're running via 'caddy run --config ...'),
-	// record it so SIGUSR1 can reload from the same file. Also provide a helper
+	// record it so SIGUSR1 can reload from the same file. Also provide a callback
 	// that knows how to load/adapt that source when requested by the main process.
 	if configFile != "" {
-		caddy.SetReloadFromSource(func(file, adapter string) error {
+		caddy.SetLastConfig(configFile, adapterUsed, func(file, adapter string) error {
 			cfg, _, _, err := LoadConfig(file, adapter)
 			if err != nil {
 				return err
 			}
 			return caddy.Load(cfg, true)
 		})
-		caddy.SetLastConfig(configFile, adapterUsed)
 	}
 
 	// run the initial config
@@ -385,8 +384,8 @@ func cmdReload(fl Flags) (int, error) {
 	}
 	// Provide the source file/adapter to the running process so it can
 	// preserve its last-config knowledge if this reload came from the same source.
-	headers.Set("X-Caddy-Config-Source-File", configFile)
-	headers.Set("X-Caddy-Config-Source-Adapter", adapterUsed)
+	headers.Set("Caddy-Config-Source-File", configFile)
+	headers.Set("Caddy-Config-Source-Adapter", adapterUsed)
 
 	resp, err := AdminAPIRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
 	if err != nil {

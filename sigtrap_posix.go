@@ -49,33 +49,30 @@ func trapSignalsPosix() {
 				exitProcessFromSignal("SIGTERM")
 
 			case syscall.SIGUSR1:
+				logger := Log().With(zap.String("signal", "SIGUSR1"))
 				// If we know the last source config file/adapter (set when starting
 				// via `caddy run --config <file> --adapter <adapter>`), attempt
 				// to reload from that source. Otherwise, ignore the signal.
-				file, adapter := getLastConfig()
+				file, adapter, reloadCallback := getLastConfig()
 				if file == "" {
-					Log().Info("last config unknown, ignored SIGUSR1",
-						zap.String("signal", "SIGUSR1"))
+					logger.Info("last config unknown, ignored SIGUSR1")
 					break
 				}
-				Log().Info("reloading config from last-known source",
-					zap.String("signal", "SIGUSR1"),
+				logger = logger.With(
 					zap.String("file", file),
 					zap.String("adapter", adapter))
-				if err := ReloadFromSource(file, adapter); errors.Is(err, errReloadFromSourceUnavailable) {
+				if reloadCallback == nil {
+					logger.Warn("no reload helper available, ignored SIGUSR1")
+					break
+				}
+				logger.Info("reloading config from last-known source")
+				if err := reloadCallback(file, adapter); errors.Is(err, errReloadFromSourceUnavailable) {
 					// No reload helper available (likely not started via caddy run).
-					Log().Warn("reload from source unavailable in this process; ignored SIGUSR1",
-						zap.String("file", file),
-						zap.String("adapter", adapter))
+					logger.Warn("reload from source unavailable in this process; ignored SIGUSR1")
 				} else if err != nil {
-					Log().Error("failed to reload config from file",
-						zap.Error(err),
-						zap.String("file", file),
-						zap.String("adapter", adapter))
+					logger.Error("failed to reload config from file", zap.Error(err))
 				} else {
-					Log().Info("successfully reloaded config from file",
-						zap.String("file", file),
-						zap.String("adapter", adapter))
+					logger.Info("successfully reloaded config from file")
 				}
 
 			case syscall.SIGUSR2:

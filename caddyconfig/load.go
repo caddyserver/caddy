@@ -125,8 +125,8 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	// config info we have stored, if it is different from
 	// the original source.
 	caddy.ClearLastConfigIfDifferent(
-		r.Header.Get("X-Caddy-Config-Source-File"),
-		r.Header.Get("X-Caddy-Config-Source-Adapter"))
+		r.Header.Get("Caddy-Config-Source-File"),
+		r.Header.Get("Caddy-Config-Source-Adapter"))
 
 	caddy.Log().Named("admin.api").Info("load complete")
 
