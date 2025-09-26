@@ -975,11 +975,11 @@ func Version() (simple, full string) {
 		if CustomVersion != "" {
 			full = CustomVersion
 			simple = CustomVersion
-			return
+			return simple, full
 		}
 		full = "unknown"
 		simple = "unknown"
-		return
+		return simple, full
 	}
 	// find the Caddy module in the dependency list
 	for _, dep := range bi.Deps {
@@ -1059,7 +1059,7 @@ func Version() (simple, full string) {
 		}
 	}
 
-	return
+	return simple, full
 }
 
 // Event represents something that has happened or is happening.
