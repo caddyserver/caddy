@@ -345,9 +345,11 @@ func StrictUnmarshalJSON(data []byte, v any) error {
 	return dec.Decode(v)
 }
 
+var JSONRawMessageType = reflect.TypeFor[json.RawMessage]()
+
 // isJSONRawMessage returns true if the type is encoding/json.RawMessage.
 func isJSONRawMessage(typ reflect.Type) bool {
-	return typ.PkgPath() == "encoding/json" && typ.Name() == "RawMessage"
+	return typ == JSONRawMessageType
 }
 
 // isModuleMapType returns true if the type is map[string]json.RawMessage.
