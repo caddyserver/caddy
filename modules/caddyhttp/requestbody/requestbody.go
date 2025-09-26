@@ -116,7 +116,7 @@ func (ew errorWrapper) Read(p []byte) (n int, err error) {
 	if errors.As(err, &mbe) {
 		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
 	}
-	return
+	return n, err
 }
 
 // Interface guard
