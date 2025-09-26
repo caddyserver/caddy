@@ -345,15 +345,11 @@ func StrictUnmarshalJSON(data []byte, v any) error {
 	return dec.Decode(v)
 }
 
-var jsonTypes = [][2]string{
-	{"encoding/json", "RawMessage"},     // default type
-	{"encoding/json/jsontext", "Value"}, // GOEXPERIMENT=jsonv2 type
-}
+var JSONRawMessageType = reflect.TypeFor[json.RawMessage]()
 
 // isJSONRawMessage returns true if the type is encoding/json.RawMessage.
 func isJSONRawMessage(typ reflect.Type) bool {
-	jt := [2]string{typ.PkgPath(), typ.Name()}
-	return jt == jsonTypes[0] || jt == jsonTypes[1]
+	return typ == JSONRawMessageType
 }
 
 // isModuleMapType returns true if the type is map[string]json.RawMessage.
