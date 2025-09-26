@@ -533,29 +533,24 @@ func (p *parser) doImport(nesting int) error {
 		}
 		// if it is {block}, we substitute with all tokens in the block
 		// if it is {blocks.*}, we substitute with the tokens in the mapping for the *
-		var skip bool
 		var tokensToAdd []Token
+		foundBlockDirective := false
 		switch {
 		case token.Text == "{block}":
+			foundBlockDirective = true
 			tokensToAdd = blockTokens
 		case strings.HasPrefix(token.Text, "{blocks.") && strings.HasSuffix(token.Text, "}"):
+			foundBlockDirective = true
 			// {blocks.foo.bar} will be extracted to key `foo.bar`
 			blockKey := strings.TrimPrefix(strings.TrimSuffix(token.Text, "}"), "{blocks.")
 			val, ok := blockMapping[blockKey]
 			if ok {
 				tokensToAdd = val
 			}
-		default:
-			skip = true
 		}
-		if !skip {
-			if len(tokensToAdd) == 0 {
-				// if there is no content in the snippet block, don't do any replacement
-				// this allows snippets which contained {block}/{block.*} before this change to continue functioning as normal
-				tokensCopy = append(tokensCopy, token)
-			} else {
-				tokensCopy = append(tokensCopy, tokensToAdd...)
-			}
+
+		if foundBlockDirective {
+			tokensCopy = append(tokensCopy, tokensToAdd...)
 			continue
 		}
 

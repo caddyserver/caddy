@@ -79,7 +79,7 @@ Response headers may be added using the --header flag for each header field.
 			cmd.Flags().StringP("body", "b", "", "The body of the HTTP response")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable more verbose debug-level logging")
-			cmd.Flags().StringSliceP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdRespond)
 		},
 	})
@@ -359,7 +359,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	}
 
 	// build headers map
-	headers, err := fl.GetStringSlice("header")
+	headers, err := fl.GetStringArray("header")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}
