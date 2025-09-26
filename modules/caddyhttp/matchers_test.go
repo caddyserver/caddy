@@ -992,7 +992,6 @@ func TestVarREMatcher(t *testing.T) {
 			expect: true,
 		},
 	} {
-		tc := tc // capture range value
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			// compile the regexp and validate its name
