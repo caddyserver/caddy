@@ -1217,7 +1217,7 @@ type reloadFromSourceFunc func(file, adapter string) error
 var reloadFromSourceCallback reloadFromSourceFunc
 
 // errReloadFromSourceUnavailable is returned when no reload-from-source callback is set.
-var errReloadFromSourceUnavailable = errors.New("reload from source unavailable in this process")
+var errReloadFromSourceUnavailable = errors.New("reload from source unavailable in this process") //nolint:unused
 
 // SetLastConfig records the given source file and adapter as the
 // last-known external configuration source. Intended to be called
