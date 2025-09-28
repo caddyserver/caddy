@@ -53,6 +53,7 @@ example.com {
 								"challenges": {
 									"dns": {
 										"provider": {
+											"argument": "foo",
 											"name": "mock"
 										}
 									}
