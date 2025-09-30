@@ -194,6 +194,16 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 	return deleted, err
 }
 
+func (up *UsagePool) Load(key any) any {
+	up.RLock()
+	defer up.RUnlock()
+	upv, loaded := up.pool[key]
+	if loaded {
+		return upv.value
+	}
+	return nil
+}
+
 // References returns the number of references (count of usages) to a
 // key in the pool, and true if the key exists, or false otherwise.
 func (up *UsagePool) References(key any) (int, bool) {
