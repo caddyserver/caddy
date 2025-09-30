@@ -99,13 +99,19 @@ type FileWriter struct {
 	RollSizeMB int `json:"roll_size_mb,omitempty"`
 
 	// Roll log file after some time
-	RollInterval time.Duration `json:"roll_interval,omitempty`
+	RollInterval time.Duration `json:"roll_interval,omitempty"`
 
 	// Roll log file at fix minutes
-	RollAtMinutes []int `json:"roll_minutes,omitempty`
+	// For example []int{0, 30} will roll file at xx:00 and xx:30 each hour
+	// Invalid value are ignored with a warning on stderr
+	// See https://github.com/DeRuina/timberjack#%EF%B8%8F-rotation-notes--warnings for caveats
+	RollAtMinutes []int `json:"roll_minutes,omitempty"`
 
 	// Roll log file at fix time
-	RollAt []string `json:"roll_at,omitempty`
+	// For example []string{"00:00", "12:00"} will roll file at 00:00 and 12:00 each day
+	// Invalid value are ignored with a warning on stderr
+	// See https://github.com/DeRuina/timberjack#%EF%B8%8F-rotation-notes--warnings for caveats
+	RollAt []string `json:"roll_at,omitempty"`
 
 	// Whether to compress rolled files. Default: true
 	RollCompress *bool `json:"roll_gzip,omitempty"`
@@ -122,6 +128,8 @@ type FileWriter struct {
 	RollKeepDays int `json:"roll_keep_days,omitempty"`
 
 	// Rotated file will have format <logfilename>-<format>-<criterion>.log
+	// Optional. If unset or invalid, defaults to 2006-01-02T15-04-05.000 (with fallback warning)
+	// <format> must be a Go time compatible format, see https://pkg.go.dev/time#pkg-constants
 	BackupTimeFormat string `json:"backup_time_format,omitempty"`
 }
 
