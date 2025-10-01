@@ -65,7 +65,7 @@ jobs:
       actions: write # to allow uploading artifacts and cache
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
       with:
         egress-policy: audit
 
@@ -73,7 +73,7 @@ jobs:
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
     - name: Install Go
-      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -162,7 +162,7 @@ jobs:
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
           allowed-endpoints: ci-s390x.caddyserver.com:22
@@ -221,7 +221,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
@@ -233,7 +233,7 @@ jobs:
           version: latest
           args: check
       - name: Install Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           go-version: "~1.25"
           check-latest: true
