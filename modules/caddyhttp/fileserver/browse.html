@@ -1411,36 +1411,43 @@ footer {
 			var timeList = Array.prototype.slice.call(document.getElementsByTagName("time"));
 			timeList.forEach(localizeDatetime);
 
-			// Media Viewer Functionality
-			const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.tiff', '.bmp', '.heif', '.heic', '.svg', '.avif'];
-			const videoExtensions = ['.mp4', '.mov', '.m4v', '.mpeg', '.mpg', '.avi', '.ogg', '.webm', '.mkv', '.vob', '.gifv', '.3gp'];
-			let mediaItems = [];
-			let currentMediaIndex = 0;
+			// media viewer functionality
+			var imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.tiff', '.bmp', '.heif', '.heic', '.svg', '.avif'];
+			var videoExtensions = ['.mp4', '.mov', '.m4v', '.mpeg', '.mpg', '.avi', '.ogg', '.webm', '.mkv', '.vob', '.gifv', '.3gp'];
+			var audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.wav', '.wma', '.midi', '.cda'];
+			var mediaItems = [];
+			var currentMediaIndex = 0;
 
 			function isMediaFile(filename) {
-				const lower = filename.toLowerCase();
-				return imageExtensions.some(ext => lower.endsWith(ext)) ||
-				       videoExtensions.some(ext => lower.endsWith(ext));
+				var lower = filename.toLowerCase();
+				return imageExtensions.some(function(ext) { return lower.endsWith(ext); }) ||
+				       videoExtensions.some(function(ext) { return lower.endsWith(ext); }) ||
+				       audioExtensions.some(function(ext) { return lower.endsWith(ext); });
 			}
 
 			function isImageFile(filename) {
-				const lower = filename.toLowerCase();
-				return imageExtensions.some(ext => lower.endsWith(ext));
+				var lower = filename.toLowerCase();
+				return imageExtensions.some(function(ext) { return lower.endsWith(ext); });
 			}
 
 			function isVideoFile(filename) {
-				const lower = filename.toLowerCase();
-				return videoExtensions.some(ext => lower.endsWith(ext));
+				var lower = filename.toLowerCase();
+				return videoExtensions.some(function(ext) { return lower.endsWith(ext); });
+			}
+
+			function isAudioFile(filename) {
+				var lower = filename.toLowerCase();
+				return audioExtensions.some(function(ext) { return lower.endsWith(ext); });
 			}
 
 			function collectMediaItems() {
 				mediaItems = [];
-				// Collect from both grid and list layouts
-				const allLinks = document.querySelectorAll('.entry a, tr.file a');
-				allLinks.forEach((link, index) => {
-					const href = link.getAttribute('href');
-					const nameEl = link.querySelector('.name');
-					const name = nameEl ? nameEl.textContent.trim() : href;
+				// collect from both grid and list layouts
+				var allLinks = document.querySelectorAll('.entry a, tr.file a');
+				allLinks.forEach(function(link, index) {
+					var href = link.getAttribute('href');
+					var nameEl = link.querySelector('.name');
+					var name = nameEl ? nameEl.textContent.trim() : href;
 
 					if (isMediaFile(name)) {
 						mediaItems.push({
@@ -1448,7 +1455,8 @@ footer {
 							name: name,
 							element: link,
 							isImage: isImageFile(name),
-							isVideo: isVideoFile(name)
+							isVideo: isVideoFile(name),
+							isAudio: isAudioFile(name)
 						});
 					}
 				});
@@ -1458,47 +1466,60 @@ footer {
 				if (index < 0 || index >= mediaItems.length) return;
 
 				currentMediaIndex = index;
-				const item = mediaItems[index];
-				const modal = document.getElementById('mediaModal');
-				const container = modal.querySelector('.modal-media-container');
-				const filenameEl = modal.querySelector('.modal-filename');
-				const counterEl = modal.querySelector('.modal-counter');
+				var item = mediaItems[index];
+				var modal = document.getElementById('mediaModal');
+				var container = modal.querySelector('.modal-media-container');
+				var filenameEl = modal.querySelector('.modal-filename');
+				var counterEl = modal.querySelector('.modal-counter');
 
-				// Clear previous content
+				// clear previous content
 				container.innerHTML = '';
 
-				// Create appropriate media element
+				// create appropriate media element
 				if (item.isImage) {
-					const img = document.createElement('img');
+					var img = document.createElement('img');
 					img.src = item.url;
 					img.alt = item.name;
 					container.appendChild(img);
 				} else if (item.isVideo) {
-					const video = document.createElement('video');
+					var video = document.createElement('video');
 					video.src = item.url;
 					video.controls = true;
 					video.autoplay = true;
 					container.appendChild(video);
+				} else if (item.isAudio) {
+					var audio = document.createElement('audio');
+					audio.src = item.url;
+					audio.controls = true;
+					audio.autoplay = true;
+					audio.style.width = '80vw';
+					container.appendChild(audio);
 				}
 
-				// Update info
+				// update info
 				filenameEl.textContent = item.name;
-				counterEl.textContent = `${index + 1} / ${mediaItems.length}`;
+				counterEl.textContent = (index + 1) + ' / ' + mediaItems.length;
 
-				// Show modal
+				// show modal
 				modal.classList.add('active');
 				document.body.style.overflow = 'hidden';
 			}
 
 			function closeMediaViewer() {
-				const modal = document.getElementById('mediaModal');
-				const container = modal.querySelector('.modal-media-container');
+				var modal = document.getElementById('mediaModal');
+				var container = modal.querySelector('.modal-media-container');
 
-				// Stop any playing video
-				const video = container.querySelector('video');
+				// stop any playing video or audio
+				var video = container.querySelector('video');
 				if (video) {
 					video.pause();
 					video.src = '';
+				}
+
+				var audio = container.querySelector('audio');
+				if (audio) {
+					audio.pause();
+					audio.src = '';
 				}
 
 				modal.classList.remove('active');
@@ -1506,9 +1527,9 @@ footer {
 			}
 
 			function navigateMedia(direction) {
-				let newIndex = currentMediaIndex + direction;
+				var newIndex = currentMediaIndex + direction;
 
-				// Loop around
+				// loop around
 				if (newIndex < 0) {
 					newIndex = mediaItems.length - 1;
 				} else if (newIndex >= mediaItems.length) {
@@ -1523,32 +1544,32 @@ footer {
 
 				if (mediaItems.length === 0) return;
 
-				// Add click handlers to media links
-				mediaItems.forEach((item, index) => {
+				// add click handlers to media links
+				mediaItems.forEach(function(item, index) {
 					item.element.addEventListener('click', function(e) {
 						e.preventDefault();
 						openMediaViewer(index);
 					});
 				});
 
-				// Modal controls
-				const modal = document.getElementById('mediaModal');
-				const closeBtn = modal.querySelector('.modal-close');
-				const prevBtn = modal.querySelector('.modal-prev');
-				const nextBtn = modal.querySelector('.modal-next');
+				// modal controls
+				var modal = document.getElementById('mediaModal');
+				var closeBtn = modal.querySelector('.modal-close');
+				var prevBtn = modal.querySelector('.modal-prev');
+				var nextBtn = modal.querySelector('.modal-next');
 
 				closeBtn.addEventListener('click', closeMediaViewer);
-				prevBtn.addEventListener('click', () => navigateMedia(-1));
-				nextBtn.addEventListener('click', () => navigateMedia(1));
+				prevBtn.addEventListener('click', function() { navigateMedia(-1); });
+				nextBtn.addEventListener('click', function() { navigateMedia(1); });
 
-				// Click on background to close
+				// click on background to close
 				modal.addEventListener('click', function(e) {
 					if (e.target === modal) {
 						closeMediaViewer();
 					}
 				});
 
-				// Keyboard navigation
+				// keyboard navigation
 				document.addEventListener('keydown', function(e) {
 					if (!modal.classList.contains('active')) return;
 
@@ -1564,9 +1585,36 @@ footer {
 							break;
 					}
 				});
+
+				// touch swipe navigation
+				var touchStartX = 0;
+				var touchEndX = 0;
+
+				modal.addEventListener('touchstart', function(e) {
+					touchStartX = e.changedTouches[0].screenX;
+				});
+
+				modal.addEventListener('touchend', function(e) {
+					touchEndX = e.changedTouches[0].screenX;
+					handleSwipe();
+				});
+
+				function handleSwipe() {
+					var swipeThreshold = 50;
+					var swipeDistance = touchEndX - touchStartX;
+
+					if (Math.abs(swipeDistance) > swipeThreshold) {
+						if (swipeDistance > 0) {
+							// swipe right - previous
+							navigateMedia(-1);
+						} else {
+							// swipe left - next
+							navigateMedia(1);
+						}
+					}
+				}
 			}
 
-			// Initialize media viewer after page load
 			window.addEventListener('load', initMediaViewer);
 
 			// @license-end
