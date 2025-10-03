@@ -15,8 +15,10 @@
 package caddyauth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -28,6 +30,8 @@ import (
 func init() {
 	caddy.RegisterModule(Authentication{})
 }
+
+var errNotAuthenticated = errors.New("not authenticated")
 
 // Authentication is a middleware which provides user authentication.
 // Rejects requests with HTTP 401 if the request is not authenticated.
@@ -46,6 +50,11 @@ type Authentication struct {
 	// A set of authentication providers. If none are specified,
 	// all requests will always be unauthenticated.
 	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=http.authentication.providers"`
+
+	// The HTTP status code to respind with for unauthenticated requests.
+	// Can be either an integer or a string if placeholders are needed.
+	// Optional. Default is 401.
+	StatusCode caddyhttp.WeakString `json:"status_code,omitempty"`
 
 	Providers map[string]Authenticator `json:"-"`
 
@@ -96,7 +105,15 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 	if !authed {
-		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+		statusCode := http.StatusUnauthorized
+		if codeStr := a.StatusCode.String(); codeStr != "" {
+			intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+			statusCode = intVal
+		}
+		return caddyhttp.Error(statusCode, errNotAuthenticated)
 	}
 
 	repl.Set("http.auth.user.id", user.ID)

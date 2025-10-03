@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/ascii"
 )
 
 func init() {
@@ -40,6 +41,12 @@ type HTTPBasicAuth struct {
 
 	// The list of accounts to authenticate.
 	AccountList []Account `json:"accounts,omitempty"`
+
+	// The name of the HTTP header for challenge response. Default: WWW-Authenticate
+	AuthenticateHeader string `json:"authenticate_header,omitempty"`
+
+	// The name of the HTTP header to check for credentials. Default: Authorization
+	AuthorizationHeader string `json:"authorization_header,omitempty"`
 
 	// The name of the realm. Default: restricted
 	Realm string `json:"realm,omitempty"`
@@ -141,7 +148,7 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 
 // Authenticate validates the user credentials in req and returns the user, if valid.
 func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) (User, bool, error) {
-	username, plaintextPasswordStr, ok := req.BasicAuth()
+	username, plaintextPasswordStr, ok := hba.credentials(req)
 	if !ok {
 		return hba.promptForCredentials(w, nil)
 	}
@@ -160,6 +167,40 @@ func (hba HTTPBasicAuth) Authenticate(w http.ResponseWriter, req *http.Request) 
 	}
 
 	return User{ID: username}, true, nil
+}
+
+func (hba HTTPBasicAuth) credentials(r *http.Request) (username, password string, ok bool) {
+	header := hba.AuthorizationHeader
+	if header == "" {
+		header = "Authorization"
+	}
+	auth := r.Header.Get(header)
+	if auth == "" {
+		return "", "", false
+	}
+	return parseBasicAuth(auth)
+}
+
+// parseBasicAuth parses an HTTP Basic Authentication string.
+// "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==" returns ("Aladdin", "open sesame", true).
+//
+// Copied from Go’s net/http.parseBasicAuth unexported function.
+func parseBasicAuth(auth string) (username, password string, ok bool) {
+	const prefix = "Basic "
+	// Case insensitive prefix match. See https://go.dev/issue/22736.
+	if len(auth) < len(prefix) || !ascii.EqualFold(auth[:len(prefix)], prefix) {
+		return "", "", false
+	}
+	c, err := base64.StdEncoding.DecodeString(auth[len(prefix):])
+	if err != nil {
+		return "", "", false
+	}
+	cs := string(c)
+	username, password, ok = strings.Cut(cs, ":")
+	if !ok {
+		return "", "", false
+	}
+	return username, password, true
 }
 
 func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []byte) (bool, error) {
@@ -212,7 +253,11 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 	if realm == "" {
 		realm = "restricted"
 	}
-	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
+	header := hba.AuthenticateHeader
+	if header == "" {
+		header = "WWW-Authenticate"
+	}
+	w.Header().Set(header, fmt.Sprintf(`Basic realm="%s"`, realm))
 	return User{}, false, err
 }
 

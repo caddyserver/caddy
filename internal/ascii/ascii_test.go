@@ -21,7 +21,7 @@
 // Original source, copied because the package was marked internal:
 // https://github.com/golang/go/blob/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a/src/net/http/internal/ascii/print_test.go
 
-package reverseproxy
+package ascii
 
 import "testing"
 
@@ -56,7 +56,7 @@ func TestEqualFold(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := asciiEqualFold(tt.a, tt.b); got != tt.want {
+			if got := EqualFold(tt.a, tt.b); got != tt.want {
 				t.Errorf("AsciiEqualFold(%q,%q): got %v want %v", tt.a, tt.b, got, tt.want)
 			}
 		})
@@ -106,7 +106,7 @@ func TestIsPrint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := asciiIsPrint(tt.in); got != tt.want {
+			if got := IsPrint(tt.in); got != tt.want {
 				t.Errorf("IsASCIIPrint(%q): got %v want %v", tt.in, got, tt.want)
 			}
 		})
