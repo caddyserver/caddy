@@ -27,6 +27,9 @@ type Tracing struct {
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#span
 	SpanName string `json:"span"`
 
+	// SpanAttributes are custom key-value pairs to be added to spans
+	SpanAttributes map[string]string `json:"span_attributes,omitempty"`
+
 	// otel implements opentelemetry related logic.
 	otel openTelemetryWrapper
 
@@ -46,7 +49,7 @@ func (ot *Tracing) Provision(ctx caddy.Context) error {
 	ot.logger = ctx.Logger()
 
 	var err error
-	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName)
+	ot.otel, err = newOpenTelemetryWrapper(ctx, ot.SpanName, ot.SpanAttributes)
 
 	return err
 }
@@ -69,6 +72,10 @@ func (ot *Tracing) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 //
 //	tracing {
 //	    [span <span_name>]
+//		[span_attributes {
+//			attr1 value1
+//			attr2 value2
+//		}]
 //	}
 func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	setParameter := func(d *caddyfile.Dispenser, val *string) error {
@@ -94,12 +101,30 @@ func (ot *Tracing) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	for d.NextBlock(0) {
-		if dst, ok := paramsMap[d.Val()]; ok {
-			if err := setParameter(d, dst); err != nil {
-				return err
+		switch d.Val() {
+		case "span_attributes":
+			if ot.SpanAttributes == nil {
+				ot.SpanAttributes = make(map[string]string)
 			}
-		} else {
-			return d.ArgErr()
+			for d.NextBlock(1) {
+				key := d.Val()
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				value := d.Val()
+				if d.NextArg() {
+					return d.ArgErr()
+				}
+				ot.SpanAttributes[key] = value
+			}
+		default:
+			if dst, ok := paramsMap[d.Val()]; ok {
+				if err := setParameter(d, dst); err != nil {
+					return err
+				}
+			} else {
+				return d.ArgErr()
+			}
 		}
 	}
 	return nil

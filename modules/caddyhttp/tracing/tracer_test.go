@@ -16,6 +16,7 @@ func TestOpenTelemetryWrapper_newOpenTelemetryWrapper(t *testing.T) {
 
 	if otw, err = newOpenTelemetryWrapper(ctx,
 		"",
+		nil,
 	); err != nil {
 		t.Errorf("newOpenTelemetryWrapper() error = %v", err)
 		t.FailNow()
