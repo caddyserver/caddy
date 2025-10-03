@@ -1,9 +1,11 @@
 {
-	acme_dns mock foo
+	acme_dns mock
 }
 
-example.com {
-	respond "Hello World"
+localhost {
+	tls {
+		resolvers 8.8.8.8 8.8.4.4
+	}
 }
 ----------
 {
@@ -19,22 +21,7 @@ example.com {
 							"match": [
 								{
 									"host": [
-										"example.com"
-									]
-								}
-							],
-							"handle": [
-								{
-									"handler": "subroute",
-									"routes": [
-										{
-											"handle": [
-												{
-													"body": "Hello World",
-													"handler": "static_response"
-												}
-											]
-										}
+										"localhost"
 									]
 								}
 							],
@@ -48,12 +35,32 @@ example.com {
 			"automation": {
 				"policies": [
 					{
+						"subjects": [
+							"localhost"
+						],
 						"issuers": [
 							{
 								"challenges": {
 									"dns": {
 										"provider": {
-											"argument": "foo",
+											"name": "mock"
+										},
+										"resolvers": [
+											"8.8.8.8",
+											"8.8.4.4"
+										]
+									}
+								},
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
 											"name": "mock"
 										}
 									}
