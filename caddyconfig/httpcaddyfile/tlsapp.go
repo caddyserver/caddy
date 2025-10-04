@@ -564,22 +564,21 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalACMECARoot != nil && !slices.Contains(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string)) {
 		acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string))
 	}
-	if globalACMEDNSok {
+	if globalACMEDNSok && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil || acmeIssuer.Challenges.DNS.ProviderRaw == nil) {
 		globalDNS := options["dns"]
-		if globalDNS != nil {
-			// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
-			acmeIssuer.Challenges = &caddytls.ChallengesConfig{
-				DNS: &caddytls.DNSChallengeConfig{},
-			}
-		} else if globalACMEDNS != nil {
-			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
-			acmeIssuer.Challenges = &caddytls.ChallengesConfig{
-				DNS: &caddytls.DNSChallengeConfig{
-					ProviderRaw: caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil),
-				},
-			}
-		} else {
+		if globalDNS == nil && globalACMEDNS == nil {
 			return fmt.Errorf("acme_dns specified without DNS provider config, but no provider specified with 'dns' global option")
+		}
+		if acmeIssuer.Challenges == nil {
+			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		}
+		if acmeIssuer.Challenges.DNS == nil {
+			acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+		}
+		// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
+		if globalDNS == nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
+			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
+			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 		}
 	}
 	if globalACMEEAB != nil && acmeIssuer.ExternalAccount == nil {
