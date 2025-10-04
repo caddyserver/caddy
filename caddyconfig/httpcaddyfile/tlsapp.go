@@ -612,14 +612,14 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	// In BSD it is valid to bind to the wildcard socket even though a more selective socket is already open (still unexpected behavior by the caller though)
 	// In Linux the same call will error with EADDRINUSE whenever the listener for the automation policy is opened
 	if acmeIssuer.Challenges == nil {
-			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 	}
 	if acmeIssuer.Challenges.BindHost == "" {
-			if defBinds, ok := options["default_bind"].([]ConfigValue); ok && len(defBinds) > 0 {
-					if abp, ok := defBinds[0].Value.(addressesWithProtocols); ok && len(abp.addresses) > 0 {
-							acmeIssuer.Challenges.BindHost = abp.addresses[0]
-					}
+		if defBinds, ok := options["default_bind"].([]ConfigValue); ok && len(defBinds) > 0 {
+			if abp, ok := defBinds[0].Value.(addressesWithProtocols); ok && len(abp.addresses) > 0 {
+				acmeIssuer.Challenges.BindHost = abp.addresses[0]
 			}
+		}
 	}
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
