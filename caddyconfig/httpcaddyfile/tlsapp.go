@@ -554,6 +554,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	globalPreferredChains := options["preferred_chains"]
 	globalCertLifetime := options["cert_lifetime"]
 	globalHTTPPort, globalHTTPSPort := options["http_port"], options["https_port"]
+	globalDefaultBind := options["default_bind"]
 
 	if globalEmail != nil && acmeIssuer.Email == "" {
 		acmeIssuer.Email = globalEmail.(string)
@@ -611,12 +612,12 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	// This avoids binding the automation policy to the wildcard socket, which is unexpected behavior when a more selective socket is specified via default_bind
 	// In BSD it is valid to bind to the wildcard socket even though a more selective socket is already open (still unexpected behavior by the caller though)
 	// In Linux the same call will error with EADDRINUSE whenever the listener for the automation policy is opened
-	if acmeIssuer.Challenges == nil {
-		acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
-	}
-	if acmeIssuer.Challenges.BindHost == "" {
-		if defBinds, ok := options["default_bind"].([]ConfigValue); ok && len(defBinds) > 0 {
+	if (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.BindHost == "") {
+		if defBinds, ok := globalDefaultBind.([]ConfigValue); ok && len(defBinds) > 0 {
 			if abp, ok := defBinds[0].Value.(addressesWithProtocols); ok && len(abp.addresses) > 0 {
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
 				acmeIssuer.Challenges.BindHost = abp.addresses[0]
 			}
 		}
