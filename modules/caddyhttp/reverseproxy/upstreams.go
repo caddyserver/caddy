@@ -213,12 +213,12 @@ func (su SRVUpstreams) expandedAddr(r *http.Request) (addr, service, proto, name
 	name = repl.ReplaceAll(su.Name, "")
 	if su.Service == "" && su.Proto == "" {
 		addr = name
-		return
+		return addr, service, proto, name
 	}
 	service = repl.ReplaceAll(su.Service, "")
 	proto = repl.ReplaceAll(su.Proto, "")
 	addr = su.formattedAddr(service, proto, name)
-	return
+	return addr, service, proto, name
 }
 
 // formattedAddr the RFC 2782 representation of the SRV domain, in

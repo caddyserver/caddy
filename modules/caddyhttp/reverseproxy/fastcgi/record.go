@@ -30,23 +30,23 @@ func (rec *record) fill(r io.Reader) (err error) {
 	rec.lr.N = rec.padding
 	rec.lr.R = r
 	if _, err = io.Copy(io.Discard, rec); err != nil {
-		return
+		return err
 	}
 
 	if err = binary.Read(r, binary.BigEndian, &rec.h); err != nil {
-		return
+		return err
 	}
 	if rec.h.Version != 1 {
 		err = errors.New("fcgi: invalid header version")
-		return
+		return err
 	}
 	if rec.h.Type == EndRequest {
 		err = io.EOF
-		return
+		return err
 	}
 	rec.lr.N = int64(rec.h.ContentLength)
 	rec.padding = int64(rec.h.PaddingLength)
-	return
+	return err
 }
 
 func (rec *record) Read(p []byte) (n int, err error) {

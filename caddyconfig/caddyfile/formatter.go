@@ -224,7 +224,7 @@ func Format(input []byte) []byte {
 			openBrace = false
 			if beginningOfLine {
 				indent()
-			} else if !openBraceSpace {
+			} else if !openBraceSpace || !unicode.IsSpace(last) {
 				write(' ')
 			}
 			write('{')
@@ -241,7 +241,7 @@ func Format(input []byte) []byte {
 		case ch == '{':
 			openBrace = true
 			openBraceSpace = spacePrior && !beginningOfLine
-			if openBraceSpace {
+			if openBraceSpace && newLines == 0 {
 				write(' ')
 			}
 			openBraceWritten = false

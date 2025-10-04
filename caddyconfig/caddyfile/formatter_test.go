@@ -444,6 +444,21 @@ block2 {
 			input:       "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
 			expect:      "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
 		},
+		{
+			description: "No trailing space on line before env variable",
+			input: `{
+	a
+
+	{$ENV_VAR}
+}
+`,
+			expect: `{
+	a
+
+	{$ENV_VAR}
+}
+`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that

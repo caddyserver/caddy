@@ -92,6 +92,7 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"application/font*",
 					"application/geo+json*",
 					"application/graphql+json*",
+					"application/graphql-response+json*",
 					"application/javascript*",
 					"application/json*",
 					"application/ld+json*",
@@ -176,7 +177,17 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			break
 		}
 	}
-	return next.ServeHTTP(w, r)
+
+	err := next.ServeHTTP(w, r)
+	// If there was an error, disable encoding completely
+	// This prevents corruption when handle_errors processes the response
+	if err != nil {
+		if ew, ok := w.(*responseWriter); ok {
+			ew.disabled = true
+		}
+	}
+
+	return err
 }
 
 func (enc *Encode) addEncoding(e Encoding) error {
@@ -232,6 +243,7 @@ type responseWriter struct {
 	statusCode   int
 	wroteHeader  bool
 	isConnect    bool
+	disabled     bool // disable encoding (for error responses)
 }
 
 // WriteHeader stores the status to write when the time comes
@@ -424,7 +436,14 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
+	// Don't initialize encoder for error responses
+	// This prevents response corruption when handle_errors is used
+	if rw.disabled {
+		return
+	}
+
 	hdr := rw.Header()
+
 	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
@@ -452,8 +471,7 @@ func (rw *responseWriter) init() {
 
 func hasVaryValue(hdr http.Header, target string) bool {
 	for _, vary := range hdr.Values("Vary") {
-		vals := strings.Split(vary, ",")
-		for _, val := range vals {
+		for val := range strings.SplitSeq(vary, ",") {
 			if strings.EqualFold(strings.TrimSpace(val), target) {
 				return true
 			}
@@ -478,7 +496,7 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 
 	prefs := []encodingPreference{}
 
-	for _, accepted := range strings.Split(acceptEncHeader, ",") {
+	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
 		parts := strings.Split(accepted, ";")
 		encName := strings.ToLower(strings.TrimSpace(parts[0]))
 

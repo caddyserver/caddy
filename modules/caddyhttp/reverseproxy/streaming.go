@@ -588,11 +588,11 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 		m.logger.Debug("flushing immediately")
 		//nolint:errcheck
 		m.flush()
-		return
+		return n, err
 	}
 	if m.flushPending {
 		m.logger.Debug("delayed flush already pending")
-		return
+		return n, err
 	}
 	if m.t == nil {
 		m.t = time.AfterFunc(m.latency, m.delayedFlush)
@@ -603,7 +603,7 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 		c.Write(zap.Duration("duration", m.latency))
 	}
 	m.flushPending = true
-	return
+	return n, err
 }
 
 func (m *maxLatencyWriter) delayedFlush() {

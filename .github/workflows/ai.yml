@@ -1,0 +1,30 @@
+name: AI Moderator
+permissions: read-all
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+jobs:
+  spam-detection:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      models: read
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: github/ai-moderator@6bcdb2a79c2e564db8d76d7d4439d91a044c4eb6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          spam-label: 'spam'
+          ai-label: 'ai-generated'
+          minimize-detected-comments: true
+          # Built-in prompt configuration (all enabled by default)
+          enable-spam-detection: true
+          enable-link-spam-detection: true
+          enable-ai-detection: true
+          # custom-prompt-path: '.github/prompts/my-custom.prompt.yml'  # Optional

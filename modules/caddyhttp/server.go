@@ -246,10 +246,9 @@ type Server struct {
 	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -266,11 +265,11 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
+	// TODO: Scheduled to be removed later because https://github.com/golang/go/pull/56110 has been merged.
 	if r.TLS == nil {
 		// not all requests have a conn (like virtual requests) - see #5698
 		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStateConn); ok {
+			if csc, ok := conn.(connectionStater); ok {
 				r.TLS = new(tls.ConnectionState)
 				*r.TLS = csc.ConnectionState()
 			}
@@ -985,10 +984,10 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
-	allValues := strings.Split(strings.Join(values, ","), ",")
+	allValues := strings.SplitSeq(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, part := range allValues {
+	for part := range allValues {
 		// Some proxies may retain the port number, so split if possible
 		host, _, err := net.SplitHostPort(part)
 		if err != nil {
@@ -1083,6 +1082,8 @@ const (
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
 	// For referencing underlying net.Conn
+	// This will eventually be deprecated and not used. To refer to the underlying connection, implement a middleware plugin
+	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
 
 	// For tracking whether the client is a trusted proxy

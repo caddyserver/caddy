@@ -209,7 +209,7 @@ func errLogValues(err error) (status int, msg string, fields func() []zapcore.Fi
 				zap.String("err_trace", handlerErr.Trace),
 			}
 		}
-		return
+		return status, msg, fields
 	}
 	fields = func() []zapcore.Field {
 		return []zapcore.Field{
@@ -218,7 +218,7 @@ func errLogValues(err error) (status int, msg string, fields func() []zapcore.Fi
 	}
 	status = http.StatusInternalServerError
 	msg = err.Error()
-	return
+	return status, msg, fields
 }
 
 // ExtraLogFields is a list of extra fields to log with every request.

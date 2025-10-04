@@ -308,9 +308,9 @@ func (d *Dispenser) CountRemainingArgs() int {
 }
 
 // RemainingArgs loads any more arguments (tokens on the same line)
-// into a slice and returns them. Open curly brace tokens also indicate
-// the end of arguments, and the curly brace is not included in
-// the return value nor is it loaded.
+// into a slice of strings and returns them. Open curly brace tokens
+// also indicate the end of arguments, and the curly brace is not
+// included in the return value nor is it loaded.
 func (d *Dispenser) RemainingArgs() []string {
 	var args []string
 	for d.NextArg() {
@@ -320,13 +320,25 @@ func (d *Dispenser) RemainingArgs() []string {
 }
 
 // RemainingArgsRaw loads any more arguments (tokens on the same line,
-// retaining quotes) into a slice and returns them. Open curly brace
-// tokens also indicate the end of arguments, and the curly brace is
-// not included in the return value nor is it loaded.
+// retaining quotes) into a slice of strings and returns them.
+// Open curly brace tokens also indicate the end of arguments,
+// and the curly brace is not included in the return value nor is it loaded.
 func (d *Dispenser) RemainingArgsRaw() []string {
 	var args []string
 	for d.NextArg() {
 		args = append(args, d.ValRaw())
+	}
+	return args
+}
+
+// RemainingArgsAsTokens loads any more arguments (tokens on the same line)
+// into a slice of Token-structs and returns them. Open curly brace tokens
+// also indicate the end of arguments, and the curly brace is not included
+// in the return value nor is it loaded.
+func (d *Dispenser) RemainingArgsAsTokens() []Token {
+	var args []Token
+	for d.NextArg() {
+		args = append(args, d.Token())
 	}
 	return args
 }
