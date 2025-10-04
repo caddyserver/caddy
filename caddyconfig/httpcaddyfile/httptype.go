@@ -851,6 +851,20 @@ func (st *ServerType) serversFromPairings(
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
 			}
 
+			// Look for any config values that provide packet conn wrappers on the server block
+			for _, listenerConfig := range sblock.pile["packet_conn_wrapper"] {
+				packetConnWrapper, ok := listenerConfig.Value.(caddy.PacketConnWrapper)
+				if !ok {
+					return nil, fmt.Errorf("config for a packet conn wrapper did not provide a value that implements caddy.PacketConnWrapper")
+				}
+				jsonPacketConnWrapper := caddyconfig.JSONModuleObject(
+					packetConnWrapper,
+					"wrapper",
+					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					warnings)
+				srv.PacketConnWrappersRaw = append(srv.PacketConnWrappersRaw, jsonPacketConnWrapper)
+			}
+
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
 			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
