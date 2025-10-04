@@ -19,7 +19,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/mholt/acmez/v3 v3.1.3
 	github.com/prometheus/client_golang v1.23.0
-	github.com/quic-go/quic-go v0.54.1
+	github.com/quic-go/quic-go v0.55.0
 	github.com/smallstep/certificates v0.28.4
 	github.com/smallstep/nosql v0.7.0
 	github.com/smallstep/truststore v0.13.0
@@ -89,7 +89,6 @@ require (
 	go.opentelemetry.io/contrib/propagators/b3 v1.38.0 // indirect
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0 // indirect
 	go.opentelemetry.io/contrib/propagators/ot v1.38.0 // indirect
-	go.uber.org/mock v0.5.2 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	google.golang.org/api v0.247.0 // indirect
@@ -153,10 +152,10 @@ require (
 	go.opentelemetry.io/proto/otlp v1.7.1 // indirect
 	go.step.sm/crypto v0.70.0
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/mod v0.26.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/sys v0.35.0
 	golang.org/x/text v0.28.0 // indirect
-	golang.org/x/tools v0.35.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 	google.golang.org/grpc v1.75.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	howett.net/plist v1.0.0 // indirect
