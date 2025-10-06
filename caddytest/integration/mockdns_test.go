@@ -15,7 +15,9 @@ func init() {
 }
 
 // MockDNSProvider is a mock DNS provider, for testing config with DNS modules.
-type MockDNSProvider struct{}
+type MockDNSProvider struct {
+	Argument string `json:"argument,omitempty"` // optional argument useful for testing
+}
 
 // CaddyModule returns the Caddy module information.
 func (MockDNSProvider) CaddyModule() caddy.ModuleInfo {
@@ -31,7 +33,15 @@ func (MockDNSProvider) Provision(ctx caddy.Context) error {
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens.
-func (MockDNSProvider) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (p *MockDNSProvider) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume directive name
+
+	if d.NextArg() {
+		p.Argument = d.Val()
+	}
+	if d.NextArg() {
+		return d.Errf("unexpected argument '%s'", d.Val())
+	}
 	return nil
 }
 
