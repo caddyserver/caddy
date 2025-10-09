@@ -74,16 +74,12 @@ type Server struct {
 	// 5m is applied to help avoid resource exhaustion.
 	IdleTimeout caddy.Duration `json:"idle_timeout,omitempty"`
 
-	// KeepAliveDsiable disables TCP keepalive packets.
-	// If set, the other TCP KeepAlive settings have no effect.
-	// KeepAlive is enabled by default.
-	KeepAliveDisable bool `json:"keepalive_disable,omitempty"`
-
 	// KeepAliveInterval is the interval at which TCP keepalive packets
 	// are sent to keep the connection alive at the TCP layer when no other
 	// data is being transmitted.
 	// If zero, the default is 15s.
-	// If negative, underlying socket value is unchanged.
+	// If negative, keepalive packets are not sent and other keepalive parameters
+	// are ignored.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
 
 	// KeepAliveIdle is the time that the connection must be idle before

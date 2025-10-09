@@ -42,7 +42,6 @@ type serverOptions struct {
 	ReadHeaderTimeout    caddy.Duration
 	WriteTimeout         caddy.Duration
 	IdleTimeout          caddy.Duration
-	KeepAliveDisable     bool
 	KeepAliveInterval    caddy.Duration
 	KeepAliveIdle        caddy.Duration
 	KeepAliveCount       int
@@ -146,12 +145,6 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 				}
 			}
-
-		case "keepalive_disable":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			serverOpts.KeepAliveDisable = true
 
 		case "keepalive_interval":
 			if !d.NextArg() {
@@ -339,7 +332,6 @@ func applyServerOptions(
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
-		server.KeepAliveDisable = opts.KeepAliveDisable
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.KeepAliveIdle = opts.KeepAliveIdle
 		server.KeepAliveCount = opts.KeepAliveCount
