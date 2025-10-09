@@ -1,7 +1,6 @@
 package reverseproxy
 
 import (
-	"errors"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -19,7 +18,7 @@ var reverseProxyMetrics = struct {
 	logger           *zap.Logger
 }{}
 
-func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
+func initReverseProxyMetrics(handler *Handler, registry prometheus.Registerer) {
 	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
@@ -32,17 +31,7 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 		}, upstreamsLabels)
 	})
 
-	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
-	// there's no good way to capture having multiple sites with reverse proxy. If this happens, the metrics will be
-	// registered twice, but the second registration will be ignored.
-	if err := registry.Register(reverseProxyMetrics.upstreamsHealthy); err != nil &&
-		!errors.Is(err, prometheus.AlreadyRegisteredError{
-			ExistingCollector: reverseProxyMetrics.upstreamsHealthy,
-			NewCollector:      reverseProxyMetrics.upstreamsHealthy,
-		}) {
-		panic(err)
-	}
-
+	registry.MustRegister(reverseProxyMetrics.upstreamsHealthy)
 	reverseProxyMetrics.logger = handler.logger.Named("reverse_proxy.metrics")
 }
 
