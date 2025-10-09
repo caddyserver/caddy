@@ -726,6 +726,12 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
 	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
 
+	// some of the outbound requests require h1 (e.g. websocket)
+	// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/request.go#L1579
+	if isWebsocket(req) {
+		caddyhttp.SetVar(req.Context(), tlsH1OnlyVarKey, true)
+	}
+
 	// Add the supported X-Forwarded-* headers
 	err = h.addForwardedHeaders(req)
 	if err != nil {
