@@ -536,8 +536,10 @@ func (app *App) Start() error {
 					// create the listener for this socket
 					lnAny, err := listenAddr.Listen(app.ctx, portOffset, net.ListenConfig{
 						KeepAliveConfig: net.KeepAliveConfig{
-							Enable:   srv.KeepAliveInterval >= 0,
+							Enable:   srv.KeepAliveInterval >= 0 || srv.KeepAliveIdle >= 0 || srv.KeepAliveCount >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
+							Idle:     time.Duration(srv.KeepAliveIdle),
+							Count:    srv.KeepAliveCount,
 						},
 					})
 					if err != nil {

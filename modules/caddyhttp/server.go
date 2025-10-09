@@ -79,6 +79,15 @@ type Server struct {
 	// data is being transmitted. The default is 15s.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
 
+	// KeepAliveIdle is the time that the connection must be idle before
+	// the first TCP keep-alive probe is sent when no other data is being
+	// transmitted. The default is 15s.
+	KeepAliveIdle caddy.Duration `json:"keepalive_idle,omitempty"`
+
+	// KeepAliveCount is the maximum number of TCP keep-alive probes that
+	// should be sent before dropping a connection.  The default is 9.
+	KeepAliveCount int `json:"keepalive_count,omitempty"`
+
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
