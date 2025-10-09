@@ -64,6 +64,7 @@ func init() {
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 	RegisterGlobalOption("dns", parseOptDNS)
+	RegisterGlobalOption("resolvers", parseOptResolvers)
 	RegisterGlobalOption("ech", parseOptECH)
 }
 
@@ -303,6 +304,15 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 		return "", d.ArgErr()
 	}
 	return val, nil
+}
+
+func parseOptResolvers(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	resolvers := d.RemainingArgs()
+	if len(resolvers) == 0 {
+		return nil, d.ArgErr()
+	}
+	return resolvers, nil
 }
 
 func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
