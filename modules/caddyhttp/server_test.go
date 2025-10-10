@@ -297,6 +297,39 @@ func TestServer_DetermineTrustedProxy_TrustedLoopback(t *testing.T) {
 	assert.Equal(t, clientIP, "31.40.0.10")
 }
 
+func TestServer_DetermineTrustedProxy_UnixSocket(t *testing.T) {
+	server := &Server{
+		ClientIPHeaders:    []string{"X-Forwarded-For"},
+		TrustedProxiesUnix: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "@"
+	req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, "2.2.2.2", clientIP)
+}
+
+func TestServer_DetermineTrustedProxy_UnixSocketStrict(t *testing.T) {
+	server := &Server{
+		ClientIPHeaders:      []string{"X-Forwarded-For"},
+		TrustedProxiesUnix:   true,
+		TrustedProxiesStrict: 1,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "@"
+	req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, "3.3.3.3", clientIP)
+}
+
 func TestServer_DetermineTrustedProxy_UntrustedPrefix(t *testing.T) {
 	loopbackPrefix, _ := netip.ParsePrefix("127.0.0.1/8")
 
