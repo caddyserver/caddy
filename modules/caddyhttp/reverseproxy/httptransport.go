@@ -380,9 +380,10 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	// we need to keep track if a proxy is used for a request
 	proxyWrapper := func(req *http.Request) (*url.URL, error) {
 		u, err := proxy(req)
-		if err != nil {
-			return nil, err
+		if u == nil || err != nil {
+			return u, err
 		}
+		// there must be a proxy for this request
 		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
 		return u, nil
 	}
