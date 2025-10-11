@@ -24,6 +24,7 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -376,9 +377,18 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
 		}
 	}
+	// we need to keep track if a proxy is used for a request
+	proxyWrapper := func(req *http.Request) (*url.URL, error) {
+		u, err := proxy(req)
+		if err != nil {
+			return nil, err
+		}
+		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
+		return u, nil
+	}
 
 	rt := &http.Transport{
-		Proxy:                  proxy,
+		Proxy:                  proxyWrapper,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
