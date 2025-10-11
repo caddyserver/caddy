@@ -1209,6 +1209,11 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 		reqHost = di.Host
 	}
 
+	// add client address to the host to let transport differentiate requests from different clients
+	if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
+		reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+	}
+
 	req.URL.Host = reqHost
 }
 
