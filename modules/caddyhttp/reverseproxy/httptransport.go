@@ -276,7 +276,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		// This means we can safely use the address in dialInfo if proxy is not used (the address and network will be same any way)
 		// or if the upstream is unix (because there is no way socks or http proxy can be used for unix address).
 		if dialInfo, ok := GetDialInfo(ctx); ok {
-			if strings.HasPrefix(dialInfo.Network, "unix") {
+			if caddyhttp.GetVar(ctx, proxyVarKey) == nil || strings.HasPrefix(dialInfo.Network, "unix") {
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}
