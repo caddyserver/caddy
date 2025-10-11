@@ -36,6 +36,12 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
+	// *tls.Conn doesn't need to be wrapped because we already removed unwanted alpns
+	// and handshake won't succeed without mutually supported alpns
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		return tlsConn, nil
+	}
+
 	_, isConnectionStater := conn.(connectionStater)
 	// emit a warning
 	if h.useTLS && !isConnectionStater {
