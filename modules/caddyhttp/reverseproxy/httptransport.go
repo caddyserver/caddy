@@ -467,14 +467,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.IdleConnTimeout = time.Duration(h.KeepAlive.IdleConnTimeout)
 	}
 
-	// The proxy protocol header can only be sent once right after opening the connection.
-	// So single connection must not be used for multiple requests, which can potentially
-	// come from different clients.
-	if !rt.DisableKeepAlives && h.ProxyProtocol != "" {
-		caddyCtx.Logger().Warn("disabling keepalives, they are incompatible with using PROXY protocol")
-		rt.DisableKeepAlives = true
-	}
-
 	if h.Compression != nil {
 		rt.DisableCompression = !*h.Compression
 	}
