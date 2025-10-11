@@ -267,13 +267,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		// For unix socket upstreams, we need to recover the dial info from
-		// the request's context, because the Host on the request's URL
-		// will have been modified by directing the request, overwriting
-		// the unix socket filename.
-		// Also, we need to avoid overwriting the address at this point
-		// when not necessary, because http.ProxyFromEnvironment may have
-		// modified the address according to the user's env proxy config.
+		// The network is usually tcp, and the address is the host in http.Request.URL.Host
+		// and that's been overwritten in directRequest
+		// However, if proxy is used according to http.ProxyFromEnvironment or proxy providers,
+		// address will be the address of the proxy server.
+
+		// This means we can safely use the address in dialInfo if proxy is not used (the address and network will be same any way)
+		// or if the upstream is unix (because there is no way socks or http proxy can be used for unix address).
 		if dialInfo, ok := GetDialInfo(ctx); ok {
 			if strings.HasPrefix(dialInfo.Network, "unix") {
 				network = dialInfo.Network
