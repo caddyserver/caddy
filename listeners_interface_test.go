@@ -56,12 +56,10 @@ func TestIsInterfaceName(t *testing.T) {
 		{"eth\t0", false, "interface with tab"},
 		{"eth\x00", false, "interface with null character"},
 
-		// Invalid interface names (unsupported Caddy placeholders)
-		{"{upstream}", false, "Caddy upstream placeholder"},
-		{"{http.request.host}", false, "Caddy HTTP placeholder"},
-		{"{vars.interface}", false, "Caddy variable placeholder"},
-		{"{system.hostname}", false, "Caddy system placeholder"},
-		{"{time.now}", false, "Caddy time placeholder"},
+		// Invalid interface names (unregistered Caddy placeholders that won't be replaced)
+		{"{upstream}", false, "Caddy upstream placeholder (not registered in global replacer)"},
+		{"{http.request.host}", false, "Caddy HTTP placeholder (not registered in global replacer)"},
+		{"{vars.interface}", false, "Caddy variable placeholder (not registered in global replacer)"},
 	}
 
 	for _, test := range tests {
@@ -322,18 +320,14 @@ func TestIsInterfaceNameWithPlaceholders(t *testing.T) {
 		{"{env.TEST_INVALID_INTERFACE}", false, "env placeholder resolving to IP address"},
 		{"{file." + invalidTempFile.Name() + "}", false, "file placeholder resolving to hostname"},
 
-		// Unsupported placeholders
-		{"{http.request.host}", false, "unsupported HTTP placeholder"},
-		{"{vars.interface}", false, "unsupported variable placeholder"},
-		{"{system.hostname}", false, "unsupported system placeholder"},
-		{"{time.now}", false, "unsupported time placeholder"},
-		{"{upstream}", false, "unsupported upstream placeholder"},
+		// Unregistered placeholders (not in global replacer, won't be replaced)
+		{"{http.request.host}", false, "HTTP placeholder (not in global replacer)"},
+		{"{vars.interface}", false, "vars placeholder (not in global replacer)"},
+		{"{upstream}", false, "upstream placeholder (not in global replacer)"},
 
-		// Mixed placeholders (supported + unsupported)
-		{"eth{env.INTERFACE_NUM}-{http.request.host}", false, "mixed env and HTTP placeholders"},
-		{"{env.PREFIX}-{vars.suffix}", false, "mixed env and vars placeholders"},
-		{"eth{env.INTERFACE_NUM}{system.hostname}", false, "mixed env and system placeholders - system not allowed"},
-		{"{env.PREFIX}-{time.now}", false, "mixed env and time placeholders - time not allowed"},
+		// Mixed with unregistered placeholders (partial replacement will fail)
+		{"eth{env.INTERFACE_NUM}-{http.request.host}", false, "mixed env and HTTP (HTTP not replaced, contains {)"},
+		{"{env.PREFIX}-{vars.suffix}", false, "mixed env and vars (vars not replaced, contains {)"},
 
 		// Invalid placeholder resolution
 		{"{env.NONEXISTENT}", false, "nonexistent environment variable"},

@@ -891,27 +891,18 @@ func isValidInterfaceChar(r rune) bool {
 }
 
 // resolveInterfacePlaceholder resolves Caddy placeholders in interface names.
-// Only env.* and file.* placeholders are supported for interface binding.
-// Returns the resolved interface name and whether it contains only supported placeholders.
+// Returns the resolved interface name and whether resolution was successful.
+// Any placeholder available in the global replacer context can be used.
 func resolveInterfacePlaceholder(s string) (string, bool) {
 	// If no placeholders, return as-is
 	if !strings.Contains(s, "{") {
 		return s, true
 	}
 
-	// Only allow env and file placeholders for interface names
-	if !strings.Contains(s, "{env.") && !strings.Contains(s, "{file.") {
-		return "", false
-	}
-
-	// Check for other placeholders that ReplaceKnown would process but we don't want
-	if strings.Contains(s, "{system.") || strings.Contains(s, "{time.") {
-		return "", false
-	}
-
 	repl := NewReplacer()
 	resolved := repl.ReplaceKnown(s, "")
 
+	// If no replacements were made or result is empty, reject it
 	if resolved == s || resolved == "" {
 		return "", false
 	}
