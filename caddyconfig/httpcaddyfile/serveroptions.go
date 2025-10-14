@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/dustin/go-humanize"
 
@@ -42,6 +43,8 @@ type serverOptions struct {
 	WriteTimeout         caddy.Duration
 	IdleTimeout          caddy.Duration
 	KeepAliveInterval    caddy.Duration
+	KeepAliveIdle        caddy.Duration
+	KeepAliveCount       int
 	MaxHeaderBytes       int
 	EnableFullDuplex     bool
 	Protocols            []string
@@ -142,6 +145,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 				}
 			}
+
 		case "keepalive_interval":
 			if !d.NextArg() {
 				return nil, d.ArgErr()
@@ -151,6 +155,26 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.Errf("parsing keepalive interval duration: %v", err)
 			}
 			serverOpts.KeepAliveInterval = caddy.Duration(dur)
+
+		case "keepalive_idle":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return nil, d.Errf("parsing keepalive idle duration: %v", err)
+			}
+			serverOpts.KeepAliveIdle = caddy.Duration(dur)
+
+		case "keepalive_count":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			cnt, err := strconv.ParseInt(d.Val(), 10, 32)
+			if err != nil {
+				return nil, d.Errf("parsing keepalive count int: %v", err)
+			}
+			serverOpts.KeepAliveCount = int(cnt)
 
 		case "max_header_size":
 			var sizeStr string
@@ -309,6 +333,8 @@ func applyServerOptions(
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
+		server.KeepAliveIdle = opts.KeepAliveIdle
+		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.Protocols = opts.Protocols

@@ -76,8 +76,24 @@ type Server struct {
 
 	// KeepAliveInterval is the interval at which TCP keepalive packets
 	// are sent to keep the connection alive at the TCP layer when no other
-	// data is being transmitted. The default is 15s.
+	// data is being transmitted.
+	// If zero, the default is 15s.
+	// If negative, keepalive packets are not sent and other keepalive parameters
+	// are ignored.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
+
+	// KeepAliveIdle is the time that the connection must be idle before
+	// the first TCP keep-alive probe is sent when no other data is being
+	// transmitted.
+	// If zero, the default is 15s.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveIdle caddy.Duration `json:"keepalive_idle,omitempty"`
+
+	// KeepAliveCount is the maximum number of TCP keep-alive probes that
+	// should be sent before dropping a connection.
+	// If zero, the default is 9.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.

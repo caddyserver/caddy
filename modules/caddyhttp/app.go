@@ -538,6 +538,8 @@ func (app *App) Start() error {
 						KeepAliveConfig: net.KeepAliveConfig{
 							Enable:   srv.KeepAliveInterval >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
+							Idle:     time.Duration(srv.KeepAliveIdle),
+							Count:    srv.KeepAliveCount,
 						},
 					})
 					if err != nil {
