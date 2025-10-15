@@ -17,14 +17,60 @@ import (
 
 // Metrics configures metrics observations.
 // EXPERIMENTAL and subject to change or removal.
+//
+// Example configuration:
+//
+//	{
+//		"apps": {
+//			"http": {
+//				"metrics": {
+//					"per_host": true,
+//					"allow_catch_all_hosts": false
+//				},
+//				"servers": {
+//					"srv0": {
+//						"routes": [{
+//							"match": [{"host": ["example.com", "www.example.com"]}],
+//							"handle": [{"handler": "static_response", "body": "Hello"}]
+//						}]
+//					}
+//				}
+//			}
+//		}
+//	}
+//
+// In this configuration:
+// - Requests to example.com and www.example.com get individual host labels
+// - All other hosts (e.g., attacker.com) are aggregated under "_other" label
+// - This prevents unlimited cardinality from arbitrary Host headers
 type Metrics struct {
 	// Enable per-host metrics. Enabling this option may
 	// incur high-memory consumption, depending on the number of hosts
 	// managed by Caddy.
+	//
+	// CARDINALITY PROTECTION: To prevent unbounded cardinality attacks,
+	// only explicitly configured hosts (via host matchers) are allowed
+	// by default. Other hosts are aggregated under the "_other" label.
+	// See AllowCatchAllHosts to change this behavior.
 	PerHost bool `json:"per_host,omitempty"`
 
-	init        sync.Once
-	httpMetrics *httpMetrics `json:"-"`
+	// Allow metrics for catch-all hosts (hosts without explicit configuration).
+	// When false (default), only hosts explicitly configured via host matchers
+	// will get individual metrics labels. All other hosts will be aggregated
+	// under the "_other" label to prevent cardinality explosion.
+	//
+	// This is automatically enabled for HTTPS servers (since certificates provide
+	// some protection against unbounded cardinality), but disabled for HTTP servers
+	// by default to prevent cardinality attacks from arbitrary Host headers.
+	//
+	// Set to true to allow all hosts to get individual metrics (NOT RECOMMENDED
+	// for production environments exposed to the internet).
+	AllowCatchAllHosts bool `json:"allow_catch_all_hosts,omitempty"`
+
+	init           sync.Once
+	httpMetrics    *httpMetrics
+	allowedHosts   map[string]struct{}
+	hasHTTPSServer bool
 }
 
 type httpMetrics struct {
@@ -101,6 +147,63 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	}, httpLabels)
 }
 
+// scanConfigForHosts scans the HTTP app configuration to build a set of allowed hosts
+// for metrics collection, similar to how auto-HTTPS scans for domain names.
+func (m *Metrics) scanConfigForHosts(app *App) {
+	if !m.PerHost {
+		return
+	}
+
+	m.allowedHosts = make(map[string]struct{})
+	m.hasHTTPSServer = false
+
+	for _, srv := range app.Servers {
+		// Check if this server has TLS enabled
+		serverHasTLS := len(srv.TLSConnPolicies) > 0
+		if serverHasTLS {
+			m.hasHTTPSServer = true
+		}
+
+		// Collect hosts from route matchers
+		for _, route := range srv.Routes {
+			for _, matcherSet := range route.MatcherSets {
+				for _, matcher := range matcherSet {
+					if hm, ok := matcher.(*MatchHost); ok {
+						for _, host := range *hm {
+							// Only allow non-fuzzy hosts to prevent unbounded cardinality
+							if !hm.fuzzy(host) {
+								m.allowedHosts[strings.ToLower(host)] = struct{}{}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// shouldAllowHostMetrics determines if metrics should be collected for the given host.
+// This implements the cardinality protection by only allowing metrics for:
+// 1. Explicitly configured hosts
+// 2. Catch-all requests on HTTPS servers (if AllowCatchAllHosts is true or auto-enabled)
+// 3. Catch-all requests on HTTP servers only if explicitly allowed
+func (m *Metrics) shouldAllowHostMetrics(host string, isHTTPS bool) bool {
+	if !m.PerHost {
+		return true // host won't be used in labels anyway
+	}
+
+	normalizedHost := strings.ToLower(host)
+
+	// Always allow explicitly configured hosts
+	if _, exists := m.allowedHosts[normalizedHost]; exists {
+		return true
+	}
+
+	// For catch-all requests (not in allowed hosts)
+	allowCatchAll := m.AllowCatchAllHosts || (isHTTPS && m.hasHTTPSServer)
+	return allowCatchAll
+}
+
 // serverNameFromContext extracts the current server name from the context.
 // Returns "UNKNOWN" if none is available (should probably never happen).
 func serverNameFromContext(ctx context.Context) string {
@@ -133,9 +236,19 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
 
+	// Determine if this is an HTTPS request
+	isHTTPS := r.TLS != nil
+
 	if h.metrics.PerHost {
-		labels["host"] = strings.ToLower(r.Host)
-		statusLabels["host"] = strings.ToLower(r.Host)
+		// Apply cardinality protection for host metrics
+		if h.metrics.shouldAllowHostMetrics(r.Host, isHTTPS) {
+			labels["host"] = strings.ToLower(r.Host)
+			statusLabels["host"] = strings.ToLower(r.Host)
+		} else {
+			// Use a catch-all label for unallowed hosts to prevent cardinality explosion
+			labels["host"] = "_other"
+			statusLabels["host"] = "_other"
+		}
 	}
 
 	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
